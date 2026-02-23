@@ -1,0 +1,44 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
+
+      # ── Database migration ────────────────────────────────────────────────
+      - name: Push database schema (db:push)
+        run: cd packages/db && bun run db:push
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # ─────────────────────────────────────────────────────────────────────
+
+      - name: Deploy
+        run: bunx sst deploy --stage staging
