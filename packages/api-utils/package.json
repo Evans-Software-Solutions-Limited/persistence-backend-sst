@@ -1,0 +1,28 @@
+{
+  "name": "@sst-monorepo-template/api-utils",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./env": "./src/env/index.ts",
+    "./jwt": "./src/jwt/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "elysia": "^1.4.23",
+    "jwt-decode": "^4.0.0",
+    "sst": "*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/aws-lambda": "^8",
+    "@types/node": "^22",
+    "eslint": "^9.39.1",
+    "typescript-eslint": "^8.48.0",
+    "vitest": "^4.0.18"
+  }
+}

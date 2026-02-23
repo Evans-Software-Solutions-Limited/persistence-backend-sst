@@ -1,0 +1,8 @@
+node_modules
+**/dist
+**/dist/**
+.sst
+*.min.js
+bun.lock
+bun.lockb
+coverage
