@@ -1,5 +1,5 @@
 {
-  "name": "@sst-monorepo-template/web",
+  "name": "@persistence/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@sst-monorepo-template/core": "workspace:*",
+    "@persistence/core": "workspace:*",
     "@base-ui/react": "^1.1.0",
     "@elysiajs/eden": "^1.4.8",
     "@fontsource-variable/figtree": "^5.2.10",
@@ -36,7 +36,7 @@
     "@tanstack/eslint-plugin-query": "^5.91.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.10.1",
+    "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.2",

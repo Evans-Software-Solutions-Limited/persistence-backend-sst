@@ -1,5 +1,5 @@
 {
-  "name": "@sst-monorepo-template/core",
+  "name": "@persistence/core",
   "version": "0.0.0",
   "type": "module",
   "exports": {
@@ -13,6 +13,8 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "@persistence/api-utils": "workspace:*",
+    "@persistence/db": "workspace:*",
     "@elysiajs/openapi": "^1.4.14",
     "elysia": "^1.4.23",
     "hono": "^4.11.9",

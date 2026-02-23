@@ -1,5 +1,5 @@
 {
-  "name": "@sst-monorepo-template/other-service",
+  "name": "@persistence/other-service",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
