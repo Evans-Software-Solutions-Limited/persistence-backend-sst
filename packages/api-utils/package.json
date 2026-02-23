@@ -1,8 +1,9 @@
 {
-  "name": "@sst-monorepo-template/api-utils",
+  "name": "@persistence/api-utils",
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./auth/supabaseAuth": "./src/auth/supabaseAuth.ts",
     "./env": "./src/env/index.ts",
     "./jwt": "./src/jwt/index.ts"
   },
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "elysia": "^1.4.23",
+    "jose": "^5.7.0",
     "jwt-decode": "^4.0.0",
     "sst": "*"
   },

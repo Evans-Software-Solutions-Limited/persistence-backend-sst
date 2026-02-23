@@ -7,8 +7,8 @@
   },
   "include": [
     "src/**/*",
-    "../../packages/api-utils/src/env",
-    "../../packages/api-utils/src/jwt"
+    "../../packages/api-utils/src/**/*",
+    "../../packages/db/src/**/*"
   ],
   "exclude": ["node_modules"]
 }

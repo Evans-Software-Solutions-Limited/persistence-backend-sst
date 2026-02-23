@@ -1,5 +1,5 @@
 {
-  "name": "sst-monorepo-template",
+  "name": "persistence",
   "version": "0.0.0",
   "packageManager": "bun@1.3.9",
   "workspaces": [
@@ -16,7 +16,7 @@
     "test": "turbo run test:unit --cache-dir .turbo",
     "test:unit": "turbo run test:unit --cache-dir .turbo",
     "tear-down": "sst remove",
-    "shell": "bun run --filter @sst-monorepo-template/scripts shell"
+    "shell": "bun run --filter @persistence/scripts shell"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22",
