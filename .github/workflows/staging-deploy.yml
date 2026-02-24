@@ -3,8 +3,6 @@ name: Deploy Staging
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 # Only one staging deploy at a time to avoid SST lock conflicts
@@ -20,7 +18,7 @@ jobs:
   install:
     name: Install
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'push' && !contains(github.event.head_commit.message, 'release-please') && !contains(github.event.head_commit.message, 'Release ')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !contains(github.event.head_commit.message, 'release-please') && !contains(github.event.head_commit.message, 'Release ')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
