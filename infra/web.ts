@@ -3,7 +3,7 @@ import { coreAPI } from "./api";
 const region = aws.getRegionOutput().name;
 
 export const frontend = new sst.aws.StaticSite("web", {
-  path: "packages/web/dist",
+  path: "packages/web",
   build: {
     output: "dist",
     command: "bun run build",
