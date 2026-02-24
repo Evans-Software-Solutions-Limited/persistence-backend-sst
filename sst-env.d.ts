@@ -6,14 +6,6 @@
 
 declare module "sst" {
   export interface Resource {
-    "PersistenceDatabaseUrl": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "PersistenceJwtSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
     "api-core": {
       "type": "sst.aws.ApiGatewayV2"
       "url": string
