@@ -14,23 +14,7 @@ export type SupabaseUser = {
   exp: number;
 };
 
-/**
- * Get the JWT secret from SST Resource or environment variable.
- * At runtime, SST injects Resource values into the Lambda environment.
- */
 function getJwtSecret(): string {
-  // Try to get from Resource (SST runtime)
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Resource } = require("sst");
-    if (Resource.PersistenceJwtSecret?.value) {
-      return Resource.PersistenceJwtSecret.value;
-    }
-  } catch {
-    // Resource not available, fall through to env var
-  }
-
-  // Fall back to environment variable
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error(
