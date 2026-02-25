@@ -16,6 +16,7 @@
     "@persistence/api-utils": "workspace:*",
     "@persistence/db": "workspace:*",
     "@elysiajs/openapi": "^1.4.14",
+    "drizzle-orm": "^0.44.2",
     "elysia": "^1.4.23",
     "hono": "^4.11.9",
     "jwt-decode": "^4.0.0",

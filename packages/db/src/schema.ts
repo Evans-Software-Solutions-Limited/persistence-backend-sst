@@ -1,8 +1,6 @@
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   boolean,
   decimal,
-  index,
   integer,
   jsonb,
   pgEnum,
