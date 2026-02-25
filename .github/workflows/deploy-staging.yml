@@ -7,7 +7,7 @@ on:
 
 # Only one staging deploy at a time to avoid SST lock conflicts
 concurrency:
-  group: sst-staging
+  group: persistence-sst-staging
   cancel-in-progress: false
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
   deploy:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    environment: staging
+    environment: Staging
     needs: [install]
     steps:
       - name: Checkout
@@ -59,7 +59,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
-          aws-region: "eu-west-2"
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - name: Unlock SST (clear stale lock from previous runs)
         run: bunx sst unlock --stage staging || true
