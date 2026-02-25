@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HelloWorldPostRepositoryService } from "../helloWorldPostService";
-import { HelloWorldRepository } from "../../repositories/helloWorldRepository";
+import { HelloWorldRepository } from "../../../repositories/helloWorldRepository";
 
 describe("HelloWorldPostService", () => {
   it("should provide HelloWorldRepository as a decorated service", async () => {

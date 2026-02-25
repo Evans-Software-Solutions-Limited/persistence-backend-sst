@@ -10,7 +10,7 @@ describe("HelloWorldGetHandler", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()) as any;
     expect(body).toHaveProperty("message");
     expect(body.message).toBe("Hello, world!");
   });
