@@ -12,8 +12,8 @@ export const exercisesListHandler = new Elysia().use(ExercisesListService).get(
       difficulty,
       category,
       search,
-      limit: limit ? parseInt(limit, 10) : 20,
-      offset: offset ? parseInt(offset, 10) : 0,
+      limit: limit ?? 20,
+      offset: offset ?? 0,
     });
 
     return { data: exercises };
@@ -24,8 +24,8 @@ export const exercisesListHandler = new Elysia().use(ExercisesListService).get(
       difficulty: t.Optional(t.String()),
       category: t.Optional(t.String()),
       search: t.Optional(t.String()),
-      limit: t.Optional(t.String()),
-      offset: t.Optional(t.String()),
+      limit: t.Optional(t.Numeric()),
+      offset: t.Optional(t.Numeric()),
     }),
   },
 );

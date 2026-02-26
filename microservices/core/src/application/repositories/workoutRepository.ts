@@ -1,9 +1,10 @@
-import { and, eq, or, desc } from "drizzle-orm";
+import { and, eq, or, desc, inArray } from "drizzle-orm";
 import {
   workouts,
   workoutExercises,
   exercises,
   friendships,
+  workoutAssignments,
   type Workout,
   type NewWorkout,
 } from "@persistence/db";
@@ -54,9 +55,11 @@ export class WorkoutRepository {
       // Own workouts
       conditions = [eq(workouts.createdBy, userId)];
     } else if (type === "assigned") {
-      // Workouts assigned to the user (via workoutAssignments)
-      // For now, just return mine — assigned would need a subquery join
-      conditions = [eq(workouts.createdBy, userId)];
+      const assignedIds = db
+        .select({ workoutId: workoutAssignments.workoutId })
+        .from(workoutAssignments)
+        .where(eq(workoutAssignments.clientId, userId));
+      conditions = [inArray(workouts.id, assignedIds)];
     } else if (type === "default") {
       // Public workouts
       conditions = [eq(workouts.visibility, "public")];

@@ -21,8 +21,8 @@ export const workoutsListHandler = new Elysia()
       const workouts = await ctx.WorkoutRepository.list(userId, {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         type: (type as any) || "mine",
-        limit: limit ? parseInt(limit, 10) : 20,
-        offset: offset ? parseInt(offset, 10) : 0,
+        limit: limit ?? 20,
+        offset: offset ?? 0,
       });
 
       return { data: workouts };
@@ -36,8 +36,8 @@ export const workoutsListHandler = new Elysia()
             t.Literal("default"),
           ]),
         ),
-        limit: t.Optional(t.String()),
-        offset: t.Optional(t.String()),
+        limit: t.Optional(t.Numeric()),
+        offset: t.Optional(t.Numeric()),
       }),
     },
   );
