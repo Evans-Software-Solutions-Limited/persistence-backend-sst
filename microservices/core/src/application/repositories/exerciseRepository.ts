@@ -40,7 +40,8 @@ export class ExerciseRepository {
     }
 
     if (filters.search) {
-      conditions.push(ilike(exercises.name, `%${filters.search}%`));
+      const escaped = filters.search.replace(/[%_\\]/g, "\\$&");
+      conditions.push(ilike(exercises.name, `%${escaped}%`));
     }
 
     const query = db

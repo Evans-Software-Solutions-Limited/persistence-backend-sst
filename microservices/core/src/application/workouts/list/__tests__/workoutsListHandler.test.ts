@@ -50,4 +50,24 @@ describe("WorkoutsListHandler", () => {
 
     expect(response.status).toBe(401);
   });
+
+  it("should return 422 for non-numeric limit", async () => {
+    const response = await workoutsListHandler.handle(
+      new Request("http://localhost/workouts?limit=abc", {
+        method: "GET",
+      }),
+    );
+
+    expect(response.status).toBe(422);
+  });
+
+  it("should return 422 for non-numeric offset", async () => {
+    const response = await workoutsListHandler.handle(
+      new Request("http://localhost/workouts?offset=xyz", {
+        method: "GET",
+      }),
+    );
+
+    expect(response.status).toBe(422);
+  });
 });

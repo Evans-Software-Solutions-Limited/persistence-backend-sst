@@ -1,5 +1,5 @@
 import Elysia, { t } from "elysia";
-import { WorkoutsListService } from "./workoutsListService";
+import { WorkoutService } from "../../repositories/workoutService";
 import {
   getAuthUser,
   requireAuth,
@@ -11,7 +11,7 @@ export const workoutsListHandler = new Elysia()
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
-  .use(WorkoutsListService)
+  .use(WorkoutService)
   .get(
     "/workouts",
     async (ctx) => {

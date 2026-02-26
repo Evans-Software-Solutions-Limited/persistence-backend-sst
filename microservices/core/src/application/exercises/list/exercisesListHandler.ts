@@ -1,7 +1,7 @@
 import Elysia, { t } from "elysia";
-import { ExercisesListService } from "./exercisesListService";
+import { ExerciseService } from "../../repositories/exerciseService";
 
-export const exercisesListHandler = new Elysia().use(ExercisesListService).get(
+export const exercisesListHandler = new Elysia().use(ExerciseService).get(
   "/exercises",
   async (ctx) => {
     const { muscleGroup, difficulty, category, search, limit, offset } =

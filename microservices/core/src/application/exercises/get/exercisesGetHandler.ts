@@ -1,7 +1,7 @@
 import Elysia, { t } from "elysia";
-import { ExercisesGetService } from "./exercisesGetService";
+import { ExerciseService } from "../../repositories/exerciseService";
 
-export const exercisesGetHandler = new Elysia().use(ExercisesGetService).get(
+export const exercisesGetHandler = new Elysia().use(ExerciseService).get(
   "/exercises/:id",
   async (ctx) => {
     const { id } = ctx.params;

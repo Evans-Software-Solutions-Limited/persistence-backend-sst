@@ -1,5 +1,5 @@
 import Elysia, { t } from "elysia";
-import { WorkoutsDeleteService } from "./workoutsDeleteService";
+import { WorkoutService } from "../../repositories/workoutService";
 import {
   getAuthUser,
   requireAuth,
@@ -11,7 +11,7 @@ export const workoutsDeleteHandler = new Elysia()
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
-  .use(WorkoutsDeleteService)
+  .use(WorkoutService)
   .delete(
     "/workouts/:id",
     async (ctx) => {
