@@ -20,7 +20,7 @@ export const exercisesListHandler = new Elysia().use(ExercisesListService).get(
   },
   {
     query: t.Object({
-      muscleGroup: t.Optional(t.String()),
+      muscleGroup: t.Optional(t.String({ format: "uuid" })),
       difficulty: t.Optional(t.String()),
       category: t.Optional(t.String()),
       search: t.Optional(t.String()),
