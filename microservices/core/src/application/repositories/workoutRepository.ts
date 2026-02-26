@@ -3,6 +3,7 @@ import {
   workouts,
   workoutExercises,
   exercises,
+  friendships,
   type Workout,
   type NewWorkout,
 } from "@persistence/db";
@@ -95,12 +96,39 @@ export class WorkoutRepository {
       return null;
     }
 
-    // Check ownership or visibility
-    if (
-      workout.createdBy !== userId &&
-      workout.visibility !== "public" &&
-      workout.visibility !== "friends"
-    ) {
+    // Owner always has access
+    if (workout.createdBy === userId) {
+      // fall through to fetch exercises
+    } else if (workout.visibility === "public") {
+      // fall through to fetch exercises
+    } else if (workout.visibility === "friends") {
+      // Verify an accepted friendship exists in either direction
+      const ownerId = workout.createdBy!;
+      const friendship = await db
+        .select({ id: friendships.id })
+        .from(friendships)
+        .where(
+          and(
+            or(
+              and(
+                eq(friendships.userId, ownerId),
+                eq(friendships.friendId, userId),
+              ),
+              and(
+                eq(friendships.userId, userId),
+                eq(friendships.friendId, ownerId),
+              ),
+            ),
+            eq(friendships.status, "accepted"),
+          ),
+        )
+        .limit(1);
+
+      if (friendship.length === 0) {
+        return null;
+      }
+    } else {
+      // private — only owner (already handled above)
       return null;
     }
 
@@ -199,8 +227,6 @@ export class WorkoutRepository {
       return false;
     }
 
-    // Since schema doesn't have deleted_at, do a hard delete
-    // (In production, you'd soft-delete by adding deleted_at column)
     const result = await db
       .delete(workouts)
       .where(eq(workouts.id, id))

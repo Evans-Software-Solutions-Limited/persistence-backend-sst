@@ -38,8 +38,12 @@ export async function getAuthUser(
     return null;
   }
   const token = authHeader.slice(7);
+  // getJwks() is intentionally outside the try-catch: a missing/invalid
+  // SUPABASE_URL is a configuration error that should surface as a 500,
+  // not be silently swallowed and returned as a 401.
+  const jwks = getJwks();
   try {
-    const { payload } = await jwtVerify(token, getJwks());
+    const { payload } = await jwtVerify(token, jwks);
     return payload as unknown as SupabaseUser;
   } catch (err) {
     console.error("[supabaseAuth] JWT verification failed:", err);

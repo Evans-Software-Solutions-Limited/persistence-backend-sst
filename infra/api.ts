@@ -7,7 +7,7 @@ coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   environment: {
     DATABASE_URL: databaseUrl.value,
-    SUPABASE_URL: process.env.SUPABASE_URL || "",
+    SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   },
 });
 
@@ -15,7 +15,7 @@ otherServiceAPI.route("$default", {
   handler: "microservices/other-service/src/api.handler",
   environment: {
     DATABASE_URL: databaseUrl.value,
-    SUPABASE_URL: process.env.SUPABASE_URL || "",
+    SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   },
 });
 

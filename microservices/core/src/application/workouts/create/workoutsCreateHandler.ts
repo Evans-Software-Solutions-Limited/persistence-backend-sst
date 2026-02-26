@@ -28,7 +28,7 @@ export const workoutsCreateHandler = new Elysia()
         name,
         description: description || null,
         visibility: visibility || "private",
-        estimatedDurationMinutes: estimatedDurationMinutes || 30,
+        estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
       });
 
       ctx.set.status = 201;

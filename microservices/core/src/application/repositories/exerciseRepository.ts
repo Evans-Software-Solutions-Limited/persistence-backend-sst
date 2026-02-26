@@ -1,4 +1,4 @@
-import { desc, eq, ilike, and } from "drizzle-orm";
+import { desc, eq, ilike, and, sql } from "drizzle-orm";
 import { exercises, type Exercise } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -30,6 +30,13 @@ export class ExerciseRepository {
     if (filters.category) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       conditions.push(eq(exercises.category, filters.category as any));
+    }
+
+    if (filters.muscleGroup) {
+      // primaryMuscles is a UUID array — filter by muscle group UUID
+      conditions.push(
+        sql`${filters.muscleGroup}::uuid = ANY(${exercises.primaryMuscles})`,
+      );
     }
 
     if (filters.search) {
