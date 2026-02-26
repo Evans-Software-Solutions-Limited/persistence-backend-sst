@@ -171,9 +171,7 @@ describe("WorkoutRepository", () => {
           // 1st: fetch workout
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
           // 2nd: check friendship — accepted friendship found
-          .mockReturnValueOnce(
-            makeSelectChain([{ id: "friendship-1" }]),
-          )
+          .mockReturnValueOnce(makeSelectChain([{ id: "friendship-1" }]))
           // 3rd: fetch exercises
           .mockReturnValueOnce(makeExercisesChain(mockExercises)),
       };

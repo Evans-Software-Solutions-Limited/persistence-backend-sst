@@ -53,7 +53,11 @@ describe("ExerciseRepository", () => {
     (getDb as any).mockReturnValue(makeListMock(mockExercises));
 
     const repo = new ExerciseRepository();
-    const result = await repo.list({ category: "strength", limit: 20, offset: 0 });
+    const result = await repo.list({
+      category: "strength",
+      limit: 20,
+      offset: 0,
+    });
 
     expect(result).toEqual(mockExercises);
   });
