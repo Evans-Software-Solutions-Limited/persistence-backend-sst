@@ -5,8 +5,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@persistence/db": path.resolve(__dirname, "../../packages/db/src"),
-      "@persistence/api-utils": path.resolve(__dirname, "../../packages/api-utils/src"),
-      "drizzle-orm": path.resolve(__dirname, "../../packages/db/node_modules/drizzle-orm"),
+      "@persistence/api-utils": path.resolve(
+        __dirname,
+        "../../packages/api-utils/src",
+      ),
+      "drizzle-orm": path.resolve(
+        __dirname,
+        "../../packages/db/node_modules/drizzle-orm",
+      ),
     },
   },
   test: {
@@ -24,10 +30,10 @@ export default defineConfig({
       ],
       // Target 90% coverage
       thresholds: {
-        lines: 85,
+        lines: 90,
         functions: 90,
-        branches: 85,
-        statements: 85,
+        branches: 90,
+        statements: 90,
       },
     },
   },

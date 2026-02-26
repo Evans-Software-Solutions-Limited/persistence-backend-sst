@@ -150,7 +150,9 @@ describe("WorkoutRepository", () => {
         visibility: "public" as const,
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeListChain([ownWorkout, publicWorkout])),
+        select: vi
+          .fn()
+          .mockReturnValue(makeListChain([ownWorkout, publicWorkout])),
       };
       (getDb as any).mockReturnValue(mockDb);
 
