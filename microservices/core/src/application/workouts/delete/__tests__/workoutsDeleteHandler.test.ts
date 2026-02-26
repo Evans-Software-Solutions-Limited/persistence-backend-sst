@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Create mock repository that can be controlled from tests
+const workoutRepositoryMocks = {
+  getById: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
 // Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -23,45 +32,16 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock the database
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(() => ({
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([
-            {
-              id: "workout-1",
-              name: "Test Workout",
-              description: null,
-              createdBy: "test-user-id",
-              visibility: "private",
-              estimatedDurationMinutes: 30,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          ]),
-        }),
-      }),
-    }),
-    delete: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([
-          {
-            id: "workout-1",
-            name: "Test Workout",
-          },
-        ]),
-      }),
-    }),
-    insert: vi.fn(),
-    update: vi.fn(),
-  })),
+// Mock WorkoutRepository class - this is what the service will instantiate
+vi.mock("../../../repositories/workoutRepository", () => ({
+  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
 describe("WorkoutsDeleteHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set default mock to return true (successful delete)
+    workoutRepositoryMocks.delete.mockResolvedValue(true);
   });
 
   describe("unauthenticated requests", () => {
@@ -104,87 +84,31 @@ describe("WorkoutsDeleteHandler", () => {
   });
 
   describe("authenticated requests", () => {
-    it("should accept DELETE request with authorization", async () => {
+    it("should return 204 when workout deleted successfully", async () => {
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
       const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/workout-id", {
+        new Request("http://localhost/workouts/workout-1", {
           method: "DELETE",
           headers: { authorization: "Bearer test-token" },
         }),
       );
 
-      // Accept either success or error responses, just not 401
-      expect(response.status).not.toBe(401);
+      expect(response.status).toBe(204);
     });
 
-    it("should verify authorization header format before processing", async () => {
+    it("should return 403 when user does not own the workout", async () => {
+      workoutRepositoryMocks.delete.mockResolvedValue(false);
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
       const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/workout-id", {
-          method: "DELETE",
-          headers: { authorization: "Bearer valid-token" },
-        }),
-      );
-
-      expect(response.status).not.toBe(401);
-    });
-
-    it("should extract workout ID from URL path", async () => {
-      const { workoutsDeleteHandler } =
-        await import("../workoutsDeleteHandler");
-      const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/specific-id", {
+        new Request("http://localhost/workouts/other-users-workout", {
           method: "DELETE",
           headers: { authorization: "Bearer test-token" },
         }),
       );
 
-      expect(response.status).not.toBe(401);
-    });
-
-    it("should handle various workout ID formats", async () => {
-      const { workoutsDeleteHandler } =
-        await import("../workoutsDeleteHandler");
-
-      for (const id of ["workout-1", "uuid-style-id-1234", "numeric-123"]) {
-        const response = await workoutsDeleteHandler.handle(
-          new Request(`http://localhost/workouts/${id}`, {
-            method: "DELETE",
-            headers: { authorization: "Bearer test-token" },
-          }),
-        );
-
-        expect(response.status).not.toBe(401);
-      }
-    });
-
-    it("should process delete request with valid authentication", async () => {
-      const { workoutsDeleteHandler } =
-        await import("../workoutsDeleteHandler");
-      const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/workout-123", {
-          method: "DELETE",
-          headers: { authorization: "Bearer test-token" },
-        }),
-      );
-
-      // Should not reject due to auth
-      expect(response.status).not.toBe(401);
-    });
-
-    it("should use authenticated user ID for deletion", async () => {
-      const { workoutsDeleteHandler } =
-        await import("../workoutsDeleteHandler");
-      const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/user-owned-workout", {
-          method: "DELETE",
-          headers: { authorization: "Bearer test-token" },
-        }),
-      );
-
-      expect(response.status).not.toBe(401);
+      expect(response.status).toBe(403);
     });
   });
 });

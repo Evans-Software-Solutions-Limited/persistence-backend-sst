@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Create mock repository that can be controlled from tests
+const workoutRepositoryMocks = {
+  getById: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
 // Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -24,37 +33,27 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock the database
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(() => ({
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockResolvedValue([
-                {
-                  id: "workout-1",
-                  name: "Test Workout",
-                  description: "A test workout",
-                  createdBy: "test-user-id",
-                  visibility: "private",
-                  estimatedDurationMinutes: 30,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                },
-              ]),
-            }),
-          }),
-        }),
-      }),
-    }),
-  })),
+// Mock WorkoutRepository class - this is what the service will instantiate
+vi.mock("../../../repositories/workoutRepository", () => ({
+  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
 describe("WorkoutsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    workoutRepositoryMocks.list.mockResolvedValue([
+      {
+        id: "workout-1",
+        name: "Test Workout",
+        userId: "test-user-id",
+        description: "A test workout",
+        visibility: "private",
+        estimatedDurationMinutes: 30,
+        exercises: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
   });
 
   describe("unauthenticated requests", () => {

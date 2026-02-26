@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Create mock repository that can be controlled from tests
+const workoutRepositoryMocks = {
+  getById: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
 // Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -23,32 +32,26 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock the database with smarter mocks that return inserted data
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(() => ({
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn(function (data: any) {
-        return {
-          returning: vi.fn().mockResolvedValue([
-            {
-              ...data,
-              id: "workout-1",
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          ]),
-        };
-      }),
-    }),
-    select: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  })),
+// Mock WorkoutRepository class - this is what the service will instantiate
+vi.mock("../../../repositories/workoutRepository", () => ({
+  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
 describe("WorkoutsCreateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock the create method to return the created workout with provided data
+    // The handler calls create(userId, data), so we need to handle both arguments
+    workoutRepositoryMocks.create.mockImplementation(
+      async (userId: string, data: any) => ({
+        id: "workout-1",
+        createdBy: userId,
+        ...data,
+        exercises: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    );
   });
 
   describe("unauthenticated requests", () => {

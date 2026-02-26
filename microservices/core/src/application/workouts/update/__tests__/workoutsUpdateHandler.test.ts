@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Create mock repository that can be controlled from tests
+const workoutRepositoryMocks = {
+  getById: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
 // Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -23,53 +32,25 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock the database
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(() => ({
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([
-            {
-              id: "workout-1",
-              name: "Test Workout",
-              description: null,
-              createdBy: "test-user-id",
-              visibility: "private",
-              estimatedDurationMinutes: 30,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          ]),
-        }),
-      }),
-    }),
-    update: vi.fn().mockReturnValue({
-      set: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([
-            {
-              id: "workout-1",
-              name: "Updated Workout",
-              description: null,
-              createdBy: "test-user-id",
-              visibility: "private",
-              estimatedDurationMinutes: 45,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          ]),
-        }),
-      }),
-    }),
-    insert: vi.fn(),
-    delete: vi.fn(),
-  })),
+// Mock WorkoutRepository class - this is what the service will instantiate
+vi.mock("../../../repositories/workoutRepository", () => ({
+  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
 describe("WorkoutsUpdateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    workoutRepositoryMocks.update.mockResolvedValue({
+      id: "workout-1",
+      name: "Updated Workout",
+      userId: "test-user-id",
+      description: null,
+      visibility: "private",
+      estimatedDurationMinutes: 45,
+      exercises: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
   });
 
   describe("unauthenticated requests", () => {
