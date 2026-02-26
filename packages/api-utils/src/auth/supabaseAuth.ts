@@ -1,48 +1,76 @@
-import { Elysia } from "elysia";
-import { jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 // Supabase JWT payload shape
 export type SupabaseUser = {
   sub: string; // user UUID
   email: string;
-  role: string; // 'authenticated' (Supabase default) — app role is in app_metadata
-  app_metadata: {
-    user_role?: "user" | "personal_trainer" | "physiotherapist" | "admin";
-    subscription_tier?: string;
-  };
+  email_verified: boolean;
   iat: number;
   exp: number;
 };
 
-function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error(
-      "JWT_SECRET is not set. Set it via: sst secret set PersistenceJwtSecret <secret>",
+// Cached per Lambda warm instance — avoids re-fetching on every request
+let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getJwks() {
+  if (!_jwks) {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("SUPABASE_URL environment variable is not set");
+    }
+    _jwks = createRemoteJWKSet(
+      new URL(
+        `${supabaseUrl.replace(/\/$/, "")}/auth/v1/.well-known/jwks.json`,
+      ),
     );
   }
-  return secret;
+  return _jwks;
 }
 
-// Elysia plugin — attaches `user` to context on all routes that use it
-export const supabaseAuth = new Elysia({ name: "SupabaseAuth" }).derive(
-  async ({ headers, set }) => {
-    const authHeader = headers.authorization;
-    if (!authHeader?.startsWith("Bearer ")) {
-      set.status = 401;
-      throw new Error("Missing or invalid Authorization header");
-    }
-    const token = authHeader.slice(7);
-    try {
-      // Verify using the JWT secret (HS256 — Supabase default)
-      const secret = new TextEncoder().encode(getJwtSecret());
-      const { payload } = await jwtVerify(token, secret, {
-        algorithms: ["HS256"],
-      });
-      return { user: payload as unknown as SupabaseUser };
-    } catch {
-      set.status = 401;
-      throw new Error("Invalid or expired token");
-    }
-  },
-);
+/**
+ * Verify a Supabase JWT from the Authorization header.
+ * Returns the user payload or null if missing/invalid.
+ */
+export async function getAuthUser(
+  authHeader: string | undefined,
+): Promise<SupabaseUser | null> {
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+  const token = authHeader.slice(7);
+  // getJwks() is intentionally outside the try-catch: a missing/invalid
+  // SUPABASE_URL is a configuration error that should surface as a 500,
+  // not be silently swallowed and returned as a 401.
+  const jwks = getJwks();
+  try {
+    const { payload } = await jwtVerify(token, jwks);
+    return payload as unknown as SupabaseUser;
+  } catch (err) {
+    console.error("[supabaseAuth] JWT verification failed:", err);
+    return null;
+  }
+}
+
+/**
+ * onBeforeHandle callback — wire this directly on each protected handler.
+ * Returning a value from onBeforeHandle stops the Elysia pipeline.
+ *
+ * Usage:
+ *   .derive(async ({ headers }) => ({ user: await getAuthUser(headers.authorization) }))
+ *   .onBeforeHandle(requireAuth)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function requireAuth(ctx: any) {
+  if (!ctx.user) {
+    ctx.set.status = 401;
+    return { message: "Unauthorized" };
+  }
+}
+
+/**
+ * Typed helper to read the user from handler context after requireAuth has run.
+ * Safe to call because requireAuth guarantees user is non-null.
+ */
+export function getUser(ctx: { user: SupabaseUser | null }): SupabaseUser {
+  return ctx.user as SupabaseUser;
+}
