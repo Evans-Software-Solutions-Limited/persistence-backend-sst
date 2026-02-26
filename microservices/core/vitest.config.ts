@@ -1,6 +1,20 @@
+import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@persistence/db": path.resolve(__dirname, "../../packages/db/src"),
+      "@persistence/api-utils": path.resolve(
+        __dirname,
+        "../../packages/api-utils/src",
+      ),
+      "drizzle-orm": path.resolve(
+        __dirname,
+        "../../packages/db/node_modules/drizzle-orm",
+      ),
+    },
+  },
   test: {
     globals: true,
     coverage: {
@@ -14,12 +28,12 @@ export default defineConfig({
         "src/api.ts",
         "src/index.ts",
       ],
-      // Target 90% - increase as tests are added. Set to 0 for template to pass CI.
+      // Target 90% coverage
       thresholds: {
-        lines: 0,
-        functions: 0,
-        branches: 0,
-        statements: 0,
+        lines: 90,
+        functions: 90,
+        branches: 90,
+        statements: 90,
       },
     },
   },

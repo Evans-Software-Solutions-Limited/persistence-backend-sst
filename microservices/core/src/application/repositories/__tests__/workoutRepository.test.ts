@@ -140,6 +140,29 @@ describe("WorkoutRepository", () => {
       // db.select is called twice: once for the subquery, once for the main query
       expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
+
+    it("should return own + public workouts when type is undefined", async () => {
+      const ownWorkout = baseWorkout;
+      const publicWorkout = {
+        ...baseWorkout,
+        id: "wo-2",
+        createdBy: "other-user",
+        visibility: "public" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValue(makeListChain([ownWorkout, publicWorkout])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.list("user-1", {
+        // type is undefined, should use the else clause
+      });
+
+      expect(result).toEqual([ownWorkout, publicWorkout]);
+    });
   });
 
   describe("getById", () => {
@@ -282,6 +305,34 @@ describe("WorkoutRepository", () => {
 
       expect(result).toEqual(mockUpdatedWorkout);
     });
+
+    it("should return null when trying to update workout that does not exist", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.update("nonexistent", "user-1", {
+        name: "Updated Name",
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it("should return null when trying to update workout not owned by user", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.update("wo-1", "different-user", {
+        name: "Updated Name",
+      });
+
+      expect(result).toBeNull();
+    });
   });
 
   describe("delete", () => {
@@ -300,6 +351,30 @@ describe("WorkoutRepository", () => {
       const result = await repo.delete("wo-1", "user-1");
 
       expect(result).toBe(true);
+    });
+
+    it("should return false when trying to delete workout that does not exist", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.delete("nonexistent", "user-1");
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false when trying to delete workout not owned by user", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.delete("wo-1", "different-user");
+
+      expect(result).toBe(false);
     });
   });
 });

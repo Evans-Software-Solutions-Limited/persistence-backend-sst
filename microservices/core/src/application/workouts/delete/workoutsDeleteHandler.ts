@@ -28,7 +28,7 @@ export const workoutsDeleteHandler = new Elysia()
       }
 
       ctx.set.status = 204;
-      return null;
+      return new Response(null, { status: 204 });
     },
     {
       params: t.Object({

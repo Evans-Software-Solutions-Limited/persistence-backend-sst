@@ -62,6 +62,17 @@ describe("ExerciseRepository", () => {
     expect(result).toEqual(mockExercises);
   });
 
+  it("should pass difficulty filter to query", async () => {
+    (getDb as any).mockReturnValue(makeListMock([mockExercises[0]]));
+
+    const repo = new ExerciseRepository();
+    const result = await repo.list({
+      difficulty: "intermediate",
+    });
+
+    expect(result).toEqual([mockExercises[0]]);
+  });
+
   it("should pass muscleGroup filter to query", async () => {
     const mockDb = makeListMock([mockExercises[0]]);
     (getDb as any).mockReturnValue(mockDb);
