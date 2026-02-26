@@ -1,20 +1,21 @@
 import Elysia, { t } from "elysia";
 import { WorkoutsListService } from "./workoutsListService";
 import {
-  supabaseAuth,
-  type SupabaseUser,
+  getAuthUser,
+  requireAuth,
+  getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 export const workoutsListHandler = new Elysia()
-  .use(supabaseAuth)
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
   .use(WorkoutsListService)
   .get(
     "/workouts",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (ctx: any) => {
-      const user = ctx.user as SupabaseUser;
-      const userId = user.sub;
-
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
       const { type, limit, offset } = ctx.query;
 
       const workouts = await ctx.WorkoutRepository.list(userId, {

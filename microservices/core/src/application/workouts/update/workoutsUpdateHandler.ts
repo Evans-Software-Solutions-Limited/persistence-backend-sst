@@ -1,28 +1,24 @@
 import Elysia, { t } from "elysia";
 import { WorkoutsUpdateService } from "./workoutsUpdateService";
 import {
-  supabaseAuth,
-  type SupabaseUser,
+  getAuthUser,
+  requireAuth,
+  getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 export const workoutsUpdateHandler = new Elysia()
-  .use(supabaseAuth)
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
   .use(WorkoutsUpdateService)
   .patch(
     "/workouts/:id",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (ctx: any) => {
-      const user = ctx.user as SupabaseUser;
-      const userId = user.sub;
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
       const { id } = ctx.params;
-
       const { name, description, visibility, estimatedDurationMinutes } =
-        ctx.body as {
-          name?: string;
-          description?: string;
-          visibility?: "private" | "friends" | "public";
-          estimatedDurationMinutes?: number;
-        };
+        ctx.body;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updateData: Record<string, any> = {};

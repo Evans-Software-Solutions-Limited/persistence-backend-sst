@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { ExercisesListService } from "../exercisesListService";
 
 describe("ExercisesListService", () => {

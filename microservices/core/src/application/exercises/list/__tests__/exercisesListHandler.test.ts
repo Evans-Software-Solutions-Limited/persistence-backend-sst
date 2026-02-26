@@ -1,25 +1,42 @@
-import { describe, it, expect } from "vitest";
 import { exercisesListHandler } from "../exercisesListHandler";
+
+vi.mock("../../../repositories/exerciseRepository", () => ({
+  ExerciseRepository: vi.fn().mockImplementation(() => ({
+    list: vi.fn().mockResolvedValue([
+      {
+        id: "1",
+        name: "Push-ups",
+        description: "Basic push-up exercise",
+        muscleGroup: "chest",
+        difficultyLevel: "beginner",
+        isPublic: true,
+      },
+    ]),
+  })),
+}));
 
 describe("ExercisesListHandler", () => {
   it("should return 200 with data array for list request", async () => {
     const response = await exercisesListHandler.handle(
       new Request("http://localhost/exercises", {
         method: "GET",
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as any;
+    const body = (await response.json()) as { data: unknown[] };
     expect(body).toHaveProperty("data");
     expect(Array.isArray(body.data)).toBe(true);
   });
 
   it("should accept query parameters for filtering", async () => {
     const response = await exercisesListHandler.handle(
-      new Request("http://localhost/exercises?difficulty=beginner&muscleGroup=chest", {
-        method: "GET",
-      })
+      new Request(
+        "http://localhost/exercises?difficulty=beginner&muscleGroup=chest",
+        {
+          method: "GET",
+        },
+      ),
     );
 
     expect(response.status).toBe(200);
@@ -29,11 +46,11 @@ describe("ExercisesListHandler", () => {
     const response = await exercisesListHandler.handle(
       new Request("http://localhost/exercises?search=push", {
         method: "GET",
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as any;
+    const body = (await response.json()) as { data: unknown[] };
     expect(Array.isArray(body.data)).toBe(true);
   });
 
@@ -41,7 +58,7 @@ describe("ExercisesListHandler", () => {
     const response = await exercisesListHandler.handle(
       new Request("http://localhost/exercises?limit=10&offset=0", {
         method: "GET",
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -51,7 +68,7 @@ describe("ExercisesListHandler", () => {
     const response = await exercisesListHandler.handle(
       new Request("http://localhost/exercises", {
         method: "GET",
-      })
+      }),
     );
 
     expect(response.headers.get("content-type")).toContain("application/json");

@@ -3,7 +3,6 @@ import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import openapi from "@elysiajs/openapi";
 
-import { getHelloWorldHandler } from "./application/hello-world/get/helloWorldGetHandler";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
 import { workoutsListHandler } from "./application/workouts/list/workoutsListHandler";
@@ -17,7 +16,6 @@ const app = new Elysia()
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
   .use(exercisesGetHandler)
-  .use(getHelloWorldHandler)
   .use(workoutsListHandler)
   .use(workoutsGetHandler)
   .use(workoutsCreateHandler)

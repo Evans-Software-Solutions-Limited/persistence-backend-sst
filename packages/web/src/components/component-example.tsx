@@ -90,8 +90,6 @@ import {
   IconFileText,
   IconLogout,
 } from "@tabler/icons-react";
-import { useGetHelloWorld } from "@/hooks/api/useGetHelloWorld";
-
 export function ComponentExample() {
   return (
     <ExampleWrapper>
@@ -102,9 +100,6 @@ export function ComponentExample() {
 }
 
 function CardExample() {
-  const { isLoading, data } = useGetHelloWorld();
-  if (isLoading) return <div>Loading...</div>;
-
   return (
     <Example title="Home" className="items-center justify-center">
       <Card className="relative w-full max-w-sm overflow-hidden pt-0">
@@ -116,7 +111,7 @@ function CardExample() {
           className="relative z-20 aspect-video w-full object-cover brightness-60 grayscale"
         />
         <CardHeader>
-          <CardTitle>{data?.message}</CardTitle>
+          <CardTitle>Persistence</CardTitle>
           <CardDescription>
             Switch to the improved way to explore your data, with natural
             language. Monitoring will no longer be available on the Pro plan in

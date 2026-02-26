@@ -1,19 +1,21 @@
 import Elysia, { t } from "elysia";
 import { WorkoutsDeleteService } from "./workoutsDeleteService";
 import {
-  supabaseAuth,
-  type SupabaseUser,
+  getAuthUser,
+  requireAuth,
+  getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 export const workoutsDeleteHandler = new Elysia()
-  .use(supabaseAuth)
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
   .use(WorkoutsDeleteService)
   .delete(
     "/workouts/:id",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (ctx: any) => {
-      const user = ctx.user as SupabaseUser;
-      const userId = user.sub;
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
       const { id } = ctx.params;
 
       const success = await ctx.WorkoutRepository.delete(id, userId);

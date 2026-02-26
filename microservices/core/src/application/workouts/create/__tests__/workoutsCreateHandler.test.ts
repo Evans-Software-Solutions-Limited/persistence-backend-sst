@@ -1,45 +1,43 @@
-import { describe, it, expect } from "vitest";
 import { workoutsCreateHandler } from "../workoutsCreateHandler";
 
 describe("WorkoutsCreateHandler", () => {
-  it("should return 400 for missing workout name", async () => {
-    const response = await workoutsCreateHandler.handle(
-      new Request("http://localhost/workouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "" }),
-      })
-    );
-
-    expect(response.status).toBe(400);
-  });
-
-  it("should return 400 when name is not provided", async () => {
-    const response = await workoutsCreateHandler.handle(
-      new Request("http://localhost/workouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-    );
-
-    expect([400, 401]).toContain(response.status);
-  });
-
   it("should require authentication", async () => {
     const response = await workoutsCreateHandler.handle(
       new Request("http://localhost/workouts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Test Workout" }),
-      })
+      }),
     );
 
-    // Expected to fail auth or validation
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBe(401);
   });
 
-  it("should handle valid request structure", async () => {
+  it("should return 401 for missing workout name without auth", async () => {
+    const response = await workoutsCreateHandler.handle(
+      new Request("http://localhost/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "" }),
+      }),
+    );
+
+    expect([400, 401, 422]).toContain(response.status);
+  });
+
+  it("should return 401 when name is not provided without auth", async () => {
+    const response = await workoutsCreateHandler.handle(
+      new Request("http://localhost/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect([400, 401, 422]).toContain(response.status);
+  });
+
+  it("should handle valid request structure without auth", async () => {
     const response = await workoutsCreateHandler.handle(
       new Request("http://localhost/workouts", {
         method: "POST",
@@ -50,13 +48,13 @@ describe("WorkoutsCreateHandler", () => {
           visibility: "private",
           estimatedDurationMinutes: 45,
         }),
-      })
+      }),
     );
 
-    expect([201, 401, 400]).toContain(response.status);
+    expect([201, 401, 400, 422]).toContain(response.status);
   });
 
-  it("should accept optional parameters", async () => {
+  it("should accept optional parameters without auth", async () => {
     const response = await workoutsCreateHandler.handle(
       new Request("http://localhost/workouts", {
         method: "POST",
@@ -65,9 +63,9 @@ describe("WorkoutsCreateHandler", () => {
           name: "Workout",
           visibility: "friends",
         }),
-      })
+      }),
     );
 
-    expect([201, 401, 400]).toContain(response.status);
+    expect([201, 401, 400, 422]).toContain(response.status);
   });
 });

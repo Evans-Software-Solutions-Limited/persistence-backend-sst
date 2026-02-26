@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WorkoutRepository } from "../workoutRepository";
 
 // Mock the database client

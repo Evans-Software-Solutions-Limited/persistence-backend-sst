@@ -1,27 +1,23 @@
 import Elysia, { t } from "elysia";
 import { WorkoutsCreateService } from "./workoutsCreateService";
 import {
-  supabaseAuth,
-  type SupabaseUser,
+  getAuthUser,
+  requireAuth,
+  getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 export const workoutsCreateHandler = new Elysia()
-  .use(supabaseAuth)
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
   .use(WorkoutsCreateService)
   .post(
     "/workouts",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (ctx: any) => {
-      const user = ctx.user as SupabaseUser;
-      const userId = user.sub;
-
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
       const { name, description, visibility, estimatedDurationMinutes } =
-        ctx.body as {
-          name: string;
-          description?: string;
-          visibility?: "private" | "friends" | "public";
-          estimatedDurationMinutes?: number;
-        };
+        ctx.body;
 
       if (!name || name.trim().length === 0) {
         ctx.set.status = 400;
