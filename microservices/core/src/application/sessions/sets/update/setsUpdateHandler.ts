@@ -30,22 +30,19 @@ export const setsUpdateHandler = new Elysia()
         return { error: "Set not found" };
       }
 
-      const allowedFields = [
-        "reps",
-        "weightKg",
-        "durationSeconds",
-        "distanceMeters",
-        "rpe",
-        "restAfterSeconds",
-        "isPersonalRecord",
-      ];
-
       const updateData: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (field in body) {
-          updateData[field] = body[field];
-        }
-      }
+      if (body.reps !== undefined) updateData.reps = body.reps;
+      if (body.weightKg !== undefined)
+        updateData.weightKg = String(body.weightKg);
+      if (body.durationSeconds !== undefined)
+        updateData.durationSeconds = body.durationSeconds;
+      if (body.distanceMeters !== undefined)
+        updateData.distanceMeters = String(body.distanceMeters);
+      if (body.rpe !== undefined) updateData.rpe = body.rpe;
+      if (body.restAfterSeconds !== undefined)
+        updateData.restAfterSeconds = body.restAfterSeconds;
+      if (body.isPersonalRecord !== undefined)
+        updateData.isPersonalRecord = body.isPersonalRecord;
 
       if (Object.keys(updateData).length === 0) {
         ctx.set.status = 400;

@@ -16,23 +16,20 @@ export const measurementsListHandler = new Elysia()
     "/measurements",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { limit = "20", offset = "0" } = ctx.query as Record<
-        string,
-        string
-      >;
+      const { limit, offset } = ctx.query;
 
       const measurements = await ctx.MeasurementRepository.list(
         userId,
-        parseInt(limit, 10),
-        parseInt(offset, 10),
+        limit ?? 20,
+        offset ?? 0,
       );
 
       return { data: measurements };
     },
     {
       query: t.Object({
-        limit: t.Optional(t.String()),
-        offset: t.Optional(t.String()),
+        limit: t.Optional(t.Numeric()),
+        offset: t.Optional(t.Numeric()),
       }),
     },
   );

@@ -16,15 +16,13 @@ export const sessionsCreateHandler = new Elysia()
     "/sessions",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const body = ctx.body as Record<string, unknown>;
+      const { workoutId, name, status, userNotes } = ctx.body;
 
       const session = await ctx.SessionRepository.create(userId, {
-        workoutId: body.workoutId as string | undefined,
-        name: body.name as string | undefined,
-        status:
-          (body.status as "in_progress" | "completed" | "cancelled") ??
-          "in_progress",
-        userNotes: body.userNotes as string | undefined,
+        workoutId,
+        name,
+        status: status ?? "in_progress",
+        userNotes,
       });
 
       ctx.set.status = 201;
@@ -34,7 +32,13 @@ export const sessionsCreateHandler = new Elysia()
       body: t.Object({
         workoutId: t.Optional(t.String()),
         name: t.Optional(t.String()),
-        status: t.Optional(t.String()),
+        status: t.Optional(
+          t.Union([
+            t.Literal("in_progress"),
+            t.Literal("completed"),
+            t.Literal("cancelled"),
+          ]),
+        ),
         userNotes: t.Optional(t.String()),
       }),
     },

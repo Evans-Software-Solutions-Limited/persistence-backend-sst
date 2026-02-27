@@ -173,5 +173,67 @@ describe("ProfilesUpdateHandler", () => {
         }),
       );
     });
+
+    it("should convert heightCm and weightKg to strings for decimal columns", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            heightCm: 180,
+            weightKg: 75.5,
+          }),
+        }),
+      );
+
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({
+          heightCm: "180",
+          weightKg: "75.5",
+        }),
+      );
+    });
+
+    it("should pass through other optional fields to update", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: "new-username",
+            avatarUrl: "https://example.com/avatar.png",
+            dateOfBirth: "1995-05-15",
+            availableEquipment: ["dumbbells"],
+            accessibilityNeeds: [],
+            preferredUnits: "imperial",
+            isProfilePublic: false,
+          }),
+        }),
+      );
+
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({
+          username: "new-username",
+          avatarUrl: "https://example.com/avatar.png",
+          dateOfBirth: "1995-05-15",
+          availableEquipment: ["dumbbells"],
+          accessibilityNeeds: [],
+          preferredUnits: "imperial",
+          isProfilePublic: false,
+        }),
+      );
+    });
   });
 });

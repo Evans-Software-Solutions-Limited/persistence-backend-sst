@@ -47,7 +47,16 @@ describe("SessionExercisesDeleteHandler", () => {
   it("should return 200 on successful delete", async () => {
     mocks.getById.mockResolvedValue({
       id: "s1",
-      exercises: [{ id: "se1", sessionId: "s1", exerciseId: "ex1", sortOrder: 1, notes: null, createdAt: new Date() }],
+      exercises: [
+        {
+          id: "se1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
     });
     const { sessionExercisesDeleteHandler } =
       await import("../sessionExercisesDeleteHandler");
