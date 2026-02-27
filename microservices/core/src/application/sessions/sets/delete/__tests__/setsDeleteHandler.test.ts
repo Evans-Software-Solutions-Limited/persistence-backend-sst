@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { getById: vi.fn(), deleteSet: vi.fn() };
+const mocks = { getSetInSession: vi.fn(), deleteSet: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -36,18 +36,18 @@ describe("SetsDeleteHandler", () => {
   it("should require authentication", async () => {
     const { setsDeleteHandler } = await import("../setsDeleteHandler");
     const response = await setsDeleteHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets/set1", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
         method: "DELETE",
       }),
     );
     expect(response.status).toBe(401);
   });
 
-  it("should return 404 when session not found", async () => {
-    mocks.getById.mockResolvedValue(null);
+  it("should return 404 when set not in session (hierarchy)", async () => {
+    mocks.getSetInSession.mockResolvedValue(null);
     const { setsDeleteHandler } = await import("../setsDeleteHandler");
     const response = await setsDeleteHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets/set1", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
         method: "DELETE",
         headers: { authorization: "Bearer token" },
       }),
@@ -55,12 +55,17 @@ describe("SetsDeleteHandler", () => {
     expect(response.status).toBe(404);
   });
 
-  it("should return 404 when set not found", async () => {
-    mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
+  it("should return 404 when deleteSet fails", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
     mocks.deleteSet.mockResolvedValue(false);
     const { setsDeleteHandler } = await import("../setsDeleteHandler");
     const response = await setsDeleteHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets/set1", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
         method: "DELETE",
         headers: { authorization: "Bearer token" },
       }),
@@ -69,11 +74,16 @@ describe("SetsDeleteHandler", () => {
   });
 
   it("should return 200 on successful delete", async () => {
-    mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
     mocks.deleteSet.mockResolvedValue(true);
     const { setsDeleteHandler } = await import("../setsDeleteHandler");
     const response = await setsDeleteHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets/set1", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
         method: "DELETE",
         headers: { authorization: "Bearer token" },
       }),

@@ -13,23 +13,29 @@ export const sessionExercisesDeleteHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .delete(
-    "/sessions/:sessionId/exercises/:exerciseId",
+    "/sessions/:sessionId/exercises/:sessionExerciseId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { sessionId, exerciseId } = ctx.params;
+      const { sessionId, sessionExerciseId } = ctx.params;
 
-      // Verify session ownership
       const session = await ctx.SessionRepository.getById(sessionId, userId);
       if (!session) {
         ctx.set.status = 404;
         return { error: "Session not found" };
       }
 
+      const belongsToSession = session.exercises.some(
+        (ex) => ex.id === sessionExerciseId,
+      );
+      if (!belongsToSession) {
+        ctx.set.status = 404;
+        return { error: "Exercise not found in session" };
+      }
+
       const deleted = await ctx.SessionRepository.removeExercise(
-        exerciseId,
+        sessionExerciseId,
         userId,
       );
-
       if (!deleted) {
         ctx.set.status = 404;
         return { error: "Exercise not found in session" };
@@ -40,7 +46,7 @@ export const sessionExercisesDeleteHandler = new Elysia()
     {
       params: t.Object({
         sessionId: t.String(),
-        exerciseId: t.String(),
+        sessionExerciseId: t.String(),
       }),
     },
   );

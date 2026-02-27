@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { getById: vi.fn(), getSessionExercises: vi.fn() };
+const mocks = { getById: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -30,16 +30,6 @@ vi.mock("../../../../repositories/sessionRepository", () => ({
 describe("SessionExercisesGetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getSessionExercises.mockResolvedValue([
-      {
-        id: "se-1",
-        sessionId: "s1",
-        exerciseId: "ex1",
-        sortOrder: 1,
-        notes: null,
-        createdAt: new Date(),
-      },
-    ]);
   });
 
   it("should require authentication", async () => {

@@ -225,6 +225,42 @@ export class SessionRepository {
       .orderBy(exerciseSets.setNumber);
   }
 
+  /**
+   * Returns the set only if it belongs to the given session exercise and
+   * session (and session belongs to user). Used to enforce URL hierarchy.
+   */
+  async getSetInSession(
+    sessionId: string,
+    sessionExerciseId: string,
+    setId: string,
+    userId: string,
+  ): Promise<ExerciseSet | null> {
+    const db = getDb();
+
+    const rows = await db
+      .select({ set: exerciseSets })
+      .from(exerciseSets)
+      .innerJoin(
+        sessionExercises,
+        eq(exerciseSets.sessionExerciseId, sessionExercises.id),
+      )
+      .innerJoin(
+        workoutSessions,
+        eq(sessionExercises.sessionId, workoutSessions.id),
+      )
+      .where(
+        and(
+          eq(exerciseSets.id, setId),
+          eq(exerciseSets.sessionExerciseId, sessionExerciseId),
+          eq(sessionExercises.sessionId, sessionId),
+          eq(workoutSessions.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    return rows[0]?.set ?? null;
+  }
+
   async updateSet(
     setId: string,
     userId: string,

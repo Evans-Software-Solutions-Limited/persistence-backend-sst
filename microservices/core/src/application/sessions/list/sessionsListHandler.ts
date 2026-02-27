@@ -16,23 +16,20 @@ export const sessionsListHandler = new Elysia()
     "/sessions",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { limit = "20", offset = "0" } = ctx.query as Record<
-        string,
-        string
-      >;
+      const { limit, offset } = ctx.query;
 
       const sessions = await ctx.SessionRepository.list(
         userId,
-        parseInt(limit, 10),
-        parseInt(offset, 10),
+        limit ?? 20,
+        offset ?? 0,
       );
 
       return { data: sessions };
     },
     {
       query: t.Object({
-        limit: t.Optional(t.String()),
-        offset: t.Optional(t.String()),
+        limit: t.Optional(t.Numeric()),
+        offset: t.Optional(t.Numeric()),
       }),
     },
   );

@@ -45,7 +45,7 @@ describe("SetsGetHandler", () => {
   it("should require authentication", async () => {
     const { setsGetHandler } = await import("../setsGetHandler");
     const response = await setsGetHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "GET",
       }),
     );
@@ -56,7 +56,7 @@ describe("SetsGetHandler", () => {
     mocks.getById.mockResolvedValue(null);
     const { setsGetHandler } = await import("../setsGetHandler");
     const response = await setsGetHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "GET",
         headers: { authorization: "Bearer token" },
       }),
@@ -68,7 +68,7 @@ describe("SetsGetHandler", () => {
     mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
     const { setsGetHandler } = await import("../setsGetHandler");
     const response = await setsGetHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "GET",
         headers: { authorization: "Bearer token" },
       }),
@@ -92,7 +92,7 @@ describe("SetsGetHandler", () => {
     });
     const { setsGetHandler } = await import("../setsGetHandler");
     const response = await setsGetHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "GET",
         headers: { authorization: "Bearer token" },
       }),

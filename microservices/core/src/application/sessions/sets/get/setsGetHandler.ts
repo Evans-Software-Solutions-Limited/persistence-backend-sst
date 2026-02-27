@@ -13,21 +13,19 @@ export const setsGetHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .get(
-    "/sessions/:sessionId/exercises/:exerciseId/sets",
+    "/sessions/:sessionId/exercises/:sessionExerciseId/sets",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { sessionId, exerciseId } = ctx.params;
+      const { sessionId, sessionExerciseId } = ctx.params;
 
-      // Verify session ownership
       const session = await ctx.SessionRepository.getById(sessionId, userId);
       if (!session) {
         ctx.set.status = 404;
         return { error: "Session not found" };
       }
 
-      // Find the session exercise to get its ID
       const sessionExercise = session.exercises.find(
-        (ex) => ex.exerciseId === exerciseId,
+        (ex) => ex.id === sessionExerciseId,
       );
       if (!sessionExercise) {
         ctx.set.status = 404;
@@ -43,7 +41,7 @@ export const setsGetHandler = new Elysia()
     {
       params: t.Object({
         sessionId: t.String(),
-        exerciseId: t.String(),
+        sessionExerciseId: t.String(),
       }),
     },
   );

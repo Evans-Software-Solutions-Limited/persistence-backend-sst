@@ -13,20 +13,23 @@ export const setsUpdateHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .patch(
-    "/sessions/:sessionId/exercises/:exerciseId/sets/:setId",
+    "/sessions/:sessionId/exercises/:sessionExerciseId/sets/:setId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { sessionId, setId } = ctx.params;
+      const { sessionId, sessionExerciseId, setId } = ctx.params;
       const body = ctx.body as Record<string, unknown>;
 
-      // Verify session ownership
-      const session = await ctx.SessionRepository.getById(sessionId, userId);
-      if (!session) {
+      const set = await ctx.SessionRepository.getSetInSession(
+        sessionId,
+        sessionExerciseId,
+        setId,
+        userId,
+      );
+      if (!set) {
         ctx.set.status = 404;
-        return { error: "Session not found" };
+        return { error: "Set not found" };
       }
 
-      // Allow updating specific fields
       const allowedFields = [
         "reps",
         "weightKg",
@@ -49,23 +52,22 @@ export const setsUpdateHandler = new Elysia()
         return { error: "No valid fields to update" };
       }
 
-      const set = await ctx.SessionRepository.updateSet(
+      const updated = await ctx.SessionRepository.updateSet(
         setId,
         userId,
         updateData,
       );
-
-      if (!set) {
+      if (!updated) {
         ctx.set.status = 404;
         return { error: "Set not found" };
       }
 
-      return { data: set };
+      return { data: updated };
     },
     {
       params: t.Object({
         sessionId: t.String(),
-        exerciseId: t.String(),
+        sessionExerciseId: t.String(),
         setId: t.String(),
       }),
       body: t.Object({

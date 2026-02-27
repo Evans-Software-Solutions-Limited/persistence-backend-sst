@@ -18,17 +18,13 @@ export const sessionExercisesGetHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { sessionId } = ctx.params;
 
-      // Verify session ownership
       const session = await ctx.SessionRepository.getById(sessionId, userId);
       if (!session) {
         ctx.set.status = 404;
         return { error: "Session not found" };
       }
 
-      const exercises =
-        await ctx.SessionRepository.getSessionExercises(sessionId);
-
-      return { data: exercises };
+      return { data: session.exercises };
     },
     {
       params: t.Object({

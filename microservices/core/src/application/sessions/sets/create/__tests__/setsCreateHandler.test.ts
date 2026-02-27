@@ -43,7 +43,7 @@ describe("SetsCreateHandler", () => {
   it("should require authentication", async () => {
     const { setsCreateHandler } = await import("../setsCreateHandler");
     const response = await setsCreateHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -56,7 +56,7 @@ describe("SetsCreateHandler", () => {
     mocks.getById.mockResolvedValue(null);
     const { setsCreateHandler } = await import("../setsCreateHandler");
     const response = await setsCreateHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "POST",
         body: JSON.stringify({ reps: 10 }),
         headers: {
@@ -72,7 +72,7 @@ describe("SetsCreateHandler", () => {
     mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
     const { setsCreateHandler } = await import("../setsCreateHandler");
     const response = await setsCreateHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "POST",
         body: JSON.stringify({ reps: 10 }),
         headers: {
@@ -100,7 +100,7 @@ describe("SetsCreateHandler", () => {
     });
     const { setsCreateHandler } = await import("../setsCreateHandler");
     const response = await setsCreateHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/ex1/sets", {
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
         method: "POST",
         body: JSON.stringify({ reps: 10 }),
         headers: {

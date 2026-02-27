@@ -13,20 +13,23 @@ export const setsDeleteHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .delete(
-    "/sessions/:sessionId/exercises/:exerciseId/sets/:setId",
+    "/sessions/:sessionId/exercises/:sessionExerciseId/sets/:setId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { sessionId, setId } = ctx.params;
+      const { sessionId, sessionExerciseId, setId } = ctx.params;
 
-      // Verify session ownership
-      const session = await ctx.SessionRepository.getById(sessionId, userId);
-      if (!session) {
+      const set = await ctx.SessionRepository.getSetInSession(
+        sessionId,
+        sessionExerciseId,
+        setId,
+        userId,
+      );
+      if (!set) {
         ctx.set.status = 404;
-        return { error: "Session not found" };
+        return { error: "Set not found" };
       }
 
       const deleted = await ctx.SessionRepository.deleteSet(setId, userId);
-
       if (!deleted) {
         ctx.set.status = 404;
         return { error: "Set not found" };
@@ -37,7 +40,7 @@ export const setsDeleteHandler = new Elysia()
     {
       params: t.Object({
         sessionId: t.String(),
-        exerciseId: t.String(),
+        sessionExerciseId: t.String(),
         setId: t.String(),
       }),
     },
