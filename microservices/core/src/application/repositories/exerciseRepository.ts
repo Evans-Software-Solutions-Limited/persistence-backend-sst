@@ -1,5 +1,12 @@
 import { desc, eq, ilike, and, sql } from "drizzle-orm";
-import { exercises, type Exercise } from "@persistence/db";
+import {
+  exercises,
+  type Exercise,
+  muscleGroups,
+  type MuscleGroup,
+  equipmentTypes,
+  type EquipmentType,
+} from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
 export interface ListExercisesFilters {
@@ -65,5 +72,24 @@ export class ExerciseRepository {
       .limit(1);
 
     return result[0] ?? null;
+  }
+
+  async getMuscleGroups(): Promise<MuscleGroup[]> {
+    const db = getDb();
+    return db.select().from(muscleGroups).orderBy(muscleGroups.name);
+  }
+
+  async getEquipmentTypes(): Promise<EquipmentType[]> {
+    const db = getDb();
+    return db.select().from(equipmentTypes).orderBy(equipmentTypes.name);
+  }
+
+  async getCategories(): Promise<string[]> {
+    const db = getDb();
+    const result = await db
+      .selectDistinct({ category: exercises.category })
+      .from(exercises)
+      .where(eq(exercises.isPublic, true));
+    return result.map((r) => r.category as string);
   }
 }
