@@ -135,3 +135,84 @@ describe("ExerciseRepository", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("Exercise Lookup Methods", () => {
+  let repository: ExerciseRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repository = new ExerciseRepository();
+  });
+
+  describe("getMuscleGroups", () => {
+    it("should return all muscle groups", async () => {
+      const mockMuscleGroups = [
+        { id: "mg-1", name: "Chest", description: "Chest muscles" },
+        { id: "mg-2", name: "Back", description: "Back muscles" },
+      ];
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(mockMuscleGroups),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getMuscleGroups();
+
+      expect(result).toEqual(mockMuscleGroups);
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  describe("getEquipmentTypes", () => {
+    it("should return all equipment types", async () => {
+      const mockEquipment = [
+        { id: "eq-1", name: "Dumbbell", description: "Hand weights" },
+        { id: "eq-2", name: "Barbell", description: "Long bar with weights" },
+      ];
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(mockEquipment),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getEquipmentTypes();
+
+      expect(result).toEqual(mockEquipment);
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  describe("getCategories", () => {
+    it("should return distinct exercise categories", async () => {
+      const mockDb = {
+        selectDistinct: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi
+              .fn()
+              .mockResolvedValue([
+                { category: "strength" },
+                { category: "cardio" },
+              ]),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getCategories();
+
+      expect(result).toEqual(["strength", "cardio"]);
+      expect(result).toHaveLength(2);
+    });
+  });
+});

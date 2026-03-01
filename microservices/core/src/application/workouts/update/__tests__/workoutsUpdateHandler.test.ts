@@ -130,11 +130,10 @@ describe("WorkoutsUpdateHandler", () => {
       expect(response.status).toBe(200);
     });
 
-    it("should return 403 for unauthorized update", async () => {
+    it("should return 403 when update fails (not owned by user)", async () => {
+      workoutRepositoryMocks.update.mockResolvedValue(null);
       const { workoutsUpdateHandler } =
         await import("../workoutsUpdateHandler");
-      // This will fail because the mock returns a workout owned by test-user-id
-      // In a real scenario with different ownership, it would return 403
       const response = await workoutsUpdateHandler.handle(
         new Request("http://localhost/workouts/other-users-workout", {
           method: "PATCH",
@@ -146,7 +145,7 @@ describe("WorkoutsUpdateHandler", () => {
         }),
       );
 
-      expect([200, 403]).toContain(response.status);
+      expect(response.status).toBe(403);
     });
 
     it("should reject empty name", async () => {
@@ -163,7 +162,7 @@ describe("WorkoutsUpdateHandler", () => {
         }),
       );
 
-      expect([400, 403]).toContain(response.status);
+      expect(response.status).toBe(400);
     });
 
     it("should accept all visibility values", async () => {
@@ -203,7 +202,7 @@ describe("WorkoutsUpdateHandler", () => {
       expect(response.status).toBe(200);
     });
 
-    it("should handle empty update payload", async () => {
+    it("should handle description update", async () => {
       const { workoutsUpdateHandler } =
         await import("../workoutsUpdateHandler");
       const response = await workoutsUpdateHandler.handle(
@@ -213,31 +212,14 @@ describe("WorkoutsUpdateHandler", () => {
             "Content-Type": "application/json",
             authorization: "Bearer test-token",
           },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ description: "New description" }),
         }),
       );
 
-      expect([200, 400, 403]).toContain(response.status);
+      expect(response.status).toBe(200);
     });
 
-    it("should reject update with empty name", async () => {
-      const { workoutsUpdateHandler } =
-        await import("../workoutsUpdateHandler");
-      const response = await workoutsUpdateHandler.handle(
-        new Request("http://localhost/workouts/workout-id", {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({ name: "" }),
-        }),
-      );
-
-      expect(response.status).toBe(400);
-    });
-
-    it("should reject update with whitespace-only name", async () => {
+    it("should reject whitespace-only name", async () => {
       const { workoutsUpdateHandler } =
         await import("../workoutsUpdateHandler");
       const response = await workoutsUpdateHandler.handle(
@@ -252,6 +234,46 @@ describe("WorkoutsUpdateHandler", () => {
       );
 
       expect(response.status).toBe(400);
+    });
+
+    it("should update with name and description", async () => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const response = await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-id", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Updated Name",
+            description: "Updated Description",
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+    });
+
+    it("should update with visibility and duration", async () => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const response = await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-id", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            visibility: "friends",
+            estimatedDurationMinutes: 90,
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
     });
   });
 });

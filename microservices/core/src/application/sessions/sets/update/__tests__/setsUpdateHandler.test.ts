@@ -134,4 +134,189 @@ describe("SetsUpdateHandler", () => {
     expect(data).toHaveProperty("data");
     expect(data.data.reps).toBe(12);
   });
+
+  it("should update weightKg parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ weightKg: 65 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update multiple parameters simultaneously", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    mocks.updateSet.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      reps: 15,
+      weightKg: "70",
+      durationSeconds: 60,
+      rpe: 9,
+      isPersonalRecord: true,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          reps: 15,
+          weightKg: 70,
+          durationSeconds: 60,
+          rpe: 9,
+          isPersonalRecord: true,
+        }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update durationSeconds parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ durationSeconds: 120 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update distanceMeters parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ distanceMeters: 2000 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update rpe parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ rpe: 10 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update restAfterSeconds parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ restAfterSeconds: 180 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should update isPersonalRecord parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ isPersonalRecord: false }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should handle string weightKg parameter", async () => {
+    mocks.getSetInSession.mockResolvedValue({
+      id: "set1",
+      sessionExerciseId: "se-1",
+      setNumber: 1,
+      createdAt: new Date(),
+    });
+    const { setsUpdateHandler } = await import("../setsUpdateHandler");
+    const response = await setsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+        method: "PATCH",
+        body: JSON.stringify({ weightKg: "67.5" }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
 });

@@ -114,4 +114,168 @@ describe("SetsCreateHandler", () => {
     expect(data).toHaveProperty("data");
     expect(data.data).toHaveProperty("id");
   });
+
+  it("should handle all optional set parameters", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    mocks.addSet.mockResolvedValue({
+      id: "set-1",
+      sessionExerciseId: "se-1",
+      setNumber: 2,
+      reps: 12,
+      weightKg: "60",
+      durationSeconds: 45,
+      distanceMeters: "100",
+      rpe: 8,
+      restAfterSeconds: 90,
+      isPersonalRecord: true,
+      createdAt: new Date(),
+    });
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({
+          setNumber: 2,
+          reps: 12,
+          weightKg: 60,
+          durationSeconds: 45,
+          distanceMeters: "100",
+          rpe: 8,
+          restAfterSeconds: 90,
+          isPersonalRecord: true,
+        }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as any;
+    expect(data.data).toBeDefined();
+  });
+
+  it("should handle numeric weightKg parameter", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({ reps: 10, weightKg: 75 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+  });
+
+  it("should handle string weightKg parameter", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({ reps: 10, weightKg: "75.5" }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+  });
+
+  it("should handle distanceMeters parameter", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({ durationSeconds: 600, distanceMeters: 1000 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+  });
+
+  it("should use default setNumber when not provided", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({ reps: 10 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+  });
 });

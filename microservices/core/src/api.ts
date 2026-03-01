@@ -5,6 +5,9 @@ import openapi from "@elysiajs/openapi";
 
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
+import { muscleGroupsHandler } from "./application/exercises/muscle-groups/muscleGroupsHandler";
+import { equipmentHandler } from "./application/exercises/equipment/equipmentHandler";
+import { categoriesHandler } from "./application/exercises/categories/categoriesHandler";
 import { workoutsListHandler } from "./application/workouts/list/workoutsListHandler";
 import { workoutsGetHandler } from "./application/workouts/get/workoutsGetHandler";
 import { workoutsCreateHandler } from "./application/workouts/create/workoutsCreateHandler";
@@ -32,12 +35,19 @@ import { goalsListHandler } from "./application/goals/list/goalsListHandler";
 import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
 import { goalsUpdateHandler } from "./application/goals/update/goalsUpdateHandler";
 import { goalsDeleteHandler } from "./application/goals/delete/goalsDeleteHandler";
+import { dashboardHandler } from "./application/dashboard/dashboardHandler";
+import { progressStatsHandler } from "./application/progress/progressStatsHandler";
+import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
+import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
 
 const app = new Elysia()
   .use(openapi())
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
   .use(exercisesGetHandler)
+  .use(muscleGroupsHandler)
+  .use(equipmentHandler)
+  .use(categoriesHandler)
   .use(workoutsListHandler)
   .use(workoutsGetHandler)
   .use(workoutsCreateHandler)
@@ -64,7 +74,11 @@ const app = new Elysia()
   .use(goalsListHandler)
   .use(goalsGetHandler)
   .use(goalsUpdateHandler)
-  .use(goalsDeleteHandler);
+  .use(goalsDeleteHandler)
+  .use(dashboardHandler)
+  .use(progressStatsHandler)
+  .use(progressRecordsHandler)
+  .use(progressHistoryHandler);
 
 export type CoreApi = typeof app;
 
