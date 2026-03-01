@@ -13,12 +13,12 @@ export const sessionsDeleteHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .delete(
-    "/sessions/:id",
+    "/sessions/:sessionId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { id } = ctx.params;
+      const { sessionId } = ctx.params;
 
-      const deleted = await ctx.SessionRepository.delete(id, userId);
+      const deleted = await ctx.SessionRepository.delete(sessionId, userId);
 
       if (!deleted) {
         ctx.set.status = 404;
@@ -29,7 +29,7 @@ export const sessionsDeleteHandler = new Elysia()
     },
     {
       params: t.Object({
-        id: t.String(),
+        sessionId: t.String(),
       }),
     },
   );
