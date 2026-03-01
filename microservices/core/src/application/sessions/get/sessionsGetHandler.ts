@@ -13,12 +13,12 @@ export const sessionsGetHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .get(
-    "/sessions/:id",
+    "/sessions/:sessionId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { id } = ctx.params;
+      const { sessionId } = ctx.params;
 
-      const session = await ctx.SessionRepository.getById(id, userId);
+      const session = await ctx.SessionRepository.getById(sessionId, userId);
 
       if (!session) {
         ctx.set.status = 404;
@@ -29,7 +29,7 @@ export const sessionsGetHandler = new Elysia()
     },
     {
       params: t.Object({
-        id: t.String(),
+        sessionId: t.String(),
       }),
     },
   );

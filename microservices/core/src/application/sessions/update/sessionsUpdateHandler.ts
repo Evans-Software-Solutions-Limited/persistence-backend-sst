@@ -13,10 +13,10 @@ export const sessionsUpdateHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .patch(
-    "/sessions/:id",
+    "/sessions/:sessionId",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { id } = ctx.params;
+      const { sessionId } = ctx.params;
       const body = ctx.body as Record<string, unknown>;
 
       // Allow updating specific fields
@@ -45,7 +45,7 @@ export const sessionsUpdateHandler = new Elysia()
       }
 
       const session = await ctx.SessionRepository.update(
-        id,
+        sessionId,
         userId,
         updateData,
       );
@@ -59,7 +59,7 @@ export const sessionsUpdateHandler = new Elysia()
     },
     {
       params: t.Object({
-        id: t.String(),
+        sessionId: t.String(),
       }),
       body: t.Object({
         name: t.Optional(t.String()),
