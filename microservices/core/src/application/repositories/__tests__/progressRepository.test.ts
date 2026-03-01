@@ -8,28 +8,6 @@ vi.mock("@persistence/db/client", () => ({
 import { getDb } from "@persistence/db/client";
 import { ProgressRepository } from "../progressRepository";
 
-// Helper function to create a reusable mock chain
-function createMockChain(result: any) {
-  const chain = {
-    where: vi.fn().mockReturnThis(),
-    orderBy: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    offset: vi.fn().mockResolvedValue(result),
-    resolve: vi.fn().mockResolvedValue(result),
-  };
-  // Make the chain resolve when awaited
-  (chain as any).then = function (onFulfilled: any) {
-    return Promise.resolve(result).then(onFulfilled);
-  };
-  return chain;
-}
-
-function createSelectMock(result: any) {
-  return {
-    from: vi.fn().mockReturnValue(createMockChain(result)),
-  };
-}
-
 describe("ProgressRepository", () => {
   let repository: ProgressRepository;
 
@@ -39,7 +17,7 @@ describe("ProgressRepository", () => {
   });
 
   describe("getStats", () => {
-    it("should return progress stats for a date range", async () => {
+    it("should calculate stats with sessions and volume data", async () => {
       const userId = "user-123";
       const from = "2024-01-01";
       const to = "2024-01-31";
@@ -48,16 +26,29 @@ describe("ProgressRepository", () => {
         id: "session-1",
         userId,
         startedAt: new Date(from),
-        completedAt: new Date(to),
-        status: "completed",
       };
 
-      // Create a mock db that returns data for sessions but empty for other queries
+      const mockSet = {
+        reps: 10,
+        weightKg: "50.5",
+      };
+
+      const mockMeasurement = {
+        id: "measurement-1",
+        measuredAt: new Date(from),
+        weightKg: "75.5",
+        bodyFatPercentage: "15.5",
+      };
+
       const mockDb = {
-        select: vi.fn().mockImplementation(() => {
-          // Return different results based on the number of calls
-          // This is a workaround since we can't track context
-          return createSelectMock([mockSession]);
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue([mockSession]),
+              then: (cb: any) => Promise.resolve([mockMeasurement]).then(cb),
+            }),
+            then: (cb: any) => Promise.resolve([mockSet]).then(cb),
+          }),
         }),
       };
 
@@ -68,8 +59,76 @@ describe("ProgressRepository", () => {
       expect(result).toBeDefined();
       expect(result.workoutFrequency).toBeGreaterThanOrEqual(0);
       expect(Array.isArray(result.volumeTrend)).toBe(true);
-      // Expect at least the mock session to be counted as one record
       expect(result.personalRecordCount).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should handle null measuredAt in measurements", async () => {
+      const userId = "user-123";
+      const from = "2024-01-01";
+      const to = "2024-01-31";
+
+      const mockSession = { startedAt: new Date(from) };
+
+      const mockMeasurement = {
+        id: "measurement-1",
+        measuredAt: null,
+        weightKg: "75.5",
+        bodyFatPercentage: "15.5",
+      };
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue([mockSession]),
+              then: (cb: any) => Promise.resolve([mockMeasurement]).then(cb),
+            }),
+            then: (cb: any) => Promise.resolve([]).then(cb),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getStats(userId, from, to);
+
+      expect(result.bodyMeasurementTrend.dates).toHaveLength(1);
+      expect(result.bodyMeasurementTrend.dates[0]).toBe("");
+    });
+
+    it("should handle null weightKg and bodyFatPercentage", async () => {
+      const userId = "user-123";
+      const from = "2024-01-01";
+      const to = "2024-01-31";
+
+      const mockSession = { startedAt: new Date(from) };
+
+      const mockMeasurement = {
+        id: "measurement-1",
+        measuredAt: new Date(from),
+        weightKg: null,
+        bodyFatPercentage: null,
+      };
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue([mockSession]),
+              then: (cb: any) => Promise.resolve([mockMeasurement]).then(cb),
+            }),
+            then: (cb: any) => Promise.resolve([]).then(cb),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getStats(userId, from, to);
+
+      expect(result.bodyMeasurementTrend.dates).toHaveLength(1);
+      expect(result.bodyMeasurementTrend.weights[0]).toBeNull();
+      expect(result.bodyMeasurementTrend.bodyFats[0]).toBeNull();
     });
   });
 
@@ -86,7 +145,13 @@ describe("ProgressRepository", () => {
       };
 
       const mockDb = {
-        select: vi.fn().mockImplementation(() => createSelectMock([mockRecord])),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue([mockRecord]),
+            }),
+          }),
+        }),
       };
 
       (getDb as any).mockReturnValue(mockDb);
@@ -100,6 +165,26 @@ describe("ProgressRepository", () => {
         recordType: "1rm",
         value: 100,
       });
+    });
+
+    it("should return empty array when no records exist", async () => {
+      const userId = "user-123";
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue([]),
+            }),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getRecords(userId);
+
+      expect(result).toHaveLength(0);
     });
   });
 
@@ -117,7 +202,17 @@ describe("ProgressRepository", () => {
       };
 
       const mockDb = {
-        select: vi.fn().mockImplementation(() => createSelectMock([mockSession])),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockReturnValue([mockSession]),
+                }),
+              }),
+            }),
+          }),
+        }),
       };
 
       (getDb as any).mockReturnValue(mockDb);
@@ -130,6 +225,65 @@ describe("ProgressRepository", () => {
         name: "Workout 1",
         status: "completed",
       });
+    });
+
+    it("should return empty array when no sessions exist", async () => {
+      const userId = "user-123";
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockReturnValue([]),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getHistory(userId, 20, 0);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it("should handle sessions with null startedAt and completedAt", async () => {
+      const userId = "user-123";
+      const mockSession = {
+        id: "session-1",
+        userId,
+        name: "Workout 1",
+        startedAt: null,
+        completedAt: null,
+        status: "in_progress",
+        totalDurationSeconds: null,
+      };
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockReturnValue([mockSession]),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repository.getHistory(userId, 20, 0);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].startedAt).toBeNull();
+      expect(result[0].completedAt).toBeNull();
     });
   });
 });

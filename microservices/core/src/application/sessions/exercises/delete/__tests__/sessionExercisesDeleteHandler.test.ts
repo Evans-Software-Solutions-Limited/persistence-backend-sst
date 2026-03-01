@@ -82,7 +82,7 @@ describe("SessionExercisesDeleteHandler", () => {
     expect(response.status).toBe(404);
   });
 
-  it("should return 404 when exercise not found", async () => {
+  it("should return 404 when exercise not found in session", async () => {
     mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
     mocks.removeExercise.mockResolvedValue(false);
     const { sessionExercisesDeleteHandler } =
@@ -94,5 +94,97 @@ describe("SessionExercisesDeleteHandler", () => {
       }),
     );
     expect(response.status).toBe(404);
+  });
+
+  it("should return 404 when removeExercise fails", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    mocks.removeExercise.mockResolvedValue(false);
+    const { sessionExercisesDeleteHandler } =
+      await import("../sessionExercisesDeleteHandler");
+    const response = await sessionExercisesDeleteHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se1", {
+        method: "DELETE",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("should handle multiple exercises in session", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+        {
+          id: "se2",
+          sessionId: "s1",
+          exerciseId: "ex2",
+          sortOrder: 2,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { sessionExercisesDeleteHandler } =
+      await import("../sessionExercisesDeleteHandler");
+    const response = await sessionExercisesDeleteHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se1", {
+        method: "DELETE",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("should delete correct exercise when multiple exist", async () => {
+    mocks.getById.mockResolvedValue({
+      id: "s1",
+      exercises: [
+        {
+          id: "se1",
+          sessionId: "s1",
+          exerciseId: "ex1",
+          sortOrder: 1,
+          notes: null,
+          createdAt: new Date(),
+        },
+        {
+          id: "se2",
+          sessionId: "s1",
+          exerciseId: "ex2",
+          sortOrder: 2,
+          notes: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const { sessionExercisesDeleteHandler } =
+      await import("../sessionExercisesDeleteHandler");
+    const response = await sessionExercisesDeleteHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se2", {
+        method: "DELETE",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(response.status).toBe(200);
   });
 });
