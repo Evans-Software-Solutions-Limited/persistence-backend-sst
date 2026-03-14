@@ -13,19 +13,23 @@ Use this when creating, modifying, or removing Elysia route handlers.
 
 ```ts
 import Elysia, { t } from "elysia";
-import { getAuthUser, requireAuth, getUser } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  getAuthUser,
+  requireAuth,
+  getUser,
+} from "@persistence/api-utils/auth/supabaseAuth";
 import { MyService } from "../repositories/myService";
 
 export const myHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
-  .onBeforeHandle(requireAuth)  // Optional: only if auth required
-  .use(MyService)  // Decorate with repository service
+  .onBeforeHandle(requireAuth) // Optional: only if auth required
+  .use(MyService) // Decorate with repository service
   .get(
     "/items/:id",
     async (ctx) => {
-      const { sub: userId } = getUser(ctx);  // Extract from JWT
+      const { sub: userId } = getUser(ctx); // Extract from JWT
       const { id } = ctx.params;
 
       const item = await ctx.MyRepository.get(userId, id);
@@ -57,6 +61,7 @@ export const myHandler = new Elysia()
 ## Common Patterns
 
 ### GET with Ownership Check
+
 ```ts
 .get("/items/:id", async (ctx) => {
   const { sub: userId } = getUser(ctx);
@@ -67,6 +72,7 @@ export const myHandler = new Elysia()
 ```
 
 ### POST with Input Validation
+
 ```ts
 .post("/items", async (ctx) => {
   const { sub: userId } = getUser(ctx);
@@ -82,6 +88,7 @@ export const myHandler = new Elysia()
 ```
 
 ### List with Filters
+
 ```ts
 .get("/items", async (ctx) => {
   const { sub: userId } = getUser(ctx);
@@ -92,6 +99,7 @@ export const myHandler = new Elysia()
 ```
 
 ### Role-Based Route
+
 ```ts
 .post("/admin/config", async (ctx) => {
   const user = getUser(ctx);

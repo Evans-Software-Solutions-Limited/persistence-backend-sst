@@ -15,6 +15,7 @@ Supports multiple user roles: regular users, personal trainers, physiotherapists
 - **Auth:** Supabase JWT validation in middleware, then explicit role/ownership checks
 
 Core data model:
+
 - Users (with roles: user, PT, physio, admin)
 - Workouts (name, exercises, visibility)
 - Sessions (workout instances, with sets/reps)
@@ -24,21 +25,22 @@ Core data model:
 
 ## Key Directories
 
-| Path | Purpose |
-|------|---------|
-| `microservices/core/src/application/` | Business logic, repositories, services |
-| `microservices/core/src/application/sessions/` | Session CRUD, set/exercise tracking |
-| `microservices/core/src/application/workouts/` | Workout CRUD, sharing/visibility |
-| `microservices/core/src/application/exercises/` | Exercise library, metadata |
-| `microservices/core/src/application/goals/` | Goal CRUD, progress tracking |
-| `microservices/core/src/application/repositories/` | Data access layer, services |
-| `packages/db/src/schema.ts` | Drizzle table definitions, enums |
-| `packages/db/migrations/` | SQL migrations (Neon) |
-| `infra/` | SST resources (API, DB, storage) |
+| Path                                               | Purpose                                |
+| -------------------------------------------------- | -------------------------------------- |
+| `microservices/core/src/application/`              | Business logic, repositories, services |
+| `microservices/core/src/application/sessions/`     | Session CRUD, set/exercise tracking    |
+| `microservices/core/src/application/workouts/`     | Workout CRUD, sharing/visibility       |
+| `microservices/core/src/application/exercises/`    | Exercise library, metadata             |
+| `microservices/core/src/application/goals/`        | Goal CRUD, progress tracking           |
+| `microservices/core/src/application/repositories/` | Data access layer, services            |
+| `packages/db/src/schema.ts`                        | Drizzle table definitions, enums       |
+| `packages/db/migrations/`                          | SQL migrations (Neon)                  |
+| `infra/`                                           | SST resources (API, DB, storage)       |
 
 ## Standards
 
 ### Code Quality
+
 - **Typecheck:** `bun run typecheck`
 - **Lint:** `bun run lint`
 - **Format:** `bun run prettier:check` / `--write`
@@ -46,12 +48,14 @@ Core data model:
 - **Tests:** `bun run test:unit` (Vitest)
 
 ### Testing Rules
+
 - **Coverage threshold:** 90% (lines, functions, branches, statements) — non-negotiable
 - **No fake tests.** Tests must prove behaviour.
 - **Coverage includes:** `src/application/**/*.ts` and `src/**/repositories/*.ts`
 - **Excluded:** Handler files (thin, tested via service/repo tests), api/index files, type defs
 
 ### Elysia Route Pattern
+
 - Routes are thin: parse input, call service/repository
 - Auth: Supabase JWT → `requireAuth` middleware → `getUser(ctx)` for userId
 - Service layer: `SessionService`, etc., decorates context with repository
@@ -59,17 +63,20 @@ Core data model:
 - Type guards: `t.Object({...})` for request validation
 
 ### Authorization Pattern
+
 - **Ownership check:** Every query filters by `userId` from JWT token
 - **Role check:** If PT-only route, verify user role after auth
 - **Visibility check:** For shared items (workouts, goals), check visibility + user is owner/friend/public
 
 ### Frontend
+
 - Container/Presenter: containers own logic, presenters are pure
 - Global state: auth context, user profile
 - API calls: through api service layer
 - Tests: rendering, interactions, API mocking
 
 ### Database & Migrations
+
 - Neon serverless Postgres, HTTP transport (Lambda-friendly)
 - Drizzle ORM with schema.ts as source of truth
 - Migrations in SQL (Neon format), must be idempotent
@@ -88,6 +95,7 @@ bun run test:unit      # Vitest (90% coverage required)
 ## Dangerous Areas
 
 ### User Data Isolation
+
 - **Files:** All `src/application/*/repositories/*.ts`, all handlers
 - **Risk:** User A seeing User B's workouts, sessions, goals
 - **Rules:**
@@ -98,6 +106,7 @@ bun run test:unit      # Vitest (90% coverage required)
   - Test: create two users, verify each only sees own data
 
 ### Role-Based Access Control
+
 - **Files:** Handlers that check `user.role` (PT, physio, admin routes)
 - **Risk:** User spoofs role claim in JWT
 - **Rules:**
@@ -108,6 +117,7 @@ bun run test:unit      # Vitest (90% coverage required)
   - Test unauthorized access (wrong role, should 403)
 
 ### Visibility & Sharing
+
 - **Files:** Workout, goal, session handlers where `visibility` is set
 - **Risk:** Private workout marked public, or wrong users seeing it
 - **Rules:**
@@ -119,6 +129,7 @@ bun run test:unit      # Vitest (90% coverage required)
   - Test: create private workout, verify friend can't see it without sharing
 
 ### Neon/Serverless DB Patterns
+
 - **Files:** `packages/db/src/client.ts`, migration scripts
 - **Risk:** Cold-start latency, connection pooling assumptions, transaction issues
 - **Rules:**
