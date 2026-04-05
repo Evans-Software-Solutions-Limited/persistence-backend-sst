@@ -1,0 +1,84 @@
+{
+  "expo": {
+    "name": "persistence-mobile",
+    "slug": "persistence",
+    "version": "1.1.1",
+    "orientation": "portrait",
+    "scheme": "persistencemobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bradleyevans96.persistence",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSHealthShareUsageDescription": "Persistence needs access to your health data to track your fitness progress, including steps, workouts, and activity levels.",
+        "NSHealthUpdateUsageDescription": "Persistence requests write permission to verify authorization status. We do not write or modify your health data."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.in-app-payments": [
+          "merchant.com.bradleyevans96.persistence"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0C111A"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.bradleyevans96.persistence",
+      "minSdkVersion": 28,
+      "permissions": [
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.WRITE_STEPS",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.WRITE_DISTANCE",
+        "android.permission.health.READ_BASAL_METABOLIC_RATE",
+        "android.permission.health.WRITE_BASAL_METABOLIC_RATE",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.WRITE_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_EXERCISE",
+        "android.permission.health.WRITE_EXERCISE",
+        "android.permission.health.READ_WEIGHT",
+        "android.permission.health.WRITE_WEIGHT",
+        "android.permission.health.READ_BODY_FAT",
+        "android.permission.health.WRITE_BODY_FAT"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A0A0F"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 28,
+            "buildToolsVersion": "35.0.0"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "255d542d-8dae-43c9-8d98-d9a3a325a470"
+      },
+      "router": {}
+    },
+    "owner": "bradleyevans96"
+  }
+}
