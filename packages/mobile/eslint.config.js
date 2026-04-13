@@ -22,9 +22,11 @@ module.exports = defineConfig([
                 "expo-*",
                 "@react-navigation/*",
                 "@expo/*",
+                "@/adapters/*",
+                "@/ui/*",
               ],
               message:
-                "Domain layer must be framework-agnostic. No React/Expo/RN imports allowed.",
+                "Domain layer must be framework-agnostic. Only imports from @/shared are allowed.",
             },
           ],
         },

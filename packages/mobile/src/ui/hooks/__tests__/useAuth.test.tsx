@@ -43,6 +43,7 @@ describe("useAuth", () => {
     });
 
     expect(result.current.session).toBeNull();
+    expect(result.current.error).toBeNull();
   });
 
   it("signs in and exposes session", async () => {
@@ -63,6 +64,7 @@ describe("useAuth", () => {
 
     expect(result.current.session).not.toBeNull();
     expect(result.current.session?.email).toBe("test@example.com");
+    expect(result.current.error).toBeNull();
   });
 
   it("signs out and clears session", async () => {
@@ -88,7 +90,7 @@ describe("useAuth", () => {
     expect(result.current.session).toBeNull();
   });
 
-  it("throws when sign-in fails", async () => {
+  it("throws and sets error when sign-in fails", async () => {
     const { adapters, auth } = createTestAdapters();
     auth.shouldFail = true;
 
@@ -107,5 +109,53 @@ describe("useAuth", () => {
         await result.current.signIn("test@example.com", "password");
       }),
     ).rejects.toThrow("Test auth error");
+
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.kind).toBe("auth");
+  });
+
+  it("throws when sign-out fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Sign in first, then make signOut fail
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+
+    auth.shouldFail = true;
+
+    await expect(
+      act(async () => {
+        await result.current.signOut();
+      }),
+    ).rejects.toThrow("Test auth error");
+  });
+
+  it("exposes error when getSession fails on bootstrap", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.shouldFail = true;
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.session).toBeNull();
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.kind).toBe("auth");
   });
 });

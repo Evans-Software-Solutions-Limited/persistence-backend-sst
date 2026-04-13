@@ -16,7 +16,7 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
  * 4. Stubs for health/notifications/payments (future milestones)
  */
 export function AppProviders({ children }: { children: ReactNode }) {
-  const adapters = useMemo<Adapters>(() => {
+  const adapters = useMemo<Adapters & { _auth: SupabaseAuthAdapter }>(() => {
     const auth = new SupabaseAuthAdapter();
     const api = new SSTApiAdapter();
     const storage = new SQLiteStorageAdapter();
@@ -25,6 +25,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     api.setTokenProvider(() => auth.getAccessToken());
 
     return {
+      _auth: auth,
       api,
       auth,
       storage,
@@ -35,8 +36,13 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Initialize offline database on mount
+    // Initialize offline database on mount (async to avoid blocking JS thread)
     adapters.storage.initialize();
+
+    // Cleanup AppState listener when provider unmounts (hot reload, strict mode)
+    return () => {
+      adapters._auth.destroy();
+    };
   }, [adapters]);
 
   return <AdapterProvider adapters={adapters}>{children}</AdapterProvider>;

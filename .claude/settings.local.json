@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"vitest\\\\|jest\" /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst/packages/*/package.json)",
+      "Bash(grep -E \"\\\\.\\(json|ts|js\\)$\")",
+      "Bash(wc -l /Users/bradleysimms-evans/Documents/projects/personal/persistence-mobile/hooks/api/*.ts)",
+      "Bash(git -C /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst log --all --oneline --grep=\"mobile\")",
+      "Bash(git -C /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst log --oneline)",
+      "Bash(git -C /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst show 3e8e420 --stat)",
+      "Bash(xargs ls:*)",
+      "Bash(wc -l /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst/packages/mobile/src/offline/*.ts /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst/packages/mobile/src/api/*.ts)",
+      "Bash(xargs cat:*)",
+      "Bash(bun install:*)",
+      "Bash(npx jest:*)",
+      "Bash(bun pm:*)",
+      "Bash(npm view:*)",
+      "Bash(python3 -c \"import json,sys; versions=[v for v in json.load\\(sys.stdin\\) if not 'canary' in v and not 'alpha' in v and not 'beta' in v]; print\\('\\\\n'.join\\(versions[-10:]\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; versions=[v for v in json.load\\(sys.stdin\\) if 'preview' in v]; print\\('\\\\n'.join\\(versions[-5:]\\)\\)\")",
+      "Bash(ls node_modules/.bun/@babel+runtime*)",
+      "Bash(npx tsc:*)",
+      "Bash(bun run:*)",
+      "Bash(npx prettier:*)",
+      "Bash(npx expo:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(ls -la /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst/.git/worktrees/*/index.lock)",
+      "Bash(git commit -m ':*)",
+      "Bash(rm -f .git/index.lock)",
+      "Bash(git commit -m 'feat: mobile guardrails with hexagonal architecture and quality gates:*)"
+    ]
+  }
+}

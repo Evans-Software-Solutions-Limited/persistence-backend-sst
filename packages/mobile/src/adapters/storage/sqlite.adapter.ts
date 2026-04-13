@@ -29,7 +29,7 @@ export class SQLiteStorageAdapter implements StoragePort {
     return this.db;
   }
 
-  initialize(): void {
+  async initialize(): Promise<void> {
     const db = this.getDb();
 
     db.execSync(`

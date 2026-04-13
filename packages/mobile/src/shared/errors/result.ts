@@ -51,6 +51,7 @@ export type AuthError = {
   readonly code:
     | "invalid_credentials"
     | "email_taken"
+    | "email_confirmation_required"
     | "token_expired"
     | "network_error"
     | "unknown";

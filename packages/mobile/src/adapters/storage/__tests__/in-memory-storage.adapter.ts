@@ -15,7 +15,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private metadata: Map<string, string> = new Map();
   private nextId = 1;
 
-  initialize(): void {
+  async initialize(): Promise<void> {
     // No-op for in-memory
   }
 

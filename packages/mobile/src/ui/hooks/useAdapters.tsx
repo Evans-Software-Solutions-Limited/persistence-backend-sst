@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { Adapters } from "@/shared/types";
 
-export const AdapterContext = createContext<Adapters | null>(null);
+const AdapterContext = createContext<Adapters | null>(null);
 
 /**
  * Access the adapter instances (API, storage, health, etc.).

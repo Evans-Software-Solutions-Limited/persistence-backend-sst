@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 type Props = {
   children: ReactNode;
@@ -31,11 +32,57 @@ export class ErrorBoundary extends Component<Props, State> {
     this.props.onError?.(error, errorInfo);
   }
 
+  private handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render(): ReactNode {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
-      return null; // ErrorFallback presenter added in design-system milestone
+      return (
+        <View style={styles.container}>
+          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.message}>{this.state.error!.message}</Text>
+          <Pressable style={styles.button} onPress={this.handleRetry}>
+            <Text style={styles.buttonText}>Try Again</Text>
+          </Pressable>
+        </View>
+      );
     }
     return this.props.children;
   }
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: "#0C0F17",
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#E5E9F0",
+    marginBottom: 8,
+  },
+  message: {
+    fontSize: 14,
+    color: "#A9B3C1",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  button: {
+    borderColor: "#1E90FF",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  buttonText: {
+    color: "#1E90FF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+});

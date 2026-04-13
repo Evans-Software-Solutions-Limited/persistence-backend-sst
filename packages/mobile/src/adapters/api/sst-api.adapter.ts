@@ -27,6 +27,14 @@ function isErrorResponse<T>(body: ApiResponse<T>): body is ApiErrorResponse {
 const API_URL =
   Constants.expoConfig?.extra?.apiUrl ?? process.env.EXPO_PUBLIC_API_URL ?? "";
 
+function validateApiUrl(url: string): void {
+  if (!url) {
+    throw new Error(
+      "Missing API configuration: set apiUrl in app.config extra or EXPO_PUBLIC_API_URL env var",
+    );
+  }
+}
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
@@ -42,6 +50,10 @@ type RequestOptions = {
  */
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
+
+  constructor() {
+    validateApiUrl(API_URL);
+  }
 
   setTokenProvider(provider: () => Promise<string | null>): void {
     this.tokenProvider = provider;
@@ -101,6 +113,14 @@ export class SSTApiAdapter implements ApiPort {
           message,
           status: response.status,
         });
+      }
+
+      // Handle 204 No Content (typical for DELETE)
+      if (
+        response.status === 204 ||
+        response.headers.get("content-length") === "0"
+      ) {
+        return ok(undefined as T);
       }
 
       const json = (await response.json()) as T;

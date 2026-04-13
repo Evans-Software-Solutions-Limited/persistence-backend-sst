@@ -140,4 +140,36 @@ describe("processSyncQueue", () => {
     expect(result).toEqual({ processed: 2, succeeded: 2, failed: 0 });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it("fetches token per-entry (not once for all)", async () => {
+    const getTokenSpy = jest.spyOn(auth, "getAccessToken");
+    await auth.signInWithEmail("test@example.com", "password");
+
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w1",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w2",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    // Token should be fetched once per entry, not once globally
+    expect(getTokenSpy).toHaveBeenCalledTimes(2);
+    getTokenSpy.mockRestore();
+  });
 });

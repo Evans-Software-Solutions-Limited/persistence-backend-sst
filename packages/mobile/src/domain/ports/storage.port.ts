@@ -8,7 +8,7 @@ import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
  */
 export interface StoragePort {
   /** Initialize local database tables */
-  initialize(): void;
+  initialize(): Promise<void>;
 
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;

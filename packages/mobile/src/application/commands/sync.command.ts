@@ -14,6 +14,9 @@ export type SyncResult = {
  * sent, then marked completed or failed. Failed entries are retried
  * up to their max_retries limit.
  *
+ * The auth token is refreshed per-entry to avoid mass 401 failures
+ * when the token expires mid-queue (realistic after long offline periods).
+ *
  * Call this when:
  * - Network connectivity is restored
  * - App comes to foreground
@@ -28,12 +31,13 @@ export async function processSyncQueue(
   let succeeded = 0;
   let failed = 0;
 
-  const token = await auth.getAccessToken();
-
   for (const entry of entries) {
     storage.markMutationInFlight(entry.id);
 
     try {
+      // Fetch token per-entry to handle expiry mid-queue
+      const token = await auth.getAccessToken();
+
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };

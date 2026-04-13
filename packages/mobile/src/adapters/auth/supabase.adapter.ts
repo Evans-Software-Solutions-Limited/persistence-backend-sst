@@ -32,6 +32,12 @@ export class SupabaseAuthAdapter implements AuthPort {
   > | null = null;
 
   constructor() {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error(
+        "Missing Supabase configuration: EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY must be set",
+      );
+    }
+
     this.client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: AsyncStorage,
@@ -49,6 +55,15 @@ export class SupabaseAuthAdapter implements AuthPort {
         this.client.auth.stopAutoRefresh();
       }
     });
+  }
+
+  /**
+   * Clean up the AppState listener. Call when the adapter is being discarded
+   * (e.g. in a useEffect cleanup or on hot reload).
+   */
+  destroy(): void {
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
   }
 
   async signInWithEmail(
@@ -81,10 +96,11 @@ export class SupabaseAuthAdapter implements AuthPort {
       return fail({ kind: "auth", code, message: error.message });
     }
     if (!data.session) {
-      // Email confirmation required — return a partial success
+      // Email confirmation required — distinct code so callers can show
+      // a "check your email" message rather than a generic error banner
       return fail({
         kind: "auth",
-        code: "unknown",
+        code: "email_confirmation_required",
         message: "Check your email for confirmation",
       });
     }
