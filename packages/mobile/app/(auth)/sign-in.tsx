@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useAuth } from "../../src/auth/provider";
+import { useAuth } from "../../src/ui/hooks/useAuth";
 
 export default function SignIn() {
   const { signIn } = useAuth();

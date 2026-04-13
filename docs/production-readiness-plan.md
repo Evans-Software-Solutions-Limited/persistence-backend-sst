@@ -32,6 +32,7 @@ Persistence is production-ready when:
 ## 1. Backend API Completion
 
 ### Goal
+
 Complete the SST API surface needed by the rebuilt mobile app.
 
 ### Required domains
@@ -65,6 +66,7 @@ Complete the SST API surface needed by the rebuilt mobile app.
 ## 2. Security Hardening
 
 ### Goal
+
 Make the SST layer the safe production boundary.
 
 ### Required items
@@ -84,6 +86,7 @@ Security is not done when endpoints merely work. It is done when the app no long
 ## 3. Data and Sync Integrity
 
 ### Goal
+
 Ensure correctness under retries, reconnections, duplicate submissions, and partial failure.
 
 ### Required items
@@ -97,6 +100,7 @@ Ensure correctness under retries, reconnections, duplicate submissions, and part
 ## 4. Observability and Operations
 
 ### Goal
+
 Make production diagnosable.
 
 ### Required items
@@ -112,6 +116,7 @@ Make production diagnosable.
 ## 5. Test and Quality Gates
 
 ### Goal
+
 Replace hope with proof.
 
 ### Required items
@@ -136,6 +141,7 @@ Replace hope with proof.
 ## 6. Mobile Release Readiness
 
 ### Goal
+
 Ensure the frontend consuming the SST API is actually releasable.
 
 ### Required items

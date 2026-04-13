@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -8,42 +8,41 @@ import {
   Text,
   View,
 } from "react-native";
-import { api, ApiError } from "../../src/api/client";
-import { useAuth } from "../../src/auth/provider";
-import { useSyncState } from "../../src/offline/hooks";
+import { useAdapters } from "../../src/ui/hooks/useAdapters";
+import { useAuth } from "../../src/ui/hooks/useAuth";
+import { useSync } from "../../src/ui/hooks/useSync";
 
 type ConnectionStatus = "checking" | "connected" | "error";
 
 export default function Home() {
-  const { user, signOut } = useAuth();
-  const syncState = useSyncState();
+  const { session, signOut } = useAuth();
+  const { api } = useAdapters();
+  const syncState = useSync();
   const [apiStatus, setApiStatus] = useState<ConnectionStatus>("checking");
   const [apiError, setApiError] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkApiHealth();
-  }, []);
-
-  const checkApiHealth = async () => {
+  const checkApiHealth = useCallback(async () => {
     setApiStatus("checking");
     setApiError(null);
-    try {
-      const result = await api.health.check();
-      setApiStatus(result.status === "ok" ? "connected" : "error");
-    } catch (err) {
+    const result = await api.healthCheck();
+    if (result.ok) {
+      setApiStatus("connected");
+    } else {
       setApiStatus("error");
-      setApiError(
-        err instanceof ApiError ? err.message : "Unable to reach API",
-      );
+      setApiError(result.error.message);
     }
-  };
+  }, [api]);
+
+  useEffect(() => {
+    checkApiHealth();
+  }, [checkApiHealth]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* User info */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Account</Text>
-        <Text style={styles.cardText}>{user?.email ?? "Unknown"}</Text>
+        <Text style={styles.cardText}>{session?.email ?? "Unknown"}</Text>
         <Pressable style={styles.secondaryButton} onPress={signOut}>
           <Text style={styles.secondaryButtonText}>Sign Out</Text>
         </Pressable>
@@ -107,7 +106,7 @@ export default function Home() {
       {/* Foundation status */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Foundation Status</Text>
-        <StatusItem label="Auth (Supabase)" ok={!!user} />
+        <StatusItem label="Auth (Supabase)" ok={!!session} />
         <StatusItem label="API Client" ok={apiStatus === "connected"} />
         <StatusItem label="Offline DB" ok />
         <StatusItem label="Sync Queue" ok />
