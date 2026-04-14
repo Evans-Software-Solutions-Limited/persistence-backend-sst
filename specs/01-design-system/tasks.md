@@ -2,60 +2,64 @@
 
 ## Phase 0: Tamagui Setup
 
-- [ ] Install `tamagui`, `@tamagui/core`, `@tamagui/config` and Expo plugin
-- [ ] Configure Tamagui compiler in `babel.config.js` / `metro.config.js`
-- [ ] Verify Tamagui works with current Expo version (if Expo 53 issues, switch to gluestack UI)
-- [ ] Create `tamagui.config.ts` with Persistence token overrides
+- [x] Install `tamagui`, `@tamagui/core`, `@tamagui/config` and Expo plugin
+- [x] Configure Tamagui compiler in `babel.config.js` / `metro.config.js`
+- [x] Verify Tamagui works with current Expo version (if Expo 53 issues, switch to gluestack UI)
+  - _Running on Expo 55 / RN 0.83 with Tamagui 2.0.0-rc.40_
+- [x] Create `tamagui.config.ts` with Persistence token overrides
 
 ## Phase 1: Tokens
 
-- [ ] Define colour palette in Tamagui token system (primary, secondary, success, warning, error, neutral scales)
-- [ ] Define typography tokens (heading 1-4, body, caption, label) in Tamagui config
-- [ ] Define spacing tokens (xs through 4xl) in Tamagui config
-- [ ] Define border radius tokens in Tamagui config
-- [ ] Create dark-first theme (dark mode is primary, light mode derived)
-- [ ] Write tests for token structure (valid values, expected keys)
+- [x] Define colour palette in Tamagui token system (primary, secondary, success, warning, error, neutral scales)
+- [x] Define typography tokens (heading 1-4, body, caption, label) in Tamagui config
+- [x] Define spacing tokens (xs through 4xl) in Tamagui config
+- [x] Define border radius tokens in Tamagui config
+- [x] Create dark-first theme (dark mode is primary, light mode derived)
+- [x] Write tests for token structure (valid values, expected keys)
 
 ## Phase 2: Theme Provider
 
-- [ ] Create Persistence `ThemeProvider` wrapping Tamagui's `TamaguiProvider`
-- [ ] Create `useTheme()` hook returning current mode and semantic tokens
-- [ ] Implement system colour scheme detection (Appearance API)
-- [ ] Support manual override (system / light / dark) via context
-- [ ] Persist theme preference to AsyncStorage
-- [ ] Write tests: default to system, override works, hook returns correct tokens
+- [x] Create Persistence `ThemeProvider` wrapping Tamagui's `TamaguiProvider`
+- [x] Create `useTheme()` hook returning current mode and semantic tokens
+- [x] Implement system colour scheme detection (Appearance API)
+- [x] Support manual override (system / light / dark) via context
+- [x] Persist theme preference to AsyncStorage
+- [x] Write tests: default to system, override works, hook returns correct tokens
 
 ## Phase 3: Layout Components
 
-- [ ] Create `Screen` component (SafeAreaView + Tamagui Stack, scroll option, background from theme)
-- [ ] Create `Row` component (Tamagui XStack wrapper with gap prop)
-- [ ] Create `Column` component (Tamagui YStack wrapper with gap prop)
-- [ ] Create `Spacer` component (flex: 1 by default, or fixed size)
-- [ ] Write tests for layout components (renders children, applies spacing)
+- [x] Create `Screen` component (SafeAreaView + Tamagui Stack, scroll option, background from theme)
+- [x] Create `Row` component (Tamagui XStack wrapper with gap prop)
+- [x] Create `Column` component (Tamagui YStack wrapper with gap prop)
+- [x] Create `Spacer` component (flex: 1 by default, or fixed size)
+- [x] Write tests for layout components (renders children, applies spacing)
 
 ## Phase 4: UI Primitives
 
 Build as Tamagui `styled()` wrappers with Persistence branding. Use `/frontend-design` skill for visual quality review.
 
-- [ ] Create `Button` (variants: primary, secondary, outline, ghost, danger; sizes: sm, md, lg; loading + disabled states; min 44pt touch target)
-- [ ] Create `Text` (variant prop maps to typography tokens)
-- [ ] Create `Card` (padding, border radius, elevation/shadow from theme)
-- [ ] Create `Input` (label, placeholder, error state, helper text, secure entry option; min 44pt touch target)
-- [ ] Create `LoadingSpinner` (size variants, colour from theme)
-- [ ] Create `Skeleton` (shimmer loading placeholder — prefer over spinners for content)
-- [ ] Create `EmptyState` (icon, title, description, optional action button)
-- [ ] Create `ErrorState` (error message, retry button)
-- [ ] Create `Badge` (count or status dot, colour variants)
-- [ ] Create `Divider` (horizontal line, margin props)
-- [ ] Create `Avatar` (image source with fallback to initials, size variants)
-- [ ] Write tests for every primitive (each variant renders, props passed correctly)
+- [x] Create `Button` (variants: primary, secondary, outline, ghost, danger; sizes: sm, md, lg; loading + disabled states; min 44pt touch target)
+- [x] Create `Text` (variant prop maps to typography tokens)
+- [x] Create `Card` (padding, border radius, elevation/shadow from theme)
+- [x] Create `Input` (label, placeholder, error state, helper text, secure entry option; min 44pt touch target)
+- [x] Create `LoadingSpinner` (size variants, colour from theme)
+- [x] Create `Skeleton` (shimmer loading placeholder — prefer over spinners for content)
+- [x] Create `EmptyState` (icon, title, description, optional action button)
+- [x] Create `ErrorState` (error message, retry button)
+- [x] Create `Badge` (count or status dot, colour variants)
+- [x] Create `Divider` (horizontal line, margin props)
+- [x] Create `Avatar` (image source with fallback to initials, size variants)
+- [x] Write tests for every primitive (each variant renders, props passed correctly)
 
 ## Phase 5: Integration & Quality
 
-- [ ] Wire `ThemeProvider` into `app/_layout.tsx`
+- [x] Wire `ThemeProvider` into `app/_layout.tsx`
 - [ ] Update existing health check screen to use new primitives
-- [ ] Export all components via barrel files
+  - _No health check screen exists yet; deferred to milestone 07_
+- [x] Export all components via barrel files
 - [ ] Run `/frontend-design` skill review on initial component set
 - [ ] Screenshot key screens and review visual quality
+  - _Sign-in screen rendered on iOS simulator but design quality flagged for improvement_
 - [ ] Verify 60fps scroll performance on FlatList screens
-- [ ] Verify all quality gates pass
+  - _No scrollable list screens exist yet; deferred to milestone 03+_
+- [x] Verify all quality gates pass
