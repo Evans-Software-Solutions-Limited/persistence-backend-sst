@@ -9,3 +9,6 @@ coverage
 CHANGELOG.md
 sst-env.d.ts
 **/sst-env.d.ts
+**/.expo
+**/android
+**/ios

@@ -17,6 +17,12 @@ node_modules
 # misc
 .DS_Store
 
+# claude local settings (machine-specific)
+.claude/settings.local.json
+
+# expo cache
+**/.expo
+
 **/coverage/**
 
 # turbo cache

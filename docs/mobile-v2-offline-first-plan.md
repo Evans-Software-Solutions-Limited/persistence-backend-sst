@@ -56,39 +56,47 @@ AI should support the product where useful, like summaries or insights for PTs, 
 ## 1. App Layers
 
 ### UI layer
+
 - screens, components, navigation
 - no direct persistence or sync logic in screen components
 
 ### Domain/application layer
+
 - use cases for workouts, exercise browsing, progress, trainer actions, subscriptions
 - transforms raw API/local records into app state
 
 ### Local data layer
+
 - local database as the primary read source for most app views
 - stores server snapshots, queued mutations, sync metadata, and lightweight derived state
 
 ### Sync layer
+
 - manages pull, push, retry, conflict handling, reconciliation, and invalidation
 - explicit policies per domain instead of one giant magical sync blob
 
 ### API layer
+
 - talks only to SST endpoints
 - no direct business-table querying from the mobile app for migrated domains
 
 ## 2. Offline-First Rules
 
 ### Read path
+
 - screens should prefer local state first
 - network refresh enhances local data, not replaces it
 - cold boot should restore meaningful last-known state where safe
 
 ### Write path
+
 - user actions create local optimistic updates when appropriate
 - mutations are queued with retry metadata
 - sync worker replays queued mutations when conditions allow
 - server acknowledgements reconcile local state
 
 ### Conflict policy
+
 Start simple and explicit:
 
 - workout logging: client-generated events with server validation on replay
@@ -187,6 +195,7 @@ Dependency: SST exercise endpoints and Algolia wrapper must be ready.
 ## Migration Strategy
 
 ## Option chosen
+
 Build Mobile V2 deliberately while reusing the current mobile repo for reference, extracted logic, and selected UI patterns where they still earn their keep.
 
 ## Practical interpretation
@@ -201,23 +210,30 @@ Build Mobile V2 deliberately while reusing the current mobile repo for reference
 Two reasonable implementation approaches:
 
 ### Approach A, V2 inside the existing mobile repo
+
 Pros:
+
 - easier comparison and incremental extraction
 - keeps Git history close to the product
 - simpler reuse of assets and existing flows
 
 Cons:
+
 - old and new architecture can get tangled if discipline slips
 
 ### Approach B, new app package/repo with selective imports from the old one
+
 Pros:
+
 - strongest separation
 - forces cleaner architecture
 
 Cons:
+
 - more setup and more migration overhead
 
 ### Recommendation
+
 Start with **Approach A only if the team is disciplined about isolation**.
 
 That means a clear V2 app boundary, not half-rebuild / half-legacy spaghetti.

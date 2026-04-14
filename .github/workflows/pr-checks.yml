@@ -31,6 +31,7 @@ jobs:
       db: ${{ steps.filter.outputs.db }}
       api-utils: ${{ steps.filter.outputs.api-utils }}
       infra: ${{ steps.filter.outputs.infra }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - uses: dorny/paths-filter@v3
         id: filter
@@ -47,6 +48,8 @@ jobs:
               - packages/db/**
             api-utils:
               - packages/api-utils/**
+            mobile:
+              - packages/mobile/**
             infra:
               - infra/**
               - sst.config.ts
@@ -62,6 +65,7 @@ jobs:
              [ "${{ steps.filter.outputs.core }}" == "true" ] || \
              [ "${{ steps.filter.outputs.db }}" == "true" ] || \
              [ "${{ steps.filter.outputs.api-utils }}" == "true" ] || \
+             [ "${{ steps.filter.outputs.mobile }}" == "true" ] || \
              [ "${{ steps.filter.outputs.infra }}" == "true" ]; then
             echo "has-changes=true" >> $GITHUB_OUTPUT
           else
