@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { colorPalette } from "../theme/tokens";
 
 type Props = {
   children: ReactNode;
@@ -27,7 +28,6 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Log to error reporting service (future: Sentry adapter)
     console.error("ErrorBoundary caught:", error, errorInfo);
     this.props.onError?.(error, errorInfo);
   }
@@ -59,29 +59,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#0C0F17",
+    backgroundColor: colorPalette.neutral1000,
   },
   title: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#E5E9F0",
+    color: colorPalette.white,
     marginBottom: 8,
   },
   message: {
     fontSize: 14,
-    color: "#A9B3C1",
+    color: colorPalette.neutral300,
     textAlign: "center",
     marginBottom: 16,
   },
   button: {
-    borderColor: "#1E90FF",
+    borderColor: colorPalette.primary500,
     borderWidth: 1,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   buttonText: {
-    color: "#1E90FF",
+    color: colorPalette.primary500,
     fontSize: 14,
     fontWeight: "600",
   },

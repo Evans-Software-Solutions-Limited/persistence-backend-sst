@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "SST Dev (Infrastructure + APIs)",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "Web Frontend (Vite)",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@persistence/web", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "Mobile (Expo)",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@persistence/mobile", "start"],
+      "port": 8081
+    },
+    {
+      "name": "Drizzle Studio",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@persistence/db", "db:studio"],
+      "port": 5555
+    }
+  ]
+}

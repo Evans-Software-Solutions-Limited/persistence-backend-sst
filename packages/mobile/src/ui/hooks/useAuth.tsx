@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AuthSession } from "@/domain/ports/auth.port";
+import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
 import { useAdapters } from "./useAdapters";
 
@@ -8,6 +8,7 @@ export type AuthState = {
   isLoading: boolean;
   error: AuthError | null;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithOAuth: (provider: OAuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -23,14 +24,21 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     // Bootstrap: get existing session
-    auth.getSession().then((result) => {
-      if (result.ok) {
-        setSession(result.value);
-      } else {
-        setError(result.error);
-      }
-      setIsLoading(false);
-    });
+    auth
+      .getSession()
+      .then((result) => {
+        if (result.ok) {
+          setSession(result.value);
+        } else {
+          setError(result.error);
+        }
+      })
+      .catch((err) => {
+        console.error("[useAuth] getSession failed:", err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
 
     // Listen for auth changes
     const unsubscribe = auth.onAuthStateChange((s) => {
@@ -53,6 +61,18 @@ export function useAuth(): AuthState {
     [auth],
   );
 
+  const signInWithOAuth = useCallback(
+    async (provider: OAuthProvider) => {
+      setError(null);
+      const result = await auth.signInWithOAuth(provider);
+      if (!result.ok) {
+        setError(result.error);
+        throw new Error(result.error.message);
+      }
+    },
+    [auth],
+  );
+
   const signOut = useCallback(async () => {
     const result = await auth.signOut();
     if (!result.ok) {
@@ -61,5 +81,5 @@ export function useAuth(): AuthState {
     }
   }, [auth]);
 
-  return { session, isLoading, error, signIn, signOut };
+  return { session, isLoading, error, signIn, signInWithOAuth, signOut };
 }

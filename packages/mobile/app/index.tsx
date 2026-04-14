@@ -1,21 +1,17 @@
-import { Redirect } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
-import { useAuth } from "../src/ui/hooks/useAuth";
+import { View } from "@tamagui/core";
+import { LoadingSpinner } from "../src/ui/components";
 
 export default function Index() {
-  const { session, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  if (session) {
-    return <Redirect href="/(app)" />;
-  }
-
-  return <Redirect href="/(auth)/sign-in" />;
+  // Auth-based navigation is handled by AuthGate in _layout.tsx.
+  // This screen only shows briefly while the session is resolved.
+  return (
+    <View
+      flex={1}
+      justifyContent="center"
+      alignItems="center"
+      backgroundColor="$background"
+    >
+      <LoadingSpinner size="lg" />
+    </View>
+  );
 }

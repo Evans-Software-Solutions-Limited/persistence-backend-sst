@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import Constants from "expo-constants";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { AppState } from "react-native";
 import type {
   AuthPort,
@@ -33,6 +35,12 @@ export class SupabaseAuthAdapter implements AuthPort {
 
   constructor() {
     if (!supabaseUrl || !supabaseAnonKey) {
+      console.error(
+        "[SupabaseAuthAdapter] Missing config — URL:",
+        supabaseUrl ? "set" : "MISSING",
+        "Key:",
+        supabaseAnonKey ? "set" : "MISSING",
+      );
       throw new Error(
         "Missing Supabase configuration: EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY must be set",
       );
@@ -108,14 +116,107 @@ export class SupabaseAuthAdapter implements AuthPort {
   }
 
   async signInWithOAuth(
-    _provider: OAuthProvider,
+    provider: OAuthProvider,
   ): Promise<Result<AuthSession, AuthError>> {
-    // OAuth implementation deferred to milestone 02
-    return fail({
-      kind: "auth",
-      code: "unknown",
-      message: "OAuth not yet implemented",
-    });
+    try {
+      // Linking.createURL handles both Expo Go (exp://) and production (persistencemobile://)
+      const redirectUrl = Linking.createURL("auth/callback");
+
+      const { data, error } = await this.client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error || !data.url) {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: error?.message ?? "Failed to start OAuth flow",
+        });
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl,
+      );
+
+      if (result.type !== "success") {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: "OAuth sign-in was cancelled",
+        });
+      }
+
+      // Supabase returns tokens in the URL hash fragment OR as query params
+      const url = result.url;
+      const params = this.extractOAuthParams(url);
+
+      if (!params.accessToken || !params.refreshToken) {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: "No tokens received from OAuth provider",
+        });
+      }
+
+      const { data: sessionData, error: sessionError } =
+        await this.client.auth.setSession({
+          access_token: params.accessToken,
+          refresh_token: params.refreshToken,
+        });
+
+      if (sessionError || !sessionData.session) {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: sessionError?.message ?? "Failed to set session",
+        });
+      }
+
+      return ok(this.mapSession(sessionData.session));
+    } catch (err) {
+      return fail({
+        kind: "auth",
+        code: "unknown",
+        message: err instanceof Error ? err.message : "OAuth failed",
+      });
+    }
+  }
+
+  /**
+   * Extract access_token and refresh_token from the OAuth redirect URL.
+   * Supabase may place them in the hash fragment (#) or query string (?).
+   */
+  private extractOAuthParams(url: string): {
+    accessToken: string | null;
+    refreshToken: string | null;
+  } {
+    // Try hash fragment first (most common with Supabase)
+    if (url.includes("#")) {
+      const hash = url.split("#")[1];
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      if (accessToken && refreshToken) {
+        return { accessToken, refreshToken };
+      }
+    }
+
+    // Fall back to query params
+    const queryStart = url.indexOf("?");
+    if (queryStart !== -1) {
+      const params = new URLSearchParams(url.substring(queryStart + 1));
+      return {
+        accessToken: params.get("access_token"),
+        refreshToken: params.get("refresh_token"),
+      };
+    }
+
+    return { accessToken: null, refreshToken: null };
   }
 
   async signOut(): Promise<Result<void, AuthError>> {

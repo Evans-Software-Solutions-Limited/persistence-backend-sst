@@ -1,1 +1,6 @@
-// Theme tokens and provider added in milestone 01 (design-system)
+export { ThemeProvider } from "./ThemeProvider";
+export { useTheme } from "./useTheme";
+export { tokens, colorPalette } from "./tokens";
+export { bodyFont, headingFont } from "./typography";
+export { themes, darkTheme, lightTheme } from "./themes";
+export type { ThemePreference, ThemeContextValue } from "./theme.types";
