@@ -56,7 +56,16 @@ export class InMemoryAuthAdapter implements AuthPort {
   async signInWithOAuth(
     _provider: OAuthProvider,
   ): Promise<Result<AuthSession, AuthError>> {
-    return fail({ kind: "auth", code: "unknown", message: "Not implemented" });
+    if (this.shouldFail) return fail(this.failError);
+    this.currentSession = {
+      accessToken: "oauth-token",
+      refreshToken: "oauth-refresh",
+      userId: "oauth-user",
+      email: "oauth@example.com",
+      expiresAt: Date.now() / 1000 + 3600,
+    };
+    this.notify();
+    return ok(this.currentSession);
   }
 
   async signOut(): Promise<Result<void, AuthError>> {

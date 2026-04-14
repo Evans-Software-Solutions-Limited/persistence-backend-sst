@@ -1,0 +1,108 @@
+import { createTokens } from "@tamagui/core";
+
+export const colorPalette = {
+  // Primary — Electric Cyan
+  primary50: "#E0F7FF",
+  primary100: "#B3ECFF",
+  primary200: "#80DFFF",
+  primary300: "#4DD2FF",
+  primary400: "#26C9FF",
+  primary500: "#00D4FF",
+  primary600: "#00B8DB",
+  primary700: "#009AB7",
+  primary800: "#007C93",
+  primary900: "#0088A3",
+
+  // Secondary — Gold (PRs, achievements)
+  gold50: "#FFF8E1",
+  gold100: "#FFECB3",
+  gold200: "#FFE082",
+  gold300: "#FFD54F",
+  gold400: "#FFCA28",
+  gold500: "#FFD700",
+  gold600: "#FFC107",
+  gold700: "#FFB300",
+  gold800: "#FFA000",
+  gold900: "#FF8F00",
+
+  // Neutral — Warm-shifted darks
+  neutral0: "#FFFFFF",
+  neutral50: "#F5F5F7",
+  neutral100: "#E8E8EC",
+  neutral200: "#D1D1D8",
+  neutral300: "#B3B3BD",
+  neutral400: "#8E8E9A",
+  neutral500: "#6B6B78",
+  neutral600: "#4A4A56",
+  neutral700: "#32323A",
+  neutral800: "#282830",
+  neutral900: "#1E1E26",
+  neutral950: "#121216",
+  neutral1000: "#0A0A0F",
+
+  // Semantic
+  success: "#22C55E",
+  successLight: "#86EFAC",
+  successDark: "#16A34A",
+  warning: "#F59E0B",
+  warningLight: "#FCD34D",
+  warningDark: "#D97706",
+  error: "#EF4444",
+  errorLight: "#FCA5A5",
+  errorDark: "#DC2626",
+  info: "#00D4FF",
+  infoLight: "#80DFFF",
+  infoDark: "#0088A3",
+
+  // Base
+  white: "#FFFFFF",
+  black: "#000000",
+  transparent: "transparent",
+} as const;
+
+export const tokens = createTokens({
+  color: colorPalette,
+  space: {
+    0: 0,
+    xxs: 2,
+    xs: 4,
+    sm: 8,
+    md: 12,
+    base: 16,
+    lg: 20,
+    xl: 24,
+    "2xl": 32,
+    "3xl": 48,
+    "4xl": 64,
+    true: 16,
+  },
+  size: {
+    0: 0,
+    xs: 20,
+    sm: 32,
+    md: 44,
+    lg: 56,
+    xl: 64,
+    "2xl": 80,
+    "3xl": 96,
+    true: 44,
+  },
+  radius: {
+    0: 0,
+    sm: 4,
+    md: 8,
+    lg: 12,
+    xl: 16,
+    "2xl": 24,
+    full: 9999,
+    true: 8,
+  },
+  zIndex: {
+    0: 0,
+    1: 100,
+    2: 200,
+    3: 300,
+    4: 400,
+    5: 500,
+  },
+});

@@ -7,6 +7,7 @@ import { StubPaymentsAdapter } from "@/adapters/payments";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { ThemeProvider } from "@/ui/theme";
 
 /**
  * Root provider that wires together all adapters:
@@ -37,7 +38,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Initialize offline database on mount (async to avoid blocking JS thread)
-    adapters.storage.initialize();
+    adapters.storage.initialize().catch((err) => {
+      console.error("[AppProviders] Storage init failed:", err);
+    });
 
     // Cleanup AppState listener when provider unmounts (hot reload, strict mode)
     return () => {
@@ -45,5 +48,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
     };
   }, [adapters]);
 
-  return <AdapterProvider adapters={adapters}>{children}</AdapterProvider>;
+  return (
+    <AdapterProvider adapters={adapters}>
+      <ThemeProvider>{children}</ThemeProvider>
+    </AdapterProvider>
+  );
 }

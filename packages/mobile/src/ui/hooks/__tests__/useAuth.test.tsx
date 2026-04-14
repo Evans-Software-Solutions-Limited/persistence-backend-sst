@@ -140,6 +140,47 @@ describe("useAuth", () => {
     ).rejects.toThrow("Test auth error");
   });
 
+  it("signs in with OAuth provider", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.signInWithOAuth("google");
+    });
+
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.email).toBe("oauth@example.com");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("throws when signInWithOAuth fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.shouldFail = true;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await expect(
+      act(async () => {
+        await result.current.signInWithOAuth("google");
+      }),
+    ).rejects.toThrow("Test auth error");
+  });
+
   it("exposes error when getSession fails on bootstrap", async () => {
     const { adapters, auth } = createTestAdapters();
     auth.shouldFail = true;

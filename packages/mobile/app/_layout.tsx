@@ -1,10 +1,37 @@
-import { Slot } from "expo-router";
+import { useEffect } from "react";
+import { Slot, useRouter, useSegments } from "expo-router";
+import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
+import { useAuth } from "../src/ui/hooks/useAuth";
+
+function AuthGate() {
+  const { session, isLoading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === "(auth)";
+
+    if (session && inAuthGroup) {
+      // Signed in but on auth screen — go to app
+      router.replace("/(app)");
+    } else if (!session && !inAuthGroup) {
+      // Not signed in and not on auth screen — go to sign-in
+      router.replace("/(auth)/sign-in");
+    }
+  }, [session, isLoading, segments, router]);
+
+  return <Slot />;
+}
 
 export default function RootLayout() {
   return (
-    <AppProviders>
-      <Slot />
-    </AppProviders>
+    <ErrorBoundary>
+      <AppProviders>
+        <AuthGate />
+      </AppProviders>
+    </ErrorBoundary>
   );
 }
