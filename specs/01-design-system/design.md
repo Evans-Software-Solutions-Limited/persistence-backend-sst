@@ -96,12 +96,12 @@ The V2 uses **Tamagui** as the component library foundation.
 
 **Alternatives evaluated:**
 
-| Library              | Verdict                                                                 |
-| -------------------- | ----------------------------------------------------------------------- |
-| gluestack UI         | Good API but heavier runtime — fallback if Tamagui has Expo 53 issues   |
-| NativeWind           | Tailwind familiarity but compile-time config complexity                 |
-| React Native Paper   | Material Design — wrong aesthetic for a fitness app                     |
-| React Native Elements| Good primitives but limited theming, less active maintenance            |
+| Library               | Verdict                                                               |
+| --------------------- | --------------------------------------------------------------------- |
+| gluestack UI          | Good API but heavier runtime — fallback if Tamagui has Expo 53 issues |
+| NativeWind            | Tailwind familiarity but compile-time config complexity               |
+| React Native Paper    | Material Design — wrong aesthetic for a fitness app                   |
+| React Native Elements | Good primitives but limited theming, less active maintenance          |
 
 **Usage pattern:**
 
@@ -114,23 +114,27 @@ The V2 uses **Tamagui** as the component library foundation.
 
 ```typescript
 // src/ui/components/Button.tsx — wraps Tamagui's Button with Persistence variants
-import { Button as TamaguiButton, styled } from 'tamagui';
+import { Button as TamaguiButton, styled } from "tamagui";
 
 export const Button = styled(TamaguiButton, {
   variants: {
     variant: {
-      primary: { backgroundColor: '$primary500', color: '$white' },
-      secondary: { backgroundColor: '$surface', borderColor: '$primary500', borderWidth: 1 },
-      ghost: { backgroundColor: 'transparent' },
-      danger: { backgroundColor: '$error500' },
+      primary: { backgroundColor: "$primary500", color: "$white" },
+      secondary: {
+        backgroundColor: "$surface",
+        borderColor: "$primary500",
+        borderWidth: 1,
+      },
+      ghost: { backgroundColor: "transparent" },
+      danger: { backgroundColor: "$error500" },
     },
     size: {
-      sm: { height: 36, paddingHorizontal: '$sm' },
-      md: { height: 44, paddingHorizontal: '$base' },
-      lg: { height: 52, paddingHorizontal: '$lg' },
+      sm: { height: 36, paddingHorizontal: "$sm" },
+      md: { height: 44, paddingHorizontal: "$base" },
+      lg: { height: 52, paddingHorizontal: "$lg" },
     },
   } as const,
-  defaultVariants: { variant: 'primary', size: 'md' },
+  defaultVariants: { variant: "primary", size: "md" },
 });
 ```
 

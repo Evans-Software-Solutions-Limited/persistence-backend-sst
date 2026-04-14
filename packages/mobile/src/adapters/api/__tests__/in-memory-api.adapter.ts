@@ -54,6 +54,8 @@ export class InMemoryApiAdapter implements ApiPort {
   }
 
   async updateProfile(data: Partial<ApiProfile>) {
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
     if (this.profiles[0]) {
       this.profiles[0] = { ...this.profiles[0], ...data };
     }
@@ -98,12 +100,14 @@ export class InMemoryApiAdapter implements ApiPort {
         code: "not_found",
         message: "Not found",
       });
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
     this.workouts[idx] = {
       ...this.workouts[idx],
       ...data,
       updatedAt: new Date().toISOString(),
     };
-    return this.mayFail(this.workouts[idx]);
+    return ok(this.workouts[idx]);
   }
 
   async deleteWorkout(id: string) {
@@ -152,12 +156,14 @@ export class InMemoryApiAdapter implements ApiPort {
         code: "not_found",
         message: "Not found",
       });
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
     this.sessions[idx] = {
       ...this.sessions[idx],
       ...data,
       updatedAt: new Date().toISOString(),
     };
-    return this.mayFail(this.sessions[idx]);
+    return ok(this.sessions[idx]);
   }
 
   async deleteSession(id: string) {
@@ -213,8 +219,10 @@ export class InMemoryApiAdapter implements ApiPort {
         code: "not_found",
         message: "Not found",
       });
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
     this.sets[idx] = { ...this.sets[idx], ...data };
-    return this.mayFail(this.sets[idx]);
+    return ok(this.sets[idx]);
   }
 
   async deleteSet(_sessionId: string, _exerciseId: string, setId: string) {
@@ -260,12 +268,14 @@ export class InMemoryApiAdapter implements ApiPort {
         code: "not_found",
         message: "Not found",
       });
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
     this.goals[idx] = {
       ...this.goals[idx],
       ...data,
       updatedAt: new Date().toISOString(),
     };
-    return this.mayFail(this.goals[idx]);
+    return ok(this.goals[idx]);
   }
 
   async deleteGoal(id: string) {
