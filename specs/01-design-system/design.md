@@ -83,12 +83,64 @@ export function Button({ label, onPress, variant = 'primary', ... }: ButtonProps
 }
 ```
 
+### Component Library: Tamagui
+
+The V2 uses **Tamagui** as the component library foundation.
+
+**Why Tamagui:**
+
+- **Optimizing compiler** — flattens component trees at build time, minimal runtime overhead
+- **Universal** — web/mobile support, Expo-compatible
+- **Token system** — compiles away at build time for zero-cost theming
+- **Rich primitives** — `Stack`, `Text`, `Button`, `Input`, `Sheet`, `Dialog`, etc.
+
+**Alternatives evaluated:**
+
+| Library              | Verdict                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| gluestack UI         | Good API but heavier runtime — fallback if Tamagui has Expo 53 issues   |
+| NativeWind           | Tailwind familiarity but compile-time config complexity                 |
+| React Native Paper   | Material Design — wrong aesthetic for a fitness app                     |
+| React Native Elements| Good primitives but limited theming, less active maintenance            |
+
+**Usage pattern:**
+
+- Use Tamagui primitives wrapped in our own design-system components
+- Our wrappers add Persistence branding, custom tokens, and domain-specific variants
+- Theme tokens are defined in Tamagui's token system (compiled away at build time)
+- If Tamagui proves too complex for the Expo 53 preview environment, fall back to gluestack UI
+
+### Component Styling Pattern
+
+```typescript
+// src/ui/components/Button.tsx — wraps Tamagui's Button with Persistence variants
+import { Button as TamaguiButton, styled } from 'tamagui';
+
+export const Button = styled(TamaguiButton, {
+  variants: {
+    variant: {
+      primary: { backgroundColor: '$primary500', color: '$white' },
+      secondary: { backgroundColor: '$surface', borderColor: '$primary500', borderWidth: 1 },
+      ghost: { backgroundColor: 'transparent' },
+      danger: { backgroundColor: '$error500' },
+    },
+    size: {
+      sm: { height: 36, paddingHorizontal: '$sm' },
+      md: { height: 44, paddingHorizontal: '$base' },
+      lg: { height: 52, paddingHorizontal: '$lg' },
+    },
+  } as const,
+  defaultVariants: { variant: 'primary', size: 'md' },
+});
+```
+
 ### Migration Notes from Old App
 
-The old `persistence-mobile` used Gluestack UI + NativeWind/Tailwind. The V2 uses:
+The old `persistence-mobile` used Gluestack UI + NativeWind/Tailwind. The V2 replaces this with Tamagui for better build-time optimisation and a cleaner API surface. Tokens from the old app (`constants/colors.ts`, `constants/theme.ts`) should be ported into Tamagui's token system to maintain brand continuity, then evolved.
 
-- **React Native StyleSheet** for performance (no runtime CSS-in-JS)
-- **Theme tokens** as plain objects (no Tailwind dependency)
-- **Components styled inline** via theme hook
+### Design Quality Tooling
 
-This avoids the Tailwind/NativeWind build complexity and reduces bundle size. If Tailwind is later desired, it can wrap these tokens, but the primitives should work without it.
+- Use the `/frontend-design` skill when building any screen or component to ensure high visual quality
+- Run the app locally and take screenshots at milestones to review visual quality
+- Use Expo preview tools or the Claude Preview MCP for visual analysis
+- Reference the old app's theme tokens as a baseline, then evolve

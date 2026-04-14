@@ -26,7 +26,8 @@
       "Bash(ls -la /Users/bradleysimms-evans/Documents/projects/personal/persistence-backend-sst/.git/worktrees/*/index.lock)",
       "Bash(git commit -m ':*)",
       "Bash(rm -f .git/index.lock)",
-      "Bash(git commit -m 'feat: mobile guardrails with hexagonal architecture and quality gates:*)"
+      "Bash(git commit -m 'feat: mobile guardrails with hexagonal architecture and quality gates:*)",
+      "WebFetch(domain:blog.logrocket.com)"
     ]
   }
 }

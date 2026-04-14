@@ -213,6 +213,49 @@ The app is offline-first. All writes go through the sync queue:
 
 ---
 
+## UI/UX Design Quality
+
+Persistence must be a **sexy, clean, modern gym application** that users love to open. Performance alone is not enough — visual design quality is a first-class requirement.
+
+### Design Principles
+
+1. **Premium feel** — dark-first palette, smooth transitions, micro-interactions on key actions (completing sets, hitting PRs, finishing workouts)
+2. **Clarity over density** — generous spacing, clear hierarchy, no cramped screens
+3. **Instant feedback** — every tap produces immediate visual feedback (haptics where supported)
+4. **Gym-floor usable** — large touch targets (min 44pt), high contrast, glanceable data during active sessions
+5. **Progressive disclosure** — simple by default, power features accessible via gestures or secondary UI
+
+### Component Library
+
+Use **Tamagui** as the component library foundation:
+
+- **Why**: Optimizing compiler that flattens component trees at build time, minimal runtime overhead, universal web/mobile support, Expo-compatible
+- **Alternatives evaluated**: gluestack UI (good but heavier runtime), NativeWind (Tailwind familiarity but compile-time config complexity), React Native Paper (Material Design — wrong aesthetic for a fitness app)
+- **Usage**: Use Tamagui primitives (`Stack`, `Text`, `Button`, `Input`, `Sheet`, etc.) wrapped in our own design-system components that add Persistence branding, tokens, and variants
+- **Theme tokens**: Define in Tamagui's token system, which compiles away at build time for zero-cost theming
+
+If Tamagui proves too complex for the Expo 53 preview environment, fall back to **gluestack UI** which has a similar API surface.
+
+### Design Tooling
+
+- Use the `/frontend-design` skill when building any screen or component to ensure high design quality
+- Run the app locally and take screenshots at each milestone to review visual quality
+- Use Expo's built-in preview tools or the Claude Preview MCP for visual analysis
+- Reference the old app's theme tokens (`persistence-mobile/constants/colors.ts`, `constants/theme.ts`) as a baseline, then evolve
+
+### Performance + Aesthetics Checklist
+
+For every screen, verify:
+
+- [ ] 60fps scroll/animation (no jank on `FlatList` or `ScrollView`)
+- [ ] Skeleton loaders for async content (not spinners — skeletons feel faster)
+- [ ] Optimistic UI updates for mutations (don't wait for server)
+- [ ] Image lazy loading with blur-up placeholders where applicable
+- [ ] Consistent enter/exit transitions between screens
+- [ ] Dark mode looks intentional (not just inverted light mode)
+
+---
+
 ## Code Style
 
 - **TypeScript strict mode** — no `any`, no `as` casts without justification
