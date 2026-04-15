@@ -15,6 +15,7 @@ const defaultProps = {
   isLoading: false,
   oauthLoading: null as null,
   error: null as string | null,
+  confirmationSent: false,
 };
 
 describe("SignUpPresenter", () => {
@@ -101,5 +102,15 @@ describe("SignUpPresenter", () => {
       <SignUpPresenter {...defaultProps} isLoading />,
     );
     expect(getByTestId("sign-up-spinner")).toBeTruthy();
+  });
+
+  it("shows confirmation message when confirmationSent is true", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <SignUpPresenter {...defaultProps} confirmationSent />,
+    );
+    expect(getByTestId("confirmation-message")).toBeTruthy();
+    expect(getByTestId("back-to-sign-in")).toBeTruthy();
+    // Form should be hidden
+    expect(queryByTestId("email")).toBeNull();
   });
 });

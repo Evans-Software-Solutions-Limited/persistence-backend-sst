@@ -9,7 +9,10 @@ export type AuthState = {
   isAuthenticated: boolean;
   error: AuthError | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+  ) => Promise<{ confirmationRequired: boolean }>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -65,6 +68,7 @@ export function useAuth(): AuthState {
         finishBootstrap(s);
       } else {
         setSession(s);
+        setError(null);
       }
     });
 
@@ -99,18 +103,28 @@ export function useAuth(): AuthState {
   );
 
   const signUp = useCallback(
-    async (email: string, password: string) => {
+    async (
+      email: string,
+      password: string,
+    ): Promise<{ confirmationRequired: boolean }> => {
       setError(null);
       const result = await auth.signUpWithEmail(email, password);
       if (!result.ok) {
+        // email_confirmation_required is a success — user registered,
+        // just needs to verify email. Don't treat it as an error.
+        if (result.error.code === "email_confirmation_required") {
+          return { confirmationRequired: true };
+        }
         setError(result.error);
         throw new Error(result.error.message);
       }
+      return { confirmationRequired: false };
     },
     [auth],
   );
 
   const signOut = useCallback(async () => {
+    setError(null);
     const result = await auth.signOut();
     if (!result.ok) {
       setError(result.error);

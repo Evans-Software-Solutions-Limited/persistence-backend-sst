@@ -8,7 +8,7 @@ import {
 import { View, Text as TamaguiText } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
 import type { OAuthProvider } from "@/domain/ports/auth.port";
-import { Text, Input, Button, Column, Row } from "@/ui/components";
+import { Text, Input, Button, Column, Row, OAuthButton } from "@/ui/components";
 
 type SignUpPresenterProps = {
   email: string;
@@ -23,6 +23,7 @@ type SignUpPresenterProps = {
   isLoading: boolean;
   oauthLoading: OAuthProvider | null;
   error: string | null;
+  confirmationSent: boolean;
 };
 
 export function SignUpPresenter({
@@ -38,6 +39,7 @@ export function SignUpPresenter({
   isLoading,
   oauthLoading,
   error,
+  confirmationSent,
 }: SignUpPresenterProps) {
   const isAnyLoading = isLoading || oauthLoading !== null;
 
@@ -86,202 +88,184 @@ export function SignUpPresenter({
               </Text>
             </View>
 
-            {/* OAuth */}
-            <Column gap="md">
-              <OAuthButton
-                label="Continue with Google"
-                onPress={() => onOAuth("google")}
-                isLoading={oauthLoading === "google"}
-                isDisabled={isAnyLoading}
-                icon="G"
-                testID="google-oauth"
-              />
-              {Platform.OS === "ios" && (
-                <OAuthButton
-                  label="Continue with Apple"
-                  onPress={() => onOAuth("apple")}
-                  isLoading={oauthLoading === "apple"}
-                  isDisabled={isAnyLoading}
-                  icon={"\uF8FF"}
-                  testID="apple-oauth"
-                />
-              )}
-            </Column>
-
-            {/* Divider */}
-            <Row gap="base" marginVertical="$xl">
-              <View
-                flex={1}
-                height={1}
-                backgroundColor="$borderColor"
-                opacity={0.3}
-              />
-              <TamaguiText
-                fontFamily="$body"
-                fontSize={11}
-                color="$colorMuted"
-                textTransform="uppercase"
-                letterSpacing={3}
-                fontWeight="500"
-              >
-                or
-              </TamaguiText>
-              <View
-                flex={1}
-                height={1}
-                backgroundColor="$borderColor"
-                opacity={0.3}
-              />
-            </Row>
-
-            {/* Error */}
-            {error && (
-              <View
-                backgroundColor="rgba(239, 68, 68, 0.1)"
-                borderRadius="$md"
-                paddingHorizontal="$base"
-                paddingVertical="$md"
-                marginBottom="$base"
-                borderWidth={1}
-                borderColor="rgba(239, 68, 68, 0.2)"
-              >
-                <Text
-                  variant="bodySmall"
-                  color="$error"
-                  align="center"
-                  testID="error-message"
+            {confirmationSent ? (
+              /* Email confirmation success state */
+              <Column gap="lg" alignItems="center">
+                <View
+                  width={64}
+                  height={64}
+                  borderRadius="$full"
+                  backgroundColor="rgba(34, 197, 94, 0.1)"
+                  alignItems="center"
+                  justifyContent="center"
+                  borderWidth={1}
+                  borderColor="rgba(34, 197, 94, 0.2)"
                 >
-                  {error}
+                  <Text variant="h2" color="$success" testID="success-icon">
+                    ✓
+                  </Text>
+                </View>
+                <Text
+                  variant="body"
+                  muted
+                  align="center"
+                  testID="confirmation-message"
+                >
+                  Check your email to confirm your account, then sign in.
                 </Text>
-              </View>
-            )}
+                <View width="100%" marginTop="$base">
+                  <Button
+                    label="Back to Sign In"
+                    onPress={onSignIn}
+                    variant="outline"
+                    fullWidth
+                    size="lg"
+                    testID="back-to-sign-in"
+                  />
+                </View>
+              </Column>
+            ) : (
+              <>
+                {/* OAuth */}
+                <Column gap="md">
+                  <OAuthButton
+                    label="Continue with Google"
+                    onPress={() => onOAuth("google")}
+                    isLoading={oauthLoading === "google"}
+                    isDisabled={isAnyLoading}
+                    icon="G"
+                    testID="google-oauth"
+                  />
+                  {Platform.OS === "ios" && (
+                    <OAuthButton
+                      label="Continue with Apple"
+                      onPress={() => onOAuth("apple")}
+                      isLoading={oauthLoading === "apple"}
+                      isDisabled={isAnyLoading}
+                      icon={"\uF8FF"}
+                      testID="apple-oauth"
+                    />
+                  )}
+                </Column>
 
-            {/* Form */}
-            <Column gap="base">
-              <Input
-                label="Email"
-                placeholder="your@email.com"
-                value={email}
-                onChangeText={onEmailChange}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                testID="email"
-              />
-              <Input
-                label="Password"
-                placeholder="Create a password"
-                value={password}
-                onChangeText={onPasswordChange}
-                secureTextEntry
-                autoComplete="new-password"
-                testID="password"
-              />
-              <Input
-                label="Confirm Password"
-                placeholder="Confirm your password"
-                value={confirmPassword}
-                onChangeText={onConfirmPasswordChange}
-                secureTextEntry
-                autoComplete="new-password"
-                testID="confirm-password"
-              />
-            </Column>
-
-            <View height="$lg" />
-
-            <Button
-              label={isLoading ? "Creating account..." : "Create Account"}
-              onPress={onSubmit}
-              isLoading={isLoading}
-              isDisabled={isAnyLoading}
-              fullWidth
-              size="lg"
-              testID="sign-up"
-            />
-
-            {/* Sign in link */}
-            <View alignItems="center" marginTop="$2xl">
-              <Pressable onPress={onSignIn} testID="sign-in-link" hitSlop={8}>
-                <Row gap="xs">
-                  <Text variant="bodySmall" muted>
-                    Already have an account?
-                  </Text>
-                  <Text variant="bodySmall" color="$primary" fontWeight="600">
-                    Sign In
-                  </Text>
+                {/* Divider */}
+                <Row gap="base" marginVertical="$xl">
+                  <View
+                    flex={1}
+                    height={1}
+                    backgroundColor="$borderColor"
+                    opacity={0.3}
+                  />
+                  <TamaguiText
+                    fontFamily="$body"
+                    fontSize={11}
+                    color="$colorMuted"
+                    textTransform="uppercase"
+                    letterSpacing={3}
+                    fontWeight="500"
+                  >
+                    or
+                  </TamaguiText>
+                  <View
+                    flex={1}
+                    height={1}
+                    backgroundColor="$borderColor"
+                    opacity={0.3}
+                  />
                 </Row>
-              </Pressable>
-            </View>
+
+                {/* Error */}
+                {error && (
+                  <View
+                    backgroundColor="rgba(239, 68, 68, 0.1)"
+                    borderRadius="$md"
+                    paddingHorizontal="$base"
+                    paddingVertical="$md"
+                    marginBottom="$base"
+                    borderWidth={1}
+                    borderColor="rgba(239, 68, 68, 0.2)"
+                  >
+                    <Text
+                      variant="bodySmall"
+                      color="$error"
+                      align="center"
+                      testID="error-message"
+                    >
+                      {error}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Form */}
+                <Column gap="base">
+                  <Input
+                    label="Email"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChangeText={onEmailChange}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    testID="email"
+                  />
+                  <Input
+                    label="Password"
+                    placeholder="Create a password"
+                    value={password}
+                    onChangeText={onPasswordChange}
+                    secureTextEntry
+                    autoComplete="new-password"
+                    testID="password"
+                  />
+                  <Input
+                    label="Confirm Password"
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChangeText={onConfirmPasswordChange}
+                    secureTextEntry
+                    autoComplete="new-password"
+                    testID="confirm-password"
+                  />
+                </Column>
+
+                <View height="$lg" />
+
+                <Button
+                  label={isLoading ? "Creating account..." : "Create Account"}
+                  onPress={onSubmit}
+                  isLoading={isLoading}
+                  isDisabled={isAnyLoading}
+                  fullWidth
+                  size="lg"
+                  testID="sign-up"
+                />
+
+                {/* Sign in link */}
+                <View alignItems="center" marginTop="$2xl">
+                  <Pressable
+                    onPress={onSignIn}
+                    testID="sign-in-link"
+                    hitSlop={8}
+                  >
+                    <Row gap="xs">
+                      <Text variant="bodySmall" muted>
+                        Already have an account?
+                      </Text>
+                      <Text
+                        variant="bodySmall"
+                        color="$primary"
+                        fontWeight="600"
+                      >
+                        Sign In
+                      </Text>
+                    </Row>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
-  );
-}
-
-function OAuthButton({
-  label,
-  onPress,
-  isLoading,
-  isDisabled,
-  icon,
-  testID,
-}: {
-  label: string;
-  onPress: () => void;
-  isLoading: boolean;
-  isDisabled: boolean;
-  icon: string;
-  testID: string;
-}) {
-  return (
-    <View
-      flexDirection="row"
-      alignItems="center"
-      justifyContent="center"
-      height={52}
-      borderRadius="$lg"
-      borderWidth={1}
-      borderColor="$borderColor"
-      backgroundColor="$surface"
-      opacity={isDisabled ? 0.5 : 1}
-      pressStyle={{ opacity: 0.7, scale: 0.98 }}
-      onPress={isDisabled ? undefined : onPress}
-      testID={testID}
-      gap="$md"
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      {isLoading ? (
-        <TamaguiText
-          fontFamily="$body"
-          fontSize={15}
-          color="$colorSecondary"
-          fontWeight="500"
-        >
-          Connecting...
-        </TamaguiText>
-      ) : (
-        <>
-          <TamaguiText
-            fontFamily="$body"
-            fontSize={18}
-            fontWeight="700"
-            color="$color"
-          >
-            {icon}
-          </TamaguiText>
-          <TamaguiText
-            fontFamily="$body"
-            fontSize={15}
-            color="$color"
-            fontWeight="500"
-          >
-            {label}
-          </TamaguiText>
-        </>
-      )}
     </View>
   );
 }

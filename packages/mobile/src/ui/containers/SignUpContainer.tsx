@@ -13,6 +13,7 @@ export function SignUpContainer() {
   const [isLoading, setIsLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmationSent, setConfirmationSent] = useState(false);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -34,7 +35,10 @@ export function SignUpContainer() {
 
     setIsLoading(true);
     try {
-      await signUp(email, password);
+      const { confirmationRequired } = await signUp(email, password);
+      if (confirmationRequired) {
+        setConfirmationSent(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
@@ -75,6 +79,7 @@ export function SignUpContainer() {
       isLoading={isLoading}
       oauthLoading={oauthLoading}
       error={error}
+      confirmationSent={confirmationSent}
     />
   );
 }
