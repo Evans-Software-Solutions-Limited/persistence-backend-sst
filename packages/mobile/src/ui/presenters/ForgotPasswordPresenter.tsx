@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -7,15 +6,9 @@ import {
 } from "react-native";
 import { View } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withDelay,
-  Easing,
-  FadeIn,
-} from "react-native-reanimated";
+import Animated, { FadeIn } from "react-native-reanimated";
 import { Text, Input, Button, Column, Row } from "@/ui/components";
+import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
 type ForgotPasswordPresenterProps = {
   email: string;
@@ -26,32 +19,6 @@ type ForgotPasswordPresenterProps = {
   error: string | null;
   isSuccess: boolean;
 };
-
-const STAGGER = 70;
-const ENTER_DURATION = 420;
-const ENTER_EASING = Easing.out(Easing.cubic);
-
-function useStaggeredEntry(index: number) {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(18);
-
-  useEffect(() => {
-    const delay = index * STAGGER;
-    opacity.value = withDelay(
-      delay,
-      withTiming(1, { duration: ENTER_DURATION, easing: ENTER_EASING }),
-    );
-    translateY.value = withDelay(
-      delay,
-      withTiming(0, { duration: ENTER_DURATION, easing: ENTER_EASING }),
-    );
-  }, [index, opacity, translateY]);
-
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
-}
 
 export function ForgotPasswordPresenter({
   email,

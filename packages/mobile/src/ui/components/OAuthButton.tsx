@@ -7,6 +7,7 @@ type OAuthButtonProps = {
   isDisabled: boolean;
   icon: string;
   testID: string;
+  marginTop?: "none" | "sm" | "md" | "lg" | "xl";
 };
 
 export function OAuthButton({
@@ -16,6 +17,7 @@ export function OAuthButton({
   isDisabled,
   icon,
   testID,
+  marginTop = "none",
 }: OAuthButtonProps) {
   return (
     <View
@@ -23,6 +25,17 @@ export function OAuthButton({
       alignItems="center"
       justifyContent="center"
       height={52}
+      marginTop={
+        marginTop === "none"
+          ? 0
+          : marginTop === "sm"
+            ? 4
+            : marginTop === "md"
+              ? 8
+              : marginTop === "lg"
+                ? 12
+                : 16
+      }
       borderRadius="$lg"
       borderWidth={1}
       borderColor="$borderColor"

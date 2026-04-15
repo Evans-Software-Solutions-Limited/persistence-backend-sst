@@ -95,8 +95,17 @@ export function PLogoDrawLoader({
     return { strokeDashoffset: (1 - local) * PATH_LENGTH_4 };
   });
 
+  // Container sized to match SVG with 20px padding per side
+  const containerSize = size + 40;
+
   return (
-    <View style={styles.container} testID={testID}>
+    <View
+      style={[
+        styles.container,
+        { width: containerSize, height: containerSize },
+      ]}
+      testID={testID}
+    >
       <Svg width={size} height={size} viewBox="0 0 1024 1024">
         <AnimatedPath
           d={PATH_1}
@@ -149,8 +158,6 @@ export function PLogoDrawLoader({
 
 const styles = StyleSheet.create({
   container: {
-    width: 260,
-    height: 260,
     justifyContent: "center",
     alignItems: "center",
   },

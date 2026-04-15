@@ -78,6 +78,9 @@ MockSignUpPresenter.mockImplementation((props) => (
   </View>
 ));
 
+// CI runners can be slow on first Tamagui compilation; extend timeout
+jest.setTimeout(15_000);
+
 describe("SignUpContainer", () => {
   const mockPush = jest.fn();
 
