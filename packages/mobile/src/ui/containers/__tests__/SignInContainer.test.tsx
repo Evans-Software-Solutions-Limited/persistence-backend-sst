@@ -22,6 +22,7 @@ const MockSignInPresenter = jest.mocked(SignInPresenter);
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
+// eslint-disable-next-line import/first
 import { useRouter } from "expo-router";
 const mockUseRouter = jest.mocked(useRouter);
 

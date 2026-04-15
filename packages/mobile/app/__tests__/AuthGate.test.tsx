@@ -33,7 +33,9 @@ jest.mock("../../src/ui/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
+// eslint-disable-next-line import/first
 import RootLayout from "../_layout";
 
 describe("AuthGate", () => {

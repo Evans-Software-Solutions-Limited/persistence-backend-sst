@@ -1,6 +1,5 @@
 import { renderHook, act, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
-import type { AuthSession } from "@/domain/ports/auth.port";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";

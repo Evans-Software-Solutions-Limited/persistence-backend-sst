@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { render, waitFor } from "@testing-library/react-native";
+import { render, waitFor, act } from "@testing-library/react-native";
 import { Text } from "react-native";
 
 import { ThemeProvider } from "../ThemeProvider";
@@ -15,6 +15,10 @@ jest.mock("react-native/Libraries/Utilities/useColorScheme", () => ({
   __esModule: true,
   default: jest.fn(() => "dark"),
 }));
+
+// eslint-disable-next-line import/first
+import useColorScheme from "react-native/Libraries/Utilities/useColorScheme";
+const mockUseColorScheme = jest.mocked(useColorScheme);
 
 function ThemeConsumer({
   onSetPreference,
@@ -84,14 +88,52 @@ describe("ThemeProvider", () => {
         />
       </ThemeProvider>,
     );
-    // Call setThemePreference
-    setPreference!("light");
+    // Call setThemePreference — wrap in act() since it triggers a state update
+    await act(async () => {
+      setPreference!("light");
+    });
     await waitFor(() => {
       expect(AsyncStorage.setItem).toHaveBeenCalledWith(
         "@persistence/theme-preference",
         "light",
       );
     });
+  });
+
+  it("resolves system preference to light when device is light", async () => {
+    mockUseColorScheme.mockReturnValue("light");
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce("system");
+
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("effective").props.children).toBe("light");
+    });
+    expect(getByTestId("isDark").props.children).toBe("false");
+    expect(getByTestId("preference").props.children).toBe("system");
+
+    // Restore dark for other tests
+    mockUseColorScheme.mockReturnValue("dark");
+  });
+
+  it("resolves system preference to dark when device is dark", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce("system");
+
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("preference").props.children).toBe("system");
+    });
+    expect(getByTestId("effective").props.children).toBe("dark");
+    expect(getByTestId("isDark").props.children).toBe("true");
   });
 
   it("handles AsyncStorage read failure gracefully", async () => {
