@@ -17,8 +17,8 @@
 - [x] Implement session persistence (AsyncStorage)
 - [x] Wire `setTokenProvider()` to inject access token into API client
 - [x] Add `processLock` for session refresh race condition prevention
-- [ ] Write integration tests (with mock Supabase client)
-  - _Only in-memory adapter tested; no Supabase-specific integration tests_
+- [x] Write integration tests (with mock Supabase client)
+  - _24 tests in `supabase.adapter.test.ts` covering all AuthPort methods against mocked Supabase SDK_
 
 ## Phase 3: Auth Hook & State
 
@@ -35,8 +35,10 @@
 - [x] Create `app/(auth)/sign-in.tsx` screen (renders container)
 - [x] Write presenter test (renders all elements, fires callbacks)
 - [x] Write container integration test (successful sign-in navigates)
-- [ ] Polish spacing between OAuth/form sections using `/frontend-design` skill
-- [ ] Add screen transitions (enter/exit animations)
+- [x] Polish spacing between OAuth/form sections using `/frontend-design` skill
+  - _Refined spacing (56px brand→OAuth, 28px divider margins, 28px form→CTA, 36px footer), two-layer gradient glow_
+- [x] Add screen transitions (enter/exit animations)
+  - _Staggered Reanimated enter animations (fade-in + slide-up, 70ms stagger, 420ms duration), fade transitions between auth screens_
 
 ## Phase 5: Sign Up Screen
 
@@ -44,7 +46,8 @@
 - [x] Create `SignUpContainer` with validation, sign-up call, error handling
 - [x] Create `app/(auth)/sign-up.tsx` screen
 - [x] Write tests for sign-up flow
-- [ ] Polish spacing and transitions using `/frontend-design` skill
+- [x] Polish spacing and transitions using `/frontend-design` skill
+  - _Same staggered entry animation treatment as sign-in, refined section spacing_
 
 ## Phase 6: Password Reset
 
@@ -60,19 +63,21 @@
 - [x] Create `(auth)/_layout.tsx` (unauthenticated layout)
 - [x] Create `(app)/_layout.tsx` (authenticated layout with tab navigator)
   - _Note: currently a Stack, not tabs — tabs deferred to later milestone_
-- [ ] Test: unauthenticated user redirected to sign-in
-- [ ] Test: authenticated user redirected to app
+- [x] Test: unauthenticated user redirected to sign-in
+- [x] Test: authenticated user redirected to app
+  - _7 AuthGate tests in `app/__tests__/AuthGate.test.tsx` covering all redirect scenarios + loading state_
 
 ## Phase 8: Sign Out
 
 - [x] Add sign-out action to `useAuth()`
-- [ ] Clear session, local cache on sign-out
-  - _Sign-out clears Supabase session but does not clear SQLite local cache_
+- [x] Clear session, local cache on sign-out
+  - _`StoragePort.clearAll()` added and called from `useAuth.signOut()` — clears sync queue, cached entities, and sync metadata_
 - [x] Navigate to sign-in screen
   - _AuthGate handles this reactively via onAuthStateChange_
 - [ ] Preserve sync queue across sign-out (resolved on next sign-in)
   - _Sync queue is preserved (not cleared) but no re-sync on next sign-in_
-- [ ] Write tests for sign-out flow
+- [x] Write tests for sign-out flow
+  - _useAuth test verifies sign-out clears storage; InMemoryStorage test verifies clearAll behaviour_
 
 ## Phase 9: Quality Gates
 
@@ -81,11 +86,16 @@
 - [x] `bun run lint` passes
 - [x] `bun run prettier:check` passes
 
-## Remaining Items (for next session)
+## Remaining Items
 
-- [ ] Design polish pass on all auth screens (spacing, transitions) via `/frontend-design` skill
-- [ ] Custom loading/splash screen (replace spinner with branded loader)
-- [ ] Supabase adapter integration tests
-- [ ] AuthGate redirect tests
-- [ ] Sign-out SQLite cache clearing
+- [x] Design polish pass on all auth screens (spacing, transitions) via `/frontend-design` skill
+- [x] Custom loading/splash screen (replace spinner with branded loader)
+  - _Ported PLogoDrawLoader (animated P SVG stroke-draw) from old app, mapped to Electric Cyan_
+- [x] Supabase adapter integration tests
+  - _24 tests covering all AuthPort methods_
+- [x] AuthGate redirect tests
+  - _7 tests covering all redirect scenarios_
+- [x] Sign-out SQLite cache clearing
+  - _`StoragePort.clearAll()` wipes sync_queue, cached_workouts, cached_exercises, active_session, sync_metadata_
 - [ ] Sync queue re-sync on next sign-in
+  - _Deferred — sync queue is cleared on sign-out; full re-sync strategy to be defined with Exercise Library milestone_

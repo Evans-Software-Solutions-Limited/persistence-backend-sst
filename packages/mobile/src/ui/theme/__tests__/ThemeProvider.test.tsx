@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { render, waitFor, act } from "@testing-library/react-native";
-import { Text } from "react-native";
+import { Text, useColorScheme } from "react-native";
 
 import { ThemeProvider } from "../ThemeProvider";
 import type { ThemePreference } from "../theme.types";
@@ -11,14 +11,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   setItem: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("react-native/Libraries/Utilities/useColorScheme", () => ({
-  __esModule: true,
-  default: jest.fn(() => "dark"),
-}));
-
-// eslint-disable-next-line import/first
-import useColorScheme from "react-native/Libraries/Utilities/useColorScheme";
-const mockUseColorScheme = jest.mocked(useColorScheme);
+const mockUseColorScheme = useColorScheme as jest.Mock;
 
 function ThemeConsumer({
   onSetPreference,
@@ -40,6 +33,7 @@ function ThemeConsumer({
 describe("ThemeProvider", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseColorScheme.mockReturnValue("dark");
   });
 
   it("renders children", () => {
@@ -115,9 +109,6 @@ describe("ThemeProvider", () => {
     });
     expect(getByTestId("isDark").props.children).toBe("false");
     expect(getByTestId("preference").props.children).toBe("system");
-
-    // Restore dark for other tests
-    mockUseColorScheme.mockReturnValue("dark");
   });
 
   it("resolves system preference to dark when device is dark", async () => {
