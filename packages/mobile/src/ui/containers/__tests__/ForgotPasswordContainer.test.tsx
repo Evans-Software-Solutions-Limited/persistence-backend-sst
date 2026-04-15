@@ -1,6 +1,7 @@
 import { render, fireEvent, waitFor, act } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import type { ReactNode } from "react";
+import { View, Text, Pressable, TextInput } from "react-native";
 import config from "../../../../tamagui.config";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -10,12 +11,17 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { StubPaymentsAdapter } from "@/adapters/payments";
 import type { Adapters } from "@/shared/types";
+import { ForgotPasswordPresenter } from "@/ui/presenters/ForgotPasswordPresenter";
 import { ForgotPasswordContainer } from "../ForgotPasswordContainer";
 
-const mockPush = jest.fn();
+jest.mock("@/ui/presenters/ForgotPasswordPresenter");
+const MockForgotPasswordPresenter = jest.mocked(ForgotPasswordPresenter);
+
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
+import { useRouter } from "expo-router";
+const mockUseRouter = jest.mocked(useRouter);
 
 function createTestAdapters(): {
   adapters: Adapters;
@@ -47,9 +53,29 @@ function TestWrapper({
   );
 }
 
+MockForgotPasswordPresenter.mockImplementation((props) => (
+  <View testID="forgot-password-screen">
+    <TextInput
+      testID="email-input"
+      value={props.email}
+      onChangeText={props.onEmailChange}
+    />
+    <Pressable testID="submit" onPress={props.onSubmit} />
+    <Pressable testID="back-to-sign-in-link" onPress={props.onBackToSignIn} />
+    {props.error && <Text testID="error-message">{props.error}</Text>}
+    {props.isSuccess && <Text testID="success-message" />}
+  </View>
+));
+
 describe("ForgotPasswordContainer", () => {
+  const mockPush = jest.fn();
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
+    mockUseRouter.mockReturnValue({
+      push: mockPush,
+    } as unknown as ReturnType<typeof useRouter>);
   });
 
   it("renders forgot-password screen", async () => {
@@ -95,7 +121,7 @@ describe("ForgotPasswordContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
@@ -120,7 +146,7 @@ describe("ForgotPasswordContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
@@ -147,7 +173,7 @@ describe("ForgotPasswordContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");

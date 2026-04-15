@@ -1,6 +1,7 @@
 import { render, fireEvent, waitFor, act } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import type { ReactNode } from "react";
+import { View, Text, Pressable, TextInput } from "react-native";
 import config from "../../../../tamagui.config";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -10,12 +11,19 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { StubPaymentsAdapter } from "@/adapters/payments";
 import type { Adapters } from "@/shared/types";
+import { SignInPresenter } from "@/ui/presenters/SignInPresenter";
 import { SignInContainer } from "../SignInContainer";
 
-const mockPush = jest.fn();
+// Mock the presenter so container tests only test logic, not UI rendering
+jest.mock("@/ui/presenters/SignInPresenter");
+const MockSignInPresenter = jest.mocked(SignInPresenter);
+
+// Mock expo-router
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
+import { useRouter } from "expo-router";
+const mockUseRouter = jest.mocked(useRouter);
 
 function createTestAdapters(): {
   adapters: Adapters;
@@ -47,9 +55,36 @@ function TestWrapper({
   );
 }
 
+// Stub presenter that exposes props via testIDs for interaction
+MockSignInPresenter.mockImplementation((props) => (
+  <View testID="sign-in-screen">
+    <TextInput
+      testID="email-input"
+      value={props.email}
+      onChangeText={props.onEmailChange}
+    />
+    <TextInput
+      testID="password-input"
+      value={props.password}
+      onChangeText={props.onPasswordChange}
+    />
+    <Pressable testID="sign-in" onPress={props.onSubmit} />
+    <Pressable testID="google-oauth" onPress={() => props.onOAuth("google")} />
+    <Pressable testID="forgot-password-link" onPress={props.onForgotPassword} />
+    <Pressable testID="sign-up-link" onPress={props.onSignUp} />
+    {props.error && <Text testID="error-message">{props.error}</Text>}
+  </View>
+));
+
 describe("SignInContainer", () => {
+  const mockPush = jest.fn();
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
+    mockUseRouter.mockReturnValue({
+      push: mockPush,
+    } as unknown as ReturnType<typeof useRouter>);
   });
 
   it("renders sign-in screen", async () => {
@@ -88,7 +123,6 @@ describe("SignInContainer", () => {
 
   it("shows error when sign-in fails", async () => {
     const { adapters, auth } = createTestAdapters();
-    auth.shouldFail = true;
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -97,11 +131,13 @@ describe("SignInContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
     fireEvent.changeText(getByTestId("password-input"), "password");
+
+    auth.shouldFail = true;
 
     await act(async () => {
       fireEvent.press(getByTestId("sign-in"));
@@ -137,7 +173,6 @@ describe("SignInContainer", () => {
 
   it("shows fallback error when sign-in throws non-Error", async () => {
     const { adapters, auth } = createTestAdapters();
-    // Override signInWithEmail to throw a string (non-Error)
     auth.signInWithEmail = async () => {
       throw "unexpected";
     };
@@ -149,7 +184,7 @@ describe("SignInContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");

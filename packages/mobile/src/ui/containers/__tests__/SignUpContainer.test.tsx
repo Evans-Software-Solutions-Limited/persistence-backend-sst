@@ -1,6 +1,7 @@
 import { render, fireEvent, waitFor, act } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import type { ReactNode } from "react";
+import { View, Text, Pressable, TextInput } from "react-native";
 import config from "../../../../tamagui.config";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -10,12 +11,17 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { StubPaymentsAdapter } from "@/adapters/payments";
 import type { Adapters } from "@/shared/types";
+import { SignUpPresenter } from "@/ui/presenters/SignUpPresenter";
 import { SignUpContainer } from "../SignUpContainer";
 
-const mockPush = jest.fn();
+jest.mock("@/ui/presenters/SignUpPresenter");
+const MockSignUpPresenter = jest.mocked(SignUpPresenter);
+
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
+import { useRouter } from "expo-router";
+const mockUseRouter = jest.mocked(useRouter);
 
 function createTestAdapters(): {
   adapters: Adapters;
@@ -47,9 +53,40 @@ function TestWrapper({
   );
 }
 
+MockSignUpPresenter.mockImplementation((props) => (
+  <View testID="sign-up-screen">
+    <TextInput
+      testID="email-input"
+      value={props.email}
+      onChangeText={props.onEmailChange}
+    />
+    <TextInput
+      testID="password-input"
+      value={props.password}
+      onChangeText={props.onPasswordChange}
+    />
+    <TextInput
+      testID="confirm-password-input"
+      value={props.confirmPassword}
+      onChangeText={props.onConfirmPasswordChange}
+    />
+    <Pressable testID="sign-up" onPress={props.onSubmit} />
+    <Pressable testID="google-oauth" onPress={() => props.onOAuth("google")} />
+    <Pressable testID="sign-in-link" onPress={props.onSignIn} />
+    {props.error && <Text testID="error-message">{props.error}</Text>}
+    {props.confirmationSent && <Text testID="confirmation-message" />}
+  </View>
+));
+
 describe("SignUpContainer", () => {
+  const mockPush = jest.fn();
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockClear();
+    mockUseRouter.mockReturnValue({
+      push: mockPush,
+    } as unknown as ReturnType<typeof useRouter>);
   });
 
   it("renders sign-up screen", async () => {
@@ -95,7 +132,7 @@ describe("SignUpContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
@@ -123,7 +160,7 @@ describe("SignUpContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
@@ -141,7 +178,6 @@ describe("SignUpContainer", () => {
 
   it("shows error when sign-up fails", async () => {
     const { adapters, auth } = createTestAdapters();
-    auth.shouldFail = true;
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -150,12 +186,14 @@ describe("SignUpContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
     fireEvent.changeText(getByTestId("password-input"), "password123");
     fireEvent.changeText(getByTestId("confirm-password-input"), "password123");
+
+    auth.shouldFail = true;
 
     await act(async () => {
       fireEvent.press(getByTestId("sign-up"));
@@ -179,7 +217,7 @@ describe("SignUpContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("email")).toBeTruthy();
+      expect(getByTestId("email-input")).toBeTruthy();
     });
 
     fireEvent.changeText(getByTestId("email-input"), "test@example.com");
@@ -240,6 +278,41 @@ describe("SignUpContainer", () => {
 
     await waitFor(() => {
       expect(getByTestId("error-message")).toBeTruthy();
+    });
+  });
+
+  it("shows confirmation message when email confirmation required", async () => {
+    const { adapters, auth } = createTestAdapters();
+    // Simulate Supabase requiring email confirmation
+    auth.signUpWithEmail = async () => ({
+      ok: false as const,
+      error: {
+        kind: "auth" as const,
+        code: "email_confirmation_required" as const,
+        message: "Check your email for confirmation",
+      },
+    });
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <SignUpContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("email-input")).toBeTruthy();
+    });
+
+    fireEvent.changeText(getByTestId("email-input"), "test@example.com");
+    fireEvent.changeText(getByTestId("password-input"), "password123");
+    fireEvent.changeText(getByTestId("confirm-password-input"), "password123");
+
+    await act(async () => {
+      fireEvent.press(getByTestId("sign-up"));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("confirmation-message")).toBeTruthy();
     });
   });
 
