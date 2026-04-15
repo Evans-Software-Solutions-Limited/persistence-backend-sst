@@ -20,6 +20,12 @@
       "port": 8081
     },
     {
+      "name": "Mobile Web (Expo)",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@persistence/mobile", "web", "--", "--port", "8082"],
+      "port": 8082
+    },
+    {
       "name": "Drizzle Studio",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "--filter", "@persistence/db", "db:studio"],

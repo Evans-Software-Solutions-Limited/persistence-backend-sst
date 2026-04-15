@@ -13,9 +13,10 @@ function AuthGate() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inAppGroup = segments[0] === "(app)";
 
-    if (session && inAuthGroup) {
-      // Signed in but on auth screen — go to app
+    if (session && !inAppGroup) {
+      // Signed in but not in app (auth screen or root) — go to app
       router.replace("/(app)");
     } else if (!session && !inAuthGroup) {
       // Not signed in and not on auth screen — go to sign-in

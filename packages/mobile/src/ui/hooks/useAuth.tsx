@@ -6,10 +6,13 @@ import { useAdapters } from "./useAdapters";
 export type AuthState = {
   session: AuthSession | null;
   isLoading: boolean;
+  isAuthenticated: boolean;
   error: AuthError | null;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 };
 
 /**
@@ -23,30 +26,52 @@ export function useAuth(): AuthState {
   const [error, setError] = useState<AuthError | null>(null);
 
   useEffect(() => {
-    // Bootstrap: get existing session
+    let bootstrapped = false;
+
+    function finishBootstrap(s: AuthSession | null, err?: AuthError) {
+      if (bootstrapped) return;
+      bootstrapped = true;
+      setSession(s);
+      if (err) setError(err);
+      setIsLoading(false);
+    }
+
+    // Bootstrap: read persisted session. Race against a timeout so a
+    // hanging network refresh (expired token + bad connectivity) can
+    // never keep the app stuck on the loading spinner.
     auth
       .getSession()
       .then((result) => {
         if (result.ok) {
-          setSession(result.value);
+          finishBootstrap(result.value);
         } else {
-          setError(result.error);
+          finishBootstrap(null, result.error);
         }
       })
-      .catch((err) => {
-        console.error("[useAuth] getSession failed:", err);
-      })
-      .finally(() => {
-        setIsLoading(false);
+      .catch(() => {
+        finishBootstrap(null);
       });
 
-    // Listen for auth changes
+    // Hard timeout — if getSession() hangs (e.g. Supabase trying to
+    // refresh an expired token over a slow network), force-resolve
+    // loading after 3 seconds so the app remains usable.
+    const timeout = setTimeout(() => finishBootstrap(null), 3000);
+
+    // Reactive listener for auth changes after bootstrap (sign-in,
+    // sign-out, token refresh). Also picks up INITIAL_SESSION if it
+    // fires after subscription (handles the race with getSession).
     const unsubscribe = auth.onAuthStateChange((s) => {
-      setSession(s);
-      setError(null);
+      if (!bootstrapped) {
+        finishBootstrap(s);
+      } else {
+        setSession(s);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [auth]);
 
   const signIn = useCallback(
@@ -73,6 +98,18 @@ export function useAuth(): AuthState {
     [auth],
   );
 
+  const signUp = useCallback(
+    async (email: string, password: string) => {
+      setError(null);
+      const result = await auth.signUpWithEmail(email, password);
+      if (!result.ok) {
+        setError(result.error);
+        throw new Error(result.error.message);
+      }
+    },
+    [auth],
+  );
+
   const signOut = useCallback(async () => {
     const result = await auth.signOut();
     if (!result.ok) {
@@ -81,5 +118,27 @@ export function useAuth(): AuthState {
     }
   }, [auth]);
 
-  return { session, isLoading, error, signIn, signInWithOAuth, signOut };
+  const resetPassword = useCallback(
+    async (email: string) => {
+      setError(null);
+      const result = await auth.resetPassword(email);
+      if (!result.ok) {
+        setError(result.error);
+        throw new Error(result.error.message);
+      }
+    },
+    [auth],
+  );
+
+  return {
+    session,
+    isLoading,
+    isAuthenticated: session !== null,
+    error,
+    signIn,
+    signUp,
+    signInWithOAuth,
+    signOut,
+    resetPassword,
+  };
 }

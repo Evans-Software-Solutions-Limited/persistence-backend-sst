@@ -62,7 +62,7 @@
       "<rootDir>/__tests__/setup.ts"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|tamagui|@tamagui|react-native-reanimated|react-native-worklets)/)"
+      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|tamagui|@tamagui|react-native-reanimated|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"

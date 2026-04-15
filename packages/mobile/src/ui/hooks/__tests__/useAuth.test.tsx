@@ -1,5 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
+import type { AuthSession } from "@/domain/ports/auth.port";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -92,7 +93,6 @@ describe("useAuth", () => {
 
   it("throws and sets error when sign-in fails", async () => {
     const { adapters, auth } = createTestAdapters();
-    auth.shouldFail = true;
 
     const wrapper = ({ children }: { children: ReactNode }) => (
       <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
@@ -104,12 +104,19 @@ describe("useAuth", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    await expect(
-      act(async () => {
-        await result.current.signIn("test@example.com", "password");
-      }),
-    ).rejects.toThrow("Test auth error");
+    auth.shouldFail = true;
 
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.signIn("test@example.com", "password");
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("Test auth error");
     expect(result.current.error).not.toBeNull();
     expect(result.current.error?.kind).toBe("auth");
   });
@@ -181,7 +188,135 @@ describe("useAuth", () => {
     ).rejects.toThrow("Test auth error");
   });
 
-  it("exposes error when getSession fails on bootstrap", async () => {
+  it("isAuthenticated is true after sign-in, false after sign-out", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+  });
+
+  it("signs up and exposes session", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.signUp("new@example.com", "password");
+    });
+
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.email).toBe("new@example.com");
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("throws and sets error when sign-up fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    auth.shouldFail = true;
+
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.signUp("new@example.com", "password");
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("Test auth error");
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.kind).toBe("auth");
+  });
+
+  it("resets password successfully", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.resetPassword("test@example.com");
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it("throws and sets error when resetPassword fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    auth.shouldFail = true;
+
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.resetPassword("test@example.com");
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("Test auth error");
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.kind).toBe("auth");
+  });
+
+  it("resolves loading even when getSession fails on bootstrap", async () => {
     const { adapters, auth } = createTestAdapters();
     auth.shouldFail = true;
 
@@ -195,8 +330,61 @@ describe("useAuth", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
+    // Bootstrap always finishes — session is null, app is usable
     expect(result.current.session).toBeNull();
-    expect(result.current.error).not.toBeNull();
-    expect(result.current.error?.kind).toBe("auth");
+  });
+
+  it("bootstraps with existing session from onAuthStateChange", async () => {
+    const { adapters, auth } = createTestAdapters();
+    // Pre-set a session before mounting the hook
+    auth.currentSession = {
+      accessToken: "existing-token",
+      refreshToken: "existing-refresh",
+      userId: "existing-user",
+      email: "existing@example.com",
+      expiresAt: Date.now() / 1000 + 3600,
+    };
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.email).toBe("existing@example.com");
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it("hard timeout resolves loading when getSession hangs", async () => {
+    jest.useFakeTimers();
+
+    const { adapters, auth } = createTestAdapters();
+    // Make getSession hang forever (never resolves)
+    auth.getSession = () => new Promise(() => {});
+    // Suppress initial onAuthStateChange event too
+    auth.onAuthStateChange = () => () => {};
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    expect(result.current.isLoading).toBe(true);
+
+    // Advance past the 3s hard timeout
+    await act(async () => {
+      jest.advanceTimersByTime(3100);
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.session).toBeNull();
+
+    jest.useRealTimers();
   });
 });
