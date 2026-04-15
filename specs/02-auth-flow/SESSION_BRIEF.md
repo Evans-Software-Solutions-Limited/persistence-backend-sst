@@ -56,15 +56,15 @@ Check `specs/03-exercise-library/` for requirements and tasks.
 
 ## Key files
 
-| File | What |
-|------|------|
-| `src/ui/presenters/SignInPresenter.tsx` | Sign-in UI (needs spacing polish) |
-| `src/ui/presenters/SignUpPresenter.tsx` | Sign-up UI (needs spacing polish) |
-| `src/ui/presenters/ForgotPasswordPresenter.tsx` | Forgot password UI |
-| `src/ui/containers/SignIn/Up/ForgotPasswordContainer.tsx` | Auth screen logic |
-| `src/ui/hooks/useAuth.tsx` | Auth state hook (complete) |
-| `src/adapters/auth/supabase.adapter.ts` | Supabase auth adapter |
-| `app/_layout.tsx` | AuthGate with route protection |
-| `app/(auth)/sign-in.tsx` | Thin screen wrapper |
-| `specs/02-auth-flow/tasks.md` | Task checklist with completion status |
-| `specs/_agent.md` | Architecture constraints (must read) |
+| File                                                      | What                                  |
+| --------------------------------------------------------- | ------------------------------------- |
+| `src/ui/presenters/SignInPresenter.tsx`                   | Sign-in UI (needs spacing polish)     |
+| `src/ui/presenters/SignUpPresenter.tsx`                   | Sign-up UI (needs spacing polish)     |
+| `src/ui/presenters/ForgotPasswordPresenter.tsx`           | Forgot password UI                    |
+| `src/ui/containers/SignIn/Up/ForgotPasswordContainer.tsx` | Auth screen logic                     |
+| `src/ui/hooks/useAuth.tsx`                                | Auth state hook (complete)            |
+| `src/adapters/auth/supabase.adapter.ts`                   | Supabase auth adapter                 |
+| `app/_layout.tsx`                                         | AuthGate with route protection        |
+| `app/(auth)/sign-in.tsx`                                  | Thin screen wrapper                   |
+| `specs/02-auth-flow/tasks.md`                             | Task checklist with completion status |
+| `specs/_agent.md`                                         | Architecture constraints (must read)  |

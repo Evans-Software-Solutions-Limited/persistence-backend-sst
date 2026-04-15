@@ -22,7 +22,15 @@
     {
       "name": "Mobile Web (Expo)",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "--filter", "@persistence/mobile", "web", "--", "--port", "8082"],
+      "runtimeArgs": [
+        "run",
+        "--filter",
+        "@persistence/mobile",
+        "web",
+        "--",
+        "--port",
+        "8082"
+      ],
       "port": 8082
     },
     {
