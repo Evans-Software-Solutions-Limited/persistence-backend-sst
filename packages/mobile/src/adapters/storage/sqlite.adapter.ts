@@ -178,6 +178,17 @@ export class SQLiteStorageAdapter implements StoragePort {
       [entityType, timestamp, timestamp],
     );
   }
+
+  clearAll(): void {
+    const db = this.getDb();
+    db.execSync(`
+      DELETE FROM sync_queue;
+      DELETE FROM cached_workouts;
+      DELETE FROM cached_exercises;
+      DELETE FROM active_session;
+      DELETE FROM sync_metadata;
+    `);
+  }
 }
 
 function mapRow(row: Record<string, unknown>): SyncQueueEntry {

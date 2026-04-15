@@ -83,6 +83,12 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.metadata.set(entityType, timestamp);
   }
 
+  clearAll(): void {
+    this.queue = [];
+    this.metadata.clear();
+    this.nextId = 1;
+  }
+
   private updateStatus(id: number, status: SyncStatus): void {
     const entry = this.queue.find((e) => e.id === id);
     if (entry) entry.status = status;
