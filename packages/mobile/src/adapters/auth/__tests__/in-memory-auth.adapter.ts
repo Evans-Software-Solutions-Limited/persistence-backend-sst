@@ -83,7 +83,14 @@ export class InMemoryAuthAdapter implements AuthPort {
     callback: (session: AuthSession | null) => void,
   ): () => void {
     this.listeners.push(callback);
+    // Mirror Supabase v2 INITIAL_SESSION behavior — fire immediately with
+    // the current session so consumers can bootstrap without getSession().
+    let subscribed = true;
+    queueMicrotask(() => {
+      if (subscribed) callback(this.currentSession);
+    });
     return () => {
+      subscribed = false;
       this.listeners = this.listeners.filter((cb) => cb !== callback);
     };
   }

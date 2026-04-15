@@ -31,9 +31,23 @@ describe("InMemoryAuthAdapter", () => {
     if (result.ok) expect(result.value).toBeNull();
   });
 
+  it("fires initial session event on subscribe", async () => {
+    const listener = jest.fn();
+    auth.onAuthStateChange(listener);
+
+    // Initial event fires via microtask
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(null);
+  });
+
   it("notifies listeners on auth state change", async () => {
     const listener = jest.fn();
     auth.onAuthStateChange(listener);
+
+    // Wait for initial event
+    await Promise.resolve();
+    listener.mockClear();
 
     await auth.signInWithEmail("test@example.com", "password");
     expect(listener).toHaveBeenCalledTimes(1);
@@ -51,6 +65,8 @@ describe("InMemoryAuthAdapter", () => {
     const unsubscribe = auth.onAuthStateChange(listener);
 
     unsubscribe();
+    // Wait for microtask — should NOT fire since we unsubscribed
+    await Promise.resolve();
     await auth.signInWithEmail("test@example.com", "password");
     expect(listener).not.toHaveBeenCalled();
   });

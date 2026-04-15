@@ -18,6 +18,14 @@ jest.mock("react-native-reanimated", () => {
   };
 });
 
+// Mock expo-linear-gradient (native module, not available in Jest)
+jest.mock("expo-linear-gradient", () => {
+  const View = require("react-native").View;
+  return {
+    LinearGradient: View,
+  };
+});
+
 // Mock expo-web-browser (used by OAuth flow)
 jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),

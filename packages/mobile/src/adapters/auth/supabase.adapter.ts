@@ -1,5 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  processLock,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -52,6 +56,7 @@ export class SupabaseAuthAdapter implements AuthPort {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+        lock: processLock,
       },
     });
 
