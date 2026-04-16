@@ -63,8 +63,7 @@ export function filterExercises(
       // Sort by score descending, then alphabetically for ties
       scored.sort(
         (a, b) =>
-          b.score - a.score ||
-          a.exercise.name.localeCompare(b.exercise.name),
+          b.score - a.score || a.exercise.name.localeCompare(b.exercise.name),
       );
       result = scored.map((s) => s.exercise);
     }

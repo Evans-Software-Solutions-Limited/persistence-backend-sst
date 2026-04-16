@@ -328,7 +328,9 @@ describe("filterExercises", () => {
 // -- validateExerciseInput --
 
 describe("validateExerciseInput", () => {
-  function validInput(overrides: Partial<CreateExerciseInput> = {}): CreateExerciseInput {
+  function validInput(
+    overrides: Partial<CreateExerciseInput> = {},
+  ): CreateExerciseInput {
     return {
       name: "Bulgarian Split Squat",
       category: "strength",
@@ -425,9 +427,7 @@ describe("validateExerciseInput", () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.fields.difficulty).toBe(
-          "Invalid difficulty level",
-        );
+        expect(result.error.fields.difficulty).toBe("Invalid difficulty level");
       }
     });
 
