@@ -2,22 +2,22 @@
 
 ## Phase 1: Domain
 
-- [ ] Create `Exercise` model and related types (`src/domain/models/exercise.ts`)
-- [ ] Create `ExerciseFilters` type
-- [ ] Create `CreateExerciseInput` validation type
-- [ ] Create exercise domain service: `filterExercises(exercises, filters)` pure function
-- [ ] Create exercise domain service: `validateExerciseInput(input)` pure function
-- [ ] Write tests for filter logic (each filter type, combined filters)
-- [ ] Write tests for validation (required fields, valid enums)
+- [x] Create `Exercise` model and related types (`src/domain/models/exercise.ts`)
+- [x] Create `ExerciseFilters` type
+- [x] Create `CreateExerciseInput` validation type
+- [x] Create exercise domain service: `filterExercises(exercises, filters)` pure function
+- [x] Create exercise domain service: `validateExerciseInput(input)` pure function
+- [x] Write tests for filter logic (each filter type, combined filters)
+- [x] Write tests for validation (required fields, valid enums)
 
 ## Phase 2: Ports & Adapters
 
-- [ ] Extend `ApiPort` with exercise methods
-- [ ] Extend `StoragePort` with exercise cache methods
-- [ ] Implement exercise methods in SST API adapter
-- [ ] Implement exercise cache in SQLite adapter (create exercises table, indexes)
-- [ ] Implement in-memory adapters for tests
-- [ ] Write adapter tests
+- [x] Extend `ApiPort` with exercise methods
+- [x] Extend `StoragePort` with exercise cache methods
+- [x] Implement exercise methods in SST API adapter
+- [x] Implement exercise cache in SQLite adapter (create exercises table, indexes)
+- [x] Implement in-memory adapters for tests
+- [x] Write adapter tests
 
 ## Phase 3: Application Layer
 

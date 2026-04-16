@@ -1,4 +1,20 @@
 import { InMemoryStorageAdapter } from "./in-memory-storage.adapter";
+import type { Exercise } from "@/domain/models/exercise";
+
+const buildExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
+  id: overrides.id ?? "e1",
+  name: "Bench Press",
+  description: null,
+  instructions: null,
+  category: "strength",
+  difficulty: "intermediate",
+  primaryMuscleGroups: ["chest"],
+  secondaryMuscleGroups: [],
+  equipment: ["barbell"],
+  isCustom: false,
+  createdBy: null,
+  ...overrides,
+});
 
 describe("InMemoryStorageAdapter", () => {
   let storage: InMemoryStorageAdapter;
@@ -142,6 +158,86 @@ describe("InMemoryStorageAdapter", () => {
         failed: 0,
         inFlight: 0,
       });
+    });
+
+    it("clears the exercise cache", () => {
+      storage.cacheExercises([buildExercise({ id: "e1" })]);
+      expect(storage.getCachedExercises()).toHaveLength(1);
+
+      storage.clearAll();
+      expect(storage.getCachedExercises()).toHaveLength(0);
+      expect(storage.getExerciseCacheAge()).toBeNull();
+    });
+  });
+
+  describe("exercise cache", () => {
+    it("returns empty array and null cache age when empty", () => {
+      expect(storage.getCachedExercises()).toEqual([]);
+      expect(storage.getExerciseCacheAge()).toBeNull();
+      expect(storage.getCachedExercise("nope")).toBeNull();
+    });
+
+    it("caches a batch of exercises and retrieves them", () => {
+      storage.cacheExercises([
+        buildExercise({ id: "e1", name: "Bench Press" }),
+        buildExercise({
+          id: "e2",
+          name: "Back Squat",
+          primaryMuscleGroups: ["quadriceps"],
+        }),
+      ]);
+
+      const all = storage.getCachedExercises();
+      expect(all).toHaveLength(2);
+      expect(all.map((e) => e.id).sort()).toEqual(["e1", "e2"]);
+    });
+
+    it("upserts on cacheExercises (updates existing by id)", () => {
+      storage.cacheExercises([buildExercise({ id: "e1", name: "Original" })]);
+      storage.cacheExercises([buildExercise({ id: "e1", name: "Updated" })]);
+
+      const all = storage.getCachedExercises();
+      expect(all).toHaveLength(1);
+      expect(all[0].name).toBe("Updated");
+    });
+
+    it("applies filters to cached exercises", () => {
+      storage.cacheExercises([
+        buildExercise({ id: "e1", name: "Bench Press" }),
+        buildExercise({
+          id: "e2",
+          name: "Back Squat",
+          primaryMuscleGroups: ["quadriceps"],
+          equipment: ["barbell"],
+        }),
+      ]);
+
+      const filtered = storage.getCachedExercises({
+        muscleGroups: ["quadriceps"],
+      });
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].id).toBe("e2");
+    });
+
+    it("gets a single cached exercise by id", () => {
+      storage.cacheExercises([buildExercise({ id: "e1" })]);
+      expect(storage.getCachedExercise("e1")?.id).toBe("e1");
+      expect(storage.getCachedExercise("missing")).toBeNull();
+    });
+
+    it("reports cache age as earliest synced_at", () => {
+      storage.cacheExercises([buildExercise({ id: "e1" })]);
+      const age = storage.getExerciseCacheAge();
+      expect(age).not.toBeNull();
+      expect(Date.parse(age as string)).not.toBeNaN();
+    });
+
+    it("saveCustomExercise tags exercise as custom and stores it", () => {
+      storage.saveCustomExercise(
+        buildExercise({ id: "custom-1", isCustom: false }),
+      );
+      const stored = storage.getCachedExercise("custom-1");
+      expect(stored?.isCustom).toBe(true);
     });
   });
 });

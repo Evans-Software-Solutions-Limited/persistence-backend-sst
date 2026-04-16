@@ -1,3 +1,5 @@
+import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   SyncQueueEntry,
@@ -13,6 +15,8 @@ import type { SyncStatus } from "@/domain/ports/sync.types";
 export class InMemoryStorageAdapter implements StoragePort {
   private queue: SyncQueueEntry[] = [];
   private metadata: Map<string, string> = new Map();
+  private exerciseCache: Map<string, { exercise: Exercise; syncedAt: string }> =
+    new Map();
   private nextId = 1;
 
   async initialize(): Promise<void> {
@@ -83,9 +87,43 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.metadata.set(entityType, timestamp);
   }
 
+  getCachedExercises(filters?: ExerciseFilters): Exercise[] {
+    const all = Array.from(this.exerciseCache.values()).map((v) => v.exercise);
+    if (!filters) return all;
+    return filterExercises(all, filters);
+  }
+
+  cacheExercises(exercises: Exercise[]): void {
+    const now = new Date().toISOString();
+    for (const exercise of exercises) {
+      this.exerciseCache.set(exercise.id, { exercise, syncedAt: now });
+    }
+  }
+
+  getCachedExercise(id: string): Exercise | null {
+    return this.exerciseCache.get(id)?.exercise ?? null;
+  }
+
+  getExerciseCacheAge(): string | null {
+    if (this.exerciseCache.size === 0) return null;
+    let oldest: string | null = null;
+    for (const { syncedAt } of this.exerciseCache.values()) {
+      if (oldest === null || syncedAt < oldest) oldest = syncedAt;
+    }
+    return oldest;
+  }
+
+  saveCustomExercise(exercise: Exercise): void {
+    this.exerciseCache.set(exercise.id, {
+      exercise: { ...exercise, isCustom: true },
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
+    this.exerciseCache.clear();
     this.nextId = 1;
   }
 

@@ -1,4 +1,6 @@
 import * as SQLite from "expo-sqlite";
+import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   EnqueueMutationInput,
@@ -77,6 +79,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
     `);
   }
 
@@ -176,6 +179,60 @@ export class SQLiteStorageAdapter implements StoragePort {
       `INSERT INTO sync_metadata (entity_type, last_synced_at) VALUES (?, ?)
        ON CONFLICT(entity_type) DO UPDATE SET last_synced_at = ?, sync_version = sync_version + 1`,
       [entityType, timestamp, timestamp],
+    );
+  }
+
+  // -- Exercise Cache --
+
+  getCachedExercises(filters?: ExerciseFilters): Exercise[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(`SELECT data FROM cached_exercises`) as {
+      data: string;
+    }[];
+
+    const exercises = rows.map((row) => JSON.parse(row.data) as Exercise);
+    if (!filters) return exercises;
+    return filterExercises(exercises, filters);
+  }
+
+  cacheExercises(exercises: Exercise[]): void {
+    if (exercises.length === 0) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      for (const exercise of exercises) {
+        db.runSync(
+          `INSERT INTO cached_exercises (id, data, synced_at) VALUES (?, ?, datetime('now'))
+           ON CONFLICT(id) DO UPDATE SET data = excluded.data, synced_at = excluded.synced_at`,
+          [exercise.id, JSON.stringify(exercise)],
+        );
+      }
+    });
+  }
+
+  getCachedExercise(id: string): Exercise | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT data FROM cached_exercises WHERE id = ? LIMIT 1`,
+      [id],
+    ) as { data: string }[];
+    if (rows.length === 0) return null;
+    return JSON.parse(rows[0].data) as Exercise;
+  }
+
+  getExerciseCacheAge(): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT MIN(synced_at) as oldest FROM cached_exercises`,
+    ) as { oldest: string | null }[];
+    return rows[0]?.oldest ?? null;
+  }
+
+  saveCustomExercise(exercise: Exercise): void {
+    const db = this.getDb();
+    db.runSync(
+      `INSERT INTO cached_exercises (id, data, synced_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, synced_at = excluded.synced_at`,
+      [exercise.id, JSON.stringify({ ...exercise, isCustom: true })],
     );
   }
 

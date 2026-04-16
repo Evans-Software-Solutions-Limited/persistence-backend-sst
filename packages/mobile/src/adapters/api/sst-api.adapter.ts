@@ -1,5 +1,14 @@
 import Constants from "expo-constants";
 import type {
+  CreateExerciseInput,
+  EquipmentType,
+  Exercise,
+  ExerciseCategory,
+  ExerciseDifficulty,
+  ExerciseFilters,
+  MuscleGroup,
+} from "@/domain/models/exercise";
+import type {
   ApiPort,
   ApiProfile,
   ApiWorkout,
@@ -14,7 +23,7 @@ import type {
   CreateGoalInput,
 } from "@/domain/ports/api.port";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
-import type { PaginationParams } from "@/shared/types";
+import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -219,12 +228,53 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   // -- Exercises --
-  async getExercises(params?: PaginationParams) {
-    return this.requestEnvelope<ApiExercise[]>("/exercises", { params });
+  async getExercises(
+    filters?: ExerciseFilters,
+    cursor?: string,
+  ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
+    const params = buildExerciseQueryParams(filters, cursor);
+    const result = await this.requestEnvelope<ApiExercisesPage>("/exercises", {
+      params,
+    });
+    if (!result.ok) return result;
+    return ok({
+      data: result.value.data.map(mapApiExerciseToDomain),
+      cursor: result.value.cursor ?? null,
+      hasMore: result.value.hasMore ?? false,
+    });
   }
 
-  async getExercise(id: string) {
-    return this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
+  async getExercise(id: string): Promise<Result<Exercise, ApiError>> {
+    const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
+    if (!result.ok) return result;
+    return ok(mapApiExerciseToDomain(result.value));
+  }
+
+  async createExercise(
+    data: CreateExerciseInput,
+  ): Promise<Result<Exercise, ApiError>> {
+    const result = await this.requestEnvelope<ApiExercise>("/exercises", {
+      method: "POST",
+      body: mapCreateExerciseInputToApi(data),
+    });
+    if (!result.ok) return result;
+    return ok(mapApiExerciseToDomain(result.value));
+  }
+
+  async updateExercise(
+    id: string,
+    data: Partial<CreateExerciseInput>,
+  ): Promise<Result<Exercise, ApiError>> {
+    const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`, {
+      method: "PATCH",
+      body: mapCreateExerciseInputToApi(data),
+    });
+    if (!result.ok) return result;
+    return ok(mapApiExerciseToDomain(result.value));
+  }
+
+  async deleteExercise(id: string): Promise<Result<void, ApiError>> {
+    return this.request<void>(`/exercises/${id}`, { method: "DELETE" });
   }
 
   // -- Sets --
@@ -280,4 +330,67 @@ export class SSTApiAdapter implements ApiPort {
   async deleteGoal(id: string) {
     return this.request<void>(`/goals/${id}`, { method: "DELETE" });
   }
+}
+
+// -- Exercise wire-format mapping --
+
+type ApiExercisesPage = {
+  data: ApiExercise[];
+  cursor?: string | null;
+  hasMore?: boolean;
+};
+
+function mapApiExerciseToDomain(api: ApiExercise): Exercise {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description,
+    instructions: api.instructions,
+    category: api.category as ExerciseCategory,
+    difficulty: api.difficultyLevel as ExerciseDifficulty,
+    primaryMuscleGroups: api.primaryMuscles as MuscleGroup[],
+    secondaryMuscleGroups: api.secondaryMuscles as MuscleGroup[],
+    equipment: api.equipmentRequired as EquipmentType[],
+    isCustom: api.isCustom,
+    createdBy: api.createdBy,
+  };
+}
+
+function mapCreateExerciseInputToApi(
+  input: Partial<CreateExerciseInput>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (input.name !== undefined) payload.name = input.name;
+  if (input.description !== undefined) payload.description = input.description;
+  if (input.instructions !== undefined)
+    payload.instructions = input.instructions;
+  if (input.category !== undefined) payload.category = input.category;
+  if (input.difficulty !== undefined)
+    payload.difficultyLevel = input.difficulty;
+  if (input.primaryMuscleGroups !== undefined)
+    payload.primaryMuscles = input.primaryMuscleGroups;
+  if (input.secondaryMuscleGroups !== undefined)
+    payload.secondaryMuscles = input.secondaryMuscleGroups;
+  if (input.equipment !== undefined)
+    payload.equipmentRequired = input.equipment;
+  return payload;
+}
+
+function buildExerciseQueryParams(
+  filters?: ExerciseFilters,
+  cursor?: string,
+): Record<string, string | number | undefined> | undefined {
+  if (!filters && !cursor) return undefined;
+  const params: Record<string, string | number | undefined> = {};
+  if (cursor) params.cursor = cursor;
+  if (filters?.search) params.search = filters.search;
+  if (filters?.category) params.category = filters.category;
+  if (filters?.difficulty) params.difficulty = filters.difficulty;
+  if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
+    params.muscleGroups = filters.muscleGroups.join(",");
+  }
+  if (filters?.equipment && filters.equipment.length > 0) {
+    params.equipment = filters.equipment.join(",");
+  }
+  return params;
 }
