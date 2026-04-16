@@ -1,1 +1,17 @@
-// Domain models added per-feature milestone
+export {
+  type Exercise,
+  type ExerciseCategory,
+  type ExerciseDifficulty,
+  type MuscleGroup,
+  type EquipmentType,
+  type ExerciseFilters,
+  type CreateExerciseInput,
+  EXERCISE_CATEGORIES,
+  EXERCISE_DIFFICULTIES,
+  MUSCLE_GROUPS,
+  EQUIPMENT_TYPES,
+  MUSCLE_GROUP_LABELS,
+  EQUIPMENT_LABELS,
+  CATEGORY_LABELS,
+  DIFFICULTY_LABELS,
+} from "./exercise";
