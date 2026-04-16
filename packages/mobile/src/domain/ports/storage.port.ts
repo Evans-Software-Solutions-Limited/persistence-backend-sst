@@ -22,6 +22,10 @@ export interface StoragePort {
   // -- Sync Metadata --
   getLastSyncedAt(entityType: string): string | null;
   setLastSyncedAt(entityType: string, timestamp: string): void;
+
+  // -- Lifecycle --
+  /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */
+  clearAll(): void;
 }
 
 export type EnqueueMutationInput = {

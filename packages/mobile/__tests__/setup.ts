@@ -3,7 +3,7 @@
 
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
-  const View = require("react-native").View;
+  const { View } = require("react-native");
   return {
     __esModule: true,
     default: {
@@ -12,9 +12,37 @@ jest.mock("react-native-reanimated", () => {
     },
     useSharedValue: (init: number) => ({ value: init }),
     useAnimatedStyle: (fn: () => unknown) => fn(),
+    useAnimatedProps: (fn: () => unknown) => fn(),
     withTiming: (val: number) => val,
+    withDelay: (_delay: number, val: number) => val,
     withRepeat: (val: number) => val,
-    Easing: { linear: "linear" },
+    interpolate: (val: number) => val,
+    Extrapolation: { CLAMP: "clamp" },
+    Easing: {
+      linear: "linear",
+      cubic: "cubic",
+      ease: "ease",
+      out: () => "easeOut",
+      in: () => "easeIn",
+      inOut: () => "easeInOut",
+    },
+    FadeIn: {
+      duration: () => ({ duration: () => ({}) }),
+    },
+  };
+});
+
+// Mock react-native-svg (native module, not available in Jest)
+jest.mock("react-native-svg", () => {
+  const { View } = require("react-native");
+  return {
+    __esModule: true,
+    default: View, // Svg
+    Svg: View,
+    Path: View,
+    Circle: View,
+    Rect: View,
+    G: View,
   };
 });
 

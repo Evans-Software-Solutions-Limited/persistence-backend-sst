@@ -23,7 +23,7 @@ export type AuthState = {
  * to provide reactive session state and auth actions.
  */
 export function useAuth(): AuthState {
-  const { auth } = useAdapters();
+  const { auth, storage } = useAdapters();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
@@ -130,7 +130,14 @@ export function useAuth(): AuthState {
       setError(result.error);
       throw new Error(result.error.message);
     }
-  }, [auth]);
+    // Clear all cached user data (sync queue, exercises, metadata)
+    // so the next sign-in starts with a clean slate.
+    try {
+      storage.clearAll();
+    } catch {
+      // Best-effort — don't block sign-out on storage failure
+    }
+  }, [auth, storage]);
 
   const resetPassword = useCallback(
     async (email: string) => {

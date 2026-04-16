@@ -1,6 +1,5 @@
 import { renderHook, act, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
-import type { AuthSession } from "@/domain/ports/auth.port";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -14,17 +13,19 @@ import type { Adapters } from "@/shared/types";
 function createTestAdapters(): {
   adapters: Adapters;
   auth: InMemoryAuthAdapter;
+  storage: InMemoryStorageAdapter;
 } {
   const auth = new InMemoryAuthAdapter();
+  const storage = new InMemoryStorageAdapter();
   const adapters: Adapters = {
     api: new InMemoryApiAdapter(),
     auth,
-    storage: new InMemoryStorageAdapter(),
+    storage,
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments: new StubPaymentsAdapter(),
   };
-  return { adapters, auth };
+  return { adapters, auth, storage };
 }
 
 describe("useAuth", () => {
@@ -386,5 +387,49 @@ describe("useAuth", () => {
     expect(result.current.session).toBeNull();
 
     jest.useRealTimers();
+  });
+
+  it("clears storage cache on sign-out", async () => {
+    const { adapters, auth, storage } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    // Seed some cached data
+    storage.enqueueMutation({
+      entityType: "workout",
+      operation: "create",
+      payload: { name: "Test" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.setLastSyncedAt("workout", "2026-01-01T00:00:00Z");
+
+    expect(storage.getPendingMutations()).toHaveLength(1);
+    expect(storage.getLastSyncedAt("workout")).toBeTruthy();
+
+    // Sign in first
+    auth.currentSession = {
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: "u1",
+      email: "e@e.com",
+      expiresAt: 0,
+    };
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Sign out
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    // Cached data should be cleared
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getLastSyncedAt("workout")).toBeNull();
   });
 });

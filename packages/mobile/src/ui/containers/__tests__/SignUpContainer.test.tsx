@@ -20,6 +20,7 @@ const MockSignUpPresenter = jest.mocked(SignUpPresenter);
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
+// eslint-disable-next-line import/first
 import { useRouter } from "expo-router";
 const mockUseRouter = jest.mocked(useRouter);
 
@@ -77,6 +78,9 @@ MockSignUpPresenter.mockImplementation((props) => (
     {props.confirmationSent && <Text testID="confirmation-message" />}
   </View>
 ));
+
+// CI runners can be slow on first Tamagui compilation; extend timeout
+jest.setTimeout(15_000);
 
 describe("SignUpContainer", () => {
   const mockPush = jest.fn();

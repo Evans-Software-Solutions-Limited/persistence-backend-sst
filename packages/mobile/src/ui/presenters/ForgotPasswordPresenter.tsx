@@ -6,7 +6,9 @@ import {
 } from "react-native";
 import { View } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
+import Animated, { FadeIn } from "react-native-reanimated";
 import { Text, Input, Button, Column, Row } from "@/ui/components";
+import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
 type ForgotPasswordPresenterProps = {
   email: string;
@@ -27,6 +29,11 @@ export function ForgotPasswordPresenter({
   error,
   isSuccess,
 }: ForgotPasswordPresenterProps) {
+  const headerStyle = useStaggeredEntry(0);
+  const formStyle = useStaggeredEntry(1);
+  const ctaStyle = useStaggeredEntry(2);
+  const footerStyle = useStaggeredEntry(3);
+
   return (
     <View
       flex={1}
@@ -35,11 +42,17 @@ export function ForgotPasswordPresenter({
     >
       <LinearGradient
         colors={[
-          "rgba(0, 212, 255, 0.06)",
-          "rgba(0, 212, 255, 0.02)",
+          "rgba(0, 212, 255, 0.08)",
+          "rgba(0, 212, 255, 0.03)",
           "transparent",
         ]}
         style={styles.topGlow}
+      />
+      <LinearGradient
+        colors={["rgba(0, 212, 255, 0.04)", "transparent"]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.secondaryGlow}
       />
 
       <KeyboardAvoidingView
@@ -48,115 +61,131 @@ export function ForgotPasswordPresenter({
       >
         <View flex={1} justifyContent="center" paddingHorizontal="$xl">
           {/* Header */}
-          <View alignItems="center" marginBottom="$2xl">
-            <Text variant="h2" align="center" testID="screen-title">
-              Reset Password
-            </Text>
-            <Text variant="bodySmall" muted align="center" marginTop="$sm">
-              {isSuccess
-                ? "Check your email for a reset link"
-                : "Enter your email and we'll send you a reset link"}
-            </Text>
-          </View>
+          <Animated.View style={headerStyle}>
+            <View alignItems="center" marginBottom={40}>
+              <Text variant="h2" align="center" testID="screen-title">
+                Reset Password
+              </Text>
+              <Text variant="bodySmall" muted align="center" marginTop="$sm">
+                {isSuccess
+                  ? "Check your email for a reset link"
+                  : "Enter your email and we\u2019ll send you a reset link"}
+              </Text>
+            </View>
+          </Animated.View>
 
           {isSuccess ? (
             /* Success state */
-            <Column gap="lg" alignItems="center">
-              <View
-                width={64}
-                height={64}
-                borderRadius="$full"
-                backgroundColor="rgba(34, 197, 94, 0.1)"
-                alignItems="center"
-                justifyContent="center"
-                borderWidth={1}
-                borderColor="rgba(34, 197, 94, 0.2)"
-              >
-                <Text variant="h2" color="$success" testID="success-icon">
-                  ✓
+            <Animated.View entering={FadeIn.duration(300)}>
+              <Column gap="lg" alignItems="center">
+                <View
+                  width={64}
+                  height={64}
+                  borderRadius="$full"
+                  backgroundColor="rgba(34, 197, 94, 0.1)"
+                  alignItems="center"
+                  justifyContent="center"
+                  borderWidth={1}
+                  borderColor="rgba(34, 197, 94, 0.2)"
+                >
+                  <Text variant="h2" color="$success" testID="success-icon">
+                    ✓
+                  </Text>
+                </View>
+                <Text
+                  variant="body"
+                  muted
+                  align="center"
+                  testID="success-message"
+                >
+                  We&apos;ve sent a password reset link to your email address.
                 </Text>
-              </View>
-              <Text
-                variant="body"
-                muted
-                align="center"
-                testID="success-message"
-              >
-                We&apos;ve sent a password reset link to your email address.
-              </Text>
-              <View width="100%" marginTop="$base">
-                <Button
-                  label="Back to Sign In"
-                  onPress={onBackToSignIn}
-                  variant="outline"
-                  fullWidth
-                  size="lg"
-                  testID="back-to-sign-in"
-                />
-              </View>
-            </Column>
+                <View width="100%" marginTop="$base">
+                  <Button
+                    label="Back to Sign In"
+                    onPress={onBackToSignIn}
+                    variant="outline"
+                    fullWidth
+                    size="lg"
+                    testID="back-to-sign-in"
+                  />
+                </View>
+              </Column>
+            </Animated.View>
           ) : (
             /* Form state */
             <>
               {/* Error */}
               {error && (
-                <View
-                  backgroundColor="rgba(239, 68, 68, 0.1)"
-                  borderRadius="$md"
-                  paddingHorizontal="$base"
-                  paddingVertical="$md"
-                  marginBottom="$base"
-                  borderWidth={1}
-                  borderColor="rgba(239, 68, 68, 0.2)"
-                >
-                  <Text
-                    variant="bodySmall"
-                    color="$error"
-                    align="center"
-                    testID="error-message"
+                <Animated.View entering={FadeIn.duration(200)}>
+                  <View
+                    backgroundColor="rgba(239, 68, 68, 0.1)"
+                    borderRadius="$md"
+                    paddingHorizontal="$base"
+                    paddingVertical="$md"
+                    marginBottom="$base"
+                    borderWidth={1}
+                    borderColor="rgba(239, 68, 68, 0.2)"
                   >
-                    {error}
-                  </Text>
-                </View>
+                    <Text
+                      variant="bodySmall"
+                      color="$error"
+                      align="center"
+                      testID="error-message"
+                    >
+                      {error}
+                    </Text>
+                  </View>
+                </Animated.View>
               )}
 
-              <Input
-                label="Email"
-                placeholder="your@email.com"
-                value={email}
-                onChangeText={onEmailChange}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                testID="email"
-              />
+              <Animated.View style={formStyle}>
+                <Input
+                  label="Email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChangeText={onEmailChange}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoComplete="email"
+                  testID="email"
+                />
+              </Animated.View>
 
-              <View height="$lg" />
+              <View height={28} />
 
-              <Button
-                label={isLoading ? "Sending..." : "Send Reset Link"}
-                onPress={onSubmit}
-                isLoading={isLoading}
-                isDisabled={isLoading}
-                fullWidth
-                size="lg"
-                testID="submit"
-              />
+              <Animated.View style={ctaStyle}>
+                <Button
+                  label={isLoading ? "Sending..." : "Send Reset Link"}
+                  onPress={onSubmit}
+                  isLoading={isLoading}
+                  isDisabled={isLoading}
+                  fullWidth
+                  size="lg"
+                  testID="submit"
+                />
+              </Animated.View>
 
               {/* Back to sign in */}
-              <View alignItems="center" marginTop="$2xl">
-                <Pressable
-                  onPress={onBackToSignIn}
-                  testID="back-to-sign-in-link"
-                  hitSlop={8}
-                >
-                  <Row gap="xs">
-                    <Text variant="bodySmall" color="$primary" fontWeight="500">
-                      ← Back to Sign In
-                    </Text>
-                  </Row>
-                </Pressable>
-              </View>
+              <Animated.View style={footerStyle}>
+                <View alignItems="center" marginTop={36}>
+                  <Pressable
+                    onPress={onBackToSignIn}
+                    testID="back-to-sign-in-link"
+                    hitSlop={8}
+                  >
+                    <Row gap="xs">
+                      <Text
+                        variant="bodySmall"
+                        color="$primary"
+                        fontWeight="500"
+                      >
+                        ← Back to Sign In
+                      </Text>
+                    </Row>
+                  </Pressable>
+                </View>
+              </Animated.View>
             </>
           )}
         </View>
@@ -172,6 +201,15 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 350,
+    height: 400,
+  },
+  secondaryGlow: {
+    position: "absolute",
+    top: 0,
+    left: "20%",
+    right: "20%",
+    height: 250,
+    borderRadius: 200,
+    opacity: 0.5,
   },
 });

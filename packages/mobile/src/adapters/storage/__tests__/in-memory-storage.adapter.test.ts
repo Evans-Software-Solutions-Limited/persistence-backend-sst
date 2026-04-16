@@ -118,4 +118,30 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getLastSyncedAt("workout")).toBe(now);
     });
   });
+
+  describe("clearAll", () => {
+    it("removes all queued mutations and metadata", () => {
+      storage.enqueueMutation({
+        entityType: "workout",
+        operation: "create",
+        payload: { name: "Chest Day" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      storage.setLastSyncedAt("workout", new Date().toISOString());
+
+      expect(storage.getPendingMutations()).toHaveLength(1);
+      expect(storage.getLastSyncedAt("workout")).not.toBeNull();
+
+      storage.clearAll();
+
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      expect(storage.getLastSyncedAt("workout")).toBeNull();
+      expect(storage.getSyncStats()).toEqual({
+        pending: 0,
+        failed: 0,
+        inFlight: 0,
+      });
+    });
+  });
 });

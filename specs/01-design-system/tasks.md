@@ -57,9 +57,10 @@ Build as Tamagui `styled()` wrappers with Persistence branding. Use `/frontend-d
 - [ ] Update existing health check screen to use new primitives
   - _No health check screen exists yet; deferred to milestone 07_
 - [x] Export all components via barrel files
-- [ ] Run `/frontend-design` skill review on initial component set
-- [ ] Screenshot key screens and review visual quality
-  - _Sign-in screen rendered on iOS simulator but design quality flagged for improvement_
+- [x] Run `/frontend-design` skill review on initial component set
+  - _All three auth screens polished with staggered Reanimated enter animations, refined spacing, two-layer gradient glow_
+- [x] Screenshot key screens and review visual quality
+  - _Auth screens reviewed on iOS simulator — user confirmed "styling looks great"_
 - [ ] Verify 60fps scroll performance on FlatList screens
   - _No scrollable list screens exist yet; deferred to milestone 03+_
 - [x] Verify all quality gates pass
