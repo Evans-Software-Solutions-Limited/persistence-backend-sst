@@ -135,6 +135,21 @@ describe("scoreExercise", () => {
     const noDesc = makeExercise({ description: null });
     expect(scoreExercise(noDesc, "flat")).toBe(0);
   });
+
+  it("scores 0 for empty search term (no false-positive startsWith)", () => {
+    // Guard against String.prototype.startsWith("") === true quirk
+    expect(scoreExercise(exercise, "")).toBe(0);
+  });
+
+  it("scores 0 for whitespace-only search term", () => {
+    expect(scoreExercise(exercise, "   ")).toBe(0);
+    expect(scoreExercise(exercise, "\t\n")).toBe(0);
+  });
+
+  it("trims whitespace around a valid term before scoring", () => {
+    expect(scoreExercise(exercise, "  bench press  ")).toBe(4);
+    expect(scoreExercise(exercise, " bench ")).toBe(3);
+  });
 });
 
 // -- filterExercises --

@@ -16,17 +16,19 @@ import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 /**
  * Score an exercise against a search term for relevance ranking.
  * Both the exercise name/description and the term are compared
- * case-insensitively.
+ * case-insensitively. The term is trimmed; an empty or whitespace-only
+ * term always scores 0 (there is no meaningful "match" for no input).
  *
  * Scoring tiers (higher = more relevant):
  *   4 — exact name match (case-insensitive)
  *   3 — name starts with the search term
  *   2 — name contains the search term
  *   1 — description contains the search term
- *   0 — no match
+ *   0 — no match (or empty term)
  */
 export function scoreExercise(exercise: Exercise, term: string): number {
-  const termLower = term.toLowerCase();
+  const termLower = term.toLowerCase().trim();
+  if (termLower.length === 0) return 0;
   const nameLower = exercise.name.toLowerCase();
   if (nameLower === termLower) return 4;
   if (nameLower.startsWith(termLower)) return 3;
