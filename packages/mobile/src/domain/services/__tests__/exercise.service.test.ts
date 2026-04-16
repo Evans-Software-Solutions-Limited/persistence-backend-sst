@@ -107,19 +107,24 @@ describe("scoreExercise", () => {
 
   it("scores 4 for exact name match (case-insensitive)", () => {
     expect(scoreExercise(exercise, "bench press")).toBe(4);
-    expect(scoreExercise(exercise, "BENCH PRESS")).toBe(0); // lowercase term expected
+    expect(scoreExercise(exercise, "BENCH PRESS")).toBe(4);
+    expect(scoreExercise(exercise, "Bench Press")).toBe(4);
+    expect(scoreExercise(exercise, "bEnCh PrEsS")).toBe(4);
   });
 
-  it("scores 3 for name starts-with", () => {
+  it("scores 3 for name starts-with (case-insensitive)", () => {
     expect(scoreExercise(exercise, "bench")).toBe(3);
+    expect(scoreExercise(exercise, "BENCH")).toBe(3);
   });
 
-  it("scores 2 for name contains", () => {
+  it("scores 2 for name contains (case-insensitive)", () => {
     expect(scoreExercise(exercise, "press")).toBe(2);
+    expect(scoreExercise(exercise, "PRESS")).toBe(2);
   });
 
-  it("scores 1 for description contains", () => {
+  it("scores 1 for description contains (case-insensitive)", () => {
     expect(scoreExercise(exercise, "flat")).toBe(1);
+    expect(scoreExercise(exercise, "FLAT")).toBe(1);
   });
 
   it("scores 0 for no match", () => {

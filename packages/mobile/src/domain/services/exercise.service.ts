@@ -1,23 +1,22 @@
-import type {
-  Exercise,
-  ExerciseFilters,
-  CreateExerciseInput,
-  ExerciseCategory,
-  ExerciseDifficulty,
-  MuscleGroup,
-  EquipmentType,
-} from "@/domain/models/exercise";
 import {
   EXERCISE_CATEGORIES,
   EXERCISE_DIFFICULTIES,
-  MUSCLE_GROUPS,
   EQUIPMENT_TYPES,
+  MUSCLE_GROUPS,
+  type CreateExerciseInput,
+  type EquipmentType,
+  type Exercise,
+  type ExerciseCategory,
+  type ExerciseDifficulty,
+  type ExerciseFilters,
+  type MuscleGroup,
 } from "@/domain/models/exercise";
-import type { ValidationError } from "@/shared/errors";
-import { ok, fail, type Result } from "@/shared/errors";
+import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 
 /**
  * Score an exercise against a search term for relevance ranking.
+ * Both the exercise name/description and the term are compared
+ * case-insensitively.
  *
  * Scoring tiers (higher = more relevant):
  *   4 — exact name match (case-insensitive)
@@ -27,11 +26,12 @@ import { ok, fail, type Result } from "@/shared/errors";
  *   0 — no match
  */
 export function scoreExercise(exercise: Exercise, term: string): number {
+  const termLower = term.toLowerCase();
   const nameLower = exercise.name.toLowerCase();
-  if (nameLower === term) return 4;
-  if (nameLower.startsWith(term)) return 3;
-  if (nameLower.includes(term)) return 2;
-  if (exercise.description?.toLowerCase().includes(term)) return 1;
+  if (nameLower === termLower) return 4;
+  if (nameLower.startsWith(termLower)) return 3;
+  if (nameLower.includes(termLower)) return 2;
+  if (exercise.description?.toLowerCase().includes(termLower)) return 1;
   return 0;
 }
 
