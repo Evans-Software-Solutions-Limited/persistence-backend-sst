@@ -1,3 +1,4 @@
+import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
 import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
@@ -22,6 +23,22 @@ export interface StoragePort {
   // -- Sync Metadata --
   getLastSyncedAt(entityType: string): string | null;
   setLastSyncedAt(entityType: string, timestamp: string): void;
+
+  // -- Exercise Cache --
+  /** Read cached exercises, applying filters locally for instant response. */
+  getCachedExercises(filters?: ExerciseFilters): Exercise[];
+  /** Upsert a batch of exercises into the local cache (single transaction). */
+  cacheExercises(exercises: Exercise[]): void;
+  /** Read a single cached exercise by id, or null if not found. */
+  getCachedExercise(id: string): Exercise | null;
+  /** Age of the exercise cache as an ISO timestamp, or null if empty. */
+  getExerciseCacheAge(): string | null;
+  /**
+   * Save a custom (user-created) exercise to the cache. Identical shape to
+   * `cacheExercises` for a single row, but semantically separate so call-sites
+   * document intent. Must set isCustom=true on the stored payload.
+   */
+  saveCustomExercise(exercise: Exercise): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

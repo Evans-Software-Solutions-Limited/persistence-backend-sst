@@ -1,9 +1,14 @@
 import type {
+  CreateExerciseInput,
+  Exercise,
+  ExerciseFilters,
+} from "@/domain/models/exercise";
+import { filterExercises } from "@/domain/services/exercise.service";
+import type {
   ApiPort,
   ApiProfile,
   ApiWorkout,
   ApiSession,
-  ApiExercise,
   ApiExerciseSet,
   ApiGoal,
   CreateWorkoutInput,
@@ -23,7 +28,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public profiles: ApiProfile[] = [];
   public workouts: ApiWorkout[] = [];
   public sessions: ApiSession[] = [];
-  public exercises: ApiExercise[] = [];
+  public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
   public goals: ApiGoal[] = [];
   public shouldFail = false;
@@ -171,8 +176,15 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
-  async getExercises(_params?: PaginationParams) {
-    return this.mayFail(this.exercises);
+  async getExercises(filters?: ExerciseFilters, _cursor?: string) {
+    const filtered = filters
+      ? filterExercises(this.exercises, filters)
+      : this.exercises;
+    return this.mayFail({
+      data: filtered,
+      cursor: null,
+      hasMore: false,
+    });
   }
 
   async getExercise(id: string) {
@@ -184,6 +196,59 @@ export class InMemoryApiAdapter implements ApiPort {
         message: "Not found",
       });
     return this.mayFail(e);
+  }
+
+  async createExercise(data: CreateExerciseInput) {
+    const exercise: Exercise = {
+      id: `exercise-${this.exercises.length + 1}`,
+      name: data.name,
+      description: data.description ?? null,
+      instructions: data.instructions ?? null,
+      category: data.category,
+      difficulty: data.difficulty,
+      primaryMuscleGroups: data.primaryMuscleGroups,
+      secondaryMuscleGroups: data.secondaryMuscleGroups ?? [],
+      equipment: data.equipment,
+      isCustom: true,
+      createdBy: "test-user",
+    };
+    const result = this.mayFail(exercise);
+    if (!result.ok) return fail<ApiError>(result.error);
+    this.exercises.push(exercise);
+    return ok(exercise);
+  }
+
+  async updateExercise(id: string, data: Partial<CreateExerciseInput>) {
+    const idx = this.exercises.findIndex((e) => e.id === id);
+    if (idx === -1)
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Not found",
+      });
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
+    const existing = this.exercises[idx];
+    const updated: Exercise = {
+      ...existing,
+      name: data.name ?? existing.name,
+      description: data.description ?? existing.description,
+      instructions: data.instructions ?? existing.instructions,
+      category: data.category ?? existing.category,
+      difficulty: data.difficulty ?? existing.difficulty,
+      primaryMuscleGroups:
+        data.primaryMuscleGroups ?? existing.primaryMuscleGroups,
+      secondaryMuscleGroups:
+        data.secondaryMuscleGroups ?? existing.secondaryMuscleGroups,
+      equipment: data.equipment ?? existing.equipment,
+    };
+    this.exercises[idx] = updated;
+    return ok(updated);
+  }
+
+  async deleteExercise(id: string) {
+    this.exercises = this.exercises.filter((e) => e.id !== id);
+    return this.mayFail(undefined);
   }
 
   async createSet(

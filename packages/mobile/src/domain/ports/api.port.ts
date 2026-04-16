@@ -1,5 +1,10 @@
+import type {
+  CreateExerciseInput,
+  Exercise,
+  ExerciseFilters,
+} from "@/domain/models/exercise";
 import type { Result, ApiError } from "@/shared/errors";
-import type { PaginationParams } from "@/shared/types";
+import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
 /**
  * Port for remote SST API operations.
@@ -48,9 +53,18 @@ export interface ApiPort {
 
   // -- Exercises --
   getExercises(
-    params?: PaginationParams,
-  ): Promise<Result<ApiExercise[], ApiError>>;
-  getExercise(id: string): Promise<Result<ApiExercise, ApiError>>;
+    filters?: ExerciseFilters,
+    cursor?: string,
+  ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
+  getExercise(id: string): Promise<Result<Exercise, ApiError>>;
+  createExercise(
+    data: CreateExerciseInput,
+  ): Promise<Result<Exercise, ApiError>>;
+  updateExercise(
+    id: string,
+    data: Partial<CreateExerciseInput>,
+  ): Promise<Result<Exercise, ApiError>>;
+  deleteExercise(id: string): Promise<Result<void, ApiError>>;
 
   // -- Sets --
   createSet(
@@ -123,12 +137,14 @@ export type ApiExercise = {
   id: string;
   name: string;
   description: string | null;
+  instructions: string | null;
   category: string;
   difficultyLevel: string;
   primaryMuscles: string[];
   secondaryMuscles: string[];
   equipmentRequired: string[];
-  isPublic: boolean;
+  isCustom: boolean;
+  createdBy: string | null;
 };
 
 export type ApiExerciseSet = {
