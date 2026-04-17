@@ -35,34 +35,52 @@ describe("getExercisesQuery", () => {
   it("returns empty result and isStale=true when cache is empty", () => {
     const result = getExercisesQuery(storage);
     expect(result.exercises).toEqual([]);
-    expect(result.cacheAge).toBeNull();
+    expect(result.lastSyncedAt).toBeNull();
     expect(result.isStale).toBe(true);
   });
 
-  it("returns cached exercises with cacheAge and isStale=false when fresh", () => {
-    const now = Date.parse("2026-04-16T12:00:00Z");
+  it("returns cached exercises with lastSyncedAt and isStale=false after a full refresh", () => {
+    const syncedAt = "2026-04-16T12:00:00.000Z";
     storage.cacheExercises([buildExercise({ id: "e1", name: "Bench Press" })]);
+    storage.setLastSyncedAt("exercises", syncedAt);
 
-    // Cache was just written; five minutes later is well within 24h
+    // Five minutes later is well within 24h
     const result = getExercisesQuery(
       storage,
       undefined,
-      () => now + 5 * 60_000,
+      () => Date.parse(syncedAt) + 5 * 60_000,
     );
     expect(result.exercises).toHaveLength(1);
-    expect(result.cacheAge).not.toBeNull();
+    expect(result.lastSyncedAt).toBe(syncedAt);
     expect(result.isStale).toBe(false);
   });
 
-  it("marks cache as stale after 24h", () => {
+  it("marks cache as stale 24h after the last completed refresh", () => {
+    const syncedAt = "2026-04-16T12:00:00.000Z";
     storage.cacheExercises([buildExercise({ id: "e1" })]);
-    const cacheAgeMs = Date.parse(storage.getExerciseCacheAge() as string);
+    storage.setLastSyncedAt("exercises", syncedAt);
 
     const result = getExercisesQuery(
       storage,
       undefined,
-      () => cacheAgeMs + EXERCISE_CACHE_STALE_AFTER_MS + 1,
+      () => Date.parse(syncedAt) + EXERCISE_CACHE_STALE_AFTER_MS + 1,
     );
+    expect(result.isStale).toBe(true);
+  });
+
+  it("is stale when rows are cached but no full refresh has ever completed", () => {
+    // Simulates a progressively-cached library from a truncated or failed
+    // refresh: rows exist with fresh per-row syncedAt timestamps, but
+    // last_synced_at is null because no full walk has succeeded. The UI
+    // must keep attempting to refresh — NOT silently sit on a partial
+    // library for 24h.
+    storage.cacheExercises([buildExercise({ id: "partial" })]);
+    expect(storage.getLastSyncedAt("exercises")).toBeNull();
+    expect(storage.getExerciseCacheAge()).not.toBeNull();
+
+    const result = getExercisesQuery(storage);
+    expect(result.exercises).toHaveLength(1);
+    expect(result.lastSyncedAt).toBeNull();
     expect(result.isStale).toBe(true);
   });
 
@@ -263,5 +281,12 @@ describe("refreshExerciseCache", () => {
     expect(storage.getCachedExercises().length).toBeGreaterThan(0);
     // Crucially: last_synced_at NOT set, so isStale will force another refresh
     expect(storage.getLastSyncedAt("exercises")).toBeNull();
+
+    // End-to-end regression: a consumer calling getExercisesQuery
+    // immediately after the truncated refresh MUST see isStale=true,
+    // otherwise the 24h freshness window would suppress the next retry.
+    const queryResult = getExercisesQuery(storage);
+    expect(queryResult.isStale).toBe(true);
+    expect(queryResult.lastSyncedAt).toBeNull();
   });
 });

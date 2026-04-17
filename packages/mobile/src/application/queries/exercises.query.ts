@@ -12,9 +12,21 @@ export const EXERCISE_CACHE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export type GetExercisesQueryResult = {
   exercises: Exercise[];
-  /** ISO timestamp of the oldest cached row, or null if cache is empty. */
-  cacheAge: string | null;
-  /** True when cache is empty or older than EXERCISE_CACHE_STALE_AFTER_MS. */
+  /**
+   * ISO timestamp of the last completed full refresh of the exercise
+   * library, or null if no full refresh has ever succeeded. Matches
+   * `sync_metadata.last_synced_at` for entity "exercises".
+   *
+   * This is specifically the sync-complete marker, not the per-row cache
+   * age. A progressively-cached library from a truncated or failed
+   * refresh will have fresh per-row timestamps but a null `lastSyncedAt`,
+   * and must be treated as stale until a full refresh completes.
+   */
+  lastSyncedAt: string | null;
+  /**
+   * True when no full refresh has ever completed, OR the last completed
+   * refresh is older than `EXERCISE_CACHE_STALE_AFTER_MS`.
+   */
   isStale: boolean;
 };
 
@@ -25,6 +37,12 @@ export type GetExercisesQueryResult = {
  * domain `filterExercises` service. Returns immediately — the caller is
  * responsible for invoking `refreshExerciseCache` when the returned
  * `isStale` is true (e.g. on app foreground or pull-to-refresh).
+ *
+ * Staleness is determined from `sync_metadata.last_synced_at` (written
+ * only after a full paginated walk completes), NOT from the oldest
+ * cached row. A progressive cache from a failed or truncated refresh
+ * therefore remains stale — the UI will keep attempting to refresh
+ * rather than silently sitting on a partial library for 24h.
  *
  * Designed to be synchronous for instant UI response: a few thousand
  * cached exercises filter in sub-10ms, well under a frame.
@@ -38,11 +56,11 @@ export function getExercisesQuery(
   now: () => number = Date.now,
 ): GetExercisesQueryResult {
   const exercises = storage.getCachedExercises(filters);
-  const cacheAge = storage.getExerciseCacheAge();
+  const lastSyncedAt = storage.getLastSyncedAt("exercises");
   const isStale =
-    cacheAge === null ||
-    now() - Date.parse(cacheAge) > EXERCISE_CACHE_STALE_AFTER_MS;
-  return { exercises, cacheAge, isStale };
+    lastSyncedAt === null ||
+    now() - Date.parse(lastSyncedAt) > EXERCISE_CACHE_STALE_AFTER_MS;
+  return { exercises, lastSyncedAt, isStale };
 }
 
 /**
