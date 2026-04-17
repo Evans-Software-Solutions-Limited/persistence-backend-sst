@@ -141,10 +141,10 @@ describe("refreshExerciseCache", () => {
     expect(storage.getLastSyncedAt("exercises")).not.toBeNull();
   });
 
-  it("forwards filters to the API", async () => {
+  it("forwards filters to the API (first page cursor=undefined)", async () => {
     const spy = jest.spyOn(api, "getExercises");
     await refreshExerciseCache(api, storage, { search: "bench" });
-    expect(spy).toHaveBeenCalledWith({ search: "bench" });
+    expect(spy).toHaveBeenCalledWith({ search: "bench" }, undefined);
   });
 
   it("leaves the cache untouched on API failure", async () => {
@@ -154,6 +154,82 @@ describe("refreshExerciseCache", () => {
     const result = await refreshExerciseCache(api, storage);
     expect(result.ok).toBe(false);
     expect(storage.getCachedExercise("existing")).not.toBeNull();
+    expect(storage.getLastSyncedAt("exercises")).toBeNull();
+  });
+
+  it("walks paginated pages until hasMore is false", async () => {
+    // Override the in-memory adapter's single-page behaviour with a stub
+    // that returns two pages. The second page carries hasMore=false to stop
+    // the loop — the function must keep calling until this condition.
+    const spy = jest
+      .spyOn(api, "getExercises")
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        value: {
+          data: [buildExercise({ id: "e1", name: "Page1-A" })],
+          cursor: "cursor-2",
+          hasMore: true,
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        value: {
+          data: [buildExercise({ id: "e2", name: "Page2-A" })],
+          cursor: null,
+          hasMore: false,
+        },
+      }));
+
+    const result = await refreshExerciseCache(api, storage);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.map((e) => e.id)).toEqual(["e1", "e2"]);
+    }
+
+    expect(spy).toHaveBeenNthCalledWith(1, undefined, undefined);
+    expect(spy).toHaveBeenNthCalledWith(2, undefined, "cursor-2");
+    expect(storage.getCachedExercises()).toHaveLength(2);
+  });
+
+  it("stops walking when the cursor is missing even if hasMore=true", async () => {
+    // Defensive: if the backend mis-reports hasMore but stops sending a
+    // cursor, the loop must still terminate rather than spin forever.
+    jest.spyOn(api, "getExercises").mockImplementationOnce(async () => ({
+      ok: true,
+      value: {
+        data: [buildExercise({ id: "e1" })],
+        cursor: null,
+        hasMore: true,
+      },
+    }));
+
+    const result = await refreshExerciseCache(api, storage);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toHaveLength(1);
+  });
+
+  it("surfaces API errors raised partway through pagination", async () => {
+    jest
+      .spyOn(api, "getExercises")
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        value: {
+          data: [buildExercise({ id: "e1" })],
+          cursor: "cursor-2",
+          hasMore: true,
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        ok: false,
+        error: { kind: "api", code: "network", message: "boom" },
+      }));
+
+    const result = await refreshExerciseCache(api, storage);
+    expect(result.ok).toBe(false);
+
+    // First page was cached before the failure (progressive caching).
+    // last_synced_at is only set once a full walk succeeds.
+    expect(storage.getCachedExercise("e1")).not.toBeNull();
     expect(storage.getLastSyncedAt("exercises")).toBeNull();
   });
 });

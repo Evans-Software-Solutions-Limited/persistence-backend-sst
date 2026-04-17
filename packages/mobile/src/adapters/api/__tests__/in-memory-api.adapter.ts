@@ -18,7 +18,7 @@ import type {
   CreateGoalInput,
 } from "@/domain/ports/api.port";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
-import type { PaginationParams } from "@/shared/types";
+import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
 /**
  * In-memory API adapter for testing.
@@ -176,15 +176,19 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
-  async getExercises(filters?: ExerciseFilters, _cursor?: string) {
+  async getExercises(
+    filters?: ExerciseFilters,
+    _cursor?: string,
+  ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
     const filtered = filters
       ? filterExercises(this.exercises, filters)
       : this.exercises;
-    return this.mayFail({
+    const page: PaginatedResult<Exercise> = {
       data: filtered,
       cursor: null,
       hasMore: false,
-    });
+    };
+    return this.mayFail(page);
   }
 
   async getExercise(id: string) {

@@ -67,23 +67,46 @@ export async function getExerciseQuery(
 }
 
 /**
+ * Upper bound on pages fetched in a single refresh to stop runaway loops
+ * if the backend ever mis-reports `hasMore`. At ~200 exercises per page
+ * this covers libraries up to ~20k rows, well above expected scale.
+ */
+export const REFRESH_MAX_PAGES = 100;
+
+/**
  * Refresh the full cached exercise library from the API and update
  * `last_synced_at` metadata. Triggers only on explicit events: pull-to-refresh,
  * app foreground, or post-mutation (debounced). No background polling.
  *
- * Returns the fresh list on success; returns the API error unchanged on
- * failure. On failure the existing cache is untouched, so callers can still
- * read stale-but-usable data via `getExercisesQuery`.
+ * Walks paginated responses until `hasMore` is false (or no cursor is
+ * returned). Caches each page as it arrives so a long refresh makes
+ * progressive data available, and records `last_synced_at` only after the
+ * full walk completes.
+ *
+ * Returns the merged list on success; returns the API error unchanged on
+ * failure. On failure the existing cache rows are untouched, so callers can
+ * still read stale-but-usable data via `getExercisesQuery`.
  */
 export async function refreshExerciseCache(
   api: ApiPort,
   storage: StoragePort,
   filters?: ExerciseFilters,
 ): Promise<Result<Exercise[], ApiError>> {
-  const result = await api.getExercises(filters);
-  if (!result.ok) return result;
+  const all: Exercise[] = [];
+  let cursor: string | undefined = undefined;
 
-  storage.cacheExercises(result.value.data);
+  for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
+    const result = await api.getExercises(filters, cursor);
+    if (!result.ok) return result;
+
+    const { data, cursor: nextCursor, hasMore } = result.value;
+    if (data.length > 0) storage.cacheExercises(data);
+    all.push(...data);
+
+    if (!hasMore || !nextCursor) break;
+    cursor = nextCursor;
+  }
+
   storage.setLastSyncedAt("exercises", new Date().toISOString());
-  return ok(result.value.data);
+  return ok(all);
 }

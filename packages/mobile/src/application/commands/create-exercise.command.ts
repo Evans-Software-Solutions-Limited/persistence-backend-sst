@@ -13,8 +13,6 @@ export type CreateExerciseCommandDeps = {
   generateId: () => string;
   /** User id of the creator — stored on the Exercise and used for audit. */
   userId: string;
-  /** Injectable clock for deterministic timestamps in tests. */
-  now?: () => Date;
 };
 
 /**
