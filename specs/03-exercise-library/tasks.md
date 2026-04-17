@@ -21,11 +21,11 @@
 
 ## Phase 3: Application Layer
 
-- [ ] Create `GetExercisesQuery` (cache-first with background refresh)
-- [ ] Create `GetExerciseQuery` (single exercise by ID)
-- [ ] Create `CreateExerciseCommand` (validate, save local, queue sync)
-- [ ] Write tests for query (returns cached, refreshes when stale)
-- [ ] Write tests for command (validates, persists, queues)
+- [x] Create `GetExercisesQuery` (cache-first with background refresh)
+- [x] Create `GetExerciseQuery` (single exercise by ID)
+- [x] Create `CreateExerciseCommand` (validate, save local, queue sync)
+- [x] Write tests for query (returns cached, refreshes when stale)
+- [x] Write tests for command (validates, persists, queues)
 
 ## Phase 4: UI — Exercise List
 
