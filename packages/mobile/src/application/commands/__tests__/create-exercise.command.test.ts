@@ -59,7 +59,7 @@ describe("createExerciseCommand", () => {
     expect(cached?.isCustom).toBe(true);
   });
 
-  it("enqueues an API sync mutation with the original input payload", () => {
+  it("enqueues an API sync mutation with a sanitized payload", () => {
     createExerciseCommand({ storage, generateId, userId: "u1" }, validInput);
 
     const pending = storage.getPendingMutations();
@@ -75,7 +75,7 @@ describe("createExerciseCommand", () => {
     });
   });
 
-  it("trims name and empties optional text fields when blank", () => {
+  it("trims name and empties optional text fields when blank — in both cache and queued payload", () => {
     const result = createExerciseCommand(
       { storage, generateId, userId: "u1" },
       {
@@ -91,6 +91,36 @@ describe("createExerciseCommand", () => {
     expect(result.value.name).toBe("Clean Name");
     expect(result.value.description).toBeNull();
     expect(result.value.instructions).toBeNull();
+
+    // Enqueued payload must match the cached record — otherwise the server
+    // receives the raw unsanitized input and the next refresh clobbers
+    // the local sanitized version.
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.name).toBe("Clean Name");
+    expect(payload.description).toBeUndefined();
+    expect(payload.instructions).toBeUndefined();
+  });
+
+  it("trims description/instructions when present — in both cache and queued payload", () => {
+    const result = createExerciseCommand(
+      { storage, generateId, userId: "u1" },
+      {
+        ...validInput,
+        description: "  real description  ",
+        instructions: "  do the thing  ",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.description).toBe("real description");
+    expect(result.value.instructions).toBe("do the thing");
+
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.description).toBe("real description");
+    expect(payload.instructions).toBe("do the thing");
   });
 
   it("defaults secondaryMuscleGroups to an empty array when omitted", () => {
