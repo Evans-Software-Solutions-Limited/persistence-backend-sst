@@ -1,7 +1,7 @@
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import { ok, type ApiError, type Result } from "@/shared/errors";
+import { fail, ok, type ApiError, type Result } from "@/shared/errors";
 
 /**
  * Exercise cache is considered stale after 24h.
@@ -70,6 +70,8 @@ export async function getExerciseQuery(
  * Upper bound on pages fetched in a single refresh to stop runaway loops
  * if the backend ever mis-reports `hasMore`. At ~200 exercises per page
  * this covers libraries up to ~20k rows, well above expected scale.
+ * If the cap is hit while the server still reports more pages, the walk
+ * is treated as incomplete — see `refreshExerciseCache`.
  */
 export const REFRESH_MAX_PAGES = 100;
 
@@ -80,12 +82,20 @@ export const REFRESH_MAX_PAGES = 100;
  *
  * Walks paginated responses until `hasMore` is false (or no cursor is
  * returned). Caches each page as it arrives so a long refresh makes
- * progressive data available, and records `last_synced_at` only after the
- * full walk completes.
+ * progressive data available, and records `last_synced_at` only when the
+ * walk reaches the server's reported end.
+ *
+ * If the walk hits `REFRESH_MAX_PAGES` while the server still reports
+ * `hasMore: true`, the refresh is considered truncated: rows fetched so
+ * far stay in the cache (progressive caching), but `last_synced_at` is
+ * NOT written — otherwise the 24h freshness window would suppress the
+ * next refresh and leave the user on a partial library. A truncated
+ * result returns an api/server error so the caller can surface the
+ * problem (and logging/telemetry can flag it).
  *
  * Returns the merged list on success; returns the API error unchanged on
- * failure. On failure the existing cache rows are untouched, so callers can
- * still read stale-but-usable data via `getExercisesQuery`.
+ * upstream failure. On any failure the existing cache rows are untouched,
+ * so callers can still read stale-but-usable data via `getExercisesQuery`.
  */
 export async function refreshExerciseCache(
   api: ApiPort,
@@ -94,6 +104,7 @@ export async function refreshExerciseCache(
 ): Promise<Result<Exercise[], ApiError>> {
   const all: Exercise[] = [];
   let cursor: string | undefined = undefined;
+  let reachedEnd = false;
 
   for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
     const result = await api.getExercises(filters, cursor);
@@ -103,8 +114,19 @@ export async function refreshExerciseCache(
     if (data.length > 0) storage.cacheExercises(data);
     all.push(...data);
 
-    if (!hasMore || !nextCursor) break;
+    if (!hasMore || !nextCursor) {
+      reachedEnd = true;
+      break;
+    }
     cursor = nextCursor;
+  }
+
+  if (!reachedEnd) {
+    return fail({
+      kind: "api",
+      code: "server",
+      message: `Exercise refresh truncated at ${REFRESH_MAX_PAGES} pages; server still reports more data. last_synced_at not updated.`,
+    });
   }
 
   storage.setLastSyncedAt("exercises", new Date().toISOString());

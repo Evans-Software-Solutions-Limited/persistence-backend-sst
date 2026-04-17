@@ -1,5 +1,6 @@
 import {
   EXERCISE_CACHE_STALE_AFTER_MS,
+  REFRESH_MAX_PAGES,
   getExerciseQuery,
   getExercisesQuery,
   refreshExerciseCache,
@@ -230,6 +231,37 @@ describe("refreshExerciseCache", () => {
     // First page was cached before the failure (progressive caching).
     // last_synced_at is only set once a full walk succeeds.
     expect(storage.getCachedExercise("e1")).not.toBeNull();
+    expect(storage.getLastSyncedAt("exercises")).toBeNull();
+  });
+
+  it("does not mark sync complete when walk is truncated at REFRESH_MAX_PAGES", async () => {
+    // Simulate a backend that always says "more data" — the walker should
+    // hit REFRESH_MAX_PAGES and return a server error rather than silently
+    // marking a partial refresh as fully synced. Otherwise isStale would
+    // return false for 24h and the UI would never re-attempt the fetch.
+    const spy = jest
+      .spyOn(api, "getExercises")
+      .mockImplementation(async (_filters, cursor) => ({
+        ok: true,
+        value: {
+          data: [buildExercise({ id: `page-${cursor ?? "start"}` })],
+          cursor: `cursor-${(cursor ?? "0") + "-next"}`,
+          hasMore: true,
+        },
+      }));
+
+    const result = await refreshExerciseCache(api, storage);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("server");
+      expect(result.error.message).toContain("truncated");
+    }
+
+    // Exactly REFRESH_MAX_PAGES calls made
+    expect(spy).toHaveBeenCalledTimes(REFRESH_MAX_PAGES);
+    // Progressive caching still applied
+    expect(storage.getCachedExercises().length).toBeGreaterThan(0);
+    // Crucially: last_synced_at NOT set, so isStale will force another refresh
     expect(storage.getLastSyncedAt("exercises")).toBeNull();
   });
 });
