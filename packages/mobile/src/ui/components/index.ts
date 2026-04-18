@@ -19,3 +19,4 @@ export { PLogoDrawLoader } from "./PLogoDrawLoader";
 export { ExerciseCard } from "./ExerciseCard";
 export { ExerciseFilterBar } from "./ExerciseFilterBar";
 export { MuscleGroupPicker } from "./MuscleGroupPicker";
+export { ComingSoon } from "./ComingSoon";
