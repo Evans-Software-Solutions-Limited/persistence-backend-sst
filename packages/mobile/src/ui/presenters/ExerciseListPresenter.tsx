@@ -221,7 +221,18 @@ export function ExerciseListPresenter({
         </View>
       </Animated.View>
 
-      {isStale && exercises.length > 0 && (
+      {/*
+        Show the stale banner whenever the cache is stale AND we're not
+        in a state that already communicates stale-ness better:
+        - `showSkeleton`: first load, truly empty cache — the skeleton *is*
+          the refresh indicator; a banner would just be noise.
+        - `loadError !== null`: the full-screen ErrorState has its own Retry
+          button; layering a second refresh affordance on top is redundant.
+        Otherwise — including when filters narrow the visible list to zero —
+        the banner stays visible so the user keeps the pull-to-refresh
+        affordance regardless of the current row count.
+      */}
+      {isStale && !showSkeleton && loadError === null && (
         <Animated.View entering={FadeIn.duration(200)}>
           <View
             marginHorizontal="$base"

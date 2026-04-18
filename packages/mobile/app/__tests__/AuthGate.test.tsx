@@ -3,7 +3,7 @@
  *
  * The AuthGate component in _layout.tsx routes users based on auth state:
  * - Loading: no redirect (stay on current screen)
- * - Authenticated + not in (app): redirect to /(app)
+ * - Authenticated + not in (app): redirect to /(app)/(tabs)
  * - Unauthenticated + not in (auth): redirect to /(auth)/sign-in
  * - Already on correct route: no redirect
  */
@@ -100,7 +100,7 @@ describe("AuthGate", () => {
     render(<RootLayout />);
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/(app)");
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
     });
   });
 
@@ -120,7 +120,7 @@ describe("AuthGate", () => {
     render(<RootLayout />);
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/(app)");
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
     });
   });
 

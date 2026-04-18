@@ -193,6 +193,73 @@ describe("ExerciseListPresenter", () => {
     expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
   });
 
+  it("keeps the stale banner visible when a filter narrows results to zero", () => {
+    // Regression: previously gated on `exercises.length > 0`, so narrowing
+    // the filter dropped the pull-to-refresh affordance even though the
+    // underlying cache was still stale.
+    const { getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({
+          exercises: [],
+          searchInput: "no-matches",
+          isStale: true,
+          lastSyncedAt: "2026-04-17T12:00:00Z",
+          now: () => Date.parse("2026-04-18T12:00:00Z"),
+        })}
+      />,
+    );
+    expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
+    // The filtered-empty state still renders below the banner.
+    expect(getByTestId("exercise-list-empty-filtered")).toBeTruthy();
+  });
+
+  it("keeps the stale banner visible on the default empty state when the cache has never synced", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({
+          exercises: [],
+          isStale: true,
+          lastSyncedAt: null,
+        })}
+      />,
+    );
+    expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
+    expect(getByText(/Not synced yet/)).toBeTruthy();
+    expect(getByTestId("exercise-list-empty")).toBeTruthy();
+  });
+
+  it("hides the stale banner while the initial skeleton is visible", () => {
+    const { queryByTestId, getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({
+          exercises: [],
+          isStale: true,
+          lastSyncedAt: null,
+          showSkeleton: true,
+          isRefreshing: true,
+        })}
+      />,
+    );
+    expect(getByTestId("exercise-list-skeleton")).toBeTruthy();
+    expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
+  });
+
+  it("hides the stale banner when a load error is being shown", () => {
+    const { queryByTestId, getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({
+          exercises: [],
+          isStale: true,
+          lastSyncedAt: null,
+          loadError: "Network down",
+        })}
+      />,
+    );
+    // ErrorState already has its own Retry button; no extra banner on top.
+    expect(getByTestId("exercise-list-error")).toBeTruthy();
+    expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
+  });
+
   it("formats last-synced ages across the minute/hour/day thresholds", () => {
     const anchor = Date.parse("2026-04-18T12:00:00Z");
     const now = () => anchor;
