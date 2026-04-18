@@ -16,3 +16,6 @@ export { Divider } from "./Divider";
 export { Avatar } from "./Avatar";
 export { OAuthButton } from "./OAuthButton";
 export { PLogoDrawLoader } from "./PLogoDrawLoader";
+export { ExerciseCard } from "./ExerciseCard";
+export { ExerciseFilterBar } from "./ExerciseFilterBar";
+export { MuscleGroupPicker } from "./MuscleGroupPicker";

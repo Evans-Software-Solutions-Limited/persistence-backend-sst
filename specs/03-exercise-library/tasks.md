@@ -29,14 +29,14 @@
 
 ## Phase 4: UI — Exercise List
 
-- [ ] Create `ExerciseCard` presenter (name, muscle group, equipment, category badge)
-- [ ] Create `ExerciseFilterBar` presenter (filter chips, active state, clear all)
-- [ ] Create `MuscleGroupPicker` presenter (multi-select grid)
-- [ ] Create `ExerciseListPresenter` (search bar, filter bar, exercise list, empty/loading states)
-- [ ] Create `ExerciseListContainer` (manages search state, filters, fetches exercises)
-- [ ] Create `app/(app)/exercises/index.tsx` screen
-- [ ] Write presenter tests (renders exercises, filters, empty state)
-- [ ] Write container integration test (fetches and displays)
+- [x] Create `ExerciseCard` presenter (name, muscle group, equipment, category badge)
+- [x] Create `ExerciseFilterBar` presenter (filter chips, active state, clear all)
+- [x] Create `MuscleGroupPicker` presenter (multi-select grid)
+- [x] Create `ExerciseListPresenter` (search bar, filter bar, exercise list, empty/loading states)
+- [x] Create `ExerciseListContainer` (manages search state, filters, fetches exercises)
+- [x] Create `app/(app)/exercises/index.tsx` screen
+- [x] Write presenter tests (renders exercises, filters, empty state)
+- [x] Write container integration test (fetches and displays)
 
 ## Phase 5: UI — Exercise Detail
 
