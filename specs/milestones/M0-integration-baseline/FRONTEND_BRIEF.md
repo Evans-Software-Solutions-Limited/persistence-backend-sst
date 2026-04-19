@@ -212,7 +212,7 @@ Pick whichever is cheaper; just make sure the smoke test can execute a create.
 
 ## Output expected
 
-- A PR on branch `feat/m0-integration-baseline` (or a sub-branch merged into it)
+- A PR on branch `feat/m0-mobile-reference-lists` (branched from fresh `main`)
 - PR title: `feat(mobile): reference-list cache + filter wire format + hierarchical modal (M0)`
 - PR body ends with a `### How to view` block:
   - Branch checkout

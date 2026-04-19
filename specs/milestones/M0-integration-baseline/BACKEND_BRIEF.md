@@ -138,7 +138,7 @@ Follow existing handler test patterns (`workoutsCreateHandler.test.ts` is a good
 
 ## Output expected
 
-- A PR on branch `feat/m0-integration-baseline` (or a sub-branch merged into it)
+- A PR on branch `feat/m0-backend-exercises-writes` (branched from fresh `main`)
 - PR title: `feat(core): exercise write handlers + multi-axis filters (M0)`
 - PR body ends with a `### How to smoke test` block listing the curl commands (or `bun run` scripts) to exercise each new endpoint locally
 - Mark relevant tasks in `specs/03-exercise-library/tasks.md` Phase 7 as done (the offline/sync items that depend on these handlers existing)
