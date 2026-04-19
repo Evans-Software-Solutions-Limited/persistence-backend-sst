@@ -202,6 +202,78 @@ describe("ExerciseFiltersProvider / useExerciseFilters", () => {
     expect(captured!.hasAnyFilter).toBe(false);
   });
 
+  it("previewFiltersWithAdvanced unions quick-filter difficulties with the pending override", () => {
+    // Regression: bugbot finding #3. Modal's matchCount used to strip
+    // difficulties from filters and replace with pendingDifficulties only,
+    // discarding quick-filter difficulty pills. The helper must produce
+    // the same merged shape that the committed `filters` would produce
+    // after an actual `applyAdvanced`.
+    let captured: ExerciseFiltersContextValue | null = null;
+    render(
+      <ExerciseFiltersProvider>
+        <Harness capture={(v) => (captured = v)} />
+      </ExerciseFiltersProvider>,
+    );
+
+    // Quick-filter "beginner" is active on the bar.
+    act(() => captured!.toggleQuickFilter("beginner"));
+    // Also active: a mine/system axis + a search term, just to verify
+    // nothing upstream of the override is lost.
+    act(() => captured!.toggleQuickFilter("mine"));
+    act(() => captured!.setSearch("press"));
+
+    // User opens the modal with NO advanced difficulties yet, adds a muscle
+    // group, and we want to know what the list will show on Apply.
+    const preview = captured!.previewFiltersWithAdvanced({
+      muscleGroups: ["chest"],
+      equipment: [],
+      difficulties: [],
+    });
+
+    expect(preview.muscleGroups).toEqual(["chest"]);
+    expect(preview.createdBy).toBe("mine");
+    expect(preview.search).toBe("press");
+    // Critical: quick-filter "beginner" must survive into the preview.
+    expect(preview.difficulties).toEqual(["beginner"]);
+  });
+
+  it("previewFiltersWithAdvanced dedups quick-filter difficulty against override difficulty", () => {
+    let captured: ExerciseFiltersContextValue | null = null;
+    render(
+      <ExerciseFiltersProvider>
+        <Harness capture={(v) => (captured = v)} />
+      </ExerciseFiltersProvider>,
+    );
+    act(() => captured!.toggleQuickFilter("beginner"));
+
+    const preview = captured!.previewFiltersWithAdvanced({
+      muscleGroups: [],
+      equipment: [],
+      difficulties: ["beginner", "advanced"],
+    });
+
+    expect(preview.difficulties?.sort()).toEqual(
+      ["advanced", "beginner"].sort(),
+    );
+    expect(preview.difficulties).toHaveLength(2);
+  });
+
+  it("previewFiltersWithAdvanced drops search when search is whitespace-only", () => {
+    let captured: ExerciseFiltersContextValue | null = null;
+    render(
+      <ExerciseFiltersProvider>
+        <Harness capture={(v) => (captured = v)} />
+      </ExerciseFiltersProvider>,
+    );
+    act(() => captured!.setSearch("   "));
+    const preview = captured!.previewFiltersWithAdvanced({
+      muscleGroups: ["chest"],
+      equipment: [],
+      difficulties: [],
+    });
+    expect(preview.search).toBeUndefined();
+  });
+
   it("quick-filter difficulties merge (dedup) with advanced difficulties", () => {
     let captured: ExerciseFiltersContextValue | null = null;
     render(

@@ -3,7 +3,6 @@ import { useCallback, useMemo, useState } from "react";
 import type {
   EquipmentType,
   ExerciseDifficulty,
-  ExerciseFilters,
   MuscleGroup,
 } from "@/domain/models/exercise";
 import { getExercisesQuery } from "@/application/queries/exercises.query";
@@ -35,7 +34,7 @@ export function ExerciseFiltersContainer() {
     equipment: appliedEquipment,
     difficultiesAdvanced: appliedDifficulties,
     applyAdvanced,
-    filters: currentFilters,
+    previewFiltersWithAdvanced,
   } = useExerciseFilters();
 
   // Pending state = the edits the user has made inside the modal that
@@ -91,26 +90,25 @@ export function ExerciseFiltersContainer() {
     router.back();
   }, [router]);
 
-  // Live match count for the Apply button. We merge the pending advanced
-  // state with the already-committed search + quick-filter createdBy axis
-  // so the count matches what the user will land on after Apply.
+  // Live match count for the Apply button. Delegates the merge to the hook's
+  // `previewFiltersWithAdvanced`, which preserves every axis the modal doesn't
+  // own (search, quick-filter createdBy, quick-filter difficulties, category)
+  // and folds in the pending advanced values exactly how `applyAdvanced` will
+  // on commit. Previously this container spread `currentFilters`, stripped
+  // `difficulties`, and re-set it from `pendingDifficulties` alone — which
+  // discarded quick-filter difficulty pills. The helper keeps the merge
+  // semantics in one place so this class of drift can't come back.
   const matchCount = useMemo(() => {
-    const pending: ExerciseFilters = { ...currentFilters };
-    // Strip the axes the modal owns; override with pending values.
-    delete pending.muscleGroups;
-    delete pending.equipment;
-    delete pending.difficulties;
-    if (pendingMuscleGroups.length > 0)
-      pending.muscleGroups = pendingMuscleGroups;
-    if (pendingEquipment.length > 0) pending.equipment = pendingEquipment;
-    if (pendingDifficulties.length > 0)
-      pending.difficulties = pendingDifficulties;
-
+    const pending = previewFiltersWithAdvanced({
+      muscleGroups: pendingMuscleGroups,
+      equipment: pendingEquipment,
+      difficulties: pendingDifficulties,
+    });
     const result = getExercisesQuery(storage, pending);
     return result.exercises.length;
   }, [
     storage,
-    currentFilters,
+    previewFiltersWithAdvanced,
     pendingMuscleGroups,
     pendingEquipment,
     pendingDifficulties,

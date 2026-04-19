@@ -311,6 +311,90 @@ describe("ExerciseFiltersContainer", () => {
     });
   });
 
+  it("matchCount respects quick-filter difficulties selected outside the modal", async () => {
+    // Regression: bugbot finding #3. When a difficulty pill is active on
+    // the quick-filter bar and the user opens the modal to narrow by
+    // muscle group, the Apply button's count used to ignore the quick-
+    // filter difficulty — the container spread `currentFilters`, stripped
+    // the merged `difficulties` array, and re-set it from only
+    // `pendingDifficulties`. The user would see e.g. "Show 20 exercises"
+    // on Apply but land on a list of 5 (the Beginner constraint kicking
+    // in afterwards). Now routed through `previewFiltersWithAdvanced`
+    // which preserves the merge.
+    const storage = seedStorage([
+      makeExercise({
+        id: "a",
+        difficulty: "beginner",
+        primaryMuscleGroups: ["chest"],
+      }),
+      makeExercise({
+        id: "b",
+        difficulty: "beginner",
+        primaryMuscleGroups: ["back"],
+      }),
+      makeExercise({
+        id: "c",
+        difficulty: "advanced",
+        primaryMuscleGroups: ["chest"],
+      }),
+      makeExercise({
+        id: "d",
+        difficulty: "intermediate",
+        primaryMuscleGroups: ["chest"],
+      }),
+    ]);
+
+    let lastContext: {
+      toggleQuickFilter: (id: "beginner") => void;
+    } | null = null;
+
+    const { getByTestId } = render(
+      <TestWrapper
+        adapters={createAdapters(storage)}
+        onContextUpdate={(v) =>
+          (lastContext = v as {
+            toggleQuickFilter: (id: "beginner") => void;
+          })
+        }
+      >
+        <ExerciseFiltersContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("modal-stub")).toBeTruthy();
+    });
+
+    // Sanity: with no filters at all, count is 4.
+    expect(getByTestId("stub-count").props.children).toBe(4);
+
+    // Activate the quick-filter "beginner" on the shared context (as if
+    // the user had tapped it on the list screen before opening the modal).
+    await act(async () => {
+      lastContext!.toggleQuickFilter("beginner");
+    });
+
+    // Quick filter alone narrows to 2 beginner exercises.
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+
+    // Now apply a pending muscle-group filter in the modal: "chest".
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-chest"));
+    });
+
+    // Correct answer: beginner AND chest = exercise "a" only. Count = 1.
+    // Under the bug this would have reported 2 (beginner+chest both
+    // dropped, muscle-only match on chest giving a/c/d — actually it was
+    // worse: the strip reset `difficulties`, losing the "beginner"
+    // constraint, so count would show 3 chest exercises regardless of
+    // difficulty).
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+  });
+
   it("toggling the same pill twice deselects it", async () => {
     const storage = seedStorage([
       makeExercise({ equipment: ["barbell"] }),

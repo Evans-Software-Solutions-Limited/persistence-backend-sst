@@ -101,6 +101,24 @@ export type ExerciseFiltersContextValue = {
     difficulties: ExerciseDifficulty[];
   }) => void;
   clearAll: () => void;
+
+  /**
+   * Build the `ExerciseFilters` shape that would be produced if the given
+   * advanced state were committed via `applyAdvanced`. Intended for the
+   * filter modal's live-count preview: the modal has uncommitted pending
+   * values, but the returned filters must still include constraints from
+   * the committed axes it doesn't own (quick-filter difficulties, quick
+   * createdBy, search, category).
+   *
+   * Centralising this prevents drift between the committed merge (in
+   * `filtersWithoutSearch`) and any manual recomputation downstream — a
+   * bug that crept in when difficulty was shared across quick bar + modal.
+   */
+  previewFiltersWithAdvanced: (override: {
+    muscleGroups: MuscleGroup[];
+    equipment: EquipmentType[];
+    difficulties: ExerciseDifficulty[];
+  }) => ExerciseFilters;
 };
 
 const ExerciseFiltersContext =
@@ -208,26 +226,69 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
     search,
   } = state;
 
-  const filtersWithoutSearch = useMemo<ExerciseFilters>(() => {
-    const quickCreatedBy = quickFilters.find(isCreatedBy) ?? null;
-    const quickDifficulties = quickFilters.filter(isDifficulty);
+  /**
+   * Single source of truth for the quick-filter + advanced-filter merge.
+   * Used by both the live memo and the `previewFiltersWithAdvanced` helper.
+   * Consumers that need the preview variant (filter modal live count) call
+   * this with uncommitted pending values; the committed memo calls it with
+   * the current state. Keeps both paths in lock-step.
+   */
+  const mergeFilters = useCallback(
+    (override: {
+      muscleGroups: MuscleGroup[];
+      equipment: EquipmentType[];
+      difficultiesAdvanced: ExerciseDifficulty[];
+    }): ExerciseFilters => {
+      const quickCreatedBy = quickFilters.find(isCreatedBy) ?? null;
+      const quickDifficulties = quickFilters.filter(isDifficulty);
 
-    // Advanced (modal) difficulties and quick-filter difficulties union.
-    // Deduplicated to keep the query payload stable.
-    const mergedDifficultySet = new Set<ExerciseDifficulty>([
-      ...quickDifficulties,
-      ...difficultiesAdvanced,
-    ]);
+      // Quick-filter difficulties and advanced (modal) difficulties union.
+      // Deduplicated to keep the query payload stable.
+      const mergedDifficultySet = new Set<ExerciseDifficulty>([
+        ...quickDifficulties,
+        ...override.difficultiesAdvanced,
+      ]);
 
-    const f: ExerciseFilters = {};
-    if (muscleGroups.length > 0) f.muscleGroups = muscleGroups;
-    if (equipment.length > 0) f.equipment = equipment;
-    if (mergedDifficultySet.size > 0) {
-      f.difficulties = Array.from(mergedDifficultySet);
-    }
-    if (quickCreatedBy !== null) f.createdBy = quickCreatedBy;
-    return f;
-  }, [quickFilters, muscleGroups, equipment, difficultiesAdvanced]);
+      const f: ExerciseFilters = {};
+      if (override.muscleGroups.length > 0)
+        f.muscleGroups = override.muscleGroups;
+      if (override.equipment.length > 0) f.equipment = override.equipment;
+      if (mergedDifficultySet.size > 0) {
+        f.difficulties = Array.from(mergedDifficultySet);
+      }
+      if (quickCreatedBy !== null) f.createdBy = quickCreatedBy;
+      return f;
+    },
+    [quickFilters],
+  );
+
+  const filtersWithoutSearch = useMemo<ExerciseFilters>(
+    () =>
+      mergeFilters({
+        muscleGroups,
+        equipment,
+        difficultiesAdvanced,
+      }),
+    [mergeFilters, muscleGroups, equipment, difficultiesAdvanced],
+  );
+
+  const previewFiltersWithAdvanced = useCallback(
+    (override: {
+      muscleGroups: MuscleGroup[];
+      equipment: EquipmentType[];
+      difficulties: ExerciseDifficulty[];
+    }): ExerciseFilters => {
+      const base = mergeFilters({
+        muscleGroups: override.muscleGroups,
+        equipment: override.equipment,
+        difficultiesAdvanced: override.difficulties,
+      });
+      const trimmed = search.trim();
+      if (trimmed.length === 0) return base;
+      return { ...base, search: trimmed };
+    },
+    [mergeFilters, search],
+  );
 
   // `filters` intentionally wraps `filtersWithoutSearch` rather than inlining
   // the same logic — when only `search` changes, only this memo recomputes.
@@ -271,6 +332,7 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
       setSearch,
       applyAdvanced,
       clearAll,
+      previewFiltersWithAdvanced,
     }),
     [
       quickFilters,
@@ -286,6 +348,7 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
       setSearch,
       applyAdvanced,
       clearAll,
+      previewFiltersWithAdvanced,
     ],
   );
 
