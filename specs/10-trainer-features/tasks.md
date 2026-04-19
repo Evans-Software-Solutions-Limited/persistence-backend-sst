@@ -1,5 +1,13 @@
 # 10 — Trainer Features: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 0 of ~40 tasks complete. Not started.**
+
+What's there: nothing trainer-specific. Backend has no trainer/PT endpoints; mobile has no client list, invite flow, or role-gated tabs.
+
+Parent milestone: **M8 Trainer features (role-gated)** — adds `GET /trainers/me/clients`, `GET /trainers/me/invitations/pending`, `POST /trainers/me/invite`, `DELETE /trainers/me/invitations/:id`, `POST /workout-assignments`, `GET /trainers/me/stats` with JWT role check; adds a 6th tab `Clients` conditional on `session.role === "personal_trainer" || "physiotherapist"`, `ClientsContainer` + presenter, invite sheet, assign-workout flow. The 6-tab layout is short-term; M11 revisits navigation when nutrition + trainer features both land.
+
 ## Phase 1: Domain
 
 - [ ] Create `PTClientRelationship`, `PTRelationshipStatus` models

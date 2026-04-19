@@ -76,9 +76,14 @@ export function filterExercises(
     result = result.filter((e) => e.category === cat);
   }
 
-  if (filters.difficulty) {
-    const diff = filters.difficulty;
-    result = result.filter((e) => e.difficulty === diff);
+  if (filters.difficulties && filters.difficulties.length > 0) {
+    const diffs = filters.difficulties;
+    result = result.filter((e) => diffs.includes(e.difficulty));
+  }
+
+  if (filters.createdBy) {
+    const wantCustom = filters.createdBy === "mine";
+    result = result.filter((e) => e.isCustom === wantCustom);
   }
 
   if (filters.muscleGroups && filters.muscleGroups.length > 0) {

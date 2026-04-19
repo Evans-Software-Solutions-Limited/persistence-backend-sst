@@ -1,5 +1,21 @@
 # 09 — Notifications & Social: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: ~1 of ~40 tasks complete. Stub adapter only, no backend.**
+
+What's there:
+
+- `NotificationsPort` interface at `src/domain/ports/notifications.port.ts` (shipped as part of 00-guardrails).
+- `StubNotificationsAdapter` at `src/adapters/notifications/stub.adapter.ts` — no-op placeholder.
+- **Backend** — no notifications endpoints, no friendships endpoints.
+
+Nothing real is built: no Expo notifications integration, no push-token registration, no notification-centre UI, no friendship flows, no shared-workouts feed.
+
+Parent milestones:
+
+- **M7 Notifications** — adds full notifications surface (`GET /notifications`, `PATCH /notifications/:id`, `PATCH /notifications/all`, `GET+POST /notifications/preferences`, `POST /devices/register`), `NotificationsContainer` + presenter with tap-to-deep-link, preferences screen with toggle switches, device-token registration on sign-in. **Social / friendships are explicitly deferred beyond M7** — this spec's original scope splits social (feed, friendships, shared workouts) from pure notifications, and the milestone plan keeps only the latter for M7.
+
 ## Phase 1: Domain
 
 - [ ] Create `AppNotification`, `NotificationType` models

@@ -1,5 +1,19 @@
 # 11 — Payments & Subscriptions: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: ~1 of ~35 tasks complete. Stub adapter only.**
+
+What's there:
+
+- `PaymentsPort` interface at `src/domain/ports/payments.port.ts` (shipped as part of 00-guardrails).
+- `StubPaymentsAdapter` at `src/adapters/payments/stub.adapter.ts` — no-op placeholder.
+- **Backend** — no Stripe integration, no subscription endpoints.
+
+Nothing real is built: no Stripe adapter, no tier selection screen, no checkout flow, no feature gates.
+
+Parent milestone: **M10 Subscriptions & payments (Stripe)** — deferred to last feature milestone per the plan. Upsell chrome (locked badges, upgrade CTAs) may appear in earlier milestones but all CTAs no-op until M10. Backend: Stripe webhook receiver, plan catalog (`GET /subscriptions/plans`), checkout (`POST /subscriptions/checkout`), portal (`POST /subscriptions/portal`), entitlement (`GET /subscriptions/me`). Frontend: subscription selection screen, entitlement gates per screen, Stripe React Native SDK.
+
 ## Phase 1: Domain
 
 - [ ] Create `UserSubscription`, `SubscriptionTier`, `SubscriptionStatus` models

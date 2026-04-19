@@ -134,12 +134,39 @@ export type Exercise = {
 
 // -- Filter type --
 
+/**
+ * Who created the exercise — used for the "My Exercises" / "System"
+ * quick-filter pills. Maps to `isCustom` on Exercise:
+ *   "mine"   → isCustom === true
+ *   "system" → isCustom === false
+ *
+ * `pt` and `physio` variants from the legacy app are intentionally omitted
+ * until user-relationship data lands. Add them here then, so filter state
+ * can stay a simple discriminated union.
+ */
+export type CreatedByFilter = "mine" | "system";
+
 export type ExerciseFilters = {
   search?: string;
   muscleGroups?: MuscleGroup[];
   equipment?: EquipmentType[];
+  /**
+   * Category is retained on the filter type for API/query compatibility
+   * but is not surfaced in the current UI. The old mobile app never exposed
+   * a category quick-filter; we keep the field to avoid churning the
+   * storage/API layer when/if the feature returns.
+   */
   category?: ExerciseCategory;
-  difficulty?: ExerciseDifficulty;
+  /**
+   * Multi-select by difficulty — OR-matched. The legacy app allows a lifter
+   * to see e.g. "Beginner + Intermediate" in one pass, so the V2 surface is
+   * an array rather than a single value.
+   */
+  difficulties?: ExerciseDifficulty[];
+  /**
+   * "Mine" / "System" quick-filter. AND-matched with other axes.
+   */
+  createdBy?: CreatedByFilter;
 };
 
 // -- Create input --

@@ -1,5 +1,19 @@
 # 04 — Workout Management: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 0 of ~40 tasks complete. Not started on mobile.**
+
+What's there:
+
+- **Backend** — `GET /workouts`, `GET /workouts/:id`, `POST /workouts`, `PATCH /workouts/:id`, `DELETE /workouts/:id` handlers all exist at `microservices/core/src/application/workouts/`. Ownership-scoped via JWT. Response shape vs legacy expectations is unverified.
+- **Mobile `ApiPort`** already declares `getWorkouts`, `getWorkout`, `createWorkout`, `updateWorkout`, `deleteWorkout` stubs.
+- The `(tabs)/workouts.tsx` screen currently renders `<ComingSoon ... />`.
+
+Nothing else is built: no domain models, no `StoragePort` workout methods, no commands/queries, no containers/presenters, no drag-and-drop reorder, no superset logic, no visibility toggling.
+
+Parent milestone: **M2 Workouts (list + create + edit)**. Backend brief will audit response shape against legacy `app/(tabs)/workouts.tsx`; frontend brief ports containers/presenters, wires sync queue, and builds the `ExercisePicker` shared with M3 active session.
+
 ## Phase 1: Domain
 
 - [ ] Create `Workout`, `WorkoutExercise`, `WorkoutVisibility` models

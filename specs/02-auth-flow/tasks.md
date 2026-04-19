@@ -1,5 +1,27 @@
 # 02 — Auth Flow: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: ~44 of 46 tasks complete.** Auth flow is functionally done; only sync-queue-resume-on-sign-in is deferred.
+
+Built and verified:
+
+- `AuthPort` interface at `src/domain/ports/auth.port.ts` with `AuthSession`, `AuthError`, `OAuthProvider` types
+- `InMemoryAuthAdapter` for tests (originally specced as `mock.adapter.ts`, landed as `in-memory-auth.adapter.ts`)
+- `SupabaseAuthAdapter` at `src/adapters/auth/supabase.adapter.ts` — full `AuthPort` implementation with OAuth deep-link handling, token refresh, session persistence, `processLock` for refresh race prevention, 24 integration tests
+- `useAuth()` hook at `src/ui/hooks/useAuth.tsx` with loading-state race + 3s hard timeout to prevent stuck splash
+- All three auth screens: `sign-in.tsx`, `sign-up.tsx`, `forgot-password.tsx` with matching container/presenter pairs, Reanimated entry animations, `/frontend-design` spacing polish, fade transitions
+- Route protection: `AuthGate` in `app/_layout.tsx` with 7 tests covering redirect scenarios + loading
+- `(auth)/_layout.tsx` and `(app)/_layout.tsx` split
+- Sign-out clears `StoragePort` via `clearAll()` (wipes sync queue, cached workouts, cached exercises, active session, sync metadata)
+- `PLogoDrawLoader` branded splash (animated P SVG stroke-draw ported from legacy app)
+- All quality gates (prettier/typecheck/lint/build/test) passing
+
+Known gaps:
+
+- **Sync queue re-sync on next sign-in** (Phase 8) — currently the queue is cleared on sign-out; full re-sync strategy is being folded into M0 Exercise Library integration work.
+- The `(app)/_layout.tsx` now wraps a 5-tab navigator (added 2026-04-17, commit 00db72e) — original spec called for tabs too, so this is complete; the prior note about "currently a Stack" is outdated.
+
 ## Phase 1: Domain & Ports
 
 - [x] Define `AuthPort` interface (`src/domain/ports/auth.port.ts`)

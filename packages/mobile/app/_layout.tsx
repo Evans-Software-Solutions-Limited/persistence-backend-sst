@@ -16,8 +16,11 @@ function AuthGate() {
     const inAppGroup = segments[0] === "(app)";
 
     if (session && !inAppGroup) {
-      // Signed in but not in app (auth screen or root) — go to app
-      router.replace("/(app)");
+      // Signed in but not in app (auth screen or root) — go to app.
+      // `/(app)` alone isn't typed any more now that the app group has no
+      // direct index (the home tab lives at `/(app)/(tabs)/index`).
+      // `/(app)/(tabs)` resolves to the tab navigator's first tab (home).
+      router.replace("/(app)/(tabs)");
     } else if (!session && !inAuthGroup) {
       // Not signed in and not on auth screen — go to sign-in
       router.replace("/(auth)/sign-in");

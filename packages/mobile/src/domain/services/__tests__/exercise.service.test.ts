@@ -228,14 +228,66 @@ describe("filterExercises", () => {
   });
 
   describe("difficulty filter", () => {
-    it("filters by difficulty", () => {
-      const result = filterExercises(EXERCISES, { difficulty: "beginner" });
+    it("filters by a single difficulty", () => {
+      const result = filterExercises(EXERCISES, {
+        difficulties: ["beginner"],
+      });
       expect(result).toHaveLength(2); // Running + Cable Fly
     });
 
+    it("OR-matches across multiple difficulties", () => {
+      const result = filterExercises(EXERCISES, {
+        difficulties: ["beginner", "advanced"],
+      });
+      // beginner ×2 + advanced ×1 (Pull Up) = 3
+      expect(result).toHaveLength(3);
+    });
+
     it("returns empty when no exercises match difficulty", () => {
-      const result = filterExercises(EXERCISES, { difficulty: "expert" });
+      const result = filterExercises(EXERCISES, {
+        difficulties: ["expert"],
+      });
       expect(result).toHaveLength(0);
+    });
+
+    it("ignores an empty difficulties array", () => {
+      const result = filterExercises(EXERCISES, { difficulties: [] });
+      expect(result).toHaveLength(EXERCISES.length);
+    });
+  });
+
+  describe("createdBy filter", () => {
+    it("'mine' returns only custom (user-created) exercises", () => {
+      const EXTRA = [
+        ...EXERCISES,
+        {
+          ...EXERCISES[0],
+          id: "custom-1",
+          name: "My Custom Lift",
+          isCustom: true,
+          createdBy: "user-123",
+        },
+      ];
+      const result = filterExercises(EXTRA, { createdBy: "mine" });
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("custom-1");
+    });
+
+    it("'system' returns only built-in exercises", () => {
+      const EXTRA = [
+        ...EXERCISES,
+        {
+          ...EXERCISES[0],
+          id: "custom-1",
+          name: "My Custom Lift",
+          isCustom: true,
+          createdBy: "user-123",
+        },
+      ];
+      const result = filterExercises(EXTRA, { createdBy: "system" });
+      // all seeded EXERCISES default to isCustom: false
+      expect(result.every((e) => !e.isCustom)).toBe(true);
+      expect(result).toHaveLength(EXERCISES.length);
     });
   });
 
@@ -310,7 +362,7 @@ describe("filterExercises", () => {
     it("combines category + difficulty", () => {
       const result = filterExercises(EXERCISES, {
         category: "strength",
-        difficulty: "beginner",
+        difficulties: ["beginner"],
       });
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe("ex-5"); // Cable Fly

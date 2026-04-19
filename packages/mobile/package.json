@@ -15,6 +15,7 @@
     "build": "echo 'Mobile build handled by EAS'"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.49.4",
     "@tamagui/animations-react-native": "^2.0.0-rc.40",

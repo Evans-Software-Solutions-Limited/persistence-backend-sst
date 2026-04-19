@@ -1,5 +1,27 @@
 # 00 — Guardrails: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 39 of 40 tasks complete.** This spec is essentially done — guardrails underpin everything else.
+
+Built and verified:
+
+- TypeScript strict mode, path aliases (`@/*` → `src/*`), `bun run typecheck` passes
+- ESLint flat config with `no-restricted-imports` for domain purity
+- Prettier configured and passing
+- Jest + `jest-expo` preset (config lives in `package.json`, not standalone `jest.config.ts`)
+- Hexagonal skeleton at `packages/mobile/src/{domain,application,adapters,ui,shared}/` with barrel exports
+- All five driven ports: `ApiPort`, `StoragePort`, `AuthPort`, `HealthPort`, `NotificationsPort`, `PaymentsPort`
+- `Result<T, E>` + `AppError` helpers in `src/shared/errors/`
+- `AdapterProvider` / `useAdapters` DI wiring
+- `InMemoryApiAdapter`, `InMemoryStorageAdapter`, `InMemoryAuthAdapter` for tests
+- `ErrorBoundary` component (uses inline fallback UI; no separate `ErrorFallback` presenter)
+- CI pipeline: `pr-checks.yml` runs typecheck, lint, build, test:unit on mobile
+
+Known gaps:
+
+- Separate `ErrorFallback` presenter (Phase 5) never extracted — the inline fallback in `ErrorBoundary` covers the use case, so this is unlikely to be prioritised.
+
 ## Phase 1: TypeScript & Tooling
 
 - [x] Update `packages/mobile/tsconfig.json` with strict mode, path aliases (`@/*` → `src/*`)
