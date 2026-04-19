@@ -1,12 +1,5 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  EquipmentType,
-  ExerciseCategory,
-  ExerciseDifficulty,
-  ExerciseFilters,
-  MuscleGroup,
-} from "@/domain/models/exercise";
 import {
   getExercisesQuery,
   refreshExerciseCache,
@@ -14,38 +7,45 @@ import {
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
+import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
 export function ExerciseListContainer() {
   const { api, storage } = useAdapters();
   const router = useRouter();
+  const {
+    search,
+    setSearch,
+    filters: rawFilters,
+    quickFilters,
+    hasAdvancedFilters,
+    hasAnyFilter,
+    toggleQuickFilter,
+    clearAll,
+  } = useExerciseFilters();
 
-  const [searchInput, setSearchInput] = useState("");
-  const debouncedSearch = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
-  const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
-  const [equipment, setEquipment] = useState<EquipmentType[]>([]);
-  const [category, setCategory] = useState<ExerciseCategory | null>(null);
-  const [difficulty, setDifficulty] = useState<ExerciseDifficulty | null>(null);
+  // Debounce the search text into the filters object the query sees.
+  // The context holds the raw input so the modal/UI can render it live;
+  // `rawFilters.search` mirrors it, so we override just the search field
+  // after the 300ms settle to avoid re-filtering on every keystroke.
+  const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  // Increment after any cache mutation so `getExercisesQuery` re-reads.
   const [cacheVersion, setCacheVersion] = useState(0);
 
-  const filters = useMemo<ExerciseFilters>(() => {
-    const f: ExerciseFilters = {};
+  const filters = useMemo(() => {
+    const f = { ...rawFilters };
     const trimmed = debouncedSearch.trim();
-    if (trimmed.length > 0) f.search = trimmed;
-    if (muscleGroups.length > 0) f.muscleGroups = muscleGroups;
-    if (equipment.length > 0) f.equipment = equipment;
-    if (category !== null) f.category = category;
-    if (difficulty !== null) f.difficulty = difficulty;
+    if (trimmed.length > 0) {
+      f.search = trimmed;
+    } else {
+      delete f.search;
+    }
     return f;
-  }, [debouncedSearch, muscleGroups, equipment, category, difficulty]);
+  }, [rawFilters, debouncedSearch]);
 
-  // `cacheVersion` is intentionally part of the dep array so the query
-  // re-runs against fresh storage after a background refresh writes rows.
   const queryResult = useMemo(() => {
     void cacheVersion;
     return getExercisesQuery(storage, filters);
@@ -72,7 +72,6 @@ export function ExerciseListContainer() {
     }
   }, [api, storage]);
 
-  // Background refresh on first mount when cache is stale.
   const hasTriggeredInitialRefreshRef = useRef(false);
   useEffect(() => {
     if (hasTriggeredInitialRefreshRef.current) return;
@@ -82,25 +81,9 @@ export function ExerciseListContainer() {
     }
   }, [queryResult.isStale, triggerRefresh]);
 
-  const onToggleMuscleGroup = useCallback((group: MuscleGroup) => {
-    setMuscleGroups((prev) =>
-      prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group],
-    );
-  }, []);
-
-  const onToggleEquipment = useCallback((eq: EquipmentType) => {
-    setEquipment((prev) =>
-      prev.includes(eq) ? prev.filter((e) => e !== eq) : [...prev, eq],
-    );
-  }, []);
-
-  const onClearFilters = useCallback(() => {
-    setMuscleGroups([]);
-    setEquipment([]);
-    setCategory(null);
-    setDifficulty(null);
-    setSearchInput("");
-  }, []);
+  const onOpenFilterModal = useCallback(() => {
+    router.push("/(app)/exercises/filters");
+  }, [router]);
 
   const onSelectExercise = useCallback(
     (id: string) => {
@@ -124,22 +107,19 @@ export function ExerciseListContainer() {
   return (
     <ExerciseListPresenter
       exercises={queryResult.exercises}
-      searchInput={searchInput}
-      muscleGroups={muscleGroups}
-      equipment={equipment}
-      category={category}
-      difficulty={difficulty}
+      searchInput={search}
+      selectedQuickFilters={quickFilters}
+      hasAdvancedFilters={hasAdvancedFilters}
+      hasAnyFilter={hasAnyFilter}
       lastSyncedAt={queryResult.lastSyncedAt}
       isStale={queryResult.isStale}
       isRefreshing={isRefreshing}
       showSkeleton={showSkeleton}
       loadError={loadError}
-      onSearchChange={setSearchInput}
-      onToggleMuscleGroup={onToggleMuscleGroup}
-      onToggleEquipment={onToggleEquipment}
-      onSelectCategory={setCategory}
-      onSelectDifficulty={setDifficulty}
-      onClearFilters={onClearFilters}
+      onSearchChange={setSearch}
+      onToggleQuickFilter={toggleQuickFilter}
+      onOpenFilterModal={onOpenFilterModal}
+      onClearFilters={clearAll}
       onRefresh={triggerRefresh}
       onSelectExercise={onSelectExercise}
       onCreateExercise={onCreateExercise}

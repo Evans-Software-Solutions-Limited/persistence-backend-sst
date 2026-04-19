@@ -1,31 +1,51 @@
+import { Ionicons } from "@expo/vector-icons";
 import { styled, View, Text as TamaguiText } from "@tamagui/core";
 import { ScrollView } from "react-native";
-import {
-  CATEGORY_LABELS,
-  DIFFICULTY_LABELS,
-  EQUIPMENT_LABELS,
-  EXERCISE_CATEGORIES,
-  EXERCISE_DIFFICULTIES,
-  EQUIPMENT_TYPES,
-  type EquipmentType,
-  type ExerciseCategory,
-  type ExerciseDifficulty,
+import type {
+  CreatedByFilter,
+  ExerciseDifficulty,
 } from "@/domain/models/exercise";
 
-import { Column } from "./Column";
-import { Row } from "./Row";
-import { Text } from "./Text";
+/**
+ * One of the curated quick-filter pills. `"all"` is mutually exclusive
+ * with every other id (selecting it clears other axes; selecting any
+ * other id removes `"all"`). The remaining ids split across two filter
+ * axes under the hood:
+ *
+ *   created_by axis: "mine" | "system"
+ *   difficulty axis: "beginner" | "intermediate" | "advanced" | "expert"
+ *
+ * Pills within an axis OR together; pills across axes AND together.
+ *
+ * `pt` / `physio` variants from the legacy app are deferred until user
+ * relationship data lands.
+ */
+export type QuickFilterId = "all" | CreatedByFilter | ExerciseDifficulty;
 
-const Chip = styled(View, {
+type QuickFilter = { id: QuickFilterId; label: string };
+
+export const QUICK_FILTERS: readonly QuickFilter[] = [
+  { id: "all", label: "All" },
+  { id: "mine", label: "My Exercises" },
+  { id: "system", label: "System" },
+  { id: "beginner", label: "Beginner" },
+  { id: "intermediate", label: "Intermediate" },
+  { id: "advanced", label: "Advanced" },
+  { id: "expert", label: "Expert" },
+] as const;
+
+const Pill = styled(View, {
   paddingHorizontal: "$md",
   paddingVertical: "$xs",
   borderRadius: "$full",
   borderWidth: 1,
   borderColor: "$borderColor",
   backgroundColor: "$surfaceSecondary",
+  minHeight: 32,
+  justifyContent: "center",
 
   pressStyle: {
-    opacity: 0.8,
+    opacity: 0.85,
     scale: 0.97,
   },
 
@@ -39,147 +59,106 @@ const Chip = styled(View, {
   } as const,
 });
 
-const ChipText = styled(TamaguiText, {
+const PillText = styled(TamaguiText, {
   fontFamily: "$body",
   fontSize: 13,
   lineHeight: 18,
   fontWeight: "600",
-  color: "$color",
+  color: "$colorSecondary",
 
   variants: {
     active: {
-      true: {
-        color: "$colorInverse",
-      },
+      true: { color: "$colorInverse" },
     },
   } as const,
 });
 
-const ClearButton = styled(View, {
-  paddingHorizontal: "$md",
-  paddingVertical: "$xs",
+const FilterIconPill = styled(View, {
+  width: 40,
+  height: 32,
   borderRadius: "$full",
-  backgroundColor: "transparent",
+  borderWidth: 1,
+  borderColor: "$borderColor",
+  backgroundColor: "$surfaceSecondary",
+  alignItems: "center",
+  justifyContent: "center",
 
   pressStyle: {
-    opacity: 0.7,
+    opacity: 0.85,
+    scale: 0.97,
   },
 });
 
-type ExerciseFilterBarProps = {
-  category: ExerciseCategory | null;
-  difficulty: ExerciseDifficulty | null;
-  equipment: EquipmentType[];
-  hasActiveFilters: boolean;
-  onSelectCategory: (category: ExerciseCategory | null) => void;
-  onSelectDifficulty: (difficulty: ExerciseDifficulty | null) => void;
-  onToggleEquipment: (equipment: EquipmentType) => void;
-  onClearFilters: () => void;
+const ActiveDot = styled(View, {
+  position: "absolute",
+  top: -2,
+  right: -2,
+  width: 8,
+  height: 8,
+  borderRadius: "$full",
+  backgroundColor: "$primary",
+  borderWidth: 1,
+  borderColor: "$background",
+});
+
+export type ExerciseFilterBarProps = {
+  /** Currently-selected quick-filter ids. Includes "all" iff nothing else is selected. */
+  selectedQuickFilters: QuickFilterId[];
+  /**
+   * True when the filter modal has any advanced filters applied
+   * (muscle group / equipment). Drives the `$primary` dot on the
+   * leading filter-icon pill.
+   */
+  hasAdvancedFilters: boolean;
+  onToggleQuickFilter: (id: QuickFilterId) => void;
+  onOpenFilterModal: () => void;
   testID?: string;
 };
 
 export function ExerciseFilterBar({
-  category,
-  difficulty,
-  equipment,
-  hasActiveFilters,
-  onSelectCategory,
-  onSelectDifficulty,
-  onToggleEquipment,
-  onClearFilters,
+  selectedQuickFilters,
+  hasAdvancedFilters,
+  onToggleQuickFilter,
+  onOpenFilterModal,
   testID,
 }: ExerciseFilterBarProps) {
   return (
-    <Column gap="sm" testID={testID}>
-      <Row gap="sm" justify="between">
-        <Text variant="label" secondary>
-          FILTERS
-        </Text>
-        {hasActiveFilters && (
-          <ClearButton
-            onPress={onClearFilters}
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{
+        gap: 8,
+        paddingHorizontal: 16,
+        alignItems: "center",
+      }}
+      testID={testID}
+    >
+      <FilterIconPill
+        onPress={onOpenFilterModal}
+        accessibilityRole="button"
+        accessibilityLabel="Open advanced filters"
+        testID="filter-modal-trigger"
+      >
+        <Ionicons name="options-outline" size={18} color="#E8E8EC" />
+        {hasAdvancedFilters && <ActiveDot testID="filter-modal-trigger-dot" />}
+      </FilterIconPill>
+
+      {QUICK_FILTERS.map((filter) => {
+        const active = selectedQuickFilters.includes(filter.id);
+        return (
+          <Pill
+            key={filter.id}
+            active={active}
+            onPress={() => onToggleQuickFilter(filter.id)}
             accessibilityRole="button"
-            accessibilityLabel="Clear all filters"
-            testID={testID ? `${testID}-clear` : "filter-bar-clear"}
+            accessibilityLabel={`${filter.label} filter`}
+            accessibilityState={{ selected: active }}
+            testID={`quick-filter-${filter.id}`}
           >
-            <Text variant="caption" color="$primary" fontWeight="600">
-              Clear all
-            </Text>
-          </ClearButton>
-        )}
-      </Row>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
-        testID={testID ? `${testID}-category-scroll` : undefined}
-      >
-        {EXERCISE_CATEGORIES.map((cat) => {
-          const active = category === cat;
-          return (
-            <Chip
-              key={`cat-${cat}`}
-              active={active}
-              onPress={() => onSelectCategory(active ? null : cat)}
-              accessibilityRole="button"
-              accessibilityLabel={`${CATEGORY_LABELS[cat]} category filter`}
-              accessibilityState={{ selected: active }}
-              testID={`filter-category-${cat}`}
-            >
-              <ChipText active={active}>{CATEGORY_LABELS[cat]}</ChipText>
-            </Chip>
-          );
-        })}
-      </ScrollView>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
-        testID={testID ? `${testID}-difficulty-scroll` : undefined}
-      >
-        {EXERCISE_DIFFICULTIES.map((diff) => {
-          const active = difficulty === diff;
-          return (
-            <Chip
-              key={`diff-${diff}`}
-              active={active}
-              onPress={() => onSelectDifficulty(active ? null : diff)}
-              accessibilityRole="button"
-              accessibilityLabel={`${DIFFICULTY_LABELS[diff]} difficulty filter`}
-              accessibilityState={{ selected: active }}
-              testID={`filter-difficulty-${diff}`}
-            >
-              <ChipText active={active}>{DIFFICULTY_LABELS[diff]}</ChipText>
-            </Chip>
-          );
-        })}
-      </ScrollView>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
-        testID={testID ? `${testID}-equipment-scroll` : undefined}
-      >
-        {EQUIPMENT_TYPES.map((eq) => {
-          const active = equipment.includes(eq);
-          return (
-            <Chip
-              key={`eq-${eq}`}
-              active={active}
-              onPress={() => onToggleEquipment(eq)}
-              accessibilityRole="button"
-              accessibilityLabel={`${EQUIPMENT_LABELS[eq]} equipment filter`}
-              accessibilityState={{ selected: active }}
-              testID={`filter-equipment-${eq}`}
-            >
-              <ChipText active={active}>{EQUIPMENT_LABELS[eq]}</ChipText>
-            </Chip>
-          );
-        })}
-      </ScrollView>
-    </Column>
+            <PillText active={active}>{filter.label}</PillText>
+          </Pill>
+        );
+      })}
+    </ScrollView>
   );
 }

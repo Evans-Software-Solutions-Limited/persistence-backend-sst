@@ -2,132 +2,107 @@ import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { ExerciseFilterBar } from "../ExerciseFilterBar";
 
+jest.mock("@expo/vector-icons", () => {
+  const { Text } = jest.requireActual("react-native");
+  const Ionicons = ({ name }: { name: string }) => (
+    <Text testID={`icon-${name}`}>{name}</Text>
+  );
+  return { Ionicons };
+});
+
 function makeProps(
   overrides: Partial<Parameters<typeof ExerciseFilterBar>[0]> = {},
 ) {
   return {
-    category: null,
-    difficulty: null,
-    equipment: [],
-    hasActiveFilters: false,
-    onSelectCategory: jest.fn(),
-    onSelectDifficulty: jest.fn(),
-    onToggleEquipment: jest.fn(),
-    onClearFilters: jest.fn(),
+    selectedQuickFilters: ["all"] as Parameters<
+      typeof ExerciseFilterBar
+    >[0]["selectedQuickFilters"],
+    hasAdvancedFilters: false,
+    onToggleQuickFilter: jest.fn(),
+    onOpenFilterModal: jest.fn(),
     testID: "filter-bar",
     ...overrides,
   };
 }
 
 describe("ExerciseFilterBar", () => {
-  it("renders chips for every category, difficulty, and equipment option", () => {
+  it("renders the leading filter-modal trigger with the options icon", () => {
     const { getByTestId } = renderWithTheme(
       <ExerciseFilterBar {...makeProps()} />,
     );
-    expect(getByTestId("filter-category-strength")).toBeTruthy();
-    expect(getByTestId("filter-category-mobility")).toBeTruthy();
-    expect(getByTestId("filter-difficulty-beginner")).toBeTruthy();
-    expect(getByTestId("filter-difficulty-expert")).toBeTruthy();
-    expect(getByTestId("filter-equipment-barbell")).toBeTruthy();
-    expect(getByTestId("filter-equipment-other")).toBeTruthy();
+    expect(getByTestId("filter-modal-trigger")).toBeTruthy();
+    expect(getByTestId("icon-options-outline")).toBeTruthy();
   });
 
-  it("does not show clear-all button when no filters are active", () => {
-    const { queryByTestId } = renderWithTheme(
-      <ExerciseFilterBar {...makeProps({ hasActiveFilters: false })} />,
+  it("shows the active dot on the trigger only when advanced filters are set", () => {
+    const { queryByTestId, rerender } = renderWithTheme(
+      <ExerciseFilterBar {...makeProps({ hasAdvancedFilters: false })} />,
     );
-    expect(queryByTestId("filter-bar-clear")).toBeNull();
+    expect(queryByTestId("filter-modal-trigger-dot")).toBeNull();
+
+    rerender(
+      <ExerciseFilterBar {...makeProps({ hasAdvancedFilters: true })} />,
+    );
+    expect(queryByTestId("filter-modal-trigger-dot")).toBeTruthy();
   });
 
-  it("shows clear-all button when filters are active and fires callback", () => {
-    const onClearFilters = jest.fn();
+  it("fires onOpenFilterModal when the trigger is pressed", () => {
+    const onOpenFilterModal = jest.fn();
     const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar
-        {...makeProps({ hasActiveFilters: true, onClearFilters })}
-      />,
+      <ExerciseFilterBar {...makeProps({ onOpenFilterModal })} />,
     );
-    fireEvent.press(getByTestId("filter-bar-clear"));
-    expect(onClearFilters).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByTestId("filter-modal-trigger"));
+    expect(onOpenFilterModal).toHaveBeenCalledTimes(1);
   });
 
-  it("selects a new category on press", () => {
-    const onSelectCategory = jest.fn();
+  it("renders every curated quick-filter pill exactly once", () => {
     const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar {...makeProps({ onSelectCategory })} />,
+      <ExerciseFilterBar {...makeProps()} />,
     );
-    fireEvent.press(getByTestId("filter-category-strength"));
-    expect(onSelectCategory).toHaveBeenCalledWith("strength");
+    for (const id of [
+      "all",
+      "mine",
+      "system",
+      "beginner",
+      "intermediate",
+      "advanced",
+      "expert",
+    ]) {
+      expect(getByTestId(`quick-filter-${id}`)).toBeTruthy();
+    }
   });
 
-  it("clears category when the active chip is pressed again", () => {
-    const onSelectCategory = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar
-        {...makeProps({ category: "strength", onSelectCategory })}
-      />,
-    );
-    fireEvent.press(getByTestId("filter-category-strength"));
-    expect(onSelectCategory).toHaveBeenCalledWith(null);
-  });
-
-  it("selects a new difficulty on press", () => {
-    const onSelectDifficulty = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar {...makeProps({ onSelectDifficulty })} />,
-    );
-    fireEvent.press(getByTestId("filter-difficulty-advanced"));
-    expect(onSelectDifficulty).toHaveBeenCalledWith("advanced");
-  });
-
-  it("clears difficulty when the active chip is pressed again", () => {
-    const onSelectDifficulty = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar
-        {...makeProps({ difficulty: "advanced", onSelectDifficulty })}
-      />,
-    );
-    fireEvent.press(getByTestId("filter-difficulty-advanced"));
-    expect(onSelectDifficulty).toHaveBeenCalledWith(null);
-  });
-
-  it("toggles equipment chips independently", () => {
-    const onToggleEquipment = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseFilterBar
-        {...makeProps({ equipment: ["barbell"], onToggleEquipment })}
-      />,
-    );
-    fireEvent.press(getByTestId("filter-equipment-dumbbell"));
-    expect(onToggleEquipment).toHaveBeenCalledWith("dumbbell");
-    fireEvent.press(getByTestId("filter-equipment-barbell"));
-    expect(onToggleEquipment).toHaveBeenCalledWith("barbell");
-  });
-
-  it("renders active chips with selected accessibility state", () => {
+  it("marks selected quick-filter pills via accessibilityState.selected", () => {
     const { getByTestId } = renderWithTheme(
       <ExerciseFilterBar
         {...makeProps({
-          category: "strength",
-          difficulty: "intermediate",
-          equipment: ["barbell"],
-          hasActiveFilters: true,
+          selectedQuickFilters: ["beginner", "intermediate"],
         })}
       />,
     );
     expect(
-      getByTestId("filter-category-strength").props.accessibilityState
+      getByTestId("quick-filter-beginner").props.accessibilityState?.selected,
+    ).toBe(true);
+    expect(
+      getByTestId("quick-filter-intermediate").props.accessibilityState
         ?.selected,
     ).toBe(true);
     expect(
-      getByTestId("filter-difficulty-intermediate").props.accessibilityState
-        ?.selected,
-    ).toBe(true);
-    expect(
-      getByTestId("filter-equipment-barbell").props.accessibilityState
-        ?.selected,
-    ).toBe(true);
-    expect(
-      getByTestId("filter-equipment-cable").props.accessibilityState?.selected,
+      getByTestId("quick-filter-advanced").props.accessibilityState?.selected,
     ).toBe(false);
+    expect(
+      getByTestId("quick-filter-all").props.accessibilityState?.selected,
+    ).toBe(false);
+  });
+
+  it("fires onToggleQuickFilter with the pill id on press", () => {
+    const onToggleQuickFilter = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseFilterBar {...makeProps({ onToggleQuickFilter })} />,
+    );
+    fireEvent.press(getByTestId("quick-filter-beginner"));
+    expect(onToggleQuickFilter).toHaveBeenCalledWith("beginner");
+    fireEvent.press(getByTestId("quick-filter-all"));
+    expect(onToggleQuickFilter).toHaveBeenCalledWith("all");
   });
 });

@@ -1,16 +1,50 @@
 import { styled, View, Text as TamaguiText } from "@tamagui/core";
 import {
-  CATEGORY_LABELS,
-  DIFFICULTY_LABELS,
   EQUIPMENT_LABELS,
   MUSCLE_GROUP_LABELS,
+  type EquipmentType,
   type Exercise,
+  type ExerciseDifficulty,
+  type MuscleGroup,
 } from "@/domain/models/exercise";
 
-import { Badge } from "./Badge";
 import { Column } from "./Column";
 import { Row } from "./Row";
 import { Text } from "./Text";
+
+/**
+ * Tinted difficulty pill styling — the screen's signature element.
+ *
+ * Each background is the matching semantic colour at 12% alpha; the text
+ * colour is a slightly lighter variant of the same hue so it reads as
+ * confident (not neon) on dark surfaces. Expert uses `$primary` cyan
+ * since it's the rarest tier.
+ */
+const DIFFICULTY_PILL: Record<
+  ExerciseDifficulty,
+  { bg: string; fg: string; label: string }
+> = {
+  beginner: {
+    bg: "rgba(34, 197, 94, 0.12)",
+    fg: "#4ADE80",
+    label: "Beginner",
+  },
+  intermediate: {
+    bg: "rgba(245, 158, 11, 0.12)",
+    fg: "#FBBF24",
+    label: "Intermediate",
+  },
+  advanced: {
+    bg: "rgba(239, 68, 68, 0.12)",
+    fg: "#F87171",
+    label: "Advanced",
+  },
+  expert: {
+    bg: "rgba(0, 212, 255, 0.12)",
+    fg: "#00D4FF",
+    label: "Expert",
+  },
+};
 
 const CardFrame = styled(View, {
   backgroundColor: "$surface",
@@ -18,19 +52,39 @@ const CardFrame = styled(View, {
   padding: "$base",
   borderWidth: 1,
   borderColor: "$borderColor",
+  overflow: "hidden",
   pressStyle: {
     backgroundColor: "$backgroundPress",
-    opacity: 0.9,
+    opacity: 0.92,
     scale: 0.995,
   },
+});
 
-  variants: {
-    custom: {
-      true: {
-        borderColor: "$primary",
-      },
-    },
-  } as const,
+const CustomAccent = styled(View, {
+  position: "absolute",
+  top: 0,
+  bottom: 0,
+  left: 0,
+  width: 3,
+  backgroundColor: "$primary",
+});
+
+const OutlinedChip = styled(View, {
+  paddingHorizontal: "$sm",
+  paddingVertical: 3,
+  borderRadius: "$full",
+  borderWidth: 1,
+  borderColor: "$borderColor",
+  backgroundColor: "transparent",
+});
+
+const ChipText = styled(TamaguiText, {
+  fontFamily: "$body",
+  fontSize: 11,
+  lineHeight: 14,
+  fontWeight: "500",
+  letterSpacing: 0.3,
+  color: "$colorSecondary",
 });
 
 type ExerciseCardProps = {
@@ -39,30 +93,58 @@ type ExerciseCardProps = {
   testID?: string;
 };
 
-function describeEquipment(exercise: Exercise): string {
-  if (exercise.equipment.length === 0) return "Bodyweight";
-  return exercise.equipment.map((e) => EQUIPMENT_LABELS[e]).join(" / ");
-}
-
-function describeMuscles(exercise: Exercise): string {
-  if (exercise.primaryMuscleGroups.length === 0) return "General";
-  return exercise.primaryMuscleGroups
-    .map((m) => MUSCLE_GROUP_LABELS[m])
-    .join(", ");
+/**
+ * Render up to `max` entries from `items`, rendering an overflow "+N" chip
+ * when the list is longer. Used for both muscle-group and equipment rows,
+ * which follow the same shape.
+ */
+function renderChipRow<T>(
+  items: T[],
+  max: number,
+  label: (item: T) => string,
+  keyOf: (item: T) => string,
+  overflowLabel: (remaining: number) => string,
+  testIdPrefix?: string,
+) {
+  if (items.length === 0) return null;
+  const visible = items.slice(0, max);
+  const remaining = items.length - visible.length;
+  return (
+    <Row gap="xs" wrap testID={testIdPrefix}>
+      {visible.map((item) => (
+        <OutlinedChip key={keyOf(item)}>
+          <ChipText>{label(item)}</ChipText>
+        </OutlinedChip>
+      ))}
+      {remaining > 0 && (
+        <OutlinedChip
+          testID={testIdPrefix ? `${testIdPrefix}-overflow` : undefined}
+        >
+          <ChipText>{overflowLabel(remaining)}</ChipText>
+        </OutlinedChip>
+      )}
+    </Row>
+  );
 }
 
 export function ExerciseCard({ exercise, onPress, testID }: ExerciseCardProps) {
+  const difficulty = DIFFICULTY_PILL[exercise.difficulty];
+
   return (
     <CardFrame
-      custom={exercise.isCustom}
       onPress={() => onPress(exercise.id)}
       accessibilityRole="button"
       accessibilityLabel={`Open ${exercise.name}`}
       testID={testID}
     >
+      {exercise.isCustom && (
+        <CustomAccent testID={testID ? `${testID}-custom-accent` : undefined} />
+      )}
+
       <Column gap="sm">
-        <Row gap="sm" justify="between">
-          <View flex={1}>
+        {/* Header: title + difficulty pill */}
+        <Row gap="sm" justify="between" alignItems="flex-start">
+          <View flex={1} paddingRight="$sm">
             <TamaguiText
               fontFamily="$body"
               fontSize={17}
@@ -75,36 +157,57 @@ export function ExerciseCard({ exercise, onPress, testID }: ExerciseCardProps) {
               {exercise.name}
             </TamaguiText>
           </View>
-          {exercise.isCustom && (
-            <Badge
-              label="CUSTOM"
-              variant="primary"
-              size="sm"
-              testID={testID ? `${testID}-custom-badge` : undefined}
-            />
-          )}
+          <View
+            paddingHorizontal="$sm"
+            paddingVertical={3}
+            borderRadius="$full"
+            backgroundColor={difficulty.bg}
+            testID={testID ? `${testID}-difficulty` : undefined}
+          >
+            <TamaguiText
+              fontFamily="$body"
+              fontSize={11}
+              lineHeight={14}
+              fontWeight="600"
+              letterSpacing={0.5}
+              color={difficulty.fg}
+            >
+              {difficulty.label}
+            </TamaguiText>
+          </View>
         </Row>
 
-        <Text variant="bodySmall" secondary numberOfLines={1}>
-          {describeMuscles(exercise)}
-        </Text>
+        {/* Description — hidden if null */}
+        {exercise.description && (
+          <Text
+            variant="bodySmall"
+            secondary
+            numberOfLines={2}
+            testID={testID ? `${testID}-description` : undefined}
+          >
+            {exercise.description}
+          </Text>
+        )}
 
-        <Row gap="xs" wrap>
-          <Badge
-            label={CATEGORY_LABELS[exercise.category]}
-            variant="info"
-            size="sm"
-          />
-          <Badge
-            label={DIFFICULTY_LABELS[exercise.difficulty]}
-            variant="default"
-            size="sm"
-          />
-        </Row>
+        {/* Muscle chip row */}
+        {renderChipRow<MuscleGroup>(
+          exercise.primaryMuscleGroups,
+          2,
+          (m) => MUSCLE_GROUP_LABELS[m],
+          (m) => `muscle-${m}`,
+          (n) => `+${n}`,
+          testID ? `${testID}-muscles` : undefined,
+        )}
 
-        <Text variant="caption" muted numberOfLines={1}>
-          {describeEquipment(exercise)}
-        </Text>
+        {/* Equipment chip row */}
+        {renderChipRow<EquipmentType>(
+          exercise.equipment,
+          3,
+          (e) => EQUIPMENT_LABELS[e],
+          (e) => `equip-${e}`,
+          (n) => `+${n} more`,
+          testID ? `${testID}-equipment` : undefined,
+        )}
       </Column>
     </CardFrame>
   );

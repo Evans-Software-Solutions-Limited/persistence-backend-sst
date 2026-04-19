@@ -1,61 +1,48 @@
+import { Ionicons } from "@expo/vector-icons";
 import { View, Text as TamaguiText } from "@tamagui/core";
 import {
   FlatList,
   RefreshControl,
   StyleSheet,
+  TextInput,
   type ListRenderItemInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
-import type {
-  EquipmentType,
-  Exercise,
-  ExerciseCategory,
-  ExerciseDifficulty,
-  MuscleGroup,
-} from "@/domain/models/exercise";
+import type { Exercise } from "@/domain/models/exercise";
 import {
-  Button,
   Column,
   EmptyState,
   ErrorState,
   ExerciseCard,
   ExerciseFilterBar,
-  Input,
-  MuscleGroupPicker,
   Row,
   Skeleton,
   Text,
 } from "@/ui/components";
+import type { QuickFilterId } from "@/ui/components/ExerciseFilterBar";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
 export type ExerciseListPresenterProps = {
   exercises: Exercise[];
   searchInput: string;
-  muscleGroups: MuscleGroup[];
-  equipment: EquipmentType[];
-  category: ExerciseCategory | null;
-  difficulty: ExerciseDifficulty | null;
+  selectedQuickFilters: QuickFilterId[];
+  hasAdvancedFilters: boolean;
+  /** True iff any filter (quick, advanced, or search) is currently set. */
+  hasAnyFilter: boolean;
   lastSyncedAt: string | null;
   isStale: boolean;
   isRefreshing: boolean;
-  /** True when initial cache read has no rows and a refresh is in-flight. */
   showSkeleton: boolean;
-  /** Non-null when the most recent refresh failed and there is no cached data to show. */
   loadError: string | null;
   onSearchChange: (text: string) => void;
-  onToggleMuscleGroup: (group: MuscleGroup) => void;
-  onToggleEquipment: (equipment: EquipmentType) => void;
-  onSelectCategory: (category: ExerciseCategory | null) => void;
-  onSelectDifficulty: (difficulty: ExerciseDifficulty | null) => void;
+  onToggleQuickFilter: (id: QuickFilterId) => void;
+  onOpenFilterModal: () => void;
   onClearFilters: () => void;
   onRefresh: () => void;
   onSelectExercise: (id: string) => void;
   onCreateExercise: () => void;
-  /**
-   * Clock for deterministic "last synced X ago" rendering in tests.
-   * Defaults to Date.now.
-   */
+  /** Injectable clock for deterministic "Updated X ago" rendering in tests. */
   now?: () => number;
 };
 
@@ -82,20 +69,17 @@ function keyExtractor(exercise: Exercise): string {
 export function ExerciseListPresenter({
   exercises,
   searchInput,
-  muscleGroups,
-  equipment,
-  category,
-  difficulty,
+  selectedQuickFilters,
+  hasAdvancedFilters,
+  hasAnyFilter,
   lastSyncedAt,
   isStale,
   isRefreshing,
   showSkeleton,
   loadError,
   onSearchChange,
-  onToggleMuscleGroup,
-  onToggleEquipment,
-  onSelectCategory,
-  onSelectDifficulty,
+  onToggleQuickFilter,
+  onOpenFilterModal,
   onClearFilters,
   onRefresh,
   onSelectExercise,
@@ -103,21 +87,10 @@ export function ExerciseListPresenter({
   now = Date.now,
 }: ExerciseListPresenterProps) {
   const insets = useSafeAreaInsets();
-
   const headerStyle = useStaggeredEntry(0);
   const searchStyle = useStaggeredEntry(1);
   const filterStyle = useStaggeredEntry(2);
-  const muscleStyle = useStaggeredEntry(3);
-  const listStyle = useStaggeredEntry(4);
-
-  const hasActiveFilters =
-    muscleGroups.length > 0 ||
-    equipment.length > 0 ||
-    category !== null ||
-    difficulty !== null;
-
-  const countLabel =
-    exercises.length === 1 ? "1 exercise" : `${exercises.length} exercises`;
+  const listStyle = useStaggeredEntry(3);
 
   const renderItem = ({ item }: ListRenderItemInfo<Exercise>) => (
     <ExerciseCard
@@ -141,18 +114,18 @@ export function ExerciseListPresenter({
     if (loadError !== null) {
       return (
         <ErrorState
-          title="Couldn't load exercises"
+          title="Couldn't load"
           message={loadError}
           onRetry={onRefresh}
           testID="exercise-list-error"
         />
       );
     }
-    if (hasActiveFilters || searchInput.length > 0) {
+    if (hasAnyFilter) {
       return (
         <EmptyState
-          title="No matches"
-          description="Try different filters or a broader search."
+          title="Nothing matches"
+          description="Try a broader search or clear your filters."
           action={{ label: "Clear filters", onPress: onClearFilters }}
           testID="exercise-list-empty-filtered"
         />
@@ -160,8 +133,8 @@ export function ExerciseListPresenter({
     }
     return (
       <EmptyState
-        title="No exercises yet"
-        description="Pull down to refresh or create your own custom exercise."
+        title="Your library is empty"
+        description="Pull down to refresh, or create an exercise."
         action={{ label: "Create exercise", onPress: onCreateExercise }}
         testID="exercise-list-empty"
       />
@@ -175,113 +148,124 @@ export function ExerciseListPresenter({
       testID="exercise-list-screen"
       style={{ paddingTop: insets.top }}
     >
+      {/* Header: title only. No counter, no right-action button. */}
       <Animated.View style={headerStyle}>
-        <Row
-          gap="sm"
-          justify="between"
-          paddingHorizontal="$base"
-          paddingTop="$base"
-          paddingBottom="$sm"
-        >
-          <Column gap="xs">
-            <TamaguiText
-              fontFamily="$heading"
-              fontSize={28}
-              lineHeight={34}
-              fontWeight="700"
-              color="$color"
-              testID="exercise-list-title"
-            >
-              Exercises
-            </TamaguiText>
-            <Text variant="caption" muted testID="exercise-list-count">
-              {countLabel}
-            </Text>
-          </Column>
-          <Button
-            label="New"
-            onPress={onCreateExercise}
-            variant="secondary"
-            size="sm"
-            testID="create-exercise-button"
-          />
-        </Row>
-      </Animated.View>
-
-      <Animated.View style={searchStyle}>
-        <View paddingHorizontal="$base" paddingBottom="$sm">
-          <Input
-            placeholder="Search exercises"
-            value={searchInput}
-            onChangeText={onSearchChange}
-            autoCapitalize="none"
-            autoCorrect={false}
-            testID="exercise-search"
-          />
+        <View paddingHorizontal="$base" paddingTop="$base" paddingBottom="$md">
+          <TamaguiText
+            fontFamily="$heading"
+            fontSize={28}
+            lineHeight={34}
+            fontWeight="700"
+            color="$color"
+            letterSpacing={-0.5}
+            testID="exercise-list-title"
+          >
+            Exercises
+          </TamaguiText>
         </View>
       </Animated.View>
 
-      {/*
-        Show the stale banner whenever the cache is stale AND we're not
-        in a state that already communicates stale-ness better:
-        - `showSkeleton`: first load, truly empty cache — the skeleton *is*
-          the refresh indicator; a banner would just be noise.
-        - `loadError !== null`: the full-screen ErrorState has its own Retry
-          button; layering a second refresh affordance on top is redundant.
-        Otherwise — including when filters narrow the visible list to zero —
-        the banner stays visible so the user keeps the pull-to-refresh
-        affordance regardless of the current row count.
-      */}
-      {isStale && !showSkeleton && loadError === null && (
-        <Animated.View entering={FadeIn.duration(200)}>
-          <View
-            marginHorizontal="$base"
-            marginBottom="$sm"
-            paddingHorizontal="$base"
-            paddingVertical="$sm"
-            borderRadius="$md"
-            backgroundColor="rgba(245, 158, 11, 0.08)"
-            borderWidth={1}
-            borderColor="rgba(245, 158, 11, 0.2)"
-          >
-            <Row gap="sm" justify="between">
-              <Text
-                variant="caption"
-                color="$warning"
-                testID="exercise-list-stale-banner"
-              >
-                {describeSyncAge(lastSyncedAt, now)} · pull down to refresh
-              </Text>
-            </Row>
-          </View>
-        </Animated.View>
-      )}
+      {/* Search bar with inline create (+) affordance. */}
+      <Animated.View style={searchStyle}>
+        <View paddingHorizontal="$base" paddingBottom="$md">
+          <Row gap="sm">
+            <View
+              flex={1}
+              flexDirection="row"
+              alignItems="center"
+              height={48}
+              backgroundColor="$surfaceSecondary"
+              borderRadius="$lg"
+              paddingHorizontal="$base"
+            >
+              <Ionicons name="search-outline" size={20} color="#8E8E9A" />
+              <TextInput
+                value={searchInput}
+                onChangeText={onSearchChange}
+                placeholder="Search exercises"
+                placeholderTextColor="#8E8E9A"
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="exercise-search-input"
+                style={styles.searchField}
+              />
+              {searchInput.length > 0 && (
+                <View
+                  onPress={() => onSearchChange("")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  testID="exercise-search-clear"
+                  padding="$xs"
+                >
+                  <Ionicons name="close-circle" size={18} color="#8E8E9A" />
+                </View>
+              )}
+            </View>
+            <View
+              width={48}
+              height={48}
+              borderRadius="$lg"
+              borderWidth={1}
+              borderColor="$primary"
+              backgroundColor="transparent"
+              alignItems="center"
+              justifyContent="center"
+              onPress={onCreateExercise}
+              accessibilityRole="button"
+              accessibilityLabel="Create new exercise"
+              testID="create-exercise-button"
+              pressStyle={{
+                backgroundColor: "$primary",
+                opacity: 0.9,
+                scale: 0.97,
+              }}
+            >
+              <Ionicons name="add" size={22} color="#00D4FF" />
+            </View>
+          </Row>
+        </View>
+      </Animated.View>
 
+      {/* Curated quick-filter rail. No more muscle grid on the main screen. */}
       <Animated.View style={filterStyle}>
-        <View paddingHorizontal="$base" paddingBottom="$sm">
+        <View paddingBottom="$md">
           <ExerciseFilterBar
-            category={category}
-            difficulty={difficulty}
-            equipment={equipment}
-            hasActiveFilters={hasActiveFilters}
-            onSelectCategory={onSelectCategory}
-            onSelectDifficulty={onSelectDifficulty}
-            onToggleEquipment={onToggleEquipment}
-            onClearFilters={onClearFilters}
+            selectedQuickFilters={selectedQuickFilters}
+            hasAdvancedFilters={hasAdvancedFilters}
+            onToggleQuickFilter={onToggleQuickFilter}
+            onOpenFilterModal={onOpenFilterModal}
             testID="exercise-filter-bar"
           />
         </View>
       </Animated.View>
 
-      <Animated.View style={muscleStyle}>
-        <View paddingHorizontal="$base" paddingBottom="$sm">
-          <MuscleGroupPicker
-            selected={muscleGroups}
-            onToggle={onToggleMuscleGroup}
-            testID="muscle-group-picker"
-          />
-        </View>
-      </Animated.View>
+      {/* Inline stale metadata strip — never obstructs content. */}
+      {isStale && !showSkeleton && loadError === null && (
+        <Animated.View entering={FadeIn.duration(200)}>
+          <View
+            paddingHorizontal="$base"
+            paddingBottom="$sm"
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <Row gap="sm">
+              <View
+                width={6}
+                height={6}
+                borderRadius="$full"
+                backgroundColor="$warning"
+              />
+              <Text variant="caption" muted testID="exercise-list-stale-banner">
+                {describeSyncAge(lastSyncedAt, now)}
+              </Text>
+            </Row>
+            <Text variant="caption" muted>
+              Pull to refresh
+            </Text>
+          </View>
+        </Animated.View>
+      )}
 
       <Animated.View style={[listStyle, styles.flex]}>
         <FlatList
@@ -299,7 +283,7 @@ export function ExerciseListPresenter({
           ListEmptyComponent={renderListEmpty}
           ItemSeparatorComponent={Separator}
           contentContainerStyle={{
-            padding: 16,
+            paddingHorizontal: 16,
             paddingBottom: 48 + insets.bottom,
             flexGrow: 1,
           }}
@@ -317,4 +301,11 @@ function Separator() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  searchField: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 16,
+    marginLeft: 10,
+    paddingVertical: 0,
+  },
 });

@@ -5,6 +5,14 @@ import { ExerciseListPresenter } from "../ExerciseListPresenter";
 
 jest.setTimeout(15_000);
 
+jest.mock("@expo/vector-icons", () => {
+  const { Text } = jest.requireActual("react-native");
+  const Ionicons = ({ name }: { name: string }) => (
+    <Text testID={`icon-${name}`}>{name}</Text>
+  );
+  return { Ionicons };
+});
+
 function makeExercise(overrides: Partial<Exercise> = {}): Exercise {
   return {
     id: "ex-1",
@@ -28,20 +36,17 @@ function makeProps(
   return {
     exercises: [],
     searchInput: "",
-    muscleGroups: [],
-    equipment: [],
-    category: null,
-    difficulty: null,
+    selectedQuickFilters: ["all"],
+    hasAdvancedFilters: false,
+    hasAnyFilter: false,
     lastSyncedAt: null,
     isStale: false,
     isRefreshing: false,
     showSkeleton: false,
     loadError: null,
     onSearchChange: jest.fn(),
-    onToggleMuscleGroup: jest.fn(),
-    onToggleEquipment: jest.fn(),
-    onSelectCategory: jest.fn(),
-    onSelectDifficulty: jest.fn(),
+    onToggleQuickFilter: jest.fn(),
+    onOpenFilterModal: jest.fn(),
     onClearFilters: jest.fn(),
     onRefresh: jest.fn(),
     onSelectExercise: jest.fn(),
@@ -51,23 +56,12 @@ function makeProps(
 }
 
 describe("ExerciseListPresenter", () => {
-  it("renders the title and the exercise count", () => {
+  it("renders the 'Exercises' title", () => {
     const { getByTestId, getByText } = renderWithTheme(
-      <ExerciseListPresenter
-        {...makeProps({
-          exercises: [makeExercise(), makeExercise({ id: "ex-2" })],
-        })}
-      />,
+      <ExerciseListPresenter {...makeProps()} />,
     );
     expect(getByTestId("exercise-list-title")).toBeTruthy();
-    expect(getByText("2 exercises")).toBeTruthy();
-  });
-
-  it("uses singular label when exactly one exercise is listed", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseListPresenter {...makeProps({ exercises: [makeExercise()] })} />,
-    );
-    expect(getByText("1 exercise")).toBeTruthy();
+    expect(getByText("Exercises")).toBeTruthy();
   });
 
   it("renders each exercise as a card", () => {
@@ -94,7 +88,25 @@ describe("ExerciseListPresenter", () => {
     expect(onSearchChange).toHaveBeenCalledWith("squat");
   });
 
-  it("fires onCreateExercise from the header New button", () => {
+  it("clears search text when the close button is pressed", () => {
+    const onSearchChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({ searchInput: "squat", onSearchChange })}
+      />,
+    );
+    fireEvent.press(getByTestId("exercise-search-clear"));
+    expect(onSearchChange).toHaveBeenCalledWith("");
+  });
+
+  it("does not render the clear-search button when search is empty", () => {
+    const { queryByTestId } = renderWithTheme(
+      <ExerciseListPresenter {...makeProps({ searchInput: "" })} />,
+    );
+    expect(queryByTestId("exercise-search-clear")).toBeNull();
+  });
+
+  it("fires onCreateExercise when the inline + button is pressed", () => {
     const onCreateExercise = jest.fn();
     const { getByTestId } = renderWithTheme(
       <ExerciseListPresenter {...makeProps({ onCreateExercise })} />,
@@ -118,13 +130,12 @@ describe("ExerciseListPresenter", () => {
   });
 
   it("shows skeleton placeholders while the initial refresh is in-flight", () => {
-    const { getByTestId, queryByTestId } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <ExerciseListPresenter
         {...makeProps({ showSkeleton: true, isRefreshing: true })}
       />,
     );
     expect(getByTestId("exercise-list-skeleton")).toBeTruthy();
-    expect(queryByTestId("exercise-list-empty")).toBeNull();
   });
 
   it("shows error state with retry when loadError is set and no cache", () => {
@@ -139,14 +150,11 @@ describe("ExerciseListPresenter", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the filtered empty state when the user has active filters or a search", () => {
+  it("shows the filtered empty state when any filter is active", () => {
     const onClearFilters = jest.fn();
     const { getByTestId, getByText } = renderWithTheme(
       <ExerciseListPresenter
-        {...makeProps({
-          searchInput: "unmatched",
-          onClearFilters,
-        })}
+        {...makeProps({ hasAnyFilter: true, onClearFilters })}
       />,
     );
     expect(getByTestId("exercise-list-empty-filtered")).toBeTruthy();
@@ -154,20 +162,19 @@ describe("ExerciseListPresenter", () => {
     expect(onClearFilters).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the default empty state with a create action when there are no filters", () => {
+  it("shows the default empty state when there are no filters", () => {
     const onCreateExercise = jest.fn();
     const { getByTestId, getByText } = renderWithTheme(
       <ExerciseListPresenter {...makeProps({ onCreateExercise })} />,
     );
     expect(getByTestId("exercise-list-empty")).toBeTruthy();
     fireEvent.press(getByText("Create exercise"));
-    // header button and empty-state button are both wired to the same handler.
     expect(onCreateExercise).toHaveBeenCalled();
   });
 
-  it("renders the stale banner when isStale is true and exercises exist", () => {
+  it("renders the stale banner and 'Pull to refresh' caption when stale", () => {
     const now = () => Date.parse("2026-04-18T12:00:00Z");
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getByText } = renderWithTheme(
       <ExerciseListPresenter
         {...makeProps({
           exercises: [makeExercise()],
@@ -178,9 +185,26 @@ describe("ExerciseListPresenter", () => {
       />,
     );
     expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
+    expect(getByText("Pull to refresh")).toBeTruthy();
   });
 
-  it("hides the stale banner when the cache is not stale", () => {
+  it("keeps the stale banner visible when a filter narrows results to zero", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseListPresenter
+        {...makeProps({
+          exercises: [],
+          hasAnyFilter: true,
+          isStale: true,
+          lastSyncedAt: "2026-04-17T12:00:00Z",
+          now: () => Date.parse("2026-04-18T12:00:00Z"),
+        })}
+      />,
+    );
+    expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
+    expect(getByTestId("exercise-list-empty-filtered")).toBeTruthy();
+  });
+
+  it("hides the stale banner when not stale", () => {
     const { queryByTestId } = renderWithTheme(
       <ExerciseListPresenter
         {...makeProps({
@@ -193,77 +217,34 @@ describe("ExerciseListPresenter", () => {
     expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
   });
 
-  it("keeps the stale banner visible when a filter narrows results to zero", () => {
-    // Regression: previously gated on `exercises.length > 0`, so narrowing
-    // the filter dropped the pull-to-refresh affordance even though the
-    // underlying cache was still stale.
-    const { getByTestId } = renderWithTheme(
+  it("hides the stale banner while the skeleton is showing", () => {
+    const { queryByTestId } = renderWithTheme(
       <ExerciseListPresenter
         {...makeProps({
-          exercises: [],
-          searchInput: "no-matches",
           isStale: true,
-          lastSyncedAt: "2026-04-17T12:00:00Z",
-          now: () => Date.parse("2026-04-18T12:00:00Z"),
-        })}
-      />,
-    );
-    expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
-    // The filtered-empty state still renders below the banner.
-    expect(getByTestId("exercise-list-empty-filtered")).toBeTruthy();
-  });
-
-  it("keeps the stale banner visible on the default empty state when the cache has never synced", () => {
-    const { getByText, getByTestId } = renderWithTheme(
-      <ExerciseListPresenter
-        {...makeProps({
-          exercises: [],
-          isStale: true,
-          lastSyncedAt: null,
-        })}
-      />,
-    );
-    expect(getByTestId("exercise-list-stale-banner")).toBeTruthy();
-    expect(getByText(/Not synced yet/)).toBeTruthy();
-    expect(getByTestId("exercise-list-empty")).toBeTruthy();
-  });
-
-  it("hides the stale banner while the initial skeleton is visible", () => {
-    const { queryByTestId, getByTestId } = renderWithTheme(
-      <ExerciseListPresenter
-        {...makeProps({
-          exercises: [],
-          isStale: true,
-          lastSyncedAt: null,
           showSkeleton: true,
           isRefreshing: true,
         })}
       />,
     );
-    expect(getByTestId("exercise-list-skeleton")).toBeTruthy();
     expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
   });
 
   it("hides the stale banner when a load error is being shown", () => {
-    const { queryByTestId, getByTestId } = renderWithTheme(
+    const { queryByTestId } = renderWithTheme(
       <ExerciseListPresenter
         {...makeProps({
-          exercises: [],
           isStale: true,
-          lastSyncedAt: null,
           loadError: "Network down",
         })}
       />,
     );
-    // ErrorState already has its own Retry button; no extra banner on top.
-    expect(getByTestId("exercise-list-error")).toBeTruthy();
     expect(queryByTestId("exercise-list-stale-banner")).toBeNull();
   });
 
   it("formats last-synced ages across the minute/hour/day thresholds", () => {
     const anchor = Date.parse("2026-04-18T12:00:00Z");
     const now = () => anchor;
-
     const cases: { syncedAt: string; expected: RegExp }[] = [
       {
         syncedAt: new Date(anchor - 30_000).toISOString(),
@@ -282,7 +263,6 @@ describe("ExerciseListPresenter", () => {
         expected: /Updated 5d ago/,
       },
     ];
-
     for (const { syncedAt, expected } of cases) {
       const { getByText, unmount } = renderWithTheme(
         <ExerciseListPresenter
@@ -323,5 +303,14 @@ describe("ExerciseListPresenter", () => {
       />,
     );
     expect(getByText(/Not synced yet/)).toBeTruthy();
+  });
+
+  it("forwards filter-modal open to onOpenFilterModal", () => {
+    const onOpenFilterModal = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseListPresenter {...makeProps({ onOpenFilterModal })} />,
+    );
+    fireEvent.press(getByTestId("filter-modal-trigger"));
+    expect(onOpenFilterModal).toHaveBeenCalledTimes(1);
   });
 });

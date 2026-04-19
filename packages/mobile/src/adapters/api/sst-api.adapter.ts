@@ -385,7 +385,10 @@ function buildExerciseQueryParams(
   if (cursor) params.cursor = cursor;
   if (filters?.search) params.search = filters.search;
   if (filters?.category) params.category = filters.category;
-  if (filters?.difficulty) params.difficulty = filters.difficulty;
+  if (filters?.difficulties && filters.difficulties.length > 0) {
+    params.difficulty = filters.difficulties.join(",");
+  }
+  if (filters?.createdBy) params.createdBy = filters.createdBy;
   if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
     params.muscleGroups = filters.muscleGroups.join(",");
   }

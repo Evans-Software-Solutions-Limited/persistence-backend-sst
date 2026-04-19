@@ -18,7 +18,7 @@ const baseExercise: Exercise = {
 };
 
 describe("ExerciseCard", () => {
-  it("renders exercise name", () => {
+  it("renders the exercise name as the title", () => {
     const { getByText } = renderWithTheme(
       <ExerciseCard
         exercise={baseExercise}
@@ -29,79 +29,137 @@ describe("ExerciseCard", () => {
     expect(getByText("Barbell Back Squat")).toBeTruthy();
   });
 
-  it("renders primary muscle group summary", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard exercise={baseExercise} onPress={jest.fn()} />,
-    );
-    expect(getByText("Quads, Glutes")).toBeTruthy();
-  });
-
-  it("renders category and difficulty badges", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard exercise={baseExercise} onPress={jest.fn()} />,
-    );
-    expect(getByText("Strength")).toBeTruthy();
-    expect(getByText("Intermediate")).toBeTruthy();
-  });
-
-  it("renders equipment summary", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard exercise={baseExercise} onPress={jest.fn()} />,
-    );
-    expect(getByText("Barbell")).toBeTruthy();
-  });
-
-  it("falls back to Bodyweight when equipment is empty", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard
-        exercise={{ ...baseExercise, equipment: [] }}
-        onPress={jest.fn()}
-      />,
-    );
-    expect(getByText("Bodyweight")).toBeTruthy();
-  });
-
-  it("falls back to General when primary muscle groups are empty", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard
-        exercise={{ ...baseExercise, primaryMuscleGroups: [] }}
-        onPress={jest.fn()}
-      />,
-    );
-    expect(getByText("General")).toBeTruthy();
-  });
-
-  it("joins multiple equipment labels with slash", () => {
-    const { getByText } = renderWithTheme(
-      <ExerciseCard
-        exercise={{ ...baseExercise, equipment: ["barbell", "cable"] }}
-        onPress={jest.fn()}
-      />,
-    );
-    expect(getByText("Barbell / Cable")).toBeTruthy();
-  });
-
-  it("shows CUSTOM badge only when exercise.isCustom is true", () => {
-    const { getByTestId, queryByTestId, rerender } = renderWithTheme(
-      <ExerciseCard
-        exercise={{ ...baseExercise, isCustom: true }}
-        onPress={jest.fn()}
-        testID="card"
-      />,
-    );
-    expect(getByTestId("card-custom-badge")).toBeTruthy();
-
-    rerender(
+  it("renders the difficulty pill label with correct capitalisation", () => {
+    const { getByTestId, getByText } = renderWithTheme(
       <ExerciseCard
         exercise={baseExercise}
         onPress={jest.fn()}
         testID="card"
       />,
     );
-    expect(queryByTestId("card-custom-badge")).toBeNull();
+    expect(getByTestId("card-difficulty")).toBeTruthy();
+    expect(getByText("Intermediate")).toBeTruthy();
   });
 
-  it("calls onPress with the exercise id", () => {
+  it.each([
+    ["beginner", "Beginner"],
+    ["intermediate", "Intermediate"],
+    ["advanced", "Advanced"],
+    ["expert", "Expert"],
+  ] as const)(
+    "renders the '%s' difficulty pill with label '%s'",
+    (difficulty, label) => {
+      const { getByText } = renderWithTheme(
+        <ExerciseCard
+          exercise={{ ...baseExercise, difficulty }}
+          onPress={jest.fn()}
+        />,
+      );
+      expect(getByText(label)).toBeTruthy();
+    },
+  );
+
+  it("renders the description with 2-line truncation when present", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={baseExercise}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    const desc = getByTestId("card-description");
+    expect(desc.props.numberOfLines).toBe(2);
+  });
+
+  it("omits the description row when description is null", () => {
+    const { queryByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={{ ...baseExercise, description: null }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(queryByTestId("card-description")).toBeNull();
+  });
+
+  it("renders primary muscle groups (max 2 visible, overflow +N)", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={{
+          ...baseExercise,
+          primaryMuscleGroups: ["quadriceps", "glutes", "hamstrings"],
+        }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(getByText("Quads")).toBeTruthy();
+    expect(getByText("Glutes")).toBeTruthy();
+    expect(getByTestId("card-muscles-overflow")).toBeTruthy();
+    expect(getByText("+1")).toBeTruthy();
+  });
+
+  it("renders equipment (max 3 visible, overflow '+N more')", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={{
+          ...baseExercise,
+          equipment: ["barbell", "cable", "dumbbell", "kettlebell", "machine"],
+        }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(getByText("Barbell")).toBeTruthy();
+    expect(getByText("Cable")).toBeTruthy();
+    expect(getByText("Dumbbell")).toBeTruthy();
+    expect(getByTestId("card-equipment-overflow")).toBeTruthy();
+    expect(getByText("+2 more")).toBeTruthy();
+  });
+
+  it("omits the equipment row entirely when equipment is empty", () => {
+    const { queryByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={{ ...baseExercise, equipment: [] }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(queryByTestId("card-equipment")).toBeNull();
+  });
+
+  it("omits the muscles row entirely when primary muscle groups is empty", () => {
+    const { queryByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={{ ...baseExercise, primaryMuscleGroups: [] }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(queryByTestId("card-muscles")).toBeNull();
+  });
+
+  it("shows the primary left-accent only when isCustom is true", () => {
+    const { queryByTestId, rerender } = renderWithTheme(
+      <ExerciseCard
+        exercise={baseExercise}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(queryByTestId("card-custom-accent")).toBeNull();
+
+    rerender(
+      <ExerciseCard
+        exercise={{ ...baseExercise, isCustom: true }}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(queryByTestId("card-custom-accent")).toBeTruthy();
+  });
+
+  it("fires onPress with the exercise id when the card is tapped", () => {
     const onPress = jest.fn();
     const { getByTestId } = renderWithTheme(
       <ExerciseCard exercise={baseExercise} onPress={onPress} testID="card" />,

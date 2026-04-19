@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
+import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colorPalette } from "../../../src/ui/theme";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -13,6 +15,12 @@ type TabIconProps = {
   unfocusedName: IoniconName;
 };
 
+/**
+ * Tab icon with a primary-coloured top indicator bar (2pt × 24pt) that
+ * shows only on the active tab. The indicator is the tab bar's signature
+ * moment — most apps settle for colour-only feedback. It sits above the
+ * icon (absolutely positioned) so it doesn't affect layout height.
+ */
 function TabIcon({
   focused,
   color,
@@ -21,15 +29,35 @@ function TabIcon({
   unfocusedName,
 }: TabIconProps) {
   return (
-    <Ionicons
-      name={focused ? focusedName : unfocusedName}
-      color={color}
-      size={size}
-    />
+    <View style={{ alignItems: "center", justifyContent: "center" }}>
+      {focused && (
+        <View
+          style={{
+            position: "absolute",
+            top: -10,
+            width: 24,
+            height: 2,
+            borderRadius: 1,
+            backgroundColor: colorPalette.primary500,
+          }}
+        />
+      )}
+      <Ionicons
+        name={focused ? focusedName : unfocusedName}
+        color={color}
+        size={size}
+      />
+    </View>
   );
 }
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  // Let the bar grow naturally with the safe-area bottom inset rather than
+  // hardcoding 84pt. Phones without a home indicator get ~72pt; phones with
+  // one get ~94pt — both feel right for their device.
+  const tabBarHeight = 60 + insets.bottom;
+
   return (
     <Tabs
       screenOptions={{
@@ -38,18 +66,19 @@ export default function TabsLayout() {
         headerTitleStyle: { fontWeight: "600" },
         tabBarStyle: {
           backgroundColor: colorPalette.neutral1000,
-          borderTopColor: colorPalette.neutral800,
+          borderTopColor: "rgba(40, 40, 48, 0.4)",
           borderTopWidth: 1,
-          height: 84,
-          paddingTop: 8,
-          paddingBottom: 28,
+          height: tabBarHeight,
+          paddingTop: 6,
+          paddingBottom: insets.bottom > 0 ? 4 : 12,
         },
         tabBarActiveTintColor: colorPalette.primary500,
         tabBarInactiveTintColor: colorPalette.neutral400,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: "600",
           letterSpacing: 0.3,
+          marginTop: 2,
         },
         sceneStyle: { backgroundColor: colorPalette.neutral1000 },
       }}
@@ -70,8 +99,8 @@ export default function TabsLayout() {
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
-              focusedName="stats-chart"
-              unfocusedName="stats-chart-outline"
+              focusedName="trending-up"
+              unfocusedName="trending-up-outline"
             />
           ),
         }}
@@ -97,8 +126,8 @@ export default function TabsLayout() {
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
-              focusedName="library"
-              unfocusedName="library-outline"
+              focusedName="albums"
+              unfocusedName="albums-outline"
             />
           ),
         }}
@@ -110,8 +139,8 @@ export default function TabsLayout() {
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
-              focusedName="person"
-              unfocusedName="person-outline"
+              focusedName="person-circle"
+              unfocusedName="person-circle-outline"
             />
           ),
         }}

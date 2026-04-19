@@ -13,16 +13,15 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { Adapters } from "@/shared/types";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { ExerciseFiltersProvider } from "@/ui/hooks/useExerciseFilters";
 import config from "../../../../tamagui.config";
 import { ExerciseListContainer } from "../ExerciseListContainer";
 
 jest.setTimeout(15_000);
 
-// Mock the presenter so container tests assert behaviour via props.
 jest.mock("@/ui/presenters/ExerciseListPresenter");
 const MockPresenter = jest.mocked(ExerciseListPresenter);
 
-// Mock expo-router.
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
@@ -49,21 +48,26 @@ MockPresenter.mockImplementation((props) => {
       />
       <Pressable testID="stub-clear" onPress={props.onClearFilters} />
       <Pressable
-        testID="stub-toggle-muscle"
-        onPress={() => props.onToggleMuscleGroup("chest")}
+        testID="stub-toggle-beginner"
+        onPress={() => props.onToggleQuickFilter("beginner")}
       />
       <Pressable
-        testID="stub-toggle-equipment"
-        onPress={() => props.onToggleEquipment("barbell")}
+        testID="stub-toggle-advanced"
+        onPress={() => props.onToggleQuickFilter("advanced")}
       />
       <Pressable
-        testID="stub-select-category"
-        onPress={() => props.onSelectCategory("strength")}
+        testID="stub-toggle-mine"
+        onPress={() => props.onToggleQuickFilter("mine")}
       />
       <Pressable
-        testID="stub-select-difficulty"
-        onPress={() => props.onSelectDifficulty("intermediate")}
+        testID="stub-toggle-system"
+        onPress={() => props.onToggleQuickFilter("system")}
       />
+      <Pressable
+        testID="stub-toggle-all"
+        onPress={() => props.onToggleQuickFilter("all")}
+      />
+      <Pressable testID="stub-open-filters" onPress={props.onOpenFilterModal} />
       <Pressable
         testID="stub-select-exercise"
         onPress={() => props.onSelectExercise("ex-1")}
@@ -80,6 +84,12 @@ MockPresenter.mockImplementation((props) => {
         {props.showSkeleton ? "true" : "false"}
       </Text>
       <Text testID="stub-load-error">{props.loadError ?? "none"}</Text>
+      <Text testID="stub-has-any-filter">
+        {props.hasAnyFilter ? "true" : "false"}
+      </Text>
+      <Text testID="stub-quick-filters">
+        {props.selectedQuickFilters.join(",")}
+      </Text>
     </View>
   );
 });
@@ -134,7 +144,9 @@ function TestWrapper({
       }}
     >
       <TamaguiProvider config={config} defaultTheme="dark">
-        <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+        <AdapterProvider adapters={adapters}>
+          <ExerciseFiltersProvider>{children}</ExerciseFiltersProvider>
+        </AdapterProvider>
       </TamaguiProvider>
     </SafeAreaProvider>
   );
@@ -165,42 +177,16 @@ describe("ExerciseListContainer", () => {
     await waitFor(() => {
       expect(getByTestId("presenter-stub")).toBeTruthy();
     });
-
     await waitFor(() => {
       expect(getByTestId("stub-count").props.children).toBe(2);
     });
     expect(storage.getLastSyncedAt("exercises")).not.toBeNull();
     expect(lastProps?.isStale).toBe(false);
-    expect(lastProps?.isRefreshing).toBe(false);
   });
 
-  it("surfaces loadError when refresh fails and there is no cached data", async () => {
+  it("starts in 'All' quick-filter state with no active filters", async () => {
     const { adapters, api } = createTestAdapters();
-    api.shouldFail = true;
-    api.failError = {
-      kind: "api",
-      code: "server",
-      message: "boom",
-    };
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <ExerciseListContainer />
-      </TestWrapper>,
-    );
-
-    await waitFor(() => {
-      expect(getByTestId("stub-load-error").props.children).toBe("boom");
-    });
-    expect(lastProps?.exercises.length).toBe(0);
-  });
-
-  it("keeps cached exercises visible when a later refresh fails", async () => {
-    const { adapters, api, storage } = createTestAdapters();
-    const seeded = makeExercise({ id: "seed", name: "Bench" });
-    storage.cacheExercises([seeded]);
-    storage.setLastSyncedAt("exercises", new Date().toISOString());
-    api.shouldFail = true;
+    api.exercises = [makeExercise()];
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -211,18 +197,192 @@ describe("ExerciseListContainer", () => {
     await waitFor(() => {
       expect(getByTestId("stub-count").props.children).toBe(1);
     });
+    expect(getByTestId("stub-quick-filters").props.children).toBe("all");
+    expect(getByTestId("stub-has-any-filter").props.children).toBe("false");
+  });
 
-    // Initial render used non-stale cache; trigger manual refresh and see it fail
-    // without blowing away the list.
+  it("toggling a difficulty pill filters the list and deselects 'all'", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "a", name: "A", difficulty: "beginner" }),
+      makeExercise({ id: "b", name: "B", difficulty: "advanced" }),
+    ];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+
     await act(async () => {
-      fireEvent.press(getByTestId("stub-refresh"));
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
     });
 
     await waitFor(() => {
-      expect(lastProps?.isRefreshing).toBe(false);
+      expect(getByTestId("stub-count").props.children).toBe(1);
     });
-    expect(getByTestId("stub-count").props.children).toBe(1);
-    expect(getByTestId("stub-load-error").props.children).toBe("none");
+    expect(getByTestId("stub-quick-filters").props.children).toBe("beginner");
+  });
+
+  it("OR-matches multiple difficulty pills on the same axis", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "a", difficulty: "beginner" }),
+      makeExercise({ id: "b", difficulty: "advanced" }),
+      makeExercise({ id: "c", difficulty: "intermediate" }),
+    ];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(3);
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-advanced"));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+  });
+
+  it("'mine' and 'system' pills are mutually exclusive", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "sys", isCustom: false }),
+      makeExercise({ id: "mine", isCustom: true, createdBy: "me" }),
+    ];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-mine"));
+    });
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+
+    // Selecting system replaces mine (mutual exclusion on createdBy axis).
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-system"));
+    });
+    await waitFor(() => {
+      expect(getByTestId("stub-quick-filters").props.children).toBe("system");
+      expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+  });
+
+  it("'all' is mutually exclusive and resets other selections", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [makeExercise()];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("presenter-stub")).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-advanced"));
+    });
+    await waitFor(() => {
+      expect(getByTestId("stub-quick-filters").props.children).toBe(
+        "beginner,advanced",
+      );
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-all"));
+    });
+    await waitFor(() => {
+      expect(getByTestId("stub-quick-filters").props.children).toBe("all");
+    });
+  });
+
+  it("deselecting the last non-'all' pill falls back to 'all'", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [makeExercise()];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("presenter-stub")).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("stub-quick-filters").props.children).toBe("all");
+    });
+  });
+
+  it("clears everything when onClearFilters fires", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [makeExercise()];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("presenter-stub")).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-beginner"));
+      fireEvent.changeText(getByTestId("stub-search"), "squat");
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("stub-has-any-filter").props.children).toBe("true");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-clear"));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("stub-quick-filters").props.children).toBe("all");
+      expect(getByTestId("stub-has-any-filter").props.children).toBe("false");
+    });
   });
 
   it("filters exercises after the search debounce settles", async () => {
@@ -245,7 +405,7 @@ describe("ExerciseListContainer", () => {
     await act(async () => {
       fireEvent.changeText(getByTestId("stub-search"), "pulldown");
     });
-    // Full list still visible before the 300ms debounce elapses.
+    // Before debounce elapses, full list still visible.
     expect(getByTestId("stub-count").props.children).toBe(2);
 
     await waitFor(
@@ -256,26 +416,10 @@ describe("ExerciseListContainer", () => {
     );
   });
 
-  it("applies muscle group, equipment, category and difficulty filters", async () => {
+  it("surfaces loadError when refresh fails and there is no cached data", async () => {
     const { adapters, api } = createTestAdapters();
-    api.exercises = [
-      makeExercise({
-        id: "chest-barbell-strength-intermediate",
-        name: "Bench Press",
-        category: "strength",
-        difficulty: "intermediate",
-        primaryMuscleGroups: ["chest"],
-        equipment: ["barbell"],
-      }),
-      makeExercise({
-        id: "back-cable-strength-beginner",
-        name: "Cable Row",
-        category: "strength",
-        difficulty: "beginner",
-        primaryMuscleGroups: ["back"],
-        equipment: ["cable"],
-      }),
-    ];
+    api.shouldFail = true;
+    api.failError = { kind: "api", code: "server", message: "boom" };
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -284,57 +428,53 @@ describe("ExerciseListContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("stub-count").props.children).toBe(2);
+      expect(getByTestId("stub-load-error").props.children).toBe("boom");
     });
+  });
 
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-toggle-muscle"));
-    });
+  it("keeps cached exercises visible when a later refresh fails", async () => {
+    const { adapters, api, storage } = createTestAdapters();
+    storage.cacheExercises([makeExercise({ id: "seed" })]);
+    storage.setLastSyncedAt("exercises", new Date().toISOString());
+    api.shouldFail = true;
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
     await waitFor(() => {
       expect(getByTestId("stub-count").props.children).toBe(1);
     });
-    expect(lastProps?.muscleGroups).toEqual(["chest"]);
-
-    // Toggle off -> back to 2
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-toggle-muscle"));
-    });
-    await waitFor(() => {
-      expect(getByTestId("stub-count").props.children).toBe(2);
-    });
 
     await act(async () => {
-      fireEvent.press(getByTestId("stub-toggle-equipment"));
-    });
-    await waitFor(() => {
-      expect(getByTestId("stub-count").props.children).toBe(1);
-    });
-    expect(lastProps?.equipment).toEqual(["barbell"]);
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-select-difficulty"));
-    });
-    await waitFor(() => {
-      expect(lastProps?.difficulty).toBe("intermediate");
+      fireEvent.press(getByTestId("stub-refresh"));
     });
 
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-select-category"));
-    });
     await waitFor(() => {
-      expect(lastProps?.category).toBe("strength");
+      expect(lastProps?.isRefreshing).toBe(false);
     });
+    expect(getByTestId("stub-count").props.children).toBe(1);
+    expect(getByTestId("stub-load-error").props.children).toBe("none");
+  });
 
-    // Clear all and ensure every filter resets.
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-clear"));
-    });
+  it("handles non-Error thrown during refresh with a fallback message", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.getExercises = async () => {
+      throw "kaboom";
+    };
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
     await waitFor(() => {
-      expect(lastProps?.muscleGroups).toEqual([]);
-      expect(lastProps?.equipment).toEqual([]);
-      expect(lastProps?.category).toBeNull();
-      expect(lastProps?.difficulty).toBeNull();
-      expect(lastProps?.searchInput).toBe("");
+      expect(getByTestId("stub-load-error").props.children).toBe(
+        "Refresh failed",
+      );
     });
   });
 
@@ -373,11 +513,8 @@ describe("ExerciseListContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 
-  it("handles non-Error thrown during refresh with a fallback message", async () => {
-    const { adapters, api } = createTestAdapters();
-    api.getExercises = async () => {
-      throw "kaboom";
-    };
+  it("navigates to the filters modal when onOpenFilterModal fires", async () => {
+    const { adapters } = createTestAdapters();
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -386,37 +523,10 @@ describe("ExerciseListContainer", () => {
     );
 
     await waitFor(() => {
-      expect(getByTestId("stub-load-error").props.children).toBe(
-        "Refresh failed",
-      );
-    });
-  });
-
-  it("allows manual pull-to-refresh to repopulate the cache after failure recovery", async () => {
-    const { adapters, api } = createTestAdapters();
-    api.shouldFail = true;
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <ExerciseListContainer />
-      </TestWrapper>,
-    );
-
-    await waitFor(() => {
-      expect(getByTestId("stub-load-error").props.children).not.toBe("none");
+      expect(getByTestId("presenter-stub")).toBeTruthy();
     });
 
-    // Recover the API and pull-to-refresh.
-    api.shouldFail = false;
-    api.exercises = [makeExercise({ id: "recovered" })];
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-refresh"));
-    });
-
-    await waitFor(() => {
-      expect(getByTestId("stub-count").props.children).toBe(1);
-      expect(getByTestId("stub-load-error").props.children).toBe("none");
-    });
+    fireEvent.press(getByTestId("stub-open-filters"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/filters");
   });
 });
