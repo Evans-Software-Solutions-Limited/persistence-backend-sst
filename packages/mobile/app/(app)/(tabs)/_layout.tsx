@@ -118,6 +118,14 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {/*
+        `exercises` here refers to the flat `exercises.tsx` file in this
+        directory — the browse tab. Its detail / creator / filters sub-routes
+        live at `app/(app)/exercises/*` (sibling of this `(tabs)` group), NOT
+        under a nested `exercises/` directory here. That positioning makes
+        them push OVER the tab bar instead of rendering inside it. See
+        `app/(app)/_layout.tsx` for the full tree.
+      */}
       <Tabs.Screen
         name="exercises"
         options={{
