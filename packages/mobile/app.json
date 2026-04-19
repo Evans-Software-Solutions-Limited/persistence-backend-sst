@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/icons/ios.png",
       "bundleIdentifier": "com.bradleyevans96.persistence",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -23,7 +24,9 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0C111A"
+        "backgroundColor": "#0C111A",
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "monochromeImage": "./assets/icons/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.bradleyevans96.persistence",
@@ -47,6 +50,7 @@
     },
     "web": {
       "output": "static",
+      "favicon": "./assets/icons/ios.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -54,7 +58,14 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0A0A0F"
+          "image": "./assets/icons/splash-icon-light.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ECEDEE",
+          "dark": {
+            "image": "./assets/icons/splash-icon-dark.png",
+            "backgroundColor": "#0A0A0F"
+          }
         }
       ],
       [
