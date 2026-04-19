@@ -1,5 +1,18 @@
 # 07 — Health Integration: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: ~1 of ~30 tasks complete. Stub adapter only.**
+
+What's there:
+
+- `HealthPort` interface at `src/domain/ports/health.port.ts` with `HealthPermissionStatus`, `HealthWeight`, `HealthError` types (shipped as part of 00-guardrails).
+- `StubHealthAdapter` at `src/adapters/health/stub.adapter.ts` — returns `unavailable` for every method. Placeholder to keep DI happy.
+
+Nothing real is built: no HealthKit adapter, no Health Connect adapter, no permission-request screen, no dashboard tiles, no weight-sync flow.
+
+Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real `ExpoHealthKitAdapter` (iOS) + Android stub + simulator-mock fallback with the dashboard rollout so Home ships with real step/calorie data from the start.
+
 ## Phase 1: Domain & Ports
 
 - [ ] Define `HealthPort` interface with all methods

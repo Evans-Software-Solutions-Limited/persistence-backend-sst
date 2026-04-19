@@ -1,5 +1,16 @@
 # CLAUDE.md – Persistence Backend SST
 
+## Current execution model (as of 2026-04-19)
+
+Work ships via milestone-driven parallel agents. Specs are the source of truth; briefs drive PRs.
+
+- **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
+- **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
+- **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
+- **Current milestone: M0 — Integration baseline** (briefs pending). M0 closes Exercise Library wire-format drift, adds backend `POST/PATCH/DELETE /exercises`, and shifts mobile filters onto API-sourced reference data.
+
+See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the full M0 → M11 list, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
+
 ## What This Repo Is
 
 Gym/fitness tracking backend. User workout logging, session management, exercise tracking, goal setting, and progress analytics. Originally built with Supabase RLS; now migrating to SST v3 with explicit backend authorization.

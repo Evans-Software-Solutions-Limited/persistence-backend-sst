@@ -1,5 +1,21 @@
 # 06 — Progress & Goals: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 0 of ~45 tasks complete on mobile. Not started.**
+
+What's there:
+
+- **Backend** — `dashboardHandler`, `progressStatsHandler`, `progressRecordsHandler`, `progressHistoryHandler`, `recordsListHandler`, `measurementsCreateHandler`, `measurementsListHandler`, and full goals CRUD (`create/list/get/update/delete`) all exist and are wired into `api.ts`. Response shapes vs legacy Home/Progress expectations are unverified — likely needs field expansion.
+- **Mobile** — `(tabs)/progress.tsx` and `(tabs)/index.tsx` (home): home is a diagnostic screen; progress is `<ComingSoon />`.
+
+Nothing else built: no domain models for `BodyMeasurement`/`PersonalRecord`/`Goal`, no queries/commands, no presenters, no PR carousel, no trend chart, no measurement editor.
+
+Parent milestones:
+
+- **M1 Home / dashboard (incl HealthKit)** — covers the dashboard tile grid + greeting + recent activity + PR-of-the-week (drawn from this spec's dashboard section).
+- **M4 Progress** — covers the PR carousel, stat tiles, trend chart, measurement list + editor.
+
 ## Phase 1: Domain
 
 - [ ] Create `BodyMeasurement`, `PersonalRecord`, `Goal` models

@@ -6,6 +6,26 @@ This file guides AI agents working on the Persistence mobile app. It defines arc
 
 ---
 
+## Execution model — milestones and briefs
+
+Specs are the source of truth. Briefs drive PRs. Understand the layering before touching anything.
+
+- **Source of truth:** each `specs/NN-<feature>/` folder (requirements + design + tasks) is the authoritative description of what a feature must do and how it's architected. These documents are append-only — mark tasks as shipped, add "Current state" notes, but don't rewrite the original intent.
+- **Milestone briefs** at `specs/milestones/M<N>-<name>/` scope a shippable cross-feature slice of work. A brief cites its parent spec(s) as authority and cuts a focused contract between humans and agents about what's in scope for this milestone.
+- **Agents always work from a brief**, never from a raw feature-level `tasks.md`. The `tasks.md` is a reservoir of work; the brief is the next cup to drink.
+- **Every milestone produces four files** in `specs/milestones/M<N>-<name>/`:
+  - `BRIEF.md` — overview, review gate, links to the two agent briefs.
+  - `BACKEND_BRIEF.md` — focused context for the backend agent (endpoints to add/change, JWT/role/ownership rules, schema touches, exact handler paths).
+  - `FRONTEND_BRIEF.md` — focused context for the frontend agent (screens, containers, presenters, adapters, domain additions, legacy-app file paths to reference).
+  - `SMOKE_TEST.md` — the reviewer's step-by-step e2e walkthrough against `bun run dev`.
+- **Parallel execution:** the backend and frontend agents work from their respective briefs in parallel. Both PRs land on a shared milestone branch and are gated on the e2e smoke test before merge.
+- **Briefs forbid scope creep.** If an agent discovers the brief is insufficient (missing endpoint, bad assumption, legacy pattern harder than described), it surfaces the gap in PR review rather than expanding scope unilaterally. Real gaps become follow-up briefs or a revised milestone cut.
+- **See** [`README.md`](./README.md) for the feature-spec index and [`milestones/ROADMAP.md`](./milestones/ROADMAP.md) for the M0 → M11 execution order.
+
+Historical per-phase briefs (e.g. `specs/03-exercise-library/PHASE_4_BRIEF.md`) are preserved for context but no longer model the workflow.
+
+---
+
 ## Reference: Old Mobile App (`persistence-mobile`)
 
 The original app lives at `/Users/bradleysimms-evans/Documents/projects/personal/persistence-mobile`. It is the **behavioural source of truth** for what the V2 must support. Use it as a reference for flows, business rules, edge cases, and proven UI patterns — but **do not copy its architecture**.

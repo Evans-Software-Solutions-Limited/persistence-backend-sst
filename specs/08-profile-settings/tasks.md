@@ -1,5 +1,16 @@
 # 08 — Profile & Settings: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: ~2 of ~40 tasks complete. Minimum viable skeleton.**
+
+What's there:
+
+- **Backend** — `GET /profiles/me` and `PATCH /profiles/me` handlers exist at `microservices/core/src/application/profiles/`. No avatar upload endpoint yet.
+- **Mobile** — `ProfileContainer` exists but currently only exposes `signOut` + email from session. `ProfilePresenter` and a presenter test exist. `(tabs)/profile.tsx` renders the container. No editor, no preferences, no settings, no session history, no account actions.
+
+Parent milestone: **M6 Profile + Edit profile** — expands `ProfileContainer` to legacy parity (stats, subscription badge, menu links, trainer promo banner conditional on role), adds `EditProfileContainer` + presenter, adds avatar picker via `expo-image-picker`. Backend brief verifies `GET/PATCH /profile` and adds `POST /profile/avatar` (multipart) if missing. Settings / preferences / history are likely to slide into later milestones or stay deferred until M11 polish.
+
 ## Phase 1: Domain
 
 - [ ] Create `UserProfile`, `UserRole`, `FitnessLevel` models

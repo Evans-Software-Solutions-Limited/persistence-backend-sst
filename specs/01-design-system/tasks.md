@@ -1,5 +1,26 @@
 # 01 — Design System: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 32 of 35 tasks complete.** Primitives are in place; list-screen perf + health-check screen polish deferred to later milestones.
+
+Built and verified:
+
+- Tamagui 2.0.0-rc.40 on Expo 55 / RN 0.83 with compiler wired through babel + metro
+- `tamagui.config.ts` with Persistence token overrides (Electric Cyan primary, cooler semantic palette, Figtree typography via design tokens)
+- Dark-first theme in `src/ui/theme/` (`tokens.ts`, `themes.ts`, `typography.ts`, `theme.types.ts`)
+- `ThemeProvider` + `useTheme()` with system/manual override persisted to AsyncStorage
+- Layout primitives: `Screen`, `Row`, `Column`, `Spacer` (all tested)
+- UI primitives built as Tamagui `styled()` wrappers: `Button`, `Text`, `Card`, `Input`, `LoadingSpinner`, `Skeleton`, `EmptyState`, `ErrorState`, `Badge`, `Divider`, `Avatar`, plus bespoke `PLogoDrawLoader`, `ComingSoon`, `ErrorBoundary`, `OAuthButton`, `ExerciseCard`, `ExerciseFilterBar`, `MuscleGroupPicker`
+- Barrel exports + tests for every primitive
+- `/frontend-design` review applied to auth screens (staggered Reanimated entry animations, two-layer gradient glow)
+- User confirmed auth-screen styling on iOS simulator
+
+Known gaps:
+
+- No health-check screen yet (Phase 5) — deferred to milestone 07 / M1 HealthKit bundle
+- 60fps FlatList performance audit not run — no scrollable list screens existed when spec was written; now unblocked by the exercise list (post-Phase 4) and should be verified in M1+
+
 ## Phase 0: Tamagui Setup
 
 - [x] Install `tamagui`, `@tamagui/core`, `@tamagui/config` and Expo plugin

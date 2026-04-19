@@ -1,4 +1,4 @@
-> **Historical reference.** This brief drove the Phase 4 work that shipped in April 2026; preserved here for historical reference. Current M0 work is briefed in [`../milestones/M0-integration-baseline/BRIEF.md`](../milestones/M0-integration-baseline/BRIEF.md) and (when authored) its sibling `BACKEND_BRIEF.md` + `FRONTEND_BRIEF.md`.
+> **Historical reference.** This brief drove the Phase 4 work that shipped in April 2026 (exercise library list UI + filter modal redesign). Preserved for context as M0 inherits the follow-on integration work. Current M0 work is briefed in the sibling [`BRIEF.md`](./BRIEF.md) and (when authored) `BACKEND_BRIEF.md` + `FRONTEND_BRIEF.md`.
 
 # Phase 4 Kickoff: Exercise Library — List UI
 

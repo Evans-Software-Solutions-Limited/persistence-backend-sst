@@ -1,5 +1,18 @@
 # 05 — Active Session: Tasks
 
+## Current state (2026-04-19)
+
+**Shipped: 0 of ~50 tasks complete on mobile. Not started.**
+
+What's there:
+
+- **Backend** — full session lifecycle exists at `microservices/core/src/application/sessions/` — create, list, get, update, delete, plus nested `sessions/exercises` (create/get/delete) and `sessions/sets` (create/get/update/delete). JWT ownership scoped.
+- **Mobile `ApiPort`** declares `getSessions`, `getSession`, `createSession`, `updateSession`, `deleteSession`, `createSet`, `updateSet` stubs.
+
+Nothing else is built: no session domain model, no active-session persistence in SQLite, no rest timer, no set logger, no session-resume flow, no summary screen.
+
+Parent milestone: **M3 Active session (offline-critical)**. Backend brief verifies lifecycle endpoints and decides client-vs-server PR detection; frontend brief is offline-first-heavy — every set persists to SQLite first, syncs on reconnect, app recovers mid-session if backgrounded.
+
 ## Phase 1: Domain
 
 - [ ] Create `WorkoutSession`, `SessionExercise`, `ExerciseSet`, `SessionSummary` models

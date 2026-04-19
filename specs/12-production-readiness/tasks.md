@@ -1,5 +1,17 @@
 # 12 — Production Readiness: Tasks
 
+## Phase 0: Current state (2026-04-19)
+
+**Shipped: ~1 of ~45 tasks complete. Not started except for the icons/splash port.**
+
+What's there:
+
+- App icon + splash screens ported from legacy app (commit cb8b3c0, `packages/mobile/assets/icons/`). iOS adaptive / Android adaptive + light/dark splash variants in place.
+
+Nothing else built: no `eas.json`, no performance audit, no error monitoring, no security audit, no network-resilience test pass, no release process docs.
+
+Parent milestone: **M11 Polish** — runs `/frontend-design` pass across the whole app for cohesion; performs the FlatList→FlashList roll, `expo-image` rollout with blur placeholders, animation jank audit; empty/error/loading state consistency sweep; accessibility (touch targets, screen-reader labels, contrast AA); navigation redesign decision (Home + Progress + Workouts + Exercises + Nutrition + Profile + optional Clients is 6-7 tabs, which likely pushes something into Profile menu or a drawer); EAS build config; Sentry; release checklist.
+
 ## Phase 1: EAS Build
 
 - [ ] Create `eas.json` with development, preview, production profiles
