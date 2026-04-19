@@ -6,9 +6,43 @@ You are working on the SST / Elysia backend at `/Users/bradleysimms-evans/Docume
 
 ## Authority
 
-- Parent spec: [`../../03-exercise-library/`](../../03-exercise-library/) — requirements and design decisions already agreed.
+- Parent spec: [`../../03-exercise-library/`](../../03-exercise-library/) — requirements and design decisions live here.
 - Backend architectural rules: [`CLAUDE.md`](../../../CLAUDE.md) at repo root (SST v3 + Elysia + Neon + Drizzle + JWT auth + explicit ownership checks).
-- If the brief is silent, the parent spec wins. If the parent spec is silent, raise a question before shipping — do not guess.
+- Workflow discipline: [`../../_agent.md`](../../_agent.md) — spec-first, always.
+- If the brief is silent, the parent spec wins. If the parent spec is silent on something the brief describes, that's a spec gap — close it FIRST via a spec update commit, then implement.
+
+## Spec alignment — READ FIRST
+
+The parent spec `specs/03-exercise-library/` does **not currently describe the backend endpoints this milestone ships**. The mobile-side `ApiPort.createExercise` / `updateExercise` / `deleteExercise` methods exist, and `SSTApiAdapter` has mappers for them, but the corresponding Elysia handlers have never been specced.
+
+Your first task on this branch, BEFORE any handler code, is to close that gap. Commits 1–3 of your PR should be:
+
+1. **`docs(03-exercise-library): extend design.md with backend write endpoints`**
+   Add a new section to `specs/03-exercise-library/design.md` titled "Backend write endpoints". Include:
+   - `POST /exercises` — request shape, response shape, ownership = JWT `sub`, sets `is_custom: true`, status codes
+   - `PATCH /exercises/:id` — owner-only (404 on non-owner, not 403), partial update semantics
+   - `DELETE /exercises/:id` — owner-only, soft-delete if `deleted_at` exists else hard
+   - Extended `GET /exercises` filter shape (multi-value `muscleGroup`, `difficulty`, `equipment`; new `createdBy` enum)
+   - Wire format MUST align with what mobile's `SSTApiAdapter.mapCreateExerciseInputToApi` produces — this is the shared contract with the frontend track.
+
+2. **`docs(03-exercise-library): add AC 7.x for backend writes to requirements.md`**
+   Append acceptance criteria like:
+   - AC 7.3 — a signed-in user can create a custom exercise; the exercise is scoped to their user id and flagged `isCustom: true`
+   - AC 7.4 — the creator can edit fields of their own exercise via PATCH
+   - AC 7.5 — the creator can delete their own exercise; non-creators receive 404 (not 403) to avoid leaking existence
+   - AC 7.6 — list filter accepts multiple muscle group UUIDs, OR-matched within axis, AND-matched across axes
+   - AC 7.7 — `createdBy=mine` filter requires authentication and scopes to JWT `sub`; `createdBy=system` requires no auth
+     Number ACs consistently with existing `requirements.md` numbering (check the file's scheme first).
+
+3. **`docs(03-exercise-library): mark M0 backend scope in tasks.md`**
+   In `tasks.md`, either:
+   - Extend the existing Phase 7 list to include the backend handler work with `- [ ]` items, marking them as M0-owned; or
+   - Add a new `## Phase 7b: Backend writes (M0)` section
+     Each task item should trace to a design section added in commit #1 and an AC from commit #2.
+
+Only AFTER these three commits land on your branch do you start implementing. Every implementation commit must cite the spec section it's implementing in the commit message footer — see [`HANDOVER.md`](./HANDOVER.md) for the template.
+
+If, while writing the spec updates, you find the brief's technical detail disagrees with the parent spec's existing intent, **flag it in the PR description rather than silently picking a side**. The resolution is always "update the spec to reflect the agreed intent", not "code against a brief that contradicts the spec".
 
 ## Scope
 
@@ -138,7 +172,7 @@ Follow existing handler test patterns (`workoutsCreateHandler.test.ts` is a good
 
 ## Output expected
 
-- A PR on branch `feat/m0-integration-baseline` (or a sub-branch merged into it)
+- A PR on branch `feat/m0-backend-exercises-writes` (branched from fresh `main`)
 - PR title: `feat(core): exercise write handlers + multi-axis filters (M0)`
 - PR body ends with a `### How to smoke test` block listing the curl commands (or `bun run` scripts) to exercise each new endpoint locally
 - Mark relevant tasks in `specs/03-exercise-library/tasks.md` Phase 7 as done (the offline/sync items that depend on these handlers existing)

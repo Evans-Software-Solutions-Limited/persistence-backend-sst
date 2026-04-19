@@ -1,15 +1,22 @@
 # Persistence V2 — Milestone Roadmap
 
-High-level milestone list for the Persistence V2 build. Each milestone ships on a shared branch via two parallel PRs (backend + frontend), both gated on an e2e smoke test against `bun run dev` before merge.
+High-level milestone list for the Persistence V2 build. Each milestone ships on two parallel branches off `main` (one backend, one frontend), each as its own PR, both gated on an e2e smoke test against `bun run dev` before merge.
 
 See [`../README.md`](../README.md) for the feature-spec index and [`../_agent.md`](../_agent.md) for the execution model.
+
+## Spec-first discipline — applies to every milestone
+
+Before any implementation commit on a milestone branch, the parent feature spec(s) must cover everything the milestone will build. If they don't, the first commits on each branch are **spec updates** — extending `design.md` with new architecture, appending new ACs to `requirements.md`, marking M<N> scope in `tasks.md`. Only then do implementation commits start, each citing the spec sections they implement.
+
+This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent.md) § Spec-first discipline (Kiro) for the full rules and [`M0-integration-baseline/HANDOVER.md`](./M0-integration-baseline/HANDOVER.md) for the commit-trace template.
 
 ## Status key
 
 - `not started` — no brief authored yet
 - `briefs authored` — `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, `SMOKE_TEST.md` exist; agents not yet kicked off
-- `in flight` — at least one PR open or landed
-- `shipped` — both PRs merged, smoke test passed
+- `spec updates in flight` — agents are extending parent spec(s) to cover milestone scope
+- `implementation in flight` — spec updates merged, implementation commits in progress
+- `shipped` — both PRs merged, smoke test passed, relevant `tasks.md` checkboxes ticked
 
 ## Milestones
 

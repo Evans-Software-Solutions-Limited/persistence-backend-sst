@@ -6,23 +6,52 @@ This file guides AI agents working on the Persistence mobile app. It defines arc
 
 ---
 
+## Spec-first discipline (Kiro)
+
+**Non-negotiable.** Specs are the contract, briefs are scoped cuts of the contract, code traces to the spec. This applies to every feature migration and every new feature — not just M0, not just the current milestone.
+
+The rules:
+
+1. **Every feature has a single spec folder `specs/NN-<feature>/` with three files**:
+   - `requirements.md` — user needs, acceptance criteria. What the user will be able to do.
+   - `design.md` — architecture, domain model, ports, backend endpoints, adapters, offline strategy, UI structure. How the system is built to satisfy the requirements.
+   - `tasks.md` — actionable checklist. Every item traces back to a requirement AC and a design section.
+
+2. **A feature's spec covers both tracks.** Backend endpoints and mobile architecture live in the same `design.md` side-by-side. There is no separate backend-only spec folder. This is what makes milestone-planning coherent: one spec = one feature = one cut of work across both tracks.
+
+3. **Briefs never introduce architecture.** A milestone brief scopes EXECUTION of an already-specced architecture. If your work requires a new port, a new endpoint, a new domain model, or a new UI pattern that isn't already in `design.md`, you UPDATE THE SPEC FIRST — as a dedicated commit in your PR — then implement against the updated spec. The spec is where new ideas land; the brief is where scoped execution happens.
+
+4. **Every PR traces to spec sections.** Commit messages and PR bodies explicitly cite: "implements `03-exercise-library/design.md` § Reference-list cache", "closes `03-exercise-library/tasks.md` Phase 7 items A, B, C", "satisfies `03-exercise-library/requirements.md` AC 4.5". A reviewer can open the spec alongside the PR and confirm alignment line-by-line.
+
+5. **Spec updates are the first commit(s) of any milestone work.** Backend agent's first commit on their branch: extend `design.md` with the new endpoints + update `requirements.md` with new ACs + mark M0 scope in `tasks.md`. Frontend agent: same shape. Only once the spec is updated does implementation start.
+
+6. **If a brief and an updated spec disagree, the spec wins.** Flag the divergence in PR review — briefs occasionally carry context the spec missed, but the resolution is always "update the spec to match the intent", never "code against the brief while the spec says otherwise."
+
+7. **Specs are append-only in intent.** Mark tasks as shipped, add "Current state (YYYY-MM-DD)" notes, extend design with new sections. Don't rewrite original requirements or delete historical design decisions — preserve the record of what was intended vs what was built.
+
+8. **Net-new features (e.g. nutrition, AI coaching) need requirements + design done BEFORE their milestone kicks off.** A spec stub without real content (just section headings) is not sufficient. A discovery + design agent pass fills it out as its own preparatory work item.
+
+If you find yourself implementing something that isn't in a spec, stop. Update the spec. Then implement.
+
+---
+
 ## Execution model — milestones and briefs
 
-Specs are the source of truth. Briefs drive PRs. Understand the layering before touching anything.
+Builds on the spec-first discipline above. Briefs are HOW we scope work across specs into shippable milestones; specs are WHAT we're building toward.
 
-- **Source of truth:** each `specs/NN-<feature>/` folder (requirements + design + tasks) is the authoritative description of what a feature must do and how it's architected. These documents are append-only — mark tasks as shipped, add "Current state" notes, but don't rewrite the original intent.
-- **Milestone briefs** at `specs/milestones/M<N>-<name>/` scope a shippable cross-feature slice of work. A brief cites its parent spec(s) as authority and cuts a focused contract between humans and agents about what's in scope for this milestone.
-- **Agents always work from a brief**, never from a raw feature-level `tasks.md`. The `tasks.md` is a reservoir of work; the brief is the next cup to drink.
+- **Source of truth:** each `specs/NN-<feature>/` folder (requirements + design + tasks) is the authoritative description of what a feature must do and how it's architected. Briefs cite them; code traces to them.
+- **Milestone briefs** at `specs/milestones/M<N>-<name>/` scope a shippable cross-feature slice of work. A brief cites its parent spec(s) as authority and cuts a focused contract between humans and agents about what's in scope for this milestone. If the parent spec doesn't cover something the brief describes, that's a spec update required FIRST — see rule 3 above.
+- **Agents always work from a brief**, never from a raw feature-level `tasks.md`. The `tasks.md` is a reservoir of work; the brief is the next cup to drink. Both trace back to the same well.
 - **Every milestone produces four files** in `specs/milestones/M<N>-<name>/`:
-  - `BRIEF.md` — overview, review gate, links to the two agent briefs.
-  - `BACKEND_BRIEF.md` — focused context for the backend agent (endpoints to add/change, JWT/role/ownership rules, schema touches, exact handler paths).
-  - `FRONTEND_BRIEF.md` — focused context for the frontend agent (screens, containers, presenters, adapters, domain additions, legacy-app file paths to reference).
-  - `SMOKE_TEST.md` — the reviewer's step-by-step e2e walkthrough against `bun run dev`.
-- **Parallel execution:** the backend and frontend agents work from their respective briefs in parallel. Both PRs land on a shared milestone branch and are gated on the e2e smoke test before merge.
-- **Briefs forbid scope creep.** If an agent discovers the brief is insufficient (missing endpoint, bad assumption, legacy pattern harder than described), it surfaces the gap in PR review rather than expanding scope unilaterally. Real gaps become follow-up briefs or a revised milestone cut.
+  - `BRIEF.md` — overview, review gate, links to the two agent briefs. Includes a `## Spec alignment` section listing which parent-spec sections / requirements / tasks this milestone closes.
+  - `BACKEND_BRIEF.md` — focused context for the backend agent (endpoints to add/change, JWT/role/ownership rules, schema touches, exact handler paths). Opens with a `## Spec alignment` citing specific `design.md` sections the work implements.
+  - `FRONTEND_BRIEF.md` — focused context for the frontend agent (screens, containers, presenters, adapters, domain additions, legacy-app file paths to reference). Opens with a `## Spec alignment` citing specific `design.md` sections the work implements.
+  - `SMOKE_TEST.md` — the reviewer's step-by-step e2e walkthrough against `bun run dev`. Each step maps to an acceptance criterion in `requirements.md`.
+- **Parallel execution:** the backend and frontend agents work from their respective briefs in parallel. Each lands a PR on its own branch; both gated on the e2e smoke test before merge.
+- **Briefs forbid scope creep.** If an agent discovers the brief is insufficient (missing endpoint, bad assumption, legacy pattern harder than described), it surfaces the gap in PR review rather than expanding scope unilaterally. Real gaps become spec updates first, then brief amendments, then code.
 - **See** [`README.md`](./README.md) for the feature-spec index and [`milestones/ROADMAP.md`](./milestones/ROADMAP.md) for the M0 → M11 execution order.
 
-Historical per-phase briefs (e.g. `specs/03-exercise-library/PHASE_4_BRIEF.md`) are preserved for context but no longer model the workflow.
+Historical per-phase briefs (e.g. `specs/03-exercise-library/PHASE_4_BRIEF.md`) are preserved for context but no longer model the workflow. They did not follow the Kiro spec-first discipline — new work must.
 
 ---
 

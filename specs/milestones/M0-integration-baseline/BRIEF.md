@@ -59,7 +59,14 @@ Two parallel agent tracks. Each reads its own brief plus the parent spec and any
 - **Frontend:** [`FRONTEND_BRIEF.md`](./FRONTEND_BRIEF.md)
 - **Smoke test:** [`SMOKE_TEST.md`](./SMOKE_TEST.md)
 
-Both PRs land on a shared milestone branch `feat/m0-integration-baseline`. Neither merges individually — both pass smoke test, then squash as one.
+Each PR lives on its own branch off fresh `main`:
+
+- Backend: `feat/m0-backend-exercises-writes`
+- Frontend: `feat/m0-mobile-reference-lists`
+
+PRs are independently reviewable and independently merged. Whichever merges first, the other rebases onto main and re-runs its smoke test against the combined state. Final e2e smoke test (the full 11 steps in [`SMOKE_TEST.md`](./SMOKE_TEST.md)) runs after both are merged.
+
+Coordinate on the shared wire-format contract up front — specifically the reference-list response shape from `GET /exercises/muscle-groups` etc. (the frontend needs a stable `key` field matching mobile enum strings). See [`HANDOVER.md`](./HANDOVER.md) "Inconsistencies flagged" section.
 
 ## Explicit non-goals for M0
 
