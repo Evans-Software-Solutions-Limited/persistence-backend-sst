@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { View, Text as TamaguiText } from "@tamagui/core";
+import { useCallback } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -92,15 +93,24 @@ export function ExerciseListPresenter({
   const filterStyle = useStaggeredEntry(2);
   const listStyle = useStaggeredEntry(3);
 
-  const renderItem = ({ item }: ListRenderItemInfo<Exercise>) => (
-    <ExerciseCard
-      exercise={item}
-      onPress={onSelectExercise}
-      testID={`exercise-card-${item.id}`}
-    />
+  // Stabilise `renderItem` reference so FlatList's cell-level memoisation
+  // isn't defeated when unrelated props (isRefreshing, searchInput, etc.)
+  // change. Combined with `React.memo` on `ExerciseCard`, only the affected
+  // cells re-render when the exercises array itself changes. Depends only
+  // on `onSelectExercise`, which the container memoises via useCallback
+  // with a stable router reference.
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Exercise>) => (
+      <ExerciseCard
+        exercise={item}
+        onPress={onSelectExercise}
+        testID={`exercise-card-${item.id}`}
+      />
+    ),
+    [onSelectExercise],
   );
 
-  const renderListEmpty = () => {
+  const renderListEmpty = useCallback(() => {
     if (showSkeleton) {
       return (
         <Column gap="sm" testID="exercise-list-skeleton">
@@ -139,7 +149,14 @@ export function ExerciseListPresenter({
         testID="exercise-list-empty"
       />
     );
-  };
+  }, [
+    showSkeleton,
+    loadError,
+    hasAnyFilter,
+    onRefresh,
+    onClearFilters,
+    onCreateExercise,
+  ]);
 
   return (
     <View

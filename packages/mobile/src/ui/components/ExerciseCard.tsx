@@ -1,4 +1,5 @@
 import { styled, View, Text as TamaguiText } from "@tamagui/core";
+import { memo } from "react";
 import {
   EQUIPMENT_LABELS,
   MUSCLE_GROUP_LABELS,
@@ -127,7 +128,17 @@ function renderChipRow<T>(
   );
 }
 
-export function ExerciseCard({ exercise, onPress, testID }: ExerciseCardProps) {
+/**
+ * Memoised so `FlatList` cell-level optimisation is effective: when the
+ * list presenter re-renders for unrelated reasons (search debounce,
+ * `isRefreshing` flag, filter-modal state), card cells skip rendering if
+ * `exercise`, `onPress`, and `testID` are unchanged. Assumes the consumer
+ * passes a stable `onPress` — `ExerciseListContainer` does via useCallback
+ * over the router. Cards are cheap to render individually but the screen
+ * can hold 50+ at once; shallow-prop memoisation keeps pull-to-refresh and
+ * filter-modal interactions at 60fps.
+ */
+function ExerciseCardBase({ exercise, onPress, testID }: ExerciseCardProps) {
   const difficulty = DIFFICULTY_PILL[exercise.difficulty];
 
   return (
@@ -212,3 +223,5 @@ export function ExerciseCard({ exercise, onPress, testID }: ExerciseCardProps) {
     </CardFrame>
   );
 }
+
+export const ExerciseCard = memo(ExerciseCardBase);
