@@ -25,10 +25,11 @@ Structured feature specifications for the Persistence V2 build (mobile + backend
 
 ## How to use these specs
 
-- **Feature specs (`specs/NN-<feature>/`)** are the authoritative description of what a feature must do, how it's architected, and what tasks it breaks into. Don't rewrite them — append current-state notes and mark checkboxes as work lands.
-- **Milestone briefs (`specs/milestones/M<N>-<name>/`)** scope a shippable cross-feature slice, pointing at the relevant specs as authority. Each milestone produces `BRIEF.md` (overview), `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
+- **Feature specs (`specs/NN-<feature>/`)** are the authoritative description of what a feature must do, how it's architected, and what tasks it breaks into. Each has three files — `requirements.md` (user-facing ACs), `design.md` (architecture + endpoints + domain model + UI structure), `tasks.md` (actionable checklist). Don't rewrite them — append current-state notes and mark checkboxes as work lands.
+- **A feature's spec covers both backend and frontend.** There is no separate backend-only spec folder. This is deliberate — it keeps milestone-planning coherent.
+- **Milestone briefs (`specs/milestones/M<N>-<name>/`)** scope a shippable cross-feature slice, pointing at the relevant feature specs as authority. Each milestone produces `BRIEF.md` (overview), `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
 - **Agents always work from a brief**, never from a raw `tasks.md`. A brief is the contract between humans and agents about what's in scope.
-- See [`_agent.md`](./_agent.md) for architectural constraints and the "always work from a brief" execution model.
+- **Spec-first discipline (non-negotiable):** If a milestone's work requires architecture not yet in `design.md`, or behaviours not yet in `requirements.md`, the first commits on that milestone's branches are **spec updates**, not implementation. Code traces to spec sections via commit-message and PR-body citations. See [`_agent.md`](./_agent.md) § Spec-first discipline (Kiro) for the full rules.
 
 ## Roadmap
 

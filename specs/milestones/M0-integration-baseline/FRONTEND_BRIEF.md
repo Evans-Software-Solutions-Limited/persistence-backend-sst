@@ -8,7 +8,40 @@ You are working on the Expo + Tamagui mobile app at `/Users/bradleysimms-evans/D
 
 - Parent spec: [`../../03-exercise-library/`](../../03-exercise-library/) — Phase 4 already shipped; you are closing drift + preparing the write path.
 - Mobile architectural rules: [`../../_agent.md`](../../_agent.md) — hexagonal arch, container/presenter, V2 tokens canonical.
-- If the brief is silent, the parent spec wins. If the parent spec is silent, surface the gap before shipping.
+- Workflow discipline: [`../../_agent.md`](../../_agent.md) — spec-first, always.
+- If the brief is silent, the parent spec wins. If the parent spec is silent on something the brief describes, that's a spec gap — close it FIRST via a spec update commit, then implement.
+
+## Spec alignment — READ FIRST
+
+The parent spec `specs/03-exercise-library/` does **not currently describe** the three new architectural additions this milestone ships:
+
+- The **reference-list cache** (backend UUID ↔ mobile enum bridge, SQLite-backed, 24h staleness)
+- The **hierarchical filter modal pattern** (section list → per-axis detail screen with search on long lists)
+- The **sync-queue wire-format fix** (mapping `CreateExerciseInput` through `mapCreateExerciseInputToApi` at enqueue vs flush time)
+
+Your first task on this branch, BEFORE any implementation code, is to close that gap. Commits 1–3 of your PR should be:
+
+1. **`docs(03-exercise-library): extend design.md with reference-list cache + filter modal + sync mapping`**
+   Add these sections to `specs/03-exercise-library/design.md`:
+   - **Reference-list cache** — `ReferenceEntry` domain model (`id: uuid`, `key: string`, `displayName: string`); port additions (`ApiPort.getReferenceList(kind)`, `StoragePort.getCachedReferenceList / cacheReferenceList / getReferenceListAge`); SQLite schema (`reference_lists (kind TEXT PK, entries TEXT JSON, synced_at TEXT)`); staleness (24h); application query shape (`getReferenceListQuery`, `refreshReferenceList`).
+   - **Hierarchical filter modal** — route structure (`app/(app)/exercises/filters/{_layout,index,muscles,equipment,difficulty}.tsx`), outer shell vs per-axis screens, sticky Apply bar with live count, search on long lists.
+   - **Sync-queue wire-format** — document the decision on where `mapCreateExerciseInputToApi` runs (enqueue vs flush) and why. This fixes drift flagged in Phase 4.
+
+2. **`docs(03-exercise-library): add AC 7.x for reference lists + modal pattern to requirements.md`**
+   Append acceptance criteria like:
+   - AC 7.8 — muscle groups / equipment / categories in the filter modal are sourced from the backend catalog, not hardcoded enums
+   - AC 7.9 — the filter modal navigates as section list → axis detail → back, with a live `Show N exercises` count that persists across navigation
+   - AC 7.10 — search works on muscle-group and equipment lists in their respective detail screens
+   - AC 7.11 — reference-list cache is available offline after first successful online fetch
+   - AC 7.12 — custom exercises created offline are enqueued with the correct wire format and reconcile on reconnect
+     Match existing `requirements.md` AC numbering.
+
+3. **`docs(03-exercise-library): mark M0 frontend scope in tasks.md`**
+   In `tasks.md`, either extend Phase 7 with the new items or add `## Phase 7c: Reference-list cache + hierarchical modal + sync fix (M0)`. Every item traces to a design section from commit #1 and an AC from commit #2.
+
+Only AFTER these three commits land do you start implementing. Every implementation commit cites the spec section in the footer — see [`HANDOVER.md`](./HANDOVER.md) for the template.
+
+If the brief's technical detail disagrees with the parent spec's intent, flag it in the PR description. Don't silently pick a side.
 
 ## Scope
 

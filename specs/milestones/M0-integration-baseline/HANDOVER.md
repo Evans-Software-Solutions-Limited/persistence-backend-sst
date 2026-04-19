@@ -2,6 +2,69 @@
 
 You're picking up M0 cold. This file is the tight handover — it covers **only** what the briefs (`BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, `SMOKE_TEST.md`) don't already contain. Read those first; come back here for context that isn't in them.
 
+## Spec-first discipline (read this before anything else)
+
+This project follows a Kiro-style spec-first workflow. **Specs are the contract; briefs are scoped cuts of that contract; code traces to specific spec sections.** Non-negotiable.
+
+Concretely, that means:
+
+1. **Every feature lives under a single `specs/NN-<feature>/` folder** with three files — `requirements.md` (what users need, acceptance criteria), `design.md` (architecture, domain model, ports, endpoints, UI structure), `tasks.md` (the actionable checklist that maps to requirements + design).
+2. **A feature's spec covers both tracks** — backend and frontend together. There is no separate "backend spec"; the backend endpoints live in the same feature spec's `design.md` alongside the mobile domain/UI architecture. This is what makes milestone-planning coherent.
+3. **Briefs never introduce architecture.** If your work requires a new port, a new endpoint, a new domain model, or a new UI pattern that isn't already in `design.md`, you update the spec FIRST (as a dedicated commit in your PR), then implement against the updated spec. The spec is where new ideas land; the brief is where scoped execution happens.
+4. **Every PR traces its changes to spec sections.** Commit messages and PR bodies reference: "implements `design.md` § Reference-list cache", "closes `tasks.md` Phase 7 items A, B, C", "satisfies `requirements.md` AC 4.5". A reviewer can open the spec alongside the PR and confirm alignment line-by-line.
+
+### Your first task in this session, before writing any code
+
+**M0 has spec gaps.** The briefs describe architecture (reference-list cache, backend write handlers) that isn't fully in `specs/03-exercise-library/{requirements,design,tasks}.md` yet. Fix that before coding:
+
+1. Read `specs/03-exercise-library/{requirements.md, design.md, tasks.md}` — understand what's there today.
+2. Extend **`design.md`** to include:
+   - The new **backend write endpoints** (`POST/PATCH/DELETE /exercises`) and the extended `GET /exercises` filter shape, with wire format and ownership rules. See `BACKEND_BRIEF.md` for the technical detail.
+   - The **reference-list cache** as a new architectural section — ports, storage schema, query shape, staleness strategy, enum↔UUID bridge. See `FRONTEND_BRIEF.md` for the technical detail.
+   - The **hierarchical filter modal** pattern (section list → detail-per-axis with search on long lists) as a UI structure note.
+3. Extend **`requirements.md`** with acceptance criteria for each of the above. E.g. "AC: user with a custom exercise they created can edit its name and see the change persist offline, syncing to backend when online". These are what `SMOKE_TEST.md` should map to 1:1.
+4. Update **`tasks.md`** to mark what's in scope for M0 vs what stays deferred for M5. Every item in M0's scope should trace back to a design section and a requirement.
+5. Ship the spec updates as the **first commits** on both M0 branches (backend branch gets the design.md backend-endpoints commit + requirements AC commit; frontend branch gets the design.md reference-list / modal commits + requirements AC commit). Don't merge those commits in isolation — they land as part of the M0 PRs.
+6. Then implement against the updated specs. Every subsequent commit on each branch references the spec section(s) it's implementing.
+
+If the brief and the updated spec disagree, **the spec wins**. If that happens, flag it — we updated the spec for a reason, but briefs occasionally carry context the spec misses.
+
+### Concrete commit trace for M0 (shape to follow for all future work)
+
+Your PR commit history on each branch should look roughly like this:
+
+```
+1. docs(03-exercise-library): add reference-list cache to design.md
+2. docs(03-exercise-library): add AC 7.1-7.5 (reference-list cache) to requirements.md
+3. docs(03-exercise-library): mark M0 scope in tasks.md Phase 7
+4. feat(core): POST /exercises handler (implements design.md § Backend writes)
+5. feat(core): PATCH + DELETE /exercises (implements design.md § Backend writes)
+6. feat(core): extend GET /exercises with multi-axis filters (satisfies AC 7.2)
+7. test(core): handler tests covering ownership + multi-axis filter OR semantics
+```
+
+Same shape on the frontend branch: spec updates first (design + requirements + tasks), then implementation commits that explicitly cite spec sections.
+
+Every implementation commit message should include a **Spec alignment** footer:
+
+```
+feat(core): POST /exercises handler
+
+...commit body...
+
+Spec alignment:
+- Implements specs/03-exercise-library/design.md § Backend writes > POST /exercises
+- Satisfies specs/03-exercise-library/requirements.md AC 7.3 (user can create
+  a custom exercise with ownership scoped to their user id)
+- Closes specs/03-exercise-library/tasks.md Phase 7 item 3
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+The PR body itself should open with a `## Spec alignment` block listing every
+section/AC/task covered, so a reviewer can follow along with both documents
+open.
+
 ## Where the source of truth lives
 
 - **The plan** driving the whole execution model: `/Users/bradleysimms-evans/.claude/plans/reflective-snuggling-cosmos.md` (approved v3, post-user-review)
