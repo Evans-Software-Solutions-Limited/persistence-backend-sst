@@ -416,6 +416,67 @@ describe("ExerciseListContainer", () => {
     );
   });
 
+  it("keeps hasAnyFilter=true until the debounce settles after clearing search", async () => {
+    // Regression: bugbot finding #5. hasAnyFilter used to come from the
+    // shared context, which derived it from raw (undebounced) search. The
+    // query used debouncedSearch. So when the user cleared a search that
+    // had produced zero results, hasAnyFilter flipped to false immediately
+    // but the list stayed empty for 300ms — presenter briefly rendered
+    // "Your library is empty" instead of "Nothing matches". Container now
+    // derives hasAnyFilter locally from the debounced filters object, so
+    // flag and results stay in lock-step.
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "a", name: "Barbell Squat" }),
+      makeExercise({ id: "b", name: "Deadlift" }),
+    ];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+    expect(getByTestId("stub-has-any-filter").props.children).toBe("false");
+
+    // Type a search that will match nothing after debounce.
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-search"), "zzzzz");
+    });
+    // Debounce elapses — list is now empty, hasAnyFilter is true.
+    await waitFor(
+      () => {
+        expect(getByTestId("stub-count").props.children).toBe(0);
+        expect(getByTestId("stub-has-any-filter").props.children).toBe("true");
+      },
+      { timeout: 2000, interval: 50 },
+    );
+
+    // User clears the search. Under the bug, hasAnyFilter immediately
+    // flipped to false (raw search is now "") even though debouncedSearch
+    // still held "zzzzz" for 300ms — so the presenter would render the
+    // default empty state during that window.
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-search"), "");
+    });
+
+    // Invariant under the fix: while the list is still empty (debounce
+    // hasn't settled), hasAnyFilter MUST remain true so the presenter
+    // keeps showing "Nothing matches". Once the debounce settles, count
+    // recovers to 2 AND hasAnyFilter correctly becomes false — at the
+    // same render.
+    await waitFor(
+      () => {
+        expect(getByTestId("stub-count").props.children).toBe(2);
+      },
+      { timeout: 2000, interval: 50 },
+    );
+    expect(getByTestId("stub-has-any-filter").props.children).toBe("false");
+  });
+
   it("does not re-run filterExercises per keystroke (debounce regression)", async () => {
     // Regression: before the fix, `rawFilters` from the context memo
     // recomputed on every keystroke (because the memo depended on

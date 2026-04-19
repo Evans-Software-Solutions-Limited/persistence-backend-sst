@@ -25,7 +25,6 @@ export function ExerciseListContainer() {
     filtersWithoutSearch,
     quickFilters,
     hasAdvancedFilters,
-    hasAnyFilter,
     toggleQuickFilter,
     clearAll,
   } = useExerciseFilters();
@@ -41,6 +40,22 @@ export function ExerciseListContainer() {
     if (trimmed.length === 0) return filtersWithoutSearch;
     return { ...filtersWithoutSearch, search: trimmed };
   }, [filtersWithoutSearch, debouncedSearch]);
+
+  // `hasAnyFilter` MUST reflect the same debounced search the query uses.
+  // The hook's `hasAnyFilter` reads raw `search`, so during the 300ms
+  // between "user clears a search that returned zero" and the debounce
+  // settling, the list is still empty (old term applied) but the hook's
+  // flag already flips to `false` — causing the presenter to briefly
+  // render the default "Your library is empty" state instead of the
+  // correct "Nothing matches". Deriving locally from the debounced
+  // `filters` keeps flag + rendered results in lock-step.
+  const hasAnyFilter = useMemo(
+    () =>
+      !(quickFilters.length === 1 && quickFilters[0] === "all") ||
+      hasAdvancedFilters ||
+      filters.search !== undefined,
+    [quickFilters, hasAdvancedFilters, filters.search],
+  );
 
   const queryResult = useMemo(() => {
     void cacheVersion;
