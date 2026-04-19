@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 
@@ -7,8 +7,16 @@ export function ProfileContainer() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Ref-based guard: two taps in the same event-loop turn would both pass a
+  // state-based guard because React batches the `setIsSigningOut(true)` call
+  // — the closure captured at render time still sees `isSigningOut === false`
+  // on the second tap. A ref mutates synchronously, so the second tap returns
+  // immediately. Matches the pattern used by `ExerciseListContainer.triggerRefresh`.
+  const isSigningOutRef = useRef(false);
+
   const handleSignOut = useCallback(async () => {
-    if (isSigningOut) return;
+    if (isSigningOutRef.current) return;
+    isSigningOutRef.current = true;
     setIsSigningOut(true);
     setError(null);
     try {
@@ -19,8 +27,9 @@ export function ProfileContainer() {
       setError(err instanceof Error ? err.message : "Sign out failed");
     } finally {
       setIsSigningOut(false);
+      isSigningOutRef.current = false;
     }
-  }, [isSigningOut, signOut]);
+  }, [signOut]);
 
   return (
     <ProfilePresenter

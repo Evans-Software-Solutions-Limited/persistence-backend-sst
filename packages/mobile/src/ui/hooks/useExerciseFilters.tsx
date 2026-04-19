@@ -81,6 +81,16 @@ export type ExerciseFiltersContextValue = {
   // --- derived query filters ---
   /** The `ExerciseFilters` shape to pass to `getExercisesQuery`. */
   filters: ExerciseFilters;
+  /**
+   * The `ExerciseFilters` shape with every axis EXCEPT `search`. This memo's
+   * reference is stable across `setSearch` calls, so consumers that need to
+   * apply a debounced search can merge it on top without their own memos
+   * recomputing on every keystroke. Use this in the list container with
+   * `useDebouncedValue(search)` — do NOT use `filters` directly for query
+   * input or the 300ms debounce is defeated (new object reference per
+   * keystroke cascades through useMemo deps and re-runs filterExercises).
+   */
+  filtersWithoutSearch: ExerciseFilters;
 
   // --- actions ---
   toggleQuickFilter: (id: QuickFilterId) => void;
@@ -187,15 +197,18 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
     setState(INITIAL_STATE);
   }, []);
 
-  const value = useMemo<ExerciseFiltersContextValue>(() => {
-    const {
-      quickFilters,
-      muscleGroups,
-      equipment,
-      difficultiesAdvanced,
-      search,
-    } = state;
+  // Destructure non-search state out so we can memoise `filtersWithoutSearch`
+  // with stable dependencies across `setSearch` calls. Using `state` directly
+  // would recompute every keystroke and defeat the consumer's debounce.
+  const {
+    quickFilters,
+    muscleGroups,
+    equipment,
+    difficultiesAdvanced,
+    search,
+  } = state;
 
+  const filtersWithoutSearch = useMemo<ExerciseFilters>(() => {
     const quickCreatedBy = quickFilters.find(isCreatedBy) ?? null;
     const quickDifficulties = quickFilters.filter(isDifficulty);
 
@@ -206,27 +219,45 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
       ...difficultiesAdvanced,
     ]);
 
-    const filters: ExerciseFilters = {};
-    const trimmedSearch = search.trim();
-    if (trimmedSearch.length > 0) filters.search = trimmedSearch;
-    if (muscleGroups.length > 0) filters.muscleGroups = muscleGroups;
-    if (equipment.length > 0) filters.equipment = equipment;
+    const f: ExerciseFilters = {};
+    if (muscleGroups.length > 0) f.muscleGroups = muscleGroups;
+    if (equipment.length > 0) f.equipment = equipment;
     if (mergedDifficultySet.size > 0) {
-      filters.difficulties = Array.from(mergedDifficultySet);
+      f.difficulties = Array.from(mergedDifficultySet);
     }
-    if (quickCreatedBy !== null) filters.createdBy = quickCreatedBy;
+    if (quickCreatedBy !== null) f.createdBy = quickCreatedBy;
+    return f;
+  }, [quickFilters, muscleGroups, equipment, difficultiesAdvanced]);
 
-    const hasAdvancedFilters =
+  // `filters` intentionally wraps `filtersWithoutSearch` rather than inlining
+  // the same logic — when only `search` changes, only this memo recomputes.
+  // Consumers that can tolerate live search (e.g. the filter-modal's match
+  // count) use this; the list container uses `filtersWithoutSearch` + a
+  // debounced search merge to avoid re-running `filterExercises` per keystroke.
+  const filters = useMemo<ExerciseFilters>(() => {
+    const trimmed = search.trim();
+    if (trimmed.length === 0) return filtersWithoutSearch;
+    return { ...filtersWithoutSearch, search: trimmed };
+  }, [filtersWithoutSearch, search]);
+
+  const hasAdvancedFilters = useMemo(
+    () =>
       muscleGroups.length > 0 ||
       equipment.length > 0 ||
-      difficultiesAdvanced.length > 0;
+      difficultiesAdvanced.length > 0,
+    [muscleGroups, equipment, difficultiesAdvanced],
+  );
 
-    const hasAnyFilter =
+  const hasAnyFilter = useMemo(
+    () =>
       !(quickFilters.length === 1 && quickFilters[0] === "all") ||
       hasAdvancedFilters ||
-      trimmedSearch.length > 0;
+      search.trim().length > 0,
+    [quickFilters, hasAdvancedFilters, search],
+  );
 
-    return {
+  const value = useMemo<ExerciseFiltersContextValue>(
+    () => ({
       quickFilters,
       muscleGroups,
       equipment,
@@ -235,12 +266,28 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
       hasAdvancedFilters,
       hasAnyFilter,
       filters,
+      filtersWithoutSearch,
       toggleQuickFilter,
       setSearch,
       applyAdvanced,
       clearAll,
-    };
-  }, [state, toggleQuickFilter, setSearch, applyAdvanced, clearAll]);
+    }),
+    [
+      quickFilters,
+      muscleGroups,
+      equipment,
+      difficultiesAdvanced,
+      search,
+      hasAdvancedFilters,
+      hasAnyFilter,
+      filters,
+      filtersWithoutSearch,
+      toggleQuickFilter,
+      setSearch,
+      applyAdvanced,
+      clearAll,
+    ],
+  );
 
   return (
     <ExerciseFiltersContext.Provider value={value}>

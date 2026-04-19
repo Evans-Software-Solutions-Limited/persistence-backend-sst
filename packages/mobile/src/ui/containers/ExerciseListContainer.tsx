@@ -17,7 +17,12 @@ export function ExerciseListContainer() {
   const {
     search,
     setSearch,
-    filters: rawFilters,
+    // Reading `filtersWithoutSearch` (stable across `setSearch`) instead of
+    // `filters` (recomputes on every keystroke because it includes `search`)
+    // is what makes the debounce effective. If you swap this to `filters`,
+    // the memo chain below runs per keystroke and `filterExercises` runs
+    // over the full cache every press — defeating the 300ms debounce.
+    filtersWithoutSearch,
     quickFilters,
     hasAdvancedFilters,
     hasAnyFilter,
@@ -25,10 +30,6 @@ export function ExerciseListContainer() {
     clearAll,
   } = useExerciseFilters();
 
-  // Debounce the search text into the filters object the query sees.
-  // The context holds the raw input so the modal/UI can render it live;
-  // `rawFilters.search` mirrors it, so we override just the search field
-  // after the 300ms settle to avoid re-filtering on every keystroke.
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -36,15 +37,10 @@ export function ExerciseListContainer() {
   const [cacheVersion, setCacheVersion] = useState(0);
 
   const filters = useMemo(() => {
-    const f = { ...rawFilters };
     const trimmed = debouncedSearch.trim();
-    if (trimmed.length > 0) {
-      f.search = trimmed;
-    } else {
-      delete f.search;
-    }
-    return f;
-  }, [rawFilters, debouncedSearch]);
+    if (trimmed.length === 0) return filtersWithoutSearch;
+    return { ...filtersWithoutSearch, search: trimmed };
+  }, [filtersWithoutSearch, debouncedSearch]);
 
   const queryResult = useMemo(() => {
     void cacheVersion;

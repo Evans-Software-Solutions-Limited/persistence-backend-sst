@@ -216,11 +216,12 @@ describe("ProfileContainer", () => {
       expect(getByTestId("profile-presenter-stub")).toBeTruthy();
     });
 
+    // Two taps in the SAME event-loop turn. A state-based guard would fail
+    // here because React batches the setIsSigningOut(true) update — the
+    // second call's closure still sees isSigningOut === false. The ref-based
+    // guard mutates synchronously, so the second tap returns immediately.
     await act(async () => {
       fireEvent.press(getByTestId("stub-sign-out"));
-    });
-    // Second press during the in-flight call should not invoke auth.signOut again.
-    await act(async () => {
       fireEvent.press(getByTestId("stub-sign-out"));
     });
 

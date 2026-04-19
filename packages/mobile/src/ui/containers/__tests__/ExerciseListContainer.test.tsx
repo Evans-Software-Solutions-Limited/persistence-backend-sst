@@ -416,6 +416,69 @@ describe("ExerciseListContainer", () => {
     );
   });
 
+  it("does not re-run filterExercises per keystroke (debounce regression)", async () => {
+    // Regression: before the fix, `rawFilters` from the context memo
+    // recomputed on every keystroke (because the memo depended on
+    // `state.search`), which cascaded through the container's `filters`
+    // useMemo and re-ran `getExercisesQuery` → `filterExercises` for every
+    // character. Debounce was largely defeated — only the search TERM was
+    // debounced, not the work of applying it.
+    //
+    // With the fix, the container reads `filtersWithoutSearch` (stable
+    // across `setSearch`) and only rebuilds `filters` when `debouncedSearch`
+    // actually settles. So `storage.getCachedExercises` should be called at
+    // most twice per keystroke burst: once for the initial render + once
+    // after the debounce fires.
+    const { adapters, api, storage } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "a", name: "Barbell Squat" }),
+      makeExercise({ id: "b", name: "Lat Pulldown" }),
+    ];
+
+    const spy = jest.spyOn(storage, "getCachedExercises");
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(2);
+    });
+
+    const callsBefore = spy.mock.calls.length;
+
+    // Fire a burst of 6 keystrokes rapidly without waiting for debounce.
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-search"), "p");
+      fireEvent.changeText(getByTestId("stub-search"), "pu");
+      fireEvent.changeText(getByTestId("stub-search"), "pul");
+      fireEvent.changeText(getByTestId("stub-search"), "pull");
+      fireEvent.changeText(getByTestId("stub-search"), "pulld");
+      fireEvent.changeText(getByTestId("stub-search"), "pulldo");
+    });
+
+    // Under the bug, each keystroke would have triggered a
+    // getCachedExercises call — 6+ calls. With the fix, zero additional
+    // calls fire until the debounce settles.
+    const callsAfterKeystrokes = spy.mock.calls.length;
+    expect(callsAfterKeystrokes - callsBefore).toBeLessThanOrEqual(1);
+
+    // After the debounce elapses, exactly one more call (for the settled
+    // search term).
+    await waitFor(
+      () => {
+        expect(getByTestId("stub-count").props.children).toBeLessThan(2);
+      },
+      { timeout: 2000, interval: 50 },
+    );
+    const callsAfterDebounce = spy.mock.calls.length;
+    expect(callsAfterDebounce).toBeGreaterThan(callsAfterKeystrokes);
+
+    spy.mockRestore();
+  });
+
   it("surfaces loadError when refresh fails and there is no cached data", async () => {
     const { adapters, api } = createTestAdapters();
     api.shouldFail = true;

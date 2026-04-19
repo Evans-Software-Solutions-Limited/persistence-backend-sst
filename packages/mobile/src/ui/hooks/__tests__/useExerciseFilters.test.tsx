@@ -93,6 +93,35 @@ describe("ExerciseFiltersProvider / useExerciseFilters", () => {
     expect(value.hasAdvancedFilters).toBe(false);
     expect(value.hasAnyFilter).toBe(false);
     expect(value.filters).toEqual({});
+    expect(value.filtersWithoutSearch).toEqual({});
+  });
+
+  it("filtersWithoutSearch reference is stable across setSearch calls", () => {
+    // Regression test for the debounce bug: when only `search` changes, the
+    // `filtersWithoutSearch` memo must keep its reference so downstream
+    // memos (in ExerciseListContainer) don't recompute per keystroke.
+    let captured: ExerciseFiltersContextValue | null = null;
+    render(
+      <ExerciseFiltersProvider>
+        <Harness capture={(v) => (captured = v)} />
+      </ExerciseFiltersProvider>,
+    );
+
+    const initial = captured!.filtersWithoutSearch;
+    act(() => captured!.setSearch("a"));
+    const afterOne = captured!.filtersWithoutSearch;
+    act(() => captured!.setSearch("ab"));
+    const afterTwo = captured!.filtersWithoutSearch;
+    act(() => captured!.setSearch("abc"));
+    const afterThree = captured!.filtersWithoutSearch;
+
+    expect(afterOne).toBe(initial);
+    expect(afterTwo).toBe(initial);
+    expect(afterThree).toBe(initial);
+
+    // Changing a non-search axis SHOULD produce a new reference though.
+    act(() => captured!.toggleQuickFilter("beginner"));
+    expect(captured!.filtersWithoutSearch).not.toBe(initial);
   });
 
   it("derives a typed ExerciseFilters object from quick + advanced + search", () => {
