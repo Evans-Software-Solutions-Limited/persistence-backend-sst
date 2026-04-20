@@ -3,6 +3,10 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import type { Result, ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -54,7 +58,7 @@ export interface ApiPort {
   // -- Exercises --
   getExercises(
     filters?: ExerciseFilters,
-    cursor?: string,
+    offset?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
   createExercise(
@@ -65,6 +69,17 @@ export interface ApiPort {
     data: Partial<CreateExerciseInput>,
   ): Promise<Result<Exercise, ApiError>>;
   deleteExercise(id: string): Promise<Result<void, ApiError>>;
+
+  /**
+   * Fetch a reference-list catalog (muscle groups / equipment / categories)
+   * from the backend. Returns `ReferenceEntry[]` — the ApiPort does NOT
+   * hold onto the list; the StoragePort caches it separately.
+   *
+   * Spec: design.md § Reference-List Cache > Port extensions · AC 7.10
+   */
+  getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>>;
 
   // -- Sets --
   createSet(

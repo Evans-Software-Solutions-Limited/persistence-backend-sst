@@ -162,10 +162,10 @@ describe("refreshExerciseCache", () => {
     expect(storage.getLastSyncedAt("exercises")).not.toBeNull();
   });
 
-  it("forwards filters to the API (first page cursor=undefined)", async () => {
+  it("forwards filters to the API with offset=0 on the first page", async () => {
     const spy = jest.spyOn(api, "getExercises");
     await refreshExerciseCache(api, storage, { search: "bench" });
-    expect(spy).toHaveBeenCalledWith({ search: "bench" }, undefined);
+    expect(spy).toHaveBeenCalledWith({ search: "bench" }, 0);
   });
 
   it("leaves the cache untouched on API failure", async () => {
@@ -178,17 +178,17 @@ describe("refreshExerciseCache", () => {
     expect(storage.getLastSyncedAt("exercises")).toBeNull();
   });
 
-  it("walks paginated pages until hasMore is false", async () => {
-    // Override the in-memory adapter's single-page behaviour with a stub
-    // that returns two pages. The second page carries hasMore=false to stop
-    // the loop — the function must keep calling until this condition.
+  it("walks paginated pages until hasMore is false (offset-based)", async () => {
+    // Stub the in-memory adapter with two pages. The second page carries
+    // hasMore=false to stop the loop. The refresher should pass offset=0
+    // on the first call and offset=1 (previous data.length) on the second.
     const spy = jest
       .spyOn(api, "getExercises")
       .mockImplementationOnce(async () => ({
         ok: true,
         value: {
           data: [buildExercise({ id: "e1", name: "Page1-A" })],
-          cursor: "cursor-2",
+          cursor: null,
           hasMore: true,
         },
       }))
@@ -207,8 +207,8 @@ describe("refreshExerciseCache", () => {
       expect(result.value.map((e) => e.id)).toEqual(["e1", "e2"]);
     }
 
-    expect(spy).toHaveBeenNthCalledWith(1, undefined, undefined);
-    expect(spy).toHaveBeenNthCalledWith(2, undefined, "cursor-2");
+    expect(spy).toHaveBeenNthCalledWith(1, undefined, 0);
+    expect(spy).toHaveBeenNthCalledWith(2, undefined, 1);
     expect(storage.getCachedExercises()).toHaveLength(2);
   });
 

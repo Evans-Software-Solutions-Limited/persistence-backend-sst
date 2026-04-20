@@ -3,6 +3,10 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   ApiPort,
@@ -31,6 +35,8 @@ export class InMemoryApiAdapter implements ApiPort {
   public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
   public goals: ApiGoal[] = [];
+  public referenceLists: Partial<Record<ReferenceListKind, ReferenceEntry[]>> =
+    {};
   public shouldFail = false;
   public failError: ApiError = {
     kind: "api",
@@ -178,7 +184,7 @@ export class InMemoryApiAdapter implements ApiPort {
 
   async getExercises(
     filters?: ExerciseFilters,
-    _cursor?: string,
+    _offset?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
     const filtered = filters
       ? filterExercises(this.exercises, filters)
@@ -189,6 +195,12 @@ export class InMemoryApiAdapter implements ApiPort {
       hasMore: false,
     };
     return this.mayFail(page);
+  }
+
+  async getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>> {
+    return this.mayFail(this.referenceLists[kind] ?? []);
   }
 
   async getExercise(id: string) {

@@ -9,6 +9,10 @@ import type {
   MuscleGroup,
 } from "@/domain/models/exercise";
 import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
+import type {
   ApiPort,
   ApiProfile,
   ApiWorkout,
@@ -47,7 +51,7 @@ function validateApiUrl(url: string): void {
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  params?: Record<string, string | number | undefined>;
+  params?: Record<string, string | number | string[] | undefined>;
 };
 
 /**
@@ -60,6 +64,19 @@ type RequestOptions = {
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
 
+  /**
+   * Enum → UUID lookup for each reference-list kind. Populated every
+   * time `getReferenceList` resolves successfully, so subsequent
+   * filter-param builds can translate `"chest"` → `<uuid>`.
+   *
+   * Kept inside the adapter (rather than injecting StoragePort) so the
+   * adapter has no cross-port dependency. The application layer owns
+   * the canonical cache (StoragePort.getCachedReferenceList); this map
+   * is a per-process mirror for the single hot-path translation.
+   */
+  private referenceLookup: Map<ReferenceListKind, Map<string, string>> =
+    new Map();
+
   constructor() {
     validateApiUrl(API_URL);
   }
@@ -70,12 +87,19 @@ export class SSTApiAdapter implements ApiPort {
 
   private buildUrl(
     path: string,
-    params?: Record<string, string | number | undefined>,
+    params?: Record<string, string | number | string[] | undefined>,
   ): string {
     const url = new URL(path, API_URL);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined) {
+        if (value === undefined) continue;
+        if (Array.isArray(value)) {
+          // Repeated-key array format for multi-value filters (matches
+          // legacy client + M0 backend contract).
+          for (const item of value) {
+            url.searchParams.append(key, String(item));
+          }
+        } else {
           url.searchParams.set(key, String(value));
         }
       }
@@ -230,18 +254,129 @@ export class SSTApiAdapter implements ApiPort {
   // -- Exercises --
   async getExercises(
     filters?: ExerciseFilters,
-    cursor?: string,
+    offset?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
-    const params = buildExerciseQueryParams(filters, cursor);
+    const params = this.buildExerciseQueryParams(filters, offset);
     const result = await this.requestEnvelope<ApiExercisesPage>("/exercises", {
       params,
     });
     if (!result.ok) return result;
+    const data = result.value.data.map(mapApiExerciseToDomain);
+    const meta = result.value.meta;
+    // Prefer the backend's meta block (M0+) for pagination. Fall back to
+    // the legacy cursor/hasMore shape if the server hasn't migrated yet.
+    const effectiveOffset = meta?.offset ?? offset ?? 0;
+    const hasMore =
+      meta != null
+        ? effectiveOffset + data.length < meta.total
+        : (result.value.hasMore ?? false);
     return ok({
-      data: result.value.data.map(mapApiExerciseToDomain),
+      data,
       cursor: result.value.cursor ?? null,
-      hasMore: result.value.hasMore ?? false,
+      hasMore,
     });
+  }
+
+  async getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>> {
+    const path = referenceListPath(kind);
+    if (kind === "categories") {
+      // M0 shim: backend still returns { data: string[] }. Map to
+      // ReferenceEntry shape client-side so consumers see a uniform
+      // contract across all three kinds. Synthesise `id` from `name`
+      // so filter params remain stable across renders.
+      const result = await this.requestEnvelope<string[]>(path);
+      if (!result.ok) return result;
+      const entries: ReferenceEntry[] = result.value.map((name) => ({
+        id: name,
+        name,
+        displayName: null,
+      }));
+      this.populateReferenceLookup(kind, entries);
+      return ok(entries);
+    }
+    const result = await this.requestEnvelope<RawReferenceEntry[]>(path);
+    if (!result.ok) return result;
+    const entries = result.value.map(mapRawReferenceEntry);
+    this.populateReferenceLookup(kind, entries);
+    return ok(entries);
+  }
+
+  private populateReferenceLookup(
+    kind: ReferenceListKind,
+    entries: ReferenceEntry[],
+  ): void {
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      map.set(entry.name, entry.id);
+    }
+    this.referenceLookup.set(kind, map);
+  }
+
+  private resolveEnumToUuid(
+    kind: ReferenceListKind,
+    key: string,
+  ): string | null {
+    return this.referenceLookup.get(kind)?.get(key) ?? null;
+  }
+
+  /**
+   * Build `GET /exercises` query params in the legacy wire format.
+   * Repeated-key arrays (passed as arrays; each key emits multiple
+   * `?key=value` pairs when serialised by the URL builder). UUIDs for
+   * muscle/equipment are resolved via the reference lookup; unresolved
+   * enums are logged + dropped (we never send a broken query).
+   *
+   * Spec: design.md § Backend Endpoints > GET /exercises
+   *       · requirements.md AC 7.13
+   */
+  private buildExerciseQueryParams(
+    filters?: ExerciseFilters,
+    offset?: number,
+  ): Record<string, string | number | string[] | undefined> | undefined {
+    if (!filters && offset == null) return undefined;
+    const params: Record<string, string | number | string[] | undefined> = {};
+    if (offset != null) params.offset = offset;
+    if (filters?.search) params.q = filters.search;
+    if (filters?.category) params.category = [filters.category];
+    if (filters?.difficulties && filters.difficulties.length > 0) {
+      params.difficulty_level = [...filters.difficulties];
+    }
+    if (filters?.createdBy) params.created_by = [filters.createdBy];
+    if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
+      const uuids = this.resolveEnumsToUuids(
+        "muscle_groups",
+        filters.muscleGroups,
+      );
+      if (uuids.length > 0) params.targeted_muscles_any = uuids;
+    }
+    if (filters?.equipment && filters.equipment.length > 0) {
+      const uuids = this.resolveEnumsToUuids("equipment", filters.equipment);
+      if (uuids.length > 0) params.equipment_any = uuids;
+    }
+    return params;
+  }
+
+  private resolveEnumsToUuids(
+    kind: ReferenceListKind,
+    keys: string[],
+  ): string[] {
+    const resolved: string[] = [];
+    for (const key of keys) {
+      const uuid = this.resolveEnumToUuid(kind, key);
+      if (uuid) {
+        resolved.push(uuid);
+      } else {
+        // Reference-list cache missing this key. Drop the filter rather
+        // than shipping an enum string the backend can't use. UI should
+        // surface zero results rather than a server error.
+        console.warn(
+          `[SSTApiAdapter] No UUID mapping for ${kind}="${key}"; filter value skipped. Reference-list cache may be stale.`,
+        );
+      }
+    }
+    return resolved;
   }
 
   async getExercise(id: string): Promise<Result<Exercise, ApiError>> {
@@ -336,9 +471,38 @@ export class SSTApiAdapter implements ApiPort {
 
 type ApiExercisesPage = {
   data: ApiExercise[];
+  /** M0+ pagination envelope from the backend. */
+  meta?: { total: number; offset: number; limit: number };
+  /** Legacy cursor pagination shape — kept for back-compat transition. */
   cursor?: string | null;
   hasMore?: boolean;
 };
+
+/** Raw reference-list row shape from the backend (snake_case). */
+type RawReferenceEntry = {
+  id: string;
+  name: string;
+  display_name: string | null;
+};
+
+function mapRawReferenceEntry(raw: RawReferenceEntry): ReferenceEntry {
+  return {
+    id: raw.id,
+    name: raw.name,
+    displayName: raw.display_name,
+  };
+}
+
+function referenceListPath(kind: ReferenceListKind): string {
+  switch (kind) {
+    case "muscle_groups":
+      return "/exercises/muscle-groups";
+    case "equipment":
+      return "/exercises/equipment";
+    case "categories":
+      return "/exercises/categories";
+  }
+}
 
 function mapApiExerciseToDomain(api: ApiExercise): Exercise {
   return {
@@ -361,7 +525,18 @@ function mapApiExerciseToDomain(api: ApiExercise): Exercise {
   };
 }
 
-function mapCreateExerciseInputToApi(
+/**
+ * Map a domain `CreateExerciseInput` (camelCase, enum strings) into the
+ * backend's POST /exercises body (snake_case).
+ *
+ * Muscle / equipment enum arrays are NOT resolved to UUIDs here — the
+ * create flow today uses the domain's enum shape; M5's real creator
+ * will wire UUID resolution. For M0's __DEV__ hook the backend accepts
+ * the payload as long as the UUID arrays are empty / omitted.
+ *
+ * Spec: design.md § Sync-Queue Wire Format · requirements.md AC 7.15
+ */
+export function mapCreateExerciseInputToApi(
   input: Partial<CreateExerciseInput>,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
@@ -371,34 +546,18 @@ function mapCreateExerciseInputToApi(
     payload.instructions = input.instructions;
   if (input.category !== undefined) payload.category = input.category;
   if (input.difficulty !== undefined)
-    payload.difficultyLevel = input.difficulty;
+    payload.difficulty_level = input.difficulty;
+  if (input.videoUrl !== undefined) payload.video_url = input.videoUrl;
+  if (input.thumbnailUrl !== undefined)
+    payload.thumbnail_url = input.thumbnailUrl;
+  // Muscle / equipment enum arrays reach the backend unchanged when the
+  // creator's UUID resolver isn't wired up yet (__DEV__ form typically
+  // sends empty arrays). M5's creator will resolve and send UUID arrays.
   if (input.primaryMuscleGroups !== undefined)
-    payload.primaryMuscles = input.primaryMuscleGroups;
+    payload.primary_muscles = input.primaryMuscleGroups;
   if (input.secondaryMuscleGroups !== undefined)
-    payload.secondaryMuscles = input.secondaryMuscleGroups;
+    payload.secondary_muscles = input.secondaryMuscleGroups;
   if (input.equipment !== undefined)
-    payload.equipmentRequired = input.equipment;
+    payload.equipment_required = input.equipment;
   return payload;
-}
-
-function buildExerciseQueryParams(
-  filters?: ExerciseFilters,
-  cursor?: string,
-): Record<string, string | number | undefined> | undefined {
-  if (!filters && !cursor) return undefined;
-  const params: Record<string, string | number | undefined> = {};
-  if (cursor) params.cursor = cursor;
-  if (filters?.search) params.search = filters.search;
-  if (filters?.category) params.category = filters.category;
-  if (filters?.difficulties && filters.difficulties.length > 0) {
-    params.difficulty = filters.difficulties.join(",");
-  }
-  if (filters?.createdBy) params.createdBy = filters.createdBy;
-  if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
-    params.muscleGroups = filters.muscleGroups.join(",");
-  }
-  if (filters?.equipment && filters.equipment.length > 0) {
-    params.equipment = filters.equipment.join(",");
-  }
-  return params;
 }

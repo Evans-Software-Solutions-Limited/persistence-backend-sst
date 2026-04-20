@@ -1,4 +1,9 @@
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceList,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
@@ -17,6 +22,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private metadata: Map<string, string> = new Map();
   private exerciseCache: Map<string, { exercise: Exercise; syncedAt: string }> =
     new Map();
+  private referenceLists: Map<ReferenceListKind, ReferenceList> = new Map();
   private nextId = 1;
 
   async initialize(): Promise<void> {
@@ -120,10 +126,27 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
+    return this.referenceLists.get(kind) ?? null;
+  }
+
+  cacheReferenceList(kind: ReferenceListKind, entries: ReferenceEntry[]): void {
+    this.referenceLists.set(kind, {
+      kind,
+      entries,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getReferenceListAge(kind: ReferenceListKind): string | null {
+    return this.referenceLists.get(kind)?.syncedAt ?? null;
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
     this.exerciseCache.clear();
+    this.referenceLists.clear();
     this.nextId = 1;
   }
 

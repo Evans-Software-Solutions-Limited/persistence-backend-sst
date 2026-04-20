@@ -1,4 +1,9 @@
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceList,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
@@ -39,6 +44,25 @@ export interface StoragePort {
    * document intent. Must set isCustom=true on the stored payload.
    */
   saveCustomExercise(exercise: Exercise): void;
+
+  // -- Reference-List Cache --
+  /**
+   * Read the cached reference list for a kind, or null if not cached yet.
+   *
+   * Spec: design.md § Reference-List Cache > Port extensions · AC 7.10, 7.14
+   */
+  getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null;
+  /**
+   * Replace the cached entries for a kind in a single operation. Sets
+   * `synced_at` to now in implementation.
+   */
+  cacheReferenceList(kind: ReferenceListKind, entries: ReferenceEntry[]): void;
+  /**
+   * Age of the cached reference list as an ISO timestamp, or null if empty.
+   * Equivalent to `getCachedReferenceList(kind)?.syncedAt ?? null` but
+   * cheaper when the caller only needs the timestamp.
+   */
+  getReferenceListAge(kind: ReferenceListKind): string | null;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

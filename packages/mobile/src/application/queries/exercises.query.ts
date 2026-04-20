@@ -121,22 +121,22 @@ export async function refreshExerciseCache(
   filters?: ExerciseFilters,
 ): Promise<Result<Exercise[], ApiError>> {
   const all: Exercise[] = [];
-  let cursor: string | undefined = undefined;
+  let offset = 0;
   let reachedEnd = false;
 
   for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
-    const result = await api.getExercises(filters, cursor);
+    const result = await api.getExercises(filters, offset);
     if (!result.ok) return result;
 
-    const { data, cursor: nextCursor, hasMore } = result.value;
+    const { data, hasMore } = result.value;
     if (data.length > 0) storage.cacheExercises(data);
     all.push(...data);
 
-    if (!hasMore || !nextCursor) {
+    if (!hasMore || data.length === 0) {
       reachedEnd = true;
       break;
     }
-    cursor = nextCursor;
+    offset += data.length;
   }
 
   if (!reachedEnd) {
