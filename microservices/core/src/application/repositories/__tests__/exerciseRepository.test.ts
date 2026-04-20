@@ -376,58 +376,66 @@ describe("ExerciseRepository.update", () => {
     vi.clearAllMocks();
   });
 
-  it("returns null when row does not exist", async () => {
-    (getDb as any).mockReturnValue(makeMockDb([]));
+  /**
+   * "Not found" and "not owner" are collapsed into a single SQL predicate:
+   * WHERE id = ? AND created_by = ?. Both cases yield an empty returning()
+   * → null at the repo boundary → 404 at the handler. No pre-SELECT, no
+   * race window. The mock only needs to exercise the update chain.
+   */
+  function makeUpdateChain(returningRows: any[]) {
+    return {
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue(returningRows),
+          }),
+        }),
+      }),
+    };
+  }
+
+  it("returns null when row does not exist (empty returning)", async () => {
+    (getDb as any).mockReturnValue(makeUpdateChain([]));
     const repo = new ExerciseRepository();
     const result = await repo.update("missing", "user-1", { name: "x" });
     expect(result).toBeNull();
   });
 
-  it("returns null when caller is not the creator", async () => {
-    const other = { ...mockExercises[0], createdBy: "other-user" };
-    (getDb as any).mockReturnValue(makeMockDb([other]));
+  it("returns null when caller is not the creator (scoped WHERE excludes row)", async () => {
+    // Same DB response as the "not found" case — the scoped WHERE causes
+    // the UPDATE to match zero rows when created_by != userId, so
+    // returning() is empty and the repo returns null.
+    (getDb as any).mockReturnValue(makeUpdateChain([]));
     const repo = new ExerciseRepository();
     const result = await repo.update("ex-1", "user-1", { name: "hijack" });
     expect(result).toBeNull();
   });
 
   it("updates and returns the row when caller owns it", async () => {
-    const owned = { ...mockExercises[0], createdBy: "user-1" };
-    const updated = { ...owned, name: "Renamed" };
-    const mockDb = {
-      ...makeMockDb([owned]),
-      update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([updated]),
-          }),
-        }),
-      }),
+    const updated = {
+      ...mockExercises[0],
+      createdBy: "user-1",
+      name: "Renamed",
     };
-    (getDb as any).mockReturnValue(mockDb);
+    (getDb as any).mockReturnValue(makeUpdateChain([updated]));
 
     const repo = new ExerciseRepository();
     const result = await repo.update("ex-1", "user-1", { name: "Renamed" });
     expect(result).toEqual(updated);
   });
 
-  it("returns null when update()...returning() yields no rows", async () => {
-    const owned = { ...mockExercises[0], createdBy: "user-1" };
+  it("applies ownership in the WHERE clause (no pre-SELECT)", async () => {
     const mockDb = {
-      ...makeMockDb([owned]),
-      update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([]),
-          }),
-        }),
-      }),
+      // No `select` mock — if the repo tries to pre-SELECT, vi will
+      // throw "is not a function" and the test will fail.
+      ...makeUpdateChain([mockExercises[0]]),
     };
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    const result = await repo.update("ex-1", "user-1", { name: "Renamed" });
-    expect(result).toBeNull();
+    await repo.update("ex-1", "user-1", { name: "Renamed" });
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -436,53 +444,48 @@ describe("ExerciseRepository.delete", () => {
     vi.clearAllMocks();
   });
 
-  it("returns false when row does not exist", async () => {
-    (getDb as any).mockReturnValue(makeMockDb([]));
+  function makeDeleteChain(returningRows: any[]) {
+    return {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue(returningRows),
+        }),
+      }),
+    };
+  }
+
+  it("returns false when row does not exist (empty returning)", async () => {
+    (getDb as any).mockReturnValue(makeDeleteChain([]));
     const repo = new ExerciseRepository();
     const result = await repo.delete("missing", "user-1");
     expect(result).toBe(false);
   });
 
-  it("returns false when caller is not the creator", async () => {
-    const other = { ...mockExercises[0], createdBy: "other-user" };
-    (getDb as any).mockReturnValue(makeMockDb([other]));
+  it("returns false when caller is not the creator (scoped WHERE excludes row)", async () => {
+    (getDb as any).mockReturnValue(makeDeleteChain([]));
     const repo = new ExerciseRepository();
     const result = await repo.delete("ex-1", "user-1");
     expect(result).toBe(false);
   });
 
   it("hard-deletes and returns true when caller owns the row", async () => {
-    const owned = { ...mockExercises[0], createdBy: "user-1" };
-    const mockDb = {
-      ...makeMockDb([owned]),
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([owned]),
-        }),
-      }),
-    };
-    (getDb as any).mockReturnValue(mockDb);
+    (getDb as any).mockReturnValue(makeDeleteChain([mockExercises[0]]));
 
     const repo = new ExerciseRepository();
     const result = await repo.delete("ex-1", "user-1");
     expect(result).toBe(true);
   });
 
-  it("returns false when delete()...returning() yields no rows", async () => {
-    const owned = { ...mockExercises[0], createdBy: "user-1" };
+  it("applies ownership in the WHERE clause (no pre-SELECT)", async () => {
     const mockDb = {
-      ...makeMockDb([owned]),
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([]),
-        }),
-      }),
+      ...makeDeleteChain([mockExercises[0]]),
     };
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    const result = await repo.delete("ex-1", "user-1");
-    expect(result).toBe(false);
+    await repo.delete("ex-1", "user-1");
+
+    expect(mockDb.delete).toHaveBeenCalledTimes(1);
   });
 });
 

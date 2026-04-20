@@ -298,6 +298,11 @@ export class ExerciseRepository {
    * isn't the creator — handler translates either to 404 (no existence
    * leak) per AC 7.4.
    *
+   * Ownership is enforced atomically in the UPDATE's WHERE clause — no
+   * pre-SELECT, no race window, one round trip. "Not found" and "not
+   * owner" both yield an empty `returning()` array, which the spec
+   * explicitly collapses to a single 404 outcome.
+   *
    * Spec: design.md § PATCH /exercises/:id · AC 7.4
    */
   async update(
@@ -307,20 +312,10 @@ export class ExerciseRepository {
   ): Promise<Exercise | null> {
     const db = getDb();
 
-    const existing = await db
-      .select()
-      .from(exercises)
-      .where(eq(exercises.id, id))
-      .limit(1);
-
-    if (!existing[0] || existing[0].createdBy !== userId) {
-      return null;
-    }
-
     const result = await db
       .update(exercises)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(exercises.id, id))
+      .where(and(eq(exercises.id, id), eq(exercises.createdBy, userId)))
       .returning();
     return result[0] ?? null;
   }
@@ -329,6 +324,9 @@ export class ExerciseRepository {
    * Hard delete, owner-only. Returns false when the row doesn't exist OR
    * the caller isn't the creator — handler translates either to 404.
    *
+   * Ownership is enforced atomically in the DELETE's WHERE clause; see
+   * `update` for the rationale.
+   *
    * No soft-delete semantics in M0 (no `deleted_at` column).
    *
    * Spec: design.md § DELETE /exercises/:id · AC 7.5
@@ -336,19 +334,9 @@ export class ExerciseRepository {
   async delete(id: string, userId: string): Promise<boolean> {
     const db = getDb();
 
-    const existing = await db
-      .select()
-      .from(exercises)
-      .where(eq(exercises.id, id))
-      .limit(1);
-
-    if (!existing[0] || existing[0].createdBy !== userId) {
-      return false;
-    }
-
     const result = await db
       .delete(exercises)
-      .where(eq(exercises.id, id))
+      .where(and(eq(exercises.id, id), eq(exercises.createdBy, userId)))
       .returning();
     return !!result[0];
   }
