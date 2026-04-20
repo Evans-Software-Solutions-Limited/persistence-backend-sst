@@ -170,6 +170,7 @@ Filter semantics:
 The handler-level **visibility predicate is always applied**, independent of the `created_by` filter. The `created_by[]` filter narrows within the visible set; it cannot expand it.
 
 Pagination is offset/limit. Response:
+
 ```json
 { "data": [ApiExercise, ...], "meta": { "total": 123, "offset": 0, "limit": 50 } }
 ```
@@ -228,13 +229,13 @@ Unauthenticated callers see only (1). `isPublic = true` is no longer the sole ga
 
 Each enum value in the `created_by[]` filter maps to a subquery applied in addition to the visibility predicate (OR-combined within the filter; AND-combined with other axes):
 
-| Filter value | Predicate                                                                                   | Auth required? |
-| ------------ | ------------------------------------------------------------------------------------------- | -------------- |
-| `"mine"`     | `created_by = sub`                                                                          | Yes            |
-| `"system"`   | `created_by IS NULL`                                                                        | No             |
-| `"pt"`       | `created_by IN (active trainer_ids for sub from pt_client_relationships, is_ai_trainer=false)` | Yes         |
-| `"physio"`   | Same subquery as `"pt"` in M0 — physio role distinction is a later milestone. Documented limitation: `"physio"` returns the same rows as `"pt"` until role is split. | Yes |
-| `"all"`      | No additional constraint (visibility predicate alone).                                      | No             |
+| Filter value | Predicate                                                                                                                                                            | Auth required? |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `"mine"`     | `created_by = sub`                                                                                                                                                   | Yes            |
+| `"system"`   | `created_by IS NULL`                                                                                                                                                 | No             |
+| `"pt"`       | `created_by IN (active trainer_ids for sub from pt_client_relationships, is_ai_trainer=false)`                                                                       | Yes            |
+| `"physio"`   | Same subquery as `"pt"` in M0 — physio role distinction is a later milestone. Documented limitation: `"physio"` returns the same rows as `"pt"` until role is split. | Yes            |
+| `"all"`      | No additional constraint (visibility predicate alone).                                                                                                               | No             |
 
 If the filter includes `"mine"`, `"pt"`, or `"physio"` without a valid JWT, return `400 { error: "created_by filter value requires authentication" }`.
 

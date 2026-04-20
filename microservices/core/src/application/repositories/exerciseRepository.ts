@@ -284,10 +284,7 @@ export class ExerciseRepository {
    *
    * Spec: design.md § POST /exercises · AC 7.3
    */
-  async create(
-    userId: string,
-    data: CreateExerciseInput,
-  ): Promise<Exercise> {
+  async create(userId: string, data: CreateExerciseInput): Promise<Exercise> {
     const db = getDb();
     const result = await db
       .insert(exercises)

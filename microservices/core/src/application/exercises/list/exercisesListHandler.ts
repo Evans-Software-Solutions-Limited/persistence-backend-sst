@@ -48,7 +48,11 @@ export const exercisesListHandler = new Elysia()
 
       // Validate created_by enum values
       for (const value of createdBy) {
-        if (!CREATED_BY_VALUES.includes(value as (typeof CREATED_BY_VALUES)[number])) {
+        if (
+          !CREATED_BY_VALUES.includes(
+            value as (typeof CREATED_BY_VALUES)[number],
+          )
+        ) {
           ctx.set.status = 400;
           return {
             error: `Invalid created_by value: "${value}". Expected one of: ${CREATED_BY_VALUES.join(", ")}`,
@@ -82,9 +86,7 @@ export const exercisesListHandler = new Elysia()
       query: t.Object({
         q: t.Optional(t.String()),
         search: t.Optional(t.String()),
-        category: t.Optional(
-          t.Union([t.String(), t.Array(t.String())]),
-        ),
+        category: t.Optional(t.Union([t.String(), t.Array(t.String())])),
         difficulty_level: t.Optional(
           t.Union([t.String(), t.Array(t.String())]),
         ),
@@ -93,12 +95,8 @@ export const exercisesListHandler = new Elysia()
           t.Union([t.String(), t.Array(t.String())]),
         ),
         muscleGroup: t.Optional(t.String()),
-        equipment_any: t.Optional(
-          t.Union([t.String(), t.Array(t.String())]),
-        ),
-        created_by: t.Optional(
-          t.Union([t.String(), t.Array(t.String())]),
-        ),
+        equipment_any: t.Optional(t.Union([t.String(), t.Array(t.String())])),
+        created_by: t.Optional(t.Union([t.String(), t.Array(t.String())])),
         limit: t.Optional(t.Numeric()),
         offset: t.Optional(t.Numeric()),
       }),

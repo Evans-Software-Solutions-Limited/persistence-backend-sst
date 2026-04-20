@@ -87,15 +87,9 @@ export const exercisesCreateHandler = new Elysia()
         ),
         region_type: t.Optional(t.String()),
         movement_type: t.Optional(t.String()),
-        primary_muscles: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
-        secondary_muscles: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
-        equipment_required: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
+        primary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        secondary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        equipment_required: t.Optional(t.Array(t.String({ format: "uuid" }))),
         accessibility_requirements: t.Optional(
           t.Array(t.String({ format: "uuid" })),
         ),

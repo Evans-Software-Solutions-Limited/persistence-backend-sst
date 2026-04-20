@@ -119,7 +119,7 @@ Parent milestone: [`specs/milestones/M0-integration-baseline/BRIEF.md`](../miles
   (list) and `GET /exercises/:id` (detail), regardless of filter:
   a caller sees a row iff `created_by IS NULL` OR `created_by = sub`
   OR `created_by IN (active trainer_ids for sub from pt_client_relationships
-  WHERE is_ai_trainer = false)`. Other users' customs are never returned.
+WHERE is_ai_trainer = false)`. Other users' customs are never returned.
   Attempting `GET /exercises/:id` on an invisible row returns `404`.
 
 - **AC 7.9** — Reference-list endpoints (`GET /exercises/muscle-groups`,

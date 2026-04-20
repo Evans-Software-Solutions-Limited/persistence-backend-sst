@@ -65,7 +65,8 @@ export const exercisesUpdateHandler = new Elysia()
       if (body.accessibility_requirements !== undefined)
         updateData.accessibilityRequirements = body.accessibility_requirements;
       if (body.accessibility_modifications !== undefined)
-        updateData.accessibilityModifications = body.accessibility_modifications;
+        updateData.accessibilityModifications =
+          body.accessibility_modifications;
       if (body.is_public !== undefined) updateData.isPublic = body.is_public;
 
       const exercise = await ctx.ExerciseRepository.update(
@@ -112,15 +113,9 @@ export const exercisesUpdateHandler = new Elysia()
         ),
         region_type: t.Optional(t.String()),
         movement_type: t.Optional(t.String()),
-        primary_muscles: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
-        secondary_muscles: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
-        equipment_required: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
+        primary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        secondary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        equipment_required: t.Optional(t.Array(t.String({ format: "uuid" }))),
         accessibility_requirements: t.Optional(
           t.Array(t.String({ format: "uuid" })),
         ),
