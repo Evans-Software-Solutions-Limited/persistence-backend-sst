@@ -204,6 +204,26 @@ describe("ExerciseRepository.list", () => {
     expect(ilike).toHaveBeenCalled();
   });
 
+  it("searches across name + description + instructions (AC 7.6 / design.md § GET /exercises)", async () => {
+    (getDb as any).mockReturnValue(makeMockDb());
+    const { ilike } = await import("drizzle-orm");
+    (ilike as any).mockClear();
+
+    const repo = new ExerciseRepository();
+    await repo.list({ q: "bench" });
+
+    // Three ilike calls — one per column — all with the same pattern.
+    expect(ilike).toHaveBeenCalledTimes(3);
+    const patterns = (ilike as any).mock.calls.map(
+      (call: unknown[]) => call[1],
+    );
+    expect(patterns).toEqual(["%bench%", "%bench%", "%bench%"]);
+    // The three columns passed as the first arg must include description +
+    // instructions, not just name.
+    const columns = (ilike as any).mock.calls.map((call: unknown[]) => call[0]);
+    expect(columns).toHaveLength(3);
+  });
+
   it("returns empty array when nothing matches", async () => {
     (getDb as any).mockReturnValue(makeMockDb([]));
     const repo = new ExerciseRepository();

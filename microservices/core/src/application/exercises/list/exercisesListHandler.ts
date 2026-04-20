@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { ExerciseService } from "../../repositories/exerciseService";
+import { toStringArray } from "../../../shared/queryParams";
 import { getAuthUser } from "@persistence/api-utils/auth/supabaseAuth";
 
 /**
@@ -19,11 +20,6 @@ import { getAuthUser } from "@persistence/api-utils/auth/supabaseAuth";
 
 const CREATED_BY_VALUES = ["mine", "system", "pt", "physio", "all"] as const;
 const AUTH_REQUIRED_CREATED_BY = new Set(["mine", "pt", "physio"]);
-
-function toStringArray(value: string | string[] | undefined): string[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
-}
 
 export const exercisesListHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -83,6 +79,9 @@ export const exercisesListHandler = new Elysia()
       return { data: exercises };
     },
     {
+      // UUID-typed axes validate at the query-schema layer so non-UUID
+      // input returns a clean 422 rather than surfacing as a Postgres
+      // cast error (500) when the repository applies ::uuid[] casts.
       query: t.Object({
         q: t.Optional(t.String()),
         search: t.Optional(t.String()),
@@ -92,10 +91,18 @@ export const exercisesListHandler = new Elysia()
         ),
         difficulty: t.Optional(t.String()),
         targeted_muscles_any: t.Optional(
-          t.Union([t.String(), t.Array(t.String())]),
+          t.Union([
+            t.String({ format: "uuid" }),
+            t.Array(t.String({ format: "uuid" })),
+          ]),
         ),
-        muscleGroup: t.Optional(t.String()),
-        equipment_any: t.Optional(t.Union([t.String(), t.Array(t.String())])),
+        muscleGroup: t.Optional(t.String({ format: "uuid" })),
+        equipment_any: t.Optional(
+          t.Union([
+            t.String({ format: "uuid" }),
+            t.Array(t.String({ format: "uuid" })),
+          ]),
+        ),
         created_by: t.Optional(t.Union([t.String(), t.Array(t.String())])),
         limit: t.Optional(t.Numeric()),
         offset: t.Optional(t.Numeric()),

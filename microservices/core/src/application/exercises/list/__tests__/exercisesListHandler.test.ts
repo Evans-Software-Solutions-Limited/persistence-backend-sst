@@ -168,6 +168,32 @@ describe("ExercisesListHandler", () => {
       );
       expect(response.status).toBe(422);
     });
+
+    it("rejects non-UUID muscleGroup with 422", async () => {
+      const { exercisesListHandler } = await import("../exercisesListHandler");
+      const response = await exercisesListHandler.handle(
+        new Request("http://localhost/exercises?muscleGroup=chest"),
+      );
+      expect(response.status).toBe(422);
+    });
+
+    it("rejects non-UUID targeted_muscles_any with 422", async () => {
+      const { exercisesListHandler } = await import("../exercisesListHandler");
+      const response = await exercisesListHandler.handle(
+        new Request(
+          "http://localhost/exercises?targeted_muscles_any=chest&targeted_muscles_any=back",
+        ),
+      );
+      expect(response.status).toBe(422);
+    });
+
+    it("rejects non-UUID equipment_any with 422", async () => {
+      const { exercisesListHandler } = await import("../exercisesListHandler");
+      const response = await exercisesListHandler.handle(
+        new Request("http://localhost/exercises?equipment_any=barbell"),
+      );
+      expect(response.status).toBe(422);
+    });
   });
 
   describe("created_by filter (AC 7.7)", () => {

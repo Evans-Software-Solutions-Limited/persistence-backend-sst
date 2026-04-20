@@ -20,6 +20,7 @@ import {
   ptClientRelationships,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { toStringArray } from "../../shared/queryParams";
 
 /**
  * Filter shape for `list()`. Arrays OR-match within an axis; different axes
@@ -63,11 +64,6 @@ export type CreateExerciseInput = Omit<
   "id" | "createdBy" | "createdAt" | "updatedAt"
 >;
 export type UpdateExerciseInput = Partial<CreateExerciseInput>;
-
-function toArray(value: string | string[] | undefined): string[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
-}
 
 export class ExerciseRepository {
   static readonly key = "ExerciseRepository";
@@ -189,7 +185,7 @@ export class ExerciseRepository {
     );
     if (createdByCond) conditions.push(createdByCond);
 
-    const difficultyArr = toArray(
+    const difficultyArr = toStringArray(
       filters.difficultyLevel && filters.difficultyLevel.length > 0
         ? filters.difficultyLevel
         : filters.difficulty,
@@ -201,7 +197,7 @@ export class ExerciseRepository {
       );
     }
 
-    const categoryArr = toArray(filters.category);
+    const categoryArr = toStringArray(filters.category);
     if (categoryArr.length > 0) {
       conditions.push(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -229,7 +225,18 @@ export class ExerciseRepository {
     const searchText = filters.q ?? filters.search;
     if (searchText) {
       const escaped = searchText.replace(/[%_\\]/g, "\\$&");
-      conditions.push(ilike(exercises.name, `%${escaped}%`));
+      const pattern = `%${escaped}%`;
+      // Matches legacy Algolia behaviour: case-insensitive substring across
+      // name + description + instructions. Description / instructions are
+      // nullable; ilike treats NULL as non-matching, which is the correct
+      // semantic (a null description should never match a user query).
+      conditions.push(
+        or(
+          ilike(exercises.name, pattern),
+          ilike(exercises.description, pattern),
+          ilike(exercises.instructions, pattern),
+        ) as SQL,
+      );
     }
 
     return db
