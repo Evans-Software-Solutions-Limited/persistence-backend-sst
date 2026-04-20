@@ -73,3 +73,58 @@ Browse, search, filter, and view exercises from the SST backend. Users can also 
 - [ ] Search and filter work on cached data
 - [ ] New custom exercises saved offline, synced when online
 - [ ] Stale data indicator shown when cache is old (>24 hours)
+
+---
+
+## Milestone-scoped Acceptance Criteria (numbered)
+
+ACs below are numbered so commit footers and PR descriptions can trace
+implementation to a specific criterion (e.g. `AC 7.3`). Append-only.
+
+### M0 — Integration baseline (backend track)
+
+Parent milestone: [`specs/milestones/M0-integration-baseline/BRIEF.md`](../milestones/M0-integration-baseline/BRIEF.md)
+
+- **AC 7.3** — An authenticated user can `POST /exercises` with a valid
+  payload. The backend sets `created_by` to the caller's `sub` from the
+  JWT (never trusted from the body) and returns `201 { data: ApiExercise }`.
+  Missing/invalid JWT returns `401`. Validation failures return `400`.
+
+- **AC 7.4** — The creator of an exercise can `PATCH /exercises/:id` to
+  partially update any subset of fields; unset fields are untouched.
+  Response is `200 { data: ApiExercise }`. A non-creator calling PATCH
+  on an existing exercise receives `404` (not `403`) to avoid leaking
+  the existence of other users' customs. Non-existent id also returns
+  `404`.
+
+- **AC 7.5** — The creator of an exercise can `DELETE /exercises/:id`
+  and receive `204 No Content`; the row is hard-deleted. A non-creator
+  receives `404`. There is no soft-delete / `deleted_at` semantics in
+  M0.
+
+- **AC 7.6** — `GET /exercises` accepts repeated-key array query params
+  (`?targeted_muscles_any=<uuid>&targeted_muscles_any=<uuid>`). Values
+  within a single axis OR-match; values across different axes (muscles,
+  equipment, difficulty, category) AND-match. Multi-select filters return
+  the correct subset end-to-end.
+
+- **AC 7.7** — `GET /exercises?created_by=<value>` accepts the enum
+  strings `"mine" | "system" | "pt" | "physio" | "all"` (NOT user UUIDs).
+  The backend translates each value into the documented subquery. Values
+  `"mine"`, `"pt"`, `"physio"` require a valid JWT — otherwise return
+  `400`. `"system"` and `"all"` are public. Multiple values union
+  together.
+
+- **AC 7.8** — The visibility predicate is always applied on `GET /exercises`
+  (list) and `GET /exercises/:id` (detail), regardless of filter:
+  a caller sees a row iff `created_by IS NULL` OR `created_by = sub`
+  OR `created_by IN (active trainer_ids for sub from pt_client_relationships
+WHERE is_ai_trainer = false)`. Other users' customs are never returned.
+  Attempting `GET /exercises/:id` on an invisible row returns `404`.
+
+- **AC 7.9** — Reference-list endpoints (`GET /exercises/muscle-groups`,
+  `/equipment`, `/categories`) return the shapes documented in
+  `design.md § Reference-list endpoints`. `equipment` emits
+  `display_name: null` (no DB column); `categories` continues to return
+  `{ data: string[] }` as an M0 shim with the real catalog table
+  deferred.

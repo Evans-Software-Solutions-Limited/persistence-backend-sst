@@ -90,3 +90,55 @@ Cross-milestone owners:
 
 - [ ] All exercise tests pass with 90% coverage
 - [ ] Quality gates pass (typecheck, lint, prettier, build, test)
+
+---
+
+## Phase 7b — Backend writes + visibility (M0, backend track)
+
+Parent milestone: [`specs/milestones/M0-integration-baseline/BACKEND_BRIEF.md`](../milestones/M0-integration-baseline/BACKEND_BRIEF.md).
+Every item traces to a `design.md` section and an AC.
+
+### Repository layer (`microservices/core/src/application/repositories/exerciseRepository.ts`)
+
+- [ ] **7b.1** Add `create(userId, input)` — insert with `created_by = userId`, return inserted row
+      (Spec: design.md § POST /exercises · AC 7.3)
+- [ ] **7b.2** Add `update(userId, id, patch)` — scoped update `WHERE id = ? AND created_by = userId`; returns null if no row matched (handler translates to 404)
+      (Spec: design.md § PATCH /exercises/:id · AC 7.4)
+- [ ] **7b.3** Add `delete(userId, id)` — scoped hard delete; returns affected-row count
+      (Spec: design.md § DELETE /exercises/:id · AC 7.5)
+- [ ] **7b.4** Extend `list(filters)` — accept array filters (`targetedMusclesAny: string[]`, `equipmentAny: string[]`, `category: string[]`, `difficultyLevel: string[]`, `createdByFilter: string[]`), use Drizzle `inArray` / array overlap for OR-within-axis
+      (Spec: design.md § GET /exercises · AC 7.6)
+- [ ] **7b.5** Add visibility predicate to `list()` + `getById()` — always applied; system (`created_by IS NULL`) ∪ own (`= sub`) ∪ connected-PT (JOIN `pt_client_relationships`)
+      (Spec: design.md § Backend Authorization Rules · AC 7.8)
+- [ ] **7b.6** Translate `createdByFilter` enum values to predicates at repository boundary
+      (Spec: design.md § Backend Authorization Rules · AC 7.7)
+
+### Handlers (`microservices/core/src/application/exercises/`)
+
+- [ ] **7b.7** Create `create/exercisesCreateHandler.ts` — JWT-auth, body validation, call `repo.create(sub, input)`, return 201
+      (Spec: design.md § POST /exercises · AC 7.3)
+- [ ] **7b.8** Create `update/exercisesUpdateHandler.ts` — JWT-auth, partial-body validation, call `repo.update(sub, id, patch)`; null-return → 404
+      (Spec: design.md § PATCH /exercises/:id · AC 7.4)
+- [ ] **7b.9** Create `delete/exercisesDeleteHandler.ts` — JWT-auth, call `repo.delete(sub, id)`; zero affected → 404; return 204
+      (Spec: design.md § DELETE /exercises/:id · AC 7.5)
+- [ ] **7b.10** Extend `list/exercisesListHandler.ts` query schema to the wire-format `t.Object` shown in design.md; pass JWT sub through to repo (optional — public list still works without auth)
+      (Spec: design.md § GET /exercises · AC 7.6, AC 7.7)
+- [ ] **7b.11** Reject `created_by` values requiring auth when JWT absent — return 400 with `{ error: "created_by filter value requires authentication" }`
+      (Spec: design.md § Backend Authorization Rules · AC 7.7)
+- [ ] **7b.12** Wire new handlers into `microservices/core/src/api.ts`
+
+### Tests
+
+- [ ] **7b.13** Handler tests for create/update/delete happy paths, 401, 404-not-403 on non-owner, validation failures
+      (Spec: AC 7.3, 7.4, 7.5)
+- [ ] **7b.14** List-handler tests: multi-axis OR-within / AND-across, `created_by=mine|system|pt|physio|all` partitioning, auth-required failure modes
+      (Spec: AC 7.6, 7.7)
+- [ ] **7b.15** Visibility tests: three-user fixture (user A, user B, PT C connected to A). Assert user A sees: own + system + PT C's customs; never B's customs. User B sees own + system; never A's or PT C's. `GET /exercises/:id` on invisible row → 404.
+      (Spec: AC 7.8)
+- [ ] **7b.16** Reference-list shape regression test — pin the exact response shape for muscle-groups/equipment/categories
+      (Spec: AC 7.9)
+
+### Quality gates
+
+- [ ] **7b.17** All backend quality gates pass (prettier / typecheck / lint / build / test with 90% coverage on changed files)
+      (Spec: repo CLAUDE.md PR Checklist)

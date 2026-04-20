@@ -5,6 +5,9 @@ import openapi from "@elysiajs/openapi";
 
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
+import { exercisesCreateHandler } from "./application/exercises/create/exercisesCreateHandler";
+import { exercisesUpdateHandler } from "./application/exercises/update/exercisesUpdateHandler";
+import { exercisesDeleteHandler } from "./application/exercises/delete/exercisesDeleteHandler";
 import { muscleGroupsHandler } from "./application/exercises/muscle-groups/muscleGroupsHandler";
 import { equipmentHandler } from "./application/exercises/equipment/equipmentHandler";
 import { categoriesHandler } from "./application/exercises/categories/categoriesHandler";
@@ -45,6 +48,9 @@ const app = new Elysia()
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
   .use(exercisesGetHandler)
+  .use(exercisesCreateHandler)
+  .use(exercisesUpdateHandler)
+  .use(exercisesDeleteHandler)
   .use(muscleGroupsHandler)
   .use(equipmentHandler)
   .use(categoriesHandler)

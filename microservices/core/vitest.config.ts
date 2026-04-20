@@ -19,7 +19,11 @@ export default defineConfig({
     globals: true,
     coverage: {
       provider: "v8",
-      include: ["src/application/**/*.ts", "src/**/repositories/*.ts"],
+      include: [
+        "src/application/**/*.ts",
+        "src/**/repositories/*.ts",
+        "src/shared/**/*.ts",
+      ],
       exclude: [
         "node_modules",
         "**/*.test.ts",
