@@ -351,7 +351,12 @@ function mapApiExerciseToDomain(api: ApiExercise): Exercise {
     primaryMuscleGroups: api.primaryMuscles as MuscleGroup[],
     secondaryMuscleGroups: api.secondaryMuscles as MuscleGroup[],
     equipment: api.equipmentRequired as EquipmentType[],
-    isCustom: api.isCustom,
+    videoUrl: api.videoUrl ?? null,
+    thumbnailUrl: api.thumbnailUrl ?? null,
+    // Derive client-side: V2 backend uses createdBy IS NULL for system
+    // exercises and has no is_custom column. Fall back to the wire
+    // flag if the backend still sets it (transitional).
+    isCustom: api.isCustom ?? api.createdBy !== null,
     createdBy: api.createdBy,
   };
 }

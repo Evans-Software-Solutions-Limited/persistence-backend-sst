@@ -13,6 +13,8 @@ const baseExercise: Exercise = {
   primaryMuscleGroups: ["quadriceps", "glutes"],
   secondaryMuscleGroups: ["hamstrings"],
   equipment: ["barbell"],
+  videoUrl: null,
+  thumbnailUrl: null,
   isCustom: false,
   createdBy: null,
 };

@@ -54,6 +54,8 @@ export function createExerciseCommand(
     primaryMuscleGroups: sanitized.primaryMuscleGroups,
     secondaryMuscleGroups: sanitized.secondaryMuscleGroups ?? [],
     equipment: sanitized.equipment,
+    videoUrl: sanitized.videoUrl ?? null,
+    thumbnailUrl: sanitized.thumbnailUrl ?? null,
     isCustom: true,
     createdBy: deps.userId,
   };
@@ -93,6 +95,12 @@ function sanitizeInput(input: CreateExerciseInput): CreateExerciseInput {
   if (input.secondaryMuscleGroups && input.secondaryMuscleGroups.length > 0) {
     sanitized.secondaryMuscleGroups = input.secondaryMuscleGroups;
   }
+
+  const videoUrl = input.videoUrl?.trim();
+  if (videoUrl) sanitized.videoUrl = videoUrl;
+
+  const thumbnailUrl = input.thumbnailUrl?.trim();
+  if (thumbnailUrl) sanitized.thumbnailUrl = thumbnailUrl;
 
   return sanitized;
 }

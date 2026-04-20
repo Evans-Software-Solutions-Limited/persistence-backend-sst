@@ -15,3 +15,11 @@ export {
   CATEGORY_LABELS,
   DIFFICULTY_LABELS,
 } from "./exercise";
+
+export {
+  type ReferenceEntry,
+  type ReferenceList,
+  type ReferenceListKind,
+  REFERENCE_LIST_STALE_AFTER_MS,
+  isReferenceListStale,
+} from "./reference-list";

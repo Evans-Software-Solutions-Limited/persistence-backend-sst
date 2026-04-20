@@ -143,7 +143,16 @@ export type ApiExercise = {
   primaryMuscles: string[];
   secondaryMuscles: string[];
   equipmentRequired: string[];
-  isCustom: boolean;
+  /** Added M0. Backend emits these on GET /exercises and GET /exercises/:id. */
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  /**
+   * Present on some backend responses (pre-M0) but no longer set by
+   * the M0 backend — it derives isCustom client-side from `createdBy
+   * !== null`. Kept optional on the wire type so adapters stay
+   * tolerant of either shape during the transition.
+   */
+  isCustom?: boolean;
   createdBy: string | null;
 };
 

@@ -277,15 +277,15 @@ Mobile holds a translation layer between its string enums and the backend's UUID
 export type ReferenceListKind = "muscle_groups" | "equipment" | "categories";
 
 export type ReferenceEntry = {
-  id: string;                        // UUID from backend
-  name: string;                      // canonical identifier, matches mobile enum string ("chest", "barbell")
-  displayName: string | null;        // human label; falls back to name in UI when null
+  id: string; // UUID from backend
+  name: string; // canonical identifier, matches mobile enum string ("chest", "barbell")
+  displayName: string | null; // human label; falls back to name in UI when null
 };
 
 export type ReferenceList = {
   kind: ReferenceListKind;
   entries: ReferenceEntry[];
-  syncedAt: string;                  // ISO timestamp
+  syncedAt: string; // ISO timestamp
 };
 ```
 
@@ -342,7 +342,7 @@ Semantics match `getExercisesQuery`: read from cache synchronously; derive `isSt
 ```ts
 export function mapEnumToUuid(
   kind: ReferenceListKind,
-  key: string,                       // enum string like "chest"
+  key: string, // enum string like "chest"
   cache: ReferenceList | null,
 ): string | undefined;
 ```
@@ -442,14 +442,14 @@ V2's `Exercise` domain model gains two fields to support the legacy list/detail 
 ```ts
 export interface Exercise {
   // ...existing fields...
-  videoUrl: string | null;             // added M0
-  thumbnailUrl: string | null;         // added M0
+  videoUrl: string | null; // added M0
+  thumbnailUrl: string | null; // added M0
 }
 
 export interface CreateExerciseInput {
   // ...existing fields...
-  videoUrl?: string;                   // added M0
-  thumbnailUrl?: string;               // added M0
+  videoUrl?: string; // added M0
+  thumbnailUrl?: string; // added M0
 }
 ```
 

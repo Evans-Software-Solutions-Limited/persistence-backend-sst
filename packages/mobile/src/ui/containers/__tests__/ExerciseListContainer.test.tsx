@@ -105,6 +105,8 @@ function makeExercise(overrides: Partial<Exercise> = {}): Exercise {
     primaryMuscleGroups: ["quadriceps"],
     secondaryMuscleGroups: [],
     equipment: ["barbell"],
+    videoUrl: null,
+    thumbnailUrl: null,
     isCustom: false,
     createdBy: null,
     ...overrides,

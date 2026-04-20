@@ -128,6 +128,19 @@ export type Exercise = {
   primaryMuscleGroups: MuscleGroup[];
   secondaryMuscleGroups: MuscleGroup[];
   equipment: EquipmentType[];
+  /**
+   * Legacy-parity fields added in M0 (AC 7.16). Nullable — not every
+   * row has media. `thumbnailUrl` is rendered on the ported list card;
+   * `videoUrl` is rendered on the ported detail screen.
+   */
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  /**
+   * Client-derived from `createdBy !== null`. The V2 backend uses
+   * `created_by IS NULL` for system exercises; there's no
+   * `is_custom` column. Adapter computes this on the way into
+   * the domain layer.
+   */
   isCustom: boolean;
   createdBy: string | null;
 };
@@ -180,4 +193,7 @@ export type CreateExerciseInput = {
   primaryMuscleGroups: MuscleGroup[];
   secondaryMuscleGroups?: MuscleGroup[];
   equipment: EquipmentType[];
+  /** Optional media URLs. Passed through to backend POST /exercises. */
+  videoUrl?: string;
+  thumbnailUrl?: string;
 };

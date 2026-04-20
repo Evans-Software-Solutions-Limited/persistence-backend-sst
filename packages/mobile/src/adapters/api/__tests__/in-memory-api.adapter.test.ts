@@ -113,6 +113,8 @@ describe("InMemoryApiAdapter", () => {
       primaryMuscleGroups: ["chest"],
       secondaryMuscleGroups: [],
       equipment: ["barbell"],
+      videoUrl: null,
+      thumbnailUrl: null,
       isCustom: false,
       createdBy: null,
       ...overrides,

@@ -213,6 +213,8 @@ export class InMemoryApiAdapter implements ApiPort {
       primaryMuscleGroups: data.primaryMuscleGroups,
       secondaryMuscleGroups: data.secondaryMuscleGroups ?? [],
       equipment: data.equipment,
+      videoUrl: null,
+      thumbnailUrl: null,
       isCustom: true,
       createdBy: "test-user",
     };

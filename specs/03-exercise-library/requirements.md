@@ -180,7 +180,7 @@ delete UX port, and the `__DEV__` creator hook.
 - **AC 7.16** — The V2 `Exercise` domain model gains `videoUrl` and
   `thumbnailUrl`. The ported legacy exercise card renders `thumbnailUrl`
   when present. Legacy-but-unused backend fields (`region_type`,
-  `movement_type`, accessibility_*, `is_public`, `secondary_muscles`)
+  `movement_type`, accessibility\_\*, `is_public`, `secondary_muscles`)
   are accepted at the adapter boundary but not projected into the
   V2 domain model in M0.
 
