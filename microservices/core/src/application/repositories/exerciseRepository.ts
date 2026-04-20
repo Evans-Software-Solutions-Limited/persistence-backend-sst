@@ -117,6 +117,9 @@ export class ExerciseRepository {
    * repository stays safe.
    *
    * Physio is treated identically to PT in M0 — no role distinction yet.
+   * To avoid emitting duplicate SQL when the caller sends both "pt" and
+   * "physio", or repeats any single value, we canonicalise physio→pt
+   * and dedupe via a Set before building predicates.
    *
    * Spec: design.md § Backend Authorization Rules · AC 7.7
    */
@@ -127,10 +130,16 @@ export class ExerciseRepository {
     if (!filter || filter.length === 0) return undefined;
     if (filter.includes("all")) return undefined;
 
+    // Canonicalise physio→pt (identical predicate in M0), then dedupe.
+    // This collapses `created_by=pt&created_by=physio` into one pt-trainer
+    // subquery instead of two identical ones.
+    const canonical = filter.map((v) => (v === "physio" ? "pt" : v));
+    const deduped = Array.from(new Set(canonical));
+
     const db = getDb();
     const predicates: SQL[] = [];
 
-    for (const value of filter) {
+    for (const value of deduped) {
       switch (value) {
         case "mine":
           if (userId) predicates.push(eq(exercises.createdBy, userId));
@@ -138,8 +147,7 @@ export class ExerciseRepository {
         case "system":
           predicates.push(isNull(exercises.createdBy));
           break;
-        case "pt":
-        case "physio": {
+        case "pt": {
           if (!userId) break;
           const trainerIds = db
             .select({ trainerId: ptClientRelationships.trainerId })

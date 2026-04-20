@@ -303,6 +303,41 @@ describe("ExerciseRepository.list", () => {
       expect(mockDb.select).toHaveBeenCalledTimes(3);
     });
 
+    it("dedupes pt + physio into one trainer subquery (regression)", async () => {
+      const mockDb = makeMockDb();
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new ExerciseRepository();
+      await repo.list({ createdByFilter: ["pt", "physio"] }, "user-1");
+
+      // Without dedup: 2 identical filter subqueries + visibility + main = 4.
+      // With dedup (physio→pt canonicalised): 1 filter + visibility + main = 3.
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+    });
+
+    it("dedupes repeated filter values (mine + mine → one eq)", async () => {
+      (getDb as any).mockReturnValue(makeMockDb());
+      const { eq } = await import("drizzle-orm");
+      (eq as any).mockClear();
+
+      const repo = new ExerciseRepository();
+      await repo.list({ createdByFilter: ["mine", "mine"] }, "user-1");
+
+      // Count eq(column, "user-1") calls. Without dedup, "mine" fires twice
+      // at the filter layer + once at visibility = 3. With dedup: 1 + 1 = 2.
+      // (The PT-subquery eq calls are against clientId / status / isAiTrainer
+      // and never carry the value "user-1" as the second arg — except one
+      // eq(clientId, "user-1") per subquery emission, which visibility
+      // emits exactly once when authed.)
+      const createdByEqCalls = (eq as any).mock.calls.filter(
+        (args: unknown[]) => args[1] === "user-1",
+      );
+      // Visibility's eq(createdBy, "user-1") + eq(clientId, "user-1") +
+      // filter's single deduped eq(createdBy, "user-1") = 3.
+      // Pre-dedup would be 4 (two filter-layer eq calls instead of one).
+      expect(createdByEqCalls.length).toBe(3);
+    });
+
     it("drops auth-required values silently when userId is null", async () => {
       const mockDb = makeMockDb();
       (getDb as any).mockReturnValue(mockDb);
