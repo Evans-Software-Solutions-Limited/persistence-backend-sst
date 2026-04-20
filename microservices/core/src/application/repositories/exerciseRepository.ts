@@ -20,35 +20,39 @@ import {
   ptClientRelationships,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { toStringArray } from "../../shared/queryParams";
 
 /**
  * Filter shape for `list()`. Arrays OR-match within an axis; different axes
- * AND together. Single-value `muscleGroup` / `difficulty` / `category` are
- * preserved for back-compat with the pre-M0 contract — new callers should
- * prefer the array variants.
+ * AND together.
+ *
+ * The handler is the single layer responsible for parsing query-string
+ * params (single value vs repeated-key array) into this filter shape.
+ * The repository trusts that callers have already normalised — no
+ * back-compat single-string fallbacks here.
+ *
+ * `muscleGroup` is the exception: it's kept as a single-UUID alias for
+ * `targetedMusclesAny` because the pre-M0 handler exposed it as a single
+ * value and some callers still reach the repo that way.
  *
  * See specs/03-exercise-library/design.md § Backend Endpoints > GET /exercises.
  */
 export interface ListExercisesFilters {
-  /** Free-text search over `name`. Matches legacy `q` param. */
+  /** Free-text search. Repository searches name + description + instructions. */
   q?: string;
   /** Back-compat alias for `q`. */
   search?: string;
-  /** Single muscle-group UUID (back-compat). */
+  /** Single muscle-group UUID (pre-M0 alias; prefer `targetedMusclesAny`). */
   muscleGroup?: string;
-  /** M0 multi-value muscle-group UUIDs — OR-matched within axis. */
+  /** Multi-value muscle-group UUIDs — OR-matched within axis. */
   targetedMusclesAny?: string[];
-  /** M0 multi-value equipment UUIDs — OR-matched within axis. */
+  /** Multi-value equipment UUIDs — OR-matched within axis. */
   equipmentAny?: string[];
-  /** Category enum — single (back-compat) or array. */
-  category?: string | string[];
-  /** Difficulty enum — single (back-compat) or array. */
-  difficulty?: string | string[];
-  /** M0 multi-value difficulty enums. */
+  /** Category enum values — OR-matched within axis. */
+  category?: string[];
+  /** Difficulty enum values — OR-matched within axis. */
   difficultyLevel?: string[];
   /**
-   * M0 `created_by[]` filter — enum strings, never UUIDs.
+   * `created_by[]` filter — enum strings, never UUIDs.
    * Valid values: "mine" | "system" | "pt" | "physio" | "all".
    *
    * The repository ORs the enum values together; the visibility predicate
@@ -185,23 +189,17 @@ export class ExerciseRepository {
     );
     if (createdByCond) conditions.push(createdByCond);
 
-    const difficultyArr = toStringArray(
-      filters.difficultyLevel && filters.difficultyLevel.length > 0
-        ? filters.difficultyLevel
-        : filters.difficulty,
-    );
-    if (difficultyArr.length > 0) {
+    if (filters.difficultyLevel && filters.difficultyLevel.length > 0) {
       conditions.push(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        inArray(exercises.difficultyLevel, difficultyArr as any),
+        inArray(exercises.difficultyLevel, filters.difficultyLevel as any),
       );
     }
 
-    const categoryArr = toStringArray(filters.category);
-    if (categoryArr.length > 0) {
+    if (filters.category && filters.category.length > 0) {
       conditions.push(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        inArray(exercises.category, categoryArr as any),
+        inArray(exercises.category, filters.category as any),
       );
     }
 

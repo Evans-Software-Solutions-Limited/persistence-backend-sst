@@ -108,6 +108,45 @@ describe("ExercisesUpdateHandler", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects 1-char name with 400 (spec: 2–100 chars)", async () => {
+    const { exercisesUpdateHandler } =
+      await import("../exercisesUpdateHandler");
+    const response = await exercisesUpdateHandler.handle(
+      new Request("http://localhost/exercises/ex-1", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: "Bearer token",
+        },
+        body: JSON.stringify({ name: "X" }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as any;
+    expect(body.error).toMatch(/at least 2/i);
+  });
+
+  it("accepts 2-char name (spec: minimum boundary)", async () => {
+    exerciseRepositoryMocks.update.mockResolvedValue({
+      id: "ex-1",
+      createdBy: "user-1",
+      name: "Ab",
+    });
+    const { exercisesUpdateHandler } =
+      await import("../exercisesUpdateHandler");
+    const response = await exercisesUpdateHandler.handle(
+      new Request("http://localhost/exercises/ex-1", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: "Bearer token",
+        },
+        body: JSON.stringify({ name: "Ab" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
   it("rejects name > 100 chars with 400", async () => {
     const { exercisesUpdateHandler } =
       await import("../exercisesUpdateHandler");
@@ -150,13 +189,14 @@ describe("ExercisesUpdateHandler", () => {
     expect(patch.name).toBe("Renamed");
   });
 
-  it("maps snake_case body fields to domain casing", async () => {
+  it("maps all snake_case body fields to domain casing", async () => {
     exerciseRepositoryMocks.update.mockResolvedValue({
       id: "ex-1",
       createdBy: "user-1",
     });
     const { exercisesUpdateHandler } =
       await import("../exercisesUpdateHandler");
+    const UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     await exercisesUpdateHandler.handle(
       new Request("http://localhost/exercises/ex-1", {
         method: "PATCH",
@@ -165,18 +205,38 @@ describe("ExercisesUpdateHandler", () => {
           authorization: "Bearer token",
         },
         body: JSON.stringify({
+          description: "desc",
+          instructions: "step",
           video_url: "https://example.com/v.mp4",
+          thumbnail_url: "https://example.com/t.jpg",
+          category: "strength",
           difficulty_level: "advanced",
-          primary_muscles: ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+          region_type: "Upper",
+          movement_type: "Push",
+          primary_muscles: [UUID],
+          secondary_muscles: [UUID],
+          equipment_required: [UUID],
+          accessibility_requirements: [UUID],
+          accessibility_modifications: "use support",
+          is_public: true,
         }),
       }),
     );
     const [, , patch] = exerciseRepositoryMocks.update.mock.calls[0];
+    expect(patch.description).toBe("desc");
+    expect(patch.instructions).toBe("step");
     expect(patch.videoUrl).toBe("https://example.com/v.mp4");
+    expect(patch.thumbnailUrl).toBe("https://example.com/t.jpg");
+    expect(patch.category).toBe("strength");
     expect(patch.difficultyLevel).toBe("advanced");
-    expect(patch.primaryMuscles).toEqual([
-      "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    ]);
+    expect(patch.regionType).toBe("Upper");
+    expect(patch.movementType).toBe("Push");
+    expect(patch.primaryMuscles).toEqual([UUID]);
+    expect(patch.secondaryMuscles).toEqual([UUID]);
+    expect(patch.equipmentRequired).toEqual([UUID]);
+    expect(patch.accessibilityRequirements).toEqual([UUID]);
+    expect(patch.accessibilityModifications).toBe("use support");
+    expect(patch.isPublic).toBe(true);
   });
 
   it("returns 200 with { data } on success", async () => {

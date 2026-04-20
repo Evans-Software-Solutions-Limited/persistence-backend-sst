@@ -124,18 +124,44 @@ describe("ExerciseRepository.list", () => {
     expect(inArray).toHaveBeenCalled();
   });
 
-  it("accepts single-value difficulty back-compat", async () => {
+  it("accepts single-value difficultyLevel array (one entry)", async () => {
     (getDb as any).mockReturnValue(makeMockDb());
     const repo = new ExerciseRepository();
-    const result = await repo.list({ difficulty: "intermediate" });
+    const result = await repo.list({ difficultyLevel: ["intermediate"] });
     expect(result).toEqual(mockExercises);
   });
 
-  it("accepts single-value category back-compat", async () => {
+  it("accepts single-value category array (one entry)", async () => {
     (getDb as any).mockReturnValue(makeMockDb());
     const repo = new ExerciseRepository();
-    const result = await repo.list({ category: "strength" });
+    const result = await repo.list({ category: ["strength"] });
     expect(result).toEqual(mockExercises);
+  });
+
+  it("skips difficulty filter when array is empty", async () => {
+    (getDb as any).mockReturnValue(makeMockDb());
+    const { inArray } = await import("drizzle-orm");
+    (inArray as any).mockClear();
+
+    const repo = new ExerciseRepository();
+    await repo.list({ difficultyLevel: [] });
+
+    // inArray should NOT fire for an empty array — the filter axis is
+    // skipped entirely. Visibility / created_by might still call inArray
+    // in other branches, but none of those paths run here (unauth, no
+    // createdByFilter, no muscle/equipment arrays).
+    expect(inArray).not.toHaveBeenCalled();
+  });
+
+  it("skips category filter when array is empty", async () => {
+    (getDb as any).mockReturnValue(makeMockDb());
+    const { inArray } = await import("drizzle-orm");
+    (inArray as any).mockClear();
+
+    const repo = new ExerciseRepository();
+    await repo.list({ category: [] });
+
+    expect(inArray).not.toHaveBeenCalled();
   });
 
   it("accepts targeted_muscles_any array (array overlap)", async () => {

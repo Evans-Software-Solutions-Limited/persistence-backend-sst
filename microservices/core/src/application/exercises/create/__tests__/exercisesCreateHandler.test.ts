@@ -101,6 +101,40 @@ describe("ExercisesCreateHandler", () => {
       expect(response.status).toBe(400);
     });
 
+    it("rejects 1-char name with 400 (spec: 2–100 chars)", async () => {
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      const response = await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({ name: "X" }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.error).toMatch(/at least 2/i);
+    });
+
+    it("accepts 2-char name (spec: minimum boundary)", async () => {
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      const response = await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({ name: "Ab" }),
+        }),
+      );
+      expect(response.status).toBe(201);
+    });
+
     it("rejects names over 100 chars with 400", async () => {
       const { exercisesCreateHandler } =
         await import("../exercisesCreateHandler");

@@ -31,6 +31,10 @@ export const exercisesCreateHandler = new Elysia()
         ctx.set.status = 400;
         return { error: "Exercise name is required" };
       }
+      if (name.length < 2) {
+        ctx.set.status = 400;
+        return { error: "Exercise name must be at least 2 characters" };
+      }
       if (name.length > 100) {
         ctx.set.status = 400;
         return { error: "Exercise name must be 100 characters or fewer" };

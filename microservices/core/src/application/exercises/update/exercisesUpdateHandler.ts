@@ -36,6 +36,10 @@ export const exercisesUpdateHandler = new Elysia()
           ctx.set.status = 400;
           return { error: "Exercise name cannot be empty" };
         }
+        if (trimmed.length < 2) {
+          ctx.set.status = 400;
+          return { error: "Exercise name must be at least 2 characters" };
+        }
         if (trimmed.length > 100) {
           ctx.set.status = 400;
           return { error: "Exercise name must be 100 characters or fewer" };
