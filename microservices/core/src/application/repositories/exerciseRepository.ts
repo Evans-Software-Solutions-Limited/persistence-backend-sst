@@ -73,6 +73,31 @@ export class ExerciseRepository {
   static readonly key = "ExerciseRepository";
 
   /**
+   * Single source of truth for "the trainers this client is connected to".
+   *
+   * Used by both the visibility predicate (always applied) and the
+   * created_by=pt|physio filter (optional, narrows within visible set).
+   * Keeping the criteria in one place means status-enum changes, new
+   * flags, or the eventual physio role split land in exactly one spot.
+   *
+   * Drizzle emits this as an SQL fragment each time it's called — there's
+   * no query-plan sharing at the DB layer in M0. Future work could hoist
+   * it into a CTE if the cost becomes measurable.
+   */
+  private activeTrainerIdsSubquery(userId: string) {
+    return getDb()
+      .select({ trainerId: ptClientRelationships.trainerId })
+      .from(ptClientRelationships)
+      .where(
+        and(
+          eq(ptClientRelationships.clientId, userId),
+          eq(ptClientRelationships.status, "active"),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      );
+  }
+
+  /**
    * Visibility predicate applied to every `list()` and `getById()` call.
    *
    * A caller sees an exercise iff ANY of:
@@ -89,21 +114,10 @@ export class ExerciseRepository {
       return isNull(exercises.createdBy);
     }
 
-    const activeTrainerIds = getDb()
-      .select({ trainerId: ptClientRelationships.trainerId })
-      .from(ptClientRelationships)
-      .where(
-        and(
-          eq(ptClientRelationships.clientId, userId),
-          eq(ptClientRelationships.status, "active"),
-          eq(ptClientRelationships.isAiTrainer, false),
-        ),
-      );
-
     return or(
       isNull(exercises.createdBy),
       eq(exercises.createdBy, userId),
-      inArray(exercises.createdBy, activeTrainerIds),
+      inArray(exercises.createdBy, this.activeTrainerIdsSubquery(userId)),
     ) as SQL;
   }
 
@@ -136,7 +150,6 @@ export class ExerciseRepository {
     const canonical = filter.map((v) => (v === "physio" ? "pt" : v));
     const deduped = Array.from(new Set(canonical));
 
-    const db = getDb();
     const predicates: SQL[] = [];
 
     for (const value of deduped) {
@@ -149,17 +162,9 @@ export class ExerciseRepository {
           break;
         case "pt": {
           if (!userId) break;
-          const trainerIds = db
-            .select({ trainerId: ptClientRelationships.trainerId })
-            .from(ptClientRelationships)
-            .where(
-              and(
-                eq(ptClientRelationships.clientId, userId),
-                eq(ptClientRelationships.status, "active"),
-                eq(ptClientRelationships.isAiTrainer, false),
-              ),
-            );
-          predicates.push(inArray(exercises.createdBy, trainerIds));
+          predicates.push(
+            inArray(exercises.createdBy, this.activeTrainerIdsSubquery(userId)),
+          );
           break;
         }
         default:
