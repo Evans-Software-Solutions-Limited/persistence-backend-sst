@@ -46,6 +46,37 @@ function FiltersLayoutInner() {
     router.back();
   }, [router]);
 
+  /**
+   * Shared left-header renderer for both the filter-modal index and the
+   * nested axis screens (muscles / equipment / difficulty / created-by).
+   * The on-press behaviour is identical — `router.back()` either pops a
+   * nested screen off the stack OR dismisses the whole modal — only the
+   * label changes. "Close" reads correctly on the index where back-action
+   * means "dismiss the modal"; on nested screens "Back" is what the user
+   * expects since they're returning to the filter index, not leaving
+   * filtering entirely.
+   */
+  const renderHeaderLeft = useCallback(
+    (label: string, testID: string) => (
+      <Pressable
+        onPress={onClose}
+        hitSlop={headerHitSlop}
+        style={({ pressed }) => [
+          headerButtonStyles.button,
+          pressed && headerButtonStyles.pressed,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${label} filters`}
+        testID={testID}
+      >
+        <Text variant="bodySmall" color="$colorSecondary">
+          {label}
+        </Text>
+      </Pressable>
+    ),
+    [onClose],
+  );
+
   const onApply = useCallback(() => {
     applied.applyAdvanced({
       muscleGroups: pending.muscleGroups,
@@ -100,23 +131,9 @@ function FiltersLayoutInner() {
           // produces a ripple/flash on press. A plain Pressable with an
           // explicit pressed-state opacity matches the iOS-native header
           // feel the legacy app had.
-          headerLeft: () => (
-            <Pressable
-              onPress={onClose}
-              hitSlop={headerHitSlop}
-              style={({ pressed }) => [
-                headerButtonStyles.button,
-                pressed && headerButtonStyles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Close filters"
-              testID="filters-close"
-            >
-              <Text variant="bodySmall" color="$colorSecondary">
-                Close
-              </Text>
-            </Pressable>
-          ),
+          // Default for the index screen. Nested axis screens override
+          // below to render "Back" instead; same router.back() behaviour.
+          headerLeft: () => renderHeaderLeft("Close", "filters-close"),
           headerRight: () => {
             const anySelected =
               pending.selectionCounts.muscleGroups +
@@ -151,10 +168,34 @@ function FiltersLayoutInner() {
         }}
       >
         <Stack.Screen name="index" options={{ title: "Filters" }} />
-        <Stack.Screen name="muscles" options={{ title: "Muscle Groups" }} />
-        <Stack.Screen name="equipment" options={{ title: "Equipment" }} />
-        <Stack.Screen name="difficulty" options={{ title: "Difficulty" }} />
-        <Stack.Screen name="created-by" options={{ title: "Created By" }} />
+        <Stack.Screen
+          name="muscles"
+          options={{
+            title: "Muscle Groups",
+            headerLeft: () => renderHeaderLeft("Back", "filters-back"),
+          }}
+        />
+        <Stack.Screen
+          name="equipment"
+          options={{
+            title: "Equipment",
+            headerLeft: () => renderHeaderLeft("Back", "filters-back"),
+          }}
+        />
+        <Stack.Screen
+          name="difficulty"
+          options={{
+            title: "Difficulty",
+            headerLeft: () => renderHeaderLeft("Back", "filters-back"),
+          }}
+        />
+        <Stack.Screen
+          name="created-by"
+          options={{
+            title: "Created By",
+            headerLeft: () => renderHeaderLeft("Back", "filters-back"),
+          }}
+        />
       </Stack>
 
       {/* Sticky apply bar — lives outside the Stack so it persists across
