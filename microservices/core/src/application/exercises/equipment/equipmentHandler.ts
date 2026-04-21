@@ -19,7 +19,6 @@ export const equipmentHandler = new Elysia()
       data: equipment.map((row) => ({
         id: row.id,
         name: row.name,
-        description: row.description,
         display_name: null,
       })),
     };

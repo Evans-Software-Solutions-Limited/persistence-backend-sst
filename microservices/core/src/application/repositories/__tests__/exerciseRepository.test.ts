@@ -282,6 +282,24 @@ describe("ExerciseRepository.list", () => {
       expect(result).toEqual(mockExercises);
     });
 
+    it("'system' predicate matches SYSTEM_USER_ID (regression: was IS NULL only)", async () => {
+      (getDb as any).mockReturnValue(makeMockDb());
+      const { eq, or } = await import("drizzle-orm");
+      (eq as any).mockClear();
+      (or as any).mockClear();
+
+      const repo = new ExerciseRepository();
+      await repo.list({ createdByFilter: ["system"] });
+
+      // The 'system' branch must call `eq(exercises.createdBy, SYSTEM_USER_ID)`
+      // alongside isNull. The legacy Supabase DB stores system rows with the
+      // sentinel UUID; an IS-NULL-only predicate returns zero rows.
+      const eqCallsWithSystemUserId = (eq as any).mock.calls.filter(
+        (args: unknown[]) => args[1] === "00000000-0000-0000-0000-000000000000",
+      );
+      expect(eqCallsWithSystemUserId.length).toBeGreaterThan(0);
+    });
+
     it("handles 'pt' with userId (builds trainer subquery)", async () => {
       const mockDb = makeMockDb();
       (getDb as any).mockReturnValue(mockDb);
@@ -604,16 +622,34 @@ describe("Exercise Lookup Methods", () => {
   });
 
   it("getCategories returns distinct categories", async () => {
+    // Supabase schema alignment: no `where(isPublic)` filter — it's
+    // selectDistinct().from(). The mock terminates at `.from()`.
     const mockDb = {
       selectDistinct: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi
-            .fn()
-            .mockResolvedValue([
-              { category: "strength" },
-              { category: "cardio" },
-            ]),
-        }),
+        from: vi
+          .fn()
+          .mockResolvedValue([
+            { category: "strength" },
+            { category: "cardio" },
+          ]),
+      }),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const result = await repository.getCategories();
+    expect(result).toEqual(["strength", "cardio"]);
+  });
+
+  it("getCategories drops null category rows", async () => {
+    const mockDb = {
+      selectDistinct: vi.fn().mockReturnValue({
+        from: vi
+          .fn()
+          .mockResolvedValue([
+            { category: "strength" },
+            { category: null },
+            { category: "cardio" },
+          ]),
       }),
     };
     (getDb as any).mockReturnValue(mockDb);
