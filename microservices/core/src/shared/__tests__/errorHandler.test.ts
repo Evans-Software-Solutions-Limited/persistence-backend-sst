@@ -44,15 +44,61 @@ describe("coreErrorHandler", () => {
     process.env.SST_STAGE = "production";
 
     const app = coreErrorHandler(new Elysia()).get("/boom", () => {
-      throw new Error("prod secret");
+      throw new Error("kaboom");
     });
 
     const response = await app.handle(new Request("http://localhost/boom"));
     expect(response.status).toBe(500);
     const body = await jsonBody(response);
-    expect(body.detail).toBe("prod secret");
     // Stack must NOT leak — may carry internal paths / env data
     expect(body.stack).toBeUndefined();
+  });
+
+  it("strips the raw detail on production 500s (CWE-209)", async () => {
+    process.env.SST_STAGE = "production";
+
+    const app = coreErrorHandler(new Elysia()).get("/boom", () => {
+      // Simulate a Postgres driver error leaking schema info
+      throw new Error(
+        'column "exercises.internal_hash" does not exist at host db.xyz.supabase.co',
+      );
+    });
+
+    const response = await app.handle(new Request("http://localhost/boom"));
+    expect(response.status).toBe(500);
+    const body = await jsonBody(response);
+    // Raw driver message must NOT leak — no column names, no hostnames
+    expect(body.detail).not.toContain("exercises");
+    expect(body.detail).not.toContain("supabase.co");
+    expect(body.detail).not.toContain("internal_hash");
+    // Generic replacement + still tells the client how to follow up
+    expect(body.detail).toMatch(/internal error/i);
+    expect(body.detail).toMatch(/server logs/i);
+  });
+
+  it("keeps detail on 4xx errors even in production (client-facing)", async () => {
+    process.env.SST_STAGE = "production";
+
+    const app = coreErrorHandler(new Elysia()).post(
+      "/require-name",
+      () => ({ ok: true }),
+      { body: t.Object({ name: t.String() }) },
+    );
+
+    const response = await app.handle(
+      new Request("http://localhost/require-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(response.status).toBe(422);
+    const body = await jsonBody(response);
+    // Client needs to know WHICH field failed; stripping here would
+    // make the API useless. Detail still carries Elysia's message.
+    expect(typeof body.detail).toBe("string");
+    expect((body.detail as string).length).toBeGreaterThan(0);
+    expect(body.detail).not.toMatch(/internal error/i);
   });
 
   it("maps VALIDATION errors to 422", async () => {

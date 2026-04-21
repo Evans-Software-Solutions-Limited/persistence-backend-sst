@@ -103,10 +103,27 @@ export function coreErrorHandler(app: Elysia<any, any, any, any, any, any>) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const validationDetail = (error as any)?.all;
 
+    // Strip raw driver messages from production 500s only (CWE-209:
+    // information disclosure). Raw Postgres / Drizzle errors can leak
+    // column names, SQL fragments, hostnames. Auth throws could leak
+    // account existence. Full detail stays in CloudWatch via the log
+    // above; support pairs client ↔ server via `requestId`.
+    //
+    // 4xx client errors keep the detail — they exist to tell the
+    // client what's wrong with their input (422 "name: required"),
+    // what they were looking for (404 "not found"), etc. Stripping
+    // those would make the API useless to consumers.
+    //
+    // Non-production keeps detail across the board for dev ergonomics.
+    const shouldStripDetail = isProduction() && status >= 500;
+    const safeDetail = shouldStripDetail
+      ? "An internal error occurred. See server logs for details."
+      : message;
+
     return {
       code,
       error: codeToLabel(code),
-      detail: message,
+      detail: safeDetail,
       ...(validationDetail ? { validation: validationDetail } : {}),
       ...(requestId ? { requestId } : {}),
       ...(isProduction() ? {} : { stack }),
