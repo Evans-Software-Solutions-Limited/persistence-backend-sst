@@ -1,5 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
+import { Pressable, StyleSheet } from "react-native";
 import { View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Row, Text } from "../../../../src/ui/components";
@@ -94,10 +95,19 @@ function FiltersLayoutInner() {
           headerTintColor: colorPalette.neutral0,
           headerTitleStyle: { fontWeight: "600" },
           contentStyle: { backgroundColor: colorPalette.neutral1000 },
+          // React Navigation's header area uses its own Pressable wrapper;
+          // using Tamagui's `<View onPress>` inside it double-wraps and
+          // produces a ripple/flash on press. A plain Pressable with an
+          // explicit pressed-state opacity matches the iOS-native header
+          // feel the legacy app had.
           headerLeft: () => (
-            <View
+            <Pressable
               onPress={onClose}
-              padding="$xs"
+              hitSlop={headerHitSlop}
+              style={({ pressed }) => [
+                headerButtonStyles.button,
+                pressed && headerButtonStyles.pressed,
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Close filters"
               testID="filters-close"
@@ -105,21 +115,39 @@ function FiltersLayoutInner() {
               <Text variant="bodySmall" color="$colorSecondary">
                 Close
               </Text>
-            </View>
+            </Pressable>
           ),
-          headerRight: () => (
-            <View
-              onPress={pending.clearAll}
-              padding="$xs"
-              accessibilityRole="button"
-              accessibilityLabel="Clear all filters"
-              testID="filters-clear"
-            >
-              <Text variant="bodySmall" color="$primary" fontWeight="600">
-                Clear
-              </Text>
-            </View>
-          ),
+          headerRight: () => {
+            const anySelected =
+              pending.selectionCounts.muscleGroups +
+                pending.selectionCounts.equipment +
+                pending.selectionCounts.difficulties +
+                pending.selectionCounts.createdBy >
+              0;
+            return (
+              <Pressable
+                onPress={anySelected ? pending.clearAll : undefined}
+                disabled={!anySelected}
+                hitSlop={headerHitSlop}
+                style={({ pressed }) => [
+                  headerButtonStyles.button,
+                  pressed && anySelected && headerButtonStyles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Clear all filters"
+                accessibilityState={{ disabled: !anySelected }}
+                testID="filters-clear"
+              >
+                <Text
+                  variant="bodySmall"
+                  color={anySelected ? "$primary" : "$colorDisabled"}
+                  fontWeight="600"
+                >
+                  Clear
+                </Text>
+              </Pressable>
+            );
+          },
         }}
       >
         <Stack.Screen name="index" options={{ title: "Filters" }} />
@@ -130,7 +158,8 @@ function FiltersLayoutInner() {
       </Stack>
 
       {/* Sticky apply bar — lives outside the Stack so it persists across
-          axis navigation (AC 7.12). */}
+          axis navigation (AC 7.12). Legacy parity: single Apply button in
+          the sticky bar; Clear lives in the header (top-right). */}
       <Row
         gap="sm"
         paddingHorizontal="$base"
@@ -142,15 +171,6 @@ function FiltersLayoutInner() {
         testID="filters-apply-bar"
       >
         <View flex={1}>
-          <Button
-            label="Clear"
-            onPress={pending.clearAll}
-            variant="ghost"
-            fullWidth
-            testID="filters-clear-button"
-          />
-        </View>
-        <View flex={2}>
           <Button
             label={buildApplyLabel(matchCount)}
             onPress={onApply}
@@ -168,3 +188,17 @@ function buildApplyLabel(count: number): string {
   if (count === 1) return "Show 1 exercise";
   return `Show ${count} exercises`;
 }
+
+const headerHitSlop = { top: 12, bottom: 12, left: 12, right: 12 };
+
+const headerButtonStyles = StyleSheet.create({
+  button: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    // Align text vertically inside React Navigation's header height.
+    justifyContent: "center",
+  },
+  pressed: {
+    opacity: 0.5,
+  },
+});

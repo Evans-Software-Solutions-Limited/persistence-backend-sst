@@ -18,31 +18,19 @@ export default function FiltersIndexScreen() {
         {
           key: "muscles",
           label: "Muscle Groups",
-          subtitle: selectionSubtitle(
-            pending.selectionCounts.muscleGroups,
-            "muscle group",
-            "muscle groups",
-          ),
+          subtitle: selectionSubtitle(pending.selectionCounts.muscleGroups),
           onPress: () => router.push("/(app)/exercises/filters/muscles"),
         },
         {
           key: "equipment",
           label: "Equipment",
-          subtitle: selectionSubtitle(
-            pending.selectionCounts.equipment,
-            "piece",
-            "pieces",
-          ),
+          subtitle: selectionSubtitle(pending.selectionCounts.equipment),
           onPress: () => router.push("/(app)/exercises/filters/equipment"),
         },
         {
           key: "difficulty",
           label: "Difficulty",
-          subtitle: selectionSubtitle(
-            pending.selectionCounts.difficulties,
-            "level",
-            "levels",
-          ),
+          subtitle: selectionSubtitle(pending.selectionCounts.difficulties),
           onPress: () => router.push("/(app)/exercises/filters/difficulty"),
         },
         {
@@ -58,8 +46,14 @@ export default function FiltersIndexScreen() {
   );
 }
 
-function selectionSubtitle(count: number, singular: string, plural: string) {
+/**
+ * Uniform subtitle across axes. The legacy app uses "N selected" rather
+ * than category-specific phrasing ("1 piece selected" for equipment is
+ * awkward; "1 muscle group selected" is verbose). Keeping this short
+ * lets the label column breathe on narrow screens.
+ */
+function selectionSubtitle(count: number): string {
   if (count === 0) return "Any";
-  if (count === 1) return `1 ${singular} selected`;
-  return `${count} ${plural} selected`;
+  if (count === 1) return "1 selected";
+  return `${count} selected`;
 }
