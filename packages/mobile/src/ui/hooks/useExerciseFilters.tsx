@@ -34,8 +34,8 @@ import type { QuickFilterId } from "@/ui/components/ExerciseFilterBar";
 
 type State = {
   quickFilters: QuickFilterId[];
-  muscleGroups: MuscleGroup[];
-  equipment: EquipmentType[];
+  muscleGroups: string[];
+  equipment: string[];
   difficultiesAdvanced: ExerciseDifficulty[];
   search: string;
 };
@@ -67,8 +67,8 @@ const INITIAL_STATE: State = {
 export type ExerciseFiltersContextValue = {
   // --- raw state ---
   quickFilters: QuickFilterId[];
-  muscleGroups: MuscleGroup[];
-  equipment: EquipmentType[];
+  muscleGroups: string[];
+  equipment: string[];
   difficultiesAdvanced: ExerciseDifficulty[];
   search: string;
 
@@ -96,8 +96,8 @@ export type ExerciseFiltersContextValue = {
   toggleQuickFilter: (id: QuickFilterId) => void;
   setSearch: (text: string) => void;
   applyAdvanced: (next: {
-    muscleGroups: MuscleGroup[];
-    equipment: EquipmentType[];
+    muscleGroups: string[];
+    equipment: string[];
     difficulties: ExerciseDifficulty[];
   }) => void;
   clearAll: () => void;
@@ -115,8 +115,8 @@ export type ExerciseFiltersContextValue = {
    * bug that crept in when difficulty was shared across quick bar + modal.
    */
   previewFiltersWithAdvanced: (override: {
-    muscleGroups: MuscleGroup[];
-    equipment: EquipmentType[];
+    muscleGroups: string[];
+    equipment: string[];
     difficulties: ExerciseDifficulty[];
   }) => ExerciseFilters;
 };
@@ -197,8 +197,8 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
 
   const applyAdvanced = useCallback(
     (next: {
-      muscleGroups: MuscleGroup[];
-      equipment: EquipmentType[];
+      muscleGroups: string[];
+      equipment: string[];
       difficulties: ExerciseDifficulty[];
     }) => {
       setState((prev) => ({
@@ -235,8 +235,8 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
    */
   const mergeFilters = useCallback(
     (override: {
-      muscleGroups: MuscleGroup[];
-      equipment: EquipmentType[];
+      muscleGroups: string[];
+      equipment: string[];
       difficultiesAdvanced: ExerciseDifficulty[];
     }): ExerciseFilters => {
       const quickCreatedBy = quickFilters.find(isCreatedBy) ?? null;
@@ -274,8 +274,8 @@ export function ExerciseFiltersProvider({ children }: { children: ReactNode }) {
 
   const previewFiltersWithAdvanced = useCallback(
     (override: {
-      muscleGroups: MuscleGroup[];
-      equipment: EquipmentType[];
+      muscleGroups: string[];
+      equipment: string[];
       difficulties: ExerciseDifficulty[];
     }): ExerciseFilters => {
       const base = mergeFilters({

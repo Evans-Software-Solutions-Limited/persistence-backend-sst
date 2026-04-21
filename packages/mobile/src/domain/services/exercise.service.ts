@@ -86,20 +86,26 @@ export function filterExercises(
     result = result.filter((e) => e.isCustom === wantCustom);
   }
 
+  // Muscle / equipment filtering compares UUIDs on both sides. Exercise's
+  // `primaryMuscleGroups` / `equipment` arrays are typed as enum unions
+  // for historical parity but hold UUIDs at runtime (see Exercise model
+  // docstring). Cast the arrays to `string[]` so the `.includes` call
+  // sees the same shape the filter is actually passing.
   if (filters.muscleGroups && filters.muscleGroups.length > 0) {
     const groups = filters.muscleGroups;
-    result = result.filter((e) =>
-      groups.some(
-        (g) =>
-          e.primaryMuscleGroups.includes(g) ||
-          e.secondaryMuscleGroups.includes(g),
-      ),
-    );
+    result = result.filter((e) => {
+      const primary = e.primaryMuscleGroups as unknown as string[];
+      const secondary = e.secondaryMuscleGroups as unknown as string[];
+      return groups.some((g) => primary.includes(g) || secondary.includes(g));
+    });
   }
 
   if (filters.equipment && filters.equipment.length > 0) {
     const equip = filters.equipment;
-    result = result.filter((e) => equip.some((eq) => e.equipment.includes(eq)));
+    result = result.filter((e) => {
+      const equipment = e.equipment as unknown as string[];
+      return equip.some((eq) => equipment.includes(eq));
+    });
   }
 
   return result;

@@ -183,8 +183,19 @@ export type CreatedByFilter = "mine" | "system";
 
 export type ExerciseFilters = {
   search?: string;
-  muscleGroups?: MuscleGroup[];
-  equipment?: EquipmentType[];
+  /**
+   * Muscle-group UUIDs. Matches the id column on Supabase's `muscle_groups`
+   * table (and the UUIDs stored in `exercises.primary_muscles`). Filter
+   * state holds UUIDs directly — NOT the legacy `MuscleGroup` enum —
+   * because the cached exercises hold UUIDs and in-memory filtering needs
+   * the two sides to match. The filter modal reads the available list
+   * from `referenceLists.muscle_groups` and keys selection by `entry.id`.
+   */
+  muscleGroups?: string[];
+  /**
+   * Equipment UUIDs — same rationale as `muscleGroups`.
+   */
+  equipment?: string[];
   /**
    * Category is retained on the filter type for API/query compatibility
    * but is not surfaced in the current UI. The old mobile app never exposed

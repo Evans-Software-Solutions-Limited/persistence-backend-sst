@@ -409,9 +409,14 @@ export class SSTApiAdapter implements ApiPort {
   /**
    * Build `GET /exercises` query params in the legacy wire format.
    * Repeated-key arrays (passed as arrays; each key emits multiple
-   * `?key=value` pairs when serialised by the URL builder). UUIDs for
-   * muscle/equipment are resolved via the reference lookup; unresolved
-   * enums are logged + dropped (we never send a broken query).
+   * `?key=value` pairs when serialised by the URL builder).
+   *
+   * `muscleGroups` / `equipment` values are expected to already be UUIDs
+   * (see `ExerciseFilters` docstrings). The legacy enum→UUID translation
+   * step was dropped in M0 once the filter modal started sourcing items
+   * directly from the reference-list cache — the translation never
+   * worked reliably anyway because the enum was case-sensitive against
+   * title-case DB rows.
    *
    * Spec: design.md § Backend Endpoints > GET /exercises
    *       · requirements.md AC 7.13
@@ -432,15 +437,10 @@ export class SSTApiAdapter implements ApiPort {
     }
     if (filters?.createdBy) params.created_by = [filters.createdBy];
     if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
-      const uuids = this.resolveEnumsToUuids(
-        "muscle_groups",
-        filters.muscleGroups,
-      );
-      if (uuids.length > 0) params.targeted_muscles_any = uuids;
+      params.targeted_muscles_any = [...filters.muscleGroups];
     }
     if (filters?.equipment && filters.equipment.length > 0) {
-      const uuids = this.resolveEnumsToUuids("equipment", filters.equipment);
-      if (uuids.length > 0) params.equipment_any = uuids;
+      params.equipment_any = [...filters.equipment];
     }
     return params;
   }

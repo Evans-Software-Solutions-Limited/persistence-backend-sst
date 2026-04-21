@@ -8,9 +8,7 @@ import {
 } from "react";
 import type {
   CreatedByFilter,
-  EquipmentType,
   ExerciseDifficulty,
-  MuscleGroup,
 } from "@/domain/models/exercise";
 import { useExerciseFilters } from "./useExerciseFilters";
 
@@ -33,15 +31,17 @@ import { useExerciseFilters } from "./useExerciseFilters";
  */
 
 type PendingState = {
-  muscleGroups: MuscleGroup[];
-  equipment: EquipmentType[];
+  /** Muscle-group UUIDs — the filter modal populates from the DB catalogue. */
+  muscleGroups: string[];
+  /** Equipment UUIDs — same rationale. */
+  equipment: string[];
   difficulties: ExerciseDifficulty[];
   createdBy: CreatedByFilter | null;
 };
 
 export type ExerciseFiltersPendingContextValue = PendingState & {
-  toggleMuscleGroup: (key: MuscleGroup) => void;
-  toggleEquipment: (key: EquipmentType) => void;
+  toggleMuscleGroup: (key: string) => void;
+  toggleEquipment: (key: string) => void;
   toggleDifficulty: (key: ExerciseDifficulty) => void;
   /**
    * `createdBy` is a radio (mine XOR system). Passing the already-selected
@@ -90,7 +90,7 @@ export function ExerciseFiltersPendingProvider({
       ) ?? null,
   }));
 
-  const toggleMuscleGroup = useCallback((key: MuscleGroup) => {
+  const toggleMuscleGroup = useCallback((key: string) => {
     setState((prev) => ({
       ...prev,
       muscleGroups: prev.muscleGroups.includes(key)
@@ -99,7 +99,7 @@ export function ExerciseFiltersPendingProvider({
     }));
   }, []);
 
-  const toggleEquipment = useCallback((key: EquipmentType) => {
+  const toggleEquipment = useCallback((key: string) => {
     setState((prev) => ({
       ...prev,
       equipment: prev.equipment.includes(key)
