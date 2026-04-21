@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import openapi from "@elysiajs/openapi";
 
+import { coreErrorHandler } from "./shared/errorHandler";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
 import { exercisesCreateHandler } from "./application/exercises/create/exercisesCreateHandler";
@@ -44,6 +45,7 @@ import { progressRecordsHandler } from "./application/progress/progressRecordsHa
 import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
 
 const app = new Elysia()
+  .use(coreErrorHandler)
   .use(openapi())
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
