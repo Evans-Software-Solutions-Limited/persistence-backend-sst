@@ -118,10 +118,21 @@ export function ExerciseListContainer() {
    */
   const isDeletePendingRef = useRef(false);
 
+  /**
+   * Holds the latest exercises array so `onLongPressExercise` can look
+   * up the pressed row without depending on `queryResult.exercises` in
+   * the useCallback deps. Keeping the callback's identity stable is
+   * load-bearing: the presenter's `renderItem` depends on it, and an
+   * unstable reference invalidates ExerciseCard's React.memo and
+   * re-renders every visible cell on each filter/cache change.
+   */
+  const exercisesRef = useRef(queryResult.exercises);
+  exercisesRef.current = queryResult.exercises;
+
   const onLongPressExercise = useCallback(
     (id: string) => {
       if (isDeletePendingRef.current) return;
-      const exercise = queryResult.exercises.find((e) => e.id === id);
+      const exercise = exercisesRef.current.find((e) => e.id === id);
       // Only surface the destructive menu for rows the user owns —
       // system / PT exercises are non-deletable. Matches AC 7.5 +
       // legacy behaviour.
@@ -163,10 +174,22 @@ export function ExerciseListContainer() {
             },
           },
         ],
-        { cancelable: true },
+        {
+          cancelable: true,
+          // Android only — fires when the user taps outside the alert
+          // or presses the hardware back button. Without this, neither
+          // Cancel nor Delete onPress runs and the guard ref stays
+          // true forever, blocking every subsequent long-press.
+          onDismiss: () => {
+            isDeletePendingRef.current = false;
+          },
+        },
       );
     },
-    [api, storage, queryResult.exercises],
+    // queryResult.exercises intentionally NOT a dep — we read it via
+    // exercisesRef so the callback identity stays stable across
+    // cache changes. See the ref docstring above.
+    [api, storage],
   );
 
   const hasCachedExercises = queryResult.exercises.length > 0;

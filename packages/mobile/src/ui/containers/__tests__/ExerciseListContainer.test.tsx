@@ -774,5 +774,82 @@ describe("ExerciseListContainer", () => {
       const [errTitle] = alertSpy.mock.calls[1];
       expect(errTitle).toMatch(/Couldn't delete/);
     });
+
+    it("resets the pending-ref via onDismiss (Android back/outside tap) — regression", async () => {
+      const { adapters, api } = createTestAdapters();
+      api.exercises = [
+        makeExercise({ id: "ex-1", name: "My Lift", isCustom: true }),
+      ];
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+      await waitFor(() => {
+        expect(getByTestId("stub-count").props.children).toBe(1);
+      });
+
+      // First long-press opens an alert. We simulate the user
+      // dismissing it by tapping outside (Android) — neither Cancel
+      // nor Delete onPress fires, only onDismiss.
+      fireEvent.press(getByTestId("stub-long-press-exercise"));
+      const firstCall = alertSpy.mock.calls[0];
+      const options = firstCall[3] as { onDismiss?: () => void } | undefined;
+      expect(typeof options?.onDismiss).toBe("function");
+      options?.onDismiss?.();
+
+      // A second long-press must open a fresh alert — the guard ref
+      // has to be reset so the user isn't locked out for the rest
+      // of the session.
+      fireEvent.press(getByTestId("stub-long-press-exercise"));
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("onLongPressExercise stability (regression)", () => {
+    // Pins that the callback identity doesn't churn on every
+    // cache / filter change, which would defeat ExerciseCard's
+    // React.memo and re-render every visible row.
+    it("keeps a stable identity across exercises-array changes", async () => {
+      const { adapters, api, storage } = createTestAdapters();
+      api.exercises = [makeExercise({ id: "ex-1" })];
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-count").props.children).toBe(1);
+      });
+
+      const firstCallback = lastProps?.onLongPressExercise;
+      expect(firstCallback).toBeDefined();
+
+      // Mutate the cache — this normally produces a new
+      // queryResult.exercises reference.
+      await act(async () => {
+        storage.cacheExercises([
+          makeExercise({ id: "ex-1" }),
+          makeExercise({ id: "ex-2", name: "New Lift" }),
+        ]);
+        // Trigger a re-render by toggling a quick filter and back.
+        fireEvent.press(getByTestId("stub-toggle-beginner"));
+      });
+      await waitFor(() => {
+        // Toggling beginner narrows the list.
+        expect(lastProps?.exercises.length).toBeLessThanOrEqual(1);
+      });
+
+      await act(async () => {
+        fireEvent.press(getByTestId("stub-toggle-beginner"));
+      });
+
+      // The callback identity must be the SAME object across renders
+      // — otherwise the presenter's renderItem useCallback
+      // invalidates and every cell re-renders.
+      expect(lastProps?.onLongPressExercise).toBe(firstCallback);
+    });
   });
 });

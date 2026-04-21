@@ -72,6 +72,21 @@ export function useReferenceLists(): ReferenceListsState {
   const [error, setError] = useState<string | null>(null);
 
   /**
+   * Tracked as state rather than derived from the mount-time `initial`
+   * snapshot — otherwise a successful refresh() couldn't flip the flag
+   * back off (storage reference never changes, so useMemo never re-runs).
+   *
+   * Seeded from the initial cache read. Cleared to `false` only after a
+   * refresh completes with every kind succeeding. A partial-failure
+   * refresh leaves the flag true so the UI / caller can retry.
+   */
+  const [isStale, setIsStale] = useState(
+    initial.muscle_groups.isStale ||
+      initial.equipment.isStale ||
+      initial.categories.isStale,
+  );
+
+  /**
    * Guard against double-fires of the auto-refresh effect. Using a ref
    * rather than state because React 18 strict-mode / hot-reload can
    * cause the effect to run twice in the same tick, and we only want
@@ -103,6 +118,12 @@ export function useReferenceLists(): ReferenceListsState {
     }
     setError(firstError);
     setIsLoading(false);
+    // Clear the stale flag only when every kind succeeded. A partial
+    // failure keeps the cache visible but leaves isStale=true so the
+    // next auto-refresh trigger fires again.
+    if (firstError === null) {
+      setIsStale(false);
+    }
   }, [api, storage, setterFor]);
 
   // Auto-refresh on mount when any list is empty or stale. Fires once
@@ -118,11 +139,6 @@ export function useReferenceLists(): ReferenceListsState {
     hasAutoRefreshedRef.current = true;
     void refresh();
   }, [initial, refresh]);
-
-  const isStale =
-    initial.muscle_groups.isStale ||
-    initial.equipment.isStale ||
-    initial.categories.isStale;
 
   return {
     muscleGroups,

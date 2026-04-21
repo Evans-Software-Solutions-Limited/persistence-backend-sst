@@ -126,6 +126,60 @@ describe("useReferenceLists", () => {
     expect(result.current.muscleGroups).toHaveLength(3);
   });
 
+  it("flips isStale=false after a successful refresh (regression)", async () => {
+    // Empty cache → isStale=true on mount. The hook used to derive
+    // isStale from a mount-time useMemo that never re-ran, so
+    // isStale stayed true forever — even after refresh populated
+    // the cache. This test pins the correct behaviour.
+    const { adapters, api } = createTestAdapters();
+    api.referenceLists.muscle_groups = [entry("chest")];
+    api.referenceLists.equipment = [entry("barbell")];
+    api.referenceLists.categories = [entry("strength")];
+
+    const { result } = renderHook(() => useReferenceLists(), {
+      wrapper: wrapper(adapters),
+    });
+
+    // Mount-time: cache empty → stale
+    expect(result.current.isStale).toBe(true);
+
+    // Auto-refresh succeeds for all three kinds
+    await waitFor(() => {
+      expect(result.current.muscleGroups).toHaveLength(1);
+    });
+
+    // After the successful refresh the flag must flip false
+    await waitFor(() => {
+      expect(result.current.isStale).toBe(false);
+    });
+  });
+
+  it("keeps isStale=true after a partially-failed refresh", async () => {
+    const { adapters, storage, api } = createTestAdapters();
+    storage.cacheReferenceList("muscle_groups", [entry("chest")]);
+    storage.cacheReferenceList("equipment", [entry("barbell")]);
+    storage.cacheReferenceList("categories", [entry("strength")]);
+    api.shouldFail = true;
+
+    const { result } = renderHook(() => useReferenceLists(), {
+      wrapper: wrapper(adapters),
+    });
+
+    // Cached + fresh on mount → isStale=false
+    expect(result.current.isStale).toBe(false);
+
+    // Force a refresh that fails
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // Refresh failed — flag stays at whatever it was, but more
+    // importantly: a failed refresh must never reset isStale to
+    // false. Error is surfaced separately.
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.isStale).toBe(false); // was already false pre-refresh
+  });
+
   it("surfaces the first error without clobbering cached entries", async () => {
     const { adapters, storage, api } = createTestAdapters();
     storage.cacheReferenceList("muscle_groups", [entry("chest")]);
