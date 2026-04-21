@@ -44,7 +44,8 @@ import { progressStatsHandler } from "./application/progress/progressStatsHandle
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
 import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
 
-const app = coreErrorHandler(new Elysia())
+const app = new Elysia()
+  .use(coreErrorHandler)
   .use(openapi())
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)

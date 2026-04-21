@@ -1,7 +1,7 @@
-import type Elysia from "elysia";
+import Elysia from "elysia";
 
 /**
- * Global error-logging + response-shape hook for the core Elysia app.
+ * Global error-logging + response-shape plugin for the core Elysia app.
  *
  * Elysia's default behaviour on an uncaught throw is to return HTTP 500
  * with an empty / opaque body. Against AWS Lambda behind API Gateway
@@ -9,7 +9,7 @@ import type Elysia from "elysia";
  * client has no body, CloudWatch logs only show that the Lambda
  * "returned 500" without the trace.
  *
- * This hook:
+ * This plugin:
  *
  * 1. Logs every error to `console.error` with the request method + path,
  *    the Elysia error code, the message, and the full stack (in that
@@ -19,68 +19,59 @@ import type Elysia from "elysia";
  * 2. Returns a structured JSON body on every error so the client network
  *    log shows the cause:
  *
- *      { code, error, detail, stack?, requestId? }
+ *      { code, error, detail, stack?, requestId?, validation? }
  *
- *    `stack` is only present when `SST_STAGE` is not `production`, and
- *    `requestId` is read from `x-amz-request-id` so support requests
- *    can pair client + server logs.
+ *    - `stack` is only present when `SST_STAGE !== "production"`.
+ *    - `requestId` is read from `x-amz-request-id` so support requests
+ *      can pair client + server logs.
+ *    - `detail` is replaced with a generic string on production 500s
+ *      to avoid leaking driver messages (CWE-209). 4xx details stay
+ *      intact — clients need them to map errors to fields.
  *
  * 3. Maps Elysia's built-in error codes to sensible status codes:
- *      - `VALIDATION` → 422  (request body / query failed t.Object schema)
+ *      - `VALIDATION` → 422
  *      - `NOT_FOUND`  → 404
- *      - `PARSE`      → 400  (malformed JSON)
+ *      - `PARSE`      → 400
  *      - everything else → 500
  *
  *    Handlers that want to return 400 / 403 / 404 for domain reasons
  *    (e.g. "not your exercise") continue to set `ctx.set.status`
- *    explicitly and return a normal body — this hook only fires on
+ *    explicitly and return a normal body — this plugin only fires on
  *    uncaught throws.
  *
- * Usage:
+ * ## Usage (plugin pattern, preserves type chain)
  *
- *    new Elysia()
- *      .use(coreErrorHandler)
- *      .use(...otherHandlers)
+ * ```ts
+ * const app = new Elysia()
+ *   .use(coreErrorHandler)      // ← full generic chain preserved
+ *   .use(exercisesListHandler)  // ← route types still inferable by Eden
+ *   .use(...);
+ * ```
+ *
+ * This is the idiomatic Elysia plugin pattern. Using `.use(plugin)`
+ * lets Elysia's type system merge the plugin's error handler into the
+ * parent app's generic chain WITHOUT erasing downstream route types —
+ * which is what the Eden treaty client relies on. A wrapper function
+ * like `coreErrorHandler(app)` would need `Elysia<any,...>` in its
+ * signature, collapsing the generics at the call site and breaking
+ * Eden type inference.
  */
-
-type ElysiaErrorCode =
-  | "VALIDATION"
-  | "NOT_FOUND"
-  | "PARSE"
-  | "INTERNAL_SERVER_ERROR"
-  | "INVALID_COOKIE_SIGNATURE"
-  | "UNKNOWN";
-
-function httpStatusForCode(code: ElysiaErrorCode | string): number {
-  switch (code) {
-    case "VALIDATION":
-      return 422;
-    case "NOT_FOUND":
-      return 404;
-    case "PARSE":
-      return 400;
-    default:
-      return 500;
-  }
-}
-
-function isProduction(): boolean {
-  return process.env.SST_STAGE === "production";
-}
-
-/**
- * Register a global onError hook on an Elysia app. Returns the app so the
- * call chains like `new Elysia().use(coreErrorHandler).use(...)`.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function coreErrorHandler(app: Elysia<any, any, any, any, any, any>) {
-  return app.onError(({ code, error, set, request }) => {
+export const coreErrorHandler = new Elysia({
+  name: "core-error-handler",
+}).onError(
+  // `as: "global"` escalates this hook beyond plugin scope so it fires
+  // for errors in ANY handler registered on the parent app via
+  // `.use(coreErrorHandler)`. Without it, Elysia scopes plugin hooks
+  // locally (i.e. only errors within this Elysia instance's own
+  // routes), which would defeat the whole point — the plugin has no
+  // routes of its own.
+  { as: "global" },
+  ({ code, error, set, request }) => {
     const status = httpStatusForCode(code);
     set.status = status;
 
     const method = request.method;
-    const url = new URL(request.url);
-    const path = url.pathname;
+    const path = new URL(request.url).pathname;
     const requestId = request.headers.get("x-amz-request-id") ?? undefined;
 
     const message = error instanceof Error ? error.message : String(error);
@@ -97,11 +88,9 @@ export function coreErrorHandler(app: Elysia<any, any, any, any, any, any>) {
       console.error(stack);
     }
 
-    // Validation errors already carry Elysia's own `all` array under
-    // the hood; if present, include it so clients can map to fields.
-    // Otherwise return the flat shape.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validationDetail = (error as any)?.all;
+    // Validation errors carry Elysia's own `all` array under the hood;
+    // surface it so clients can map to fields.
+    const validationDetail = extractValidationDetail(error);
 
     // Strip raw driver messages from production 500s only (CWE-209:
     // information disclosure). Raw Postgres / Drizzle errors can leak
@@ -128,10 +117,48 @@ export function coreErrorHandler(app: Elysia<any, any, any, any, any, any>) {
       ...(requestId ? { requestId } : {}),
       ...(isProduction() ? {} : { stack }),
     };
-  });
+  },
+);
+
+/**
+ * Narrow `error` to extract Elysia's ValidationError `.all` array without
+ * falling back to `any`. Works on any object carrying a readonly `all`
+ * list of objects.
+ */
+function extractValidationDetail(error: unknown): readonly unknown[] | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "all" in error &&
+    Array.isArray((error as { all?: unknown }).all)
+  ) {
+    return (error as { all: readonly unknown[] }).all;
+  }
+  return null;
 }
 
-function codeToLabel(code: ElysiaErrorCode | string): string {
+/**
+ * Elysia's ErrorCode type in practice is a union of its built-in string
+ * codes plus any numeric status a handler threw directly. We take the
+ * broadest signature (`string | number`) so the helpers are callable
+ * regardless of Elysia's minor-version churn on the exact union shape.
+ */
+type ErrorCodeInput = string | number;
+
+function httpStatusForCode(code: ErrorCodeInput): number {
+  switch (code) {
+    case "VALIDATION":
+      return 422;
+    case "NOT_FOUND":
+      return 404;
+    case "PARSE":
+      return 400;
+    default:
+      return typeof code === "number" ? code : 500;
+  }
+}
+
+function codeToLabel(code: ErrorCodeInput): string {
   switch (code) {
     case "VALIDATION":
       return "Validation failed";
@@ -145,4 +172,8 @@ function codeToLabel(code: ElysiaErrorCode | string): string {
     default:
       return "Request failed";
   }
+}
+
+function isProduction(): boolean {
+  return process.env.SST_STAGE === "production";
 }

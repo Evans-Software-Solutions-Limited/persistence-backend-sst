@@ -26,7 +26,7 @@ describe("coreErrorHandler", () => {
   it("returns structured 500 body with stack outside production", async () => {
     delete process.env.SST_STAGE;
 
-    const app = coreErrorHandler(new Elysia()).get("/boom", () => {
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
       throw new Error("kaboom");
     });
 
@@ -43,7 +43,7 @@ describe("coreErrorHandler", () => {
   it("strips the stack in production", async () => {
     process.env.SST_STAGE = "production";
 
-    const app = coreErrorHandler(new Elysia()).get("/boom", () => {
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
       throw new Error("kaboom");
     });
 
@@ -57,7 +57,7 @@ describe("coreErrorHandler", () => {
   it("strips the raw detail on production 500s (CWE-209)", async () => {
     process.env.SST_STAGE = "production";
 
-    const app = coreErrorHandler(new Elysia()).get("/boom", () => {
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
       // Simulate a Postgres driver error leaking schema info
       throw new Error(
         'column "exercises.internal_hash" does not exist at host db.xyz.supabase.co',
@@ -79,11 +79,11 @@ describe("coreErrorHandler", () => {
   it("keeps detail on 4xx errors even in production (client-facing)", async () => {
     process.env.SST_STAGE = "production";
 
-    const app = coreErrorHandler(new Elysia()).post(
-      "/require-name",
-      () => ({ ok: true }),
-      { body: t.Object({ name: t.String() }) },
-    );
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .post("/require-name", () => ({ ok: true }), {
+        body: t.Object({ name: t.String() }),
+      });
 
     const response = await app.handle(
       new Request("http://localhost/require-name", {
@@ -102,13 +102,11 @@ describe("coreErrorHandler", () => {
   });
 
   it("maps VALIDATION errors to 422", async () => {
-    const app = coreErrorHandler(new Elysia()).post(
-      "/require-name",
-      () => ({ ok: true }),
-      {
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .post("/require-name", () => ({ ok: true }), {
         body: t.Object({ name: t.String() }),
-      },
-    );
+      });
 
     const response = await app.handle(
       new Request("http://localhost/require-name", {
@@ -124,7 +122,7 @@ describe("coreErrorHandler", () => {
   });
 
   it("maps unknown routes to 404 with structured body", async () => {
-    const app = coreErrorHandler(new Elysia()).get("/exists", () => ({
+    const app = new Elysia().use(coreErrorHandler).get("/exists", () => ({
       ok: true,
     }));
 
@@ -136,10 +134,12 @@ describe("coreErrorHandler", () => {
   });
 
   it("leaves handler-set status codes alone (domain 400/403/404)", async () => {
-    const app = coreErrorHandler(new Elysia()).get("/forbidden", ({ set }) => {
-      set.status = 403;
-      return { error: "nope" };
-    });
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .get("/forbidden", ({ set }) => {
+        set.status = 403;
+        return { error: "nope" };
+      });
 
     const response = await app.handle(
       new Request("http://localhost/forbidden"),
@@ -152,7 +152,7 @@ describe("coreErrorHandler", () => {
   });
 
   it("logs method + path + code + message to console.error", async () => {
-    const app = coreErrorHandler(new Elysia()).get("/trace", () => {
+    const app = new Elysia().use(coreErrorHandler).get("/trace", () => {
       throw new Error("traced");
     });
 
@@ -169,7 +169,7 @@ describe("coreErrorHandler", () => {
 
   it("surfaces requestId from x-amz-request-id when present", async () => {
     delete process.env.SST_STAGE;
-    const app = coreErrorHandler(new Elysia()).get("/boom", () => {
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
       throw new Error("kaboom");
     });
 
