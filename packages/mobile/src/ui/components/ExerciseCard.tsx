@@ -91,6 +91,13 @@ const ChipText = styled(TamaguiText, {
 type ExerciseCardProps = {
   exercise: Exercise;
   onPress: (id: string) => void;
+  /**
+   * Optional long-press handler. Used by the exercise list to trigger a
+   * destructive-delete confirm Alert (AC 7.17). If omitted, long-press
+   * falls back to the normal press handler — matches legacy behaviour
+   * on non-owned rows.
+   */
+  onLongPress?: (id: string) => void;
   testID?: string;
 };
 
@@ -138,12 +145,18 @@ function renderChipRow<T>(
  * can hold 50+ at once; shallow-prop memoisation keeps pull-to-refresh and
  * filter-modal interactions at 60fps.
  */
-function ExerciseCardBase({ exercise, onPress, testID }: ExerciseCardProps) {
+function ExerciseCardBase({
+  exercise,
+  onPress,
+  onLongPress,
+  testID,
+}: ExerciseCardProps) {
   const difficulty = DIFFICULTY_PILL[exercise.difficulty];
 
   return (
     <CardFrame
       onPress={() => onPress(exercise.id)}
+      onLongPress={onLongPress ? () => onLongPress(exercise.id) : undefined}
       accessibilityRole="button"
       accessibilityLabel={`Open ${exercise.name}`}
       testID={testID}

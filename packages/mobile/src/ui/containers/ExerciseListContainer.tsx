@@ -1,5 +1,7 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "react-native";
+import { deleteExerciseCommand } from "@/application/commands/delete-exercise.command";
 import {
   getExercisesQuery,
   refreshExerciseCache,
@@ -107,6 +109,66 @@ export function ExerciseListContainer() {
     router.push("/(app)/exercises/create");
   }, [router]);
 
+  /**
+   * Guard against accidental double-taps that would open two Alerts
+   * (and ship two DELETE requests). Refs (not state) because Alert
+   * presentation is asynchronous and a debounce via React state
+   * would still allow the second trigger to land before the
+   * re-render.
+   */
+  const isDeletePendingRef = useRef(false);
+
+  const onLongPressExercise = useCallback(
+    (id: string) => {
+      if (isDeletePendingRef.current) return;
+      const exercise = queryResult.exercises.find((e) => e.id === id);
+      // Only surface the destructive menu for rows the user owns —
+      // system / PT exercises are non-deletable. Matches AC 7.5 +
+      // legacy behaviour.
+      if (!exercise || !exercise.isCustom) return;
+      isDeletePendingRef.current = true;
+      Alert.alert(
+        `Delete ${exercise.name}?`,
+        "This action cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              isDeletePendingRef.current = false;
+            },
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const result = await deleteExerciseCommand(
+                  { api, storage },
+                  id,
+                );
+                if (!result.ok) {
+                  Alert.alert("Couldn't delete", result.error.message, [
+                    { text: "OK" },
+                  ]);
+                } else {
+                  // Bump cacheVersion so the list re-renders from
+                  // the freshly-invalidated cache. Matches the
+                  // pattern used by triggerRefresh.
+                  setCacheVersion((v) => v + 1);
+                }
+              } finally {
+                isDeletePendingRef.current = false;
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [api, storage, queryResult.exercises],
+  );
+
   const hasCachedExercises = queryResult.exercises.length > 0;
   const showSkeleton =
     !hasCachedExercises && isRefreshing && queryResult.lastSyncedAt === null;
@@ -134,6 +196,7 @@ export function ExerciseListContainer() {
       onRefresh={triggerRefresh}
       onSelectExercise={onSelectExercise}
       onCreateExercise={onCreateExercise}
+      onLongPressExercise={onLongPressExercise}
     />
   );
 }

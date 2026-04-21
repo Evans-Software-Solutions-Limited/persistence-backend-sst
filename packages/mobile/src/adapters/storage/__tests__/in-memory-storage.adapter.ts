@@ -126,6 +126,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  removeCachedExercise(id: string): void {
+    this.exerciseCache.delete(id);
+  }
+
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
     return this.referenceLists.get(kind) ?? null;
   }

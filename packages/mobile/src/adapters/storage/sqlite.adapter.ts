@@ -250,6 +250,11 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  removeCachedExercise(id: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_exercises WHERE id = ?`, [id]);
+  }
+
   // -- Reference-List Cache --
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {

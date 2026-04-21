@@ -45,6 +45,13 @@ export interface StoragePort {
    */
   saveCustomExercise(exercise: Exercise): void;
 
+  /**
+   * Remove a single cached exercise by id. No-op when the row isn't
+   * cached. Used by the delete-exercise command after a successful
+   * API DELETE so the list updates immediately.
+   */
+  removeCachedExercise(id: string): void;
+
   // -- Reference-List Cache --
   /**
    * Read the cached reference list for a kind, or null if not cached yet.
