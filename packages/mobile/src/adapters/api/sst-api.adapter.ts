@@ -364,6 +364,19 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   /**
+   * Seed the in-memory lookups from a previously-cached set of entries
+   * (typically read from StoragePort at mount, before any network fetch).
+   * Replaces existing entries for the kind. Safe to call repeatedly; a
+   * later `getReferenceList` response will overwrite with fresher data.
+   */
+  hydrateReferenceLabels(
+    kind: ReferenceListKind,
+    entries: readonly ReferenceEntry[],
+  ): void {
+    this.populateReferenceLookup(kind, [...entries]);
+  }
+
+  /**
    * Stamp `primaryMuscleGroupLabels` / `secondaryMuscleGroupLabels` /
    * `equipmentLabels` onto an Exercise using the in-memory reference-
    * list lookup. Exposed as an instance method (not a free function) so

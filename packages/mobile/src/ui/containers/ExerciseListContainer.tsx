@@ -6,10 +6,12 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
+import { filterExercises } from "@/domain/services/exercise.service";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
+import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -59,10 +61,62 @@ export function ExerciseListContainer() {
     [quickFilters, hasAdvancedFilters, filters.search],
   );
 
-  const queryResult = useMemo(() => {
+  // Drive reference-list hydration + re-enrichment. The hook seeds the
+  // adapter's id→label map from storage on mount (see useReferenceLists'
+  // `initial` useMemo) AND exposes state that changes when a fresh
+  // refresh lands — we depend on those below so exercise chip labels
+  // rehydrate without a manual reload.
+  const {
+    muscleGroups: refMuscleGroups,
+    equipment: refEquipment,
+    categories: refCategories,
+  } = useReferenceLists();
+
+  // Cache read: the expensive step. `storage.getCachedExercises()` does
+  // `SELECT data FROM cached_exercises` + JSON.parse × N rows (~2.3k in
+  // prod). Memoising only on `[storage, cacheVersion]` means this runs
+  // exactly once per cache mutation — NOT on every search keystroke.
+  // Filtering is a separate, cheap, in-memory step below.
+  const cacheRead = useMemo(() => {
     void cacheVersion;
-    return getExercisesQuery(storage, filters);
-  }, [storage, filters, cacheVersion]);
+    return getExercisesQuery(storage);
+  }, [storage, cacheVersion]);
+
+  // In-memory filter: cheap. Runs on each filter change (search debounce,
+  // quick filter toggle, filter modal apply). Uses the same
+  // `filterExercises` service the storage adapter would have used,
+  // just applied to the already-parsed cache slice above.
+  const filtered = useMemo(() => {
+    return filterExercises(cacheRead.exercises, filters);
+  }, [cacheRead.exercises, filters]);
+
+  // Label enrichment: re-stamp `primaryMuscleGroupLabels` /
+  // `secondaryMuscleGroupLabels` / `equipmentLabels` using the adapter's
+  // in-memory reverse lookup. Depends on the reference-list state so
+  // that when a background refresh completes, the chips repopulate
+  // without waiting for the next exercise refresh.
+  const enrichedExercises = useMemo(() => {
+    // Keep the ref arrays in the dep list; they're what actually
+    // change when refs load. Reading them here is enough to make React
+    // track the dep — we don't use the values directly because the
+    // adapter holds the lookup map.
+    void refMuscleGroups;
+    void refEquipment;
+    void refCategories;
+    return filtered.map((ex) => api.enrichExerciseLabels(ex));
+  }, [filtered, api, refMuscleGroups, refEquipment, refCategories]);
+
+  // Compatibility wrapper: the presenter still reads from `queryResult`
+  // shape. Surface lastSyncedAt + isStale from the cache read; the
+  // exercises array is the filtered + enriched version.
+  const queryResult = useMemo(
+    () => ({
+      exercises: enrichedExercises,
+      lastSyncedAt: cacheRead.lastSyncedAt,
+      isStale: cacheRead.isStale,
+    }),
+    [enrichedExercises, cacheRead.lastSyncedAt, cacheRead.isStale],
+  );
 
   const isRefreshingRef = useRef(false);
 

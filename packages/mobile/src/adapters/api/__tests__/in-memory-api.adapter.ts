@@ -182,6 +182,27 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
+  /**
+   * No-op in tests — the in-memory adapter doesn't resolve UUIDs because
+   * its `exercises` array holds domain-shape rows with labels already
+   * provided by test fixtures. Kept to satisfy the ApiPort interface.
+   */
+  hydrateReferenceLabels(
+    _kind: ReferenceListKind,
+    _entries: readonly ReferenceEntry[],
+  ): void {
+    // intentionally empty — see docstring
+  }
+
+  /**
+   * Identity in tests. The SST adapter's enrichment reads from its own
+   * in-memory reverse-lookup; the in-memory adapter stores Exercise rows
+   * that already carry the shape test code asserts on.
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise {
+    return exercise;
+  }
+
   async getExercises(
     filters?: ExerciseFilters,
     _offset?: number,

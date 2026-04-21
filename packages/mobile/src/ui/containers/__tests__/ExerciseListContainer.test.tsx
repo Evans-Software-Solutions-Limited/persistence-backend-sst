@@ -483,19 +483,19 @@ describe("ExerciseListContainer", () => {
     expect(getByTestId("stub-has-any-filter").props.children).toBe("false");
   });
 
-  it("does not re-run filterExercises per keystroke (debounce regression)", async () => {
-    // Regression: before the fix, `rawFilters` from the context memo
-    // recomputed on every keystroke (because the memo depended on
-    // `state.search`), which cascaded through the container's `filters`
-    // useMemo and re-ran `getExercisesQuery` → `filterExercises` for every
-    // character. Debounce was largely defeated — only the search TERM was
-    // debounced, not the work of applying it.
+  it("reads the cache once per cacheVersion, filters in memory on keystrokes", async () => {
+    // Architecture contract: the storage cache read (JSON.parse ×
+    // ~2.3k rows in prod) is the expensive step. The container must
+    // memoise it on `cacheVersion` and never redo it for filter or
+    // search changes — those apply in-memory via `filterExercises`.
     //
-    // With the fix, the container reads `filtersWithoutSearch` (stable
-    // across `setSearch`) and only rebuilds `filters` when `debouncedSearch`
-    // actually settles. So `storage.getCachedExercises` should be called at
-    // most twice per keystroke burst: once for the initial render + once
-    // after the debounce fires.
+    // Under the old code, `storage.getCachedExercises` was called with
+    // the full filter object and re-parsed the cache for every filter
+    // / search change. The new container calls `getCachedExercises()`
+    // with no filters once, then filters the result in memory, so the
+    // storage spy stays flat across an entire keystroke burst AND the
+    // subsequent debounce settle. Only a cache mutation (refresh,
+    // delete) bumps it.
     const { adapters, api, storage } = createTestAdapters();
     api.exercises = [
       makeExercise({ id: "a", name: "Barbell Squat" }),
@@ -514,9 +514,9 @@ describe("ExerciseListContainer", () => {
       expect(getByTestId("stub-count").props.children).toBe(2);
     });
 
-    const callsBefore = spy.mock.calls.length;
+    const callsAfterInitialRefresh = spy.mock.calls.length;
 
-    // Fire a burst of 6 keystrokes rapidly without waiting for debounce.
+    // Fire a burst of 6 keystrokes rapidly.
     await act(async () => {
       fireEvent.changeText(getByTestId("stub-search"), "p");
       fireEvent.changeText(getByTestId("stub-search"), "pu");
@@ -526,14 +526,13 @@ describe("ExerciseListContainer", () => {
       fireEvent.changeText(getByTestId("stub-search"), "pulldo");
     });
 
-    // Under the bug, each keystroke would have triggered a
-    // getCachedExercises call — 6+ calls. With the fix, zero additional
-    // calls fire until the debounce settles.
+    // No new reads from keystrokes — filtering is in memory.
     const callsAfterKeystrokes = spy.mock.calls.length;
-    expect(callsAfterKeystrokes - callsBefore).toBeLessThanOrEqual(1);
+    expect(callsAfterKeystrokes).toBe(callsAfterInitialRefresh);
 
-    // After the debounce elapses, exactly one more call (for the settled
-    // search term).
+    // After the debounce settles and the filter drops the non-matching
+    // row, the count reflects the in-memory filter — but the storage
+    // spy still hasn't been called again.
     await waitFor(
       () => {
         expect(getByTestId("stub-count").props.children).toBeLessThan(2);
@@ -541,7 +540,7 @@ describe("ExerciseListContainer", () => {
       { timeout: 2000, interval: 50 },
     );
     const callsAfterDebounce = spy.mock.calls.length;
-    expect(callsAfterDebounce).toBeGreaterThan(callsAfterKeystrokes);
+    expect(callsAfterDebounce).toBe(callsAfterInitialRefresh);
 
     spy.mockRestore();
   });

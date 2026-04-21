@@ -55,6 +55,29 @@ export interface ApiPort {
   ): Promise<Result<ApiSession, ApiError>>;
   deleteSession(id: string): Promise<Result<void, ApiError>>;
 
+  /**
+   * Seed the adapter's in-memory id→label + name→id reference-list
+   * lookups from a previously-cached set of entries (typically loaded
+   * from StoragePort at app start). Normally the adapter populates
+   * these maps lazily inside `getReferenceList`; this lets a caller
+   * prime them without hitting the network so that `getExercises`
+   * responses can be enriched with muscle / equipment labels even on
+   * cold cache + second-launch paths where no reference-list fetch
+   * fires. Safe to call repeatedly; replaces the existing entries.
+   */
+  hydrateReferenceLabels(
+    kind: ReferenceListKind,
+    entries: readonly ReferenceEntry[],
+  ): void;
+
+  /**
+   * Apply the adapter's cached reference-list lookups to an Exercise,
+   * stamping `primaryMuscleGroupLabels` / `secondaryMuscleGroupLabels` /
+   * `equipmentLabels`. Pure — does not touch storage or network. Safe
+   * no-op if the lookups aren't hydrated yet (labels come back empty).
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise;
+
   // -- Exercises --
   getExercises(
     filters?: ExerciseFilters,

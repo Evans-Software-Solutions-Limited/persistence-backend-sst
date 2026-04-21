@@ -52,12 +52,24 @@ export function useReferenceLists(): ReferenceListsState {
   const initial = useMemo(() => {
     const readKind = (kind: ReferenceListKind) =>
       getReferenceListQuery(storage, kind);
-    return {
+    const result = {
       muscle_groups: readKind("muscle_groups"),
       equipment: readKind("equipment"),
       categories: readKind("categories"),
     };
-  }, [storage]);
+    // Prime the adapter's id→label reverse lookup from storage on every
+    // mount, regardless of staleness. Without this, the adapter's lookup
+    // only populates after a successful `refresh()` — which doesn't fire
+    // when the cache is fresh — and `getExercises` responses come back
+    // with empty `*Labels` arrays on warm starts, producing chip-less
+    // exercise cards. Hydrating unconditionally makes the lookup
+    // available before the first exercise fetch runs in the same tick.
+    for (const kind of ALL_KINDS) {
+      const entries = result[kind].entries;
+      if (entries.length > 0) api.hydrateReferenceLabels(kind, entries);
+    }
+    return result;
+  }, [api, storage]);
 
   const [muscleGroups, setMuscleGroups] = useState<ReferenceEntry[]>(
     initial.muscle_groups.entries,
