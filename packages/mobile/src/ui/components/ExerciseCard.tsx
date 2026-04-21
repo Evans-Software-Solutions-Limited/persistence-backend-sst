@@ -3,11 +3,38 @@ import { memo } from "react";
 import {
   EQUIPMENT_LABELS,
   MUSCLE_GROUP_LABELS,
-  type EquipmentType,
   type Exercise,
   type ExerciseDifficulty,
-  type MuscleGroup,
 } from "@/domain/models/exercise";
+
+/**
+ * Build the labelled chip list for a muscle / equipment row.
+ *
+ * The adapter stamps resolved labels onto `*Labels` fields when the
+ * reference-list cache is loaded — prefer those. If the cache wasn't
+ * populated when the exercise was mapped (e.g. cold start before
+ * reference-list fetch), fall back to the legacy enum→label map keyed
+ * on the stored values. This ONLY yields a real label for legacy rows
+ * that stored enum keys; UUID-valued rows without labels return the key
+ * itself, which is better than an empty chip but obviously wrong — so
+ * we drop those so the chip doesn't render instead of showing a raw UUID.
+ */
+function labelledChips(
+  ids: readonly string[],
+  labels: readonly string[] | undefined,
+  fallbackMap: Record<string, string>,
+): Array<{ key: string; label: string }> {
+  if (labels && labels.length > 0) {
+    return labels.map((label, i) => ({ key: ids[i] ?? `idx-${i}`, label }));
+  }
+  // Legacy path — ids holding enum keys from pre-M0 cached data.
+  const result: Array<{ key: string; label: string }> = [];
+  for (const id of ids) {
+    const label = fallbackMap[id];
+    if (label) result.push({ key: id, label });
+  }
+  return result;
+}
 
 import { Column } from "./Column";
 import { Row } from "./Row";
@@ -102,26 +129,24 @@ type ExerciseCardProps = {
 };
 
 /**
- * Render up to `max` entries from `items`, rendering an overflow "+N" chip
- * when the list is longer. Used for both muscle-group and equipment rows,
- * which follow the same shape.
+ * Render up to `max` chips from a pre-built `{key, label}` list, with an
+ * overflow "+N" chip when the full list is longer. Kept generic on the
+ * item shape so muscle + equipment rows share one implementation.
  */
-function renderChipRow<T>(
-  items: T[],
+function renderChipRow(
+  chips: Array<{ key: string; label: string }>,
   max: number,
-  label: (item: T) => string,
-  keyOf: (item: T) => string,
   overflowLabel: (remaining: number) => string,
   testIdPrefix?: string,
 ) {
-  if (items.length === 0) return null;
-  const visible = items.slice(0, max);
-  const remaining = items.length - visible.length;
+  if (chips.length === 0) return null;
+  const visible = chips.slice(0, max);
+  const remaining = chips.length - visible.length;
   return (
     <Row gap="xs" wrap testID={testIdPrefix}>
-      {visible.map((item) => (
-        <OutlinedChip key={keyOf(item)}>
-          <ChipText>{label(item)}</ChipText>
+      {visible.map((chip) => (
+        <OutlinedChip key={chip.key}>
+          <ChipText>{chip.label}</ChipText>
         </OutlinedChip>
       ))}
       {remaining > 0 && (
@@ -214,21 +239,25 @@ function ExerciseCardBase({
         )}
 
         {/* Muscle chip row */}
-        {renderChipRow<MuscleGroup>(
-          exercise.primaryMuscleGroups,
+        {renderChipRow(
+          labelledChips(
+            exercise.primaryMuscleGroups,
+            exercise.primaryMuscleGroupLabels,
+            MUSCLE_GROUP_LABELS,
+          ),
           2,
-          (m) => MUSCLE_GROUP_LABELS[m],
-          (m) => `muscle-${m}`,
           (n) => `+${n}`,
           testID ? `${testID}-muscles` : undefined,
         )}
 
         {/* Equipment chip row */}
-        {renderChipRow<EquipmentType>(
-          exercise.equipment,
+        {renderChipRow(
+          labelledChips(
+            exercise.equipment,
+            exercise.equipmentLabels,
+            EQUIPMENT_LABELS,
+          ),
           3,
-          (e) => EQUIPMENT_LABELS[e],
-          (e) => `equip-${e}`,
           (n) => `+${n} more`,
           testID ? `${testID}-equipment` : undefined,
         )}

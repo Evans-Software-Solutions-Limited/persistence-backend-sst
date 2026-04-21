@@ -28,16 +28,21 @@ const AUTH_REQUIRED_CREATED_BY = new Set(["mine", "pt", "physio"]);
  *      force Supabase to materialise every row into memory and serialise
  *      a huge JSON — enough to blow Lambda's 6 MB response limit or
  *      exhaust the pooler connection's working memory.
- *   2. The mobile full-library refresh walks pages of 500 (see
- *      REFRESH_PAGE_SIZE). 1000 gives legitimate callers plenty of
- *      headroom for batch loads without becoming a DoS vector.
+ *   2. The mobile full-library refresh requests up to REFRESH_PAGE_SIZE
+ *      rows in a single call so the current ~2.3k catalogue completes in
+ *      one round-trip. 3000 gives that path headroom plus a buffer for
+ *      catalogue growth without turning into a DoS vector.
+ *
+ * Payload math: at ~800 bytes/row raw JSON, 3000 rows ≈ 2.4 MB — well
+ * under Lambda's 6 MB sync-response cap. Revisit if the average row
+ * grows (e.g. adding long instructional fields).
  *
  * Requests that exceed the cap are silently clamped — no 4xx. The client
  * still gets a valid (smaller) page; the walk just needs more iterations.
  * Returning an error here would break existing callers that happened to
  * pass a too-large number on one request.
  */
-const MAX_LIMIT = 1000;
+const MAX_LIMIT = 3000;
 const DEFAULT_LIMIT = 20;
 
 export const exercisesListHandler = new Elysia()

@@ -77,6 +77,19 @@ export class SSTApiAdapter implements ApiPort {
   private referenceLookup: Map<ReferenceListKind, Map<string, string>> =
     new Map();
 
+  /**
+   * UUID → display-label lookup. Built from the same reference-list fetch
+   * as `referenceLookup` (inverse map). Used by `mapApiExerciseToDomain`
+   * to resolve the UUID arrays the backend returns for `primary_muscles`
+   * / `equipment_required` into human labels for the card.
+   *
+   * Prefers `displayName` when set, falling back to `name` (which is the
+   * actual stored label in the current Supabase schema — see
+   * `muscle_groups.name` values like "Shoulders", "Quadriceps").
+   */
+  private referenceLabelLookup: Map<ReferenceListKind, Map<string, string>> =
+    new Map();
+
   constructor() {
     validateApiUrl(API_URL);
   }
@@ -262,7 +275,9 @@ export class SSTApiAdapter implements ApiPort {
       params,
     });
     if (!result.ok) return result;
-    const data = result.value.data.map(mapApiExerciseToDomain);
+    const data = result.value.data
+      .map(mapApiExerciseToDomain)
+      .map((ex) => this.enrichExerciseLabels(ex));
     const meta = result.value.meta;
     // Prefer the backend's meta block (M0+) for pagination. Fall back to
     // the legacy cursor/hasMore shape if the server hasn't migrated yet.
@@ -308,11 +323,17 @@ export class SSTApiAdapter implements ApiPort {
     kind: ReferenceListKind,
     entries: ReferenceEntry[],
   ): void {
-    const map = new Map<string, string>();
+    const nameToId = new Map<string, string>();
+    const idToLabel = new Map<string, string>();
     for (const entry of entries) {
-      map.set(entry.name, entry.id);
+      nameToId.set(entry.name, entry.id);
+      // Prefer displayName for rendering; fall back to name. This lets
+      // future schema migrations populate display_name without any UI
+      // change — the lookup keeps returning the right label.
+      idToLabel.set(entry.id, entry.displayName ?? entry.name);
     }
-    this.referenceLookup.set(kind, map);
+    this.referenceLookup.set(kind, nameToId);
+    this.referenceLabelLookup.set(kind, idToLabel);
   }
 
   private resolveEnumToUuid(
@@ -320,6 +341,56 @@ export class SSTApiAdapter implements ApiPort {
     key: string,
   ): string | null {
     return this.referenceLookup.get(kind)?.get(key) ?? null;
+  }
+
+  /**
+   * Resolve an array of UUIDs to their display labels via the reference-
+   * list cache. Used by `mapApiExerciseToDomain` to enrich exercise rows
+   * with labels for card rendering. Unresolved ids fall back to `null`
+   * so the caller can distinguish "not in cache yet" from "no entry".
+   */
+  private resolveUuidsToLabels(
+    kind: ReferenceListKind,
+    uuids: readonly string[],
+  ): string[] {
+    const map = this.referenceLabelLookup.get(kind);
+    if (!map) return [];
+    const labels: string[] = [];
+    for (const uuid of uuids) {
+      const label = map.get(uuid);
+      if (label) labels.push(label);
+    }
+    return labels;
+  }
+
+  /**
+   * Stamp `primaryMuscleGroupLabels` / `secondaryMuscleGroupLabels` /
+   * `equipmentLabels` onto an Exercise using the in-memory reference-
+   * list lookup. Exposed as an instance method (not a free function) so
+   * downstream flows that read cached Exercises from storage (bypassing
+   * the API) can still re-enrich them when the cache pre-dates the
+   * reference-list load. Safe no-op if the reference lists haven't been
+   * fetched yet — card falls back to the UUID placeholder chip.
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise {
+    const primary = this.resolveUuidsToLabels(
+      "muscle_groups",
+      exercise.primaryMuscleGroups as unknown as string[],
+    );
+    const secondary = this.resolveUuidsToLabels(
+      "muscle_groups",
+      exercise.secondaryMuscleGroups as unknown as string[],
+    );
+    const equipment = this.resolveUuidsToLabels(
+      "equipment",
+      exercise.equipment as unknown as string[],
+    );
+    return {
+      ...exercise,
+      primaryMuscleGroupLabels: primary,
+      secondaryMuscleGroupLabels: secondary,
+      equipmentLabels: equipment,
+    };
   }
 
   /**
@@ -385,7 +456,7 @@ export class SSTApiAdapter implements ApiPort {
   async getExercise(id: string): Promise<Result<Exercise, ApiError>> {
     const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async createExercise(
@@ -396,7 +467,7 @@ export class SSTApiAdapter implements ApiPort {
       body: mapCreateExerciseInputToApi(data),
     });
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async updateExercise(
@@ -408,7 +479,7 @@ export class SSTApiAdapter implements ApiPort {
       body: mapCreateExerciseInputToApi(data),
     });
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async deleteExercise(id: string): Promise<Result<void, ApiError>> {

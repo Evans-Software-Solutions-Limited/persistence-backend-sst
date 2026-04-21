@@ -99,21 +99,29 @@ export const REFRESH_MAX_PAGES = 100;
  * The exercise library is ~2.3k rows in production. The UI's "initial
  * cache fill" is driven by this constant: smaller pages mean more round-
  * trips through AppSync/Lambda/Supabase pooler, which multiplies latency,
- * memory pressure on the JS thread, and Lambda cold-starts during dev. A
- * page size of 500 turns a 2.3k-row fill from ~116 calls into 5.
+ * memory pressure on the JS thread, and Lambda cold-starts during dev.
  *
- * Why 500 and not "grab it all in one request": response body size
- * matters for memory + JSON parse cost, and some CDN / API Gateway
- * configurations will refuse payloads past a few MB. 500 rows of the
- * current exercise shape comes out to roughly 300–400 KB — comfortably
- * under Lambda's 6 MB sync invocation limit and quick to parse. Bump if
- * the library scale grows and we benchmark the wire cost.
+ * Sizing math for this catalogue:
+ *   - ~2.3k rows × ~800 bytes/row ≈ 1.8 MB JSON payload
+ *   - Lambda sync-response hard cap: 6 MB
+ *   - API Gateway default response size: 10 MB
+ *   - gzip over HTTP: typical 4–6x compression on JSON
+ *
+ * 2500 keeps the full library in a single round-trip for the current
+ * catalogue while leaving ~3 MB of raw-payload headroom. `REFRESH_MAX_PAGES`
+ * below still caps any runaway walk if the library grows past ~500k rows.
+ *
+ * Trade-off: a single-page refresh defers any UI feedback until the whole
+ * response lands. At typical connection speeds and JSON sizes that's sub-
+ * second and visually equivalent to a progressive fill, but if the library
+ * scales beyond ~10k rows, drop this back to ~2000 and let the walk
+ * populate progressively via `storage.cacheExercises` after each page.
  *
  * The handler still honours an explicit `?limit=` query param (capped
- * server-side for safety), so per-screen pagination can use smaller
- * sizes when rendering a bounded scroll window.
+ * server-side at MAX_LIMIT = 1000), so per-screen pagination can use
+ * smaller sizes when rendering a bounded scroll window.
  */
-export const REFRESH_PAGE_SIZE = 500;
+export const REFRESH_PAGE_SIZE = 2500;
 
 /**
  * Refresh the full cached exercise library from the API and update

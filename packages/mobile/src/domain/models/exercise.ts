@@ -125,9 +125,31 @@ export type Exercise = {
   instructions: string | null;
   category: ExerciseCategory;
   difficulty: ExerciseDifficulty;
+  /**
+   * UUID arrays as returned by the backend. Typed as the historical enum
+   * union for source compatibility with the legacy port — the actual
+   * runtime values are DB UUIDs (e.g. `"15f7ddb6-..."`), not enum keys
+   * (`"shoulders"`). Use `*Labels` below for display; resolve UUIDs via
+   * the reference-list cache when you need the enum surface.
+   */
   primaryMuscleGroups: MuscleGroup[];
   secondaryMuscleGroups: MuscleGroup[];
   equipment: EquipmentType[];
+  /**
+   * Display labels resolved at the adapter boundary via the reference-list
+   * cache (`muscle_groups` / `equipment_types` tables). Parallel-indexed
+   * with `primaryMuscleGroups` / `equipment`. Undefined before the first
+   * reference-list fetch completes; the card falls back to a placeholder
+   * label rather than rendering an empty chip.
+   *
+   * This shape is how the card and any other display surface should read
+   * muscle / equipment names — the legacy `MUSCLE_GROUP_LABELS[key]` map
+   * only works for enum keys, and returns `undefined` against UUIDs
+   * (which is why pre-M0 cards rendered empty circles).
+   */
+  primaryMuscleGroupLabels?: string[];
+  secondaryMuscleGroupLabels?: string[];
+  equipmentLabels?: string[];
   /**
    * Legacy-parity fields added in M0 (AC 7.16). Nullable — not every
    * row has media. `thumbnailUrl` is rendered on the ported list card;
