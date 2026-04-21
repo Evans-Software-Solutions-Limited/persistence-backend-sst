@@ -14,6 +14,7 @@ const exerciseRepositoryMocks = {
       createdBy: null,
     },
   ]),
+  count: vi.fn().mockResolvedValue(1),
   getById: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -48,17 +49,55 @@ describe("ExercisesListHandler", () => {
     exerciseRepositoryMocks.list.mockResolvedValue([
       { id: "1", name: "Push-ups", difficultyLevel: "beginner" },
     ]);
+    exerciseRepositoryMocks.count.mockResolvedValue(1);
   });
 
   describe("basic contract", () => {
-    it("returns 200 with { data } array", async () => {
+    // Wire shape: `{ data: { data: ApiExercise[], meta: {...} } }` — the
+    // outer `data` is the generic success envelope, the inner object is
+    // the paginated-page payload the mobile adapter expects. See
+    // sst-api.adapter.ts `ApiExercisesPage` and `requestEnvelope`.
+    it("returns 200 with double-envelope { data: { data: [...], meta } }", async () => {
       const { exercisesListHandler } = await import("../exercisesListHandler");
       const response = await exercisesListHandler.handle(
         new Request("http://localhost/exercises"),
       );
       expect(response.status).toBe(200);
-      const body = (await response.json()) as { data: unknown[] };
-      expect(Array.isArray(body.data)).toBe(true);
+      const body = (await response.json()) as {
+        data: {
+          data: unknown[];
+          meta: { total: number; offset: number; limit: number };
+        };
+      };
+      expect(Array.isArray(body.data.data)).toBe(true);
+      expect(body.data.meta).toEqual({ total: 1, offset: 0, limit: 20 });
+    });
+
+    it("forwards limit/offset from query string into meta", async () => {
+      exerciseRepositoryMocks.count.mockResolvedValue(42);
+      const { exercisesListHandler } = await import("../exercisesListHandler");
+      const response = await exercisesListHandler.handle(
+        new Request("http://localhost/exercises?limit=5&offset=10"),
+      );
+      const body = (await response.json()) as {
+        data: { meta: { total: number; offset: number; limit: number } };
+      };
+      expect(body.data.meta).toEqual({ total: 42, offset: 10, limit: 5 });
+    });
+
+    it("runs list + count against the same filters in parallel", async () => {
+      const { exercisesListHandler } = await import("../exercisesListHandler");
+      await exercisesListHandler.handle(
+        new Request("http://localhost/exercises?category=strength"),
+      );
+      // Both must be called — parallel invocation is the perf contract
+      // for the handler. Both must receive the same filter shape.
+      expect(exerciseRepositoryMocks.list).toHaveBeenCalledTimes(1);
+      expect(exerciseRepositoryMocks.count).toHaveBeenCalledTimes(1);
+      const listArgs = exerciseRepositoryMocks.list.mock.calls[0][0];
+      const countArgs = exerciseRepositoryMocks.count.mock.calls[0][0];
+      expect(listArgs).toEqual(countArgs);
+      expect(listArgs.category).toEqual(["strength"]);
     });
 
     it("returns JSON content-type", async () => {

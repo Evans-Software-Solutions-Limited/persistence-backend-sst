@@ -62,21 +62,39 @@ export const exercisesListHandler = new Elysia()
         }
       }
 
-      const exercises = await ctx.ExerciseRepository.list(
-        {
-          q,
-          category,
-          difficultyLevel,
-          targetedMusclesAny,
-          equipmentAny,
-          createdByFilter: createdBy,
-          limit: ctx.query.limit ?? 20,
-          offset: ctx.query.offset ?? 0,
-        },
-        userId,
-      );
+      const limit = ctx.query.limit ?? 20;
+      const offset = ctx.query.offset ?? 0;
 
-      return { data: exercises };
+      const repoFilters = {
+        q,
+        category,
+        difficultyLevel,
+        targetedMusclesAny,
+        equipmentAny,
+        createdByFilter: createdBy,
+        limit,
+        offset,
+      };
+
+      // Page slice + total count in parallel — the two queries share the
+      // exact same WHERE predicate via `buildListFilterConditions`, so
+      // `hasMore` can be derived on the client without a second round-trip.
+      const [exercises, total] = await Promise.all([
+        ctx.ExerciseRepository.list(repoFilters, userId),
+        ctx.ExerciseRepository.count(repoFilters, userId),
+      ]);
+
+      // Double-envelope wire shape: the outer `data` is the generic
+      // success envelope every endpoint uses (`{ data: T }`); the inner
+      // object is the paginated-page payload the mobile adapter
+      // (`sst-api.adapter.ts:ApiExercisesPage`) expects. Breaking this
+      // contract → `result.value.data.map` crashes the Exercise list UI.
+      return {
+        data: {
+          data: exercises,
+          meta: { total, offset, limit },
+        },
+      };
     },
     {
       // UUID-typed axes validate at the query-schema layer so non-UUID

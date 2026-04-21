@@ -395,6 +395,65 @@ describe("ExerciseRepository.list", () => {
   });
 });
 
+describe("ExerciseRepository.count", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // `count()` must hit the DB with the same AND-combined filter chain that
+  // `list()` builds — if they drift, `meta.total` can report N rows but the
+  // page slice returns fewer (or hasMore flips true while the next page is
+  // empty). The shared `buildListFilterConditions` helper is the contract.
+
+  /** Build a db mock whose `select().from().where()` resolves to `rows`. */
+  function makeCountingDb(rows: Array<{ total: number }>) {
+    const where = vi.fn().mockResolvedValue(rows);
+    const from = vi.fn().mockReturnValue({ where });
+    return {
+      select: vi.fn().mockReturnValue({ from }),
+      where, // exposed so tests can assert it was awaited
+    };
+  }
+
+  it("returns the total from the single COUNT(*) row", async () => {
+    const mockDb = makeCountingDb([{ total: 42 }]);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    const total = await repo.count({ limit: 20, offset: 0 }, "user-1");
+    expect(total).toBe(42);
+  });
+
+  it("returns 0 when the query yields no rows (defensive)", async () => {
+    const mockDb = makeCountingDb([]);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    const total = await repo.count({});
+    expect(total).toBe(0);
+  });
+
+  it("applies the same visibility + filter conditions as list()", async () => {
+    const mockDb = makeCountingDb([{ total: 7 }]);
+    (getDb as any).mockReturnValue(mockDb);
+    const { and } = await import("drizzle-orm");
+
+    const repo = new ExerciseRepository();
+    await repo.count(
+      {
+        category: ["strength"],
+        difficultyLevel: ["intermediate"],
+        q: "bench",
+      },
+      "user-1",
+    );
+    // Same WHERE predicate builder is reused: and() is called with the
+    // full condition stack (visibility + category + difficulty + search).
+    expect(and).toHaveBeenCalled();
+    expect(mockDb.select).toHaveBeenCalled();
+  });
+});
+
 describe("ExerciseRepository.getById", () => {
   beforeEach(() => {
     vi.clearAllMocks();

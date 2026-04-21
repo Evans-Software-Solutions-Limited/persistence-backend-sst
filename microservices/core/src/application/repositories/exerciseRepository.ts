@@ -229,19 +229,16 @@ export class ExerciseRepository {
   }
 
   /**
-   * List exercises visible to `userId` (or system-only when null), applying
-   * the filter axes above. OR within array axes, AND across axes.
+   * Build the AND-combined WHERE clause for both `list()` and `count()`.
    *
-   * Spec: design.md § Backend Endpoints > GET /exercises · AC 7.6, 7.7, 7.8
+   * Extracted so pagination's `total` count and the page slice run against
+   * the exact same predicate — if these ever drift, `hasMore` can flip
+   * true while the next page returns zero rows (and vice versa).
    */
-  async list(
+  private buildListFilterConditions(
     filters: ListExercisesFilters,
-    userId: string | null = null,
-  ): Promise<Exercise[]> {
-    const db = getDb();
-    const limit = filters.limit ?? 20;
-    const offset = filters.offset ?? 0;
-
+    userId: string | null,
+  ): SQL[] {
     const conditions: SQL[] = [];
 
     conditions.push(this.buildVisibilityCondition(userId));
@@ -300,6 +297,25 @@ export class ExerciseRepository {
       );
     }
 
+    return conditions;
+  }
+
+  /**
+   * List exercises visible to `userId` (or system-only when null), applying
+   * the filter axes above. OR within array axes, AND across axes.
+   *
+   * Spec: design.md § Backend Endpoints > GET /exercises · AC 7.6, 7.7, 7.8
+   */
+  async list(
+    filters: ListExercisesFilters,
+    userId: string | null = null,
+  ): Promise<Exercise[]> {
+    const db = getDb();
+    const limit = filters.limit ?? 20;
+    const offset = filters.offset ?? 0;
+
+    const conditions = this.buildListFilterConditions(filters, userId);
+
     return db
       .select()
       .from(exercises)
@@ -307,6 +323,29 @@ export class ExerciseRepository {
       .orderBy(desc(exercises.createdAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * Count rows matching the same visibility + filter predicate as `list()`,
+   * ignoring limit/offset. Used by the handler to emit `meta.total` so the
+   * mobile client can render pagination state without an extra round-trip.
+   *
+   * Always uses the shared `buildListFilterConditions` so the count cannot
+   * drift from the page query — see that method's docstring.
+   */
+  async count(
+    filters: ListExercisesFilters,
+    userId: string | null = null,
+  ): Promise<number> {
+    const db = getDb();
+    const conditions = this.buildListFilterConditions(filters, userId);
+
+    const rows = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(exercises)
+      .where(and(...conditions));
+
+    return rows[0]?.total ?? 0;
   }
 
   /**
