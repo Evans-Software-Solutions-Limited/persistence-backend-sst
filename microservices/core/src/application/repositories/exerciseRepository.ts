@@ -14,12 +14,45 @@ import {
   type Exercise,
   type NewExercise,
   muscleGroups,
-  type MuscleGroup,
   equipmentTypes,
-  type EquipmentType,
   ptClientRelationships,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+
+/**
+ * Sentinel UUID used by the legacy Supabase DB to mark system-authored
+ * exercises. The backend is still connected to the live Supabase
+ * schema (not Neon), so this convention is load-bearing — rows with
+ * this `created_by` value are the stock/system catalogue that every
+ * user can see.
+ *
+ * DO NOT replace with `IS NULL` — the live DB does not store NULL
+ * creators, so that predicate would silently hide every system
+ * exercise.
+ */
+export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Shape returned by the muscle-groups reference-list endpoint.
+ * Mirrors the actual Supabase columns — do not add fields that
+ * aren't in the live table.
+ */
+export type MuscleGroupRow = {
+  id: string;
+  name: string;
+  displayName: string | null;
+};
+
+/**
+ * Shape returned by the equipment-types reference-list endpoint.
+ * Supabase's equipment_types table has no display_name column;
+ * the handler projects `display_name: null` for API-shape parity
+ * across the three reference-list endpoints.
+ */
+export type EquipmentTypeRow = {
+  id: string;
+  name: string;
+};
 
 /**
  * Filter shape for `list()`. Arrays OR-match within an axis; different axes
@@ -101,21 +134,31 @@ export class ExerciseRepository {
    * Visibility predicate applied to every `list()` and `getById()` call.
    *
    * A caller sees an exercise iff ANY of:
-   *   • `created_by IS NULL` (system)
-   *   • `created_by = caller.sub` (own custom)
-   *   • `created_by` belongs to an active, non-AI PT/physio they're connected to
+   *   • `created_by = SYSTEM_USER_ID` (system catalogue — legacy Supabase
+   *     convention; see the constant's docstring).
+   *   • `created_by IS NULL` (defensive — kept for forward-compat with a
+   *     potential Neon migration that drops the sentinel, never matches
+   *     against the live Supabase rows).
+   *   • `created_by = caller.sub` (own custom).
+   *   • `created_by` belongs to an active, non-AI PT/physio the caller is
+   *     connected to.
    *
    * Unauthenticated callers see only system exercises.
    *
    * Spec: design.md § Backend Authorization Rules · AC 7.8
    */
   private buildVisibilityCondition(userId: string | null): SQL {
+    const systemClause = or(
+      eq(exercises.createdBy, SYSTEM_USER_ID),
+      isNull(exercises.createdBy),
+    ) as SQL;
+
     if (!userId) {
-      return isNull(exercises.createdBy);
+      return systemClause;
     }
 
     return or(
-      isNull(exercises.createdBy),
+      systemClause,
       eq(exercises.createdBy, userId),
       inArray(exercises.createdBy, this.activeTrainerIdsSubquery(userId)),
     ) as SQL;
@@ -158,7 +201,14 @@ export class ExerciseRepository {
           if (userId) predicates.push(eq(exercises.createdBy, userId));
           break;
         case "system":
-          predicates.push(isNull(exercises.createdBy));
+          // System rows on Supabase use the SYSTEM_USER_ID sentinel;
+          // IS NULL is kept as a belt-and-suspenders fallback.
+          predicates.push(
+            or(
+              eq(exercises.createdBy, SYSTEM_USER_ID),
+              isNull(exercises.createdBy),
+            ) as SQL,
+          );
           break;
         case "pt": {
           if (!userId) break;
@@ -277,23 +327,48 @@ export class ExerciseRepository {
     return result[0] ?? null;
   }
 
-  async getMuscleGroups(): Promise<MuscleGroup[]> {
+  /**
+   * Explicit column projection — not `select()` — so a future schema.ts
+   * that adds fields not present in the live Supabase table doesn't
+   * break the SELECT. Mirrors the exact column list the legacy mobile
+   * app fetches from the same table.
+   */
+  async getMuscleGroups(): Promise<MuscleGroupRow[]> {
     const db = getDb();
-    return db.select().from(muscleGroups).orderBy(muscleGroups.name);
+    return db
+      .select({
+        id: muscleGroups.id,
+        name: muscleGroups.name,
+        displayName: muscleGroups.displayName,
+      })
+      .from(muscleGroups)
+      .orderBy(muscleGroups.name);
   }
 
-  async getEquipmentTypes(): Promise<EquipmentType[]> {
+  /**
+   * Explicit projection: `equipment_types` in Supabase has only
+   * `id, name, created_at`. The Drizzle schema also lists a
+   * `description` column that does not exist in the live DB;
+   * projecting `select()` would 500 on Postgres's "column
+   * description does not exist". See memory/project_supabase_db_as_is.
+   */
+  async getEquipmentTypes(): Promise<EquipmentTypeRow[]> {
     const db = getDb();
-    return db.select().from(equipmentTypes).orderBy(equipmentTypes.name);
+    return db
+      .select({
+        id: equipmentTypes.id,
+        name: equipmentTypes.name,
+      })
+      .from(equipmentTypes)
+      .orderBy(equipmentTypes.name);
   }
 
   async getCategories(): Promise<string[]> {
     const db = getDb();
     const result = await db
       .selectDistinct({ category: exercises.category })
-      .from(exercises)
-      .where(eq(exercises.isPublic, true));
-    return result.map((r) => r.category as string);
+      .from(exercises);
+    return result.map((r) => r.category as string).filter(Boolean);
   }
 
   /**

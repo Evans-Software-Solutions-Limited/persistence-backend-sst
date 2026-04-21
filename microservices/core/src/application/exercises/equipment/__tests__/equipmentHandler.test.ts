@@ -23,7 +23,7 @@ describe("EquipmentHandler", () => {
 
   it("returns 200 with { data } array", async () => {
     exerciseRepositoryMocks.getEquipmentTypes.mockResolvedValue([
-      { id: "eq-1", name: "Dumbbell", description: "Hand weights" },
+      { id: "eq-1", name: "Dumbbell" },
     ]);
     const { equipmentHandler } = await import("../equipmentHandler");
     const response = await equipmentHandler.handle(
@@ -34,20 +34,12 @@ describe("EquipmentHandler", () => {
     expect(Array.isArray(body.data)).toBe(true);
   });
 
-  it("projects display_name: null alongside id/name/description (AC 7.9)", async () => {
+  it("projects only { id, name, display_name: null } (AC 7.9)", async () => {
+    // Repo returns Supabase-aligned EquipmentTypeRow ({ id, name })
+    // — no description column in the live DB.
     exerciseRepositoryMocks.getEquipmentTypes.mockResolvedValue([
-      {
-        id: "eq-1",
-        name: "Barbell",
-        description: "Long bar with weights",
-        createdAt: new Date("2026-01-01"),
-      },
-      {
-        id: "eq-2",
-        name: "Dumbbell",
-        description: "Hand weights",
-        createdAt: new Date("2026-01-01"),
-      },
+      { id: "eq-1", name: "Barbell" },
+      { id: "eq-2", name: "Dumbbell" },
     ]);
 
     const { equipmentHandler } = await import("../equipmentHandler");
@@ -61,12 +53,12 @@ describe("EquipmentHandler", () => {
     expect(body.data[0]).toEqual({
       id: "eq-1",
       name: "Barbell",
-      description: "Long bar with weights",
       display_name: null,
     });
     expect(body.data[1].display_name).toBeNull();
-    // createdAt must be stripped from the projection
-    expect(body.data[0]).not.toHaveProperty("createdAt");
+    // description was dropped alongside the repo projection change —
+    // it isn't in Supabase, mustn't appear in the response.
+    expect(body.data[0]).not.toHaveProperty("description");
   });
 
   it("returns empty array cleanly when no equipment rows", async () => {
