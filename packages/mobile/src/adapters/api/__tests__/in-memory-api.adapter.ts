@@ -185,6 +185,7 @@ export class InMemoryApiAdapter implements ApiPort {
   async getExercises(
     filters?: ExerciseFilters,
     _offset?: number,
+    _limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
     const filtered = filters
       ? filterExercises(this.exercises, filters)

@@ -59,6 +59,7 @@ export interface ApiPort {
   getExercises(
     filters?: ExerciseFilters,
     offset?: number,
+    limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
   createExercise(

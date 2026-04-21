@@ -255,8 +255,9 @@ export class SSTApiAdapter implements ApiPort {
   async getExercises(
     filters?: ExerciseFilters,
     offset?: number,
+    limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
-    const params = this.buildExerciseQueryParams(filters, offset);
+    const params = this.buildExerciseQueryParams(filters, offset, limit);
     const result = await this.requestEnvelope<ApiExercisesPage>("/exercises", {
       params,
     });
@@ -334,10 +335,12 @@ export class SSTApiAdapter implements ApiPort {
   private buildExerciseQueryParams(
     filters?: ExerciseFilters,
     offset?: number,
+    limit?: number,
   ): Record<string, string | number | string[] | undefined> | undefined {
-    if (!filters && offset == null) return undefined;
+    if (!filters && offset == null && limit == null) return undefined;
     const params: Record<string, string | number | string[] | undefined> = {};
     if (offset != null) params.offset = offset;
+    if (limit != null) params.limit = limit;
     if (filters?.search) params.q = filters.search;
     if (filters?.category) params.category = [filters.category];
     if (filters?.difficulties && filters.difficulties.length > 0) {

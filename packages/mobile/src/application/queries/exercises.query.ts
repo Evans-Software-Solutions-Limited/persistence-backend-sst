@@ -86,12 +86,34 @@ export async function getExerciseQuery(
 
 /**
  * Upper bound on pages fetched in a single refresh to stop runaway loops
- * if the backend ever mis-reports `hasMore`. At ~200 exercises per page
- * this covers libraries up to ~20k rows, well above expected scale.
+ * if the backend ever mis-reports `hasMore`. At `REFRESH_PAGE_SIZE` per
+ * page this covers libraries of ~50k rows, well above expected scale.
  * If the cap is hit while the server still reports more pages, the walk
  * is treated as incomplete — see `refreshExerciseCache`.
  */
 export const REFRESH_MAX_PAGES = 100;
+
+/**
+ * Page size used by the full-library refresh walk.
+ *
+ * The exercise library is ~2.3k rows in production. The UI's "initial
+ * cache fill" is driven by this constant: smaller pages mean more round-
+ * trips through AppSync/Lambda/Supabase pooler, which multiplies latency,
+ * memory pressure on the JS thread, and Lambda cold-starts during dev. A
+ * page size of 500 turns a 2.3k-row fill from ~116 calls into 5.
+ *
+ * Why 500 and not "grab it all in one request": response body size
+ * matters for memory + JSON parse cost, and some CDN / API Gateway
+ * configurations will refuse payloads past a few MB. 500 rows of the
+ * current exercise shape comes out to roughly 300–400 KB — comfortably
+ * under Lambda's 6 MB sync invocation limit and quick to parse. Bump if
+ * the library scale grows and we benchmark the wire cost.
+ *
+ * The handler still honours an explicit `?limit=` query param (capped
+ * server-side for safety), so per-screen pagination can use smaller
+ * sizes when rendering a bounded scroll window.
+ */
+export const REFRESH_PAGE_SIZE = 500;
 
 /**
  * Refresh the full cached exercise library from the API and update
@@ -125,7 +147,7 @@ export async function refreshExerciseCache(
   let reachedEnd = false;
 
   for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
-    const result = await api.getExercises(filters, offset);
+    const result = await api.getExercises(filters, offset, REFRESH_PAGE_SIZE);
     if (!result.ok) return result;
 
     const { data, hasMore } = result.value;

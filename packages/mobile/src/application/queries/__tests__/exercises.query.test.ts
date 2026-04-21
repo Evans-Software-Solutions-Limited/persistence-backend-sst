@@ -1,6 +1,7 @@
 import {
   EXERCISE_CACHE_STALE_AFTER_MS,
   REFRESH_MAX_PAGES,
+  REFRESH_PAGE_SIZE,
   getExerciseQuery,
   getExercisesQuery,
   refreshExerciseCache,
@@ -162,10 +163,12 @@ describe("refreshExerciseCache", () => {
     expect(storage.getLastSyncedAt("exercises")).not.toBeNull();
   });
 
-  it("forwards filters to the API with offset=0 on the first page", async () => {
+  it("forwards filters to the API with offset=0 and REFRESH_PAGE_SIZE on the first page", async () => {
     const spy = jest.spyOn(api, "getExercises");
     await refreshExerciseCache(api, storage, { search: "bench" });
-    expect(spy).toHaveBeenCalledWith({ search: "bench" }, 0);
+    // Third arg is the bulk page size — see REFRESH_PAGE_SIZE docstring for
+    // why small defaults are a crash risk on a 2k-row library.
+    expect(spy).toHaveBeenCalledWith({ search: "bench" }, 0, REFRESH_PAGE_SIZE);
   });
 
   it("leaves the cache untouched on API failure", async () => {
@@ -207,8 +210,8 @@ describe("refreshExerciseCache", () => {
       expect(result.value.map((e) => e.id)).toEqual(["e1", "e2"]);
     }
 
-    expect(spy).toHaveBeenNthCalledWith(1, undefined, 0);
-    expect(spy).toHaveBeenNthCalledWith(2, undefined, 1);
+    expect(spy).toHaveBeenNthCalledWith(1, undefined, 0, REFRESH_PAGE_SIZE);
+    expect(spy).toHaveBeenNthCalledWith(2, undefined, 1, REFRESH_PAGE_SIZE);
     expect(storage.getCachedExercises()).toHaveLength(2);
   });
 
