@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
   EquipmentType,
@@ -499,6 +500,23 @@ export class SSTApiAdapter implements ApiPort {
       `/sessions/${sessionId}/exercises/${exerciseId}/sets/${setId}`,
       { method: "DELETE" },
     );
+  }
+
+  // -- Dashboard --
+
+  /**
+   * Fetch the Home-tab aggregation payload (M1).
+   *
+   * Single-envelope response — the handler returns
+   * `{ data: DashboardPayload }` and `requestEnvelope<T>` unwraps the
+   * one layer. No reference-list UUID translation required (no
+   * reference-list-typed fields on the payload).
+   *
+   * Spec: specs/06-progress-goals/design.md § Dashboard backend contract
+   *       · requirements.md STORY-005 AC 5.8, STORY-007 AC 7.1
+   */
+  async getDashboard(): Promise<Result<DashboardPayload, ApiError>> {
+    return this.requestEnvelope<DashboardPayload>("/dashboard");
   }
 
   // -- Goals --

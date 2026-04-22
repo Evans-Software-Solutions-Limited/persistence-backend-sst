@@ -1,3 +1,4 @@
+import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
   Exercise,
@@ -37,6 +38,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public goals: ApiGoal[] = [];
   public referenceLists: Partial<Record<ReferenceListKind, ReferenceEntry[]>> =
     {};
+  public dashboard: DashboardPayload | null = null;
   public shouldFail = false;
   public failError: ApiError = {
     kind: "api",
@@ -223,6 +225,17 @@ export class InMemoryApiAdapter implements ApiPort {
     kind: ReferenceListKind,
   ): Promise<Result<ReferenceEntry[], ApiError>> {
     return this.mayFail(this.referenceLists[kind] ?? []);
+  }
+
+  async getDashboard(): Promise<Result<DashboardPayload, ApiError>> {
+    if (this.dashboard === null) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No dashboard fixture configured",
+      });
+    }
+    return this.mayFail(this.dashboard);
   }
 
   async getExercise(id: string) {

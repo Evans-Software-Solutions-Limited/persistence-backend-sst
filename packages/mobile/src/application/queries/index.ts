@@ -5,3 +5,10 @@ export {
   EXERCISE_CACHE_STALE_AFTER_MS,
   type GetExercisesQueryResult,
 } from "./exercises.query";
+
+export {
+  getDashboardQuery,
+  refreshDashboard,
+  DASHBOARD_STALE_AFTER_MS,
+  type DashboardQueryResult,
+} from "./dashboard.query";
