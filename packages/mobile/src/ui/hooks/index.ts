@@ -6,3 +6,7 @@ export {
   ExerciseFiltersPendingProvider,
 } from "./useExerciseFiltersPending";
 export type { ExerciseFiltersPendingContextValue } from "./useExerciseFiltersPending";
+export { useDashboard } from "./useDashboard";
+export type { DashboardState } from "./useDashboard";
+export { useHealthData, HEALTH_READ_RATE_LIMIT_MS } from "./useHealthData";
+export type { HealthDataState } from "./useHealthData";
