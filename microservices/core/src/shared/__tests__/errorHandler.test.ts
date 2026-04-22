@@ -181,4 +181,54 @@ describe("coreErrorHandler", () => {
     const body = await jsonBody(response);
     expect(body.requestId).toBe("abc-123-def");
   });
+
+  it("unwinds `.cause` chain and surfaces driver fields (dev-mode)", async () => {
+    // Mirrors how Drizzle wraps a node-postgres / postgres.js driver error:
+    // the outer Error carries "Failed query: ..." and the real PG error
+    // hangs off `.cause` with its code/severity/detail as own fields.
+    delete process.env.SST_STAGE;
+
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
+      const driverError = Object.assign(
+        new Error("password authentication failed for user 'postgres'"),
+        {
+          code: "28P01",
+          severity: "FATAL",
+          routine: "auth_failed",
+        },
+      );
+      const wrapper = new Error("Failed query: select 1", {
+        cause: driverError,
+      });
+      throw wrapper;
+    });
+
+    const response = await app.handle(new Request("http://localhost/boom"));
+    expect(response.status).toBe(500);
+    const body = await jsonBody(response);
+    // Causes surfaced on the response body so the Expo network tab shows
+    // the real driver reason without CloudWatch.
+    expect(Array.isArray(body.causes)).toBe(true);
+    const causes = body.causes as Record<string, unknown>[];
+    expect(causes[0]?.code).toBe("28P01");
+    expect(causes[0]?.severity).toBe("FATAL");
+    expect(causes[0]?.message).toContain("password authentication failed");
+    // Each cause link also logged separately so CloudWatch has them.
+    const causeLogs = consoleErrorSpy.mock.calls.filter((c) =>
+      String(c[0]).startsWith("[api:error] cause["),
+    );
+    expect(causeLogs.length).toBeGreaterThan(0);
+  });
+
+  it("strips the `causes` field in production", async () => {
+    process.env.SST_STAGE = "production";
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
+      throw new Error("outer", { cause: new Error("inner secret") });
+    });
+    const response = await app.handle(new Request("http://localhost/boom"));
+    const body = await jsonBody(response);
+    // Prod response must not leak driver internals in the body
+    expect(body.causes).toBeUndefined();
+    expect(body.stack).toBeUndefined();
+  });
 });

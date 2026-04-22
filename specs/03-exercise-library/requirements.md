@@ -128,3 +128,72 @@ WHERE is_ai_trainer = false)`. Other users' customs are never returned.
   `display_name: null` (no DB column); `categories` continues to return
   `{ data: string[] }` as an M0 shim with the real catalog table
   deferred.
+
+### M0 — Integration baseline (frontend track)
+
+Parent milestone: [`specs/milestones/M0-integration-baseline/BRIEF.md`](../milestones/M0-integration-baseline/BRIEF.md)
+
+AC 7.10 onward covers the mobile track — reference-list cache,
+hierarchical modal port, filter wire format, sync-queue mapping,
+delete UX port, and the `__DEV__` creator hook.
+
+- **AC 7.10** — On the first Exercises-tab open per app session, the
+  mobile client fetches the three reference lists (muscle groups,
+  equipment, categories) from the backend and caches them in SQLite
+  in the `reference_lists` table. Subsequent tab opens read from the
+  cache synchronously (no network) unless the cache is older than 24
+  hours, in which case a background refresh fires while the cached
+  values render.
+
+- **AC 7.11** — The filter modal is a nested stack: a section list
+  of four axes (Muscle Groups, Equipment, Difficulty, Created By);
+  each axis navigates to its own detail screen; Muscles and Equipment
+  detail screens include a search bar; Difficulty and Created By do
+  not. The component hierarchy is ported 1:1 from
+  `persistence-mobile/components/exercises/` (no structural redesign).
+
+- **AC 7.12** — A sticky "Show N exercises" Apply bar persists at the
+  bottom of the filter modal across child-route navigation; its count
+  updates live as the user toggles selections in any axis. Tapping
+  Apply commits the diff to the list's filter state and dismisses
+  the modal.
+
+- **AC 7.13** — `SSTApiAdapter.buildExerciseQueryParams` sends the
+  backend-shaped filter: `q`, `category[]`, `difficulty_level[]`,
+  `targeted_muscles_any[]` (UUIDs via reference cache), `equipment_any[]`
+  (UUIDs via reference cache), `created_by[]` (enum strings unchanged),
+  `limit`, `offset`. Repeated-key array format. The cursor param is
+  dropped; `refreshExerciseCache` walks via offset.
+
+- **AC 7.14** — The reference-list cache renders when the device is
+  offline. After one successful online fetch, the filter modal and
+  any cache-consuming hook render the cached entries without network.
+
+- **AC 7.15** — `createExerciseCommand` enqueues the sync-queue entry
+  with a wire-format (snake_case) payload: `difficulty_level`,
+  `primary_muscles` (UUID[]), `equipment_required` (UUID[]), etc.
+  An offline create flushes successfully to `POST /exercises` on
+  reconnect without further mapping. Missing cache mappings cause
+  the enqueue to error upstream; the queue never holds a broken
+  payload.
+
+- **AC 7.16** — The V2 `Exercise` domain model gains `videoUrl` and
+  `thumbnailUrl`. The ported legacy exercise card renders `thumbnailUrl`
+  when present. Legacy-but-unused backend fields (`region_type`,
+  `movement_type`, accessibility\_\*, `is_public`, `secondary_muscles`)
+  are accepted at the adapter boundary but not projected into the
+  V2 domain model in M0.
+
+- **AC 7.17** — A delete from the exercise list is triggered by the
+  legacy-pattern affordance (long-press / three-dot menu) and shows
+  a destructive `Alert.alert` confirm ("Are you sure you want to
+  delete {name}? This action cannot be undone.") with Cancel /
+  Delete. On confirm the app calls `DELETE /exercises/:id` and
+  invalidates the local cache on success. UX ported 1:1 from
+  `persistence-mobile`.
+
+- **AC 7.18** — A minimal `__DEV__`-gated creator form exists at
+  `app/(app)/exercises/create.tsx` with fields for name + primary
+  muscle + equipment, enough to exercise `POST /exercises` against
+  `bun run dev` for the M0 smoke test. The real creator ships in M5;
+  this is a smoke-test enabler only.

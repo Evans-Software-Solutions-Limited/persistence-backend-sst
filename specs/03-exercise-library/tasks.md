@@ -25,6 +25,7 @@ Cross-milestone owners:
 
 - **M0 Integration baseline** closes: (a) wire-format fix in `processSyncQueue` / `createExerciseCommand` payload shape; (b) backend `POST/PATCH/DELETE /exercises` handlers (mobile calls them, backend currently only serves reads); (c) filter-param mismatch — mobile enum strings vs backend UUID-keyed reference data — via a reference-lists cache.
 - **M5 Exercise detail + creator** closes Phases 5 + 6.
+- **Phase 9 (own PR, post-M0)** — offline search & sort. Legacy used Algolia; V2's offline-first model needs a SQLite FTS5 + normalised-column approach. Scoped in § Phase 9 below and in `design.md` § Offline search & sort. No milestone owner assigned yet — likely sits between M3 (session history unlocks `popular` sort) and M11 (search highlighting polish).
 
 ## Phase 1: Domain
 
@@ -142,3 +143,136 @@ Every item traces to a `design.md` section and an AC.
 
 - [ ] **7b.17** All backend quality gates pass (prettier / typecheck / lint / build / test with 90% coverage on changed files)
       (Spec: repo CLAUDE.md PR Checklist)
+
+---
+
+## Phase 7c — Reference-list cache + legacy modal port + sync fix (M0, frontend track)
+
+Parent milestone: [`specs/milestones/M0-integration-baseline/FRONTEND_BRIEF.md`](../milestones/M0-integration-baseline/FRONTEND_BRIEF.md).
+Every item traces to a `design.md` section and an AC.
+
+### Domain
+
+- [ ] **7c.1** Add `ReferenceEntry`, `ReferenceListKind`, `ReferenceList` to `src/domain/models/reference-list.ts`; export from `domain/models/index.ts`
+      (Spec: design.md § Reference-List Cache > Domain model · AC 7.10)
+- [ ] **7c.2** Add `videoUrl`, `thumbnailUrl` to `Exercise` + `CreateExerciseInput` in `src/domain/models/exercise.ts`
+      (Spec: design.md § Exercise Domain — M0 field additions · AC 7.16)
+
+### Ports
+
+- [ ] **7c.3** Extend `ApiPort` with `getReferenceList(kind)`
+      (Spec: design.md § Reference-List Cache > Port extensions · AC 7.10)
+- [ ] **7c.4** Extend `StoragePort` with `getCachedReferenceList / cacheReferenceList / getReferenceListAge`
+      (Spec: design.md § Reference-List Cache > Port extensions · AC 7.10)
+
+### Application
+
+- [ ] **7c.5** Implement `getReferenceListQuery` + `refreshReferenceList` in `src/application/queries/reference-lists.query.ts`
+      (Spec: design.md § Reference-List Cache > Application query · AC 7.10, 7.14)
+- [ ] **7c.6** Update `createExerciseCommand` to call `mapCreateExerciseInputToApi` at enqueue time; store snake_case payload in sync-queue
+      (Spec: design.md § Sync-Queue Wire Format · AC 7.15)
+
+### Adapters
+
+- [ ] **7c.7** Implement `SSTApiAdapter.getReferenceList(kind)` — dispatches to `/exercises/{muscle-groups|equipment|categories}`; maps categories `string[] → ReferenceEntry`
+      (Spec: design.md § Reference-List Cache · design.md § Backend Endpoints > Reference-list endpoints · AC 7.10)
+- [ ] **7c.8** Rewrite `SSTApiAdapter.buildExerciseQueryParams` to the legacy wire format (repeated-key arrays, UUID translation via reference cache, `q` param, drop cursor for offset)
+      (Spec: design.md § Backend Endpoints > GET /exercises · AC 7.13)
+- [ ] **7c.9** Add `mapEnumToUuid(kind, key, cache)` helper; log + skip unknown keys rather than throw
+      (Spec: design.md § Reference-List Cache > Enum ↔ UUID bridge · AC 7.13)
+- [ ] **7c.10** Update `refreshExerciseCache` pagination to offset-based (not cursor-based)
+      (Spec: design.md § Backend Endpoints > GET /exercises · AC 7.13)
+- [ ] **7c.11** SQLite adapter: add `reference_lists` table migration + implement three new `StoragePort` methods
+      (Spec: design.md § Reference-List Cache > SQLite schema · AC 7.10, 7.14)
+- [ ] **7c.12** InMemory adapters: matching stub implementations for `getReferenceList` and the three storage methods
+      (Spec: design.md § Reference-List Cache · AC 7.10)
+
+### UI — hooks + containers + presenters
+
+- [ ] **7c.13** `src/ui/hooks/useReferenceLists.tsx` — reads cache, refreshes on first call per session, returns `{ muscleGroups, equipment, categories, isLoading, isStale, refresh }`
+      (Spec: design.md § UI Hooks · AC 7.10)
+- [ ] **7c.14** Delete `app/(app)/exercises/filters.tsx` (Phase 4 flat modal)
+      (Spec: design.md § Hierarchical Filter Modal · AC 7.11)
+- [ ] **7c.15** Create `app/(app)/exercises/filters/_layout.tsx` — modal shell + sticky Apply bar with live count
+      (Spec: design.md § Hierarchical Filter Modal > Sticky Apply bar · AC 7.11, 7.12)
+- [ ] **7c.16** Create `app/(app)/exercises/filters/index.tsx` — section list for 4 axes
+      (Spec: design.md § Hierarchical Filter Modal > Route structure · AC 7.11)
+- [ ] **7c.17** Create `app/(app)/exercises/filters/muscles.tsx` + `equipment.tsx` — searchable checklist per axis (port legacy `FilterDetailScreen`)
+      (Spec: design.md § Hierarchical Filter Modal > Search UX · AC 7.11)
+- [ ] **7c.18** Create `app/(app)/exercises/filters/difficulty.tsx` + `created-by.tsx` — plain checklist per axis
+      (Spec: design.md § Hierarchical Filter Modal > Route structure · AC 7.11)
+- [ ] **7c.19** Remove Phase 4 `ExerciseFiltersPresenter` / `ExerciseFiltersContainer` / `ExerciseFilterBar` wholesale; update `ExerciseListContainer` to consume the nested-modal output
+      (Spec: design.md § Hierarchical Filter Modal > Presenter replacement · AC 7.11)
+- [ ] **7c.20** Port exercise list card + delete-alert pattern from `persistence-mobile/components/exercises/*` 1:1; wire `DELETE /exercises/:id` via `ApiPort.deleteExercise`
+      (Spec: design.md § Hierarchical Filter Modal > Legacy reference paths · AC 7.17)
+- [ ] **7c.21** Add minimal `__DEV__`-gated creator form to `app/(app)/exercises/create.tsx` — name + primary muscle + equipment; wired through `createExerciseCommand`; gated so production bundle excludes the form
+      (Spec: design.md § Sync-Queue Wire Format · AC 7.18)
+
+### Tests
+
+- [ ] **7c.22** Reference-list query tests (cache-hit, cache-miss, stale-trigger-refresh, API-failure fallback to cache)
+      (Spec: AC 7.10, 7.14)
+- [ ] **7c.23** Adapter tests for `getReferenceList` and the rewritten `buildExerciseQueryParams` — assert exact wire-format shape against snapshots
+      (Spec: AC 7.13)
+- [ ] **7c.24** SQLite adapter test: `reference_lists` table persistence across instances
+      (Spec: AC 7.10, 7.14)
+- [ ] **7c.25** `useReferenceLists` hook test: first-call refresh, subsequent reads hit cache
+      (Spec: AC 7.10)
+- [ ] **7c.26** Shallow render tests for the 4 nested filter screens (route registration, axis props)
+      (Spec: AC 7.11)
+- [ ] **7c.27** Apply-bar live-count test (sticky across navigation, correct count)
+      (Spec: AC 7.12)
+- [ ] **7c.28** `createExerciseCommand` test — asserts enqueued payload is snake_case wire shape, not domain shape
+      (Spec: AC 7.15)
+- [ ] **7c.29** Delete-alert test — destructive confirm fires `deleteExercise`, cache invalidates on success
+      (Spec: AC 7.17)
+
+### Quality gates
+
+- [ ] **7c.30** All mobile quality gates pass (prettier / typecheck / lint 0-warn / build / test with 90% coverage on changed files)
+      (Spec: repo `_agent.md` § Quality Gates)
+
+## Phase 9 (deferred — post-M0, own PR): Offline search & sort
+
+**Status:** scoped, not started. Legacy app used Algolia for typo-tolerant ranked search; V2 is offline-first so that path doesn't carry over. The M0 surface renders the catalogue in `created_at DESC` with in-JS substring filtering — fine for 2.3k rows, not a long-term answer.
+
+**Parent design section:** design.md § Offline search & sort (deferred) — read that first; it covers the three concepts (normalised SQLite columns, FTS5, sort vocabulary) and the deferred decisions.
+
+### Backend
+
+- [ ] **9.1** Add `?sort=name-asc|name-desc|recent|popular` query param to `GET /exercises`; default `name-asc` with `created_at DESC` as tiebreaker. `popular` returns 501 / clamps to `recent` until session-history data is wired (M3+).
+      (Spec: design.md § Offline search & sort > Sort vocabulary · new AC — add to requirements.md as 7.19)
+- [ ] **9.2** Optional: evaluate Postgres `tsvector`/`tsquery` index on `exercises.name || description || instructions` for an online `?q=` path; decide whether to ship here or leave ILIKE. Benchmark against ILIKE on 2.3k rows first — may not be worth the migration.
+      (Spec: design.md § Offline search & sort > Deferred decisions)
+- [ ] **9.3** Backend tests: sort orderings deterministic; tiebreakers applied; invalid `sort` clamps without erroring.
+
+### Frontend — storage layer
+
+- [ ] **9.4** SQLite migration: extend `cached_exercises` with indexed derived columns (`name`, `name_lower`, `category`, `difficulty`, `is_custom`, `created_by`). Backfill at write time inside `cacheExercises`. Existing `data` JSON stays as source of truth.
+      (Spec: design.md § Offline search & sort > Normalised search columns)
+- [ ] **9.5** SQLite migration: `CREATE VIRTUAL TABLE exercises_fts USING fts5(name, description, instructions, content='cached_exercises', content_rowid='rowid')` + insert/update/delete triggers on `cached_exercises`.
+      (Spec: design.md § Offline search & sort > FTS5)
+- [ ] **9.6** Rewrite `sqlite.adapter.ts:getCachedExercises(filters)` to dispatch to SQL: `WHERE` over the new columns for filter axes, `MATCH` against `exercises_fts` for search term, `ORDER BY` for the chosen sort. `JSON.parse` only the result rows.
+      (Spec: design.md § Offline search & sort)
+- [ ] **9.7** In-memory storage adapter: matching behaviour via array ops — keeps parity for test suites.
+
+### Frontend — domain / application / UI
+
+- [ ] **9.8** Extend `ExerciseFilters` with `sort?: "name-asc" | "name-desc" | "recent" | "popular"` (default `"name-asc"`).
+      (Spec: design.md § Offline search & sort > Sort vocabulary)
+- [ ] **9.9** `filterExercises` (domain service) gains a sort step; ordering enforced client-side even when the repository already did it, so offline-cache reads always match online behaviour.
+- [ ] **9.10** `ExerciseFilterBar` or a new sort pill row — UI control for toggling sort. Legacy parity check: decide whether it lives on the list screen or inside the filter modal.
+      (Spec: design.md § Offline search & sort — UI placement TBD)
+- [ ] **9.11** Adapter: `buildExerciseQueryParams` threads `sort` through to the backend as `?sort=`.
+- [ ] **9.12** Consider: highlight matched substrings in `ExerciseCard`'s name row. Defer to M11 polish if it slows the search PR down.
+
+### Tests
+
+- [ ] **9.13** SQLite adapter test: FTS5 queries return ranked results; derived columns stay in sync after `cacheExercises` updates; migration is idempotent.
+- [ ] **9.14** `filterExercises` / `getExercisesQuery` tests: each sort produces the expected ordering; secondary tiebreaker applied.
+- [ ] **9.15** Container test: toggling sort re-orders the list without a cache re-read (cacheVersion stays flat).
+- [ ] **9.16** Perf sanity: `getCachedExercises` with FTS + filter on 2.3k seed rows completes under 20ms on an iPhone 12 simulator (bench number baseline; tighten if we benchmark hardware).
+
+### Requirements.md
+
+- [ ] **9.17** Append ACs 7.19 (sort vocabulary), 7.20 (FTS5 keyword search), 7.21 (derived-column index), 7.22 (sort preference persisted). Cross-reference from design.md § Offline search & sort.

@@ -3,6 +3,10 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import type { Result, ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -51,10 +55,34 @@ export interface ApiPort {
   ): Promise<Result<ApiSession, ApiError>>;
   deleteSession(id: string): Promise<Result<void, ApiError>>;
 
+  /**
+   * Seed the adapter's in-memory id→label + name→id reference-list
+   * lookups from a previously-cached set of entries (typically loaded
+   * from StoragePort at app start). Normally the adapter populates
+   * these maps lazily inside `getReferenceList`; this lets a caller
+   * prime them without hitting the network so that `getExercises`
+   * responses can be enriched with muscle / equipment labels even on
+   * cold cache + second-launch paths where no reference-list fetch
+   * fires. Safe to call repeatedly; replaces the existing entries.
+   */
+  hydrateReferenceLabels(
+    kind: ReferenceListKind,
+    entries: readonly ReferenceEntry[],
+  ): void;
+
+  /**
+   * Apply the adapter's cached reference-list lookups to an Exercise,
+   * stamping `primaryMuscleGroupLabels` / `secondaryMuscleGroupLabels` /
+   * `equipmentLabels`. Pure — does not touch storage or network. Safe
+   * no-op if the lookups aren't hydrated yet (labels come back empty).
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise;
+
   // -- Exercises --
   getExercises(
     filters?: ExerciseFilters,
-    cursor?: string,
+    offset?: number,
+    limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
   createExercise(
@@ -65,6 +93,17 @@ export interface ApiPort {
     data: Partial<CreateExerciseInput>,
   ): Promise<Result<Exercise, ApiError>>;
   deleteExercise(id: string): Promise<Result<void, ApiError>>;
+
+  /**
+   * Fetch a reference-list catalog (muscle groups / equipment / categories)
+   * from the backend. Returns `ReferenceEntry[]` — the ApiPort does NOT
+   * hold onto the list; the StoragePort caches it separately.
+   *
+   * Spec: design.md § Reference-List Cache > Port extensions · AC 7.10
+   */
+  getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>>;
 
   // -- Sets --
   createSet(
@@ -143,7 +182,16 @@ export type ApiExercise = {
   primaryMuscles: string[];
   secondaryMuscles: string[];
   equipmentRequired: string[];
-  isCustom: boolean;
+  /** Added M0. Backend emits these on GET /exercises and GET /exercises/:id. */
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  /**
+   * Present on some backend responses (pre-M0) but no longer set by
+   * the M0 backend — it derives isCustom client-side from `createdBy
+   * !== null`. Kept optional on the wire type so adapters stay
+   * tolerant of either shape during the transition.
+   */
+  isCustom?: boolean;
   createdBy: string | null;
 };
 

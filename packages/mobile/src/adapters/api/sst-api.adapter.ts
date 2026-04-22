@@ -9,6 +9,10 @@ import type {
   MuscleGroup,
 } from "@/domain/models/exercise";
 import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
+import type {
   ApiPort,
   ApiProfile,
   ApiWorkout,
@@ -47,7 +51,7 @@ function validateApiUrl(url: string): void {
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  params?: Record<string, string | number | undefined>;
+  params?: Record<string, string | number | string[] | undefined>;
 };
 
 /**
@@ -60,6 +64,30 @@ type RequestOptions = {
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
 
+  /**
+   * UUID → display-label lookup per reference-list kind. Populated every
+   * time `getReferenceList` or `hydrateReferenceLabels` runs, and used by
+   * `enrichExerciseLabels` to resolve the UUID arrays the backend returns
+   * for `primary_muscles` / `equipment_required` into human labels for
+   * the card.
+   *
+   * Prefers `displayName` when set, falling back to `name` (which is the
+   * actual stored label in the current Supabase schema — see
+   * `muscle_groups.name` values like "Shoulders", "Quadriceps").
+   *
+   * Kept inside the adapter (rather than injecting StoragePort) so the
+   * adapter has no cross-port dependency. The application layer owns the
+   * canonical cache (StoragePort.getCachedReferenceList); this map is a
+   * per-process mirror for the single hot-path label resolution.
+   *
+   * NOTE: pre-M0 a second `referenceLookup` (name → id) also lived here,
+   * consumed by an enum→UUID resolver in `buildExerciseQueryParams`. Once
+   * the filter state migrated to UUIDs (see design.md § Hierarchical
+   * Filter Modal) that resolver became a no-op and was removed.
+   */
+  private referenceLabelLookup: Map<ReferenceListKind, Map<string, string>> =
+    new Map();
+
   constructor() {
     validateApiUrl(API_URL);
   }
@@ -70,12 +98,19 @@ export class SSTApiAdapter implements ApiPort {
 
   private buildUrl(
     path: string,
-    params?: Record<string, string | number | undefined>,
+    params?: Record<string, string | number | string[] | undefined>,
   ): string {
     const url = new URL(path, API_URL);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined) {
+        if (value === undefined) continue;
+        if (Array.isArray(value)) {
+          // Repeated-key array format for multi-value filters (matches
+          // legacy client + M0 backend contract).
+          for (const item of value) {
+            url.searchParams.append(key, String(item));
+          }
+        } else {
           url.searchParams.set(key, String(value));
         }
       }
@@ -230,24 +265,186 @@ export class SSTApiAdapter implements ApiPort {
   // -- Exercises --
   async getExercises(
     filters?: ExerciseFilters,
-    cursor?: string,
+    offset?: number,
+    limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
-    const params = buildExerciseQueryParams(filters, cursor);
+    const params = this.buildExerciseQueryParams(filters, offset, limit);
     const result = await this.requestEnvelope<ApiExercisesPage>("/exercises", {
       params,
     });
     if (!result.ok) return result;
+    const data = result.value.data
+      .map(mapApiExerciseToDomain)
+      .map((ex) => this.enrichExerciseLabels(ex));
+    const meta = result.value.meta;
+    // Prefer the backend's meta block (M0+) for pagination. Fall back to
+    // the legacy cursor/hasMore shape if the server hasn't migrated yet.
+    const effectiveOffset = meta?.offset ?? offset ?? 0;
+    const hasMore =
+      meta != null
+        ? effectiveOffset + data.length < meta.total
+        : (result.value.hasMore ?? false);
     return ok({
-      data: result.value.data.map(mapApiExerciseToDomain),
+      data,
       cursor: result.value.cursor ?? null,
-      hasMore: result.value.hasMore ?? false,
+      hasMore,
     });
+  }
+
+  async getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>> {
+    const path = referenceListPath(kind);
+    if (kind === "categories") {
+      // M0 shim: backend still returns { data: string[] }. Map to
+      // ReferenceEntry shape client-side so consumers see a uniform
+      // contract across all three kinds. Synthesise `id` from `name`
+      // so filter params remain stable across renders.
+      const result = await this.requestEnvelope<string[]>(path);
+      if (!result.ok) return result;
+      const entries: ReferenceEntry[] = result.value.map((name) => ({
+        id: name,
+        name,
+        displayName: null,
+      }));
+      this.populateReferenceLookup(kind, entries);
+      return ok(entries);
+    }
+    const result = await this.requestEnvelope<RawReferenceEntry[]>(path);
+    if (!result.ok) return result;
+    const entries = result.value.map(mapRawReferenceEntry);
+    this.populateReferenceLookup(kind, entries);
+    return ok(entries);
+  }
+
+  private populateReferenceLookup(
+    kind: ReferenceListKind,
+    entries: ReferenceEntry[],
+  ): void {
+    const idToLabel = new Map<string, string>();
+    for (const entry of entries) {
+      // Prefer displayName for rendering; fall back to name. This lets
+      // future schema migrations populate display_name without any UI
+      // change — the lookup keeps returning the right label.
+      idToLabel.set(entry.id, entry.displayName ?? entry.name);
+    }
+    this.referenceLabelLookup.set(kind, idToLabel);
+  }
+
+  /**
+   * Resolve an array of UUIDs to their display labels via the reference-
+   * list cache. Used by `enrichExerciseLabels` to stamp card chips with
+   * human labels.
+   *
+   * Contract: the returned array is **parallel-indexed** with `uuids`.
+   * Unresolved ids map to an empty string rather than being silently
+   * dropped — otherwise a partial lookup would misalign labels against
+   * the caller's id array (ids=[A,B,C], only A+C resolve → labels=
+   * ["LabelA","LabelC"] would incorrectly pair "LabelC" with id B at
+   * index 1). The card renderer filters empty labels *after* pairing,
+   * so the correct id↔label mapping survives.
+   *
+   * When the kind's lookup hasn't been hydrated yet (no fetch or cache
+   * read has run for this `ReferenceListKind`), returns an empty array
+   * instead of a length-matched array of empty strings. The renderer
+   * treats empty-array as "labels not ready" and falls back to the
+   * legacy enum→label map rather than rendering zero chips.
+   */
+  private resolveUuidsToLabels(
+    kind: ReferenceListKind,
+    uuids: readonly string[],
+  ): string[] {
+    const map = this.referenceLabelLookup.get(kind);
+    if (!map) return [];
+    return uuids.map((uuid) => map.get(uuid) ?? "");
+  }
+
+  /**
+   * Seed the in-memory lookups from a previously-cached set of entries
+   * (typically read from StoragePort at mount, before any network fetch).
+   * Replaces existing entries for the kind. Safe to call repeatedly; a
+   * later `getReferenceList` response will overwrite with fresher data.
+   */
+  hydrateReferenceLabels(
+    kind: ReferenceListKind,
+    entries: readonly ReferenceEntry[],
+  ): void {
+    this.populateReferenceLookup(kind, [...entries]);
+  }
+
+  /**
+   * Stamp `primaryMuscleGroupLabels` / `secondaryMuscleGroupLabels` /
+   * `equipmentLabels` onto an Exercise using the in-memory reference-
+   * list lookup. Exposed as an instance method (not a free function) so
+   * downstream flows that read cached Exercises from storage (bypassing
+   * the API) can still re-enrich them when the cache pre-dates the
+   * reference-list load. Safe no-op if the reference lists haven't been
+   * fetched yet — card falls back to the UUID placeholder chip.
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise {
+    const primary = this.resolveUuidsToLabels(
+      "muscle_groups",
+      exercise.primaryMuscleGroups as unknown as string[],
+    );
+    const secondary = this.resolveUuidsToLabels(
+      "muscle_groups",
+      exercise.secondaryMuscleGroups as unknown as string[],
+    );
+    const equipment = this.resolveUuidsToLabels(
+      "equipment",
+      exercise.equipment as unknown as string[],
+    );
+    return {
+      ...exercise,
+      primaryMuscleGroupLabels: primary,
+      secondaryMuscleGroupLabels: secondary,
+      equipmentLabels: equipment,
+    };
+  }
+
+  /**
+   * Build `GET /exercises` query params in the legacy wire format.
+   * Repeated-key arrays (passed as arrays; each key emits multiple
+   * `?key=value` pairs when serialised by the URL builder).
+   *
+   * `muscleGroups` / `equipment` values are expected to already be UUIDs
+   * (see `ExerciseFilters` docstrings). The legacy enum→UUID translation
+   * step was dropped in M0 once the filter modal started sourcing items
+   * directly from the reference-list cache — the translation never
+   * worked reliably anyway because the enum was case-sensitive against
+   * title-case DB rows.
+   *
+   * Spec: design.md § Backend Endpoints > GET /exercises
+   *       · requirements.md AC 7.13
+   */
+  private buildExerciseQueryParams(
+    filters?: ExerciseFilters,
+    offset?: number,
+    limit?: number,
+  ): Record<string, string | number | string[] | undefined> | undefined {
+    if (!filters && offset == null && limit == null) return undefined;
+    const params: Record<string, string | number | string[] | undefined> = {};
+    if (offset != null) params.offset = offset;
+    if (limit != null) params.limit = limit;
+    if (filters?.search) params.q = filters.search;
+    if (filters?.category) params.category = [filters.category];
+    if (filters?.difficulties && filters.difficulties.length > 0) {
+      params.difficulty_level = [...filters.difficulties];
+    }
+    if (filters?.createdBy) params.created_by = [filters.createdBy];
+    if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
+      params.targeted_muscles_any = [...filters.muscleGroups];
+    }
+    if (filters?.equipment && filters.equipment.length > 0) {
+      params.equipment_any = [...filters.equipment];
+    }
+    return params;
   }
 
   async getExercise(id: string): Promise<Result<Exercise, ApiError>> {
     const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async createExercise(
@@ -258,7 +455,7 @@ export class SSTApiAdapter implements ApiPort {
       body: mapCreateExerciseInputToApi(data),
     });
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async updateExercise(
@@ -270,7 +467,7 @@ export class SSTApiAdapter implements ApiPort {
       body: mapCreateExerciseInputToApi(data),
     });
     if (!result.ok) return result;
-    return ok(mapApiExerciseToDomain(result.value));
+    return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
   async deleteExercise(id: string): Promise<Result<void, ApiError>> {
@@ -336,9 +533,38 @@ export class SSTApiAdapter implements ApiPort {
 
 type ApiExercisesPage = {
   data: ApiExercise[];
+  /** M0+ pagination envelope from the backend. */
+  meta?: { total: number; offset: number; limit: number };
+  /** Legacy cursor pagination shape — kept for back-compat transition. */
   cursor?: string | null;
   hasMore?: boolean;
 };
+
+/** Raw reference-list row shape from the backend (snake_case). */
+type RawReferenceEntry = {
+  id: string;
+  name: string;
+  display_name: string | null;
+};
+
+function mapRawReferenceEntry(raw: RawReferenceEntry): ReferenceEntry {
+  return {
+    id: raw.id,
+    name: raw.name,
+    displayName: raw.display_name,
+  };
+}
+
+function referenceListPath(kind: ReferenceListKind): string {
+  switch (kind) {
+    case "muscle_groups":
+      return "/exercises/muscle-groups";
+    case "equipment":
+      return "/exercises/equipment";
+    case "categories":
+      return "/exercises/categories";
+  }
+}
 
 function mapApiExerciseToDomain(api: ApiExercise): Exercise {
   return {
@@ -351,12 +577,28 @@ function mapApiExerciseToDomain(api: ApiExercise): Exercise {
     primaryMuscleGroups: api.primaryMuscles as MuscleGroup[],
     secondaryMuscleGroups: api.secondaryMuscles as MuscleGroup[],
     equipment: api.equipmentRequired as EquipmentType[],
-    isCustom: api.isCustom,
+    videoUrl: api.videoUrl ?? null,
+    thumbnailUrl: api.thumbnailUrl ?? null,
+    // Derive client-side: V2 backend uses createdBy IS NULL for system
+    // exercises and has no is_custom column. Fall back to the wire
+    // flag if the backend still sets it (transitional).
+    isCustom: api.isCustom ?? api.createdBy !== null,
     createdBy: api.createdBy,
   };
 }
 
-function mapCreateExerciseInputToApi(
+/**
+ * Map a domain `CreateExerciseInput` (camelCase, enum strings) into the
+ * backend's POST /exercises body (snake_case).
+ *
+ * Muscle / equipment enum arrays are NOT resolved to UUIDs here — the
+ * create flow today uses the domain's enum shape; M5's real creator
+ * will wire UUID resolution. For M0's __DEV__ hook the backend accepts
+ * the payload as long as the UUID arrays are empty / omitted.
+ *
+ * Spec: design.md § Sync-Queue Wire Format · requirements.md AC 7.15
+ */
+export function mapCreateExerciseInputToApi(
   input: Partial<CreateExerciseInput>,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
@@ -366,34 +608,18 @@ function mapCreateExerciseInputToApi(
     payload.instructions = input.instructions;
   if (input.category !== undefined) payload.category = input.category;
   if (input.difficulty !== undefined)
-    payload.difficultyLevel = input.difficulty;
+    payload.difficulty_level = input.difficulty;
+  if (input.videoUrl !== undefined) payload.video_url = input.videoUrl;
+  if (input.thumbnailUrl !== undefined)
+    payload.thumbnail_url = input.thumbnailUrl;
+  // Muscle / equipment enum arrays reach the backend unchanged when the
+  // creator's UUID resolver isn't wired up yet (__DEV__ form typically
+  // sends empty arrays). M5's creator will resolve and send UUID arrays.
   if (input.primaryMuscleGroups !== undefined)
-    payload.primaryMuscles = input.primaryMuscleGroups;
+    payload.primary_muscles = input.primaryMuscleGroups;
   if (input.secondaryMuscleGroups !== undefined)
-    payload.secondaryMuscles = input.secondaryMuscleGroups;
+    payload.secondary_muscles = input.secondaryMuscleGroups;
   if (input.equipment !== undefined)
-    payload.equipmentRequired = input.equipment;
+    payload.equipment_required = input.equipment;
   return payload;
-}
-
-function buildExerciseQueryParams(
-  filters?: ExerciseFilters,
-  cursor?: string,
-): Record<string, string | number | undefined> | undefined {
-  if (!filters && !cursor) return undefined;
-  const params: Record<string, string | number | undefined> = {};
-  if (cursor) params.cursor = cursor;
-  if (filters?.search) params.search = filters.search;
-  if (filters?.category) params.category = filters.category;
-  if (filters?.difficulties && filters.difficulties.length > 0) {
-    params.difficulty = filters.difficulties.join(",");
-  }
-  if (filters?.createdBy) params.createdBy = filters.createdBy;
-  if (filters?.muscleGroups && filters.muscleGroups.length > 0) {
-    params.muscleGroups = filters.muscleGroups.join(",");
-  }
-  if (filters?.equipment && filters.equipment.length > 0) {
-    params.equipment = filters.equipment.join(",");
-  }
-  return params;
 }

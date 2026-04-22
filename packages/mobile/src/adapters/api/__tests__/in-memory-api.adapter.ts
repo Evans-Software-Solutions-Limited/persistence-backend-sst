@@ -3,6 +3,10 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   ApiPort,
@@ -31,6 +35,8 @@ export class InMemoryApiAdapter implements ApiPort {
   public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
   public goals: ApiGoal[] = [];
+  public referenceLists: Partial<Record<ReferenceListKind, ReferenceEntry[]>> =
+    {};
   public shouldFail = false;
   public failError: ApiError = {
     kind: "api",
@@ -176,9 +182,31 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
+  /**
+   * No-op in tests — the in-memory adapter doesn't resolve UUIDs because
+   * its `exercises` array holds domain-shape rows with labels already
+   * provided by test fixtures. Kept to satisfy the ApiPort interface.
+   */
+  hydrateReferenceLabels(
+    _kind: ReferenceListKind,
+    _entries: readonly ReferenceEntry[],
+  ): void {
+    // intentionally empty — see docstring
+  }
+
+  /**
+   * Identity in tests. The SST adapter's enrichment reads from its own
+   * in-memory reverse-lookup; the in-memory adapter stores Exercise rows
+   * that already carry the shape test code asserts on.
+   */
+  enrichExerciseLabels(exercise: Exercise): Exercise {
+    return exercise;
+  }
+
   async getExercises(
     filters?: ExerciseFilters,
-    _cursor?: string,
+    _offset?: number,
+    _limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
     const filtered = filters
       ? filterExercises(this.exercises, filters)
@@ -189,6 +217,12 @@ export class InMemoryApiAdapter implements ApiPort {
       hasMore: false,
     };
     return this.mayFail(page);
+  }
+
+  async getReferenceList(
+    kind: ReferenceListKind,
+  ): Promise<Result<ReferenceEntry[], ApiError>> {
+    return this.mayFail(this.referenceLists[kind] ?? []);
   }
 
   async getExercise(id: string) {
@@ -213,6 +247,8 @@ export class InMemoryApiAdapter implements ApiPort {
       primaryMuscleGroups: data.primaryMuscleGroups,
       secondaryMuscleGroups: data.secondaryMuscleGroups ?? [],
       equipment: data.equipment,
+      videoUrl: null,
+      thumbnailUrl: null,
       isCustom: true,
       createdBy: "test-user",
     };

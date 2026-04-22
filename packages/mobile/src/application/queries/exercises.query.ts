@@ -86,12 +86,42 @@ export async function getExerciseQuery(
 
 /**
  * Upper bound on pages fetched in a single refresh to stop runaway loops
- * if the backend ever mis-reports `hasMore`. At ~200 exercises per page
- * this covers libraries up to ~20k rows, well above expected scale.
+ * if the backend ever mis-reports `hasMore`. At `REFRESH_PAGE_SIZE` per
+ * page this covers libraries of ~50k rows, well above expected scale.
  * If the cap is hit while the server still reports more pages, the walk
  * is treated as incomplete — see `refreshExerciseCache`.
  */
 export const REFRESH_MAX_PAGES = 100;
+
+/**
+ * Page size used by the full-library refresh walk.
+ *
+ * The exercise library is ~2.3k rows in production. The UI's "initial
+ * cache fill" is driven by this constant: smaller pages mean more round-
+ * trips through AppSync/Lambda/Supabase pooler, which multiplies latency,
+ * memory pressure on the JS thread, and Lambda cold-starts during dev.
+ *
+ * Sizing math for this catalogue:
+ *   - ~2.3k rows × ~800 bytes/row ≈ 1.8 MB JSON payload
+ *   - Lambda sync-response hard cap: 6 MB
+ *   - API Gateway default response size: 10 MB
+ *   - gzip over HTTP: typical 4–6x compression on JSON
+ *
+ * 2500 keeps the full library in a single round-trip for the current
+ * catalogue while leaving ~3 MB of raw-payload headroom. `REFRESH_MAX_PAGES`
+ * below still caps any runaway walk if the library grows past ~500k rows.
+ *
+ * Trade-off: a single-page refresh defers any UI feedback until the whole
+ * response lands. At typical connection speeds and JSON sizes that's sub-
+ * second and visually equivalent to a progressive fill, but if the library
+ * scales beyond ~10k rows, drop this back to ~2000 and let the walk
+ * populate progressively via `storage.cacheExercises` after each page.
+ *
+ * The handler still honours an explicit `?limit=` query param (capped
+ * server-side at MAX_LIMIT = 1000), so per-screen pagination can use
+ * smaller sizes when rendering a bounded scroll window.
+ */
+export const REFRESH_PAGE_SIZE = 2500;
 
 /**
  * Refresh the full cached exercise library from the API and update
@@ -121,22 +151,22 @@ export async function refreshExerciseCache(
   filters?: ExerciseFilters,
 ): Promise<Result<Exercise[], ApiError>> {
   const all: Exercise[] = [];
-  let cursor: string | undefined = undefined;
+  let offset = 0;
   let reachedEnd = false;
 
   for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
-    const result = await api.getExercises(filters, cursor);
+    const result = await api.getExercises(filters, offset, REFRESH_PAGE_SIZE);
     if (!result.ok) return result;
 
-    const { data, cursor: nextCursor, hasMore } = result.value;
+    const { data, hasMore } = result.value;
     if (data.length > 0) storage.cacheExercises(data);
     all.push(...data);
 
-    if (!hasMore || !nextCursor) {
+    if (!hasMore || data.length === 0) {
       reachedEnd = true;
       break;
     }
-    cursor = nextCursor;
+    offset += data.length;
   }
 
   if (!reachedEnd) {

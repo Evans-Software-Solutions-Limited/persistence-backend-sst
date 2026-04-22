@@ -1,6 +1,7 @@
 import type { CreateExerciseInput, Exercise } from "@/domain/models/exercise";
 import { validateExerciseInput } from "@/domain/services/exercise.service";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { mapCreateExerciseInputToApi } from "@/adapters/api/sst-api.adapter";
 import { ok, type Result, type ValidationError } from "@/shared/errors";
 
 /**
@@ -54,16 +55,23 @@ export function createExerciseCommand(
     primaryMuscleGroups: sanitized.primaryMuscleGroups,
     secondaryMuscleGroups: sanitized.secondaryMuscleGroups ?? [],
     equipment: sanitized.equipment,
+    videoUrl: sanitized.videoUrl ?? null,
+    thumbnailUrl: sanitized.thumbnailUrl ?? null,
     isCustom: true,
     createdBy: deps.userId,
   };
 
   deps.storage.saveCustomExercise(exercise);
+  // Map at enqueue time so the sync queue stores the wire-format
+  // (snake_case) payload. The sync engine then flushes it verbatim —
+  // no per-entity-type dispatch, no domain-knowledge coupling.
+  // Fixes the drift flagged in Phase 4.
+  // Spec: design.md § Sync-Queue Wire Format · AC 7.15
   deps.storage.enqueueMutation({
     entityType: "exercise",
     entityId: exercise.id,
     operation: "create",
-    payload: sanitized,
+    payload: mapCreateExerciseInputToApi(sanitized),
     endpoint: "/exercises",
     method: "POST",
   });
@@ -93,6 +101,12 @@ function sanitizeInput(input: CreateExerciseInput): CreateExerciseInput {
   if (input.secondaryMuscleGroups && input.secondaryMuscleGroups.length > 0) {
     sanitized.secondaryMuscleGroups = input.secondaryMuscleGroups;
   }
+
+  const videoUrl = input.videoUrl?.trim();
+  if (videoUrl) sanitized.videoUrl = videoUrl;
+
+  const thumbnailUrl = input.thumbnailUrl?.trim();
+  if (thumbnailUrl) sanitized.thumbnailUrl = thumbnailUrl;
 
   return sanitized;
 }

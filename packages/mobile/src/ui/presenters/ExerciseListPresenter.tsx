@@ -43,6 +43,12 @@ export type ExerciseListPresenterProps = {
   onRefresh: () => void;
   onSelectExercise: (id: string) => void;
   onCreateExercise: () => void;
+  /**
+   * Long-press handler on exercise cards. Used to trigger the
+   * destructive-delete Alert (AC 7.17). Optional — presenter renders
+   * the same cards with or without it.
+   */
+  onLongPressExercise?: (id: string) => void;
   /** Injectable clock for deterministic "Updated X ago" rendering in tests. */
   now?: () => number;
 };
@@ -85,6 +91,7 @@ export function ExerciseListPresenter({
   onRefresh,
   onSelectExercise,
   onCreateExercise,
+  onLongPressExercise,
   now = Date.now,
 }: ExerciseListPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -104,10 +111,11 @@ export function ExerciseListPresenter({
       <ExerciseCard
         exercise={item}
         onPress={onSelectExercise}
+        onLongPress={onLongPressExercise}
         testID={`exercise-card-${item.id}`}
       />
     ),
-    [onSelectExercise],
+    [onSelectExercise, onLongPressExercise],
   );
 
   const renderListEmpty = useCallback(() => {

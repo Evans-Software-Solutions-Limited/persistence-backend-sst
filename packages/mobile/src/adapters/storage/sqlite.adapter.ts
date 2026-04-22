@@ -1,5 +1,10 @@
 import * as SQLite from "expo-sqlite";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  ReferenceEntry,
+  ReferenceList,
+  ReferenceListKind,
+} from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
@@ -76,6 +81,15 @@ export class SQLiteStorageAdapter implements StoragePort {
         entity_type TEXT PRIMARY KEY,
         last_synced_at TEXT NOT NULL,
         sync_version INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- M0: reference-list cache. Each row holds one catalog
+      -- (muscle_groups / equipment / categories). Entries is a
+      -- JSON-serialised ReferenceEntry[].
+      CREATE TABLE IF NOT EXISTS reference_lists (
+        kind TEXT PRIMARY KEY,
+        entries TEXT NOT NULL,
+        synced_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -236,6 +250,47 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  removeCachedExercise(id: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_exercises WHERE id = ?`, [id]);
+  }
+
+  // -- Reference-List Cache --
+
+  getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT kind, entries, synced_at FROM reference_lists WHERE kind = ?`,
+      [kind],
+    ) as { kind: ReferenceListKind; entries: string; synced_at: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      kind: row.kind,
+      entries: JSON.parse(row.entries) as ReferenceEntry[],
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheReferenceList(kind: ReferenceListKind, entries: ReferenceEntry[]): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO reference_lists (kind, entries, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(kind) DO UPDATE SET entries = excluded.entries, synced_at = excluded.synced_at`,
+      [kind, JSON.stringify(entries), syncedAt],
+    );
+  }
+
+  getReferenceListAge(kind: ReferenceListKind): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM reference_lists WHERE kind = ?`,
+      [kind],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -244,6 +299,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_exercises;
       DELETE FROM active_session;
       DELETE FROM sync_metadata;
+      DELETE FROM reference_lists;
     `);
   }
 }

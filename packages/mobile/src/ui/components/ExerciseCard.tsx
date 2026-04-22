@@ -3,11 +3,51 @@ import { memo } from "react";
 import {
   EQUIPMENT_LABELS,
   MUSCLE_GROUP_LABELS,
-  type EquipmentType,
   type Exercise,
   type ExerciseDifficulty,
-  type MuscleGroup,
 } from "@/domain/models/exercise";
+
+/**
+ * Build the labelled chip list for a muscle / equipment row.
+ *
+ * The adapter stamps resolved labels onto `*Labels` fields when the
+ * reference-list cache is loaded — prefer those. If the cache wasn't
+ * populated when the exercise was mapped (e.g. cold start before
+ * reference-list fetch), fall back to the legacy enum→label map keyed
+ * on the stored values. This ONLY yields a real label for legacy rows
+ * that stored enum keys; UUID-valued rows without labels return the key
+ * itself, which is better than an empty chip but obviously wrong — so
+ * we drop those so the chip doesn't render instead of showing a raw UUID.
+ */
+function labelledChips(
+  ids: readonly string[],
+  labels: readonly string[] | undefined,
+  fallbackMap: Record<string, string>,
+): Array<{ key: string; label: string }> {
+  // Primary path: labels populated by `SSTApiAdapter.resolveUuidsToLabels`.
+  // The adapter guarantees the `labels` array is parallel-indexed with
+  // `ids` (unresolved UUIDs map to empty strings rather than being
+  // dropped — see adapter docstring). Pair ids↔labels BEFORE filtering
+  // empties so the correct React key stays attached to each chip.
+  if (labels && labels.length > 0) {
+    const paired: Array<{ key: string; label: string }> = [];
+    const limit = Math.min(ids.length, labels.length);
+    for (let i = 0; i < limit; i++) {
+      const label = labels[i];
+      if (label && label.length > 0) {
+        paired.push({ key: ids[i] ?? `idx-${i}`, label });
+      }
+    }
+    return paired;
+  }
+  // Legacy path — ids holding enum keys from pre-M0 cached data.
+  const result: Array<{ key: string; label: string }> = [];
+  for (const id of ids) {
+    const label = fallbackMap[id];
+    if (label) result.push({ key: id, label });
+  }
+  return result;
+}
 
 import { Column } from "./Column";
 import { Row } from "./Row";
@@ -91,30 +131,35 @@ const ChipText = styled(TamaguiText, {
 type ExerciseCardProps = {
   exercise: Exercise;
   onPress: (id: string) => void;
+  /**
+   * Optional long-press handler. Used by the exercise list to trigger a
+   * destructive-delete confirm Alert (AC 7.17). If omitted, long-press
+   * falls back to the normal press handler — matches legacy behaviour
+   * on non-owned rows.
+   */
+  onLongPress?: (id: string) => void;
   testID?: string;
 };
 
 /**
- * Render up to `max` entries from `items`, rendering an overflow "+N" chip
- * when the list is longer. Used for both muscle-group and equipment rows,
- * which follow the same shape.
+ * Render up to `max` chips from a pre-built `{key, label}` list, with an
+ * overflow "+N" chip when the full list is longer. Kept generic on the
+ * item shape so muscle + equipment rows share one implementation.
  */
-function renderChipRow<T>(
-  items: T[],
+function renderChipRow(
+  chips: Array<{ key: string; label: string }>,
   max: number,
-  label: (item: T) => string,
-  keyOf: (item: T) => string,
   overflowLabel: (remaining: number) => string,
   testIdPrefix?: string,
 ) {
-  if (items.length === 0) return null;
-  const visible = items.slice(0, max);
-  const remaining = items.length - visible.length;
+  if (chips.length === 0) return null;
+  const visible = chips.slice(0, max);
+  const remaining = chips.length - visible.length;
   return (
     <Row gap="xs" wrap testID={testIdPrefix}>
-      {visible.map((item) => (
-        <OutlinedChip key={keyOf(item)}>
-          <ChipText>{label(item)}</ChipText>
+      {visible.map((chip) => (
+        <OutlinedChip key={chip.key}>
+          <ChipText>{chip.label}</ChipText>
         </OutlinedChip>
       ))}
       {remaining > 0 && (
@@ -138,12 +183,18 @@ function renderChipRow<T>(
  * can hold 50+ at once; shallow-prop memoisation keeps pull-to-refresh and
  * filter-modal interactions at 60fps.
  */
-function ExerciseCardBase({ exercise, onPress, testID }: ExerciseCardProps) {
+function ExerciseCardBase({
+  exercise,
+  onPress,
+  onLongPress,
+  testID,
+}: ExerciseCardProps) {
   const difficulty = DIFFICULTY_PILL[exercise.difficulty];
 
   return (
     <CardFrame
       onPress={() => onPress(exercise.id)}
+      onLongPress={onLongPress ? () => onLongPress(exercise.id) : undefined}
       accessibilityRole="button"
       accessibilityLabel={`Open ${exercise.name}`}
       testID={testID}
@@ -201,21 +252,25 @@ function ExerciseCardBase({ exercise, onPress, testID }: ExerciseCardProps) {
         )}
 
         {/* Muscle chip row */}
-        {renderChipRow<MuscleGroup>(
-          exercise.primaryMuscleGroups,
+        {renderChipRow(
+          labelledChips(
+            exercise.primaryMuscleGroups,
+            exercise.primaryMuscleGroupLabels,
+            MUSCLE_GROUP_LABELS,
+          ),
           2,
-          (m) => MUSCLE_GROUP_LABELS[m],
-          (m) => `muscle-${m}`,
           (n) => `+${n}`,
           testID ? `${testID}-muscles` : undefined,
         )}
 
         {/* Equipment chip row */}
-        {renderChipRow<EquipmentType>(
-          exercise.equipment,
+        {renderChipRow(
+          labelledChips(
+            exercise.equipment,
+            exercise.equipmentLabels,
+            EQUIPMENT_LABELS,
+          ),
           3,
-          (e) => EQUIPMENT_LABELS[e],
-          (e) => `equip-${e}`,
           (n) => `+${n} more`,
           testID ? `${testID}-equipment` : undefined,
         )}

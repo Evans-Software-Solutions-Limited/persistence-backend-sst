@@ -125,9 +125,44 @@ export type Exercise = {
   instructions: string | null;
   category: ExerciseCategory;
   difficulty: ExerciseDifficulty;
+  /**
+   * UUID arrays as returned by the backend. Typed as the historical enum
+   * union for source compatibility with the legacy port — the actual
+   * runtime values are DB UUIDs (e.g. `"15f7ddb6-..."`), not enum keys
+   * (`"shoulders"`). Use `*Labels` below for display; resolve UUIDs via
+   * the reference-list cache when you need the enum surface.
+   */
   primaryMuscleGroups: MuscleGroup[];
   secondaryMuscleGroups: MuscleGroup[];
   equipment: EquipmentType[];
+  /**
+   * Display labels resolved at the adapter boundary via the reference-list
+   * cache (`muscle_groups` / `equipment_types` tables). Parallel-indexed
+   * with `primaryMuscleGroups` / `equipment`. Undefined before the first
+   * reference-list fetch completes; the card falls back to a placeholder
+   * label rather than rendering an empty chip.
+   *
+   * This shape is how the card and any other display surface should read
+   * muscle / equipment names — the legacy `MUSCLE_GROUP_LABELS[key]` map
+   * only works for enum keys, and returns `undefined` against UUIDs
+   * (which is why pre-M0 cards rendered empty circles).
+   */
+  primaryMuscleGroupLabels?: string[];
+  secondaryMuscleGroupLabels?: string[];
+  equipmentLabels?: string[];
+  /**
+   * Legacy-parity fields added in M0 (AC 7.16). Nullable — not every
+   * row has media. `thumbnailUrl` is rendered on the ported list card;
+   * `videoUrl` is rendered on the ported detail screen.
+   */
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  /**
+   * Client-derived from `createdBy !== null`. The V2 backend uses
+   * `created_by IS NULL` for system exercises; there's no
+   * `is_custom` column. Adapter computes this on the way into
+   * the domain layer.
+   */
   isCustom: boolean;
   createdBy: string | null;
 };
@@ -148,8 +183,19 @@ export type CreatedByFilter = "mine" | "system";
 
 export type ExerciseFilters = {
   search?: string;
-  muscleGroups?: MuscleGroup[];
-  equipment?: EquipmentType[];
+  /**
+   * Muscle-group UUIDs. Matches the id column on Supabase's `muscle_groups`
+   * table (and the UUIDs stored in `exercises.primary_muscles`). Filter
+   * state holds UUIDs directly — NOT the legacy `MuscleGroup` enum —
+   * because the cached exercises hold UUIDs and in-memory filtering needs
+   * the two sides to match. The filter modal reads the available list
+   * from `referenceLists.muscle_groups` and keys selection by `entry.id`.
+   */
+  muscleGroups?: string[];
+  /**
+   * Equipment UUIDs — same rationale as `muscleGroups`.
+   */
+  equipment?: string[];
   /**
    * Category is retained on the filter type for API/query compatibility
    * but is not surfaced in the current UI. The old mobile app never exposed
@@ -180,4 +226,7 @@ export type CreateExerciseInput = {
   primaryMuscleGroups: MuscleGroup[];
   secondaryMuscleGroups?: MuscleGroup[];
   equipment: EquipmentType[];
+  /** Optional media URLs. Passed through to backend POST /exercises. */
+  videoUrl?: string;
+  thumbnailUrl?: string;
 };

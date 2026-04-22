@@ -13,6 +13,8 @@ const baseExercise: Exercise = {
   primaryMuscleGroups: ["quadriceps", "glutes"],
   secondaryMuscleGroups: ["hamstrings"],
   equipment: ["barbell"],
+  videoUrl: null,
+  thumbnailUrl: null,
   isCustom: false,
   createdBy: null,
 };
@@ -166,5 +168,88 @@ describe("ExerciseCard", () => {
     );
     fireEvent.press(getByTestId("card"));
     expect(onPress).toHaveBeenCalledWith("ex-1");
+  });
+
+  describe("chip label resolution", () => {
+    // Regression: the adapter's `resolveUuidsToLabels` emits a parallel-
+    // indexed array (unresolved UUIDs → empty string). The card must pair
+    // ids↔labels by index BEFORE filtering empties, otherwise a partial
+    // reference-list lookup silently mispairs labels against ids.
+    //
+    // Pre-fix, `labels.map((label, i) => ({ key: ids[i], label }))` with
+    // ids=[A,B,C] and labels=["LabelA","LabelC"] (2 elements — missing
+    // one was silently dropped) would produce:
+    //   { key: A, label: "LabelA" }  // correct
+    //   { key: B, label: "LabelC" }  // WRONG — should be key C
+    // Post-fix the adapter emits parallel-length labels=["LabelA","","LabelC"],
+    // and the card filters the empty entry AFTER pairing, preserving
+    // key C for label "LabelC".
+    it("preserves id↔label alignment when some UUIDs don't resolve", () => {
+      const uuidA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      const uuidB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      const uuidC = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+      const exercise: Exercise = {
+        ...baseExercise,
+        primaryMuscleGroups: [
+          uuidA,
+          uuidB,
+          uuidC,
+        ] as unknown as Exercise["primaryMuscleGroups"],
+        primaryMuscleGroupLabels: ["LabelA", "", "LabelC"],
+        equipment: [] as unknown as Exercise["equipment"],
+        equipmentLabels: [],
+      };
+
+      const { getByText, queryByText, getByTestId } = renderWithTheme(
+        <ExerciseCard exercise={exercise} onPress={jest.fn()} testID="card" />,
+      );
+
+      // Both resolved chips render; the empty-slot one is filtered out.
+      // Muscle-row max is 2 — both slots exactly filled, no overflow chip.
+      expect(getByText("LabelA")).toBeTruthy();
+      expect(getByText("LabelC")).toBeTruthy();
+      expect(queryByText("")).toBeNull();
+      // The chip row renders (muscles testID present), proving it wasn't
+      // suppressed by the empty-filter.
+      expect(getByTestId("card-muscles")).toBeTruthy();
+    });
+
+    it("renders no chips when the labels array is a same-length all-empty-strings (reference lookup hydrated but row has no matches)", () => {
+      const exercise: Exercise = {
+        ...baseExercise,
+        primaryMuscleGroups: [
+          "uuid-1",
+          "uuid-2",
+        ] as unknown as Exercise["primaryMuscleGroups"],
+        primaryMuscleGroupLabels: ["", ""],
+        equipment: [] as unknown as Exercise["equipment"],
+        equipmentLabels: [],
+      };
+
+      const { queryByTestId } = renderWithTheme(
+        <ExerciseCard exercise={exercise} onPress={jest.fn()} testID="card" />,
+      );
+
+      // No chip row at all when every label is empty post-filter.
+      expect(queryByTestId("card-muscles")).toBeNull();
+    });
+
+    it("falls back to legacy enum→label map when labels array is empty (reference lookup not hydrated)", () => {
+      const exercise: Exercise = {
+        ...baseExercise,
+        // Legacy-shape data: ids hold enum keys matching MUSCLE_GROUP_LABELS.
+        primaryMuscleGroups: ["quadriceps", "glutes"],
+        primaryMuscleGroupLabels: undefined,
+        equipment: ["barbell"],
+        equipmentLabels: undefined,
+      };
+
+      const { getByText } = renderWithTheme(
+        <ExerciseCard exercise={exercise} onPress={jest.fn()} testID="card" />,
+      );
+      expect(getByText("Quads")).toBeTruthy();
+      expect(getByText("Glutes")).toBeTruthy();
+      expect(getByText("Barbell")).toBeTruthy();
+    });
   });
 });
