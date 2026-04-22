@@ -55,6 +55,42 @@ Parent milestones:
 - [ ] Create `app/(app)/(tabs)/index.tsx` as dashboard screen
 - [ ] Write tests
 
+## Phase 4a: Backend `/dashboard` expansion (M1)
+
+Traces to `design.md` § Dashboard backend contract and `requirements.md` STORY-007 (AC 7.1–7.9).
+
+- [ ] Extend `DashboardData` type in `microservices/core/src/application/repositories/dashboardRepository.ts` to match `DashboardPayload` (profile, subscription, recentWorkouts, recentActivity, activeGoals, progress, prOfTheWeek, latestMeasurement)
+- [ ] Add `getProfileSlice(userId)` repo method (select `fullName`, derive `firstName`, `preferredUnits`)
+- [ ] Add `getSubscriptionSlice(userId)` repo method (join `user_subscriptions` + `subscription_tiers`; apply legacy `isFreeTier` rule)
+- [ ] Add `getRecentWorkouts(userId, limit = 10)` repo method (own + assigned + default, ordered as legacy)
+- [ ] Add `getRecentActivity(userId, windowDays = 7)` repo method (completed sessions joined to `workouts`)
+- [ ] Add `getActiveGoalsWithProgress(userId)` repo method (active only, joined to `goal_types`, priority-ordered)
+- [ ] Add `getPROfTheWeek(userId, windowDays = 7)` repo method with deterministic tie-breaking per design §
+- [ ] Wire all sub-queries into a single `Promise.all` in `getDashboard`
+- [ ] Emit numeric `weightKg` / `bodyFatPercentage` (convert Drizzle numeric strings to `number`)
+- [ ] Handler-level tests: happy path, 401, empty-state user, PR-of-the-week tie-breaking (AC 7.9)
+- [ ] Repository tests covering each sub-query with seed data
+- [ ] Maintain ≥ 90% coverage on `dashboardRepository.ts` + `dashboardHandler.ts`
+
+## Phase 4b: Mobile Home screen + dashboard cache (M1)
+
+Traces to `design.md` § Dashboard mobile architecture and `requirements.md` STORY-005 (AC 5.1–5.12).
+
+- [ ] Create `packages/mobile/src/domain/models/dashboard.ts` with `DashboardPayload` and nested types; export from `domain/models/index.ts`
+- [ ] Add `ApiPort.getDashboard()` signature; implement in `SSTApiAdapter` and `InMemoryApiAdapter`
+- [ ] Add `StoragePort` dashboard cache methods (`getCachedDashboard`, `cacheDashboard`, `getDashboardAge`); implement in `SQLiteStorageAdapter` + in-memory stub
+- [ ] Add `cached_dashboard` SQLite migration (user_id PK, payload JSON, synced_at)
+- [ ] Create `packages/mobile/src/application/queries/dashboard.query.ts` — `getDashboardQuery` (cache-first) + `refreshDashboard` (writes through)
+- [ ] Create `useDashboard` hook (mirrors `useReferenceLists` shape — exposes `payload`, `isStale`, `isRefreshing`, `refresh`)
+- [ ] Port `HomePresenter` from `persistence-mobile/components/home/HomePresenter/` (1:1 copy with V2 tokens)
+- [ ] Port section presenters: `GreetingSection`, `GoalsSection`, `YourWorkoutsSection`, `MyProgressSection`, `RecentActivitySection`, `SubscriptionBadge`, `StepsTodayTile`, `PROfTheWeekCard`
+- [ ] Create `HomeContainer` with the 3-memo pipeline (cachedPayload → viewModel → animationStyles)
+- [ ] Wire pull-to-refresh (AC 5.10)
+- [ ] Replace diagnostic content in `app/(app)/(tabs)/index.tsx` with `<HomeContainer />`
+- [ ] Presenter unit tests (each section)
+- [ ] Container tests: cache-hit, stale refresh, offline path, pull-to-refresh (AC 5.9 / 5.10)
+- [ ] Maintain ≥ 90% coverage on changed files
+
 ## Phase 5: UI — Measurements
 
 - [ ] Create `MeasurementEditorPresenter` (form with weight, body fat, body measurements)
