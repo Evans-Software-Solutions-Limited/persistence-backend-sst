@@ -65,27 +65,25 @@ export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
 
   /**
-   * Enum → UUID lookup for each reference-list kind. Populated every
-   * time `getReferenceList` resolves successfully, so subsequent
-   * filter-param builds can translate `"chest"` → `<uuid>`.
-   *
-   * Kept inside the adapter (rather than injecting StoragePort) so the
-   * adapter has no cross-port dependency. The application layer owns
-   * the canonical cache (StoragePort.getCachedReferenceList); this map
-   * is a per-process mirror for the single hot-path translation.
-   */
-  private referenceLookup: Map<ReferenceListKind, Map<string, string>> =
-    new Map();
-
-  /**
-   * UUID → display-label lookup. Built from the same reference-list fetch
-   * as `referenceLookup` (inverse map). Used by `mapApiExerciseToDomain`
-   * to resolve the UUID arrays the backend returns for `primary_muscles`
-   * / `equipment_required` into human labels for the card.
+   * UUID → display-label lookup per reference-list kind. Populated every
+   * time `getReferenceList` or `hydrateReferenceLabels` runs, and used by
+   * `enrichExerciseLabels` to resolve the UUID arrays the backend returns
+   * for `primary_muscles` / `equipment_required` into human labels for
+   * the card.
    *
    * Prefers `displayName` when set, falling back to `name` (which is the
    * actual stored label in the current Supabase schema — see
    * `muscle_groups.name` values like "Shoulders", "Quadriceps").
+   *
+   * Kept inside the adapter (rather than injecting StoragePort) so the
+   * adapter has no cross-port dependency. The application layer owns the
+   * canonical cache (StoragePort.getCachedReferenceList); this map is a
+   * per-process mirror for the single hot-path label resolution.
+   *
+   * NOTE: pre-M0 a second `referenceLookup` (name → id) also lived here,
+   * consumed by an enum→UUID resolver in `buildExerciseQueryParams`. Once
+   * the filter state migrated to UUIDs (see design.md § Hierarchical
+   * Filter Modal) that resolver became a no-op and was removed.
    */
   private referenceLabelLookup: Map<ReferenceListKind, Map<string, string>> =
     new Map();
@@ -323,31 +321,21 @@ export class SSTApiAdapter implements ApiPort {
     kind: ReferenceListKind,
     entries: ReferenceEntry[],
   ): void {
-    const nameToId = new Map<string, string>();
     const idToLabel = new Map<string, string>();
     for (const entry of entries) {
-      nameToId.set(entry.name, entry.id);
       // Prefer displayName for rendering; fall back to name. This lets
       // future schema migrations populate display_name without any UI
       // change — the lookup keeps returning the right label.
       idToLabel.set(entry.id, entry.displayName ?? entry.name);
     }
-    this.referenceLookup.set(kind, nameToId);
     this.referenceLabelLookup.set(kind, idToLabel);
-  }
-
-  private resolveEnumToUuid(
-    kind: ReferenceListKind,
-    key: string,
-  ): string | null {
-    return this.referenceLookup.get(kind)?.get(key) ?? null;
   }
 
   /**
    * Resolve an array of UUIDs to their display labels via the reference-
-   * list cache. Used by `mapApiExerciseToDomain` to enrich exercise rows
-   * with labels for card rendering. Unresolved ids fall back to `null`
-   * so the caller can distinguish "not in cache yet" from "no entry".
+   * list cache. Used by `enrichExerciseLabels` to stamp card chips with
+   * human labels. Unresolved ids are silently dropped so the card doesn't
+   * render raw UUIDs before the reference lookup has finished hydrating.
    */
   private resolveUuidsToLabels(
     kind: ReferenceListKind,
@@ -443,27 +431,6 @@ export class SSTApiAdapter implements ApiPort {
       params.equipment_any = [...filters.equipment];
     }
     return params;
-  }
-
-  private resolveEnumsToUuids(
-    kind: ReferenceListKind,
-    keys: string[],
-  ): string[] {
-    const resolved: string[] = [];
-    for (const key of keys) {
-      const uuid = this.resolveEnumToUuid(kind, key);
-      if (uuid) {
-        resolved.push(uuid);
-      } else {
-        // Reference-list cache missing this key. Drop the filter rather
-        // than shipping an enum string the backend can't use. UI should
-        // surface zero results rather than a server error.
-        console.warn(
-          `[SSTApiAdapter] No UUID mapping for ${kind}="${key}"; filter value skipped. Reference-list cache may be stale.`,
-        );
-      }
-    }
-    return resolved;
   }
 
   async getExercise(id: string): Promise<Result<Exercise, ApiError>> {
