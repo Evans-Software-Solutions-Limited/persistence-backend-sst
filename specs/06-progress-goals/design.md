@@ -197,16 +197,32 @@ type DashboardPayload = {
 
 ### Derivations and sources
 
-- `profile` — `profiles` table; `firstName` is the first whitespace-delimited token of `fullName`, or `null` when `fullName` is null.
-- `subscription` — latest row in `user_subscriptions` joined to `subscription_tiers`. `isFreeTier` follows the legacy `isFreeTier` rule: `true` when no active subscription, when the tier's `tierName = 'free'`, or when status is `cancelled` and the billing period has ended.
-- `recentWorkouts` — union of: user's own `workouts`, workouts assigned via `workout_assignments`, and default templates. Same ordering and limit (10) as the legacy `getMyWorkouts`.
-- `recentActivity` — `workout_sessions` completed within `now - 7d`, joined to `workouts` for the template name fallback.
-- `activeGoals` — `user_goals` where `is_active = true`, joined to `goal_types` for display.
-- `progress.workoutsThisMonth` / `workoutsLastMonth` — count of completed sessions bucketed by calendar month.
-- `progress.streak` — existing `calculateStreak` algorithm in `DashboardRepository` (unchanged).
+- `profile` — `profiles` table; `firstName` is the first whitespace-delimited token of `fullName`, or `null` when `fullName` is null. Whitespace is matched by `/\s+/` (covers non-ASCII whitespace); empty / whitespace-only `fullName` yields `firstName = null`.
+- `subscription` — latest row in `user_subscriptions` joined to `subscription_tiers` on `tier_name`. The live Supabase schema stores the enum-shaped subscription status under `user_subscriptions.payment_status` (values: `"active" | "trialing" | "cancelled" | "past_due" | "pending"`) — there is **no** `user_subscriptions.status` column. The handler maps `payment_status` → the payload's `status` field, collapsing `"pending"` to `null` (nothing to surface) and leaving the four business-meaningful values as-is.
+- `subscription.isFreeTier` follows the legacy rule:
+  - `true` when the user has no `user_subscriptions` row,
+  - `true` when the joined `subscription_tiers.tier_name = 'free'`,
+  - `true` when `payment_status = 'cancelled'` AND (`expires_at` is non-null AND `expires_at <= now`),
+  - `false` otherwise (active, trialing, past_due within grace, pending with a tier, or cancelled-but-still-in-paid-window).
+- `subscription.isTrainerTier` — `subscription_tiers.is_trainer_tier` on the joined row; `false` when there's no row.
+- `recentWorkouts` — concatenation in this order (legacy `getMyWorkouts` ordering): (1) user's own `workouts` (`created_by = :userId`, most recent first); (2) workouts assigned via `workout_assignments` where `client_id = :userId` (assignment recency, most recent first); (3) default templates (`created_by = SYSTEM_USER_ID` sentinel or `visibility = 'public'` fallback when assignments / owned are sparse). The union is truncated to the first 10 after deduplicating on `workout.id`. `isAssigned` is `true` iff the workout came via section (2).
+- `assignedByType` — derived from the assigning trainer's role. For assigned workouts, the handler looks up the trainer's `profiles.role`: `"personal_trainer"` → `"personal_trainer"`, `"physiotherapist"` → `"physiotherapist"`, any other role → `null`. The live Supabase `workout_assignments` table has no dedicated `assigned_by_type` column (schema drift from the legacy API shape); using `profiles.role` is the authoritative source for the derived label. If a future migration adds the column, this derivation collapses to a direct projection.
+- `recentActivity` — `workout_sessions` with `status = 'completed'` and `completed_at >= now - windowDays`, joined to `workouts` for the template name fallback (`workout_sessions.name || workouts.name`). Ordered by `completed_at DESC`. `workoutId` is the session's `workout_id` FK (nullable — the join is `LEFT`).
+- `activeGoals` — `user_goals` where `is_active = true`, joined to `goal_types` for display. The live Supabase schema exposes `user_goals { id, user_id, goal_type_id, priority, is_active, target_date, notes }` — it has **no** `title`, `target_value`, `current_value`, or `unit` columns. The handler derives the payload fields from the join as follows:
+  - `title` — `goal_types.description || goal_types.name` (category-typed display string).
+  - `current` — `0` (schema has no stored progress; tracked client-side in M4).
+  - `target` — `0` (schema has no stored target; tracked client-side in M4).
+  - `unit` — `goal_types.category ?? ""` (closest available descriptor).
+  - `priority` — `user_goals.priority ?? 1`.
+  - `targetDate` — `user_goals.target_date` (stored as `text`).
+  - Ordering: `priority ASC` (lower number = higher priority, matching legacy).
+  - Spec follow-up — if / when M4 adds goal-progress tracking, extend `user_goals` with `target_value` / `current_value` / `unit` and update this derivation accordingly. M1 ships with defensive zeros so the mobile progress-bar presenter renders "0 / 0" gracefully.
+- `progress.workoutsThisMonth` / `workoutsLastMonth` — count of `workout_sessions` with `status = 'completed'` bucketed by the `completed_at` UTC calendar month (`YYYY-MM` equal to the current month / the previous month at handler time).
+- `progress.streak` — existing `calculateStreak` algorithm (unchanged from the pre-M1 repository). Lives as `getProgressStats`'s internal helper post-refactor.
 - `progress.personalRecordsCount` — count of rows in `personal_records` for user (unchanged).
-- `prOfTheWeek` — the `personal_records` row with the highest `achievedAt` within `now - 7d`; ties broken by `recordType` weighting (`1rm` > `3rm` > `5rm` > `10rm` > `max_weight` > `max_reps` > `best_time` > `longest_distance`). `null` when no records in the window.
-- `latestMeasurement` — most recent `body_measurements` row (numeric fields emitted as `number`, not string, so mobile doesn't parse).
+- `prOfTheWeek` — the `personal_records` row with `achieved_at >= now - windowDays`, picked by sorting candidates in application code by `achieved_at DESC`, then `recordType` rank (`1rm` = 8, `3rm` = 7, `5rm` = 6, `10rm` = 5, `max_weight` = 4, `max_reps` = 3, `best_time` = 2, `longest_distance` = 1) DESC, then `id` ASC as a final deterministic tiebreaker. Joined to `exercises` for `exerciseName`. `null` when the window is empty. The weighting is extracted as a pure `rankPersonalRecord(row)` helper so the test can assert determinism without seeding a DB.
+- `latestMeasurement` — most recent `body_measurements` row by `measured_at DESC`. Numeric fields (`weight_kg`, `body_fat_percentage`) are coerced from Drizzle `numeric` strings to JavaScript `number` at the repo layer, not the mobile adapter. `measuredAt` is ISO8601 UTC.
+- `prOfTheWeek.value` — also coerced from Drizzle `numeric` string to `number` at the repo layer.
 
 ### Status codes
 
