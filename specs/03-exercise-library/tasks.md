@@ -1,8 +1,8 @@
 # 03 — Exercise Library: Tasks
 
-## Current state (2026-04-19)
+## Current state (2026-04-22)
 
-**Shipped: 24 of 32 tasks complete (Phases 1-4).** Phases 5-8 are split across milestones M0 (integration + wire-format fixes) and M5 (detail + creator).
+**Shipped: all 30 M0 (`7c.*`) tasks + Phases 1–4 merged to main.** Phase 5 (detail) and Phase 6 (creator) move to M5. Phase 9 (offline search & sort) is scoped post-M0 as its own PR.
 
 Built and verified:
 
@@ -153,83 +153,83 @@ Every item traces to a `design.md` section and an AC.
 
 ### Domain
 
-- [ ] **7c.1** Add `ReferenceEntry`, `ReferenceListKind`, `ReferenceList` to `src/domain/models/reference-list.ts`; export from `domain/models/index.ts`
+- [x] **7c.1** Add `ReferenceEntry`, `ReferenceListKind`, `ReferenceList` to `src/domain/models/reference-list.ts`; export from `domain/models/index.ts`
       (Spec: design.md § Reference-List Cache > Domain model · AC 7.10)
-- [ ] **7c.2** Add `videoUrl`, `thumbnailUrl` to `Exercise` + `CreateExerciseInput` in `src/domain/models/exercise.ts`
+- [x] **7c.2** Add `videoUrl`, `thumbnailUrl` to `Exercise` + `CreateExerciseInput` in `src/domain/models/exercise.ts`
       (Spec: design.md § Exercise Domain — M0 field additions · AC 7.16)
 
 ### Ports
 
-- [ ] **7c.3** Extend `ApiPort` with `getReferenceList(kind)`
+- [x] **7c.3** Extend `ApiPort` with `getReferenceList(kind)`
       (Spec: design.md § Reference-List Cache > Port extensions · AC 7.10)
-- [ ] **7c.4** Extend `StoragePort` with `getCachedReferenceList / cacheReferenceList / getReferenceListAge`
+- [x] **7c.4** Extend `StoragePort` with `getCachedReferenceList / cacheReferenceList / getReferenceListAge`
       (Spec: design.md § Reference-List Cache > Port extensions · AC 7.10)
 
 ### Application
 
-- [ ] **7c.5** Implement `getReferenceListQuery` + `refreshReferenceList` in `src/application/queries/reference-lists.query.ts`
+- [x] **7c.5** Implement `getReferenceListQuery` + `refreshReferenceList` in `src/application/queries/reference-lists.query.ts`
       (Spec: design.md § Reference-List Cache > Application query · AC 7.10, 7.14)
-- [ ] **7c.6** Update `createExerciseCommand` to call `mapCreateExerciseInputToApi` at enqueue time; store snake_case payload in sync-queue
+- [x] **7c.6** Update `createExerciseCommand` to call `mapCreateExerciseInputToApi` at enqueue time; store snake_case payload in sync-queue
       (Spec: design.md § Sync-Queue Wire Format · AC 7.15)
 
 ### Adapters
 
-- [ ] **7c.7** Implement `SSTApiAdapter.getReferenceList(kind)` — dispatches to `/exercises/{muscle-groups|equipment|categories}`; maps categories `string[] → ReferenceEntry`
+- [x] **7c.7** Implement `SSTApiAdapter.getReferenceList(kind)` — dispatches to `/exercises/{muscle-groups|equipment|categories}`; maps categories `string[] → ReferenceEntry`
       (Spec: design.md § Reference-List Cache · design.md § Backend Endpoints > Reference-list endpoints · AC 7.10)
-- [ ] **7c.8** Rewrite `SSTApiAdapter.buildExerciseQueryParams` to the legacy wire format (repeated-key arrays, UUID translation via reference cache, `q` param, drop cursor for offset)
+- [x] **7c.8** Rewrite `SSTApiAdapter.buildExerciseQueryParams` to the legacy wire format (repeated-key arrays, UUID translation via reference cache, `q` param, drop cursor for offset)
       (Spec: design.md § Backend Endpoints > GET /exercises · AC 7.13)
-- [ ] **7c.9** Add `mapEnumToUuid(kind, key, cache)` helper; log + skip unknown keys rather than throw
+- [x] **7c.9** Add `mapEnumToUuid(kind, key, cache)` helper; log + skip unknown keys rather than throw
       (Spec: design.md § Reference-List Cache > Enum ↔ UUID bridge · AC 7.13)
-- [ ] **7c.10** Update `refreshExerciseCache` pagination to offset-based (not cursor-based)
+- [x] **7c.10** Update `refreshExerciseCache` pagination to offset-based (not cursor-based)
       (Spec: design.md § Backend Endpoints > GET /exercises · AC 7.13)
-- [ ] **7c.11** SQLite adapter: add `reference_lists` table migration + implement three new `StoragePort` methods
+- [x] **7c.11** SQLite adapter: add `reference_lists` table migration + implement three new `StoragePort` methods
       (Spec: design.md § Reference-List Cache > SQLite schema · AC 7.10, 7.14)
-- [ ] **7c.12** InMemory adapters: matching stub implementations for `getReferenceList` and the three storage methods
+- [x] **7c.12** InMemory adapters: matching stub implementations for `getReferenceList` and the three storage methods
       (Spec: design.md § Reference-List Cache · AC 7.10)
 
 ### UI — hooks + containers + presenters
 
-- [ ] **7c.13** `src/ui/hooks/useReferenceLists.tsx` — reads cache, refreshes on first call per session, returns `{ muscleGroups, equipment, categories, isLoading, isStale, refresh }`
+- [x] **7c.13** `src/ui/hooks/useReferenceLists.tsx` — reads cache, refreshes on first call per session, returns `{ muscleGroups, equipment, categories, isLoading, isStale, refresh }`
       (Spec: design.md § UI Hooks · AC 7.10)
-- [ ] **7c.14** Delete `app/(app)/exercises/filters.tsx` (Phase 4 flat modal)
+- [x] **7c.14** Delete `app/(app)/exercises/filters.tsx` (Phase 4 flat modal)
       (Spec: design.md § Hierarchical Filter Modal · AC 7.11)
-- [ ] **7c.15** Create `app/(app)/exercises/filters/_layout.tsx` — modal shell + sticky Apply bar with live count
+- [x] **7c.15** Create `app/(app)/exercises/filters/_layout.tsx` — modal shell + sticky Apply bar with live count
       (Spec: design.md § Hierarchical Filter Modal > Sticky Apply bar · AC 7.11, 7.12)
-- [ ] **7c.16** Create `app/(app)/exercises/filters/index.tsx` — section list for 4 axes
+- [x] **7c.16** Create `app/(app)/exercises/filters/index.tsx` — section list for 4 axes
       (Spec: design.md § Hierarchical Filter Modal > Route structure · AC 7.11)
-- [ ] **7c.17** Create `app/(app)/exercises/filters/muscles.tsx` + `equipment.tsx` — searchable checklist per axis (port legacy `FilterDetailScreen`)
+- [x] **7c.17** Create `app/(app)/exercises/filters/muscles.tsx` + `equipment.tsx` — searchable checklist per axis (port legacy `FilterDetailScreen`)
       (Spec: design.md § Hierarchical Filter Modal > Search UX · AC 7.11)
-- [ ] **7c.18** Create `app/(app)/exercises/filters/difficulty.tsx` + `created-by.tsx` — plain checklist per axis
+- [x] **7c.18** Create `app/(app)/exercises/filters/difficulty.tsx` + `created-by.tsx` — plain checklist per axis
       (Spec: design.md § Hierarchical Filter Modal > Route structure · AC 7.11)
-- [ ] **7c.19** Remove Phase 4 `ExerciseFiltersPresenter` / `ExerciseFiltersContainer` / `ExerciseFilterBar` wholesale; update `ExerciseListContainer` to consume the nested-modal output
+- [x] **7c.19** Remove Phase 4 `ExerciseFiltersPresenter` / `ExerciseFiltersContainer` / `ExerciseFilterBar` wholesale; update `ExerciseListContainer` to consume the nested-modal output
       (Spec: design.md § Hierarchical Filter Modal > Presenter replacement · AC 7.11)
-- [ ] **7c.20** Port exercise list card + delete-alert pattern from `persistence-mobile/components/exercises/*` 1:1; wire `DELETE /exercises/:id` via `ApiPort.deleteExercise`
+- [x] **7c.20** Port exercise list card + delete-alert pattern from `persistence-mobile/components/exercises/*` 1:1; wire `DELETE /exercises/:id` via `ApiPort.deleteExercise`
       (Spec: design.md § Hierarchical Filter Modal > Legacy reference paths · AC 7.17)
-- [ ] **7c.21** Add minimal `__DEV__`-gated creator form to `app/(app)/exercises/create.tsx` — name + primary muscle + equipment; wired through `createExerciseCommand`; gated so production bundle excludes the form
+- [x] **7c.21** Add minimal `__DEV__`-gated creator form to `app/(app)/exercises/create.tsx` — name + primary muscle + equipment; wired through `createExerciseCommand`; gated so production bundle excludes the form
       (Spec: design.md § Sync-Queue Wire Format · AC 7.18)
 
 ### Tests
 
-- [ ] **7c.22** Reference-list query tests (cache-hit, cache-miss, stale-trigger-refresh, API-failure fallback to cache)
+- [x] **7c.22** Reference-list query tests (cache-hit, cache-miss, stale-trigger-refresh, API-failure fallback to cache)
       (Spec: AC 7.10, 7.14)
-- [ ] **7c.23** Adapter tests for `getReferenceList` and the rewritten `buildExerciseQueryParams` — assert exact wire-format shape against snapshots
+- [x] **7c.23** Adapter tests for `getReferenceList` and the rewritten `buildExerciseQueryParams` — assert exact wire-format shape against snapshots
       (Spec: AC 7.13)
-- [ ] **7c.24** SQLite adapter test: `reference_lists` table persistence across instances
+- [x] **7c.24** SQLite adapter test: `reference_lists` table persistence across instances
       (Spec: AC 7.10, 7.14)
-- [ ] **7c.25** `useReferenceLists` hook test: first-call refresh, subsequent reads hit cache
+- [x] **7c.25** `useReferenceLists` hook test: first-call refresh, subsequent reads hit cache
       (Spec: AC 7.10)
-- [ ] **7c.26** Shallow render tests for the 4 nested filter screens (route registration, axis props)
+- [x] **7c.26** Shallow render tests for the 4 nested filter screens (route registration, axis props)
       (Spec: AC 7.11)
-- [ ] **7c.27** Apply-bar live-count test (sticky across navigation, correct count)
+- [x] **7c.27** Apply-bar live-count test (sticky across navigation, correct count)
       (Spec: AC 7.12)
-- [ ] **7c.28** `createExerciseCommand` test — asserts enqueued payload is snake_case wire shape, not domain shape
+- [x] **7c.28** `createExerciseCommand` test — asserts enqueued payload is snake_case wire shape, not domain shape
       (Spec: AC 7.15)
-- [ ] **7c.29** Delete-alert test — destructive confirm fires `deleteExercise`, cache invalidates on success
+- [x] **7c.29** Delete-alert test — destructive confirm fires `deleteExercise`, cache invalidates on success
       (Spec: AC 7.17)
 
 ### Quality gates
 
-- [ ] **7c.30** All mobile quality gates pass (prettier / typecheck / lint 0-warn / build / test with 90% coverage on changed files)
+- [x] **7c.30** All mobile quality gates pass (prettier / typecheck / lint 0-warn / build / test with 90% coverage on changed files)
       (Spec: repo `_agent.md` § Quality Gates)
 
 ## Phase 9 (deferred — post-M0, own PR): Offline search & sort

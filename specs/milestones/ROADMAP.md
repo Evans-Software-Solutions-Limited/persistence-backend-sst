@@ -24,9 +24,12 @@ This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent
 
 **Purpose:** close Exercise Library wire-format drift, add missing `POST/PATCH/DELETE /exercises` backend handlers, shift mobile filter UI onto API-sourced reference lists (muscle groups, equipment, categories). Unblocks everything downstream.
 
-- **Status:** not started
+- **Status:** shipped (2026-04-22)
 - **Parent spec:** [03-exercise-library](../03-exercise-library/) (closes Phases 5–8 gaps + drift)
 - **Brief:** [`M0-integration-baseline/BRIEF.md`](./M0-integration-baseline/BRIEF.md)
+- **Merged PRs:** #29 (process), #30 (backend writes + filter), #31 (frontend), #32 (Supabase alignment), #33 (global error handler)
+- **Post-ship gates:** 507 mobile + 356 core tests; 98.17% / 97.43% line coverage; typecheck + lint + prettier clean
+- **Deferred:** Phase 9 (offline search & sort) scoped in `03-exercise-library/{design,tasks}.md` as own PR, not yet milestone-owned. Likely slots between M3 and M11.
 
 ### M1 — Home / dashboard (incl. HealthKit)
 
