@@ -466,3 +466,37 @@ Legacy-but-unused fields (`regionType`, `movementType`, `accessibilityRequiremen
 - `useReferenceLists()` — React hook in `src/ui/hooks/useReferenceLists.tsx`. Reads from `StoragePort` via the DI container, refreshes via `ApiPort` on first call per session. Returns `{ muscleGroups, equipment, categories, isLoading, isStale, refresh }`. The filter modal and filter-aware containers consume this hook.
 
 No redesign of the existing `ExerciseListContainer` / `ExerciseListPresenter` (kept from Phase 4, with `ExerciseFilterBar` removed since the nested modal replaces it).
+
+---
+
+## Offline search & sort (deferred — post-M0, own PR)
+
+### Context
+
+Legacy `persistence-mobile` used Algolia for exercise search: typo-tolerant, ranked, server-hosted. V2 is offline-first — every browse, filter, and search lookup must work against the SQLite cache without a network round-trip. That rules out Algolia as the primary path. Post-M0 the library renders all ~2.3k exercises in `created_at DESC` order with a substring `filterExercises` applied in-memory; good enough to ship, not good enough long-term.
+
+Known limits of the post-M0 surface:
+
+- **Substring-only matching** — `filterExercises` (domain service) does `name.toLowerCase().includes(query.toLowerCase())` plus description / instructions ILIKE on the server. No stemming, no typo tolerance, no per-word ranking.
+- **No deterministic sort** — backend orders by `created_at DESC` with no secondary key; SQLite reads use insertion order (no `ORDER BY` on the cached JSON). Ties shuffle between refreshes.
+- **No user-chosen sort** — alphabetical (the default lifter's mental model), "most used" (once session history lands in M3), and "my customs first" all unimplemented.
+- **No index** — the SQLite cache stores each exercise as a JSON blob in a `data` column; every filter parses all 2.3k rows into JS before comparing. Works for 2.3k, will not work for 10k+.
+
+### Likely shape of the follow-up
+
+A dedicated PR — split backend + frontend — scoped around three concepts:
+
+1. **Normalised search columns in SQLite.** Add indexed columns (`name`, `name_lower`, `category`, `difficulty`, `created_by_sentinel`) alongside the existing `data` JSON blob. Filtering and sort happen in SQL (`WHERE name_lower LIKE ? ORDER BY name_lower`), not JS. JSON blob stays as the source of truth; normalised columns are derived at `cacheExercises` write time.
+
+2. **SQLite FTS5 virtual table for keyword search.** `CREATE VIRTUAL TABLE exercises_fts USING fts5(name, description, instructions)` — populated alongside the main cache insert, queried with `MATCH` when a search term is present. Gives stemming + relevance ranking (`bm25()`) + phrase support without the Algolia dependency. Typo tolerance still absent; `trigram` extension can add it later if needed.
+
+3. **Sort vocabulary.** Domain adds a `sort` field to `ExerciseFilters`: `"name-asc" | "name-desc" | "recent" | "popular"` (popular requires session history — parked until M3+ data is flowing). Default `name-asc`, with `created_at DESC` as secondary tiebreaker. Backend takes `?sort=` and applies the matching `ORDER BY`; SQLite adapter maps the sort to the relevant column.
+
+### Decisions deferred until that PR lands
+
+- **"Customs pinned on top"** — separate from sort: a `isCustom DESC` prefix applied regardless of chosen sort. Likely yes; verify against legacy app.
+- **Search-term highlighting in the card** — bolding matched substrings in the list title. Legacy had this; ported-then-revamp says add when the /frontend-design pass gets to M11.
+- **Backend full-text search** — whether to also expose `GET /exercises?q=` with Postgres `tsvector` + `tsquery` for the online path, or keep the current ILIKE. FTS5 on the client handles the offline case regardless; the backend choice is a later decision.
+- **Reference-list driven filters vs. search** — today the modal filters on `muscle_groups[]` and `equipment[]` as hard AND constraints. Keyword search runs over the full `name/description/instructions`. Keep them orthogonal or merge (search narrows *within* filters)? Legacy did the latter; likely correct.
+
+See `tasks.md` § Phase 9 for the work breakdown.
