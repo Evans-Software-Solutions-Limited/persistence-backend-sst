@@ -334,8 +334,21 @@ export class SSTApiAdapter implements ApiPort {
   /**
    * Resolve an array of UUIDs to their display labels via the reference-
    * list cache. Used by `enrichExerciseLabels` to stamp card chips with
-   * human labels. Unresolved ids are silently dropped so the card doesn't
-   * render raw UUIDs before the reference lookup has finished hydrating.
+   * human labels.
+   *
+   * Contract: the returned array is **parallel-indexed** with `uuids`.
+   * Unresolved ids map to an empty string rather than being silently
+   * dropped — otherwise a partial lookup would misalign labels against
+   * the caller's id array (ids=[A,B,C], only A+C resolve → labels=
+   * ["LabelA","LabelC"] would incorrectly pair "LabelC" with id B at
+   * index 1). The card renderer filters empty labels *after* pairing,
+   * so the correct id↔label mapping survives.
+   *
+   * When the kind's lookup hasn't been hydrated yet (no fetch or cache
+   * read has run for this `ReferenceListKind`), returns an empty array
+   * instead of a length-matched array of empty strings. The renderer
+   * treats empty-array as "labels not ready" and falls back to the
+   * legacy enum→label map rather than rendering zero chips.
    */
   private resolveUuidsToLabels(
     kind: ReferenceListKind,
@@ -343,12 +356,7 @@ export class SSTApiAdapter implements ApiPort {
   ): string[] {
     const map = this.referenceLabelLookup.get(kind);
     if (!map) return [];
-    const labels: string[] = [];
-    for (const uuid of uuids) {
-      const label = map.get(uuid);
-      if (label) labels.push(label);
-    }
-    return labels;
+    return uuids.map((uuid) => map.get(uuid) ?? "");
   }
 
   /**

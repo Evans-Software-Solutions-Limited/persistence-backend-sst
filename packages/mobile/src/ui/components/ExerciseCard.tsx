@@ -24,8 +24,21 @@ function labelledChips(
   labels: readonly string[] | undefined,
   fallbackMap: Record<string, string>,
 ): Array<{ key: string; label: string }> {
+  // Primary path: labels populated by `SSTApiAdapter.resolveUuidsToLabels`.
+  // The adapter guarantees the `labels` array is parallel-indexed with
+  // `ids` (unresolved UUIDs map to empty strings rather than being
+  // dropped — see adapter docstring). Pair ids↔labels BEFORE filtering
+  // empties so the correct React key stays attached to each chip.
   if (labels && labels.length > 0) {
-    return labels.map((label, i) => ({ key: ids[i] ?? `idx-${i}`, label }));
+    const paired: Array<{ key: string; label: string }> = [];
+    const limit = Math.min(ids.length, labels.length);
+    for (let i = 0; i < limit; i++) {
+      const label = labels[i];
+      if (label && label.length > 0) {
+        paired.push({ key: ids[i] ?? `idx-${i}`, label });
+      }
+    }
+    return paired;
   }
   // Legacy path — ids holding enum keys from pre-M0 cached data.
   const result: Array<{ key: string; label: string }> = [];
