@@ -497,6 +497,6 @@ A dedicated PR — split backend + frontend — scoped around three concepts:
 - **"Customs pinned on top"** — separate from sort: a `isCustom DESC` prefix applied regardless of chosen sort. Likely yes; verify against legacy app.
 - **Search-term highlighting in the card** — bolding matched substrings in the list title. Legacy had this; ported-then-revamp says add when the /frontend-design pass gets to M11.
 - **Backend full-text search** — whether to also expose `GET /exercises?q=` with Postgres `tsvector` + `tsquery` for the online path, or keep the current ILIKE. FTS5 on the client handles the offline case regardless; the backend choice is a later decision.
-- **Reference-list driven filters vs. search** — today the modal filters on `muscle_groups[]` and `equipment[]` as hard AND constraints. Keyword search runs over the full `name/description/instructions`. Keep them orthogonal or merge (search narrows *within* filters)? Legacy did the latter; likely correct.
+- **Reference-list driven filters vs. search** — today the modal filters on `muscle_groups[]` and `equipment[]` as hard AND constraints. Keyword search runs over the full `name/description/instructions`. Keep them orthogonal or merge (search narrows _within_ filters)? Legacy did the latter; likely correct.
 
 See `tasks.md` § Phase 9 for the work breakdown.
