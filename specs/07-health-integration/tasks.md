@@ -20,20 +20,36 @@ Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real 
 - [ ] Create mock health adapter for tests
 - [ ] Write tests for mock adapter
 
-## Phase 2: iOS Adapter (HealthKit)
+## Phase 2: iOS Adapter (HealthKit) — M1 scope
 
-- [ ] Add `@kingstinct/react-native-healthkit` dependency
-- [ ] Create `HealthKitAdapter` implementing `HealthPort`
-- [ ] Implement permission request (steps, calories, body mass, heart rate)
-- [ ] Implement data reads (steps today, calories today, latest weight, heart rate)
-- [ ] Implement body weight write
-- [ ] Handle HealthKit not available (simulator, older iOS)
-- [ ] Write tests with mock HealthKit module
+Traces to `design.md` § M1 scope: platform adapter matrix and
+`requirements.md` STORY-007 AC 7.1 / 7.2 / 7.4 / 7.6 / 7.7.
+
+- [ ] Add `@kingstinct/react-native-healthkit` dependency to `packages/mobile`
+- [ ] Add iOS native-build config (Info.plist `NSHealthShareUsageDescription` + `NSHealthUpdateUsageDescription`)
+- [ ] Create `ExpoHealthKitAdapter` at `packages/mobile/src/adapters/health/expo-healthkit.adapter.ts` implementing `HealthPort`
+- [ ] Implement permission request (steps, active energy, body mass, heart rate)
+- [ ] Implement reads: `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`
+- [ ] Stub `writeBodyWeight` to return `fail(UNAVAILABLE)` in M1 (lights up M6)
+- [ ] Handle HealthKit not available (older iOS, entitlements missing) — return appropriate `HealthError`
+- [ ] Create `SimulatorMockHealthAdapter` at `packages/mobile/src/adapters/health/simulator-mock.adapter.ts` with deterministic values (AC 7.2)
+- [ ] Create `adapters/health/index.ts` `createHealthAdapter()` selection function (AC 7.4)
+- [ ] Wire new adapter into `AdapterProvider`
+- [ ] Write tests with a mock HealthKit native module; maintain ≥ 90% coverage
 
 ## Phase 3: Android Adapter (Health Connect)
 
+**M1 scope:** ship `AndroidStubHealthAdapter` only. Full Health Connect
+integration deferred past M1 (post-M4 candidate).
+
+Traces to `requirements.md` STORY-007 AC 7.3 + 7.4.
+
+- [ ] Create `AndroidStubHealthAdapter` at `packages/mobile/src/adapters/health/android-stub.adapter.ts` — `isAvailable: false`, reads return `fail(UNAVAILABLE)`, permission request resolves as no-op success
+
+**Deferred past M1:**
+
 - [ ] Add `react-native-health-connect` / `expo-health-connect` dependency
-- [ ] Create `HealthConnectAdapter` implementing `HealthPort`
+- [ ] Create real `HealthConnectAdapter` implementing `HealthPort`
 - [ ] Implement permission request
 - [ ] Implement data reads
 - [ ] Handle Health Connect not installed (redirect to Play Store)
@@ -46,14 +62,19 @@ Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real 
 - [ ] Create `app/(app)/health-permissions.tsx` screen
 - [ ] Write tests
 
-## Phase 5: UI — Dashboard Tiles
+## Phase 5: UI — Dashboard Tiles — M1 scope
 
-- [ ] Create `StepsTile` presenter (step count, progress ring)
-- [ ] Create `CaloriesTile` presenter (calorie count)
-- [ ] Create `HealthConnectionStatus` component (connected/not connected)
-- [ ] Create `useHealthData()` hook (rate-limited reads, caches in state)
-- [ ] Integrate tiles into dashboard presenter
-- [ ] Write tests
+Traces to `design.md` § M1 scope > UI tiles live vs not-yet-connected
+and `requirements.md` STORY-007 AC 7.5 + 7.6 (plus 06-progress-goals
+STORY-005 AC 5.12 for animation).
+
+- [ ] Create `StepsTile` presenter (step count, last-synced caption, `$success` dot when granted)
+- [ ] Add "Connect Health" CTA variant for denied / not-determined state (AC 7.5)
+- [ ] Add "Not available on Android yet" variant for Android / web (AC 7.3)
+- [ ] Create `useHealthData()` hook at `packages/mobile/src/ui/hooks/useHealthData.tsx` with 5-min rate limit + app-foreground re-read (AC 7.6)
+- [ ] Integrate `StepsTile` into `HomePresenter` MyProgress section
+- [ ] Wire active-energy read into MyProgress (single tile for M1; basal / standTime remain placeholder zeros per design §)
+- [ ] Write presenter + hook tests; maintain ≥ 90% coverage
 
 ## Phase 6: Body Weight Sync
 

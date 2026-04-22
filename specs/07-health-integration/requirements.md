@@ -64,3 +64,15 @@ Sync health data (steps, calories, body weight, active energy) from Apple Health
 - [ ] Health data read from device (no network needed)
 - [ ] Cached locally for dashboard display
 - [ ] No battery drain from health polling
+
+### STORY-007: As an M1 user on any platform, I want the dashboard's step tile to render without crashing
+
+**Acceptance Criteria:**
+
+- [ ] AC 7.1 — On iOS device: `ExpoHealthKitAdapter` provides `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`, `requestPermissions`, `getPermissionStatus`, `isAvailable`, `disconnect`. `writeBodyWeight` returns `fail(UNAVAILABLE)` in M1 (lights up M6).
+- [ ] AC 7.2 — On iOS simulator: `SimulatorMockHealthAdapter` returns deterministic non-zero values (steps 4812, active cal 312, weight 74.5 kg, hr 62 bpm) so the StepsTile renders populated in simulator-driven smoke tests.
+- [ ] AC 7.3 — On Android: `AndroidStubHealthAdapter` reports `isAvailable: false`; reads return `fail(UNAVAILABLE)`; dashboard renders a muted "Not available on Android yet" tile.
+- [ ] AC 7.4 — Selection logic lives in `adapters/health/index.ts` — `createHealthAdapter()` picks the correct implementation once at provider construction.
+- [ ] AC 7.5 — Denied / not-determined permission state renders a "Connect Health" CTA tile on the dashboard; tap navigates toward `/health-permissions` (destination is a placeholder until Phase 4 ships the screen).
+- [ ] AC 7.6 — `useHealthData()` rate-limits reads to one per 5 minutes; re-reads fire on app-foreground transitions.
+- [ ] AC 7.7 — M1 coverage ≥ 90% on `adapters/health/*` and `ui/hooks/useHealthData*`; test adapters are the `MockHealthAdapter` + `InMemoryHealthAdapter` pattern.
