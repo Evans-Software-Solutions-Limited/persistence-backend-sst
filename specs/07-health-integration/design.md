@@ -79,12 +79,12 @@ M1 ships the first real `HealthPort` implementations alongside the Home
 screen. Not every adapter goes to full fidelity — only the pieces
 needed for the dashboard tiles.
 
-| Platform | Adapter | M1 scope | Notes |
-| --- | --- | --- | --- |
-| iOS (device / real build) | `ExpoHealthKitAdapter` | Read steps today, active calories today, latest body weight, heart rate; permission request + status; `isAvailable()`; `disconnect()` | Uses `@kingstinct/react-native-healthkit`, already used by legacy. `writeBodyWeight` is a no-op that returns `fail(UNAVAILABLE)` in M1 — wired in M6 when measurement editor ships. |
-| iOS simulator | `SimulatorMockHealthAdapter` | Same surface as iOS, returns deterministic non-zero numbers (steps: 4812, active cal: 312, weight: 74.5 kg, hr: 62 bpm) | Simulator reports HealthKit as `isAvailable: false` in practice; fallback adapter keeps smoke-testing unblocked. Selected when `Platform.OS === "ios" && __DEV__ && !Device.isDevice`. |
-| Android | `AndroidStubHealthAdapter` | `isAvailable: false`; every read returns `fail(UNAVAILABLE)`; permission request is a no-op success | Android M1 scope is "does not crash, renders an empty health tile with 'Not available on Android yet'". Real Health Connect adapter is deferred past M1. |
-| Tests | `MockHealthAdapter` | Existing in-memory adapter with configurable return values | Unchanged from Phase 1 stub pattern. |
+| Platform                  | Adapter                      | M1 scope                                                                                                                              | Notes                                                                                                                                                                                  |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS (device / real build) | `ExpoHealthKitAdapter`       | Read steps today, active calories today, latest body weight, heart rate; permission request + status; `isAvailable()`; `disconnect()` | Uses `@kingstinct/react-native-healthkit`, already used by legacy. `writeBodyWeight` is a no-op that returns `fail(UNAVAILABLE)` in M1 — wired in M6 when measurement editor ships.    |
+| iOS simulator             | `SimulatorMockHealthAdapter` | Same surface as iOS, returns deterministic non-zero numbers (steps: 4812, active cal: 312, weight: 74.5 kg, hr: 62 bpm)               | Simulator reports HealthKit as `isAvailable: false` in practice; fallback adapter keeps smoke-testing unblocked. Selected when `Platform.OS === "ios" && __DEV__ && !Device.isDevice`. |
+| Android                   | `AndroidStubHealthAdapter`   | `isAvailable: false`; every read returns `fail(UNAVAILABLE)`; permission request is a no-op success                                   | Android M1 scope is "does not crash, renders an empty health tile with 'Not available on Android yet'". Real Health Connect adapter is deferred past M1.                               |
+| Tests                     | `MockHealthAdapter`          | Existing in-memory adapter with configurable return values                                                                            | Unchanged from Phase 1 stub pattern.                                                                                                                                                   |
 
 ### Selection logic
 

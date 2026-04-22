@@ -27,9 +27,16 @@ Today `microservices/core/src/application/repositories/dashboardRepository.ts` e
 
 ```ts
 interface DashboardData {
-  recentWorkouts: Array<{ id, name, status, startedAt, completedAt, totalDurationSeconds }>;
-  activeGoals: Array<{ id, priority, isActive, targetDate }>;
-  latestMeasurements: { id, weightKg, bodyFatPercentage, measuredAt } | null;
+  recentWorkouts: Array<{
+    id;
+    name;
+    status;
+    startedAt;
+    completedAt;
+    totalDurationSeconds;
+  }>;
+  activeGoals: Array<{ id; priority; isActive; targetDate }>;
+  latestMeasurements: { id; weightKg; bodyFatPercentage; measuredAt } | null;
   personalRecordsCount: number;
   streak: number;
   steps: null;

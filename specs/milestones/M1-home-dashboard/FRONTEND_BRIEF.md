@@ -121,17 +121,17 @@ Per `07-health-integration/design.md` § M1 scope: platform adapter matrix.
 
 **`packages/mobile/src/adapters/health/simulator-mock.adapter.ts`** — NEW. Returns deterministic values per the parent spec:
 
-| Method | Value |
-| --- | --- |
-| `isAvailable` | `true` |
-| `requestPermissions` | `ok` with all `"granted"` |
-| `getPermissionStatus` | all `"granted"` |
-| `getStepsToday` | `ok(4812)` |
-| `getActiveCaloriesToday` | `ok(312)` |
-| `getLatestBodyWeight` | `ok({ value: 74.5, unit: "kg", date: <today> })` |
-| `getHeartRateLatest` | `ok(62)` |
-| `writeBodyWeight` | `ok(undefined)` — simulator can pretend it writes |
-| `disconnect` | no-op |
+| Method                   | Value                                             |
+| ------------------------ | ------------------------------------------------- |
+| `isAvailable`            | `true`                                            |
+| `requestPermissions`     | `ok` with all `"granted"`                         |
+| `getPermissionStatus`    | all `"granted"`                                   |
+| `getStepsToday`          | `ok(4812)`                                        |
+| `getActiveCaloriesToday` | `ok(312)`                                         |
+| `getLatestBodyWeight`    | `ok({ value: 74.5, unit: "kg", date: <today> })`  |
+| `getHeartRateLatest`     | `ok(62)`                                          |
+| `writeBodyWeight`        | `ok(undefined)` — simulator can pretend it writes |
+| `disconnect`             | no-op                                             |
 
 **`packages/mobile/src/adapters/health/android-stub.adapter.ts`** — NEW. `isAvailable: false`; every read returns `fail(UNAVAILABLE)`; permission request resolves as no-op success; disconnect is a no-op.
 

@@ -2,7 +2,7 @@
 
 ## Why this milestone
 
-M0 closed the exercise-library wire drift — the mobile app now talks to the SST backend end-to-end for the Exercises tab. But the first thing a user sees after sign-in is still the **Home tab**, and Home is currently a diagnostic screen (API health check + sync status cards at [app/(app)/(tabs)/index.tsx](../../../packages/mobile/app/(app)/(tabs)/index.tsx)) with zero product content.
+M0 closed the exercise-library wire drift — the mobile app now talks to the SST backend end-to-end for the Exercises tab. But the first thing a user sees after sign-in is still the **Home tab**, and Home is currently a diagnostic screen (API health check + sync status cards at [app/(app)/(tabs)/index.tsx](<../../../packages/mobile/app/(app)/(tabs)/index.tsx>)) with zero product content.
 
 M1 ships the real Home tab:
 
