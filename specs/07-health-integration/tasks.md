@@ -25,17 +25,17 @@ Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real 
 Traces to `design.md` § M1 scope: platform adapter matrix and
 `requirements.md` STORY-007 AC 7.1 / 7.2 / 7.4 / 7.6 / 7.7.
 
-- [ ] Add `@kingstinct/react-native-healthkit` dependency to `packages/mobile`
-- [ ] Add iOS native-build config (Info.plist `NSHealthShareUsageDescription` + `NSHealthUpdateUsageDescription`)
-- [ ] Create `ExpoHealthKitAdapter` at `packages/mobile/src/adapters/health/expo-healthkit.adapter.ts` implementing `HealthPort`
-- [ ] Implement permission request (steps, active energy, body mass, heart rate)
-- [ ] Implement reads: `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`
-- [ ] Stub `writeBodyWeight` to return `fail(UNAVAILABLE)` in M1 (lights up M6)
-- [ ] Handle HealthKit not available (older iOS, entitlements missing) — return appropriate `HealthError`
-- [ ] Create `SimulatorMockHealthAdapter` at `packages/mobile/src/adapters/health/simulator-mock.adapter.ts` with deterministic values (AC 7.2)
-- [ ] Create `adapters/health/index.ts` `createHealthAdapter()` selection function (AC 7.4)
-- [ ] Wire new adapter into `AdapterProvider`
-- [ ] Write tests with a mock HealthKit native module; maintain ≥ 90% coverage
+- [x] Add `@kingstinct/react-native-healthkit` dependency to `packages/mobile`
+- [x] Add iOS native-build config (Info.plist `NSHealthShareUsageDescription` + `NSHealthUpdateUsageDescription`)
+- [x] Create `ExpoHealthKitAdapter` at `packages/mobile/src/adapters/health/expo-healthkit.adapter.ts` implementing `HealthPort`
+- [x] Implement permission request (steps, active energy, body mass, heart rate)
+- [x] Implement reads: `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`
+- [x] Stub `writeBodyWeight` to return `fail(UNAVAILABLE)` in M1 (lights up M6)
+- [x] Handle HealthKit not available (older iOS, entitlements missing) — return appropriate `HealthError`
+- [x] Create `SimulatorMockHealthAdapter` at `packages/mobile/src/adapters/health/simulator-mock.adapter.ts` with deterministic values (AC 7.2)
+- [x] Create `adapters/health/index.ts` `createHealthAdapter()` selection function (AC 7.4)
+- [x] Wire new adapter into `AdapterProvider`
+- [x] Write tests with a mock HealthKit native module; maintain ≥ 90% coverage
 
 ## Phase 3: Android Adapter (Health Connect)
 
@@ -44,7 +44,7 @@ integration deferred past M1 (post-M4 candidate).
 
 Traces to `requirements.md` STORY-007 AC 7.3 + 7.4.
 
-- [ ] Create `AndroidStubHealthAdapter` at `packages/mobile/src/adapters/health/android-stub.adapter.ts` — `isAvailable: false`, reads return `fail(UNAVAILABLE)`, permission request resolves as no-op success
+- [x] Create `AndroidStubHealthAdapter` at `packages/mobile/src/adapters/health/android-stub.adapter.ts` — `isAvailable: false`, reads return `fail(UNAVAILABLE)`, permission request resolves as no-op success
 
 **Deferred past M1:**
 
@@ -68,13 +68,13 @@ Traces to `design.md` § M1 scope > UI tiles live vs not-yet-connected
 and `requirements.md` STORY-007 AC 7.5 + 7.6 (plus 06-progress-goals
 STORY-005 AC 5.12 for animation).
 
-- [ ] Create `StepsTile` presenter (step count, last-synced caption, `$success` dot when granted)
-- [ ] Add "Connect Health" CTA variant for denied / not-determined state (AC 7.5)
-- [ ] Add "Not available on Android yet" variant for Android / web (AC 7.3)
-- [ ] Create `useHealthData()` hook at `packages/mobile/src/ui/hooks/useHealthData.tsx` with 5-min rate limit + app-foreground re-read (AC 7.6)
-- [ ] Integrate `StepsTile` into `HomePresenter` MyProgress section
-- [ ] Wire active-energy read into MyProgress (single tile for M1; basal / standTime remain placeholder zeros per design §)
-- [ ] Write presenter + hook tests; maintain ≥ 90% coverage
+- [x] Create `StepsTile` presenter (step count, last-synced caption, `$success` dot when granted)
+- [x] Add "Connect Health" CTA variant for denied / not-determined state (AC 7.5)
+- [x] Add "Not available on Android yet" variant for Android / web (AC 7.3)
+- [x] Create `useHealthData()` hook at `packages/mobile/src/ui/hooks/useHealthData.tsx` with 5-min rate limit + app-foreground re-read (AC 7.6)
+- [x] Integrate `StepsTile` into `HomePresenter` MyProgress section
+- [x] Wire active-energy read into MyProgress (single tile for M1; basal / standTime remain placeholder zeros per design §)
+- [x] Write presenter + hook tests; maintain ≥ 90% coverage
 
 ## Phase 6: Body Weight Sync
 
