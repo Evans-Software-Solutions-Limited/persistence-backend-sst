@@ -45,6 +45,9 @@ export class StubHealthAdapter implements HealthPort {
   > {
     return fail(UNAVAILABLE);
   }
+  async getHeartRateLatest(): Promise<Result<number | null, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
   async writeBodyWeight(): Promise<Result<void, HealthError>> {
     return fail(UNAVAILABLE);
   }

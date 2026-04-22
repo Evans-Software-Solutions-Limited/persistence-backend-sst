@@ -23,3 +23,20 @@ export {
   REFERENCE_LIST_STALE_AFTER_MS,
   isReferenceListStale,
 } from "./reference-list";
+
+export { type PersonalRecord, type RecordType, RECORD_TYPES } from "./record";
+
+export {
+  type CachedDashboard,
+  type DashboardActiveGoal,
+  type DashboardLatestMeasurement,
+  type DashboardPayload,
+  type DashboardPROfTheWeek,
+  type DashboardProfile,
+  type DashboardProgress,
+  type DashboardRecentActivity,
+  type DashboardRecentWorkout,
+  type DashboardSubscription,
+  DASHBOARD_STALE_AFTER_MS,
+  isDashboardStale,
+} from "./dashboard";

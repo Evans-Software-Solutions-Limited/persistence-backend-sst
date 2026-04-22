@@ -1,3 +1,4 @@
+import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
   Exercise,
@@ -122,6 +123,18 @@ export interface ApiPort {
     exerciseId: string,
     setId: string,
   ): Promise<Result<void, ApiError>>;
+
+  /**
+   * Fetch the Home-tab dashboard aggregation payload (M1).
+   *
+   * Single-envelope response (`{ data: DashboardPayload }`) — adapter
+   * unwraps once. No UUID-typed fields on the payload, so no
+   * reference-list enrichment is required.
+   *
+   * Spec: specs/06-progress-goals/design.md § Dashboard backend contract (M1)
+   *       specs/06-progress-goals/requirements.md STORY-005 AC 5.8, STORY-007 AC 7.1
+   */
+  getDashboard(): Promise<Result<DashboardPayload, ApiError>>;
 
   // -- Goals --
   getGoals(params?: PaginationParams): Promise<Result<ApiGoal[], ApiError>>;

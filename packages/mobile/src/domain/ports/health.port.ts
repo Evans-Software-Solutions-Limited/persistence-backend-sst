@@ -25,7 +25,9 @@ export type HealthError = {
 
 /**
  * Port for health data providers (HealthKit / Health Connect).
- * Stub — expanded in milestone 07.
+ *
+ * Spec: specs/07-health-integration/design.md § Architecture,
+ *       § M1 scope: platform adapter matrix
  */
 export interface HealthPort {
   isAvailable(): Promise<boolean>;
@@ -34,6 +36,15 @@ export interface HealthPort {
   getStepsToday(): Promise<Result<number, HealthError>>;
   getActiveCaloriesToday(): Promise<Result<number, HealthError>>;
   getLatestBodyWeight(): Promise<Result<HealthWeight | null, HealthError>>;
+  /**
+   * Most recent heart rate sample in bpm, or null when no samples are
+   * available. Read-only in M1 — no M1 UI surfaces this directly, but
+   * the read path is implemented for M4 Progress.
+   *
+   * Spec: specs/07-health-integration/design.md § Architecture,
+   *       § M1 scope: platform adapter matrix
+   */
+  getHeartRateLatest(): Promise<Result<number | null, HealthError>>;
   writeBodyWeight(
     weight: number,
     date: Date,
