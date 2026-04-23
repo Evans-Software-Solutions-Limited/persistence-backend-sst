@@ -372,8 +372,17 @@ describe("HomeContainer", () => {
     // Wait for the auth bootstrap + cache read to settle — during
     // that window `userId` legitimately flips from null to "user-1",
     // which recomputes dashboard.refresh and is not a memo defeat.
+    //
+    // HomePresenter receives `viewModel`, not `payload`. When the
+    // fixture-backed cache read lands, viewModel.firstName transitions
+    // from null (the pre-bootstrap fallback) to "Alex" (the fixture
+    // value). The earlier revision of this wait gated on
+    // `?.payload !== undefined`, which the optional chain coerced to
+    // `undefined`, making `expect(undefined).not.toBeNull()` pass on
+    // the very first render — completely defeating the wait. See
+    // bugbot thread on PR #37.
     await waitFor(() => {
-      expect(mockHomePresenterProps.current?.payload).not.toBeNull();
+      expect(mockHomePresenterProps.current?.viewModel?.firstName).toBe("Alex");
     });
 
     // Snapshot the post-settle render count, then capture identities

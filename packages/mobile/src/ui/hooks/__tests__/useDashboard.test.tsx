@@ -206,6 +206,80 @@ describe("useDashboard", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("dedupes concurrent refresh() calls onto a single in-flight promise", async () => {
+    // Regression for bugbot finding on PR #37: without a shared in-
+    // flight ref, a pull-to-refresh arriving while the auto-refresh
+    // is still running (or vice versa) fires TWO overlapping API
+    // calls; the first to finish flips isRefreshing to false while
+    // the second is still running, dismissing the RefreshControl
+    // spinner prematurely.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+
+    // Stall getDashboard behind a manually-released promise so we can
+    // observe the overlap window. The adapter's ok() helper is what
+    // the real impl wraps its result in.
+    let release: (() => void) | null = null;
+    const stalled = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const getDashboardSpy = jest
+      .spyOn(api, "getDashboard")
+      .mockImplementation(async () => {
+        await stalled;
+        return ok(DASHBOARD_FIXTURE);
+      });
+
+    const adapters = makeAdapters(api, storage);
+
+    const { result } = renderHook(() => useDashboard(), {
+      wrapper: wrap(adapters),
+    });
+
+    // Wait for useAuth to supply userId (session arrives async).
+    await waitFor(() => {
+      expect(result.current.refresh).toBeDefined();
+    });
+
+    // Auto-refresh fires on mount (empty cache → stale). Wait for the
+    // spy to register that first call so we know the in-flight ref
+    // is set before we race a second call against it.
+    await waitFor(() => {
+      expect(getDashboardSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(result.current.isRefreshing).toBe(true);
+
+    // Fire a second refresh while the first is still stalled. The
+    // in-flight dedupe must make this a no-op at the API layer —
+    // spy call count should NOT go up.
+    let secondResolved = false;
+    let secondPromise: Promise<void> | undefined;
+    await act(async () => {
+      secondPromise = result.current.refresh().then(() => {
+        secondResolved = true;
+      });
+    });
+    // Flush any microtasks the act() caller queued.
+    await Promise.resolve();
+    expect(getDashboardSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(true);
+    expect(secondResolved).toBe(false);
+
+    // Release the stall and let both awaiters settle.
+    await act(async () => {
+      release?.();
+      await secondPromise;
+    });
+
+    // Both calls should now be complete, isRefreshing false, and the
+    // API was hit exactly once across both callers.
+    expect(result.current.isRefreshing).toBe(false);
+    expect(getDashboardSpy).toHaveBeenCalledTimes(1);
+    expect(secondResolved).toBe(true);
+    expect(result.current.payload).toEqual(DASHBOARD_FIXTURE);
+  });
+
   it("re-arms the auto-refresh guard when userId changes (sign-out → sign-in as a different user)", async () => {
     // Regression for bugbot finding on PR #37: hasAutoRefreshedRef was
     // set to true for user-1 and never reset. When user-1 signed out

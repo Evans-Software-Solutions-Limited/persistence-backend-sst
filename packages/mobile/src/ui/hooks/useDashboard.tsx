@@ -77,25 +77,40 @@ export function useDashboard(): DashboardState {
     setSyncedAt(initial.syncedAt);
   }, [initial]);
 
+  // Dedupe concurrent refresh() calls onto a single in-flight promise.
+  // Without this, a pull-to-refresh arriving while the one-shot auto-
+  // refresh is still running (or vice versa) would fire two overlapping
+  // API calls; the first to finish would flip isRefreshing back to
+  // false while the second was still in flight, dismissing the
+  // RefreshControl spinner prematurely. Returning the same promise
+  // also means the caller's `await refresh()` resolves when the single
+  // real refresh completes, not before. See bugbot thread on PR #37.
+  const inFlightRef = useRef<Promise<void> | null>(null);
   const refresh = useCallback(async () => {
     if (!userId) return;
+    if (inFlightRef.current) return inFlightRef.current;
     setIsRefreshing(true);
     setError(null);
-    try {
-      const result = await refreshDashboard(api, storage, userId);
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    const work = (async () => {
+      try {
+        const result = await refreshDashboard(api, storage, userId);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setPayload(result.value);
+        setIsStale(false);
+        setSyncedAt(storage.getDashboardAge(userId));
+        // Bump the version so any parent container re-running the
+        // cache-read memo sees the updated row.
+        setCacheVersion((v) => v + 1);
+      } finally {
+        setIsRefreshing(false);
+        inFlightRef.current = null;
       }
-      setPayload(result.value);
-      setIsStale(false);
-      setSyncedAt(storage.getDashboardAge(userId));
-      // Bump the version so any parent container re-running the
-      // cache-read memo sees the updated row.
-      setCacheVersion((v) => v + 1);
-    } finally {
-      setIsRefreshing(false);
-    }
+    })();
+    inFlightRef.current = work;
+    return work;
   }, [api, storage, userId]);
 
   // One-shot auto-refresh per user when the cache is stale or empty.
