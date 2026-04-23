@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
 import {
   bodyMeasurements,
   exercises,
@@ -388,59 +388,63 @@ export class DashboardRepository {
   ): Promise<DashboardRecentWorkout[]> {
     const db = getDb();
 
-    // 1. Own workouts (most recent first).
-    const own = await db
-      .select({
-        id: workouts.id,
-        name: workouts.name,
-        description: workouts.description,
-        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
-        createdBy: workouts.createdBy,
-        createdAt: workouts.createdAt,
-      })
-      .from(workouts)
-      .where(eq(workouts.createdBy, userId))
-      .orderBy(desc(workouts.createdAt))
-      .limit(limit);
-
-    // 2. Assigned workouts — join the assignment to surface the trainer's
-    //    role so we can derive `assignedByType` without a second query.
-    const assigned = await db
-      .select({
-        id: workouts.id,
-        name: workouts.name,
-        description: workouts.description,
-        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
-        createdBy: workouts.createdBy,
-        assignedAt: workoutAssignments.createdAt,
-        trainerRole: profiles.role,
-      })
-      .from(workoutAssignments)
-      .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
-      .leftJoin(profiles, eq(workoutAssignments.trainerId, profiles.id))
-      .where(eq(workoutAssignments.clientId, userId))
-      .orderBy(desc(workoutAssignments.createdAt))
-      .limit(limit);
-
-    // 3. Default templates — system-authored or public library entries.
-    const defaults = await db
-      .select({
-        id: workouts.id,
-        name: workouts.name,
-        description: workouts.description,
-        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
-        createdBy: workouts.createdBy,
-        createdAt: workouts.createdAt,
-      })
-      .from(workouts)
-      .where(
-        or(
-          eq(workouts.createdBy, SYSTEM_USER_ID),
-          eq(workouts.visibility, "public"),
-        ),
-      )
-      .orderBy(desc(workouts.createdAt))
-      .limit(limit);
+    // The three fetches are independent (no data dependency between them),
+    // so run them in parallel. `getDashboard` gates its eight sub-queries on
+    // a single Promise.all — serialising these three here would make this
+    // method the round-trip bottleneck.
+    const [own, assigned, defaults] = await Promise.all([
+      // 1. Own workouts (most recent first).
+      db
+        .select({
+          id: workouts.id,
+          name: workouts.name,
+          description: workouts.description,
+          estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+          createdBy: workouts.createdBy,
+          createdAt: workouts.createdAt,
+        })
+        .from(workouts)
+        .where(eq(workouts.createdBy, userId))
+        .orderBy(desc(workouts.createdAt))
+        .limit(limit),
+      // 2. Assigned workouts — join the assignment to surface the trainer's
+      //    role so we can derive `assignedByType` without a second query.
+      db
+        .select({
+          id: workouts.id,
+          name: workouts.name,
+          description: workouts.description,
+          estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+          createdBy: workouts.createdBy,
+          assignedAt: workoutAssignments.createdAt,
+          trainerRole: profiles.role,
+        })
+        .from(workoutAssignments)
+        .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
+        .leftJoin(profiles, eq(workoutAssignments.trainerId, profiles.id))
+        .where(eq(workoutAssignments.clientId, userId))
+        .orderBy(desc(workoutAssignments.createdAt))
+        .limit(limit),
+      // 3. Default templates — system-authored or public library entries.
+      db
+        .select({
+          id: workouts.id,
+          name: workouts.name,
+          description: workouts.description,
+          estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+          createdBy: workouts.createdBy,
+          createdAt: workouts.createdAt,
+        })
+        .from(workouts)
+        .where(
+          or(
+            eq(workouts.createdBy, SYSTEM_USER_ID),
+            eq(workouts.visibility, "public"),
+          ),
+        )
+        .orderBy(desc(workouts.createdAt))
+        .limit(limit),
+    ]);
 
     const seen = new Set<string>();
     const combined: DashboardRecentWorkout[] = [];
@@ -628,7 +632,18 @@ export class DashboardRepository {
   async getProgressStats(userId: string): Promise<DashboardProgress> {
     const db = getDb();
 
-    const [completedSessions, recordsCount, streak] = await Promise.all([
+    // Only the current and previous calendar months contribute to
+    // workoutsThisMonth / workoutsLastMonth. Filter in SQL so users with
+    // long histories don't transfer and iterate over unbounded rows on
+    // every dashboard load.
+    const now = new Date();
+    const startOfLastMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+    );
+
+    // `personal_records` previously selected every row just for `.length`.
+    // A SQL COUNT(*) is constant-size on the wire regardless of history.
+    const [completedSessions, recordsCountRows, streak] = await Promise.all([
       db
         .select({
           id: workoutSessions.id,
@@ -640,21 +655,18 @@ export class DashboardRepository {
             eq(workoutSessions.userId, userId),
             eq(workoutSessions.status, "completed"),
             isNotNull(workoutSessions.completedAt),
+            gte(workoutSessions.completedAt, startOfLastMonth),
           ),
         ),
       db
-        .select({ id: personalRecords.id })
+        .select({ total: sql<number>`count(*)::int` })
         .from(personalRecords)
         .where(eq(personalRecords.userId, userId)),
       this.calculateStreak(userId),
     ]);
 
-    const now = new Date();
     const thisMonth = monthKey(now);
-    const lastMonthDate = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
-    );
-    const lastMonth = monthKey(lastMonthDate);
+    const lastMonth = monthKey(startOfLastMonth);
 
     let workoutsThisMonth = 0;
     let workoutsLastMonth = 0;
@@ -674,7 +686,7 @@ export class DashboardRepository {
       workoutsThisMonth,
       workoutsLastMonth,
       streak,
-      personalRecordsCount: recordsCount.length,
+      personalRecordsCount: recordsCountRows[0]?.total ?? 0,
     };
   }
 

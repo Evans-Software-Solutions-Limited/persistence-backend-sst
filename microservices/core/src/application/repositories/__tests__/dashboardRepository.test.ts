@@ -712,6 +712,55 @@ describe("DashboardRepository sub-query composition", () => {
         expect(w.createdBy).toBe("00000000-0000-0000-0000-000000000000");
       }
     });
+
+    it("issues its three sub-queries in parallel (Promise.all)", async () => {
+      // Regression test for the bugbot finding: the three fetches are
+      // independent, so the method must not serialise them. We assert
+      // this by making every chain resolution wait on a manually-released
+      // promise — if getRecentWorkouts still awaited sequentially, the
+      // second select() would never be called while the first is pending.
+      const callOrder: number[] = [];
+      const release: Array<() => void> = [];
+
+      const makeDeferredChain = (ix: number, rows: any[]) => {
+        const chain: any = {
+          from: vi.fn(() => chain),
+          where: vi.fn(() => chain),
+          orderBy: vi.fn(() => chain),
+          limit: vi.fn(() => chain),
+          leftJoin: vi.fn(() => chain),
+          innerJoin: vi.fn(() => chain),
+          then: (onFulfilled: any, onRejected?: any) => {
+            callOrder.push(ix);
+            return new Promise<any[]>((resolve) => {
+              release.push(() => resolve(rows));
+            }).then(onFulfilled, onRejected);
+          },
+        };
+        return chain;
+      };
+
+      let selectIndex = 0;
+      (getDb as any).mockReturnValue({
+        select: vi.fn(() => {
+          const ix = selectIndex++;
+          return makeDeferredChain(ix, []);
+        }),
+      });
+
+      const pending = repository.getRecentWorkouts("user-1");
+
+      // Give the event loop a tick so getRecentWorkouts can kick off all
+      // three queries before any resolves.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // All three chains must have been awaited before any of them resolve.
+      expect(callOrder).toEqual([0, 1, 2]);
+
+      for (const fn of release) fn();
+      await pending;
+    });
   });
 
   describe("getRecentActivity", () => {
@@ -952,11 +1001,12 @@ describe("DashboardRepository sub-query composition", () => {
         { id: "s-6", completedAt: null },
         { id: "s-7", completedAt: "bogus" },
       ];
-      const records = [{ id: "r-1" }, { id: "r-2" }];
+      // personal_records is now a SQL COUNT(*), not a row fetch.
+      const recordsCountRow = [{ total: 2 }];
       const streakSessions: Array<{ startedAt: Date | null }> = [];
 
       (getDb as any).mockReturnValue(
-        mockDbWithQueryResults([completed, records, streakSessions]),
+        mockDbWithQueryResults([completed, recordsCountRow, streakSessions]),
       );
 
       const stats = await repository.getProgressStats("user-1");
@@ -997,12 +1047,37 @@ describe("DashboardRepository sub-query composition", () => {
             { id: "s-1", completedAt: null },
             { id: "s-2", completedAt: "not a date" },
           ],
+          // COUNT(*) row-shape, empty: falls back to 0 per the ?? guard
           [],
           [],
         ]),
       );
 
       const stats = await repository.getProgressStats("user-1");
+      expect(stats.workoutsThisMonth).toBe(0);
+      expect(stats.workoutsLastMonth).toBe(0);
+      expect(stats.personalRecordsCount).toBe(0);
+    });
+
+    it("reads personalRecordsCount from the SQL COUNT(*) row, not a row fetch", async () => {
+      // Regression test for the bugbot finding: the records query must
+      // return a single { total } row (SQL COUNT(*)), not every record
+      // row for the user. A large total must be reflected exactly once
+      // — not as an array length derived from N transferred rows.
+      const now = new Date("2026-04-22T12:00:00Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+
+      (getDb as any).mockReturnValue(
+        mockDbWithQueryResults([
+          [], // no sessions in window
+          [{ total: 4812 }], // SQL COUNT(*) result
+          [], // streak
+        ]),
+      );
+
+      const stats = await repository.getProgressStats("user-1");
+      expect(stats.personalRecordsCount).toBe(4812);
       expect(stats.workoutsThisMonth).toBe(0);
       expect(stats.workoutsLastMonth).toBe(0);
     });
