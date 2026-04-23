@@ -101,20 +101,27 @@ export function useDashboard(): DashboardState {
   // One-shot auto-refresh per user when the cache is stale or empty.
   // The guard is keyed on `userId` — if the signed-in user changes
   // (sign-out → sign-in as a different user), re-arm the one-shot so
-  // the new user's stale-cache auto-refresh can fire. Without this
-  // reset the Home tab sat empty on user-switch until a manual pull-
-  // to-refresh. See bugbot thread on PR #37.
+  // the new user's stale-cache auto-refresh can fire.
+  //
+  // Read `initial.isStale` directly, NOT the `isStale` state variable.
+  // The state variable is initialised from `initial.isStale` but is only
+  // re-synced via a separate useEffect, so it lags `initial` by one
+  // render. During auth bootstrap (userId: null → "user-1") that lag
+  // caused a spurious refresh every app open against a fresh cache:
+  // the memo already knew the cache was fresh, but state was still
+  // `true` from the null-user branch. See bugbot thread on PR #37.
   const autoRefreshedForUserRef = useRef<string | null>(null);
+  const initialIsStale = initial.isStale;
   useEffect(() => {
     if (!userId) {
       autoRefreshedForUserRef.current = null;
       return;
     }
     if (autoRefreshedForUserRef.current === userId) return;
-    if (!isStale) return;
+    if (!initialIsStale) return;
     autoRefreshedForUserRef.current = userId;
     void refresh();
-  }, [userId, isStale, refresh]);
+  }, [userId, initialIsStale, refresh]);
 
   return {
     payload,

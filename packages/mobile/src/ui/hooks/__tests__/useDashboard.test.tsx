@@ -110,6 +110,38 @@ describe("useDashboard", () => {
     expect(result.current.isStale).toBe(false);
   });
 
+  it("does not fire a refresh on bootstrap when the cache is fresh", async () => {
+    // Regression for bugbot finding on PR #37: the auto-refresh effect
+    // read `isStale` from useState, which lagged `initial.isStale` by
+    // one render. When userId transitioned from null to "user-1"
+    // during the auth bootstrap, the state variable was still `true`
+    // (from the null-user branch) even though `initial.isStale` was
+    // already `false` (cache hit). Result: every app open briefly
+    // flashed isRefreshing=true against a perfectly fresh cache.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    const getDashboardSpy = jest.spyOn(api, "getDashboard");
+    const adapters = makeAdapters(api, storage);
+
+    const { result } = renderHook(() => useDashboard(), {
+      wrapper: wrap(adapters),
+    });
+    // Wait for the cached payload to propagate into state (proves the
+    // auth bootstrap + cache read completed).
+    await waitFor(() => {
+      expect(result.current.payload).not.toBeNull();
+    });
+    // Give any spurious auto-refresh a tick to fire. Before the fix
+    // this window saw a GET /dashboard call; after the fix it stays at
+    // zero because the cache was fresh at auth-bootstrap time.
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(getDashboardSpy).toHaveBeenCalledTimes(0);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   it("surfaces API error on refresh failure but keeps cached payload", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

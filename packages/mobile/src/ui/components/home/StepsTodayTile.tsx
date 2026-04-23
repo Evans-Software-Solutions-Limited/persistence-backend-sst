@@ -1,4 +1,4 @@
-import { Pressable } from "react-native";
+import { Platform, Pressable } from "react-native";
 import { View } from "@tamagui/core";
 import type { HealthPermissionStatus } from "@/domain/ports/health.port";
 import { Card } from "@/ui/components/Card";
@@ -11,11 +11,23 @@ import { Text } from "@/ui/components/Text";
  *
  * - "granted" + value: renders the count with a `$success` dot + last-synced caption.
  * - "denied" / "not_determined": renders a "Connect Health" CTA tile.
- * - "unavailable": renders muted "Not available on Android yet".
+ * - "unavailable": renders a platform-aware muted copy.
  *
  * Spec: specs/07-health-integration/design.md § M1 scope > UI tiles
  *       · requirements.md STORY-007 AC 7.3, 7.5
  */
+
+/**
+ * Pick the "Not available" copy that actually describes the user's
+ * platform. `StubHealthAdapter` reports `isAvailable: false` on web /
+ * unknown platforms too — hardcoding Android in that branch was a
+ * factual error flagged by bugbot on PR #37.
+ */
+function unavailableMessage(platformOS: typeof Platform.OS): string {
+  if (platformOS === "android") return "Not available on Android yet";
+  if (platformOS === "ios") return "Health not available on this iOS build";
+  return "Health data not available";
+}
 
 export type StepsTodayTileProps = {
   stepsToday: number | null;
@@ -50,7 +62,7 @@ export function StepsTodayTile({
           STEPS TODAY
         </Text>
         <Text variant="body" muted>
-          Not available on Android yet
+          {unavailableMessage(Platform.OS)}
         </Text>
       </Card>
     );

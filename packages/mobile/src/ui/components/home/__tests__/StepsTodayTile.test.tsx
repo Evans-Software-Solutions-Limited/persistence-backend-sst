@@ -1,4 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
+import { Platform } from "react-native";
 import { StepsTodayTile } from "@/ui/components/home/StepsTodayTile";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
@@ -37,23 +38,56 @@ describe("StepsTodayTile", () => {
     expect(getByText("0")).toBeTruthy();
   });
 
-  it("renders the unavailable state on Android / web", () => {
-    const { getByTestId, getByText } = renderWithTheme(
-      <StepsTodayTile
-        stepsToday={null}
-        isAvailable={false}
-        permissionStatus={{
-          steps: "not_determined",
-          calories: "not_determined",
-          bodyWeight: "not_determined",
-          heartRate: "not_determined",
-        }}
-        lastReadAt={null}
-        onConnectPress={jest.fn()}
-      />,
-    );
-    expect(getByTestId("steps-tile-unavailable")).toBeTruthy();
-    expect(getByText(/Not available on Android/i)).toBeTruthy();
+  describe("unavailable state — platform-aware copy (bugbot regression PR #37)", () => {
+    const unavailableProps = {
+      stepsToday: null,
+      isAvailable: false,
+      permissionStatus: {
+        steps: "not_determined" as const,
+        calories: "not_determined" as const,
+        bodyWeight: "not_determined" as const,
+        heartRate: "not_determined" as const,
+      },
+      lastReadAt: null,
+      onConnectPress: jest.fn(),
+    };
+
+    const originalOS = Platform.OS;
+    afterEach(() => {
+      Object.defineProperty(Platform, "OS", {
+        configurable: true,
+        value: originalOS,
+      });
+    });
+
+    function setPlatform(os: "ios" | "android" | "web") {
+      Object.defineProperty(Platform, "OS", { configurable: true, value: os });
+    }
+
+    it("renders the Android-specific copy on Android", () => {
+      setPlatform("android");
+      const { getByTestId, getByText } = renderWithTheme(
+        <StepsTodayTile {...unavailableProps} />,
+      );
+      expect(getByTestId("steps-tile-unavailable")).toBeTruthy();
+      expect(getByText("Not available on Android yet")).toBeTruthy();
+    });
+
+    it("renders the iOS-specific copy on iOS", () => {
+      setPlatform("ios");
+      const { getByText } = renderWithTheme(
+        <StepsTodayTile {...unavailableProps} />,
+      );
+      expect(getByText("Health not available on this iOS build")).toBeTruthy();
+    });
+
+    it("renders the generic fallback copy on web / unknown platforms", () => {
+      setPlatform("web");
+      const { getByText } = renderWithTheme(
+        <StepsTodayTile {...unavailableProps} />,
+      );
+      expect(getByText("Health data not available")).toBeTruthy();
+    });
   });
 
   it("renders the Connect CTA when permission is denied / not_determined", () => {
