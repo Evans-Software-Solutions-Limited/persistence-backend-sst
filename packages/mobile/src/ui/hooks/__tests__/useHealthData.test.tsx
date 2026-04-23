@@ -178,6 +178,39 @@ describe("useHealthData", () => {
     );
   });
 
+  it("does not consume the rate-limit window when health is unavailable", async () => {
+    // Regression for bugbot finding on PR #37: lastReadAtRef used to
+    // be set BEFORE the availability check, so an unavailable health
+    // provider still burned the 5-minute rate-limit timer. The next
+    // AppState foreground transition within the window (or any other
+    // rate-limited caller) got silently skipped even though no real
+    // read had ever happened. Fix: only set lastReadAtRef after
+    // availability passes.
+    const health = makeHealthAdapter({
+      isAvailable: jest.fn(async () => false),
+    });
+    renderHook(() => useHealthData(), {
+      wrapper: wrap(makeAdapters(health)),
+    });
+
+    // Mount-time read runs, hits isAvailable=false, returns early.
+    await waitFor(() => {
+      expect(health.isAvailable).toHaveBeenCalledTimes(1);
+    });
+
+    // Foreground transition in the same tick — if the rate-limit
+    // window was burned by the mount call, this path would skip
+    // entirely and isAvailable would still be at 1. With the fix,
+    // the window is untouched and the availability check retries.
+    await act(async () => {
+      appStateListeners.forEach((cb) => cb("active"));
+    });
+
+    await waitFor(() => {
+      expect(health.isAvailable).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("removes the AppState listener on unmount", async () => {
     const health = makeHealthAdapter();
     const { unmount } = renderHook(() => useHealthData(), {

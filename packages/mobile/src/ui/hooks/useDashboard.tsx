@@ -77,18 +77,24 @@ export function useDashboard(): DashboardState {
     setSyncedAt(initial.syncedAt);
   }, [initial]);
 
-  // Dedupe concurrent refresh() calls onto a single in-flight promise.
-  // Without this, a pull-to-refresh arriving while the one-shot auto-
-  // refresh is still running (or vice versa) would fire two overlapping
-  // API calls; the first to finish would flip isRefreshing back to
-  // false while the second was still in flight, dismissing the
-  // RefreshControl spinner prematurely. Returning the same promise
-  // also means the caller's `await refresh()` resolves when the single
-  // real refresh completes, not before. See bugbot thread on PR #37.
-  const inFlightRef = useRef<Promise<void> | null>(null);
+  // Dedupe concurrent refresh() calls onto a single in-flight promise,
+  // BUT only when they're for the same user. Cross-user dedupe was a
+  // bug — sign-out during an in-flight refresh, then sign-in as a
+  // different user, would have the new user's auto-refresh silently
+  // consume the stale user-1 promise via the guard below, leaving
+  // user-2's dashboard empty. Keying the ref on userId means user-2's
+  // refresh starts a fresh fetch; same-user concurrent callers still
+  // share one in-flight window as before (AC 5.10 spinner behaviour
+  // stays correct). See bugbot thread on PR #37.
+  const inFlightRef = useRef<{
+    userId: string;
+    promise: Promise<void>;
+  } | null>(null);
   const refresh = useCallback(async () => {
     if (!userId) return;
-    if (inFlightRef.current) return inFlightRef.current;
+    if (inFlightRef.current && inFlightRef.current.userId === userId) {
+      return inFlightRef.current.promise;
+    }
     setIsRefreshing(true);
     setError(null);
     const work = (async () => {
@@ -106,10 +112,19 @@ export function useDashboard(): DashboardState {
         setCacheVersion((v) => v + 1);
       } finally {
         setIsRefreshing(false);
-        inFlightRef.current = null;
+        // Only clear if the registered entry is still for this user.
+        // If user-2's refresh replaced ours during sign-out/sign-in,
+        // the ref holds user-2's promise — skip the clear so user-2's
+        // work isn't orphaned. `userId` here is the closure-captured
+        // value from this `refresh` useCallback build, so comparing
+        // to `inFlightRef.current.userId` correctly distinguishes
+        // cross-user replacement.
+        if (inFlightRef.current?.userId === userId) {
+          inFlightRef.current = null;
+        }
       }
     })();
-    inFlightRef.current = work;
+    inFlightRef.current = { userId, promise: work };
     return work;
   }, [api, storage, userId]);
 

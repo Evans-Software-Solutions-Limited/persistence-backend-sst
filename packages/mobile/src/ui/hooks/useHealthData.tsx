@@ -75,7 +75,6 @@ export function useHealthData(): HealthDataState {
       ) {
         return;
       }
-      lastReadAtRef.current = now;
 
       const available = await health.isAvailable();
       setIsAvailable(available);
@@ -83,6 +82,14 @@ export function useHealthData(): HealthDataState {
       setPermissionStatus(perms);
 
       if (!available) return;
+
+      // Only consume the rate-limit window once we've passed the
+      // availability gate and committed to a real read. If availability
+      // is false we return early without burning the window, so the
+      // next rate-limited caller (AppState foreground re-read, etc.)
+      // actually retries rather than getting silently skipped. See
+      // bugbot thread on PR #37.
+      lastReadAtRef.current = now;
 
       setIsReading(true);
       try {

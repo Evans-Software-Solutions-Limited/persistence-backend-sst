@@ -280,6 +280,116 @@ describe("useDashboard", () => {
     expect(result.current.payload).toEqual(DASHBOARD_FIXTURE);
   });
 
+  it("does not dedupe a new user's refresh onto a stale in-flight promise from the previous user", async () => {
+    // Regression for bugbot finding on PR #37: the inFlightRef used to
+    // be keyed on nothing, so if user-1's auto-refresh was still in
+    // flight when user-2 signed in, the new auto-refresh call hit
+    // the dedupe guard and returned user-1's stale promise — silently
+    // consuming user-2's one-shot without actually fetching their
+    // dashboard. Keying the ref on userId means cross-user calls
+    // always start a fresh fetch.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+
+    // Stall every getDashboard call so user-1's is still in flight
+    // when user-2 signs in. All stalls release at once at the end of
+    // the test.
+    const releases: Array<() => void> = [];
+    const getDashboardSpy = jest
+      .spyOn(api, "getDashboard")
+      .mockImplementation(async () => {
+        await new Promise<void>((resolve) => releases.push(resolve));
+        return ok(DASHBOARD_FIXTURE);
+      });
+
+    const listeners: ((s: AuthSession | null) => void)[] = [];
+    const user1: AuthSession = {
+      accessToken: "t1",
+      refreshToken: "r1",
+      userId: "user-1",
+      email: "u1@example.com",
+      expiresAt: Date.now() + 60_000,
+    };
+    const user2: AuthSession = {
+      accessToken: "t2",
+      refreshToken: "r2",
+      userId: "user-2",
+      email: "u2@example.com",
+      expiresAt: Date.now() + 60_000,
+    };
+
+    let currentSession: AuthSession | null = user1;
+    const auth = {
+      signInWithEmail: jest.fn(),
+      signUpWithEmail: jest.fn(),
+      signInWithOAuth: jest.fn(),
+      signOut: jest.fn(),
+      getSession: jest.fn(async () => ok(currentSession)),
+      onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
+        listeners.push(cb);
+        setTimeout(() => cb(currentSession), 0);
+        return () => {};
+      }),
+      resetPassword: jest.fn(),
+      refreshSession: jest.fn(),
+      getAccessToken: jest.fn(async () => currentSession?.accessToken ?? "t"),
+    } as unknown as Adapters["auth"];
+
+    const adapters: Adapters = {
+      api,
+      auth,
+      storage,
+      health: {
+        isAvailable: jest.fn(async () => false),
+        requestPermissions: jest.fn(),
+        getPermissionStatus: jest.fn(async () => ({
+          steps: "not_determined",
+          calories: "not_determined",
+          bodyWeight: "not_determined",
+          heartRate: "not_determined",
+        })),
+        getStepsToday: jest.fn(),
+        getActiveCaloriesToday: jest.fn(),
+        getLatestBodyWeight: jest.fn(),
+        getHeartRateLatest: jest.fn(),
+        writeBodyWeight: jest.fn(),
+        disconnect: jest.fn(),
+      } as unknown as Adapters["health"],
+      notifications: {} as Adapters["notifications"],
+      payments: {} as Adapters["payments"],
+    };
+
+    renderHook(() => useDashboard(), { wrapper: wrap(adapters) });
+
+    // user-1 mount-time auto-refresh registers as call #1 and stalls.
+    await waitFor(() => {
+      expect(getDashboardSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Flip session to user-2 while user-1's refresh is still stalled.
+    await act(async () => {
+      currentSession = null;
+      listeners.forEach((cb) => cb(null));
+    });
+    await act(async () => {
+      currentSession = user2;
+      listeners.forEach((cb) => cb(user2));
+    });
+
+    // user-2's auto-refresh MUST start a brand-new fetch, not dedupe
+    // onto the stale user-1 promise. Pre-fix, this waitFor would
+    // time out at 1 call.
+    await waitFor(() => {
+      expect(getDashboardSpy).toHaveBeenCalledTimes(2);
+    });
+
+    // Release both stalled promises so the test can clean up cleanly.
+    await act(async () => {
+      releases.forEach((r) => r());
+    });
+  });
+
   it("re-arms the auto-refresh guard when userId changes (sign-out → sign-in as a different user)", async () => {
     // Regression for bugbot finding on PR #37: hasAutoRefreshedRef was
     // set to true for user-1 and never reset. When user-1 signed out
