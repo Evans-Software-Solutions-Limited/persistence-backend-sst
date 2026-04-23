@@ -98,9 +98,17 @@ export function HomeContainer() {
     [greetingStyle, goalsStyle, workoutsStyle, progressStyle, activityStyle],
   );
 
+  // Depend on the stable useCallback-wrapped methods directly, not the
+  // whole hook-return objects. useDashboard() and useHealthData() build
+  // their return value as a plain inline object, so `dashboard` and
+  // `health` are new references every render — listing them here would
+  // recreate onRefresh every render and defeat the memoization. The
+  // `.refresh` fns underneath are already useCallback-stable.
+  const dashboardRefresh = dashboard.refresh;
+  const healthRefresh = health.refresh;
   const onRefresh = useCallback(() => {
-    void Promise.all([dashboard.refresh(), health.refresh()]);
-  }, [dashboard, health]);
+    void Promise.all([dashboardRefresh(), healthRefresh()]);
+  }, [dashboardRefresh, healthRefresh]);
 
   const onUpgradePress = useCallback(() => {
     Alert.alert(
@@ -124,11 +132,14 @@ export function HomeContainer() {
     router.push("/(app)/(tabs)/progress");
   }, [router]);
 
+  // Same pattern as onRefresh above — depend on the stable
+  // useCallback-wrapped method, not the whole `health` hook return.
+  const healthRequestPermissions = health.requestPermissions;
   const onConnectHealthPress = useCallback(() => {
     // M1 non-goal: `/health-permissions` screen. Route is a placeholder
     // until Phase 4 of the health spec ships.
-    void health.requestPermissions();
-  }, [health]);
+    void healthRequestPermissions();
+  }, [healthRequestPermissions]);
 
   const onActivityPress = useCallback(
     (_sessionId: string) => {

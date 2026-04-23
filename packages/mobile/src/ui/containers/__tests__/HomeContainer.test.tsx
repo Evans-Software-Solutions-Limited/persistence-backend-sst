@@ -8,12 +8,17 @@ jest.mock("expo-router", () => ({
 }));
 
 const mockHomePresenterProps: { current: any } = { current: null };
+// Records the props passed on each render. Used by the identity-
+// stability test (bugbot regression) to assert onRefresh +
+// onConnectHealthPress don't get recreated on every render.
+const mockHomePresenterRenders: any[] = [];
 jest.mock("@/ui/presenters/HomePresenter", () => {
   const React = require("react");
   const { Pressable } = require("react-native");
   return {
     HomePresenter: (props: any) => {
       mockHomePresenterProps.current = props;
+      mockHomePresenterRenders.push(props);
       return React.createElement(
         require("react-native").View,
         { testID: "home-presenter-stub" },
@@ -171,6 +176,7 @@ describe("HomeContainer", () => {
   beforeEach(() => {
     mockRouterPush.mockClear();
     mockHomePresenterProps.current = null;
+    mockHomePresenterRenders.length = 0;
   });
 
   it("passes the dashboard fixture into the presenter view-model", async () => {
@@ -341,5 +347,65 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     expect(mockHomePresenterProps.current.animationStyles).toHaveLength(5);
+  });
+
+  it("keeps onRefresh + onConnectHealthPress identity stable across re-renders", async () => {
+    // Regression for bugbot finding on PR #37: the original code
+    // declared `useCallback(..., [dashboard, health])`, but both
+    // useDashboard() and useHealthData() return fresh plain objects
+    // each render — so the deps were "new" every render and
+    // useCallback re-created both handlers every render, defeating
+    // the memoization entirely. The fix depends on the stable
+    // useCallback-wrapped refresh / requestPermissions methods.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    const adapters = makeAdapters(api, storage);
+
+    const { getByTestId } = renderWithTheme(
+      <Wrap adapters={adapters}>
+        <HomeContainer />
+      </Wrap>,
+    );
+
+    // Wait for the auth bootstrap + cache read to settle — during
+    // that window `userId` legitimately flips from null to "user-1",
+    // which recomputes dashboard.refresh and is not a memo defeat.
+    await waitFor(() => {
+      expect(mockHomePresenterProps.current?.payload).not.toBeNull();
+    });
+
+    // Snapshot the post-settle render count, then capture identities
+    // only from renders AFTER this point. That way any change in the
+    // captured handler reference is caused by a re-render alone, not
+    // by a genuine dependency change.
+    const cutoff = mockHomePresenterRenders.length;
+
+    // Force at least two more re-renders by firing a pull-to-refresh
+    // twice. Pre-fix, each of these renders pushes a distinct
+    // onRefresh identity (the old deps `[dashboard, health]` were
+    // fresh objects every render).
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-refresh"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-refresh"));
+    });
+
+    const postSettleRenders = mockHomePresenterRenders.slice(cutoff);
+    expect(postSettleRenders.length).toBeGreaterThanOrEqual(2);
+
+    const distinctRefreshes = new Set(
+      postSettleRenders.map((p) => p.onRefresh),
+    );
+    const distinctConnects = new Set(
+      postSettleRenders.map((p) => p.onConnectHealthPress),
+    );
+
+    // Both handlers must be memo-stable across post-settle renders.
+    // Pre-fix, these Sets would have size === postSettleRenders.length.
+    expect(distinctRefreshes.size).toBe(1);
+    expect(distinctConnects.size).toBe(1);
   });
 });
