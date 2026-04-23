@@ -13,7 +13,7 @@ import type {
   HealthPermissionStatus,
   HealthWeight,
 } from "@/domain/ports/health.port";
-import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { PLogoDrawLoader } from "@/ui/components";
 import { GoalsSection } from "@/ui/components/home/GoalsSection";
 import { GreetingSection } from "@/ui/components/home/GreetingSection";
 import { MyProgressSection } from "@/ui/components/home/MyProgressSection";
