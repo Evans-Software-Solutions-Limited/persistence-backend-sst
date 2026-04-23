@@ -1,78 +1,125 @@
-import { ScrollView } from "react-native";
-import { View } from "@tamagui/core";
-import type { DashboardActiveGoal } from "@/domain/models/dashboard";
-import { Card } from "@/ui/components/Card";
-import { Column } from "@/ui/components/Column";
-import { EmptyState } from "@/ui/components/EmptyState";
-import { Row } from "@/ui/components/Row";
-import { Text } from "@/ui/components/Text";
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  BorderRadius,
+  Colors,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/ui/theme/homeLegacyTheme";
 
 /**
- * Horizontal list of active-goal chips with progress indicators.
- * Ported 1:1 from `persistence-mobile/components/home/GoalsSection/`.
- *
- * Spec: specs/06-progress-goals/requirements.md STORY-005 AC 5.4
+ * Stacked goal cards with progress bar. Ported verbatim from
+ * `persistence-mobile/components/home/GoalsSection/`.
  */
 
-export type GoalsSectionProps = {
-  goals: readonly DashboardActiveGoal[];
-};
+export interface Goal {
+  readonly id: string;
+  readonly title: string;
+  readonly current: number;
+  readonly target: number;
+  readonly unit?: string;
+  readonly icon: keyof typeof Ionicons.glyphMap;
+}
+
+interface GoalsSectionProps {
+  readonly goals: Goal[];
+}
 
 export function GoalsSection({ goals }: GoalsSectionProps) {
+  if (goals.length === 0) {
+    return null;
+  }
+
   return (
-    <Column gap="sm" testID="goals-section">
-      <Text variant="h4">Active Goals</Text>
-      {goals.length === 0 ? (
-        <EmptyState
-          title="No active goals"
-          description="Set a goal from the Progress tab to see it here."
-        />
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12, paddingRight: 4 }}
-        >
-          {goals.map((goal) => (
-            <GoalChip key={goal.id} goal={goal} />
-          ))}
-        </ScrollView>
-      )}
-    </Column>
+    <View style={styles.container} testID="goals-section">
+      <Text style={styles.sectionTitle}>Goals</Text>
+      {goals.map((goal) => {
+        const percentage =
+          goal.target > 0
+            ? Math.min((goal.current / goal.target) * 100, 100)
+            : 0;
+        const isComplete = goal.current >= goal.target;
+
+        return (
+          <View
+            key={goal.id}
+            style={styles.goalCard}
+            testID={`goal-card-${goal.id}`}
+          >
+            <View style={styles.goalHeader}>
+              <Ionicons
+                name={goal.icon}
+                size={20}
+                color={Colors.primary.DEFAULT}
+              />
+              <Text style={styles.goalTitle}>{goal.title}</Text>
+            </View>
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${percentage}%`,
+                      backgroundColor: isComplete
+                        ? Colors.success.DEFAULT
+                        : Colors.primary.DEFAULT,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {goal.current.toLocaleString()} / {goal.target.toLocaleString()}{" "}
+                {goal.unit || ""}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
-function GoalChip({ goal }: { goal: DashboardActiveGoal }) {
-  const clampedTarget = goal.target > 0 ? goal.target : 1;
-  const pct = Math.max(0, Math.min(1, goal.current / clampedTarget));
-  return (
-    <Card
-      testID={`goal-chip-${goal.id}`}
-      minWidth={160}
-      padding="$base"
-      gap="$xs"
-    >
-      <Text variant="bodySmall" secondary numberOfLines={1}>
-        {goal.title}
-      </Text>
-      <Row justify="between" gap="xs">
-        <Text variant="h4">{goal.current}</Text>
-        <Text variant="bodySmall" muted>
-          / {goal.target} {goal.unit}
-        </Text>
-      </Row>
-      <View
-        height={4}
-        borderRadius="$full"
-        backgroundColor="$surfaceSecondary"
-        overflow="hidden"
-      >
-        <View
-          height="100%"
-          width={`${pct * 100}%`}
-          backgroundColor="$primary"
-        />
-      </View>
-    </Card>
-  );
-}
+const styles = StyleSheet.create({
+  container: {},
+  sectionTitle: {
+    ...Typography.h3,
+    marginBottom: Spacing.md,
+  },
+  goalCard: {
+    backgroundColor: Colors.surface.primary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    ...Shadows.small,
+  },
+  goalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  goalTitle: {
+    ...Typography.body1,
+    color: Colors.text.primary,
+  },
+  progressContainer: {
+    gap: Spacing.xs,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: Colors.surface.secondary,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: BorderRadius.full,
+  },
+  progressText: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+  },
+});

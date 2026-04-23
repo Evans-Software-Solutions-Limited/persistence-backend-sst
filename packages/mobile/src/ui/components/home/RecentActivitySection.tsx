@@ -1,25 +1,31 @@
-import { Pressable } from "react-native";
-import type { DashboardRecentActivity } from "@/domain/models/dashboard";
-import { Card } from "@/ui/components/Card";
-import { Column } from "@/ui/components/Column";
-import { EmptyState } from "@/ui/components/EmptyState";
-import { Row } from "@/ui/components/Row";
-import { Text } from "@/ui/components/Text";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  BorderRadius,
+  Colors,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/ui/theme/homeLegacyTheme";
 
 /**
- * Vertical list of recently-completed sessions. Ported 1:1 from
- * `persistence-mobile/components/home/RecentActivitySection/`.
- *
- * Spec: specs/06-progress-goals/requirements.md STORY-005 AC 5.3
- *       · STORY-007 AC 7.2
+ * Recent activity list. Ported verbatim from
+ * `persistence-mobile/components/home/RecentActivitySection/` — same
+ * row cards, same relative-time caption.
  */
 
-export type RecentActivitySectionProps = {
-  activities: readonly DashboardRecentActivity[];
-  onActivityPress: (sessionId: string) => void;
-};
+interface RecentActivity {
+  readonly workout_session_id: string;
+  readonly workout_name: string;
+  readonly completed_at: string;
+}
 
-function formatRelative(iso: string): string {
+interface RecentActivitySectionProps {
+  readonly activities: readonly RecentActivity[];
+  readonly onActivityPress?: (sessionId: string) => void;
+}
+
+function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - Date.parse(iso);
   if (Number.isNaN(diffMs)) return "";
   const mins = Math.max(0, Math.floor(diffMs / 60_000));
@@ -30,49 +36,67 @@ function formatRelative(iso: string): string {
   return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
-function formatDuration(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const mins = Math.max(0, Math.round(seconds / 60));
-  return `${mins} min`;
-}
-
 export function RecentActivitySection({
   activities,
   onActivityPress,
 }: RecentActivitySectionProps) {
+  if (activities.length === 0) {
+    return null;
+  }
+
   return (
-    <Column gap="sm" testID="recent-activity-section">
-      <Text variant="h4">Recent Activity</Text>
-      {activities.length === 0 ? (
-        <EmptyState
-          title="No recent activity"
-          description="Completed workouts from the last 7 days will appear here."
-        />
-      ) : (
-        <Column gap="xs">
-          {activities.map((activity) => (
-            <Pressable
-              key={activity.workoutSessionId}
-              onPress={() => onActivityPress(activity.workoutSessionId)}
-              testID={`recent-activity-${activity.workoutSessionId}`}
-            >
-              <Card pressable padding="$base" gap="$xs">
-                <Row justify="between" gap="xs">
-                  <Text variant="body" numberOfLines={1}>
-                    {activity.workoutName}
-                  </Text>
-                  <Text variant="caption" muted>
-                    {formatRelative(activity.completedAt)}
-                  </Text>
-                </Row>
-                <Text variant="caption" muted>
-                  {formatDuration(activity.durationSeconds)}
-                </Text>
-              </Card>
-            </Pressable>
-          ))}
-        </Column>
-      )}
-    </Column>
+    <View style={styles.container} testID="recent-activity-section">
+      <Text style={styles.sectionTitle}>Recent Activity</Text>
+      {activities.map((activity) => {
+        const body = (
+          <View style={styles.activityCard}>
+            <Text style={styles.activityName}>{activity.workout_name}</Text>
+            <Text style={styles.activityTime}>
+              {formatRelativeTime(activity.completed_at)}
+            </Text>
+          </View>
+        );
+        return onActivityPress ? (
+          <TouchableOpacity
+            key={activity.workout_session_id}
+            onPress={() => onActivityPress(activity.workout_session_id)}
+            testID={`recent-activity-${activity.workout_session_id}`}
+          >
+            {body}
+          </TouchableOpacity>
+        ) : (
+          <View
+            key={activity.workout_session_id}
+            testID={`recent-activity-${activity.workout_session_id}`}
+          >
+            {body}
+          </View>
+        );
+      })}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {},
+  sectionTitle: {
+    ...Typography.h3,
+    marginBottom: Spacing.md,
+  },
+  activityCard: {
+    backgroundColor: Colors.surface.primary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    ...Shadows.small,
+  },
+  activityName: {
+    ...Typography.body1,
+    color: Colors.text.primary,
+    marginBottom: Spacing.xs,
+  },
+  activityTime: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+  },
+});

@@ -1,75 +1,41 @@
-import type { DashboardActiveGoal } from "@/domain/models/dashboard";
-import { GoalsSection } from "@/ui/components/home/GoalsSection";
+import { GoalsSection, type Goal } from "@/ui/components/home/GoalsSection";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
-const goals: DashboardActiveGoal[] = [
-  {
-    id: "goal-1",
-    title: "Bench 100kg",
-    current: 90,
-    target: 100,
-    unit: "kg",
-    priority: 1,
-    targetDate: null,
-  },
-  {
-    id: "goal-2",
-    title: "10k steps",
-    current: 0,
+describe("GoalsSection", () => {
+  const goal = (overrides: Partial<Goal> = {}): Goal => ({
+    id: "g-1",
+    title: "10,000 Steps",
+    current: 4812,
     target: 10000,
     unit: "steps",
-    priority: 2,
-    targetDate: null,
-  },
-];
-
-describe("GoalsSection", () => {
-  it("renders all provided goals", () => {
-    const { getByTestId } = renderWithTheme(<GoalsSection goals={goals} />);
-    expect(getByTestId("goal-chip-goal-1")).toBeTruthy();
-    expect(getByTestId("goal-chip-goal-2")).toBeTruthy();
+    icon: "footsteps",
+    ...overrides,
   });
 
-  it("renders an empty state when no goals", () => {
-    const { getByText } = renderWithTheme(<GoalsSection goals={[]} />);
-    expect(getByText("No active goals")).toBeTruthy();
+  it("returns null when goals is empty", () => {
+    const { queryByTestId } = renderWithTheme(<GoalsSection goals={[]} />);
+    expect(queryByTestId("goals-section")).toBeNull();
   });
 
-  it("clamps progress percentage at 0 even when current is negative", () => {
+  it("renders each goal with title + progress text", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <GoalsSection goals={[goal()]} />,
+    );
+    expect(getByTestId("goal-card-g-1")).toBeTruthy();
+    expect(getByText("10,000 Steps")).toBeTruthy();
+    expect(getByText("4,812 / 10,000 steps")).toBeTruthy();
+  });
+
+  it("renders multiple goals in order", () => {
     const { getByTestId } = renderWithTheme(
       <GoalsSection
         goals={[
-          {
-            id: "neg",
-            title: "weird",
-            current: -50,
-            target: 100,
-            unit: "kg",
-            priority: 1,
-            targetDate: null,
-          },
+          goal({ id: "g-1", title: "Steps" }),
+          goal({ id: "g-2", title: "Sleep", current: 8, target: 8 }),
         ]}
       />,
     );
-    expect(getByTestId("goal-chip-neg")).toBeTruthy();
-  });
-
-  it("handles zero-target goals gracefully", () => {
-    const { getByTestId } = renderWithTheme(
-      <GoalsSection
-        goals={[
-          {
-            id: "zero",
-            title: "habit",
-            current: 1,
-            target: 0,
-            unit: "check",
-            priority: 1,
-            targetDate: null,
-          },
-        ]}
-      />,
-    );
-    expect(getByTestId("goal-chip-zero")).toBeTruthy();
+    expect(getByTestId("goal-card-g-1")).toBeTruthy();
+    expect(getByTestId("goal-card-g-2")).toBeTruthy();
   });
 });

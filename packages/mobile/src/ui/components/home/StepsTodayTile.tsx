@@ -1,27 +1,26 @@
-import { Platform, Pressable } from "react-native";
-import { View } from "@tamagui/core";
+import React from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import type { HealthPermissionStatus } from "@/domain/ports/health.port";
-import { Card } from "@/ui/components/Card";
-import { Row } from "@/ui/components/Row";
-import { Text } from "@/ui/components/Text";
+import {
+  BorderRadius,
+  Colors,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/ui/theme/homeLegacyTheme";
+import { SimpleLineGraph } from "./SimpleLineGraph";
 
 /**
- * Three-state Steps-today tile.
+ * Steps-today MyProgress tile. Visual structure ported verbatim from
+ * `persistence-mobile/components/home/StepsTodayTile/` (title, big
+ * value, SimpleLineGraph). Three states preserved from the M1 scope
+ * — granted / denied / unavailable — so AC 7.3 and AC 7.5 still hold:
  *
- * - "granted" + value: renders the count with a `$success` dot + last-synced caption.
- * - "denied" / "not_determined": renders a "Connect Health" CTA tile.
- * - "unavailable": renders a platform-aware muted copy.
- *
- * Spec: specs/07-health-integration/design.md § M1 scope > UI tiles
- *       · requirements.md STORY-007 AC 7.3, 7.5
+ * - granted + value: legacy look (count + line graph)
+ * - denied / not_determined: "Connect Health" CTA tile
+ * - unavailable: platform-aware muted copy
  */
 
-/**
- * Pick the "Not available" copy that actually describes the user's
- * platform. `StubHealthAdapter` reports `isAvailable: false` on web /
- * unknown platforms too — hardcoding Android in that branch was a
- * factual error flagged by bugbot on PR #37.
- */
 function unavailableMessage(platformOS: typeof Platform.OS): string {
   if (platformOS === "android") return "Not available on Android yet";
   if (platformOS === "ios") return "Health not available on this iOS build";
@@ -34,36 +33,24 @@ export type StepsTodayTileProps = {
   permissionStatus: HealthPermissionStatus;
   lastReadAt: string | null;
   onConnectPress: () => void;
+  history?: { date: Date; steps: number }[];
 };
-
-function formatLastReadAt(iso: string | null): string | null {
-  if (!iso) return null;
-  const diffMs = Date.now() - Date.parse(iso);
-  if (Number.isNaN(diffMs)) return null;
-  if (diffMs < 60 * 1000) return "just now";
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ago`;
-}
 
 export function StepsTodayTile({
   stepsToday,
   isAvailable,
   permissionStatus,
-  lastReadAt,
   onConnectPress,
+  history = [],
 }: StepsTodayTileProps) {
   if (!isAvailable) {
     return (
-      <Card testID="steps-tile-unavailable" padding="$base" gap="$xs">
-        <Text variant="label" muted>
-          STEPS TODAY
-        </Text>
-        <Text variant="body" muted>
+      <View style={styles.container} testID="steps-tile-unavailable">
+        <Text style={styles.title}>Steps Today</Text>
+        <Text style={styles.unavailable}>
           {unavailableMessage(Platform.OS)}
         </Text>
-      </Card>
+      </View>
     );
   }
 
@@ -71,41 +58,69 @@ export function StepsTodayTile({
   if (!granted) {
     return (
       <Pressable onPress={onConnectPress} testID="steps-tile-connect">
-        <Card pressable padding="$base" gap="$xs">
-          <Text variant="label" muted>
-            STEPS TODAY
-          </Text>
-          <Text variant="body">Connect Health</Text>
-          <Text variant="caption" muted>
-            Tap to grant permission
-          </Text>
-        </Card>
+        <View style={styles.container}>
+          <Text style={styles.title}>Steps Today</Text>
+          <Text style={styles.connectLabel}>Connect Health</Text>
+          <Text style={styles.connectCaption}>Tap to grant permission</Text>
+        </View>
       </Pressable>
     );
   }
 
-  const caption = formatLastReadAt(lastReadAt);
+  const value = (stepsToday ?? 0).toLocaleString();
+
   return (
-    <Card testID="steps-tile-granted" padding="$base" gap="$xs">
-      <Row gap="xs">
-        <View
-          width={8}
-          height={8}
-          borderRadius="$full"
-          backgroundColor="$success"
-        />
-        <Text variant="label" muted>
-          STEPS TODAY
-        </Text>
-      </Row>
-      <Text variant="h3" testID="steps-tile-value">
-        {stepsToday ?? 0}
+    <View style={styles.container} testID="steps-tile-granted">
+      <Text style={styles.title}>Steps Today</Text>
+      <Text style={styles.value} testID="steps-tile-value">
+        {value}
       </Text>
-      {caption ? (
-        <Text variant="caption" muted>
-          Last synced {caption}
-        </Text>
+      {history.length > 0 ? (
+        <View style={styles.graphContainer}>
+          <SimpleLineGraph
+            data={history.map((h) => h.steps)}
+            width={150}
+            height={60}
+            color={Colors.success.DEFAULT}
+          />
+        </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.surface.primary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    ...Shadows.small,
+  },
+  title: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+    marginBottom: Spacing.xs,
+  },
+  value: {
+    ...Typography.h3,
+    color: Colors.text.primary,
+    marginBottom: Spacing.sm,
+  },
+  graphContainer: {
+    marginTop: Spacing.xs,
+  },
+  unavailable: {
+    ...Typography.body2,
+    color: Colors.text.tertiary,
+  },
+  connectLabel: {
+    ...Typography.h4,
+    color: Colors.text.primary,
+    marginBottom: Spacing.xs,
+  },
+  connectCaption: {
+    ...Typography.caption,
+    color: Colors.text.secondary,
+  },
+});

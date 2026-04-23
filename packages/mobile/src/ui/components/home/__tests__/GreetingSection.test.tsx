@@ -1,44 +1,55 @@
+import { fireEvent } from "@testing-library/react-native";
 import { GreetingSection } from "@/ui/components/home/GreetingSection";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
 describe("GreetingSection", () => {
-  const subscription = {
-    tierName: "Pro",
-    isFreeTier: false,
-    isTrainerTier: false,
+  const base = {
+    userName: "Alex",
+    subscriptionTier: "free",
+    isFreeTier: true,
+    onUpgradePress: jest.fn(),
+    onManageSubscription: jest.fn(),
   };
 
-  it("renders the user's first name", () => {
-    const { getByText } = renderWithTheme(
-      <GreetingSection
-        firstName="Alex"
-        subscription={subscription}
-        onUpgradePress={jest.fn()}
-      />,
-    );
-    expect(getByText("Hey, Alex")).toBeTruthy();
-    expect(getByText("WELCOME BACK")).toBeTruthy();
+  it("renders the user name + a time-based greeting", () => {
+    const { getByText } = renderWithTheme(<GreetingSection {...base} />);
+    expect(getByText("Alex")).toBeTruthy();
+    expect(getByText(/Good (morning|afternoon|evening)/)).toBeTruthy();
   });
 
-  it("falls back to 'Lifter' when firstName is null (AC 5.1)", () => {
-    const { getByText } = renderWithTheme(
-      <GreetingSection
-        firstName={null}
-        subscription={subscription}
-        onUpgradePress={jest.fn()}
-      />,
+  it("shows Free Tier + Upgrade CTA when isFreeTier is true", () => {
+    const onUpgradePress = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
+      <GreetingSection {...base} onUpgradePress={onUpgradePress} />,
     );
-    expect(getByText("Hey, Lifter")).toBeTruthy();
+    expect(getByText("Free Tier")).toBeTruthy();
+    fireEvent.press(getByTestId("subscription-upgrade"));
+    expect(onUpgradePress).toHaveBeenCalled();
   });
 
-  it("falls back to 'Lifter' when firstName is only whitespace", () => {
-    const { getByText } = renderWithTheme(
+  it("shows tier name + Manage CTA for paid tiers", () => {
+    const onManageSubscription = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
       <GreetingSection
-        firstName="   "
-        subscription={subscription}
-        onUpgradePress={jest.fn()}
+        {...base}
+        subscriptionTier="premium"
+        isFreeTier={false}
+        onManageSubscription={onManageSubscription}
       />,
     );
-    expect(getByText("Hey, Lifter")).toBeTruthy();
+    expect(getByText("Premium User")).toBeTruthy();
+    fireEvent.press(getByTestId("subscription-manage"));
+    expect(onManageSubscription).toHaveBeenCalled();
+  });
+
+  it("falls back to 'Free User' for unknown tier", () => {
+    const { getByText } = renderWithTheme(
+      <GreetingSection
+        {...base}
+        subscriptionTier="unknown"
+        isFreeTier={false}
+      />,
+    );
+    expect(getByText("Free User")).toBeTruthy();
   });
 });

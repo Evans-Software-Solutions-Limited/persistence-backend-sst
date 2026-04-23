@@ -193,7 +193,7 @@ describe("HomeContainer", () => {
     );
 
     await waitFor(() => {
-      expect(mockHomePresenterProps.current?.viewModel.firstName).toBe("Alex");
+      expect(mockHomePresenterProps.current?.viewModel.userName).toBe("Alex");
     });
     expect(mockHomePresenterProps.current.viewModel.workouts).toHaveLength(
       DASHBOARD_FIXTURE.recentWorkouts.length,
@@ -216,12 +216,10 @@ describe("HomeContainer", () => {
     await waitFor(() => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
-    expect(mockHomePresenterProps.current.viewModel.firstName).toBeNull();
+    expect(mockHomePresenterProps.current.viewModel.userName).toBe("Lifter");
     expect(mockHomePresenterProps.current.viewModel.goals).toEqual([]);
     expect(mockHomePresenterProps.current.viewModel.workouts).toEqual([]);
-    expect(
-      mockHomePresenterProps.current.viewModel.subscription.isFreeTier,
-    ).toBe(true);
+    expect(mockHomePresenterProps.current.viewModel.isFreeTier).toBe(true);
   });
 
   it("passes isLoading=true to the presenter during cold-start refresh", async () => {
@@ -414,7 +412,7 @@ describe("HomeContainer", () => {
     // which recomputes dashboard.refresh and is not a memo defeat.
     //
     // HomePresenter receives `viewModel`, not `payload`. When the
-    // fixture-backed cache read lands, viewModel.firstName transitions
+    // fixture-backed cache read lands, viewModel.userName transitions
     // from null (the pre-bootstrap fallback) to "Alex" (the fixture
     // value). The earlier revision of this wait gated on
     // `?.payload !== undefined`, which the optional chain coerced to
@@ -422,7 +420,7 @@ describe("HomeContainer", () => {
     // the very first render — completely defeating the wait. See
     // bugbot thread on PR #37.
     await waitFor(() => {
-      expect(mockHomePresenterProps.current?.viewModel?.firstName).toBe("Alex");
+      expect(mockHomePresenterProps.current?.viewModel?.userName).toBe("Alex");
     });
 
     // Snapshot the post-settle render count, then capture identities

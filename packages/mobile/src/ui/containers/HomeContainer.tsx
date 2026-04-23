@@ -1,10 +1,14 @@
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { Alert } from "react-native";
+import type { Goal } from "@/ui/components/home/GoalsSection";
+import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
 import {
   HomePresenter,
+  type HomePresenterRecentActivity,
   type HomePresenterViewModel,
 } from "@/ui/presenters/HomePresenter";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
@@ -14,10 +18,12 @@ import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
  *
  * 1. `cachedPayload` — sourced from `useDashboard`'s state (which itself
  *    memoises the storage read).
- * 2. `viewModel` — derives the presenter-shaped props from cached
- *    payload + live `useHealthData` readings.
- * 3. `animationStyles` — five per-section staggered entry styles, one
- *    per section.
+ * 2. `viewModel` — derives the legacy-shaped props each section
+ *    presenter expects, from the cached payload + live `useHealthData`
+ *    readings. Mock history arrays for body-weight / body-fat / steps
+ *    mirror the legacy Home's `generateMockHistory` approach until the
+ *    backend ships real history endpoints.
+ * 3. `animationStyles` — five per-section staggered entry styles.
  *
  * Pull-to-refresh bypasses the TTL by calling both `dashboard.refresh`
  * and `health.refresh` in parallel (AC 5.10).
@@ -26,8 +32,37 @@ import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
  *       (M1) > Container data pipeline · requirements.md STORY-005 AC 5.1–5.12
  */
 
+// Legacy home used client-side mock history until the Progress
+// milestone ships real trend endpoints. Mirroring that here keeps the
+// tile SVGs populated. Seeded by Date + currentValue so the output is
+// stable across a single render batch.
+function generateMockHistory(
+  currentValue: number | null,
+  days: number = 7,
+): { date: Date; value: number }[] {
+  if (currentValue === null) return [];
+  const history: { date: Date; value: number }[] = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    const variation = (Math.random() - 0.5) * 0.1; // ±5% variation
+    history.push({
+      date,
+      value: currentValue * (1 + variation),
+    });
+  }
+  return history;
+}
+
+function firstNameFallback(firstName: string | null): string {
+  if (firstName && firstName.trim().length > 0) return firstName;
+  return "Lifter";
+}
+
 export function HomeContainer() {
   const router = useRouter();
+  const { session } = useAuth();
   const dashboard = useDashboard();
   const health = useHealthData();
 
@@ -37,46 +72,87 @@ export function HomeContainer() {
   // Memo #2: presenter-shaped view-model. Recomputes when either the
   // cached payload or any health reading changes.
   const viewModel = useMemo<HomePresenterViewModel>(() => {
-    const fallbackProfile = {
-      firstName: null as string | null,
-    };
-    const fallbackSubscription = {
-      tierName: null as string | null,
-      isFreeTier: true,
-      isTrainerTier: false,
-      status: null as "active" | "trialing" | "cancelled" | "past_due" | null,
-    };
-    const fallbackProgress = {
-      workoutsThisMonth: 0,
-      workoutsLastMonth: 0,
-      streak: 0,
-      personalRecordsCount: 0,
-    };
+    // Body weight: prefer the backend measurement (always kg by
+    // contract), fall back to the HealthKit sample with its own unit.
+    // The unit label tracks whichever source supplied the value.
+    const weightSource: {
+      value: number;
+      unit: "kg" | "lbs";
+    } | null =
+      cachedPayload?.latestMeasurement?.weightKg != null
+        ? { value: cachedPayload.latestMeasurement.weightKg, unit: "kg" }
+        : health.latestBodyWeight != null
+          ? {
+              value: health.latestBodyWeight.value,
+              unit: health.latestBodyWeight.unit,
+            }
+          : null;
+
+    const bodyWeight = weightSource?.value ?? null;
+    const bodyWeightUnit = weightSource?.unit ?? "kg";
+    const bodyFat = cachedPayload?.latestMeasurement?.bodyFatPercentage ?? null;
+
+    const workouts: WorkoutCardWorkout[] = (
+      cachedPayload?.recentWorkouts ?? []
+    ).map((w) => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      estimated_duration_minutes: w.estimatedDurationMinutes,
+      is_assigned: w.isAssigned,
+      assigned_by_type: w.assignedByType,
+      created_by: w.createdBy,
+    }));
+
+    const goals: Goal[] = (cachedPayload?.activeGoals ?? []).map((g) => ({
+      id: g.id,
+      title: g.title,
+      current: g.current,
+      target: g.target,
+      unit: g.unit,
+      icon: "flag",
+    }));
+
+    const recentActivity: HomePresenterRecentActivity[] = (
+      cachedPayload?.recentActivity ?? []
+    ).map((a) => ({
+      workout_session_id: a.workoutSessionId,
+      workout_name: a.workoutName,
+      completed_at: a.completedAt,
+    }));
 
     return {
-      firstName: cachedPayload?.profile.firstName ?? fallbackProfile.firstName,
-      subscription: cachedPayload?.subscription ?? fallbackSubscription,
-      goals: cachedPayload?.activeGoals ?? [],
-      workouts: cachedPayload?.recentWorkouts ?? [],
-      progress: cachedPayload?.progress ?? fallbackProgress,
-      latestMeasurement: cachedPayload?.latestMeasurement ?? null,
-      prOfTheWeek: cachedPayload?.prOfTheWeek ?? null,
-      recentActivity: cachedPayload?.recentActivity ?? [],
-      stepsToday: health.stepsToday,
-      activeCaloriesToday: health.activeCaloriesToday,
+      userName: firstNameFallback(cachedPayload?.profile.firstName ?? null),
+      subscriptionTier: cachedPayload?.subscription.tierName ?? null,
+      isFreeTier: cachedPayload?.subscription.isFreeTier ?? true,
+      goals,
+      workouts,
+      currentUserId: session?.userId,
+      workoutsThisMonth: cachedPayload?.progress.workoutsThisMonth ?? 0,
+      workoutsLastMonth: cachedPayload?.progress.workoutsLastMonth ?? 0,
+      activeEnergy: health.activeCaloriesToday ?? 0,
+      basalEnergy: 0,
+      standTime: 0,
+      bodyWeight,
+      bodyWeightUnit,
+      bodyWeightHistory: generateMockHistory(bodyWeight),
+      bodyFat,
+      bodyFatHistory: generateMockHistory(bodyFat),
+      stepsToday: health.stepsToday ?? 0,
+      stepsHistory: [],
+      recentActivity,
       latestBodyWeight: health.latestBodyWeight,
       healthIsAvailable: health.isAvailable,
       healthPermissionStatus: health.permissionStatus,
-      lastHealthReadAt: health.lastReadAt,
     };
   }, [
     cachedPayload,
+    session?.userId,
     health.stepsToday,
     health.activeCaloriesToday,
     health.latestBodyWeight,
     health.isAvailable,
     health.permissionStatus,
-    health.lastReadAt,
   ]);
 
   // Memo #3: per-section animation styles. One `useStaggeredEntry` per
@@ -100,10 +176,8 @@ export function HomeContainer() {
 
   // Depend on the stable useCallback-wrapped methods directly, not the
   // whole hook-return objects. useDashboard() and useHealthData() build
-  // their return value as a plain inline object, so `dashboard` and
-  // `health` are new references every render — listing them here would
-  // recreate onRefresh every render and defeat the memoization. The
-  // `.refresh` fns underneath are already useCallback-stable.
+  // their return value as a plain inline object each render, so those
+  // references would churn the memoization.
   const dashboardRefresh = dashboard.refresh;
   const healthRefresh = health.refresh;
   const onRefresh = useCallback(() => {
@@ -117,7 +191,21 @@ export function HomeContainer() {
     );
   }, []);
 
+  const onManageSubscriptionPress = useCallback(() => {
+    Alert.alert(
+      "Manage subscription",
+      "Subscription management lights up in a later milestone.",
+    );
+  }, []);
+
   const onWorkoutPress = useCallback(
+    (_workoutId: string) => {
+      router.push("/(app)/(tabs)/workouts");
+    },
+    [router],
+  );
+
+  const onWorkoutStart = useCallback(
     (_workoutId: string) => {
       router.push("/(app)/(tabs)/workouts");
     },
@@ -132,8 +220,6 @@ export function HomeContainer() {
     router.push("/(app)/(tabs)/progress");
   }, [router]);
 
-  // Same pattern as onRefresh above — depend on the stable
-  // useCallback-wrapped method, not the whole `health` hook return.
   const healthRequestPermissions = health.requestPermissions;
   const onConnectHealthPress = useCallback(() => {
     // M1 non-goal: `/health-permissions` screen. Route is a placeholder
@@ -150,10 +236,7 @@ export function HomeContainer() {
 
   // Cold-start: no cached payload yet AND a background refresh is in
   // flight. Show the P-logo loader full-screen, matching the legacy
-  // app's first-open behaviour. Once the payload arrives (either from
-  // cache or refresh), the normal Home tree renders. A stale-cache
-  // path (cachedPayload present + isRefreshing) keeps the usual tree
-  // + the RefreshControl spinner — no loader flash.
+  // app's first-open behaviour.
   const isLoading = cachedPayload === null && dashboard.isRefreshing;
 
   return (
@@ -164,7 +247,9 @@ export function HomeContainer() {
       isRefreshing={dashboard.isRefreshing || health.isReading}
       onRefresh={onRefresh}
       onUpgradePress={onUpgradePress}
+      onManageSubscriptionPress={onManageSubscriptionPress}
       onWorkoutPress={onWorkoutPress}
+      onWorkoutStart={onWorkoutStart}
       onViewAllWorkoutsPress={onViewAllWorkoutsPress}
       onViewAllProgressPress={onViewAllProgressPress}
       onConnectHealthPress={onConnectHealthPress}

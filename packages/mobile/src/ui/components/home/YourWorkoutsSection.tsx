@@ -1,107 +1,119 @@
-import { Pressable, ScrollView } from "react-native";
-import type { DashboardRecentWorkout } from "@/domain/models/dashboard";
-import { Badge } from "@/ui/components/Badge";
-import { Card } from "@/ui/components/Card";
-import { Column } from "@/ui/components/Column";
-import { EmptyState } from "@/ui/components/EmptyState";
-import { Row } from "@/ui/components/Row";
-import { Text } from "@/ui/components/Text";
+import React from "react";
+import {
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import Carousel from "react-native-reanimated-carousel";
+import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
+import { WorkoutCard, type WorkoutCardWorkout } from "./WorkoutCard";
 
 /**
- * Horizontal carousel of recent workout templates. Ported 1:1 from
- * `persistence-mobile/components/home/YourWorkoutsSection/`.
- *
- * Tapping routes to `/workouts` (existing placeholder) — no M1 popover.
- *
- * Spec: specs/06-progress-goals/requirements.md STORY-005 AC 5.2
+ * Horizontal parallax workout carousel. Ported verbatim from
+ * `persistence-mobile/components/home/YourWorkoutsSection/` — same
+ * react-native-reanimated-carousel setup, same parallax mode, same
+ * sizing rules. Only the theme import + WorkoutCard import were
+ * swapped.
  */
 
-export type YourWorkoutsSectionProps = {
-  workouts: readonly DashboardRecentWorkout[];
-  onWorkoutPress: (workoutId: string) => void;
-  onViewAllPress: () => void;
-};
+interface YourWorkoutsSectionProps {
+  readonly workouts: readonly WorkoutCardWorkout[];
+  readonly currentUserId?: string;
+  readonly onWorkoutPress: (workoutId: string) => void;
+  readonly onWorkoutStart: (workoutId: string) => void;
+  readonly onWorkoutEdit?: (workoutId: string) => void;
+  readonly onWorkoutDelete?: (workoutId: string) => void;
+  readonly onViewAllPress: () => void;
+}
 
 export function YourWorkoutsSection({
   workouts,
+  currentUserId,
   onWorkoutPress,
+  onWorkoutStart,
+  onWorkoutEdit,
+  onWorkoutDelete,
   onViewAllPress,
 }: YourWorkoutsSectionProps) {
+  const screenWidth = Dimensions.get("window").width;
+  const cardWidth = screenWidth * 0.85; // 85% of screen width
+  const itemWidth = cardWidth + Spacing.md; // Add spacing between cards
+  // Fixed height that matches typical WorkoutCard content (title,
+  // description, metadata, actions).
+  const carouselHeight = 200;
+
+  if (workouts.length === 0) {
+    return null;
+  }
+
   return (
-    <Column gap="sm" testID="your-workouts-section">
-      <Row justify="between">
-        <Text variant="h4">Your Workouts</Text>
-        <Pressable onPress={onViewAllPress} testID="your-workouts-view-all">
-          <Text variant="bodySmall" color="$primary">
-            See all
-          </Text>
-        </Pressable>
-      </Row>
-      {workouts.length === 0 ? (
-        <EmptyState
-          title="No workouts yet"
-          description="Create a workout from the Workouts tab to get started."
-        />
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+    <View style={styles.container} testID="your-workouts-section">
+      <View style={styles.header}>
+        <Text style={styles.sectionTitle}>Your Workouts</Text>
+        <TouchableOpacity
+          onPress={onViewAllPress}
+          testID="your-workouts-view-all"
         >
-          {workouts.map((workout) => (
+          <Text style={styles.viewAllText}>View All</Text>
+        </TouchableOpacity>
+      </View>
+      <Carousel
+        width={itemWidth}
+        height={carouselHeight}
+        data={[...workouts]}
+        renderItem={({ item }) => (
+          <View style={styles.carouselItem}>
             <WorkoutCard
-              key={workout.id}
-              workout={workout}
-              onPress={onWorkoutPress}
+              workout={item}
+              onPress={() => onWorkoutPress(item.id)}
+              onStart={() => onWorkoutStart(item.id)}
+              onEdit={onWorkoutEdit ? () => onWorkoutEdit(item.id) : undefined}
+              onDelete={
+                onWorkoutDelete ? () => onWorkoutDelete(item.id) : undefined
+              }
+              currentUserId={currentUserId}
             />
-          ))}
-        </ScrollView>
-      )}
-    </Column>
+          </View>
+        )}
+        style={styles.carousel}
+        snapEnabled
+        pagingEnabled
+        mode="parallax"
+        modeConfig={{
+          parallaxScrollingScale: 0.9,
+          parallaxScrollingOffset: 50,
+        }}
+        scrollAnimationDuration={500}
+        onConfigurePanGesture={(gesture) => {
+          gesture.activeOffsetX([-10, 10]);
+          gesture.failOffsetY([-5, 5]);
+        }}
+      />
+    </View>
   );
 }
 
-function WorkoutCard({
-  workout,
-  onPress,
-}: {
-  workout: DashboardRecentWorkout;
-  onPress: (workoutId: string) => void;
-}) {
-  const assignedLabel =
-    workout.assignedByType === "personal_trainer"
-      ? "PT"
-      : workout.assignedByType === "physiotherapist"
-        ? "Physio"
-        : null;
-
-  return (
-    <Pressable
-      onPress={() => onPress(workout.id)}
-      testID={`workout-card-${workout.id}`}
-    >
-      <Card pressable width={220} padding="$base" gap="$xs">
-        <Row justify="between" gap="xs">
-          <Text variant="h4" numberOfLines={1}>
-            {workout.name ?? "Untitled workout"}
-          </Text>
-          {assignedLabel ? (
-            <Badge label={assignedLabel} variant="info" size="sm" />
-          ) : null}
-        </Row>
-        {workout.description ? (
-          <Text variant="bodySmall" secondary numberOfLines={2}>
-            {workout.description}
-          </Text>
-        ) : null}
-        <Row gap="xs">
-          <Text variant="caption" muted>
-            {workout.estimatedDurationMinutes
-              ? `${workout.estimatedDurationMinutes} min`
-              : "Duration —"}
-          </Text>
-        </Row>
-      </Card>
-    </Pressable>
-  );
-}
+const styles = StyleSheet.create({
+  container: {},
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  sectionTitle: {
+    ...Typography.h3,
+  },
+  viewAllText: {
+    ...Typography.body2,
+    color: Colors.primary.DEFAULT,
+  },
+  carousel: {
+    width: "100%",
+  },
+  carouselItem: {
+    paddingHorizontal: Spacing.xs,
+  },
+});

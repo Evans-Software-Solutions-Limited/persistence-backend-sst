@@ -1,5 +1,4 @@
 import { fireEvent } from "@testing-library/react-native";
-import { DASHBOARD_FIXTURE } from "@/adapters/api/__tests__/fixtures/dashboard.fixture";
 import {
   HomePresenter,
   type HomePresenterProps,
@@ -7,46 +6,102 @@ import {
 } from "@/ui/presenters/HomePresenter";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
-jest.setTimeout(15_000);
-
-function makeViewModel(): HomePresenterViewModel {
+jest.mock("react-native-reanimated-carousel", () => {
+  const React = require("react");
+  const { View } = require("react-native");
   return {
-    firstName: DASHBOARD_FIXTURE.profile.firstName,
-    subscription: DASHBOARD_FIXTURE.subscription,
-    goals: DASHBOARD_FIXTURE.activeGoals,
-    workouts: DASHBOARD_FIXTURE.recentWorkouts,
-    progress: DASHBOARD_FIXTURE.progress,
-    latestMeasurement: DASHBOARD_FIXTURE.latestMeasurement,
-    prOfTheWeek: DASHBOARD_FIXTURE.prOfTheWeek,
-    recentActivity: DASHBOARD_FIXTURE.recentActivity,
+    __esModule: true,
+    default: ({ data, renderItem }: any) =>
+      React.createElement(
+        View,
+        { testID: "carousel-mock" },
+        data.map((item: any, index: number) =>
+          React.createElement(
+            View,
+            { key: item.id ?? index },
+            renderItem({ item, index, animationValue: { value: 0 } }),
+          ),
+        ),
+      ),
+  };
+});
+
+function makeViewModel(
+  overrides: Partial<HomePresenterViewModel> = {},
+): HomePresenterViewModel {
+  const granted = {
+    steps: "granted" as const,
+    calories: "granted" as const,
+    bodyWeight: "granted" as const,
+    heartRate: "granted" as const,
+  };
+  return {
+    userName: "Alex",
+    subscriptionTier: "free",
+    isFreeTier: true,
+    goals: [
+      {
+        id: "g-1",
+        title: "10,000 Steps",
+        current: 4812,
+        target: 10000,
+        unit: "steps",
+        icon: "footsteps",
+      },
+    ],
+    workouts: [
+      {
+        id: "w-1",
+        name: "Push Day",
+        description: "Chest + triceps",
+        estimated_duration_minutes: 45,
+        exercises: [],
+        targeted_muscles: [],
+        is_assigned: false,
+        assigned_by_type: null,
+        created_by: "user-1",
+      },
+    ],
+    currentUserId: "user-1",
+    workoutsThisMonth: 9,
+    workoutsLastMonth: 12,
+    activeEnergy: 312,
+    basalEnergy: 0,
+    standTime: 0,
+    bodyWeight: 78.2,
+    bodyWeightUnit: "kg",
+    bodyWeightHistory: [],
+    bodyFat: 16.5,
+    bodyFatHistory: [],
     stepsToday: 4812,
-    activeCaloriesToday: 312,
+    stepsHistory: [],
+    recentActivity: [
+      {
+        workout_session_id: "s-1",
+        workout_name: "Yesterday's session",
+        completed_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+      },
+    ],
     latestBodyWeight: null,
     healthIsAvailable: true,
-    healthPermissionStatus: {
-      steps: "granted",
-      calories: "granted",
-      bodyWeight: "granted",
-      heartRate: "granted",
-    },
-    lastHealthReadAt: null,
+    healthPermissionStatus: granted,
+    ...overrides,
   };
 }
 
 function renderHome(overrides: Partial<HomePresenterProps> = {}) {
-  const viewModel = overrides.viewModel ?? makeViewModel();
   const props: HomePresenterProps = {
-    viewModel,
+    viewModel: overrides.viewModel ?? makeViewModel(),
     animationStyles: [{}, {}, {}, {}, {}],
     isLoading: false,
     isRefreshing: false,
     onRefresh: jest.fn(),
     onUpgradePress: jest.fn(),
     onWorkoutPress: jest.fn(),
+    onWorkoutStart: jest.fn(),
     onViewAllWorkoutsPress: jest.fn(),
     onViewAllProgressPress: jest.fn(),
     onConnectHealthPress: jest.fn(),
-    onActivityPress: jest.fn(),
     ...overrides,
   };
   return { ...renderWithTheme(<HomePresenter {...props} />), props };
@@ -60,30 +115,13 @@ describe("HomePresenter", () => {
     expect(getByTestId("your-workouts-section")).toBeTruthy();
     expect(getByTestId("my-progress-section")).toBeTruthy();
     expect(getByTestId("recent-activity-section")).toBeTruthy();
-    expect(getByText("Hey, Alex")).toBeTruthy();
-    expect(getByText("Barbell Bench Press")).toBeTruthy();
+    expect(getByText("Alex")).toBeTruthy();
+    expect(getByText("Push Day")).toBeTruthy();
   });
 
-  it("omits the PR-of-the-week card when prOfTheWeek is null", () => {
-    const vm = makeViewModel();
-    vm.prOfTheWeek = null;
-    const { queryByTestId } = renderHome({ viewModel: vm });
-    expect(queryByTestId("pr-of-the-week")).toBeNull();
-  });
-
-  it("fires the upgrade callback when a free-tier badge is tapped", () => {
-    const vm = makeViewModel();
-    vm.subscription = {
-      tierName: null,
-      isFreeTier: true,
-      isTrainerTier: false,
-      status: null,
-    };
+  it("fires the upgrade callback when the free-tier CTA is tapped", () => {
     const onUpgradePress = jest.fn();
-    const { getByTestId } = renderHome({
-      viewModel: vm,
-      onUpgradePress,
-    });
+    const { getByTestId } = renderHome({ onUpgradePress });
     fireEvent.press(getByTestId("subscription-upgrade"));
     expect(onUpgradePress).toHaveBeenCalled();
   });
@@ -94,15 +132,9 @@ describe("HomePresenter", () => {
   });
 
   it("renders the PLogoDrawLoader full-screen when isLoading is true", () => {
-    // Cold-start path: no cached payload yet, refresh in flight.
-    // Matches the legacy app's full-screen-loader behaviour on first
-    // open. Exposed as a dedicated prop so the HomeContainer test
-    // (and this one) can assert the branch without rendering the
-    // full section tree.
     const { getByTestId, queryByTestId } = renderHome({ isLoading: true });
     expect(getByTestId("home-loader")).toBeTruthy();
     expect(getByTestId("logo-loader")).toBeTruthy();
-    // Sections should NOT render in the loader branch.
     expect(queryByTestId("home-scroll")).toBeNull();
     expect(queryByTestId("greeting-section")).toBeNull();
   });
