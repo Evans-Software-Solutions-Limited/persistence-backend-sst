@@ -51,8 +51,19 @@ export function MyProgressSection({
   onConnectHealthPress,
   onViewAllPress,
 }: MyProgressSectionProps) {
-  const weight = latestMeasurement?.weightKg ?? latestBodyWeight?.value ?? null;
-  const weightUnit = latestBodyWeight?.unit === "lbs" ? "lbs" : "kg";
+  // The unit label must track whichever source actually supplied the
+  // displayed value, not default to the health adapter's unit whenever
+  // it happens to be non-null. `latestMeasurement.weightKg` is always
+  // kg by backend contract; `latestBodyWeight.value` carries its own
+  // unit (kg or lbs) from HealthKit.
+  const weightSource: { value: number; unit: "kg" | "lbs" } | null =
+    latestMeasurement?.weightKg != null
+      ? { value: latestMeasurement.weightKg, unit: "kg" }
+      : latestBodyWeight != null
+        ? { value: latestBodyWeight.value, unit: latestBodyWeight.unit }
+        : null;
+  const weight = weightSource?.value ?? null;
+  const weightUnit = weightSource?.unit ?? "kg";
 
   return (
     <Column gap="sm" testID="my-progress-section">

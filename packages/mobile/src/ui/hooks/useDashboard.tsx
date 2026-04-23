@@ -98,13 +98,21 @@ export function useDashboard(): DashboardState {
     }
   }, [api, storage, userId]);
 
-  // One-shot auto-refresh on mount when the cache is stale or empty.
-  const hasAutoRefreshedRef = useRef(false);
+  // One-shot auto-refresh per user when the cache is stale or empty.
+  // The guard is keyed on `userId` — if the signed-in user changes
+  // (sign-out → sign-in as a different user), re-arm the one-shot so
+  // the new user's stale-cache auto-refresh can fire. Without this
+  // reset the Home tab sat empty on user-switch until a manual pull-
+  // to-refresh. See bugbot thread on PR #37.
+  const autoRefreshedForUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!userId) return;
-    if (hasAutoRefreshedRef.current) return;
+    if (!userId) {
+      autoRefreshedForUserRef.current = null;
+      return;
+    }
+    if (autoRefreshedForUserRef.current === userId) return;
     if (!isStale) return;
-    hasAutoRefreshedRef.current = true;
+    autoRefreshedForUserRef.current = userId;
     void refresh();
   }, [userId, isStale, refresh]);
 

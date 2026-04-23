@@ -173,4 +173,106 @@ describe("useDashboard", () => {
     expect(result.current.isRefreshing).toBe(false);
     expect(result.current.error).toBeNull();
   });
+
+  it("re-arms the auto-refresh guard when userId changes (sign-out → sign-in as a different user)", async () => {
+    // Regression for bugbot finding on PR #37: hasAutoRefreshedRef was
+    // set to true for user-1 and never reset. When user-1 signed out
+    // and user-2 signed in (same hook instance), the stale-cache auto-
+    // refresh skipped — Home tab sat empty until manual pull-to-refresh.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+
+    // Listeners registered via auth.onAuthStateChange; fired manually
+    // from the test to simulate sign-out → sign-in.
+    const listeners: ((s: AuthSession | null) => void)[] = [];
+    const user1: AuthSession = {
+      accessToken: "t1",
+      refreshToken: "r1",
+      userId: "user-1",
+      email: "u1@example.com",
+      expiresAt: Date.now() + 60_000,
+    };
+    const user2: AuthSession = {
+      accessToken: "t2",
+      refreshToken: "r2",
+      userId: "user-2",
+      email: "u2@example.com",
+      expiresAt: Date.now() + 60_000,
+    };
+
+    let currentSession: AuthSession | null = user1;
+    const auth = {
+      signInWithEmail: jest.fn(),
+      signUpWithEmail: jest.fn(),
+      signInWithOAuth: jest.fn(),
+      signOut: jest.fn(),
+      getSession: jest.fn(async () => ok(currentSession)),
+      onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
+        listeners.push(cb);
+        setTimeout(() => cb(currentSession), 0);
+        return () => {};
+      }),
+      resetPassword: jest.fn(),
+      refreshSession: jest.fn(),
+      getAccessToken: jest.fn(async () => currentSession?.accessToken ?? "t"),
+    } as unknown as Adapters["auth"];
+
+    const adapters: Adapters = {
+      api,
+      auth,
+      storage,
+      health: {
+        isAvailable: jest.fn(async () => false),
+        requestPermissions: jest.fn(),
+        getPermissionStatus: jest.fn(async () => ({
+          steps: "not_determined",
+          calories: "not_determined",
+          bodyWeight: "not_determined",
+          heartRate: "not_determined",
+        })),
+        getStepsToday: jest.fn(),
+        getActiveCaloriesToday: jest.fn(),
+        getLatestBodyWeight: jest.fn(),
+        getHeartRateLatest: jest.fn(),
+        writeBodyWeight: jest.fn(),
+        disconnect: jest.fn(),
+      } as unknown as Adapters["health"],
+      notifications: {} as Adapters["notifications"],
+      payments: {} as Adapters["payments"],
+    };
+
+    const getDashboardSpy = jest.spyOn(api, "getDashboard");
+
+    const { result } = renderHook(() => useDashboard(), {
+      wrapper: wrap(adapters),
+    });
+
+    // user-1 auto-refresh fires (empty cache → stale)
+    await waitFor(() => {
+      expect(result.current.payload).toEqual(DASHBOARD_FIXTURE);
+    });
+    const callsAfterUser1 = getDashboardSpy.mock.calls.length;
+    expect(callsAfterUser1).toBeGreaterThanOrEqual(1);
+
+    // Sign out (session → null), then sign in as user-2.
+    await act(async () => {
+      currentSession = null;
+      listeners.forEach((cb) => cb(null));
+    });
+    await act(async () => {
+      currentSession = user2;
+      listeners.forEach((cb) => cb(user2));
+    });
+
+    // user-2 has NO cache row, so the stale-cache auto-refresh must
+    // fire again. Before the fix, it was guarded by the one-shot ref
+    // left set from user-1 and never fired — this assertion proves the
+    // guard re-arms on userId change.
+    await waitFor(() => {
+      expect(getDashboardSpy.mock.calls.length).toBeGreaterThan(
+        callsAfterUser1,
+      );
+    });
+  });
 });

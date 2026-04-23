@@ -55,6 +55,42 @@ describe("MyProgressSection", () => {
     expect(getByText("75.0 kg")).toBeTruthy();
   });
 
+  it("labels the measurement-sourced weight as kg even when a lbs HealthKit sample is present", () => {
+    // Regression for bugbot finding on PR #37: weight VALUE came from
+    // latestMeasurement.weightKg (always kg by backend contract) but
+    // the UNIT was derived from latestBodyWeight.unit whenever the
+    // HealthKit sample was non-null. Displaying "78.2 lbs" for a kg
+    // measurement is wrong and misleads the user by ~2.2x.
+    const { getByText, queryByText } = renderWithTheme(
+      <MyProgressSection
+        {...baseProps}
+        latestMeasurement={{ weightKg: 78.2, bodyFatPercentage: null }}
+        latestBodyWeight={{
+          value: 172.4,
+          unit: "lbs",
+          date: "2026-04-20T07:00:00Z",
+        }}
+      />,
+    );
+    expect(getByText("78.2 kg")).toBeTruthy();
+    expect(queryByText(/lbs/)).toBeNull();
+  });
+
+  it("labels the health-sourced weight with its reported unit when measurement is absent", () => {
+    const { getByText } = renderWithTheme(
+      <MyProgressSection
+        {...baseProps}
+        latestMeasurement={null}
+        latestBodyWeight={{
+          value: 172.4,
+          unit: "lbs",
+          date: "2026-04-20T07:00:00Z",
+        }}
+      />,
+    );
+    expect(getByText("172.4 lbs")).toBeTruthy();
+  });
+
   it("renders em-dash when no weight is available", () => {
     const { getByTestId } = renderWithTheme(
       <MyProgressSection
