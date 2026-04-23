@@ -59,18 +59,18 @@ Parent milestones:
 
 Traces to `design.md` § Dashboard backend contract and `requirements.md` STORY-007 (AC 7.1–7.9).
 
-- [ ] Extend `DashboardData` type in `microservices/core/src/application/repositories/dashboardRepository.ts` to match `DashboardPayload` (profile, subscription, recentWorkouts, recentActivity, activeGoals, progress, prOfTheWeek, latestMeasurement)
-- [ ] Add `getProfileSlice(userId)` repo method (select `fullName`, derive `firstName`, `preferredUnits`)
-- [ ] Add `getSubscriptionSlice(userId)` repo method (join `user_subscriptions` + `subscription_tiers`; apply legacy `isFreeTier` rule)
-- [ ] Add `getRecentWorkouts(userId, limit = 10)` repo method (own + assigned + default, ordered as legacy)
-- [ ] Add `getRecentActivity(userId, windowDays = 7)` repo method (completed sessions joined to `workouts`)
-- [ ] Add `getActiveGoalsWithProgress(userId)` repo method (active only, joined to `goal_types`, priority-ordered)
-- [ ] Add `getPROfTheWeek(userId, windowDays = 7)` repo method with deterministic tie-breaking per design §
-- [ ] Wire all sub-queries into a single `Promise.all` in `getDashboard`
-- [ ] Emit numeric `weightKg` / `bodyFatPercentage` (convert Drizzle numeric strings to `number`)
-- [ ] Handler-level tests: happy path, 401, empty-state user, PR-of-the-week tie-breaking (AC 7.9)
-- [ ] Repository tests covering each sub-query with seed data
-- [ ] Maintain ≥ 90% coverage on `dashboardRepository.ts` + `dashboardHandler.ts`
+- [x] Extend `DashboardData` type in `microservices/core/src/application/repositories/dashboardRepository.ts` to match `DashboardPayload` (profile, subscription, recentWorkouts, recentActivity, activeGoals, progress, prOfTheWeek, latestMeasurement)
+- [x] Add `getProfileSlice(userId)` repo method (select `fullName`, derive `firstName`, `preferredUnits`)
+- [x] Add `getSubscriptionSlice(userId)` repo method (join `user_subscriptions` + `subscription_tiers`; apply legacy `isFreeTier` rule)
+- [x] Add `getRecentWorkouts(userId, limit = 10)` repo method (own + assigned + default, ordered as legacy)
+- [x] Add `getRecentActivity(userId, windowDays = 7)` repo method (completed sessions joined to `workouts`)
+- [x] Add `getActiveGoalsWithProgress(userId)` repo method (active only, joined to `goal_types`, priority-ordered)
+- [x] Add `getPROfTheWeek(userId, windowDays = 7)` repo method with deterministic tie-breaking per design §
+- [x] Wire all sub-queries into a single `Promise.all` in `getDashboard`
+- [x] Emit numeric `weightKg` / `bodyFatPercentage` (convert Drizzle numeric strings to `number`)
+- [x] Handler-level tests: happy path, 401, empty-state user, PR-of-the-week tie-breaking (AC 7.9)
+- [x] Repository tests covering each sub-query with seed data
+- [x] Maintain ≥ 90% coverage on `dashboardRepository.ts` + `dashboardHandler.ts`
 
 ## Phase 4b: Mobile Home screen + dashboard cache (M1)
 
