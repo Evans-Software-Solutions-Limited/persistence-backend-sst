@@ -148,10 +148,19 @@ export function HomeContainer() {
     [router],
   );
 
+  // Cold-start: no cached payload yet AND a background refresh is in
+  // flight. Show the P-logo loader full-screen, matching the legacy
+  // app's first-open behaviour. Once the payload arrives (either from
+  // cache or refresh), the normal Home tree renders. A stale-cache
+  // path (cachedPayload present + isRefreshing) keeps the usual tree
+  // + the RefreshControl spinner — no loader flash.
+  const isLoading = cachedPayload === null && dashboard.isRefreshing;
+
   return (
     <HomePresenter
       viewModel={viewModel}
       animationStyles={animationStyles}
+      isLoading={isLoading}
       isRefreshing={dashboard.isRefreshing || health.isReading}
       onRefresh={onRefresh}
       onUpgradePress={onUpgradePress}

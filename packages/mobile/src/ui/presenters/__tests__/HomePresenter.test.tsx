@@ -38,6 +38,7 @@ function renderHome(overrides: Partial<HomePresenterProps> = {}) {
   const props: HomePresenterProps = {
     viewModel,
     animationStyles: [{}, {}, {}, {}, {}],
+    isLoading: false,
     isRefreshing: false,
     onRefresh: jest.fn(),
     onUpgradePress: jest.fn(),
@@ -90,5 +91,19 @@ describe("HomePresenter", () => {
   it("renders the view with refreshing state active", () => {
     const { getByTestId } = renderHome({ isRefreshing: true });
     expect(getByTestId("home-scroll")).toBeTruthy();
+  });
+
+  it("renders the PLogoDrawLoader full-screen when isLoading is true", () => {
+    // Cold-start path: no cached payload yet, refresh in flight.
+    // Matches the legacy app's full-screen-loader behaviour on first
+    // open. Exposed as a dedicated prop so the HomeContainer test
+    // (and this one) can assert the branch without rendering the
+    // full section tree.
+    const { getByTestId, queryByTestId } = renderHome({ isLoading: true });
+    expect(getByTestId("home-loader")).toBeTruthy();
+    expect(getByTestId("logo-loader")).toBeTruthy();
+    // Sections should NOT render in the loader branch.
+    expect(queryByTestId("home-scroll")).toBeNull();
+    expect(queryByTestId("greeting-section")).toBeNull();
   });
 });

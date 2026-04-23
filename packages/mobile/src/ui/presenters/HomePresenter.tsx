@@ -13,6 +13,7 @@ import type {
   HealthPermissionStatus,
   HealthWeight,
 } from "@/domain/ports/health.port";
+import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { GoalsSection } from "@/ui/components/home/GoalsSection";
 import { GreetingSection } from "@/ui/components/home/GreetingSection";
 import { MyProgressSection } from "@/ui/components/home/MyProgressSection";
@@ -60,6 +61,12 @@ export type HomePresenterProps = {
   viewModel: HomePresenterViewModel;
   /** Five per-section animated styles; indices match section order. */
   animationStyles: readonly SectionAnimationStyle[];
+  /**
+   * Cold-start loading state — no cached payload yet + a background
+   * refresh is in flight. Renders the custom P-logo loader
+   * full-screen (matches the legacy app's first-open behaviour).
+   */
+  isLoading: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
   onUpgradePress: () => void;
@@ -75,6 +82,7 @@ export type HomePresenterProps = {
 export function HomePresenter({
   viewModel,
   animationStyles,
+  isLoading,
   isRefreshing,
   onRefresh,
   onUpgradePress,
@@ -86,6 +94,19 @@ export function HomePresenter({
   onActivityPress,
   onPROfTheWeekPress,
 }: HomePresenterProps) {
+  if (isLoading) {
+    return (
+      <View
+        flex={1}
+        backgroundColor="$background"
+        justifyContent="center"
+        alignItems="center"
+        testID="home-loader"
+      >
+        <PLogoDrawLoader />
+      </View>
+    );
+  }
   const [
     greetingStyle,
     goalsStyle,

@@ -2,7 +2,6 @@ import { Platform, Pressable } from "react-native";
 import { View } from "@tamagui/core";
 import type { HealthPermissionStatus } from "@/domain/ports/health.port";
 import { Card } from "@/ui/components/Card";
-import { Column } from "@/ui/components/Column";
 import { Row } from "@/ui/components/Row";
 import { Text } from "@/ui/components/Text";
 
@@ -107,7 +106,6 @@ export function StepsTodayTile({
           Last synced {caption}
         </Text>
       ) : null}
-      <Column />
     </Card>
   );
 }

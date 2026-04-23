@@ -224,6 +224,46 @@ describe("HomeContainer", () => {
     ).toBe(true);
   });
 
+  it("passes isLoading=true to the presenter during cold-start refresh", async () => {
+    // Regression + feature test: when the cache is empty and the auto-
+    // refresh is in flight, HomePresenter must receive `isLoading=true`
+    // so it renders the full-screen PLogoDrawLoader (matches the legacy
+    // app's first-open behaviour).
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+
+    // Stall the dashboard fetch so the loading branch is observable
+    // without a release.
+    let release: (() => void) | null = null;
+    jest.spyOn(api, "getDashboard").mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return ok(DASHBOARD_FIXTURE);
+    });
+
+    const adapters = makeAdapters(api, storage);
+
+    renderWithTheme(
+      <Wrap adapters={adapters}>
+        <HomeContainer />
+      </Wrap>,
+    );
+
+    await waitFor(() => {
+      expect(mockHomePresenterProps.current?.isLoading).toBe(true);
+    });
+
+    // Release the stall and confirm isLoading flips back to false.
+    await act(async () => {
+      release?.();
+    });
+    await waitFor(() => {
+      expect(mockHomePresenterProps.current?.isLoading).toBe(false);
+    });
+  });
+
   it("triggers both dashboard + health refresh on pull-to-refresh", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

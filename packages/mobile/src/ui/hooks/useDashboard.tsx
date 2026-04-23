@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  getDashboardQuery,
-  refreshDashboard,
-} from "@/application/queries/dashboard.query";
+import { getDashboardQuery } from "@/application/queries/dashboard.query";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "./useAdapters";
@@ -77,6 +74,18 @@ export function useDashboard(): DashboardState {
     setSyncedAt(initial.syncedAt);
   }, [initial]);
 
+  // Mirror the live userId into a ref so a refresh IIFE can check
+  // whether the session is still the one it started against. Without
+  // this guard, a refresh that started for user-1 could complete after
+  // sign-out and pollute state / storage with user-1's payload under
+  // user-1's key — undoing sign-out cleanup. The ref is always one
+  // step ahead of the closure-captured `userId` inside a stale
+  // refresh. See bugbot thread on PR #37.
+  const latestUserIdRef = useRef<string | null>(userId);
+  useEffect(() => {
+    latestUserIdRef.current = userId;
+  }, [userId]);
+
   // Dedupe concurrent refresh() calls onto a single in-flight promise,
   // BUT only when they're for the same user. Cross-user dedupe was a
   // bug — sign-out during an in-flight refresh, then sign-in as a
@@ -99,11 +108,17 @@ export function useDashboard(): DashboardState {
     setError(null);
     const work = (async () => {
       try {
-        const result = await refreshDashboard(api, storage, userId);
+        // Fetch first; DO NOT write to storage or state yet. If the
+        // session flipped during the fetch, the writes below are
+        // skipped — preventing cross-user state pollution + the
+        // storage rewrite that would undo sign-out cleanup.
+        const result = await api.getDashboard();
         if (!result.ok) {
-          setError(result.error);
+          if (latestUserIdRef.current === userId) setError(result.error);
           return;
         }
+        if (latestUserIdRef.current !== userId) return;
+        storage.cacheDashboard(userId, result.value);
         setPayload(result.value);
         setIsStale(false);
         setSyncedAt(storage.getDashboardAge(userId));
