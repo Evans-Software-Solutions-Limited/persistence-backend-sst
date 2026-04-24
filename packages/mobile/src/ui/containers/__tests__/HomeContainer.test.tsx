@@ -105,6 +105,7 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     requestPermissions: async () => ok(grantedStatus),
     getPermissionStatus: async () => grantedStatus,
     getStepsToday: async () => ok(4812),
+    getStepsLastNDays: async () => ok([]),
     getActiveCaloriesToday: async () => ok(312),
     getLatestBodyWeight: async () =>
       ok({ value: 74.5, unit: "kg" as const, date: "2026-04-20T07:00:00Z" }),
@@ -118,6 +119,7 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     requestPermissions: jest.fn(base.requestPermissions),
     getPermissionStatus: jest.fn(base.getPermissionStatus),
     getStepsToday: jest.fn(base.getStepsToday),
+    getStepsLastNDays: jest.fn(base.getStepsLastNDays),
     getActiveCaloriesToday: jest.fn(base.getActiveCaloriesToday),
     getLatestBodyWeight: jest.fn(base.getLatestBodyWeight),
     getHeartRateLatest: jest.fn(base.getHeartRateLatest),

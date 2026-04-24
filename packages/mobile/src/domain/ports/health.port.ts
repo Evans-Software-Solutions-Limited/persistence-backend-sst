@@ -13,6 +13,15 @@ export type HealthWeight = {
   date: string;
 };
 
+/**
+ * Daily step bucket used by the Home tab's StepsTodayTile mini-graph.
+ * Mirrors the legacy `twoWeeksSteps` shape (`{ date, steps }`).
+ */
+export type HealthDailySteps = {
+  date: string; // ISO date at local start-of-day
+  steps: number;
+};
+
 export type HealthError = {
   readonly kind: "health";
   readonly code:
@@ -34,6 +43,14 @@ export interface HealthPort {
   requestPermissions(): Promise<Result<HealthPermissionStatus, HealthError>>;
   getPermissionStatus(): Promise<HealthPermissionStatus>;
   getStepsToday(): Promise<Result<number, HealthError>>;
+  /**
+   * Per-day step counts for the last N days (inclusive of today),
+   * earliest first. Powers the StepsTodayTile mini-graph — matches
+   * legacy `queryStepsTwoWeeks` aggregated to daily buckets.
+   */
+  getStepsLastNDays(
+    days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>>;
   getActiveCaloriesToday(): Promise<Result<number, HealthError>>;
   getLatestBodyWeight(): Promise<Result<HealthWeight | null, HealthError>>;
   /**

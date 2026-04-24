@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import type {
+  HealthDailySteps,
   HealthPermissionStatus,
   HealthWeight,
 } from "@/domain/ports/health.port";
@@ -32,6 +33,8 @@ const DEFAULT_PERMISSIONS: HealthPermissionStatus = {
 
 export type HealthDataState = {
   stepsToday: number | null;
+  /** Per-day step history for the last 7 days, earliest first. */
+  stepsHistory: readonly HealthDailySteps[];
   activeCaloriesToday: number | null;
   latestBodyWeight: HealthWeight | null;
   permissionStatus: HealthPermissionStatus;
@@ -45,10 +48,16 @@ export type HealthDataState = {
   refresh: () => Promise<void>;
 };
 
+/** Number of days of step history to pull for the StepsTodayTile mini-graph. */
+const STEPS_HISTORY_DAYS = 7;
+
 export function useHealthData(): HealthDataState {
   const { health } = useAdapters();
 
   const [stepsToday, setStepsToday] = useState<number | null>(null);
+  const [stepsHistory, setStepsHistory] = useState<readonly HealthDailySteps[]>(
+    [],
+  );
   const [activeCaloriesToday, setActiveCaloriesToday] = useState<number | null>(
     null,
   );
@@ -93,12 +102,15 @@ export function useHealthData(): HealthDataState {
 
       setIsReading(true);
       try {
-        const [stepsResult, caloriesResult, weightResult] = await Promise.all([
-          health.getStepsToday(),
-          health.getActiveCaloriesToday(),
-          health.getLatestBodyWeight(),
-        ]);
+        const [stepsResult, stepsHistoryResult, caloriesResult, weightResult] =
+          await Promise.all([
+            health.getStepsToday(),
+            health.getStepsLastNDays(STEPS_HISTORY_DAYS),
+            health.getActiveCaloriesToday(),
+            health.getLatestBodyWeight(),
+          ]);
         if (stepsResult.ok) setStepsToday(stepsResult.value);
+        if (stepsHistoryResult.ok) setStepsHistory(stepsHistoryResult.value);
         if (caloriesResult.ok) setActiveCaloriesToday(caloriesResult.value);
         if (weightResult.ok) setLatestBodyWeight(weightResult.value);
         setLastReadAt(new Date(now).toISOString());
@@ -142,6 +154,7 @@ export function useHealthData(): HealthDataState {
 
   return {
     stepsToday,
+    stepsHistory,
     activeCaloriesToday,
     latestBodyWeight,
     permissionStatus,

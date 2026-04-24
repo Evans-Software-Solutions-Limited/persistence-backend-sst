@@ -14,6 +14,7 @@
  */
 
 import type {
+  HealthDailySteps,
   HealthError,
   HealthPermissionStatus,
   HealthPort,
@@ -53,6 +54,28 @@ export class SimulatorMockHealthAdapter implements HealthPort {
 
   async getStepsToday(): Promise<Result<number, HealthError>> {
     return ok(SIMULATOR_MOCK_VALUES.stepsToday);
+  }
+
+  async getStepsLastNDays(
+    days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>> {
+    if (days <= 0) return ok([]);
+    // Deterministic fake trend — today ends at 4812 (the mock today
+    // value), with a gently varying ramp backwards. Ensures the
+    // StepsTodayTile mini-graph has a readable line on simulator.
+    const out: HealthDailySteps[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      // Bounded sine-ish variation: steps oscillate 3500–6500.
+      const variance = Math.round(1500 * Math.sin((i / 3) * Math.PI));
+      const steps =
+        i === 0 ? SIMULATOR_MOCK_VALUES.stepsToday : 5000 + variance;
+      out.push({ date: d.toISOString(), steps });
+    }
+    return ok(out);
   }
 
   async getActiveCaloriesToday(): Promise<Result<number, HealthError>> {

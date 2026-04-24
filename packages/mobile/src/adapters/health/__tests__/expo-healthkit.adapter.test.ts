@@ -9,6 +9,9 @@ describe("ExpoHealthKitAdapter", () => {
       queryStatisticsForQuantity: jest.fn(async () => ({
         sumQuantity: { quantity: 4812 },
       })),
+      queryStatisticsCollectionForQuantity: jest.fn(
+        async () => [] as ReadonlyArray<unknown>,
+      ),
       getMostRecentQuantitySample: jest.fn(async () => ({
         quantity: 74.5,
         unit: "kg",
@@ -20,7 +23,7 @@ describe("ExpoHealthKitAdapter", () => {
 
   it("reports available when the library reports available", async () => {
     const hk = makeHealthKit();
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     expect(await adapter.isAvailable()).toBe(true);
     expect(hk.isHealthDataAvailable).toHaveBeenCalled();
   });
@@ -31,26 +34,31 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     expect(await adapter.isAvailable()).toBe(false);
   });
 
-  it("requests read + write scopes on permission request", async () => {
+  it("requests read + share scopes on permission request (v14 AuthDataTypes shape)", async () => {
     const hk = makeHealthKit();
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.requestPermissions();
     expect(result.ok).toBe(true);
     expect(hk.requestAuthorization).toHaveBeenCalledTimes(1);
+    // v14 library signature: single `{ toRead, toShare }` object, NOT
+    // the v12 positional `(toRead, toWrite)` arrays. Calling the v12
+    // shape silently no-ops on device — every subsequent read returns
+    // 0. Bug caught on PR #37.
     const call = (hk.requestAuthorization as jest.Mock).mock.calls[0] as [
-      readonly string[],
-      readonly string[],
+      { toRead?: readonly string[]; toShare?: readonly string[] },
     ];
-    const [readScopes, writeScopes] = call;
-    expect(readScopes).toContain("HKQuantityTypeIdentifierStepCount");
-    expect(readScopes).toContain("HKQuantityTypeIdentifierActiveEnergyBurned");
-    expect(readScopes).toContain("HKQuantityTypeIdentifierBodyMass");
-    expect(readScopes).toContain("HKQuantityTypeIdentifierHeartRate");
-    expect(writeScopes).toContain("HKQuantityTypeIdentifierBodyMass");
+    const [authDataTypes] = call;
+    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierStepCount");
+    expect(authDataTypes.toRead).toContain(
+      "HKQuantityTypeIdentifierActiveEnergyBurned",
+    );
+    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierBodyMass");
+    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierHeartRate");
+    expect(authDataTypes.toShare).toContain("HKQuantityTypeIdentifierBodyMass");
   });
 
   it("surfaces permission_denied when requestAuthorization rejects", async () => {
@@ -59,7 +67,7 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("nope");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.requestPermissions();
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -76,7 +84,7 @@ describe("ExpoHealthKitAdapter", () => {
         return 0;
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const status = await adapter.getPermissionStatus();
     expect(status.steps).toBe("granted");
     expect(status.bodyWeight).toBe("denied");
@@ -90,7 +98,7 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const status = await adapter.getPermissionStatus();
     expect(status.steps).toBe("not_determined");
   });
@@ -101,7 +109,7 @@ describe("ExpoHealthKitAdapter", () => {
         sumQuantity: { quantity: 4812.6 },
       })),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getStepsToday();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBe(4813);
@@ -111,7 +119,7 @@ describe("ExpoHealthKitAdapter", () => {
     const hk = makeHealthKit({
       queryStatisticsForQuantity: jest.fn(async () => null),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getStepsToday();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBe(0);
@@ -123,7 +131,7 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("native boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getStepsToday();
     if (result.ok) throw new Error("expected failure");
     expect(result.error.code).toBe("read_failed");
@@ -136,7 +144,7 @@ describe("ExpoHealthKitAdapter", () => {
         sumQuantity: { quantity: 312 },
       })),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getActiveCaloriesToday();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBe(312);
@@ -148,7 +156,7 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getActiveCaloriesToday();
     if (result.ok) throw new Error("expected failure");
     expect(result.error.code).toBe("read_failed");
@@ -156,7 +164,7 @@ describe("ExpoHealthKitAdapter", () => {
 
   it("reads the latest body weight sample (kg)", async () => {
     const hk = makeHealthKit();
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getLatestBodyWeight();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).not.toBeNull();
@@ -172,7 +180,7 @@ describe("ExpoHealthKitAdapter", () => {
         endDate: "2026-04-20T07:00:00Z",
       })),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getLatestBodyWeight();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value?.unit).toBe("lbs");
@@ -182,7 +190,7 @@ describe("ExpoHealthKitAdapter", () => {
     const hk = makeHealthKit({
       getMostRecentQuantitySample: jest.fn(async () => null),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getLatestBodyWeight();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBeNull();
@@ -194,7 +202,7 @@ describe("ExpoHealthKitAdapter", () => {
         quantity: 80,
       })),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getLatestBodyWeight();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value?.date).toEqual(expect.any(String));
@@ -206,7 +214,7 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getLatestBodyWeight();
     if (result.ok) throw new Error("expected failure");
     expect(result.error.code).toBe("read_failed");
@@ -218,7 +226,7 @@ describe("ExpoHealthKitAdapter", () => {
         quantity: 62.4,
       })),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getHeartRateLatest();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBe(62);
@@ -228,7 +236,7 @@ describe("ExpoHealthKitAdapter", () => {
     const hk = makeHealthKit({
       getMostRecentQuantitySample: jest.fn(async () => null),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getHeartRateLatest();
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBeNull();
@@ -240,15 +248,63 @@ describe("ExpoHealthKitAdapter", () => {
         throw new Error("boom");
       }),
     });
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.getHeartRateLatest();
     if (result.ok) throw new Error("expected failure");
     expect(result.error.code).toBe("read_failed");
   });
 
+  it("aggregates step history via queryStatisticsCollectionForQuantity", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsCollectionForQuantity: jest.fn(async () => [
+        {
+          startDate: new Date("2026-04-18T00:00:00Z"),
+          sumQuantity: { quantity: 4200 },
+        },
+        {
+          startDate: new Date("2026-04-19T00:00:00Z"),
+          sumQuantity: { quantity: 6100 },
+        },
+        {
+          startDate: new Date("2026-04-20T00:00:00Z"),
+          sumQuantity: { quantity: 4812 },
+        },
+      ]),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStepsLastNDays(3);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(3);
+    expect(result.value[0].steps).toBe(4200);
+    expect(result.value[2].steps).toBe(4812);
+    expect(hk.queryStatisticsCollectionForQuantity).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to empty step-history when the library build lacks collection query", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsCollectionForQuantity: undefined,
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStepsLastNDays(7);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([]);
+  });
+
+  it("returns empty history for days <= 0", async () => {
+    const hk = makeHealthKit();
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStepsLastNDays(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([]);
+    expect(hk.queryStatisticsCollectionForQuantity).not.toHaveBeenCalled();
+  });
+
   it("stubs writeBodyWeight as unavailable in M1", async () => {
     const hk = makeHealthKit();
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.writeBodyWeight();
     if (result.ok) throw new Error("expected failure");
     expect(result.error.code).toBe("unavailable");
@@ -256,7 +312,7 @@ describe("ExpoHealthKitAdapter", () => {
 
   it("has a no-op disconnect", async () => {
     const hk = makeHealthKit();
-    const adapter = new ExpoHealthKitAdapter(hk);
+    const adapter = new ExpoHealthKitAdapter(hk as never);
     await expect(adapter.disconnect()).resolves.toBeUndefined();
   });
 });

@@ -10,6 +10,7 @@
  */
 
 import type {
+  HealthDailySteps,
   HealthError,
   HealthPermissionStatus,
   HealthPort,
@@ -21,12 +22,36 @@ import { fail, ok, type Result } from "@/shared/errors";
  * Subset of the HealthKit module we consume. Typed loosely (`unknown`)
  * rather than against the library's rich generic types so the adapter
  * remains testable (Jest factory mocks replace the whole module).
+ *
+ * Matches `@kingstinct/react-native-healthkit@14` API. Key differences
+ * from v12 (which the legacy app targets):
+ * - `requestAuthorization` takes a single `AuthDataTypes` object with
+ *   `{ toShare, toRead }` keys — NOT the legacy positional
+ *   `(toRead, toWrite)`. Getting this wrong means no permission sheet
+ *   ever fires and every subsequent read returns 0.
+ * - `queryStatisticsCollectionForQuantity` powers the step-history
+ *   tile graph (legacy used the per-day aggregation for the two-week
+ *   trend).
  */
 type StatisticsQuery = (
   identifier: string,
   statistics: readonly string[],
   options?: { filter?: { startDate: Date; endDate: Date } },
 ) => Promise<{ sumQuantity?: { quantity?: number } } | null | undefined>;
+
+type StatisticsCollectionQuery = (
+  identifier: string,
+  statistics: readonly string[],
+  anchorDate: Date,
+  intervalComponents: { day?: number; hour?: number },
+  options?: { filter?: { startDate: Date; endDate: Date } },
+) => Promise<
+  ReadonlyArray<{
+    startDate?: Date | string | number;
+    endDate?: Date | string | number;
+    sumQuantity?: { quantity?: number };
+  }>
+>;
 
 type MostRecentQuery = (identifier: string) => Promise<
   | {
@@ -39,7 +64,12 @@ type MostRecentQuery = (identifier: string) => Promise<
   | undefined
 >;
 
-/** Matches the library's AuthorizationStatus enum. 0 notDetermined, 1 denied, 2 authorized. */
+type AuthDataTypes = {
+  toShare?: readonly string[];
+  toRead?: readonly string[];
+};
+
+/** Matches the library's AuthorizationStatus enum. 0 notDetermined, 1 sharingDenied, 2 sharingAuthorized. */
 const AUTH_STATUS_AUTHORIZED = 2;
 const AUTH_STATUS_DENIED = 1;
 
@@ -54,12 +84,10 @@ const IDENTIFIER = {
 /** Type-erased handle to the HealthKit module (lazily imported). */
 type HealthKitLike = {
   isHealthDataAvailable: () => boolean;
-  requestAuthorization: (
-    toRead: readonly string[],
-    toWrite: readonly string[],
-  ) => Promise<boolean>;
+  requestAuthorization: (toRequest: AuthDataTypes) => Promise<boolean>;
   authorizationStatusFor: (identifier: string) => number;
   queryStatisticsForQuantity: StatisticsQuery;
+  queryStatisticsCollectionForQuantity?: StatisticsCollectionQuery;
   getMostRecentQuantitySample: MostRecentQuery;
 };
 
@@ -111,8 +139,12 @@ export class ExpoHealthKitAdapter implements HealthPort {
     Result<HealthPermissionStatus, HealthError>
   > {
     try {
-      await this.healthkit.requestAuthorization(
-        [
+      // v14 signature: single AuthDataTypes object. Passing two
+      // positional arrays (the v12 shape) silently no-ops on device —
+      // no permission sheet, no errors, every subsequent read returns
+      // 0. This was the bug Brad spotted on PR #37.
+      await this.healthkit.requestAuthorization({
+        toRead: [
           IDENTIFIER.STEPS,
           IDENTIFIER.ACTIVE_ENERGY,
           IDENTIFIER.BODY_MASS,
@@ -120,8 +152,8 @@ export class ExpoHealthKitAdapter implements HealthPort {
         ],
         // Body mass is the only writeable scope M1 requests; writes
         // themselves are stubbed until M6.
-        [IDENTIFIER.BODY_MASS],
-      );
+        toShare: [IDENTIFIER.BODY_MASS],
+      });
       return ok(await this.getPermissionStatus());
     } catch (err) {
       return fail<HealthError>({
@@ -166,6 +198,54 @@ export class ExpoHealthKitAdapter implements HealthPort {
       return fail(
         readFailure(
           err instanceof Error ? err.message : "Failed to read steps",
+        ),
+      );
+    }
+  }
+
+  async getStepsLastNDays(
+    days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>> {
+    if (days <= 0) return ok([]);
+    const collection = this.healthkit.queryStatisticsCollectionForQuantity;
+    if (!collection) {
+      // Older library build — fall back to an empty history rather
+      // than throwing. Today's value still comes from getStepsToday.
+      return ok([]);
+    }
+    try {
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      const start = new Date(end);
+      start.setDate(end.getDate() - (days - 1));
+      start.setHours(0, 0, 0, 0);
+
+      const buckets = await collection(
+        IDENTIFIER.STEPS,
+        ["cumulativeSum"],
+        start,
+        { day: 1 },
+        { filter: { startDate: start, endDate: end } },
+      );
+
+      const out: HealthDailySteps[] = [];
+      for (const bucket of buckets) {
+        const stepsValue = bucket.sumQuantity?.quantity;
+        if (typeof stepsValue !== "number") continue;
+        const rawDate = bucket.startDate ?? bucket.endDate;
+        const date =
+          rawDate instanceof Date
+            ? rawDate.toISOString()
+            : typeof rawDate === "string"
+              ? rawDate
+              : new Date(rawDate ?? Date.now()).toISOString();
+        out.push({ date, steps: Math.round(stepsValue) });
+      }
+      return ok(out);
+    } catch (err) {
+      return fail(
+        readFailure(
+          err instanceof Error ? err.message : "Failed to read step history",
         ),
       );
     }

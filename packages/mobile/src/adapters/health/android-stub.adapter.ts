@@ -10,6 +10,7 @@
  */
 
 import type {
+  HealthDailySteps,
   HealthError,
   HealthPermissionStatus,
   HealthPort,
@@ -49,6 +50,12 @@ export class AndroidStubHealthAdapter implements HealthPort {
   }
 
   async getStepsToday(): Promise<Result<number, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
+  async getStepsLastNDays(
+    _days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>> {
     return fail(UNAVAILABLE);
   }
 
