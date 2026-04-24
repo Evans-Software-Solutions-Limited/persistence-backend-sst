@@ -38,6 +38,38 @@ describe("StepsTodayTile", () => {
     expect(getByText("0")).toBeTruthy();
   });
 
+  it("renders the history graph when history is non-empty", () => {
+    const history = [
+      { date: new Date("2026-04-17"), steps: 3000 },
+      { date: new Date("2026-04-18"), steps: 5200 },
+      { date: new Date("2026-04-19"), steps: 4812 },
+    ];
+    const { toJSON } = renderWithTheme(
+      <StepsTodayTile
+        stepsToday={4812}
+        isAvailable
+        permissionStatus={grantedStatus}
+        lastReadAt={null}
+        onConnectPress={jest.fn()}
+        history={history}
+      />,
+    );
+    expect(JSON.stringify(toJSON())).toContain('"d":"M ');
+  });
+
+  it("omits the graph when history is empty", () => {
+    const { toJSON } = renderWithTheme(
+      <StepsTodayTile
+        stepsToday={4812}
+        isAvailable
+        permissionStatus={grantedStatus}
+        lastReadAt={null}
+        onConnectPress={jest.fn()}
+      />,
+    );
+    expect(JSON.stringify(toJSON())).not.toContain('"d":"M ');
+  });
+
   it("renders the Connect CTA when permission is denied / not_determined", () => {
     const onConnect = jest.fn();
     const { getByTestId } = renderWithTheme(

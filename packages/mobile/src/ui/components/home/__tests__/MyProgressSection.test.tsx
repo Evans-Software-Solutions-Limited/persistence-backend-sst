@@ -68,4 +68,15 @@ describe("MyProgressSection", () => {
     fireEvent.press(getByTestId("my-progress-view-all"));
     expect(onViewAllPress).toHaveBeenCalled();
   });
+
+  it("defaults bodyWeightUnit to kg when not supplied", () => {
+    // The `bodyWeightUnit = "kg"` default branch — explicit default
+    // test exercises the fallback rather than the always-kg override.
+    const { bodyWeightUnit: _unused, ...propsNoUnit } = baseProps;
+    void _unused;
+    const { getByText } = renderWithTheme(
+      <MyProgressSection {...propsNoUnit} />,
+    );
+    expect(getByText("78.2 kg")).toBeTruthy();
+  });
 });

@@ -52,4 +52,50 @@ describe("GreetingSection", () => {
     );
     expect(getByText("Free User")).toBeTruthy();
   });
+
+  describe("time-of-day greeting", () => {
+    let hourSpy: jest.SpyInstance<number, []>;
+    afterEach(() => {
+      hourSpy?.mockRestore();
+    });
+
+    function mockHour(hour: number) {
+      // Stub Date.prototype.getHours so getTimeBasedGreeting falls
+      // into each branch deterministically. Less invasive than
+      // replacing the whole Date constructor.
+      hourSpy = jest.spyOn(Date.prototype, "getHours").mockReturnValue(hour);
+    }
+
+    it("renders 'Good morning' before noon", () => {
+      mockHour(9);
+      const { getByText } = renderWithTheme(<GreetingSection {...base} />);
+      expect(getByText("Good morning")).toBeTruthy();
+    });
+
+    it("renders 'Good afternoon' between noon and 5pm", () => {
+      mockHour(14);
+      const { getByText } = renderWithTheme(<GreetingSection {...base} />);
+      expect(getByText("Good afternoon")).toBeTruthy();
+    });
+
+    it("renders 'Good evening' at or after 5pm", () => {
+      mockHour(19);
+      const { getByText } = renderWithTheme(<GreetingSection {...base} />);
+      expect(getByText("Good evening")).toBeTruthy();
+    });
+  });
+
+  it("hides the Manage CTA for paid users when onManageSubscription is omitted", () => {
+    const { queryByTestId } = renderWithTheme(
+      <GreetingSection
+        userName="Alex"
+        subscriptionTier="premium"
+        isFreeTier={false}
+        onUpgradePress={undefined as unknown as () => void}
+        onManageSubscription={undefined as unknown as () => void}
+      />,
+    );
+    expect(queryByTestId("subscription-manage")).toBeNull();
+    expect(queryByTestId("subscription-upgrade")).toBeNull();
+  });
 });
