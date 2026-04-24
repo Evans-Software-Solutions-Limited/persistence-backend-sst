@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useStableMockHistory } from "@/ui/hooks/useStableMockHistory";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
 /**
@@ -32,29 +33,6 @@ import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
  *       (M1) > Container data pipeline · requirements.md STORY-005 AC 5.1–5.12
  */
 
-// Legacy home used client-side mock history until the Progress
-// milestone ships real trend endpoints. Mirroring that here keeps the
-// tile SVGs populated. Seeded by Date + currentValue so the output is
-// stable across a single render batch.
-function generateMockHistory(
-  currentValue: number | null,
-  days: number = 7,
-): { date: Date; value: number }[] {
-  if (currentValue === null) return [];
-  const history: { date: Date; value: number }[] = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    const variation = (Math.random() - 0.5) * 0.1; // ±5% variation
-    history.push({
-      date,
-      value: currentValue * (1 + variation),
-    });
-  }
-  return history;
-}
-
 function firstNameFallback(firstName: string | null): string {
   if (firstName && firstName.trim().length > 0) return firstName;
   return "Lifter";
@@ -69,29 +47,36 @@ export function HomeContainer() {
   // Memo #1: cachedPayload slice the view-model derives from.
   const cachedPayload = useMemo(() => dashboard.payload, [dashboard.payload]);
 
+  // Body weight: prefer the backend measurement (always kg by
+  // contract), fall back to the HealthKit sample with its own unit.
+  // The unit label tracks whichever source supplied the value.
+  // Lifted OUT of the view-model memo so the mock-history hooks
+  // below can key on the stable value without the memo re-running
+  // on every unrelated tick.
+  const weightSource: { value: number; unit: "kg" | "lbs" } | null =
+    cachedPayload?.latestMeasurement?.weightKg != null
+      ? { value: cachedPayload.latestMeasurement.weightKg, unit: "kg" }
+      : health.latestBodyWeight != null
+        ? {
+            value: health.latestBodyWeight.value,
+            unit: health.latestBodyWeight.unit,
+          }
+        : null;
+  const bodyWeight = weightSource?.value ?? null;
+  const bodyWeightUnit = weightSource?.unit ?? "kg";
+  const bodyFat = cachedPayload?.latestMeasurement?.bodyFatPercentage ?? null;
+
+  // Stable mock-history references — regenerate only when the
+  // underlying value changes, NOT on every unrelated view-model
+  // re-compute. Math.random inside a useMemo factory would have
+  // caused the tile graphs to jump on every health reading update.
+  // See bugbot thread on PR #37.
+  const bodyWeightHistory = useStableMockHistory(bodyWeight);
+  const bodyFatHistory = useStableMockHistory(bodyFat);
+
   // Memo #2: presenter-shaped view-model. Recomputes when either the
   // cached payload or any health reading changes.
   const viewModel = useMemo<HomePresenterViewModel>(() => {
-    // Body weight: prefer the backend measurement (always kg by
-    // contract), fall back to the HealthKit sample with its own unit.
-    // The unit label tracks whichever source supplied the value.
-    const weightSource: {
-      value: number;
-      unit: "kg" | "lbs";
-    } | null =
-      cachedPayload?.latestMeasurement?.weightKg != null
-        ? { value: cachedPayload.latestMeasurement.weightKg, unit: "kg" }
-        : health.latestBodyWeight != null
-          ? {
-              value: health.latestBodyWeight.value,
-              unit: health.latestBodyWeight.unit,
-            }
-          : null;
-
-    const bodyWeight = weightSource?.value ?? null;
-    const bodyWeightUnit = weightSource?.unit ?? "kg";
-    const bodyFat = cachedPayload?.latestMeasurement?.bodyFatPercentage ?? null;
-
     const workouts: WorkoutCardWorkout[] = (
       cachedPayload?.recentWorkouts ?? []
     ).map((w) => ({
@@ -135,9 +120,9 @@ export function HomeContainer() {
       standTime: 0,
       bodyWeight,
       bodyWeightUnit,
-      bodyWeightHistory: generateMockHistory(bodyWeight),
+      bodyWeightHistory,
       bodyFat,
-      bodyFatHistory: generateMockHistory(bodyFat),
+      bodyFatHistory,
       stepsToday: health.stepsToday ?? 0,
       stepsHistory: health.stepsHistory.map((h) => ({
         date: new Date(h.date),
@@ -151,6 +136,11 @@ export function HomeContainer() {
   }, [
     cachedPayload,
     session?.userId,
+    bodyWeight,
+    bodyWeightUnit,
+    bodyFat,
+    bodyWeightHistory,
+    bodyFatHistory,
     health.stepsToday,
     health.stepsHistory,
     health.activeCaloriesToday,
