@@ -1,5 +1,6 @@
 import type {
   HealthPort,
+  HealthDailySteps,
   HealthPermissionStatus,
   HealthWeight,
   HealthError,
@@ -37,12 +38,20 @@ export class StubHealthAdapter implements HealthPort {
   async getStepsToday(): Promise<Result<number, HealthError>> {
     return fail(UNAVAILABLE);
   }
+  async getStepsLastNDays(
+    _days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>> {
+    return fail(UNAVAILABLE);
+  }
   async getActiveCaloriesToday(): Promise<Result<number, HealthError>> {
     return fail(UNAVAILABLE);
   }
   async getLatestBodyWeight(): Promise<
     Result<HealthWeight | null, HealthError>
   > {
+    return fail(UNAVAILABLE);
+  }
+  async getHeartRateLatest(): Promise<Result<number | null, HealthError>> {
     return fail(UNAVAILABLE);
   }
   async writeBodyWeight(): Promise<Result<void, HealthError>> {

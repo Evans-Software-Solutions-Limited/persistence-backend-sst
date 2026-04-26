@@ -1,3 +1,7 @@
+import type {
+  CachedDashboard,
+  DashboardPayload,
+} from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
 import type {
   ReferenceEntry,
@@ -70,6 +74,26 @@ export interface StoragePort {
    * cheaper when the caller only needs the timestamp.
    */
   getReferenceListAge(kind: ReferenceListKind): string | null;
+
+  // -- Dashboard Cache (M1) --
+  /**
+   * Read the cached dashboard payload for a user, or null if none.
+   *
+   * Spec: specs/06-progress-goals/design.md § Dashboard mobile architecture
+   *       (M1) > Offline cache · requirements.md STORY-005 AC 5.9
+   */
+  getCachedDashboard(userId: string): CachedDashboard | null;
+  /**
+   * Write-through the latest backend payload for a user, stamping
+   * `syncedAt = now()`.
+   */
+  cacheDashboard(userId: string, payload: DashboardPayload): void;
+  /**
+   * Age of the cached dashboard as an ISO timestamp, or null if none.
+   * Equivalent to `getCachedDashboard(userId)?.syncedAt ?? null` but
+   * cheaper when only the timestamp is needed (stale-indicator caption).
+   */
+  getDashboardAge(userId: string): string | null;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

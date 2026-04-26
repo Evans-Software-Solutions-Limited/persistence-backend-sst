@@ -76,20 +76,20 @@ Traces to `design.md` § Dashboard backend contract and `requirements.md` STORY-
 
 Traces to `design.md` § Dashboard mobile architecture and `requirements.md` STORY-005 (AC 5.1–5.12).
 
-- [ ] Create `packages/mobile/src/domain/models/dashboard.ts` with `DashboardPayload` and nested types; export from `domain/models/index.ts`
-- [ ] Add `ApiPort.getDashboard()` signature; implement in `SSTApiAdapter` and `InMemoryApiAdapter`
-- [ ] Add `StoragePort` dashboard cache methods (`getCachedDashboard`, `cacheDashboard`, `getDashboardAge`); implement in `SQLiteStorageAdapter` + in-memory stub
-- [ ] Add `cached_dashboard` SQLite migration (user_id PK, payload JSON, synced_at)
-- [ ] Create `packages/mobile/src/application/queries/dashboard.query.ts` — `getDashboardQuery` (cache-first) + `refreshDashboard` (writes through)
-- [ ] Create `useDashboard` hook (mirrors `useReferenceLists` shape — exposes `payload`, `isStale`, `isRefreshing`, `refresh`)
-- [ ] Port `HomePresenter` from `persistence-mobile/components/home/HomePresenter/` (1:1 copy with V2 tokens)
-- [ ] Port section presenters: `GreetingSection`, `GoalsSection`, `YourWorkoutsSection`, `MyProgressSection`, `RecentActivitySection`, `SubscriptionBadge`, `StepsTodayTile`, `PROfTheWeekCard`
-- [ ] Create `HomeContainer` with the 3-memo pipeline (cachedPayload → viewModel → animationStyles)
-- [ ] Wire pull-to-refresh (AC 5.10)
-- [ ] Replace diagnostic content in `app/(app)/(tabs)/index.tsx` with `<HomeContainer />`
-- [ ] Presenter unit tests (each section)
-- [ ] Container tests: cache-hit, stale refresh, offline path, pull-to-refresh (AC 5.9 / 5.10)
-- [ ] Maintain ≥ 90% coverage on changed files
+- [x] Create `packages/mobile/src/domain/models/dashboard.ts` with `DashboardPayload` and nested types; export from `domain/models/index.ts`
+- [x] Add `ApiPort.getDashboard()` signature; implement in `SSTApiAdapter` and `InMemoryApiAdapter`
+- [x] Add `StoragePort` dashboard cache methods (`getCachedDashboard`, `cacheDashboard`, `getDashboardAge`); implement in `SQLiteStorageAdapter` + in-memory stub
+- [x] Add `cached_dashboard` SQLite migration (user_id PK, payload JSON, synced_at)
+- [x] Create `packages/mobile/src/application/queries/dashboard.query.ts` — `getDashboardQuery` (cache-first) + `refreshDashboard` (writes through)
+- [x] Create `useDashboard` hook (mirrors `useReferenceLists` shape — exposes `payload`, `isStale`, `isRefreshing`, `refresh`)
+- [x] Port `HomePresenter` from `persistence-mobile/components/home/HomePresenter/` (1:1 copy with V2 tokens)
+- [x] Port section presenters: `GreetingSection`, `GoalsSection`, `YourWorkoutsSection`, `MyProgressSection`, `RecentActivitySection`, `SubscriptionBadge`, `StepsTodayTile`, `PROfTheWeekCard`
+- [x] Create `HomeContainer` with the 3-memo pipeline (cachedPayload → viewModel → animationStyles)
+- [x] Wire pull-to-refresh (AC 5.10)
+- [x] Replace diagnostic content in `app/(app)/(tabs)/index.tsx` with `<HomeContainer />`
+- [x] Presenter unit tests (each section)
+- [x] Container tests: cache-hit, stale refresh, offline path, pull-to-refresh (AC 5.9 / 5.10)
+- [x] Maintain ≥ 90% coverage on changed files
 
 ## Phase 5: UI — Measurements
 

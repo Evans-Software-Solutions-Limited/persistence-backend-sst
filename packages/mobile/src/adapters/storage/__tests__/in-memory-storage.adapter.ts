@@ -1,3 +1,7 @@
+import type {
+  CachedDashboard,
+  DashboardPayload,
+} from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
 import type {
   ReferenceEntry,
@@ -23,6 +27,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private exerciseCache: Map<string, { exercise: Exercise; syncedAt: string }> =
     new Map();
   private referenceLists: Map<ReferenceListKind, ReferenceList> = new Map();
+  private dashboardCache: Map<string, CachedDashboard> = new Map();
   private nextId = 1;
 
   async initialize(): Promise<void> {
@@ -146,11 +151,28 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this.referenceLists.get(kind)?.syncedAt ?? null;
   }
 
+  getCachedDashboard(userId: string): CachedDashboard | null {
+    return this.dashboardCache.get(userId) ?? null;
+  }
+
+  cacheDashboard(userId: string, payload: DashboardPayload): void {
+    this.dashboardCache.set(userId, {
+      userId,
+      payload,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getDashboardAge(userId: string): string | null {
+    return this.dashboardCache.get(userId)?.syncedAt ?? null;
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();
+    this.dashboardCache.clear();
     this.nextId = 1;
   }
 

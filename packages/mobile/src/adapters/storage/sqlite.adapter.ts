@@ -1,4 +1,8 @@
 import * as SQLite from "expo-sqlite";
+import type {
+  CachedDashboard,
+  DashboardPayload,
+} from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
 import type {
   ReferenceEntry,
@@ -89,6 +93,16 @@ export class SQLiteStorageAdapter implements StoragePort {
       CREATE TABLE IF NOT EXISTS reference_lists (
         kind TEXT PRIMARY KEY,
         entries TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- M1: dashboard cache. One row per user; payload is the full
+      -- JSON-serialised DashboardPayload. 5-minute TTL (see
+      -- DASHBOARD_STALE_AFTER_MS) is enforced by the query layer,
+      -- not the storage adapter.
+      CREATE TABLE IF NOT EXISTS cached_dashboard (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
       );
 
@@ -291,6 +305,42 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows[0]?.synced_at ?? null;
   }
 
+  // -- Dashboard Cache (M1) --
+
+  getCachedDashboard(userId: string): CachedDashboard | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, payload, synced_at FROM cached_dashboard WHERE user_id = ?`,
+      [userId],
+    ) as { user_id: string; payload: string; synced_at: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      payload: JSON.parse(row.payload) as DashboardPayload,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheDashboard(userId: string, payload: DashboardPayload): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_dashboard (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getDashboardAge(userId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_dashboard WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -300,6 +350,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM active_session;
       DELETE FROM sync_metadata;
       DELETE FROM reference_lists;
+      DELETE FROM cached_dashboard;
     `);
   }
 }

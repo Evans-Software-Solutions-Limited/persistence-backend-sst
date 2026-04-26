@@ -13,6 +13,15 @@ export type HealthWeight = {
   date: string;
 };
 
+/**
+ * Daily step bucket used by the Home tab's StepsTodayTile mini-graph.
+ * Mirrors the legacy `twoWeeksSteps` shape (`{ date, steps }`).
+ */
+export type HealthDailySteps = {
+  date: string; // ISO date at local start-of-day
+  steps: number;
+};
+
 export type HealthError = {
   readonly kind: "health";
   readonly code:
@@ -25,15 +34,34 @@ export type HealthError = {
 
 /**
  * Port for health data providers (HealthKit / Health Connect).
- * Stub — expanded in milestone 07.
+ *
+ * Spec: specs/07-health-integration/design.md § Architecture,
+ *       § M1 scope: platform adapter matrix
  */
 export interface HealthPort {
   isAvailable(): Promise<boolean>;
   requestPermissions(): Promise<Result<HealthPermissionStatus, HealthError>>;
   getPermissionStatus(): Promise<HealthPermissionStatus>;
   getStepsToday(): Promise<Result<number, HealthError>>;
+  /**
+   * Per-day step counts for the last N days (inclusive of today),
+   * earliest first. Powers the StepsTodayTile mini-graph — matches
+   * legacy `queryStepsTwoWeeks` aggregated to daily buckets.
+   */
+  getStepsLastNDays(
+    days: number,
+  ): Promise<Result<readonly HealthDailySteps[], HealthError>>;
   getActiveCaloriesToday(): Promise<Result<number, HealthError>>;
   getLatestBodyWeight(): Promise<Result<HealthWeight | null, HealthError>>;
+  /**
+   * Most recent heart rate sample in bpm, or null when no samples are
+   * available. Read-only in M1 — no M1 UI surfaces this directly, but
+   * the read path is implemented for M4 Progress.
+   *
+   * Spec: specs/07-health-integration/design.md § Architecture,
+   *       § M1 scope: platform adapter matrix
+   */
+  getHeartRateLatest(): Promise<Result<number | null, HealthError>>;
   writeBodyWeight(
     weight: number,
     date: Date,
