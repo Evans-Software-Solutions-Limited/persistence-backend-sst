@@ -33,6 +33,13 @@ export interface MyProgressSectionProps {
   readonly healthIsAvailable: boolean;
   readonly healthPermissionStatus: HealthPermissionStatus;
   readonly latestBodyWeight: HealthWeight | null;
+  /**
+   * True when the active health adapter is the simulator-mock fixture
+   * (per `HealthPort.isMock`). The three tiles that consume health
+   * data render a small `MOCK` chip when set, so reviewers don't
+   * mistake the deterministic 4812 / 312 / 74.5 numbers for a bug.
+   */
+  readonly healthIsMock?: boolean;
   readonly onConnectHealthPress: () => void;
   readonly onViewAllPress: () => void;
 }
@@ -52,6 +59,7 @@ export function MyProgressSection({
   stepsHistory,
   healthIsAvailable,
   healthPermissionStatus,
+  healthIsMock = false,
   onConnectHealthPress,
   onViewAllPress,
 }: MyProgressSectionProps) {
@@ -76,6 +84,7 @@ export function MyProgressSection({
             activeEnergy={activeEnergy}
             basalEnergy={basalEnergy}
             standTime={standTime}
+            isMock={healthIsMock}
           />
         </View>
         <View style={styles.row}>
@@ -83,6 +92,7 @@ export function MyProgressSection({
             currentValue={bodyWeight}
             unit={bodyWeightUnit}
             history={bodyWeightHistory}
+            isMock={healthIsMock}
           />
           <BodyFatTile currentValue={bodyFat} history={bodyFatHistory} />
         </View>
@@ -94,6 +104,7 @@ export function MyProgressSection({
             permissionStatus={healthPermissionStatus}
             lastReadAt={null}
             onConnectPress={onConnectHealthPress}
+            isMock={healthIsMock}
           />
           <View style={styles.placeholder} />
         </View>

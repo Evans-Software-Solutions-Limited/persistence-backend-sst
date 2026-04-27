@@ -142,4 +142,34 @@ describe("StepsTodayTile", () => {
       expect(getByText("Health data not available")).toBeTruthy();
     });
   });
+
+  describe("MOCK chip (simulator-mock disclosure)", () => {
+    it("renders a MOCK chip on the granted state when isMock=true", () => {
+      const { getByTestId, getByText } = renderWithTheme(
+        <StepsTodayTile
+          stepsToday={4812}
+          isAvailable
+          permissionStatus={grantedStatus}
+          lastReadAt={null}
+          onConnectPress={jest.fn()}
+          isMock
+        />,
+      );
+      expect(getByTestId("steps-tile-mock-chip")).toBeTruthy();
+      expect(getByText("MOCK")).toBeTruthy();
+    });
+
+    it("omits the MOCK chip when isMock=false (default)", () => {
+      const { queryByTestId } = renderWithTheme(
+        <StepsTodayTile
+          stepsToday={4812}
+          isAvailable
+          permissionStatus={grantedStatus}
+          lastReadAt={null}
+          onConnectPress={jest.fn()}
+        />,
+      );
+      expect(queryByTestId("steps-tile-mock-chip")).toBeNull();
+    });
+  });
 });

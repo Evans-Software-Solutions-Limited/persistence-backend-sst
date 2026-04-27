@@ -18,18 +18,31 @@ interface BodyWeightTileProps {
   readonly currentValue: number | null;
   readonly unit?: "kg" | "lbs";
   readonly history: { date: Date; value: number }[];
+  /**
+   * True when the value comes from the simulator-mock adapter rather
+   * than a live HealthKit / Health Connect read. Renders a small chip
+   * so reviewers don't mistake the deterministic 74.5 kg fixture for
+   * a real reading. Cosmetic only; doesn't change tile behaviour.
+   */
+  readonly isMock?: boolean;
 }
 
 export function BodyWeightTile({
   currentValue,
   unit = "kg",
   history,
+  isMock = false,
 }: BodyWeightTileProps) {
   const displayValue =
     currentValue === null ? "—" : `${currentValue.toFixed(1)} ${unit}`;
 
   return (
     <View style={styles.container} testID="tile-body-weight">
+      {isMock && (
+        <View style={styles.mockChip} testID="body-weight-tile-mock-chip">
+          <Text style={styles.mockChipText}>MOCK</Text>
+        </View>
+      )}
       <Text style={styles.title}>Body Weight</Text>
       <Text style={styles.value}>{displayValue}</Text>
       {history.length > 0 ? (
@@ -66,5 +79,22 @@ const styles = StyleSheet.create({
   },
   graphContainer: {
     marginTop: Spacing.xs,
+  },
+  mockChip: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: Colors.surface.tertiary,
+  },
+  mockChipText: {
+    ...Typography.caption,
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    color: Colors.text.tertiary,
   },
 });
