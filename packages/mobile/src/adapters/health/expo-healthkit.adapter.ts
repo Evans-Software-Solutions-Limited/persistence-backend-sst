@@ -121,6 +121,8 @@ function readFailure(message: string): HealthError {
 }
 
 export class ExpoHealthKitAdapter implements HealthPort {
+  readonly isMock = false;
+
   private readonly healthkit: HealthKitLike;
 
   constructor(healthkit?: HealthKitLike) {

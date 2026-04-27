@@ -43,6 +43,7 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     heartRate: "granted",
   } as const;
   const base: HealthPort = {
+    isMock: false,
     isAvailable: async () => true,
     requestPermissions: async () => ok(grantedStatus),
     getPermissionStatus: async () => grantedStatus,
@@ -58,6 +59,7 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
   };
   // Wrap every function in a jest.fn so tests can count calls / override.
   const wrapped: HealthPort = {
+    isMock: base.isMock,
     isAvailable: jest.fn(base.isAvailable),
     requestPermissions: jest.fn(base.requestPermissions),
     getPermissionStatus: jest.fn(base.getPermissionStatus),
@@ -119,6 +121,21 @@ describe("useHealthData", () => {
       expect(result.current.isAvailable).toBe(false);
     });
     expect(health.getStepsToday).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the adapter's isMock flag on the hook return", async () => {
+    const realHealth = makeHealthAdapter({ isMock: false });
+    const mockHealth = makeHealthAdapter({ isMock: true });
+
+    const real = renderHook(() => useHealthData(), {
+      wrapper: wrap(makeAdapters(realHealth)),
+    });
+    expect(real.result.current.isMock).toBe(false);
+
+    const mocked = renderHook(() => useHealthData(), {
+      wrapper: wrap(makeAdapters(mockHealth)),
+    });
+    expect(mocked.result.current.isMock).toBe(true);
   });
 
   it("refresh() bypasses the rate limit", async () => {

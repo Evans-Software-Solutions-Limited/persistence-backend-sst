@@ -38,6 +38,8 @@ export const SIMULATOR_MOCK_VALUES = {
 } as const;
 
 export class SimulatorMockHealthAdapter implements HealthPort {
+  readonly isMock = true;
+
   async isAvailable() {
     return true;
   }
