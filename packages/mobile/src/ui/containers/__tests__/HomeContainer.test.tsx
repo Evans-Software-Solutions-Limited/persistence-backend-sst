@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 // Jest hoists jest.mock factories — prefix captured refs with `mock*`.
 
@@ -58,6 +58,16 @@ jest.mock("@/ui/presenters/HomePresenter", () => {
             testID: "stub-activity",
             onPress: () => props.onActivityPress("s1"),
           }),
+          React.createElement(Pressable, {
+            key: "workout-start",
+            testID: "stub-workout-start",
+            onPress: () => props.onWorkoutStart("w1"),
+          }),
+          React.createElement(Pressable, {
+            key: "manage-subscription",
+            testID: "stub-manage-subscription",
+            onPress: props.onManageSubscriptionPress,
+          }),
         ],
       );
     },
@@ -101,6 +111,7 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     heartRate: "granted",
   } as const;
   const base: HealthPort = {
+    isMock: false,
     isAvailable: async () => true,
     requestPermissions: async () => ok(grantedStatus),
     getPermissionStatus: async () => grantedStatus,
@@ -115,6 +126,7 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     disconnect: async () => {},
   };
   const wrapped: HealthPort = {
+    isMock: base.isMock,
     isAvailable: jest.fn(base.isAvailable),
     requestPermissions: jest.fn(base.requestPermissions),
     getPermissionStatus: jest.fn(base.getPermissionStatus),
@@ -202,11 +214,12 @@ describe("HomeContainer", () => {
     );
   });
 
-  it("falls back to safe defaults when cache is empty", async () => {
+  it("emits null userName + surfaces the api error when cache is empty and refresh fails", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    // Do not seed api.dashboard — so the auto-refresh will fail silently
-    // and the cache stays empty.
+    // Do not seed api.dashboard — the InMemoryApiAdapter returns a
+    // not_found ApiError, which the container should propagate via
+    // `error` rather than swallowing behind a polite-greeting fallback.
     const adapters = makeAdapters(api, storage);
 
     renderWithTheme(
@@ -216,9 +229,13 @@ describe("HomeContainer", () => {
     );
 
     await waitFor(() => {
-      expect(mockHomePresenterProps.current).not.toBeNull();
+      expect(mockHomePresenterProps.current?.error).not.toBeNull();
     });
-    expect(mockHomePresenterProps.current.viewModel.userName).toBe("Lifter");
+    // No "Lifter" fallback any more — null signals the presenter to
+    // pivot to the dedicated error state instead of greeting a fake
+    // user. See PR #37 review thread.
+    expect(mockHomePresenterProps.current.viewModel.userName).toBeNull();
+    expect(mockHomePresenterProps.current.error?.kind).toBe("api");
     expect(mockHomePresenterProps.current.viewModel.goals).toEqual([]);
     expect(mockHomePresenterProps.current.viewModel.workouts).toEqual([]);
     expect(mockHomePresenterProps.current.viewModel.isFreeTier).toBe(true);
@@ -346,6 +363,80 @@ describe("HomeContainer", () => {
     expect(health.requestPermissions).toHaveBeenCalled();
   });
 
+  it("routes to /workouts on workout-start tap", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    const adapters = makeAdapters(api, storage);
+
+    const { getByTestId } = renderWithTheme(
+      <Wrap adapters={adapters}>
+        <HomeContainer />
+      </Wrap>,
+    );
+    await waitFor(() => {
+      expect(mockHomePresenterProps.current).not.toBeNull();
+    });
+    fireEvent.press(getByTestId("stub-workout-start"));
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/workouts");
+  });
+
+  it("surfaces an Alert when the manage-subscription CTA fires", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    const adapters = makeAdapters(api, storage);
+
+    const { getByTestId } = renderWithTheme(
+      <Wrap adapters={adapters}>
+        <HomeContainer />
+      </Wrap>,
+    );
+    await waitFor(() => {
+      expect(mockHomePresenterProps.current).not.toBeNull();
+    });
+
+    fireEvent.press(getByTestId("stub-manage-subscription"));
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Manage subscription",
+      expect.any(String),
+    );
+    alertSpy.mockRestore();
+  });
+
+  it("maps health.stepsHistory ISO dates into Date objects on the view-model", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    const stepsHistory = [
+      { date: "2026-04-19T00:00:00.000Z", steps: 4500 },
+      { date: "2026-04-20T00:00:00.000Z", steps: 5200 },
+    ];
+    const health = mockHealth({
+      getStepsLastNDays: jest.fn(async () => ok(stepsHistory)),
+    });
+    const adapters = makeAdapters(api, storage, health);
+
+    renderWithTheme(
+      <Wrap adapters={adapters}>
+        <HomeContainer />
+      </Wrap>,
+    );
+    await waitFor(() => {
+      expect(
+        mockHomePresenterProps.current?.viewModel?.stepsHistory?.length,
+      ).toBe(2);
+    });
+    const mapped = mockHomePresenterProps.current.viewModel.stepsHistory;
+    expect(mapped[0].date).toBeInstanceOf(Date);
+    expect(mapped[0].steps).toBe(4500);
+    expect(mapped[1].steps).toBe(5200);
+  });
+
   it("surfaces an Alert when the upgrade CTA fires", async () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const api = new InMemoryApiAdapter();
@@ -387,6 +478,202 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     expect(mockHomePresenterProps.current.animationStyles).toHaveLength(5);
+  });
+
+  describe("error + profile-incomplete surfacing (PR #37 follow-up)", () => {
+    it("forwards a refresh error from useDashboard onto the presenter prop", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      // No fixture seeded — InMemoryApiAdapter returns a not_found
+      // ApiError, so the auto-refresh fires and rejects.
+      const adapters = makeAdapters(api, storage);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current?.error).not.toBeNull();
+      });
+      expect(mockHomePresenterProps.current.error.kind).toBe("api");
+      expect(mockHomePresenterProps.current.error.code).toBe("not_found");
+    });
+
+    it("synthesises an error when the payload comes back with a null firstName", async () => {
+      // Brad-flagged scenario: API returns 200 but profile.firstName is
+      // null. Pre-fix we silently rendered "Lifter"; post-fix the
+      // container surfaces an api/server error so the presenter shows
+      // the blocking error state.
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const incompletePayload = {
+        ...DASHBOARD_FIXTURE,
+        profile: { ...DASHBOARD_FIXTURE.profile, firstName: null },
+      };
+      api.dashboard = incompletePayload;
+      storage.cacheDashboard("user-1", incompletePayload);
+      const adapters = makeAdapters(api, storage);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      // Wait for the auth bootstrap to land + the cache read to lift
+      // the incomplete payload into state. Gating only on
+      // `userName === null` is not enough — the very first render
+      // (pre-bootstrap, userId === null) ALSO has userName === null
+      // and a null `error`, so a naive waitFor resolves before the
+      // synthesised error has had a chance to materialise. Local
+      // runs happened to settle on a later render; CI on Linux
+      // settled on the earlier one. Gate explicitly on the error
+      // we're about to assert. See PR #38 review.
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current?.error).not.toBeNull();
+      });
+      expect(mockHomePresenterProps.current.viewModel.userName).toBeNull();
+      expect(mockHomePresenterProps.current.error?.kind).toBe("api");
+      expect(mockHomePresenterProps.current.error?.code).toBe("server");
+      expect(mockHomePresenterProps.current.error?.message).toMatch(/profile/i);
+    });
+
+    it("clears the synthesised error once the payload returns with a firstName", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.dashboard = DASHBOARD_FIXTURE;
+      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+      const adapters = makeAdapters(api, storage);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current?.viewModel?.userName).toBe(
+          "Alex",
+        );
+      });
+      expect(mockHomePresenterProps.current.error).toBeNull();
+    });
+  });
+
+  describe("loader caption timer (5s)", () => {
+    it("flips showSlowLoaderCaption true after 5 seconds of loading", async () => {
+      jest.useFakeTimers();
+      try {
+        const api = new InMemoryApiAdapter();
+        const storage = new InMemoryStorageAdapter();
+        api.dashboard = DASHBOARD_FIXTURE;
+        // Stall the fetch so isLoading stays true long enough for the
+        // caption timer to fire under our control.
+        let release: (() => void) | null = null;
+        jest.spyOn(api, "getDashboard").mockImplementation(async () => {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return ok(DASHBOARD_FIXTURE);
+        });
+
+        const adapters = makeAdapters(api, storage);
+
+        renderWithTheme(
+          <Wrap adapters={adapters}>
+            <HomeContainer />
+          </Wrap>,
+        );
+
+        await waitFor(() => {
+          expect(mockHomePresenterProps.current?.isLoading).toBe(true);
+        });
+        expect(mockHomePresenterProps.current.showSlowLoaderCaption).toBe(
+          false,
+        );
+
+        await act(async () => {
+          jest.advanceTimersByTime(5_000);
+        });
+
+        await waitFor(() => {
+          expect(mockHomePresenterProps.current.showSlowLoaderCaption).toBe(
+            true,
+          );
+        });
+
+        // Cleanup: drain microtasks before swapping back to real timers
+        // so any pending `release()` doesn't leak into other tests.
+        await act(async () => {
+          release?.();
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("resets showSlowLoaderCaption back to false when isLoading flips off", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.dashboard = DASHBOARD_FIXTURE;
+      // Pre-seed the cache so isLoading is false from mount.
+      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+      const adapters = makeAdapters(api, storage);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current?.isLoading).toBe(false);
+      });
+      expect(mockHomePresenterProps.current.showSlowLoaderCaption).toBe(false);
+    });
+  });
+
+  describe("isMock threading", () => {
+    it("forwards healthIsMock=true onto the view-model when the adapter is a mock", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.dashboard = DASHBOARD_FIXTURE;
+      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+      const health = mockHealth({ isMock: true });
+      const adapters = makeAdapters(api, storage, health);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current).not.toBeNull();
+      });
+      expect(mockHomePresenterProps.current.viewModel.healthIsMock).toBe(true);
+    });
+
+    it("forwards healthIsMock=false for real adapters", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.dashboard = DASHBOARD_FIXTURE;
+      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+      const adapters = makeAdapters(api, storage); // default mockHealth has isMock:false
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current).not.toBeNull();
+      });
+      expect(mockHomePresenterProps.current.viewModel.healthIsMock).toBe(false);
+    });
   });
 
   it("keeps onRefresh + onConnectHealthPress identity stable across re-renders", async () => {

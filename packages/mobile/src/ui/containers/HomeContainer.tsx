@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import type { Goal } from "@/ui/components/home/GoalsSection";
 import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
@@ -33,10 +33,29 @@ import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
  *       (M1) > Container data pipeline · requirements.md STORY-005 AC 5.1–5.12
  */
 
-function firstNameFallback(firstName: string | null): string {
+/**
+ * Pick the greeting display name. Returns `null` (not a string fallback)
+ * when the cached profile lacks a first name — `null` is the signal for
+ * the presenter that profile data hasn't materialised yet, which the
+ * loading + error branches below interpret. The previous `"Lifter"`
+ * fallback masked real API failures behind a polite-looking greeting;
+ * Brad called this out explicitly during the PR #37 review.
+ *
+ * Spec: specs/06-progress-goals/requirements.md STORY-005 AC 5.9
+ */
+function deriveUserName(firstName: string | null | undefined): string | null {
   if (firstName && firstName.trim().length > 0) return firstName;
-  return "Lifter";
+  return null;
 }
+
+/**
+ * Delay between `isLoading` flipping true and the presenter showing the
+ * "Taking longer than usual…" caption under the loader. Sits halfway
+ * between an unnoticeable fetch and the 10s adapter-side timeout — long
+ * enough that fast fetches never trip it, short enough that the user
+ * gets a signal before the full timeout fires.
+ */
+export const HOME_LOADER_CAPTION_DELAY_MS = 5_000;
 
 export function HomeContainer() {
   const router = useRouter();
@@ -107,7 +126,7 @@ export function HomeContainer() {
     }));
 
     return {
-      userName: firstNameFallback(cachedPayload?.profile.firstName ?? null),
+      userName: deriveUserName(cachedPayload?.profile.firstName),
       subscriptionTier: cachedPayload?.subscription.tierName ?? null,
       isFreeTier: cachedPayload?.subscription.isFreeTier ?? true,
       goals,
@@ -132,6 +151,7 @@ export function HomeContainer() {
       latestBodyWeight: health.latestBodyWeight,
       healthIsAvailable: health.isAvailable,
       healthPermissionStatus: health.permissionStatus,
+      healthIsMock: health.isMock,
     };
   }, [
     cachedPayload,
@@ -147,6 +167,7 @@ export function HomeContainer() {
     health.latestBodyWeight,
     health.isAvailable,
     health.permissionStatus,
+    health.isMock,
   ]);
 
   // Memo #3: per-section animation styles. One `useStaggeredEntry` per
@@ -228,16 +249,69 @@ export function HomeContainer() {
     [router],
   );
 
+  // Per Brad's review: a successful payload that comes back with a
+  // null profile.firstName is a contract violation (every signed-in
+  // user has a profile row), not a polite-fallback case. Treat it as
+  // an unrecoverable error so the user sees the explicit error state
+  // and can retry — never a silent "Lifter" greeting.
+  const profileIncomplete =
+    cachedPayload !== null && cachedPayload.profile.firstName === null;
+
   // Cold-start: no cached payload yet AND a background refresh is in
   // flight. Show the P-logo loader full-screen, matching the legacy
-  // app's first-open behaviour.
+  // app's first-open behaviour. We deliberately do NOT roll the
+  // profile-incomplete case in here — once the refresh has settled
+  // and the profile is still missing, the presenter pivots to the
+  // dedicated full-screen error state below rather than spinning
+  // forever.
   const isLoading = cachedPayload === null && dashboard.isRefreshing;
+
+  // Surface refresh failures with the right severity:
+  // - cache empty + error → blocking full-screen error ("we couldn't
+  //   load your dashboard"). Includes the profile-incomplete case
+  //   above, which is synthesised as an api/server error so the
+  //   presenter doesn't need a separate prop.
+  // - cache present + error → non-blocking inline banner ("couldn't
+  //   refresh — showing cached data"), modelled on M0's
+  //   ExerciseListPresenter stale strip. The banner addresses Brad's
+  //   "Spotify-like working-offline indicator" ask without pulling in
+  //   a full NetInfo dependency this round; the timeout code is the
+  //   strongest signal we have for "no connectivity right now".
+  const dashboardError = dashboard.error;
+  const syntheticProfileError = useMemo(() => {
+    if (!profileIncomplete) return null;
+    return {
+      kind: "api" as const,
+      code: "server" as const,
+      message:
+        "Your profile didn't load. This usually clears on retry — if it doesn't, check back shortly.",
+    };
+  }, [profileIncomplete]);
+  const effectiveError = dashboardError ?? syntheticProfileError;
+
+  // 5-second loader caption — kicks in for slow fetches before the
+  // 10s adapter timeout fires. Cleared when isLoading flips off or
+  // the component unmounts; never keeps a stale handle around.
+  const [showSlowLoaderCaption, setShowSlowLoaderCaption] = useState(false);
+  useEffect(() => {
+    if (!isLoading) {
+      setShowSlowLoaderCaption(false);
+      return;
+    }
+    const handle = setTimeout(
+      () => setShowSlowLoaderCaption(true),
+      HOME_LOADER_CAPTION_DELAY_MS,
+    );
+    return () => clearTimeout(handle);
+  }, [isLoading]);
 
   return (
     <HomePresenter
       viewModel={viewModel}
       animationStyles={animationStyles}
       isLoading={isLoading}
+      showSlowLoaderCaption={showSlowLoaderCaption}
+      error={effectiveError}
       isRefreshing={dashboard.isRefreshing || health.isReading}
       onRefresh={onRefresh}
       onUpgradePress={onUpgradePress}
