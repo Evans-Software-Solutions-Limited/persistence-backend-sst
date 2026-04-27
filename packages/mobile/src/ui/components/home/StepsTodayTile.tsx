@@ -34,13 +34,6 @@ export type StepsTodayTileProps = {
   lastReadAt: string | null;
   onConnectPress: () => void;
   history?: { date: Date; steps: number }[];
-  /**
-   * True when the value comes from the simulator-mock adapter rather
-   * than a live HealthKit / Health Connect read. Renders a small chip
-   * so reviewers don't mistake the deterministic 4812 fixture for a
-   * real reading. Cosmetic only; doesn't change tile behaviour.
-   */
-  isMock?: boolean;
 };
 
 export function StepsTodayTile({
@@ -49,7 +42,6 @@ export function StepsTodayTile({
   permissionStatus,
   onConnectPress,
   history = [],
-  isMock = false,
 }: StepsTodayTileProps) {
   if (!isAvailable) {
     return (
@@ -79,11 +71,6 @@ export function StepsTodayTile({
 
   return (
     <View style={styles.container} testID="steps-tile-granted">
-      {isMock && (
-        <View style={styles.mockChip} testID="steps-tile-mock-chip">
-          <Text style={styles.mockChipText}>MOCK</Text>
-        </View>
-      )}
       <Text style={styles.title}>Steps Today</Text>
       <Text style={styles.value} testID="steps-tile-value">
         {value}
@@ -135,22 +122,5 @@ const styles = StyleSheet.create({
   connectCaption: {
     ...Typography.caption,
     color: Colors.text.secondary,
-  },
-  mockChip: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 1,
-    borderRadius: 4,
-    backgroundColor: Colors.surface.tertiary,
-  },
-  mockChipText: {
-    ...Typography.caption,
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    color: Colors.text.tertiary,
   },
 });

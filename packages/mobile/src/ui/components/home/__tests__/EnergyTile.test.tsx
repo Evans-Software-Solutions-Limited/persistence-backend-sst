@@ -19,19 +19,4 @@ describe("EnergyTile", () => {
     expect(getAllByText("0 kcal").length).toBe(2);
     expect(getByText("0h")).toBeTruthy();
   });
-
-  it("renders a MOCK chip when isMock=true", () => {
-    const { getByTestId, getByText } = renderWithTheme(
-      <EnergyTile activeEnergy={312} basalEnergy={1457} standTime={9} isMock />,
-    );
-    expect(getByTestId("energy-tile-mock-chip")).toBeTruthy();
-    expect(getByText("MOCK")).toBeTruthy();
-  });
-
-  it("omits the MOCK chip by default", () => {
-    const { queryByTestId } = renderWithTheme(
-      <EnergyTile activeEnergy={312} basalEnergy={1457} standTime={9} />,
-    );
-    expect(queryByTestId("energy-tile-mock-chip")).toBeNull();
-  });
 });

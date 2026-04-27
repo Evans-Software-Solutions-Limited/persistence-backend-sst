@@ -79,12 +79,11 @@ M1 ships the first real `HealthPort` implementations alongside the Home
 screen. Not every adapter goes to full fidelity — only the pieces
 needed for the dashboard tiles.
 
-| Platform                  | Adapter                      | M1 scope                                                                                                                              | Notes                                                                                                                                                                                  |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iOS (device / real build) | `ExpoHealthKitAdapter`       | Read steps today, active calories today, latest body weight, heart rate; permission request + status; `isAvailable()`; `disconnect()` | Uses `@kingstinct/react-native-healthkit`, already used by legacy. `writeBodyWeight` is a no-op that returns `fail(UNAVAILABLE)` in M1 — wired in M6 when measurement editor ships.    |
-| iOS simulator             | `SimulatorMockHealthAdapter` | Same surface as iOS, returns deterministic non-zero numbers (steps: 4812, active cal: 312, weight: 74.5 kg, hr: 62 bpm)               | Simulator reports HealthKit as `isAvailable: false` in practice; fallback adapter keeps smoke-testing unblocked. Selected when `Platform.OS === "ios" && __DEV__ && !Device.isDevice`. |
-| Android                   | `AndroidStubHealthAdapter`   | `isAvailable: false`; every read returns `fail(UNAVAILABLE)`; permission request is a no-op success                                   | Android M1 scope is "does not crash, renders an empty health tile with 'Not available on Android yet'". Real Health Connect adapter is deferred past M1.                               |
-| Tests                     | `MockHealthAdapter`          | Existing in-memory adapter with configurable return values                                                                            | Unchanged from Phase 1 stub pattern.                                                                                                                                                   |
+| Platform                  | Adapter                    | M1 scope                                                                                                                                                                                                                                                                           | Notes                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| iOS (device or simulator) | `ExpoHealthKitAdapter`     | Read steps today, walking distance, basal/move energy, active energy, exercise minutes, stand time, latest body weight, body fat %, heart rate; permission request + status; `isAvailable()`; `disconnect()`. Permission scope mirrors the legacy app's IOS_READ + IOS_WRITE sets. | Uses `@kingstinct/react-native-healthkit`, the same library legacy ships. On the iOS simulator HealthKit reports `isAvailable: false`; tiles render the existing "Health not available on this iOS build" copy honestly rather than showing a fixture. `writeBodyWeight` is stubbed — wired in M6 when the measurement editor ships. |
+| Android                   | `AndroidStubHealthAdapter` | `isAvailable: false`; every read returns `fail(UNAVAILABLE)`; permission request is a no-op success                                                                                                                                                                                | Android M1 scope is "does not crash, renders an empty health tile with 'Not available on Android yet'". Real Health Connect adapter is deferred past M1.                                                                                                                                                                             |
+| Tests                     | `MockHealthAdapter`        | Existing in-memory adapter with configurable return values                                                                                                                                                                                                                         | Unchanged from Phase 1 stub pattern.                                                                                                                                                                                                                                                                                                 |
 
 ### Selection logic
 
@@ -93,20 +92,13 @@ Picked once at `AdapterProvider` construction, not per-hook:
 ```ts
 // adapters/health/index.ts
 export function createHealthAdapter(): HealthPort {
-  if (Platform.OS === "ios") {
-    if (__DEV__ && !Device.isDevice) return new SimulatorMockHealthAdapter();
-    return new ExpoHealthKitAdapter();
-  }
+  if (Platform.OS === "ios") return new ExpoHealthKitAdapter();
   if (Platform.OS === "android") return new AndroidStubHealthAdapter();
   return new StubHealthAdapter(); // web / fallback
 }
 ```
 
-The `StubHealthAdapter` from 00-guardrails remains — the simulator-mock and Android-stub adapters are new and explicit replacements so the health surface is coherent on every target.
-
-### Why simulator-mock is M1-critical
-
-The V2 smoke-test flow runs on an iOS simulator (established in M0). Without a simulator-mock fallback, the dashboard's StepsTile renders empty or the tile swallows permission-denied errors, and the review gate "mocked step count renders" from the M1 brief sketch fails. Mock values are deterministic so simulator builds are visually stable across reviewers.
+The `StubHealthAdapter` from 00-guardrails remains — the Android-stub adapter is new and explicit so the health surface is coherent on every target. The earlier M1 design included a `SimulatorMockHealthAdapter` that returned deterministic fixtures on the iOS simulator; that adapter was removed in PR #38 follow-up (Brad's preference: always live data, no mock disclosure layer). Smoke-testing on simulator now relies on the real adapter's "not available" fall-through.
 
 ### UI tiles: live vs not-yet-connected states
 

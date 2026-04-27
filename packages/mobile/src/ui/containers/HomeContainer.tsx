@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { Goal } from "@/ui/components/home/GoalsSection";
 import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
@@ -151,7 +151,6 @@ export function HomeContainer() {
       latestBodyWeight: health.latestBodyWeight,
       healthIsAvailable: health.isAvailable,
       healthPermissionStatus: health.permissionStatus,
-      healthIsMock: health.isMock,
     };
   }, [
     cachedPayload,
@@ -167,7 +166,6 @@ export function HomeContainer() {
     health.latestBodyWeight,
     health.isAvailable,
     health.permissionStatus,
-    health.isMock,
   ]);
 
   // Memo #3: per-section animation styles. One `useStaggeredEntry` per
@@ -251,20 +249,48 @@ export function HomeContainer() {
 
   // Per Brad's review: a successful payload that comes back with a
   // null profile.firstName is a contract violation (every signed-in
-  // user has a profile row), not a polite-fallback case. Treat it as
-  // an unrecoverable error so the user sees the explicit error state
-  // and can retry — never a silent "Lifter" greeting.
+  // user has a profile row). His preferred UX is "stay in loading
+  // state until the profile resolves; only show an error if it stays
+  // null after a retry." We honour that with a single auto-retry:
+  // when we observe a null firstName from a settled refresh, we fire
+  // one more refresh in the background. Until that retry resolves,
+  // the user keeps seeing the loader rather than a flash of error.
+  // If it STILL comes back null afterwards, we surface the full-
+  // screen error. PR #38 review captured this directly:
+  // > "There shouldn't be an error, the data should be there, so the
+  // > error shouldn't be shown, it should have the loading state
+  // > until the profile is found and if it isnt its something wrong
+  // > with our current api implementation."
   const profileIncomplete =
     cachedPayload !== null && cachedPayload.profile.firstName === null;
 
+  const profileRetryAttemptedRef = useRef(false);
+  const dashboardIsRefreshing = dashboard.isRefreshing;
+  useEffect(() => {
+    // Reset the guard whenever a successful refresh restores the
+    // first name. Otherwise a flaky API that briefly returned null
+    // would burn the one-shot and never auto-retry on the NEXT app
+    // open.
+    if (!profileIncomplete) {
+      profileRetryAttemptedRef.current = false;
+      return;
+    }
+    if (dashboardIsRefreshing) return;
+    if (profileRetryAttemptedRef.current) return;
+    profileRetryAttemptedRef.current = true;
+    void dashboardRefresh();
+  }, [profileIncomplete, dashboardIsRefreshing, dashboardRefresh]);
+
   // Cold-start: no cached payload yet AND a background refresh is in
-  // flight. Show the P-logo loader full-screen, matching the legacy
-  // app's first-open behaviour. We deliberately do NOT roll the
-  // profile-incomplete case in here — once the refresh has settled
-  // and the profile is still missing, the presenter pivots to the
-  // dedicated full-screen error state below rather than spinning
-  // forever.
-  const isLoading = cachedPayload === null && dashboard.isRefreshing;
+  // flight. Also: a payload landed but profile.firstName is still null
+  // and we haven't yet given the auto-retry a chance to resolve. In
+  // both cases we keep the P-logo loader full-screen rather than
+  // flashing the section tree (or the error state) prematurely.
+  const profileRetryPending =
+    profileIncomplete &&
+    (dashboardIsRefreshing || !profileRetryAttemptedRef.current);
+  const isLoading =
+    (cachedPayload === null && dashboardIsRefreshing) || profileRetryPending;
 
   // Surface refresh failures with the right severity:
   // - cache empty + error → blocking full-screen error ("we couldn't
@@ -277,16 +303,22 @@ export function HomeContainer() {
   //   "Spotify-like working-offline indicator" ask without pulling in
   //   a full NetInfo dependency this round; the timeout code is the
   //   strongest signal we have for "no connectivity right now".
+  //
+  // The synthesised profile error is held back while
+  // `profileRetryPending` is true: we'd rather sit on the loader for
+  // an extra round-trip than flash a "your profile didn't load" error
+  // that immediately disappears once the retry returns a real name.
   const dashboardError = dashboard.error;
   const syntheticProfileError = useMemo(() => {
     if (!profileIncomplete) return null;
+    if (profileRetryPending) return null;
     return {
       kind: "api" as const,
       code: "server" as const,
       message:
         "Your profile didn't load. This usually clears on retry — if it doesn't, check back shortly.",
     };
-  }, [profileIncomplete]);
+  }, [profileIncomplete, profileRetryPending]);
   const effectiveError = dashboardError ?? syntheticProfileError;
 
   // 5-second loader caption — kicks in for slow fetches before the

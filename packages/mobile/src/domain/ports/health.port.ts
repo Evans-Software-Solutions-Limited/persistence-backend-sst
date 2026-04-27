@@ -39,22 +39,6 @@ export type HealthError = {
  *       § M1 scope: platform adapter matrix
  */
 export interface HealthPort {
-  /**
-   * True when this adapter returns deterministic fake values rather
-   * than reading the real OS health store. Surfaces in the UI as a
-   * `MOCK` chip on the affected tiles so simulator reviewers can tell
-   * fixture data apart from a live read at a glance.
-   *
-   * Per-spec mock behaviour itself is not changing — only the
-   * disclosure. Real adapters (HealthKit on device, Health Connect
-   * once it ships) MUST return false; the no-op `StubHealthAdapter`
-   * also returns false because its tile state is the explicit
-   * "not available" copy, not a fixture value.
-   *
-   * Spec: specs/07-health-integration/design.md § M1 scope: platform
-   *       adapter matrix > Why simulator-mock is M1-critical
-   */
-  readonly isMock: boolean;
   isAvailable(): Promise<boolean>;
   requestPermissions(): Promise<Result<HealthPermissionStatus, HealthError>>;
   getPermissionStatus(): Promise<HealthPermissionStatus>;

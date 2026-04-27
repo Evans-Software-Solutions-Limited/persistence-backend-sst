@@ -42,13 +42,6 @@ export type HealthDataState = {
   isReading: boolean;
   /** ISO timestamp of the last completed read, or null. */
   lastReadAt: string | null;
-  /**
-   * True when the active adapter returns deterministic fake values
-   * (currently only `SimulatorMockHealthAdapter`). Tile presenters use
-   * this to render a `MOCK` chip so simulator reviewers can see at a
-   * glance that the numbers are fixtures, not a live read.
-   */
-  isMock: boolean;
   /** Request permissions and immediately attempt a fresh read. */
   requestPermissions: () => Promise<void>;
   /** Force a read, bypassing the rate limit. */
@@ -168,7 +161,6 @@ export function useHealthData(): HealthDataState {
     isAvailable,
     isReading,
     lastReadAt,
-    isMock: health.isMock,
     requestPermissions,
     refresh,
   };

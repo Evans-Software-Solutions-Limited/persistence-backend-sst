@@ -11,7 +11,7 @@ What's there:
 
 Nothing real is built: no HealthKit adapter, no Health Connect adapter, no permission-request screen, no dashboard tiles, no weight-sync flow.
 
-Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real `ExpoHealthKitAdapter` (iOS) + Android stub + simulator-mock fallback with the dashboard rollout so Home ships with real step/calorie data from the start.
+Parent milestone: **M1 Home / dashboard (incl HealthKit)** — bundles the real `ExpoHealthKitAdapter` (iOS, full legacy read + write scope) + Android stub with the dashboard rollout so Home ships with real step/calorie data from the start. PR #38 follow-up dropped the earlier simulator-mock fallback per Brad's "always live data, no fixtures" preference.
 
 ## Phase 1: Domain & Ports
 
@@ -28,12 +28,12 @@ Traces to `design.md` § M1 scope: platform adapter matrix and
 - [x] Add `@kingstinct/react-native-healthkit` dependency to `packages/mobile`
 - [x] Add iOS native-build config (Info.plist `NSHealthShareUsageDescription` + `NSHealthUpdateUsageDescription`)
 - [x] Create `ExpoHealthKitAdapter` at `packages/mobile/src/adapters/health/expo-healthkit.adapter.ts` implementing `HealthPort`
-- [x] Implement permission request (steps, active energy, body mass, heart rate)
+- [x] Implement permission request — full legacy read + write scope (steps, walking distance, basal energy, active energy, exercise minutes, stand time, body mass, body fat %, heart rate; writes drop exercise minutes / stand time / heart rate per HealthKit's read-only categories)
 - [x] Implement reads: `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`
 - [x] Stub `writeBodyWeight` to return `fail(UNAVAILABLE)` in M1 (lights up M6)
 - [x] Handle HealthKit not available (older iOS, entitlements missing) — return appropriate `HealthError`
-- [x] Create `SimulatorMockHealthAdapter` at `packages/mobile/src/adapters/health/simulator-mock.adapter.ts` with deterministic values (AC 7.2)
 - [x] Create `adapters/health/index.ts` `createHealthAdapter()` selection function (AC 7.4)
+- [x] PR #38 follow-up: removed `SimulatorMockHealthAdapter`. iOS always uses `ExpoHealthKitAdapter`; on simulator HealthKit reports unavailable and tiles render their existing "not available" copy.
 - [x] Wire new adapter into `AdapterProvider`
 - [x] Write tests with a mock HealthKit native module; maintain ≥ 90% coverage
 

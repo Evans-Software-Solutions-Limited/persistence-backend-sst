@@ -76,10 +76,57 @@ const AUTH_STATUS_DENIED = 1;
 /** HKQuantityTypeIdentifier strings (stable across HealthKit versions). */
 const IDENTIFIER = {
   STEPS: "HKQuantityTypeIdentifierStepCount",
+  STEP_DISTANCE: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+  BASAL_ENERGY: "HKQuantityTypeIdentifierBasalEnergyBurned",
   ACTIVE_ENERGY: "HKQuantityTypeIdentifierActiveEnergyBurned",
+  EXERCISE_MINUTES: "HKQuantityTypeIdentifierAppleExerciseTime",
+  STAND_TIME: "HKQuantityTypeIdentifierAppleStandTime",
   BODY_MASS: "HKQuantityTypeIdentifierBodyMass",
+  BODY_FAT_PERCENTAGE: "HKQuantityTypeIdentifierBodyFatPercentage",
   HEART_RATE: "HKQuantityTypeIdentifierHeartRate",
 } as const;
+
+/**
+ * Read-permission scope. Mirrors the legacy app's
+ * `IOS_READ_HEALTH_DATA_PERMISSIONS` set in
+ * `persistence-mobile/hooks/health/constants.ts` so the iOS HealthKit
+ * sheet asks for the same data points the user is used to seeing.
+ *
+ * V2 keeps `HEART_RATE` on top of legacy because the read path is
+ * already wired for M4 Progress. Adding read-only identifiers is
+ * cheap — Apple doesn't surface unused scopes anywhere outside the
+ * grant sheet, and the user only sees a single combined dialog.
+ */
+const READ_IDENTIFIERS: readonly string[] = [
+  IDENTIFIER.STEPS,
+  IDENTIFIER.STEP_DISTANCE,
+  IDENTIFIER.BASAL_ENERGY,
+  IDENTIFIER.ACTIVE_ENERGY,
+  IDENTIFIER.EXERCISE_MINUTES,
+  IDENTIFIER.STAND_TIME,
+  IDENTIFIER.BODY_MASS,
+  IDENTIFIER.BODY_FAT_PERCENTAGE,
+  IDENTIFIER.HEART_RATE,
+];
+
+/**
+ * Write-permission scope. Mirrors the legacy app's
+ * `IOS_WRITE_HEALTH_DATA_PERMISSIONS` set — drops EXERCISE_MINUTES
+ * and STAND_TIME because HealthKit treats those as system-derived
+ * categories and rejects the write scope.
+ *
+ * Heart rate writes are not requested. M1 ships with all writes
+ * stubbed (`writeBodyWeight` returns `unavailable`); the scope is
+ * pre-requested so M6 doesn't need a second permission prompt.
+ */
+const WRITE_IDENTIFIERS: readonly string[] = [
+  IDENTIFIER.STEPS,
+  IDENTIFIER.STEP_DISTANCE,
+  IDENTIFIER.BASAL_ENERGY,
+  IDENTIFIER.ACTIVE_ENERGY,
+  IDENTIFIER.BODY_MASS,
+  IDENTIFIER.BODY_FAT_PERCENTAGE,
+];
 
 /** Type-erased handle to the HealthKit module (lazily imported). */
 type HealthKitLike = {
@@ -121,8 +168,6 @@ function readFailure(message: string): HealthError {
 }
 
 export class ExpoHealthKitAdapter implements HealthPort {
-  readonly isMock = false;
-
   private readonly healthkit: HealthKitLike;
 
   constructor(healthkit?: HealthKitLike) {
@@ -145,16 +190,15 @@ export class ExpoHealthKitAdapter implements HealthPort {
       // positional arrays (the v12 shape) silently no-ops on device —
       // no permission sheet, no errors, every subsequent read returns
       // 0. This was the bug Brad spotted on PR #37.
+      //
+      // Read + write scopes mirror the legacy app's permission set
+      // (see `persistence-mobile/hooks/health/constants.ts`). Brad
+      // flagged on PR #38 that the M1-narrow scope (steps / active
+      // energy / body mass / heart rate) was missing legacy data
+      // points — this aligns the grant sheet to legacy parity.
       await this.healthkit.requestAuthorization({
-        toRead: [
-          IDENTIFIER.STEPS,
-          IDENTIFIER.ACTIVE_ENERGY,
-          IDENTIFIER.BODY_MASS,
-          IDENTIFIER.HEART_RATE,
-        ],
-        // Body mass is the only writeable scope M1 requests; writes
-        // themselves are stubbed until M6.
-        toShare: [IDENTIFIER.BODY_MASS],
+        toRead: READ_IDENTIFIERS,
+        toShare: WRITE_IDENTIFIERS,
       });
       return ok(await this.getPermissionStatus());
     } catch (err) {

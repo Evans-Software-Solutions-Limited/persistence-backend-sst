@@ -74,8 +74,6 @@ export type HomePresenterViewModel = {
   latestBodyWeight: HealthWeight | null;
   healthIsAvailable: boolean;
   healthPermissionStatus: HealthPermissionStatus;
-  /** True when the active health adapter is the simulator-mock fixture. */
-  healthIsMock: boolean;
 };
 
 export type HomePresenterProps = {
@@ -293,7 +291,6 @@ export function HomePresenter({
             stepsHistory={viewModel.stepsHistory}
             healthIsAvailable={viewModel.healthIsAvailable}
             healthPermissionStatus={viewModel.healthPermissionStatus}
-            healthIsMock={viewModel.healthIsMock}
             latestBodyWeight={viewModel.latestBodyWeight}
             onConnectHealthPress={onConnectHealthPress}
             onViewAllPress={onViewAllProgressPress}

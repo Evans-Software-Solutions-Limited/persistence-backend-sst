@@ -24,8 +24,6 @@ const NOT_DETERMINED: HealthPermissionStatus = {
  * No-op health adapter. Replaced in milestone 07.
  */
 export class StubHealthAdapter implements HealthPort {
-  readonly isMock = false;
-
   async isAvailable() {
     return false;
   }

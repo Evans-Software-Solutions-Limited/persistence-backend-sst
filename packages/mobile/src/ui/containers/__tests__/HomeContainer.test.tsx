@@ -111,7 +111,6 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     heartRate: "granted",
   } as const;
   const base: HealthPort = {
-    isMock: false,
     isAvailable: async () => true,
     requestPermissions: async () => ok(grantedStatus),
     getPermissionStatus: async () => grantedStatus,
@@ -126,7 +125,6 @@ function mockHealth(overrides: Partial<HealthPort> = {}): HealthPort {
     disconnect: async () => {},
   };
   const wrapped: HealthPort = {
-    isMock: base.isMock,
     isAvailable: jest.fn(base.isAvailable),
     requestPermissions: jest.fn(base.requestPermissions),
     getPermissionStatus: jest.fn(base.getPermissionStatus),
@@ -501,11 +499,47 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current.error.code).toBe("not_found");
     });
 
-    it("synthesises an error when the payload comes back with a null firstName", async () => {
-      // Brad-flagged scenario: API returns 200 but profile.firstName is
-      // null. Pre-fix we silently rendered "Lifter"; post-fix the
-      // container surfaces an api/server error so the presenter shows
-      // the blocking error state.
+    it("auto-retries once and clears once the payload returns with a firstName on retry", async () => {
+      // Brad's PR #38 ask: "stay in loading state until the profile
+      // is found; only show error if it stays null after a retry."
+      // First fetch returns null firstName, second fetch returns the
+      // correct one. The user should never see the error state — the
+      // container holds the loader through the retry round-trip.
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const incompletePayload = {
+        ...DASHBOARD_FIXTURE,
+        profile: { ...DASHBOARD_FIXTURE.profile, firstName: null },
+      };
+      // Seed the cache with the incomplete payload so the container
+      // observes profileIncomplete on its first render after auth
+      // bootstrap. The api fixture returns the GOOD payload, so the
+      // auto-retry resolves the firstName.
+      api.dashboard = DASHBOARD_FIXTURE;
+      storage.cacheDashboard("user-1", incompletePayload);
+      const adapters = makeAdapters(api, storage);
+
+      renderWithTheme(
+        <Wrap adapters={adapters}>
+          <HomeContainer />
+        </Wrap>,
+      );
+
+      // The auto-retry should resolve into the good payload — the
+      // user sees the real firstName and never the error state.
+      await waitFor(() => {
+        expect(mockHomePresenterProps.current?.viewModel?.userName).toBe(
+          "Alex",
+        );
+      });
+      expect(mockHomePresenterProps.current.error).toBeNull();
+    });
+
+    it("surfaces the synthesised error when the auto-retry STILL returns a null firstName", async () => {
+      // Same flow as above but the api fixture also returns a null
+      // firstName, simulating a real backend bug. After the auto-
+      // retry settles, the container surfaces the blocking error
+      // state because no further user action will recover us.
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       const incompletePayload = {
@@ -522,15 +556,6 @@ describe("HomeContainer", () => {
         </Wrap>,
       );
 
-      // Wait for the auth bootstrap to land + the cache read to lift
-      // the incomplete payload into state. Gating only on
-      // `userName === null` is not enough — the very first render
-      // (pre-bootstrap, userId === null) ALSO has userName === null
-      // and a null `error`, so a naive waitFor resolves before the
-      // synthesised error has had a chance to materialise. Local
-      // runs happened to settle on a later render; CI on Linux
-      // settled on the earlier one. Gate explicitly on the error
-      // we're about to assert. See PR #38 review.
       await waitFor(() => {
         expect(mockHomePresenterProps.current?.error).not.toBeNull();
       });
@@ -632,47 +657,6 @@ describe("HomeContainer", () => {
         expect(mockHomePresenterProps.current?.isLoading).toBe(false);
       });
       expect(mockHomePresenterProps.current.showSlowLoaderCaption).toBe(false);
-    });
-  });
-
-  describe("isMock threading", () => {
-    it("forwards healthIsMock=true onto the view-model when the adapter is a mock", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      api.dashboard = DASHBOARD_FIXTURE;
-      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
-      const health = mockHealth({ isMock: true });
-      const adapters = makeAdapters(api, storage, health);
-
-      renderWithTheme(
-        <Wrap adapters={adapters}>
-          <HomeContainer />
-        </Wrap>,
-      );
-
-      await waitFor(() => {
-        expect(mockHomePresenterProps.current).not.toBeNull();
-      });
-      expect(mockHomePresenterProps.current.viewModel.healthIsMock).toBe(true);
-    });
-
-    it("forwards healthIsMock=false for real adapters", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      api.dashboard = DASHBOARD_FIXTURE;
-      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
-      const adapters = makeAdapters(api, storage); // default mockHealth has isMock:false
-
-      renderWithTheme(
-        <Wrap adapters={adapters}>
-          <HomeContainer />
-        </Wrap>,
-      );
-
-      await waitFor(() => {
-        expect(mockHomePresenterProps.current).not.toBeNull();
-      });
-      expect(mockHomePresenterProps.current.viewModel.healthIsMock).toBe(false);
     });
   });
 

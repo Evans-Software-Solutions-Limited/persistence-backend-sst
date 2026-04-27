@@ -18,28 +18,15 @@ interface EnergyTileProps {
   readonly activeEnergy: number; // kcal
   readonly basalEnergy: number; // kcal
   readonly standTime: number; // hours
-  /**
-   * True when the value comes from the simulator-mock adapter rather
-   * than a live HealthKit / Health Connect read. Renders a small chip
-   * so reviewers don't mistake the deterministic 312 fixture for a
-   * real reading. Cosmetic only; doesn't change tile behaviour.
-   */
-  readonly isMock?: boolean;
 }
 
 export function EnergyTile({
   activeEnergy,
   basalEnergy,
   standTime,
-  isMock = false,
 }: EnergyTileProps) {
   return (
     <View style={styles.container} testID="tile-energy">
-      {isMock && (
-        <View style={styles.mockChip} testID="energy-tile-mock-chip">
-          <Text style={styles.mockChipText}>MOCK</Text>
-        </View>
-      )}
       <Text style={styles.title}>Energy</Text>
       <View style={styles.energyRow}>
         <Ionicons name="flame" size={16} color={Colors.warning.DEFAULT} />
@@ -96,22 +83,5 @@ const styles = StyleSheet.create({
     ...Typography.body1,
     color: Colors.text.primary,
     fontWeight: "600",
-  },
-  mockChip: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 1,
-    borderRadius: 4,
-    backgroundColor: Colors.surface.tertiary,
-  },
-  mockChipText: {
-    ...Typography.caption,
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    color: Colors.text.tertiary,
   },
 });

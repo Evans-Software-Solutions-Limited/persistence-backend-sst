@@ -85,7 +85,6 @@ function makeViewModel(
     latestBodyWeight: null,
     healthIsAvailable: true,
     healthPermissionStatus: granted,
-    healthIsMock: false,
     ...overrides,
   };
 }
@@ -254,26 +253,6 @@ describe("HomePresenter", () => {
       expect(queryByTestId("home-error-banner")).toBeNull();
       // Sanity: the happy-path section tree still renders.
       expect(getByTestId("greeting-section")).toBeTruthy();
-    });
-  });
-
-  describe("MOCK chip threading", () => {
-    it("does not render any MOCK chip when healthIsMock=false", () => {
-      const { queryByTestId } = renderHome({
-        viewModel: makeViewModel({ healthIsMock: false }),
-      });
-      expect(queryByTestId("steps-tile-mock-chip")).toBeNull();
-      expect(queryByTestId("energy-tile-mock-chip")).toBeNull();
-      expect(queryByTestId("body-weight-tile-mock-chip")).toBeNull();
-    });
-
-    it("renders MOCK chips on the three health tiles when healthIsMock=true", () => {
-      const { getByTestId } = renderHome({
-        viewModel: makeViewModel({ healthIsMock: true }),
-      });
-      expect(getByTestId("steps-tile-mock-chip")).toBeTruthy();
-      expect(getByTestId("energy-tile-mock-chip")).toBeTruthy();
-      expect(getByTestId("body-weight-tile-mock-chip")).toBeTruthy();
     });
   });
 });

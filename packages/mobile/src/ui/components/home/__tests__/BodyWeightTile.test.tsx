@@ -43,19 +43,4 @@ describe("BodyWeightTile", () => {
     );
     expect(JSON.stringify(toJSON())).not.toContain('"d":"M ');
   });
-
-  it("renders a MOCK chip when isMock=true", () => {
-    const { getByTestId, getByText } = renderWithTheme(
-      <BodyWeightTile currentValue={74.5} history={[]} isMock />,
-    );
-    expect(getByTestId("body-weight-tile-mock-chip")).toBeTruthy();
-    expect(getByText("MOCK")).toBeTruthy();
-  });
-
-  it("omits the MOCK chip by default", () => {
-    const { queryByTestId } = renderWithTheme(
-      <BodyWeightTile currentValue={74.5} history={[]} />,
-    );
-    expect(queryByTestId("body-weight-tile-mock-chip")).toBeNull();
-  });
 });

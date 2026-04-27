@@ -32,8 +32,6 @@ const DENIED: HealthPermissionStatus = {
 };
 
 export class AndroidStubHealthAdapter implements HealthPort {
-  readonly isMock = false;
-
   async isAvailable() {
     return false;
   }
