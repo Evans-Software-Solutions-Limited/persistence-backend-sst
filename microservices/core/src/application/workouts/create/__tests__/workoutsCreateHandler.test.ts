@@ -269,6 +269,68 @@ describe("WorkoutsCreateHandler", () => {
       expect(response.status).toBe(400);
     });
 
+    it("should return 400 when targetRepsMin is provided alone and exceeds the default max=1", async () => {
+      // Regression: pre-fix, the validator only fired when BOTH bounds
+      // were explicit. A payload with `targetRepsMin: 5` (no max) skipped
+      // the check, then the repository defaulted max to 1 and stored
+      // min=5/max=1 — violating the invariant.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Asymmetric",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMin: 5 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should return 400 when targetRepsMax is provided alone below the default min=1", async () => {
+      // Mirror of the above: max=0 with default min=1 still violates min ≤ max.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Asymmetric",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMax: 0 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should accept omitted reps bounds (both default to 1)", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Defaults",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(201);
+    });
+
     it("should default exercises to [] when omitted", async () => {
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");

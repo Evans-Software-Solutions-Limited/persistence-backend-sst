@@ -433,6 +433,12 @@ describe("WorkoutRepository", () => {
   });
 
   describe("update", () => {
+    // Ownership is enforced by folding `(id, createdBy)` into the UPDATE
+    // WHERE clause. `returning()` returning [] ⇒ either the row doesn't
+    // exist or the caller doesn't own it; both surface as 404 from the
+    // handler layer. There is NO separate SELECT, so `mockDb.select` is
+    // unused on the update path.
+
     it("should update metadata only when exercises is omitted", async () => {
       const updated = { ...baseWorkout, name: "Updated" };
       const tx = {
@@ -448,7 +454,6 @@ describe("WorkoutRepository", () => {
         insert: vi.fn(),
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -482,7 +487,6 @@ describe("WorkoutRepository", () => {
           .mockReturnValue(makeExercisesByWorkoutChain(mockExercises)),
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -521,7 +525,6 @@ describe("WorkoutRepository", () => {
         select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -534,9 +537,25 @@ describe("WorkoutRepository", () => {
       expect(tx.insert).not.toHaveBeenCalled();
     });
 
-    it("should return null when workout does not exist", async () => {
+    it("should return null when the (id, createdBy) UPDATE matches no rows (not found / not owner)", async () => {
+      // Empty returning() covers BOTH the not-found and not-owner cases —
+      // and crucially the concurrent-delete race where the row vanished
+      // between the caller's intent and the actual UPDATE. Pre-fix this
+      // path crashed inside fetchWorkoutWithExercises with a 500.
+      const tx = {
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        select: vi.fn(),
+      };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -546,20 +565,10 @@ describe("WorkoutRepository", () => {
       });
 
       expect(result).toBeNull();
-    });
-
-    it("should return null when caller is not the owner", async () => {
-      const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
-      };
-      (getDb as any).mockReturnValue(mockDb);
-
-      const repo = new WorkoutRepository();
-      const result = await repo.update("wo-1", "different-user", {
-        name: "X",
-      });
-
-      expect(result).toBeNull();
+      // No follow-on writes / reads when the UPDATE didn't match a row
+      expect(tx.delete).not.toHaveBeenCalled();
+      expect(tx.insert).not.toHaveBeenCalled();
+      expect(tx.select).not.toHaveBeenCalled();
     });
 
     it("should update description, visibility, and estimatedDurationMinutes together", async () => {
@@ -581,7 +590,6 @@ describe("WorkoutRepository", () => {
         insert: vi.fn(),
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -619,7 +627,6 @@ describe("WorkoutRepository", () => {
         select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
       };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -639,9 +646,11 @@ describe("WorkoutRepository", () => {
   });
 
   describe("delete", () => {
-    it("should delete a workout owned by the user", async () => {
+    // Same TOCTOU-free pattern as update: ownership in the DELETE WHERE,
+    // returning() length = match count.
+
+    it("should delete a workout when (id, createdBy) matches", async () => {
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([baseWorkout]),
@@ -656,28 +665,19 @@ describe("WorkoutRepository", () => {
       expect(result).toBe(true);
     });
 
-    it("should return false when workout does not exist", async () => {
+    it("should return false when DELETE matches no rows (not found / not owner / concurrent delete)", async () => {
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([])),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      const result = await repo.delete("nonexistent", "user-1");
-
-      expect(result).toBe(false);
-    });
-
-    it("should return false when caller is not the owner", async () => {
-      const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
-      };
-      (getDb as any).mockReturnValue(mockDb);
-
-      const repo = new WorkoutRepository();
-      const result = await repo.delete("wo-1", "different-user");
-
-      expect(result).toBe(false);
+      expect(await repo.delete("nonexistent", "user-1")).toBe(false);
+      expect(await repo.delete("wo-1", "different-user")).toBe(false);
     });
   });
 

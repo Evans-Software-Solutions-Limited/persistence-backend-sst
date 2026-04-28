@@ -265,5 +265,26 @@ describe("WorkoutsUpdateHandler", () => {
       );
       expect(response.status).toBe(400);
     });
+
+    it("should return 400 when only targetRepsMin is provided and it exceeds the default max=1", async () => {
+      // Mirror of the create-handler regression test: validation must
+      // catch min/max violations even when the client omits one bound and
+      // the repository would default it.
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const response = await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMin: 5 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
   });
 });

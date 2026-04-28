@@ -2,22 +2,14 @@ import Elysia, { t } from "elysia";
 import { WorkoutService } from "../../repositories/workoutService";
 import type { UpdateWorkoutInput } from "../../repositories/workoutRepository";
 import {
+  findInvalidRepRangeIndex,
+  workoutExerciseInputSchema,
+} from "../shared/schemas";
+import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-
-const workoutExerciseInputSchema = t.Object({
-  exerciseId: t.String(),
-  sortOrder: t.Number(),
-  supersetGroup: t.Optional(t.Union([t.Number(), t.Null()])),
-  targetSets: t.Optional(t.Union([t.Number(), t.Null()])),
-  targetRepsMin: t.Optional(t.Number()),
-  targetRepsMax: t.Optional(t.Number()),
-  targetDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
-  restSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
-  notes: t.Optional(t.Union([t.String(), t.Null()])),
-});
 
 export const workoutsUpdateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -44,18 +36,12 @@ export const workoutsUpdateHandler = new Elysia()
       }
 
       if (exercises) {
-        for (const ex of exercises) {
-          if (
-            ex.targetRepsMin !== undefined &&
-            ex.targetRepsMax !== undefined &&
-            ex.targetRepsMin > ex.targetRepsMax
-          ) {
-            ctx.set.status = 400;
-            return {
-              error:
-                "targetRepsMin cannot exceed targetRepsMax for any exercise",
-            };
-          }
+        const badIndex = findInvalidRepRangeIndex(exercises);
+        if (badIndex !== null) {
+          ctx.set.status = 400;
+          return {
+            error: "targetRepsMin cannot exceed targetRepsMax for any exercise",
+          };
         }
       }
 

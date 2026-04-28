@@ -231,16 +231,6 @@ export class WorkoutRepository {
   ): Promise<WorkoutWithExercises | null> {
     const db = getDb();
 
-    const [existing] = await db
-      .select()
-      .from(workouts)
-      .where(eq(workouts.id, id))
-      .limit(1);
-
-    if (!existing || existing.createdBy !== userId) {
-      return null;
-    }
-
     return db.transaction(async (tx) => {
       const metadata: Partial<Workout> = {};
       if (data.name !== undefined) metadata.name = data.name;
@@ -250,11 +240,17 @@ export class WorkoutRepository {
       if (data.estimatedDurationMinutes !== undefined)
         metadata.estimatedDurationMinutes = data.estimatedDurationMinutes;
 
+      // Ownership check folded into the UPDATE WHERE — no separate SELECT,
+      // no TOCTOU window. Empty `returning()` means either the row doesn't
+      // exist or the caller doesn't own it; both surface as 404 at the
+      // handler layer.
       const [updated] = await tx
         .update(workouts)
         .set({ ...metadata, updatedAt: new Date() })
-        .where(eq(workouts.id, id))
+        .where(and(eq(workouts.id, id), eq(workouts.createdBy, userId)))
         .returning();
+
+      if (!updated) return null;
 
       if (data.exercises !== undefined) {
         // Full-replacement: wipe junction rows + insert new array.
@@ -278,22 +274,16 @@ export class WorkoutRepository {
   async delete(id: string, userId: string): Promise<boolean> {
     const db = getDb();
 
-    const [existing] = await db
-      .select()
-      .from(workouts)
-      .where(eq(workouts.id, id))
-      .limit(1);
-
-    if (!existing || existing.createdBy !== userId) {
-      return false;
-    }
-
+    // Same as `update`: ownership check folded into the DELETE WHERE so a
+    // concurrent delete can't surface as 500. FK cascade on
+    // `workout_exercises.workoutId` cleans up junction rows; sessions get
+    // `workoutId = NULL` via FK `set null`.
     const result = await db
       .delete(workouts)
-      .where(eq(workouts.id, id))
+      .where(and(eq(workouts.id, id), eq(workouts.createdBy, userId)))
       .returning();
 
-    return !!result[0];
+    return result.length > 0;
   }
 
   // ─── Internal helpers ────────────────────────────────────────────────
