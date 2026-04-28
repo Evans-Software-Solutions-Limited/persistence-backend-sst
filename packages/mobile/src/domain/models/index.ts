@@ -40,3 +40,20 @@ export {
   DASHBOARD_STALE_AFTER_MS,
   isDashboardStale,
 } from "./dashboard";
+
+export {
+  type Workout,
+  type WorkoutExercise,
+  type WorkoutExerciseRef,
+  type WorkoutExerciseInput,
+  type WorkoutVisibility,
+  type WorkoutListType,
+  type WorkoutQuota,
+  type CreateWorkoutInput,
+  type UpdateWorkoutInput,
+  type CachedWorkoutsList,
+  type CachedWorkoutDetail,
+  WORKOUTS_LIST_STALE_AFTER_MS,
+  isWorkoutsListStale,
+  isWorkoutDetailStale,
+} from "./workout";

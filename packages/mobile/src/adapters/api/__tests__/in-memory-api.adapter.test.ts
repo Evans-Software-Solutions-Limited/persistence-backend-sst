@@ -27,28 +27,31 @@ describe("InMemoryApiAdapter", () => {
 
   describe("workouts CRUD", () => {
     it("creates and retrieves a workout", async () => {
-      const createResult = await api.createWorkout({ name: "Push Day" });
+      const createResult = await api.createWorkout({
+        name: "Push Day",
+        exercises: [],
+      });
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
       const listResult = await api.getWorkouts();
       expect(listResult.ok).toBe(true);
       if (listResult.ok) {
-        expect(listResult.value).toHaveLength(1);
-        expect(listResult.value[0].name).toBe("Push Day");
+        expect(listResult.value.workouts).toHaveLength(1);
+        expect(listResult.value.workouts[0].name).toBe("Push Day");
       }
     });
 
     it("deletes a workout", async () => {
-      await api.createWorkout({ name: "Push Day" });
+      await api.createWorkout({ name: "Push Day", exercises: [] });
       const listBefore = await api.getWorkouts();
       if (listBefore.ok) {
-        await api.deleteWorkout(listBefore.value[0].id);
+        await api.deleteWorkout(listBefore.value.workouts[0].id);
       }
 
       const listAfter = await api.getWorkouts();
       if (listAfter.ok) {
-        expect(listAfter.value).toHaveLength(0);
+        expect(listAfter.value.workouts).toHaveLength(0);
       }
     });
   });

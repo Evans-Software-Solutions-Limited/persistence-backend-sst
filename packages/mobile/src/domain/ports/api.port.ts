@@ -8,6 +8,13 @@ import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type {
+  CreateWorkoutInput as CreateWorkoutDomainInput,
+  UpdateWorkoutInput as UpdateWorkoutDomainInput,
+  Workout,
+  WorkoutListType,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import type { Result, ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -28,18 +35,25 @@ export interface ApiPort {
     data: Partial<ApiProfile>,
   ): Promise<Result<ApiProfile, ApiError>>;
 
-  // -- Workouts --
+  // -- Workouts (M2) --
+  /**
+   * Fetch a workouts list slice for one of the three section types
+   * (mine / assigned / default). The double-envelope response carries
+   * pagination metadata and (for `type=mine` only) a `quota` block.
+   *
+   * Spec: specs/04-workout-management/design.md § API Contract > GET /workouts
+   */
   getWorkouts(
-    params?: PaginationParams,
-  ): Promise<Result<ApiWorkout[], ApiError>>;
-  getWorkout(id: string): Promise<Result<ApiWorkout, ApiError>>;
+    params?: GetWorkoutsParams,
+  ): Promise<Result<GetWorkoutsResult, ApiError>>;
+  getWorkout(id: string): Promise<Result<Workout, ApiError>>;
   createWorkout(
-    data: CreateWorkoutInput,
-  ): Promise<Result<ApiWorkout, ApiError>>;
+    data: CreateWorkoutDomainInput,
+  ): Promise<Result<Workout, ApiError>>;
   updateWorkout(
     id: string,
-    data: Partial<CreateWorkoutInput>,
-  ): Promise<Result<ApiWorkout, ApiError>>;
+    data: UpdateWorkoutDomainInput,
+  ): Promise<Result<Workout, ApiError>>;
   deleteWorkout(id: string): Promise<Result<void, ApiError>>;
 
   // -- Sessions --
@@ -160,15 +174,29 @@ export type ApiProfile = {
   updatedAt: string;
 };
 
-export type ApiWorkout = {
-  id: string;
-  name: string;
-  description: string | null;
-  createdBy: string;
-  visibility: "private" | "friends" | "public";
-  estimatedDurationMinutes: number | null;
-  createdAt: string;
-  updatedAt: string;
+/**
+ * Wire shape for a workout. The M2 backend emits camelCase via Drizzle,
+ * so `ApiWorkout` and the domain `Workout` model are structurally
+ * identical — the adapter passes payloads through without mapping.
+ */
+export type ApiWorkout = Workout;
+
+/** M2: query params for the GET /workouts list endpoint. */
+export type GetWorkoutsParams = {
+  type?: WorkoutListType;
+  limit?: number;
+  offset?: number;
+};
+
+/**
+ * M2: list response. Mirrors the backend's double-envelope `{ data, meta }`
+ * after the adapter unwraps once. `quota` is only present when the
+ * request was for `type='mine'`; absent for `assigned` / `default`.
+ */
+export type GetWorkoutsResult = {
+  workouts: Workout[];
+  total: number;
+  quota: WorkoutQuota | null;
 };
 
 export type ApiSession = {
@@ -232,12 +260,10 @@ export type ApiGoal = {
 };
 
 // -- Input types --
-
-export type CreateWorkoutInput = {
-  name: string;
-  description?: string;
-  visibility?: "private" | "friends" | "public";
-};
+// `CreateWorkoutInput` and `UpdateWorkoutInput` are imported from
+// `@/domain/models/workout` (re-exported as `CreateWorkoutDomainInput` /
+// `UpdateWorkoutDomainInput`) so the form layer and the API layer share
+// one canonical definition.
 
 export type CreateSessionInput = {
   workoutId?: string;

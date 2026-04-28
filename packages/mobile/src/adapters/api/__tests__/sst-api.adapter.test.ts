@@ -101,3 +101,91 @@ describe("SSTApiAdapter.getDashboard timeout", () => {
     expect(result.error.code).toBe("network");
   });
 });
+
+describe("SSTApiAdapter.getWorkouts envelope (M2)", () => {
+  it("unwraps the double-envelope { data, meta } including pagination + quota for type=mine", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "wo-1",
+              name: "Push",
+              description: null,
+              createdBy: "user-1",
+              visibility: "private",
+              estimatedDurationMinutes: 45,
+              exercises: [],
+              createdAt: "2026-04-28T00:00:00Z",
+              updatedAt: "2026-04-28T00:00:00Z",
+            },
+          ],
+          meta: {
+            pagination: { limit: 20, offset: 0, total: 1 },
+            quota: { used: 1, limit: 50 },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getWorkouts({ type: "mine" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workouts).toHaveLength(1);
+    expect(result.value.workouts[0].name).toBe("Push");
+    expect(result.value.total).toBe(1);
+    expect(result.value.quota).toEqual({ used: 1, limit: 50 });
+  });
+
+  it("returns quota=null when the meta envelope omits it (type=default / assigned)", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          meta: { pagination: { limit: 20, offset: 0, total: 0 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getWorkouts({ type: "default" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workouts).toEqual([]);
+    expect(result.value.quota).toBeNull();
+  });
+
+  it("propagates HTTP 401 as api/unauthorized", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "unauth" }), { status: 401 });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getWorkouts();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unauthorized");
+  });
+
+  it("forwards type / limit / offset as query params", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          meta: { pagination: { limit: 5, offset: 10, total: 0 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    await adapter.getWorkouts({ type: "assigned", limit: 5, offset: 10 });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("type=assigned");
+    expect(url).toContain("limit=5");
+    expect(url).toContain("offset=10");
+  });
+});
