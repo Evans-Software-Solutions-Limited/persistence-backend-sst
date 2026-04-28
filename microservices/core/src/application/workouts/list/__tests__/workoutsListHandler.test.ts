@@ -1,16 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Create mock repository that can be controlled from tests
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
-  create: vi.fn(),
+  createWithExercises: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  getQuota: vi.fn(),
 };
 
-// Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -29,71 +28,64 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
       ctx.set.status = 401;
       return { message: "Unauthorized" };
     }
-    // Return undefined to let the pipeline continue
   }),
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock WorkoutRepository class - this is what the service will instantiate
 vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
+const baseWorkout = {
+  id: "workout-1",
+  name: "Test Workout",
+  description: null,
+  createdBy: "test-user-id",
+  visibility: "private" as const,
+  estimatedDurationMinutes: 30,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  exercises: [],
+};
+
 describe("WorkoutsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    workoutRepositoryMocks.list.mockResolvedValue([
-      {
-        id: "workout-1",
-        name: "Test Workout",
-        userId: "test-user-id",
-        description: "A test workout",
-        visibility: "private",
-        estimatedDurationMinutes: 30,
-        exercises: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ]);
+    workoutRepositoryMocks.list.mockResolvedValue({
+      workouts: [baseWorkout],
+      total: 1,
+      quota: { used: 1, limit: 50 },
+    });
   });
 
   describe("unauthenticated requests", () => {
     it("should require authentication to list workouts", async () => {
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "GET",
-        }),
+        new Request("http://localhost/workouts", { method: "GET" }),
       );
-
       expect(response.status).toBe(401);
     });
 
     it("should return 422 for non-numeric limit", async () => {
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?limit=abc", {
-          method: "GET",
-        }),
+        new Request("http://localhost/workouts?limit=abc", { method: "GET" }),
       );
-
       expect(response.status).toBe(422);
     });
 
     it("should return 422 for non-numeric offset", async () => {
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?offset=xyz", {
-          method: "GET",
-        }),
+        new Request("http://localhost/workouts?offset=xyz", { method: "GET" }),
       );
-
       expect(response.status).toBe(422);
     });
   });
 
   describe("authenticated requests", () => {
-    it("should return 200 for authenticated user with valid token", async () => {
+    it("should return 200 + double-envelope { data, meta } for type=mine", async () => {
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
         new Request("http://localhost/workouts", {
@@ -103,59 +95,52 @@ describe("WorkoutsListHandler", () => {
       );
 
       expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.meta.pagination).toEqual({ limit: 20, offset: 0, total: 1 });
+      expect(body.meta.quota).toEqual({ used: 1, limit: 50 });
     });
 
-    it("should return array of workouts for authenticated user", async () => {
+    it("should pass type, limit, offset through to repository", async () => {
       const { workoutsListHandler } = await import("../workoutsListHandler");
-      const response = await workoutsListHandler.handle(
+      await workoutsListHandler.handle(
+        new Request(
+          "http://localhost/workouts?type=assigned&limit=5&offset=10",
+          {
+            method: "GET",
+            headers: { authorization: "Bearer test-token" },
+          },
+        ),
+      );
+
+      expect(workoutRepositoryMocks.list).toHaveBeenCalledWith("test-user-id", {
+        type: "assigned",
+        limit: 5,
+        offset: 10,
+      });
+    });
+
+    it("should default to type=mine when type is omitted", async () => {
+      const { workoutsListHandler } = await import("../workoutsListHandler");
+      await workoutsListHandler.handle(
         new Request("http://localhost/workouts", {
           method: "GET",
           headers: { authorization: "Bearer test-token" },
         }),
       );
 
-      expect(response.status).toBe(200);
-      const data = (await response.json()) as any;
-      expect(Array.isArray(data.data)).toBe(true);
-    });
-
-    it("should accept pagination parameters", async () => {
-      const { workoutsListHandler } = await import("../workoutsListHandler");
-      const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?limit=10&offset=0", {
-          method: "GET",
-          headers: { authorization: "Bearer test-token" },
-        }),
+      expect(workoutRepositoryMocks.list).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ type: "mine" }),
       );
-
-      expect(response.status).toBe(200);
     });
 
-    it("should accept type parameter with valid values", async () => {
-      const { workoutsListHandler } = await import("../workoutsListHandler");
-      const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?type=mine", {
-          method: "GET",
-          headers: { authorization: "Bearer test-token" },
-        }),
-      );
-
-      expect(response.status).toBe(200);
-    });
-
-    it("should accept assigned type parameter", async () => {
-      const { workoutsListHandler } = await import("../workoutsListHandler");
-      const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?type=assigned", {
-          method: "GET",
-          headers: { authorization: "Bearer test-token" },
-        }),
-      );
-
-      expect(response.status).toBe(200);
-    });
-
-    it("should accept default type parameter", async () => {
+    it("should omit meta.quota in envelope when type=default", async () => {
+      workoutRepositoryMocks.list.mockResolvedValue({
+        workouts: [],
+        total: 0,
+        // no quota
+      });
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
         new Request("http://localhost/workouts?type=default", {
@@ -164,19 +149,37 @@ describe("WorkoutsListHandler", () => {
         }),
       );
 
-      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.meta.quota).toBeUndefined();
+      expect(body.meta.pagination.total).toBe(0);
     });
 
-    it("should handle valid pagination parameters", async () => {
+    it("should omit meta.quota when type=assigned", async () => {
+      workoutRepositoryMocks.list.mockResolvedValue({
+        workouts: [],
+        total: 0,
+      });
       const { workoutsListHandler } = await import("../workoutsListHandler");
       const response = await workoutsListHandler.handle(
-        new Request("http://localhost/workouts?limit=20&offset=10", {
+        new Request("http://localhost/workouts?type=assigned", {
           method: "GET",
           headers: { authorization: "Bearer test-token" },
         }),
       );
 
-      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.meta.quota).toBeUndefined();
+    });
+
+    it("should reject invalid type values with 422", async () => {
+      const { workoutsListHandler } = await import("../workoutsListHandler");
+      const response = await workoutsListHandler.handle(
+        new Request("http://localhost/workouts?type=bogus", {
+          method: "GET",
+          headers: { authorization: "Bearer test-token" },
+        }),
+      );
+      expect(response.status).toBe(422);
     });
   });
 });

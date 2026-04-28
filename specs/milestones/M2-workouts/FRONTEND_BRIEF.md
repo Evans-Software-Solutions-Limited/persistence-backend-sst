@@ -131,13 +131,13 @@ WorkoutEditorContainer
 
 Documented in [`BACKEND_BRIEF.md`](./BACKEND_BRIEF.md) and `04-workout-management/design.md § API Contract`. Summary for the adapter:
 
-| Operation | Path | Envelope unwrap | Notes |
-|---|---|---|---|
-| `getWorkouts({type})` | `GET /workouts?type=...&limit=20&offset=0` | double `{ data, meta }` via `requestPaginatedEnvelope` | meta has `pagination.total`; `quota` only when `type=mine` |
-| `getWorkout(id)` | `GET /workouts/:id` | single `{ data }` | 404 → `ApiError("not_found")` |
-| `createWorkout(input)` | `POST /workouts` body=input | single `{ data }` | 201 → success |
-| `updateWorkout(id, input)` | `PATCH /workouts/:id` body=input | single `{ data }` | full-replacement when `input.exercises` present |
-| `deleteWorkout(id)` | `DELETE /workouts/:id` | 204 no body | success → `ok(undefined)` |
+| Operation                  | Path                                       | Envelope unwrap                                        | Notes                                                      |
+| -------------------------- | ------------------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------- |
+| `getWorkouts({type})`      | `GET /workouts?type=...&limit=20&offset=0` | double `{ data, meta }` via `requestPaginatedEnvelope` | meta has `pagination.total`; `quota` only when `type=mine` |
+| `getWorkout(id)`           | `GET /workouts/:id`                        | single `{ data }`                                      | 404 → `ApiError("not_found")`                              |
+| `createWorkout(input)`     | `POST /workouts` body=input                | single `{ data }`                                      | 201 → success                                              |
+| `updateWorkout(id, input)` | `PATCH /workouts/:id` body=input           | single `{ data }`                                      | full-replacement when `input.exercises` present            |
+| `deleteWorkout(id)`        | `DELETE /workouts/:id`                     | 204 no body                                            | success → `ok(undefined)`                                  |
 
 Use `request<T>` / `requestEnvelope<T>` / `requestPaginatedEnvelope<T>` helpers consistent with M0 and M1. Per-request timeout: 10s on the mutating endpoints (consistent with M1's `DASHBOARD_REQUEST_TIMEOUT_MS`).
 
@@ -180,6 +180,7 @@ export type SyncIntent =
 ```
 
 When `createWorkout` succeeds remotely, the worker:
+
 1. Replaces the temp UUID in `cached_workouts` and `cached_workout_detail` with the server ID.
 2. Updates any in-flight `updateWorkout` / `deleteWorkout` intents in the queue that reference the temp UUID.
 
@@ -189,18 +190,18 @@ This is similar to M0's exercise create-then-update sequence; reuse those primit
 
 For each component, paste the legacy JSX + StyleSheet, swap the theme import path, retain prop names. Where the legacy hook (`useGetMyWorkouts`, `useEditWorkoutForm`, etc.) is imported, replace with the V2 hook (`useWorkouts`, container-side reducer for forms). Where `router.push('/workout-creator')` appears, change to `router.push('/workouts/create')`.
 
-| Legacy file | V2 destination | Notes |
-|---|---|---|
-| `app/(tabs)/workouts.tsx` (494 lines) | `WorkoutsListPresenter` (pure JSX) + `WorkoutsListContainer` (state) | Three sections, search bar, popover, quota |
-| `app/workout-creator.tsx` (575 lines) | `WorkoutCreatorPresenter` + `WorkoutCreatorContainer` | Form reducer, picker integration, superset propagation |
-| `app/workout-editor.tsx` (650 lines) | `WorkoutEditorPresenter` + `WorkoutEditorContainer` | Async-loaded form, dirty flag, full-replacement PATCH |
-| `components/workouts/WorkoutCard/` | `ui/components/workouts/WorkoutCard/` | Verbatim |
-| `components/workouts/WorkoutSection/` | `ui/components/workouts/WorkoutSection/` | Verbatim |
-| `components/workouts/WorkoutPopover/` | `ui/components/workouts/WorkoutPopover/` | Verbatim; M3 stub for "Start" CTA |
-| `components/workouts/WorkoutLimitIndicator/` | `ui/components/workouts/WorkoutLimitIndicator/` | Verbatim; consume `quota` from `useWorkouts` |
-| `components/workouts/QuickActions/` | `ui/components/workouts/QuickActions/` | Verbatim |
-| `components/workouts/AddExercisePopover/` (and all sub-files) | `ui/components/workouts/AddExercisePopover/` | Verbatim — but the inner exercise list **must** wrap M0's `ExerciseListContainer` instead of legacy hooks |
-| `components/workouts/ExerciseConfigCard/` | `ui/components/workouts/ExerciseConfigCard/` | Verbatim |
+| Legacy file                                                   | V2 destination                                                       | Notes                                                                                                     |
+| ------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `app/(tabs)/workouts.tsx` (494 lines)                         | `WorkoutsListPresenter` (pure JSX) + `WorkoutsListContainer` (state) | Three sections, search bar, popover, quota                                                                |
+| `app/workout-creator.tsx` (575 lines)                         | `WorkoutCreatorPresenter` + `WorkoutCreatorContainer`                | Form reducer, picker integration, superset propagation                                                    |
+| `app/workout-editor.tsx` (650 lines)                          | `WorkoutEditorPresenter` + `WorkoutEditorContainer`                  | Async-loaded form, dirty flag, full-replacement PATCH                                                     |
+| `components/workouts/WorkoutCard/`                            | `ui/components/workouts/WorkoutCard/`                                | Verbatim                                                                                                  |
+| `components/workouts/WorkoutSection/`                         | `ui/components/workouts/WorkoutSection/`                             | Verbatim                                                                                                  |
+| `components/workouts/WorkoutPopover/`                         | `ui/components/workouts/WorkoutPopover/`                             | Verbatim; M3 stub for "Start" CTA                                                                         |
+| `components/workouts/WorkoutLimitIndicator/`                  | `ui/components/workouts/WorkoutLimitIndicator/`                      | Verbatim; consume `quota` from `useWorkouts`                                                              |
+| `components/workouts/QuickActions/`                           | `ui/components/workouts/QuickActions/`                               | Verbatim                                                                                                  |
+| `components/workouts/AddExercisePopover/` (and all sub-files) | `ui/components/workouts/AddExercisePopover/`                         | Verbatim — but the inner exercise list **must** wrap M0's `ExerciseListContainer` instead of legacy hooks |
+| `components/workouts/ExerciseConfigCard/`                     | `ui/components/workouts/ExerciseConfigCard/`                         | Verbatim                                                                                                  |
 
 ## Active-session navigation stubs
 
@@ -250,6 +251,7 @@ bun run test:unit
 
 ```markdown
 ## Spec alignment
+
 - 04-workout-management/design.md § Domain Model + § API Contract — implemented (mobile side)
 - 04-workout-management/design.md § SQLite cache shape — implemented
 - 04-workout-management/design.md § Offline Strategy — implemented (sync queue)
@@ -263,9 +265,11 @@ bun run test:unit
 - 04-workout-management/requirements.md STORY-008 ACs 8.1–8.5 — offline cache + queue
 
 ## How to view
+
 [Reference SMOKE_TEST.md steps 1–11]
 
 ## Test coverage
+
 [Pasted from `bun run test:unit --coverage` summary]
 ```
 
