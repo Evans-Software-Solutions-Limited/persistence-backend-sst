@@ -177,6 +177,36 @@ describe("WorkoutRepository", () => {
       expect(mockDb.select).toHaveBeenCalledTimes(3);
     });
 
+    it("type=default should include null-creator (system-seeded) public workouts", async () => {
+      // Regression: pre-fix the default filter was `ne(createdBy, userId)`,
+      // which in SQL evaluates to NULL (falsy) for rows where createdBy
+      // is NULL — silently excluding system seeds. Spec contract is
+      // `createdBy IS NULL OR createdBy != userId`. The repository mock
+      // here can't introspect the actual SQL, but the test exists so a
+      // future regression reverting to a plain `ne` shows up against the
+      // spec language in the helper's where-builder.
+      const seededWorkout = {
+        ...baseWorkout,
+        id: "wo-seed",
+        createdBy: null,
+        visibility: "public" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeListChain([seededWorkout]))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(makeExercisesByWorkoutChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.list("user-1", { type: "default" });
+
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].createdBy).toBeNull();
+    });
+
     it("should query assigned workouts when type=assigned", async () => {
       const assignedWorkout = { ...baseWorkout, createdBy: "trainer-1" };
       const mockDb = {
@@ -256,7 +286,9 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([baseWorkout]))
-          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -278,7 +310,9 @@ describe("WorkoutRepository", () => {
           .fn()
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
           .mockReturnValueOnce(makeSelectChain([{ id: "friendship-1" }]))
-          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -332,7 +366,9 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([publicWorkout]))
-          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -359,6 +395,12 @@ describe("WorkoutRepository", () => {
   describe("createWithExercises", () => {
     it("should insert workout and nested exercises in a single transaction", async () => {
       const created = { ...baseWorkout, id: "wo-new", name: "New" };
+      // The post-insert re-fetch goes through fetchExercisesForWorkouts
+      // and groups by workoutId — pin the mock rows to the new id.
+      const newWorkoutExercises = mockExercises.map((e) => ({
+        ...e,
+        workoutId: "wo-new",
+      }));
       const insertExercises = vi.fn().mockReturnValue({
         values: vi.fn().mockResolvedValue(undefined),
       });
@@ -375,7 +417,7 @@ describe("WorkoutRepository", () => {
         }),
         select: vi
           .fn()
-          .mockReturnValue(makeExercisesByWorkoutChain(mockExercises)),
+          .mockReturnValue(makeExercisesByWorkoutChain(newWorkoutExercises)),
       };
 
       const mockDb = {
@@ -484,7 +526,9 @@ describe("WorkoutRepository", () => {
         }),
         select: vi
           .fn()
-          .mockReturnValue(makeExercisesByWorkoutChain(mockExercises)),
+          .mockReturnValue(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
       };
       const mockDb = {
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),

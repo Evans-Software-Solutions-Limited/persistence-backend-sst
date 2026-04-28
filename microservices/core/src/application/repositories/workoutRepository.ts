@@ -1,4 +1,4 @@
-import { and, eq, ne, or, desc, inArray, count } from "drizzle-orm";
+import { and, eq, ne, or, desc, inArray, count, isNull } from "drizzle-orm";
 import {
   workouts,
   workoutExercises,
@@ -299,10 +299,15 @@ export class WorkoutRepository {
         .where(eq(workoutAssignments.clientId, userId));
       return inArray(workouts.id, assignedIds);
     }
-    // default — public, but exclude user's own publics (those show under "mine")
+    // default — public, but exclude user's own publics (those show under
+    // "mine"). Uses `isNull OR ne` because in SQL `NULL != value`
+    // evaluates to NULL (falsy), which would silently exclude system-
+    // seeded / community workouts where `createdBy` is NULL. Spec:
+    // 04-workout-management/design.md § API Contract > GET /workouts >
+    // Filter semantics — "createdBy IS NULL OR createdBy != userId".
     return and(
       eq(workouts.visibility, "public"),
-      ne(workouts.createdBy, userId),
+      or(isNull(workouts.createdBy), ne(workouts.createdBy, userId)),
     );
   }
 
@@ -343,35 +348,11 @@ export class WorkoutRepository {
     db: DbOrTx,
     workout: Workout,
   ): Promise<WorkoutWithExercises> {
-    const exerciseRows = await db
-      .select({
-        id: workoutExercises.id,
-        exerciseId: workoutExercises.exerciseId,
-        sortOrder: workoutExercises.sortOrder,
-        supersetGroup: workoutExercises.supersetGroup,
-        targetSets: workoutExercises.targetSets,
-        targetRepsMin: workoutExercises.targetRepsMin,
-        targetRepsMax: workoutExercises.targetRepsMax,
-        targetDurationSeconds: workoutExercises.targetDurationSeconds,
-        restSeconds: workoutExercises.restSeconds,
-        notes: workoutExercises.notes,
-        exercise: {
-          id: exercises.id,
-          name: exercises.name,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          category: exercises.category as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          difficultyLevel: exercises.difficultyLevel as any,
-          videoUrl: exercises.videoUrl,
-          thumbnailUrl: exercises.thumbnailUrl,
-        },
-      })
-      .from(workoutExercises)
-      .leftJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
-      .where(eq(workoutExercises.workoutId, workout.id))
-      .orderBy(workoutExercises.sortOrder);
-
-    return { ...workout, exercises: exerciseRows };
+    // Routes through the batch helper so the select clause + join shape
+    // live in exactly one place. Avoids drift between single-workout
+    // and list responses if a column is added or renamed later.
+    const grouped = await this.fetchExercisesForWorkouts(db, [workout.id]);
+    return { ...workout, exercises: grouped.get(workout.id) ?? [] };
   }
 
   private async fetchExercisesForWorkouts(
@@ -408,7 +389,7 @@ export class WorkoutRepository {
       .from(workoutExercises)
       .leftJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
       .where(inArray(workoutExercises.workoutId, workoutIds))
-      .orderBy(workoutExercises.sortOrder);
+      .orderBy(workoutExercises.workoutId, workoutExercises.sortOrder);
 
     for (const row of rows) {
       const { workoutId, ...rest } = row;
