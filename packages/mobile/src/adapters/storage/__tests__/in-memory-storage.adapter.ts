@@ -8,6 +8,13 @@ import type {
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type {
+  CachedWorkoutDetail,
+  CachedWorkoutsList,
+  Workout,
+  WorkoutListType,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
@@ -28,7 +35,17 @@ export class InMemoryStorageAdapter implements StoragePort {
     new Map();
   private referenceLists: Map<ReferenceListKind, ReferenceList> = new Map();
   private dashboardCache: Map<string, CachedDashboard> = new Map();
+  private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
+  private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private nextId = 1;
+
+  private workoutsListKey(userId: string, type: WorkoutListType): string {
+    return `${userId}::${type}`;
+  }
+
+  private workoutDetailKey(userId: string, workoutId: string): string {
+    return `${userId}::${workoutId}`;
+  }
 
   async initialize(): Promise<void> {
     // No-op for in-memory
@@ -167,12 +184,77 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this.dashboardCache.get(userId)?.syncedAt ?? null;
   }
 
+  // -- Workouts Cache (M2) --
+
+  getCachedWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+  ): CachedWorkoutsList | null {
+    return (
+      this.workoutsListCache.get(this.workoutsListKey(userId, type)) ?? null
+    );
+  }
+
+  cacheWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+    workouts: Workout[],
+    quota: WorkoutQuota | null,
+  ): void {
+    this.workoutsListCache.set(this.workoutsListKey(userId, type), {
+      userId,
+      type,
+      workouts,
+      quota,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getWorkoutsListAge(userId: string, type: WorkoutListType): string | null {
+    return (
+      this.workoutsListCache.get(this.workoutsListKey(userId, type))
+        ?.syncedAt ?? null
+    );
+  }
+
+  getCachedWorkoutDetail(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutDetail | null {
+    return (
+      this.workoutDetailCache.get(this.workoutDetailKey(userId, workoutId)) ??
+      null
+    );
+  }
+
+  cacheWorkoutDetail(userId: string, workout: Workout): void {
+    this.workoutDetailCache.set(this.workoutDetailKey(userId, workout.id), {
+      userId,
+      workoutId: workout.id,
+      workout,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  removeCachedWorkout(userId: string, workoutId: string): void {
+    this.workoutDetailCache.delete(this.workoutDetailKey(userId, workoutId));
+    for (const [key, slice] of this.workoutsListCache.entries()) {
+      if (slice.userId !== userId) continue;
+      const filtered = slice.workouts.filter((w) => w.id !== workoutId);
+      if (filtered.length !== slice.workouts.length) {
+        this.workoutsListCache.set(key, { ...slice, workouts: filtered });
+      }
+    }
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();
     this.dashboardCache.clear();
+    this.workoutsListCache.clear();
+    this.workoutDetailCache.clear();
     this.nextId = 1;
   }
 

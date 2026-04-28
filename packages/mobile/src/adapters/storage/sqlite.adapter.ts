@@ -9,6 +9,13 @@ import type {
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type {
+  CachedWorkoutDetail,
+  CachedWorkoutsList,
+  Workout,
+  WorkoutListType,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
@@ -60,10 +67,27 @@ export class SQLiteStorageAdapter implements StoragePort {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
+      -- Pre-M2 the table was a flat keyed-by-id stash with no usage in
+      -- shipped code; M2 replaces it with a (user_id, type)-keyed cache
+      -- of full list slices. DROP IF EXISTS is safe because no shipped
+      -- writes touched the old table.
+      DROP TABLE IF EXISTS cached_workouts;
+
       CREATE TABLE IF NOT EXISTS cached_workouts (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('mine', 'assigned', 'default')),
+        payload TEXT NOT NULL,
+        quota TEXT,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, type)
+      );
+
+      CREATE TABLE IF NOT EXISTS cached_workout_detail (
+        user_id TEXT NOT NULL,
+        workout_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, workout_id)
       );
 
       CREATE TABLE IF NOT EXISTS cached_exercises (
@@ -305,6 +329,136 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows[0]?.synced_at ?? null;
   }
 
+  // -- Workouts Cache (M2) --
+
+  getCachedWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+  ): CachedWorkoutsList | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, type, payload, quota, synced_at FROM cached_workouts
+       WHERE user_id = ? AND type = ?`,
+      [userId, type],
+    ) as {
+      user_id: string;
+      type: WorkoutListType;
+      payload: string;
+      quota: string | null;
+      synced_at: string;
+    }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      type: row.type,
+      workouts: JSON.parse(row.payload) as Workout[],
+      quota: row.quota ? (JSON.parse(row.quota) as WorkoutQuota) : null,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+    workouts: Workout[],
+    quota: WorkoutQuota | null,
+  ): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_workouts (user_id, type, payload, quota, synced_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, type) DO UPDATE SET
+         payload = excluded.payload,
+         quota = excluded.quota,
+         synced_at = excluded.synced_at`,
+      [
+        userId,
+        type,
+        JSON.stringify(workouts),
+        quota ? JSON.stringify(quota) : null,
+        syncedAt,
+      ],
+    );
+  }
+
+  getWorkoutsListAge(userId: string, type: WorkoutListType): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_workouts WHERE user_id = ? AND type = ?`,
+      [userId, type],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  getCachedWorkoutDetail(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutDetail | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, workout_id, payload, synced_at FROM cached_workout_detail
+       WHERE user_id = ? AND workout_id = ?`,
+      [userId, workoutId],
+    ) as {
+      user_id: string;
+      workout_id: string;
+      payload: string;
+      synced_at: string;
+    }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      workoutId: row.workout_id,
+      workout: JSON.parse(row.payload) as Workout,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheWorkoutDetail(userId: string, workout: Workout): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_workout_detail (user_id, workout_id, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, workout_id) DO UPDATE SET
+         payload = excluded.payload,
+         synced_at = excluded.synced_at`,
+      [userId, workout.id, JSON.stringify(workout), syncedAt],
+    );
+  }
+
+  removeCachedWorkout(userId: string, workoutId: string): void {
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      db.runSync(
+        `DELETE FROM cached_workout_detail WHERE user_id = ? AND workout_id = ?`,
+        [userId, workoutId],
+      );
+      // List slices store full payloads; rewrite the slice without the row.
+      const slices = db.getAllSync(
+        `SELECT type, payload, quota, synced_at FROM cached_workouts WHERE user_id = ?`,
+        [userId],
+      ) as {
+        type: WorkoutListType;
+        payload: string;
+        quota: string | null;
+        synced_at: string;
+      }[];
+      for (const slice of slices) {
+        const list = JSON.parse(slice.payload) as Workout[];
+        const filtered = list.filter((w) => w.id !== workoutId);
+        if (filtered.length === list.length) continue;
+        db.runSync(
+          `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
+          [JSON.stringify(filtered), userId, slice.type],
+        );
+      }
+    });
+  }
+
   // -- Dashboard Cache (M1) --
 
   getCachedDashboard(userId: string): CachedDashboard | null {
@@ -346,6 +500,7 @@ export class SQLiteStorageAdapter implements StoragePort {
     db.execSync(`
       DELETE FROM sync_queue;
       DELETE FROM cached_workouts;
+      DELETE FROM cached_workout_detail;
       DELETE FROM cached_exercises;
       DELETE FROM active_session;
       DELETE FROM sync_metadata;

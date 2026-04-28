@@ -8,6 +8,13 @@ import type {
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type {
+  CachedWorkoutDetail,
+  CachedWorkoutsList,
+  Workout,
+  WorkoutListType,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
@@ -74,6 +81,55 @@ export interface StoragePort {
    * cheaper when the caller only needs the timestamp.
    */
   getReferenceListAge(kind: ReferenceListKind): string | null;
+
+  // -- Workouts Cache (M2) --
+  /**
+   * Read the cached workouts list slice for `(userId, type)`. Returns
+   * null when the slice has never been cached. The query layer uses this
+   * + `isWorkoutsListStale` to decide whether to render cache-first then
+   * background-refresh.
+   *
+   * Spec: specs/04-workout-management/design.md § SQLite cache shape
+   */
+  getCachedWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+  ): CachedWorkoutsList | null;
+
+  /**
+   * Write-through the latest backend list slice for `(userId, type)`.
+   * Stamps `syncedAt = now()`. `quota` should be non-null only when
+   * `type='mine'` (matching the backend's envelope semantics).
+   */
+  cacheWorkoutsList(
+    userId: string,
+    type: WorkoutListType,
+    workouts: Workout[],
+    quota: WorkoutQuota | null,
+  ): void;
+
+  /** ISO timestamp of the last cached refresh, or null if no row. */
+  getWorkoutsListAge(userId: string, type: WorkoutListType): string | null;
+
+  /**
+   * Read the cached single-workout detail. Populated by the popover
+   * detail open and refreshed by every list refetch (the list response
+   * carries full workout payloads, so we splatter them into the detail
+   * cache too).
+   */
+  getCachedWorkoutDetail(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutDetail | null;
+
+  /** Write-through the workout detail. Stamps `syncedAt = now()`. */
+  cacheWorkoutDetail(userId: string, workout: Workout): void;
+
+  /**
+   * Remove a workout from list + detail caches after a successful
+   * delete. No-op when the rows aren't cached.
+   */
+  removeCachedWorkout(userId: string, workoutId: string): void;
 
   // -- Dashboard Cache (M1) --
   /**

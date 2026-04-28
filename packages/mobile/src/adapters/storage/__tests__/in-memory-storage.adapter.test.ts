@@ -1,5 +1,19 @@
 import { InMemoryStorageAdapter } from "./in-memory-storage.adapter";
 import type { Exercise } from "@/domain/models/exercise";
+import type { Workout } from "@/domain/models/workout";
+
+const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
+  id: overrides.id ?? "w-1",
+  name: overrides.name ?? "Push Day",
+  description: null,
+  createdBy: overrides.createdBy ?? "user-1",
+  visibility: overrides.visibility ?? "private",
+  estimatedDurationMinutes: 45,
+  exercises: overrides.exercises ?? [],
+  createdAt: "2026-04-28T00:00:00Z",
+  updatedAt: "2026-04-28T00:00:00Z",
+  ...overrides,
+});
 
 const buildExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
   id: overrides.id ?? "e1",
@@ -240,6 +254,146 @@ describe("InMemoryStorageAdapter", () => {
       );
       const stored = storage.getCachedExercise("custom-1");
       expect(stored?.isCustom).toBe(true);
+    });
+  });
+
+  describe("workouts cache (M2)", () => {
+    it("returns null when no list slice is cached", () => {
+      expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
+      expect(storage.getWorkoutsListAge("user-1", "mine")).toBeNull();
+    });
+
+    it("caches and reads back a list slice scoped by (userId, type)", () => {
+      const workouts = [buildWorkout({ id: "w-1", name: "Push" })];
+      storage.cacheWorkoutsList("user-1", "mine", workouts, {
+        used: 1,
+        limit: 50,
+      });
+
+      const cached = storage.getCachedWorkoutsList("user-1", "mine");
+      expect(cached).not.toBeNull();
+      expect(cached?.workouts).toEqual(workouts);
+      expect(cached?.quota).toEqual({ used: 1, limit: 50 });
+      expect(cached?.userId).toBe("user-1");
+      expect(cached?.type).toBe("mine");
+      expect(cached?.syncedAt).toBeDefined();
+    });
+
+    it("isolates list slices between userIds", () => {
+      storage.cacheWorkoutsList(
+        "user-1",
+        "mine",
+        [buildWorkout({ id: "w-A" })],
+        null,
+      );
+      storage.cacheWorkoutsList(
+        "user-2",
+        "mine",
+        [buildWorkout({ id: "w-B", createdBy: "user-2" })],
+        null,
+      );
+
+      expect(
+        storage.getCachedWorkoutsList("user-1", "mine")?.workouts[0].id,
+      ).toBe("w-A");
+      expect(
+        storage.getCachedWorkoutsList("user-2", "mine")?.workouts[0].id,
+      ).toBe("w-B");
+    });
+
+    it("isolates list slices between types for the same user", () => {
+      storage.cacheWorkoutsList(
+        "user-1",
+        "mine",
+        [buildWorkout({ id: "w-mine" })],
+        { used: 1, limit: null },
+      );
+      storage.cacheWorkoutsList(
+        "user-1",
+        "default",
+        [buildWorkout({ id: "w-default" })],
+        null,
+      );
+
+      expect(
+        storage.getCachedWorkoutsList("user-1", "mine")?.workouts[0].id,
+      ).toBe("w-mine");
+      expect(
+        storage.getCachedWorkoutsList("user-1", "default")?.workouts[0].id,
+      ).toBe("w-default");
+      // Quota only on `mine` slice
+      expect(
+        storage.getCachedWorkoutsList("user-1", "default")?.quota,
+      ).toBeNull();
+    });
+
+    it("upserts the slice on repeat cache calls", () => {
+      storage.cacheWorkoutsList("user-1", "mine", [], null);
+      storage.cacheWorkoutsList(
+        "user-1",
+        "mine",
+        [buildWorkout({ id: "w-1" })],
+        { used: 1, limit: 10 },
+      );
+
+      const cached = storage.getCachedWorkoutsList("user-1", "mine");
+      expect(cached?.workouts).toHaveLength(1);
+      expect(cached?.quota).toEqual({ used: 1, limit: 10 });
+    });
+
+    it("caches and reads single workout detail", () => {
+      const workout = buildWorkout({ id: "w-1", name: "Push" });
+      storage.cacheWorkoutDetail("user-1", workout);
+
+      const cached = storage.getCachedWorkoutDetail("user-1", "w-1");
+      expect(cached?.workout).toEqual(workout);
+      expect(cached?.userId).toBe("user-1");
+      expect(cached?.workoutId).toBe("w-1");
+    });
+
+    it("returns null for missing detail", () => {
+      expect(storage.getCachedWorkoutDetail("user-1", "missing")).toBeNull();
+    });
+
+    it("removeCachedWorkout drops detail and prunes from list slices", () => {
+      const wKeep = buildWorkout({ id: "w-keep" });
+      const wDrop = buildWorkout({ id: "w-drop" });
+      storage.cacheWorkoutsList("user-1", "mine", [wKeep, wDrop], null);
+      storage.cacheWorkoutDetail("user-1", wDrop);
+
+      storage.removeCachedWorkout("user-1", "w-drop");
+
+      expect(storage.getCachedWorkoutDetail("user-1", "w-drop")).toBeNull();
+      const slice = storage.getCachedWorkoutsList("user-1", "mine");
+      expect(slice?.workouts.map((w) => w.id)).toEqual(["w-keep"]);
+    });
+
+    it("removeCachedWorkout leaves other users' caches intact", () => {
+      const w = buildWorkout({ id: "w-shared" });
+      storage.cacheWorkoutsList("user-1", "mine", [w], null);
+      storage.cacheWorkoutsList("user-2", "mine", [w], null);
+
+      storage.removeCachedWorkout("user-1", "w-shared");
+
+      expect(
+        storage.getCachedWorkoutsList("user-1", "mine")?.workouts,
+      ).toHaveLength(0);
+      expect(
+        storage.getCachedWorkoutsList("user-2", "mine")?.workouts,
+      ).toHaveLength(1);
+    });
+
+    it("clearAll wipes the workouts caches", () => {
+      storage.cacheWorkoutsList("user-1", "mine", [buildWorkout()], {
+        used: 1,
+        limit: 10,
+      });
+      storage.cacheWorkoutDetail("user-1", buildWorkout());
+
+      storage.clearAll();
+
+      expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
+      expect(storage.getCachedWorkoutDetail("user-1", "w-1")).toBeNull();
     });
   });
 });
