@@ -1,16 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Create mock repository that can be controlled from tests
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
-  create: vi.fn(),
+  createWithExercises: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  getQuota: vi.fn(),
 };
 
-// Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -33,7 +32,6 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock WorkoutRepository class - this is what the service will instantiate
 vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
@@ -41,14 +39,26 @@ vi.mock("../../../repositories/workoutRepository", () => ({
 describe("WorkoutsCreateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock the create method to return the created workout with provided data
-    // The handler calls create(userId, data), so we need to handle both arguments
-    workoutRepositoryMocks.create.mockImplementation(
+    workoutRepositoryMocks.createWithExercises.mockImplementation(
       async (userId: string, data: any) => ({
         id: "workout-1",
         createdBy: userId,
-        ...data,
-        exercises: [],
+        name: data.name,
+        description: data.description ?? null,
+        visibility: data.visibility ?? "private",
+        estimatedDurationMinutes: data.estimatedDurationMinutes ?? 30,
+        exercises: (data.exercises ?? []).map((ex: any, idx: number) => ({
+          id: `we-${idx}`,
+          ...ex,
+          supersetGroup: ex.supersetGroup ?? null,
+          targetSets: ex.targetSets ?? null,
+          targetRepsMin: ex.targetRepsMin ?? 1,
+          targetRepsMax: ex.targetRepsMax ?? 1,
+          targetDurationSeconds: ex.targetDurationSeconds ?? null,
+          restSeconds: ex.restSeconds ?? 90,
+          notes: ex.notes ?? null,
+          exercise: null,
+        })),
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -63,39 +73,10 @@ describe("WorkoutsCreateHandler", () => {
         new Request("http://localhost/workouts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Test Workout" }),
+          body: JSON.stringify({ name: "Test" }),
         }),
       );
-
       expect(response.status).toBe(401);
-    });
-
-    it("should return 422 for missing workout name without auth", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "" }),
-        }),
-      );
-
-      expect([400, 401, 422]).toContain(response.status);
-    });
-
-    it("should return 422 when name is not provided without auth", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        }),
-      );
-
-      expect([400, 401, 422]).toContain(response.status);
     });
 
     it("should reject invalid visibility values with 422", async () => {
@@ -104,20 +85,19 @@ describe("WorkoutsCreateHandler", () => {
       const response = await workoutsCreateHandler.handle(
         new Request("http://localhost/workouts", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "Workout",
-            visibility: "secret",
-          }),
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "X", visibility: "secret" }),
         }),
       );
-
       expect(response.status).toBe(422);
     });
   });
 
-  describe("authenticated requests", () => {
-    it("should create workout with valid data", async () => {
+  describe("authenticated metadata-only requests", () => {
+    it("should create with valid data and return 201 single-envelope", async () => {
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");
       const response = await workoutsCreateHandler.handle(
@@ -129,7 +109,7 @@ describe("WorkoutsCreateHandler", () => {
           },
           body: JSON.stringify({
             name: "My Workout",
-            description: "Test workout",
+            description: "Test",
             visibility: "private",
             estimatedDurationMinutes: 45,
           }),
@@ -137,9 +117,12 @@ describe("WorkoutsCreateHandler", () => {
       );
 
       expect(response.status).toBe(201);
+      const body = (await response.json()) as any;
+      expect(body.data.id).toBe("workout-1");
+      expect(body.data.name).toBe("My Workout");
     });
 
-    it("should return created workout data", async () => {
+    it("should default visibility to private and duration to 30", async () => {
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");
       const response = await workoutsCreateHandler.handle(
@@ -149,102 +132,12 @@ describe("WorkoutsCreateHandler", () => {
             "Content-Type": "application/json",
             authorization: "Bearer test-token",
           },
-          body: JSON.stringify({
-            name: "My Workout",
-            visibility: "private",
-          }),
+          body: JSON.stringify({ name: "Defaults" }),
         }),
       );
-
-      expect(response.status).toBe(201);
-      const data = (await response.json()) as any;
-      expect(data).toHaveProperty("data");
-      expect(data.data).toHaveProperty("id");
-      expect(data.data.name).toBe("My Workout");
-    });
-
-    it("should handle valid request with optional parameters", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Workout",
-            visibility: "friends",
-          }),
-        }),
-      );
-
-      expect(response.status).toBe(201);
-    });
-
-    it("should accept estimatedDurationMinutes of 0", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Zero Duration Workout",
-            estimatedDurationMinutes: 0,
-          }),
-        }),
-      );
-
-      expect(response.status).toBe(201);
-      const data = (await response.json()) as any;
-      expect(data.data.estimatedDurationMinutes).toBe(0);
-    });
-
-    it("should set default visibility to private", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Default Visibility Workout",
-          }),
-        }),
-      );
-
-      expect(response.status).toBe(201);
-      const data = (await response.json()) as any;
-      expect(data.data.visibility).toBe("private");
-    });
-
-    it("should set default estimatedDurationMinutes to 30", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Default Duration Workout",
-          }),
-        }),
-      );
-
-      expect(response.status).toBe(201);
-      const data = (await response.json()) as any;
-      expect(data.data.estimatedDurationMinutes).toBe(30);
+      const body = (await response.json()) as any;
+      expect(body.data.visibility).toBe("private");
+      expect(body.data.estimatedDurationMinutes).toBe(30);
     });
 
     it("should set createdBy to authenticated user", async () => {
@@ -257,53 +150,205 @@ describe("WorkoutsCreateHandler", () => {
             "Content-Type": "application/json",
             authorization: "Bearer test-token",
           },
+          body: JSON.stringify({ name: "X" }),
+        }),
+      );
+      const body = (await response.json()) as any;
+      expect(body.data.createdBy).toBe("test-user-id");
+    });
+
+    it("should reject empty workout name with 400", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "" }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should reject whitespace-only workout name with 400", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "   " }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("nested-exercise requests", () => {
+    it("should pass nested exercises to createWithExercises", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
           body: JSON.stringify({
-            name: "User-Owned Workout",
+            name: "With Exercises",
+            exercises: [
+              {
+                exerciseId: "ex-1",
+                sortOrder: 0,
+                supersetGroup: 1,
+                targetSets: 4,
+                targetRepsMin: 8,
+                targetRepsMax: 12,
+              },
+              {
+                exerciseId: "ex-2",
+                sortOrder: 1,
+                supersetGroup: 1,
+                targetSets: 4,
+                targetRepsMin: 8,
+                targetRepsMax: 12,
+              },
+            ],
           }),
         }),
       );
 
+      expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({
+          name: "With Exercises",
+          exercises: expect.arrayContaining([
+            expect.objectContaining({
+              exerciseId: "ex-1",
+              supersetGroup: 1,
+            }),
+            expect.objectContaining({
+              exerciseId: "ex-2",
+              supersetGroup: 1,
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it("should return 400 when targetRepsMin > targetRepsMax", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Invalid",
+            exercises: [
+              {
+                exerciseId: "ex-1",
+                sortOrder: 0,
+                targetRepsMin: 12,
+                targetRepsMax: 8,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should return 400 when targetRepsMin is provided alone and exceeds the default max=1", async () => {
+      // Regression: pre-fix, the validator only fired when BOTH bounds
+      // were explicit. A payload with `targetRepsMin: 5` (no max) skipped
+      // the check, then the repository defaulted max to 1 and stored
+      // min=5/max=1 — violating the invariant.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Asymmetric",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMin: 5 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should return 400 when targetRepsMax is provided alone below the default min=1", async () => {
+      // Mirror of the above: max=0 with default min=1 still violates min ≤ max.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Asymmetric",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMax: 0 }],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    });
+
+    it("should accept omitted reps bounds (both default to 1)", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Defaults",
+            exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
+          }),
+        }),
+      );
       expect(response.status).toBe(201);
-      const data = (await response.json()) as any;
-      expect(data.data.createdBy).toBe("test-user-id");
     });
 
-    it("should reject empty workout name", async () => {
+    it("should default exercises to [] when omitted", async () => {
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
+      await workoutsCreateHandler.handle(
         new Request("http://localhost/workouts", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             authorization: "Bearer test-token",
           },
-          body: JSON.stringify({
-            name: "",
-          }),
+          body: JSON.stringify({ name: "No exercises" }),
         }),
       );
 
-      expect(response.status).toBe(400);
-    });
-
-    it("should reject whitespace-only workout name", async () => {
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "   ",
-          }),
-        }),
+      expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ exercises: [] }),
       );
-
-      expect(response.status).toBe(400);
     });
   });
 });

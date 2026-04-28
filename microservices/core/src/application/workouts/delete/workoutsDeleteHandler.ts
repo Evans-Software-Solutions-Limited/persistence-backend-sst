@@ -21,10 +21,8 @@ export const workoutsDeleteHandler = new Elysia()
       const success = await ctx.WorkoutRepository.delete(id, userId);
 
       if (!success) {
-        ctx.set.status = 403;
-        return {
-          error: "Unauthorized: you can only delete your own workouts",
-        };
+        ctx.set.status = 404;
+        return { error: "Workout not found" };
       }
 
       ctx.set.status = 204;

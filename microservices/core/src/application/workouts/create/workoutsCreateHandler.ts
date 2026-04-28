@@ -1,6 +1,10 @@
 import Elysia, { t } from "elysia";
 import { WorkoutService } from "../../repositories/workoutService";
 import {
+  findInvalidRepRangeIndex,
+  workoutExerciseInputSchema,
+} from "../shared/schemas";
+import {
   getAuthUser,
   requireAuth,
   getUser,
@@ -16,19 +20,35 @@ export const workoutsCreateHandler = new Elysia()
     "/workouts",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { name, description, visibility, estimatedDurationMinutes } =
-        ctx.body;
+      const {
+        name,
+        description,
+        visibility,
+        estimatedDurationMinutes,
+        exercises,
+      } = ctx.body;
 
       if (!name || name.trim().length === 0) {
         ctx.set.status = 400;
         return { error: "Workout name is required" };
       }
 
-      const workout = await ctx.WorkoutRepository.create(userId, {
+      if (exercises) {
+        const badIndex = findInvalidRepRangeIndex(exercises);
+        if (badIndex !== null) {
+          ctx.set.status = 400;
+          return {
+            error: "targetRepsMin cannot exceed targetRepsMax for any exercise",
+          };
+        }
+      }
+
+      const workout = await ctx.WorkoutRepository.createWithExercises(userId, {
         name,
-        description: description || null,
-        visibility: visibility || "private",
+        description: description ?? null,
+        visibility: visibility ?? "private",
         estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
+        exercises: exercises ?? [],
       });
 
       ctx.set.status = 201;
@@ -37,7 +57,7 @@ export const workoutsCreateHandler = new Elysia()
     {
       body: t.Object({
         name: t.String(),
-        description: t.Optional(t.String()),
+        description: t.Optional(t.Union([t.String(), t.Null()])),
         visibility: t.Optional(
           t.Union([
             t.Literal("private"),
@@ -46,6 +66,7 @@ export const workoutsCreateHandler = new Elysia()
           ]),
         ),
         estimatedDurationMinutes: t.Optional(t.Number()),
+        exercises: t.Optional(t.Array(workoutExerciseInputSchema)),
       }),
     },
   );
