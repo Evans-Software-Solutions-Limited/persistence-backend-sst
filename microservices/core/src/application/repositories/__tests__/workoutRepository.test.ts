@@ -1,13 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WorkoutRepository } from "../workoutRepository";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
 }));
 
-// inArray receives a Drizzle subquery object built by the mock chain;
-// stub it to return a plain condition marker so the unit test doesn't
-// attempt to introspect the mock as real SQL.
 vi.mock("drizzle-orm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("drizzle-orm")>();
   return {
@@ -21,6 +19,7 @@ import { getDb } from "@persistence/db/client";
 const baseWorkout = {
   id: "wo-1",
   name: "Full Body",
+  description: null,
   createdBy: "user-1",
   visibility: "private" as const,
   estimatedDurationMinutes: 45,
@@ -33,6 +32,7 @@ const mockExercises = [
     id: "we-1",
     exerciseId: "ex-1",
     sortOrder: 1,
+    supersetGroup: null,
     targetSets: 3,
     targetRepsMin: 8,
     targetRepsMax: 10,
@@ -49,6 +49,11 @@ const mockExercises = [
     },
   },
 ];
+
+const mockExercisesWithWorkoutId = mockExercises.map((e) => ({
+  ...e,
+  workoutId: "wo-1",
+}));
 
 function makeSelectChain(resolvedValue: any) {
   return {
@@ -74,12 +79,42 @@ function makeListChain(resolvedValue: any) {
   };
 }
 
-function makeExercisesChain(resolvedValue: any) {
+function makeCountChain(value: number) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([{ value }]),
+    }),
+  };
+}
+
+function makeExercisesByWorkoutChain(resolvedValue: any) {
   return {
     from: vi.fn().mockReturnValue({
       leftJoin: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           orderBy: vi.fn().mockResolvedValue(resolvedValue),
+        }),
+      }),
+    }),
+  };
+}
+
+function makeQuotaUsedChain(value: number) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([{ value }]),
+    }),
+  };
+}
+
+function makeQuotaTierChain(workoutLimit: number | null) {
+  return {
+    from: vi.fn().mockReturnValue({
+      innerJoin: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi
+            .fn()
+            .mockResolvedValue(workoutLimit === null ? [] : [{ workoutLimit }]),
         }),
       }),
     }),
@@ -92,29 +127,54 @@ describe("WorkoutRepository", () => {
   });
 
   describe("list", () => {
-    it("should return own workouts when type=mine", async () => {
+    it("should return own workouts with nested exercises and quota when type=mine", async () => {
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeListChain([baseWorkout])),
+        select: vi
+          .fn()
+          // 1: paginated workouts query
+          .mockReturnValueOnce(makeListChain([baseWorkout]))
+          // 2: count query
+          .mockReturnValueOnce(makeCountChain(1))
+          // 3: nested exercises fetch (inArray on workoutIds)
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          // 4: quota used count
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          // 5: quota tier limit lookup
+          .mockReturnValueOnce(makeQuotaTierChain(50)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
       const result = await repo.list("user-1", { type: "mine" });
 
-      expect(result).toEqual([baseWorkout]);
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].id).toBe("wo-1");
+      expect(result.workouts[0].exercises).toEqual(mockExercises);
+      expect(result.total).toBe(1);
+      expect(result.quota).toEqual({ used: 1, limit: 50 });
     });
 
-    it("should return public workouts when type=default", async () => {
+    it("should omit quota and skip the quota queries when type=default", async () => {
       const publicWorkout = { ...baseWorkout, visibility: "public" as const };
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeListChain([publicWorkout])),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeListChain([publicWorkout]))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(makeExercisesByWorkoutChain([])),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
       const result = await repo.list("user-1", { type: "default" });
 
-      expect(result).toEqual([publicWorkout]);
+      expect(result.workouts).toHaveLength(1);
+      expect(result.quota).toBeUndefined();
+      expect(result.total).toBe(1);
+      // 3 queries: list, count, exercises — no quota
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
     });
 
     it("should query assigned workouts when type=assigned", async () => {
@@ -122,46 +182,71 @@ describe("WorkoutRepository", () => {
       const mockDb = {
         select: vi
           .fn()
-          // First call: builds the subquery for workoutAssignments
+          // Subquery for workoutAssignments inside buildListWhereClause
           .mockReturnValueOnce({
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({ subquery: true }),
             }),
           })
-          // Second call: the main list query
-          .mockReturnValueOnce(makeListChain([assignedWorkout])),
+          // Main paginated query
+          .mockReturnValueOnce(makeListChain([assignedWorkout]))
+          // Count
+          .mockReturnValueOnce(makeCountChain(1))
+          // Exercises
+          .mockReturnValueOnce(makeExercisesByWorkoutChain([])),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
       const result = await repo.list("user-1", { type: "assigned" });
 
-      expect(result).toEqual([assignedWorkout]);
-      // db.select is called twice: once for the subquery, once for the main query
-      expect(mockDb.select).toHaveBeenCalledTimes(2);
+      expect(result.workouts).toEqual([{ ...assignedWorkout, exercises: [] }]);
+      expect(result.quota).toBeUndefined();
+      // 4 queries because of the assigned subquery
+      expect(mockDb.select).toHaveBeenCalledTimes(4);
     });
 
-    it("should return own + public workouts when type is undefined", async () => {
-      const ownWorkout = baseWorkout;
-      const publicWorkout = {
-        ...baseWorkout,
-        id: "wo-2",
-        createdBy: "other-user",
-        visibility: "public" as const,
-      };
+    it("should default to type=mine when type is undefined", async () => {
       const mockDb = {
         select: vi
           .fn()
-          .mockReturnValue(makeListChain([ownWorkout, publicWorkout])),
+          .mockReturnValueOnce(makeListChain([baseWorkout]))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      const result = await repo.list("user-1", {
-        // type is undefined, should use the else clause
-      });
+      const result = await repo.list("user-1", {});
 
-      expect(result).toEqual([ownWorkout, publicWorkout]);
+      expect(result.workouts).toHaveLength(1);
+      expect(result.quota).toEqual({ used: 1, limit: null });
+    });
+
+    it("should return empty workouts and total=0 with no exercises fetch when no rows match", async () => {
+      // fetchExercisesForWorkouts short-circuits on empty ids without
+      // calling db.select, so only 4 selects fire: list, count, quota-used,
+      // quota-tier.
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeListChain([]))
+          .mockReturnValueOnce(makeCountChain(0))
+          .mockReturnValueOnce(makeQuotaUsedChain(0))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.list("user-1", { type: "mine" });
+
+      expect(result.workouts).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(mockDb.select).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -171,7 +256,7 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([baseWorkout]))
-          .mockReturnValueOnce(makeExercisesChain(mockExercises)),
+          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -191,12 +276,9 @@ describe("WorkoutRepository", () => {
       const mockDb = {
         select: vi
           .fn()
-          // 1st: fetch workout
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
-          // 2nd: check friendship — accepted friendship found
           .mockReturnValueOnce(makeSelectChain([{ id: "friendship-1" }]))
-          // 3rd: fetch exercises
-          .mockReturnValueOnce(makeExercisesChain(mockExercises)),
+          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -216,9 +298,7 @@ describe("WorkoutRepository", () => {
       const mockDb = {
         select: vi
           .fn()
-          // 1st: fetch workout
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
-          // 2nd: check friendship — no accepted friendship
           .mockReturnValueOnce(makeSelectChain([])),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -227,7 +307,6 @@ describe("WorkoutRepository", () => {
       const result = await repo.getById("wo-1", "stranger-id");
 
       expect(result).toBeNull();
-      // Exercises should never be fetched after access is denied
       expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
@@ -243,6 +322,27 @@ describe("WorkoutRepository", () => {
       expect(result).toBeNull();
     });
 
+    it("should grant access to public workout for any user", async () => {
+      const publicWorkout = {
+        ...baseWorkout,
+        createdBy: "owner-id",
+        visibility: "public" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([publicWorkout]))
+          .mockReturnValueOnce(makeExercisesByWorkoutChain(mockExercises)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "stranger-id");
+
+      expect(result).not.toBeNull();
+      expect(result?.exercises).toEqual(mockExercises);
+    });
+
     it("should return null when workout does not exist", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValueOnce(makeSelectChain([])),
@@ -256,57 +356,185 @@ describe("WorkoutRepository", () => {
     });
   });
 
-  describe("create", () => {
-    it("should create a workout", async () => {
-      const mockCreatedWorkout = {
-        ...baseWorkout,
-        name: "New Workout",
-        estimatedDurationMinutes: 30,
-      };
-      const mockDb = {
-        insert: vi.fn().mockReturnValue({
-          values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([mockCreatedWorkout]),
-          }),
+  describe("createWithExercises", () => {
+    it("should insert workout and nested exercises in a single transaction", async () => {
+      const created = { ...baseWorkout, id: "wo-new", name: "New" };
+      const insertExercises = vi.fn().mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      });
+      const insertWorkouts = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([created]),
         }),
+      });
+      const tx = {
+        insert: vi.fn().mockImplementation(() => {
+          // First call — workouts; second call — workoutExercises
+          if (insertWorkouts.mock.calls.length === 0) return insertWorkouts();
+          return insertExercises();
+        }),
+        select: vi
+          .fn()
+          .mockReturnValue(makeExercisesByWorkoutChain(mockExercises)),
+      };
+
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      const result = await repo.create("user-1", {
-        name: "New Workout",
-        visibility: "private",
-        estimatedDurationMinutes: 30,
+      const result = await repo.createWithExercises("user-1", {
+        name: "New",
+        exercises: [
+          {
+            exerciseId: "ex-1",
+            sortOrder: 0,
+            targetSets: 3,
+            targetRepsMin: 8,
+            targetRepsMax: 10,
+          },
+        ],
       });
 
-      expect(result).toEqual(mockCreatedWorkout);
+      expect(result.id).toBe("wo-new");
+      expect(result.exercises).toEqual(mockExercises);
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+      // workouts insert + workoutExercises insert
+      expect(tx.insert).toHaveBeenCalledTimes(2);
+    });
+
+    it("should insert only the workout when exercises array is empty", async () => {
+      const created = { ...baseWorkout, id: "wo-new", name: "New" };
+      const insertWorkouts = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([created]),
+        }),
+      });
+      const tx = {
+        insert: vi.fn().mockImplementation(() => insertWorkouts()),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.createWithExercises("user-1", {
+        name: "New",
+        exercises: [],
+      });
+
+      expect(result.exercises).toEqual([]);
+      // Only workouts insert called
+      expect(tx.insert).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("update", () => {
-    it("should update a workout owned by the user", async () => {
-      const mockUpdatedWorkout = { ...baseWorkout, name: "Updated Workout" };
-      const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+    it("should update metadata only when exercises is omitted", async () => {
+      const updated = { ...baseWorkout, name: "Updated" };
+      const tx = {
         update: vi.fn().mockReturnValue({
           set: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([mockUpdatedWorkout]),
+              returning: vi.fn().mockResolvedValue([updated]),
             }),
           }),
         }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        delete: vi.fn(),
+        insert: vi.fn(),
+      };
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.update("wo-1", "user-1", { name: "Updated" });
+
+      expect(result?.name).toBe("Updated");
+      expect(tx.delete).not.toHaveBeenCalled();
+      expect(tx.insert).not.toHaveBeenCalled();
+    });
+
+    it("should full-replace exercises when array provided", async () => {
+      const updated = { ...baseWorkout };
+      const tx = {
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([updated]),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+        select: vi
+          .fn()
+          .mockReturnValue(makeExercisesByWorkoutChain(mockExercises)),
+      };
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
       const result = await repo.update("wo-1", "user-1", {
-        name: "Updated Workout",
+        name: "Updated",
+        exercises: [
+          {
+            exerciseId: "ex-2",
+            sortOrder: 0,
+            targetRepsMin: 5,
+            targetRepsMax: 8,
+          },
+        ],
       });
 
-      expect(result).toEqual(mockUpdatedWorkout);
+      expect(result?.exercises).toEqual(mockExercises);
+      expect(tx.delete).toHaveBeenCalledTimes(1);
+      expect(tx.insert).toHaveBeenCalledTimes(1);
     });
 
-    it("should return null when trying to update workout that does not exist", async () => {
+    it("should skip exercises insert when full-replacement array is empty", async () => {
+      const tx = {
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([baseWorkout]),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+        insert: vi.fn(),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.update("wo-1", "user-1", { exercises: [] });
+
+      expect(result?.exercises).toEqual([]);
+      expect(tx.delete).toHaveBeenCalledTimes(1);
+      expect(tx.insert).not.toHaveBeenCalled();
+    });
+
+    it("should return null when workout does not exist", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
@@ -314,13 +542,13 @@ describe("WorkoutRepository", () => {
 
       const repo = new WorkoutRepository();
       const result = await repo.update("nonexistent", "user-1", {
-        name: "Updated Name",
+        name: "X",
       });
 
       expect(result).toBeNull();
     });
 
-    it("should return null when trying to update workout not owned by user", async () => {
+    it("should return null when caller is not the owner", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
       };
@@ -328,10 +556,85 @@ describe("WorkoutRepository", () => {
 
       const repo = new WorkoutRepository();
       const result = await repo.update("wo-1", "different-user", {
-        name: "Updated Name",
+        name: "X",
       });
 
       expect(result).toBeNull();
+    });
+
+    it("should update description, visibility, and estimatedDurationMinutes together", async () => {
+      const updated = {
+        ...baseWorkout,
+        description: "new desc",
+        visibility: "friends" as const,
+        estimatedDurationMinutes: 75,
+      };
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([updated]),
+        }),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        delete: vi.fn(),
+        insert: vi.fn(),
+      };
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", {
+        description: "new desc",
+        visibility: "friends",
+        estimatedDurationMinutes: 75,
+      });
+
+      // The .set() call should include all three metadata fields plus updatedAt
+      const setArg = setSpy.mock.calls[0][0];
+      expect(setArg.description).toBe("new desc");
+      expect(setArg.visibility).toBe("friends");
+      expect(setArg.estimatedDurationMinutes).toBe(75);
+    });
+
+    it("should default targetRepsMin/Max to 1 when omitted in nested exercises", async () => {
+      const insertSpy = vi.fn().mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([baseWorkout]),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+        insert: insertSpy,
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", {
+        exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
+      });
+
+      // Drizzle insert chain: insert(table) -> values(rows)
+      const valuesArg = insertSpy.mock.results[0].value.values.mock.calls[0][0];
+      expect(valuesArg[0].targetRepsMin).toBe(1);
+      expect(valuesArg[0].targetRepsMax).toBe(1);
+      expect(valuesArg[0].restSeconds).toBe(90);
+      expect(valuesArg[0].supersetGroup).toBeNull();
     });
   });
 
@@ -353,7 +656,7 @@ describe("WorkoutRepository", () => {
       expect(result).toBe(true);
     });
 
-    it("should return false when trying to delete workout that does not exist", async () => {
+    it("should return false when workout does not exist", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
@@ -365,7 +668,7 @@ describe("WorkoutRepository", () => {
       expect(result).toBe(false);
     });
 
-    it("should return false when trying to delete workout not owned by user", async () => {
+    it("should return false when caller is not the owner", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
       };
@@ -375,6 +678,38 @@ describe("WorkoutRepository", () => {
       const result = await repo.delete("wo-1", "different-user");
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("getQuota", () => {
+    it("should return used count + tier limit when subscription is active", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(7))
+          .mockReturnValueOnce(makeQuotaTierChain(50)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const quota = await repo.getQuota("user-1");
+
+      expect(quota).toEqual({ used: 7, limit: 50 });
+    });
+
+    it("should return limit=null when no active subscription exists", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(0))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const quota = await repo.getQuota("user-1");
+
+      expect(quota).toEqual({ used: 0, limit: null });
     });
   });
 });

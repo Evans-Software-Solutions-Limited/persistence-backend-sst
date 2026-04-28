@@ -1,16 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Create mock repository that can be controlled from tests
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
-  create: vi.fn(),
+  createWithExercises: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  getQuota: vi.fn(),
 };
 
-// Mock Supabase auth utilities
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -33,7 +32,6 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-// Mock WorkoutRepository class - this is what the service will instantiate
 vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
@@ -41,20 +39,16 @@ vi.mock("../../../repositories/workoutRepository", () => ({
 describe("WorkoutsDeleteHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Set default mock to return true (successful delete)
     workoutRepositoryMocks.delete.mockResolvedValue(true);
   });
 
   describe("unauthenticated requests", () => {
-    it("should require authentication to delete", async () => {
+    it("should require authentication", async () => {
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
       const response = await workoutsDeleteHandler.handle(
-        new Request("http://localhost/workouts/123", {
-          method: "DELETE",
-        }),
+        new Request("http://localhost/workouts/123", { method: "DELETE" }),
       );
-
       expect(response.status).toBe(401);
     });
 
@@ -66,11 +60,10 @@ describe("WorkoutsDeleteHandler", () => {
           method: "DELETE",
         }),
       );
-
       expect(response.status).toBe(401);
     });
 
-    it("should reject with invalid authorization header format", async () => {
+    it("should reject invalid authorization header", async () => {
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
       const response = await workoutsDeleteHandler.handle(
@@ -79,13 +72,12 @@ describe("WorkoutsDeleteHandler", () => {
           headers: { authorization: "InvalidToken" },
         }),
       );
-
       expect(response.status).toBe(401);
     });
   });
 
   describe("authenticated requests", () => {
-    it("should return 204 when workout deleted successfully", async () => {
+    it("should return 204 on successful delete", async () => {
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
       const response = await workoutsDeleteHandler.handle(
@@ -94,11 +86,10 @@ describe("WorkoutsDeleteHandler", () => {
           headers: { authorization: "Bearer test-token" },
         }),
       );
-
       expect(response.status).toBe(204);
     });
 
-    it("should return 403 when user does not own the workout", async () => {
+    it("should return 404 when repo returns false (not found / not owner)", async () => {
       workoutRepositoryMocks.delete.mockResolvedValue(false);
       const { workoutsDeleteHandler } =
         await import("../workoutsDeleteHandler");
@@ -108,8 +99,22 @@ describe("WorkoutsDeleteHandler", () => {
           headers: { authorization: "Bearer test-token" },
         }),
       );
+      expect(response.status).toBe(404);
+    });
 
-      expect(response.status).toBe(403);
+    it("should pass id and userId through to repo", async () => {
+      const { workoutsDeleteHandler } =
+        await import("../workoutsDeleteHandler");
+      await workoutsDeleteHandler.handle(
+        new Request("http://localhost/workouts/workout-xyz", {
+          method: "DELETE",
+          headers: { authorization: "Bearer test-token" },
+        }),
+      );
+      expect(workoutRepositoryMocks.delete).toHaveBeenCalledWith(
+        "workout-xyz",
+        "test-user-id",
+      );
     });
   });
 });

@@ -81,6 +81,7 @@ All routes live under `/workouts` on the core Elysia API. Auth via Supabase JWT 
 ### `GET /workouts` — list
 
 **Query params:**
+
 - `type?: "mine" | "assigned" | "default"` — default `mine`
 - `limit?: number` — default 20
 - `offset?: number` — default 0
@@ -92,6 +93,7 @@ All routes live under `/workouts` on the core Elysia API. Auth via Supabase JWT 
 Each `Workout` in the list includes its full `exercises[]` array with joined `exercise` metadata. The list is read-heavy (~20 workouts × ~6 exercises each = ~120 junction rows joined to exercises) but avoids N+1 on the list screen — a single round-trip renders the entire list with `WorkoutCard` summaries.
 
 **Filter semantics:**
+
 - `mine` — `workouts.createdBy = userId`. Returns all visibilities (you see your own private workouts).
 - `assigned` — workouts referenced by `workout_assignments` rows where `clientId = userId`. Returns regardless of workout visibility (an assigned workout is intended to be visible to its assignee).
 - `default` — `workouts.visibility = 'public'` AND `createdBy IS NULL OR createdBy != userId` (excludes your own public workouts; those show under `mine`).
@@ -101,6 +103,7 @@ Each `Workout` in the list includes its full `exercises[]` array with joined `ex
 **Response:** `{ data: Workout }` or `404` when the workout doesn't exist or the user lacks visibility access.
 
 Visibility access rules:
+
 - Owner (`createdBy = userId`) — always allowed.
 - `visibility = 'public'` — allowed.
 - `visibility = 'friends'` — allowed iff a row exists in `friendships` with `(userId, ownerId)` or `(ownerId, userId)` and `status = 'accepted'`.
@@ -247,6 +250,7 @@ The picker re-uses the **M0 `ExerciseListContainer`** under the hood — it alre
 ## Visibility & access control
 
 Implemented in `WorkoutRepository.getById` (already shipped). M2 verifies under test:
+
 - Owner sees private / friends / public.
 - Friend sees `friends` (bidirectional `friendships.status = 'accepted'`).
 - Stranger sees only `public`.

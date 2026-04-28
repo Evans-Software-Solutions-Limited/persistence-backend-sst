@@ -18,14 +18,31 @@ export const workoutsListHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { type, limit, offset } = ctx.query;
 
-      const workouts = await ctx.WorkoutRepository.list(userId, {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        type: (type as any) || "mine",
-        limit: limit ?? 20,
-        offset: offset ?? 0,
+      const effectiveLimit = limit ?? 20;
+      const effectiveOffset = offset ?? 0;
+
+      const result = await ctx.WorkoutRepository.list(userId, {
+        type: type ?? "mine",
+        limit: effectiveLimit,
+        offset: effectiveOffset,
       });
 
-      return { data: workouts };
+      const meta: {
+        pagination: { limit: number; offset: number; total: number };
+        quota?: { used: number; limit: number | null };
+      } = {
+        pagination: {
+          limit: effectiveLimit,
+          offset: effectiveOffset,
+          total: result.total,
+        },
+      };
+
+      if (result.quota) {
+        meta.quota = result.quota;
+      }
+
+      return { data: result.workouts, meta };
     },
     {
       query: t.Object({

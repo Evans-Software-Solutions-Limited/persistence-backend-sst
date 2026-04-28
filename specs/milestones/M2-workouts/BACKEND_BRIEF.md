@@ -202,6 +202,7 @@ Use the same template M0 + M1 used. Mandatory sections:
 
 ```markdown
 ## Spec alignment
+
 - 04-workout-management/design.md § API Contract (M2 backend) — implemented
 - 04-workout-management/design.md § Domain Model — implemented (supersetGroup added)
 - 04-workout-management/requirements.md STORY-001 ACs 1.1, 1.6, 1.9 — backend
@@ -212,9 +213,11 @@ Use the same template M0 + M1 used. Mandatory sections:
 - 04-workout-management/requirements.md STORY-009 ACs 9.1–9.5 — data isolation tests
 
 ## How to view
+
 [Reference SMOKE_TEST.md steps; backend can self-verify steps 1–4 + 11 with curl]
 
 ## Test coverage
+
 [Pasted from `bun run test:unit --coverage` summary]
 ```
 
