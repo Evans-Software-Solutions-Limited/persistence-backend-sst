@@ -138,4 +138,121 @@ describe("HomePresenter", () => {
     expect(queryByTestId("home-scroll")).toBeNull();
     expect(queryByTestId("greeting-section")).toBeNull();
   });
+
+  describe("slow-loader caption (5s timer)", () => {
+    it("hides the caption while isLoading is true but the timer hasn't fired", () => {
+      const { queryByTestId } = renderHome({
+        isLoading: true,
+        showSlowLoaderCaption: false,
+      });
+      expect(queryByTestId("home-loader-caption")).toBeNull();
+    });
+
+    it("renders the caption alongside the loader once the timer fires", () => {
+      const { getByTestId } = renderHome({
+        isLoading: true,
+        showSlowLoaderCaption: true,
+      });
+      expect(getByTestId("home-loader")).toBeTruthy();
+      expect(getByTestId("home-loader-caption")).toBeTruthy();
+    });
+  });
+
+  describe("error states (STORY-005 AC 5.9)", () => {
+    const apiError = {
+      kind: "api" as const,
+      code: "timeout" as const,
+      message: "Request timed out after 10000ms",
+    };
+
+    it("renders the blocking error state when there is an error and no userName", () => {
+      const onRefresh = jest.fn();
+      const { getByTestId, getByText, queryByTestId } = renderHome({
+        viewModel: makeViewModel({ userName: null }),
+        error: apiError,
+        onRefresh,
+      });
+      expect(getByTestId("home-error-blocking")).toBeTruthy();
+      expect(getByTestId("home-error-state")).toBeTruthy();
+      // Timeout-specific copy from describeError().
+      expect(getByText("Couldn't load your dashboard")).toBeTruthy();
+      // Section tree must NOT render — the blocking state replaces it.
+      expect(queryByTestId("home-scroll")).toBeNull();
+      expect(queryByTestId("greeting-section")).toBeNull();
+    });
+
+    it("retry button on the blocking error state calls onRefresh", () => {
+      const onRefresh = jest.fn();
+      const { getByText } = renderHome({
+        viewModel: makeViewModel({ userName: null }),
+        error: apiError,
+        onRefresh,
+      });
+      fireEvent.press(getByText("Retry"));
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("falls back to a generic message for unrecognised error codes (default branch)", () => {
+      const { getByText } = renderHome({
+        viewModel: makeViewModel({ userName: null }),
+        error: { kind: "api", code: "server", message: "Something exploded" },
+      });
+      // describeError's default arm uses the upstream message when set.
+      expect(getByText("Something exploded")).toBeTruthy();
+    });
+
+    it("uses the generic copy when the upstream message is empty", () => {
+      const { getByText } = renderHome({
+        viewModel: makeViewModel({ userName: null }),
+        error: { kind: "api", code: "server", message: "" },
+      });
+      expect(
+        getByText("Something went wrong on our side. Tap Retry to try again."),
+      ).toBeTruthy();
+    });
+
+    it("renders error-code-tailored copy for unauthorized / network", () => {
+      const { getByText, rerender } = renderHome({
+        viewModel: makeViewModel({ userName: null }),
+        error: { kind: "api", code: "unauthorized", message: "401" },
+      });
+      expect(getByText("Session expired")).toBeTruthy();
+
+      rerender(
+        <HomePresenter
+          viewModel={makeViewModel({ userName: null })}
+          animationStyles={[{}, {}, {}, {}, {}]}
+          isLoading={false}
+          isRefreshing={false}
+          onRefresh={jest.fn()}
+          onUpgradePress={jest.fn()}
+          onWorkoutPress={jest.fn()}
+          onWorkoutStart={jest.fn()}
+          onViewAllWorkoutsPress={jest.fn()}
+          onViewAllProgressPress={jest.fn()}
+          onConnectHealthPress={jest.fn()}
+          error={{ kind: "api", code: "network", message: "offline" }}
+        />,
+      );
+      expect(getByText("No connection")).toBeTruthy();
+    });
+
+    it("renders the inline banner above the section tree when cache is present + error", () => {
+      const { getByTestId } = renderHome({
+        // userName non-null = cache present; error = refresh failed.
+        error: apiError,
+      });
+      expect(getByTestId("home-error-banner")).toBeTruthy();
+      // Section tree DOES render because we have cached data.
+      expect(getByTestId("home-scroll")).toBeTruthy();
+      expect(getByTestId("greeting-section")).toBeTruthy();
+    });
+
+    it("omits the inline banner when there is no error", () => {
+      const { queryByTestId, getByTestId } = renderHome();
+      expect(queryByTestId("home-error-banner")).toBeNull();
+      // Sanity: the happy-path section tree still renders.
+      expect(getByTestId("greeting-section")).toBeTruthy();
+    });
+  });
 });

@@ -38,7 +38,7 @@ describe("ExpoHealthKitAdapter", () => {
     expect(await adapter.isAvailable()).toBe(false);
   });
 
-  it("requests read + share scopes on permission request (v14 AuthDataTypes shape)", async () => {
+  it("requests the full legacy read + write scope set (v14 AuthDataTypes shape)", async () => {
     const hk = makeHealthKit();
     const adapter = new ExpoHealthKitAdapter(hk as never);
     const result = await adapter.requestPermissions();
@@ -52,13 +52,53 @@ describe("ExpoHealthKitAdapter", () => {
       { toRead?: readonly string[]; toShare?: readonly string[] },
     ];
     const [authDataTypes] = call;
-    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierStepCount");
-    expect(authDataTypes.toRead).toContain(
+
+    // Read scope mirrors `persistence-mobile/hooks/health/constants.ts`
+    // `IOS_READ_HEALTH_DATA_PERMISSIONS` plus `HEART_RATE` (V2-only,
+    // for M4 Progress prep). Brad flagged on PR #38 that the prior
+    // 4-identifier scope was missing legacy data points.
+    const expectedRead = [
+      "HKQuantityTypeIdentifierStepCount",
+      "HKQuantityTypeIdentifierDistanceWalkingRunning",
+      "HKQuantityTypeIdentifierBasalEnergyBurned",
       "HKQuantityTypeIdentifierActiveEnergyBurned",
+      "HKQuantityTypeIdentifierAppleExerciseTime",
+      "HKQuantityTypeIdentifierAppleStandTime",
+      "HKQuantityTypeIdentifierBodyMass",
+      "HKQuantityTypeIdentifierBodyFatPercentage",
+      "HKQuantityTypeIdentifierHeartRate",
+    ];
+    for (const id of expectedRead) {
+      expect(authDataTypes.toRead).toContain(id);
+    }
+
+    // Write scope mirrors legacy
+    // `IOS_WRITE_HEALTH_DATA_PERMISSIONS`: drops EXERCISE_MINUTES /
+    // STAND_TIME (HealthKit treats them as system-derived and rejects
+    // the write scope) and HEART_RATE (no V2 write path planned).
+    const expectedWrite = [
+      "HKQuantityTypeIdentifierStepCount",
+      "HKQuantityTypeIdentifierDistanceWalkingRunning",
+      "HKQuantityTypeIdentifierBasalEnergyBurned",
+      "HKQuantityTypeIdentifierActiveEnergyBurned",
+      "HKQuantityTypeIdentifierBodyMass",
+      "HKQuantityTypeIdentifierBodyFatPercentage",
+    ];
+    for (const id of expectedWrite) {
+      expect(authDataTypes.toShare).toContain(id);
+    }
+    // Defensive: read-only-on-device identifiers must NOT appear in
+    // the write scope. HealthKit will reject the whole request if
+    // they do.
+    expect(authDataTypes.toShare).not.toContain(
+      "HKQuantityTypeIdentifierAppleExerciseTime",
     );
-    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierBodyMass");
-    expect(authDataTypes.toRead).toContain("HKQuantityTypeIdentifierHeartRate");
-    expect(authDataTypes.toShare).toContain("HKQuantityTypeIdentifierBodyMass");
+    expect(authDataTypes.toShare).not.toContain(
+      "HKQuantityTypeIdentifierAppleStandTime",
+    );
+    expect(authDataTypes.toShare).not.toContain(
+      "HKQuantityTypeIdentifierHeartRate",
+    );
   });
 
   it("surfaces permission_denied when requestAuthorization rejects", async () => {

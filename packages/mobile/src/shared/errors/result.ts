@@ -35,6 +35,7 @@ export type ApiError = {
     | "unauthorized"
     | "not_found"
     | "server"
+    | "timeout"
     | "unknown";
   readonly message: string;
   readonly status?: number;

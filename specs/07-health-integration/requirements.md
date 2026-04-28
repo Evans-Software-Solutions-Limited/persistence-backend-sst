@@ -69,8 +69,8 @@ Sync health data (steps, calories, body weight, active energy) from Apple Health
 
 **Acceptance Criteria:**
 
-- [ ] AC 7.1 — On iOS device: `ExpoHealthKitAdapter` provides `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`, `requestPermissions`, `getPermissionStatus`, `isAvailable`, `disconnect`. `writeBodyWeight` returns `fail(UNAVAILABLE)` in M1 (lights up M6).
-- [ ] AC 7.2 — On iOS simulator: `SimulatorMockHealthAdapter` returns deterministic non-zero values (steps 4812, active cal 312, weight 74.5 kg, hr 62 bpm) so the StepsTile renders populated in simulator-driven smoke tests.
+- [ ] AC 7.1 — On iOS (device or simulator): `ExpoHealthKitAdapter` provides `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`, `requestPermissions`, `getPermissionStatus`, `isAvailable`, `disconnect`. The permission grant sheet covers the full legacy read + write scope (steps, walking distance, basal energy, active energy, exercise minutes, stand time, body mass, body fat %, heart rate). `writeBodyWeight` returns `fail(UNAVAILABLE)` in M1 (lights up M6).
+- [ ] AC 7.2 — On iOS simulator: HealthKit reports `isAvailable: false` and tiles render the existing "Health not available on this iOS build" copy. The earlier `SimulatorMockHealthAdapter` was removed in PR #38 follow-up — simulator builds now show live empty state honestly rather than a fixture.
 - [ ] AC 7.3 — On Android: `AndroidStubHealthAdapter` reports `isAvailable: false`; reads return `fail(UNAVAILABLE)`; dashboard renders a muted "Not available on Android yet" tile.
 - [ ] AC 7.4 — Selection logic lives in `adapters/health/index.ts` — `createHealthAdapter()` picks the correct implementation once at provider construction.
 - [ ] AC 7.5 — Denied / not-determined permission state renders a "Connect Health" CTA tile on the dashboard; tap navigates toward `/health-permissions` (destination is a placeholder until Phase 4 ships the screen).

@@ -53,7 +53,24 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   params?: Record<string, string | number | string[] | undefined>;
+  /**
+   * Per-request client-side timeout in ms. When set, the request is
+   * aborted via AbortController if it doesn't settle in time and the
+   * adapter returns `{ code: "timeout" }`. Off by default — only paths
+   * with a known UX cost of an open-ended hang opt in (see getDashboard).
+   */
+  timeoutMs?: number;
 };
+
+/**
+ * Default client-side timeout for the dashboard fetch. The SST dev stage
+ * waits out AWS's full Lambda timeout (~30s) when the proxy target isn't
+ * running, so without this the cold-start loader spins for half a minute.
+ * Tuned to 10s — aggressive enough to surface real connectivity issues,
+ * forgiving enough that a cellular round-trip on the live stage normally
+ * settles inside the window.
+ */
+export const DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * SST API adapter implementing ApiPort.
@@ -123,7 +140,7 @@ export class SSTApiAdapter implements ApiPort {
     path: string,
     options: RequestOptions = {},
   ): Promise<Result<T, ApiError>> {
-    const { method = "GET", body, params } = options;
+    const { method = "GET", body, params, timeoutMs } = options;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -136,11 +153,22 @@ export class SSTApiAdapter implements ApiPort {
       }
     }
 
+    // Per-request abort wiring. Only allocated when a caller opts into
+    // a timeout — fetch otherwise behaves exactly as before, so non-
+    // dashboard endpoints are unaffected by this change. The timer is
+    // always cleared in `finally`, even if the request rejects.
+    const controller = timeoutMs != null ? new AbortController() : null;
+    const timeoutHandle =
+      controller != null
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+
     try {
       const response = await fetch(this.buildUrl(path, params), {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller?.signal,
       });
 
       if (!response.ok) {
@@ -171,11 +199,28 @@ export class SSTApiAdapter implements ApiPort {
       const json = (await response.json()) as T;
       return ok(json);
     } catch (err) {
+      // AbortError is fetch's signal that the controller fired. Surface
+      // it as a distinct `timeout` code so the UI can render a focused
+      // "couldn't load — check your connection" state, separate from
+      // genuine network errors (DNS, TLS, etc.) which keep `network`.
+      const isAbort =
+        controller != null &&
+        ((err instanceof Error && err.name === "AbortError") ||
+          controller.signal.aborted);
+      if (isAbort) {
+        return fail({
+          kind: "api",
+          code: "timeout",
+          message: `Request timed out after ${timeoutMs}ms`,
+        });
+      }
       return fail({
         kind: "api",
         code: "network",
         message: err instanceof Error ? err.message : "Network error",
       });
+    } finally {
+      if (timeoutHandle != null) clearTimeout(timeoutHandle);
     }
   }
 
@@ -516,7 +561,9 @@ export class SSTApiAdapter implements ApiPort {
    *       · requirements.md STORY-005 AC 5.8, STORY-007 AC 7.1
    */
   async getDashboard(): Promise<Result<DashboardPayload, ApiError>> {
-    return this.requestEnvelope<DashboardPayload>("/dashboard");
+    return this.requestEnvelope<DashboardPayload>("/dashboard", {
+      timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+    });
   }
 
   // -- Goals --
