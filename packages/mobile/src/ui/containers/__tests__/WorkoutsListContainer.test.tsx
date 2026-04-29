@@ -229,7 +229,7 @@ describe("WorkoutsListContainer", () => {
     storage.cacheWorkoutsList(
       "test-user",
       "mine",
-      [buildWorkout({ id: "w-1" })],
+      [buildWorkout({ id: "w-1", name: "Push Day" })],
       { used: 3, limit: 3 },
     );
     storage.cacheWorkoutsList("test-user", "assigned", [], null);
@@ -239,6 +239,12 @@ describe("WorkoutsListContainer", () => {
     const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
+
+    // Wait for the cached payload to render (proves auth bootstrap fired
+    // and the quota-bearing snapshot has propagated). Without this anchor
+    // findByText("Upgrade Now") could time out in CI before the multi-
+    // step chain (auth setTimeout → setSnapshot → viewModel memo) runs.
+    expect(await findByText("Push Day")).toBeTruthy();
 
     // Click "Upgrade Now" inside the quota indicator — that's the
     // explicit at-limit path. The QuickActions Create button is
