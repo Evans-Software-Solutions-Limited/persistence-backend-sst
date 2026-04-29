@@ -36,6 +36,12 @@ const COPY = {
     title: "Edit Workout",
     description: "Workout editor follows in the next mobile PR.",
   },
+  "exercise-creator": {
+    icon: "barbell-outline" as const,
+    title: "Create Exercise",
+    description:
+      "Custom exercise creation from the workout picker arrives in milestone M5.",
+  },
   subscription: {
     icon: "lock-closed-outline" as const,
     title: "Upgrade Subscription",
