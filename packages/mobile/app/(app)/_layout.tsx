@@ -51,6 +51,14 @@ export default function AppLayout() {
             presentation: "modal",
           }}
         />
+        <Stack.Screen
+          name="workouts/create"
+          options={{
+            title: "New workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
       </Stack>
     </ExerciseFiltersProvider>
   );
