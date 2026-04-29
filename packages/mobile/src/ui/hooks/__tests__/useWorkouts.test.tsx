@@ -146,6 +146,47 @@ describe("useWorkouts", () => {
     });
   });
 
+  it("dedupes concurrent refresh() calls onto a single in-flight promise per user", async () => {
+    // Slow-down the in-memory API so that two refresh() calls overlap
+    // and the second one hits the inFlightRef early-return branch.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutsList("test-user", "mine", [], null);
+    storage.cacheWorkoutsList("test-user", "assigned", [], null);
+    storage.cacheWorkoutsList("test-user", "default", [], null);
+
+    const originalGetWorkouts = api.getWorkouts.bind(api);
+    const getWorkoutsSpy = jest
+      .spyOn(api, "getWorkouts")
+      .mockImplementation(async (...args) => {
+        // Yield a microtask so the second refresh() can register before
+        // the first resolves.
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        return originalGetWorkouts(...args);
+      });
+
+    const adapters = makeAdapters(api, storage);
+    const { result } = renderHook(() => useWorkouts(), {
+      wrapper: wrap(adapters),
+    });
+
+    // Wait for auth bootstrap so userId is set.
+    await waitFor(() => {
+      expect(result.current.refresh).toBeDefined();
+    });
+
+    await act(async () => {
+      const a = result.current.refresh();
+      const b = result.current.refresh();
+      await Promise.all([a, b]);
+    });
+
+    // Both calls should share one round-trip — getWorkouts fires three
+    // times (one per section) for the FIRST refresh, plus zero for the
+    // second (deduped).
+    expect(getWorkoutsSpy).toHaveBeenCalledTimes(3);
+  });
+
   it("surfaces an api error without clobbering cached payload", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

@@ -155,4 +155,56 @@ describe("WorkoutPopover", () => {
     fireEvent.press(getByTestId("close-button"));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("renders an exercise thumbnail Image when the joined exercise has a thumbnailUrl", () => {
+    const withThumbnail: Workout = {
+      ...baseWorkout,
+      exercises: [
+        {
+          ...baseWorkout.exercises[0],
+          exercise: baseWorkout.exercises[0].exercise
+            ? {
+                ...baseWorkout.exercises[0].exercise,
+                thumbnailUrl: "https://example.com/bench.jpg",
+              }
+            : null,
+        },
+      ],
+    };
+    const { UNSAFE_getAllByType } = renderWithTheme(
+      <WorkoutPopover
+        visible={true}
+        workout={withThumbnail}
+        isLoading={false}
+        error={null}
+        onClose={() => {}}
+        onStartWorkout={() => {}}
+      />,
+    );
+    // Image component renders when thumbnailUrl is set.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Image = require("react-native").Image;
+    expect(UNSAFE_getAllByType(Image).length).toBeGreaterThan(0);
+  });
+
+  it("falls back to 'Exercise' when the joined exercise reference is null (deleted exercise)", () => {
+    const orphanExerciseWorkout: Workout = {
+      ...baseWorkout,
+      exercises: [{ ...baseWorkout.exercises[0], exercise: null }],
+    };
+    const { getByText, queryByText } = renderWithTheme(
+      <WorkoutPopover
+        visible={true}
+        workout={orphanExerciseWorkout}
+        isLoading={false}
+        error={null}
+        onClose={() => {}}
+        onStartWorkout={() => {}}
+      />,
+    );
+    expect(getByText("Exercise")).toBeTruthy();
+    // Category line is gated on `we.exercise && ...`, so absent for
+    // the orphan-exercise case.
+    expect(queryByText(/strength/)).toBeNull();
+  });
 });

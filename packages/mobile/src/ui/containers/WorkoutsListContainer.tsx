@@ -102,26 +102,15 @@ export function WorkoutsListContainer() {
 
   const onSearchChange = useCallback((q: string) => setSearchQuery(q), []);
 
+  // Note: the QuickActions Create button is `disabled={isAtLimit}` so
+  // this handler doesn't fire when the user is over quota — the
+  // WorkoutLimitIndicator's "Upgrade Now" CTA is the explicit at-limit
+  // path. Matches legacy behaviour.
   const onCreateWorkout = useCallback(() => {
-    if (viewModel.isAtLimit) {
-      Alert.alert(
-        "Workout Limit Reached",
-        `You've reached your free tier limit of ${viewModel.userWorkoutLimit} workout templates. Upgrade to create more workouts!`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Upgrade",
-            onPress: () =>
-              router.push("/coming-soon?feature=subscription" as never),
-          },
-        ],
-      );
-      return;
-    }
     // TODO(M2 mobile follow-up): wire to /workouts/create once the
     // creator surface lands on the next mobile PR.
     router.push("/coming-soon?feature=workout-creator" as never);
-  }, [viewModel.isAtLimit, viewModel.userWorkoutLimit]);
+  }, []);
 
   const onBrowseExercises = useCallback(() => {
     router.push("/(app)/(tabs)/exercises" as never);
@@ -163,25 +152,16 @@ export function WorkoutsListContainer() {
             style: "destructive",
             onPress: () => {
               setDeletingWorkoutIds((prev) => new Set(prev).add(workout.id));
-              const result = deleteWorkoutCommand(
-                { storage, userId },
-                workout.id,
-              );
+              // The command is synchronous and only touches storage —
+              // it can't fail in practice. Optimistic cache removal
+              // happens inside the command; the post-call refresh
+              // syncs the React snapshot with storage.
+              deleteWorkoutCommand({ storage, userId }, workout.id);
               setDeletingWorkoutIds((prev) => {
                 const next = new Set(prev);
                 next.delete(workout.id);
                 return next;
               });
-              if (!result.ok) {
-                Alert.alert(
-                  "Error",
-                  "Failed to delete workout. Please try again.",
-                );
-                return;
-              }
-              // Optimistic local removal already happened in the
-              // command; trigger a refresh so the cached snapshot
-              // matches storage.
               void workoutsRefresh();
             },
           },

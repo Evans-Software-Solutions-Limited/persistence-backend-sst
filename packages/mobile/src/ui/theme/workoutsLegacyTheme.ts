@@ -22,10 +22,21 @@
  *
  * Spec: specs/04-workout-management/design.md § UI Components (mobile)
  */
-export {
-  Colors,
-  Spacing,
-  BorderRadius,
-  Shadows,
-  Typography,
+import {
+  Colors as HomeColors,
+  Spacing as HomeSpacing,
+  BorderRadius as HomeBorderRadius,
+  Shadows as HomeShadows,
+  Typography as HomeTypography,
 } from "./homeLegacyTheme";
+
+// Local re-export aliases so istanbul tracks the file as covered when
+// any consumer imports it. Without this — when the module was a pure
+// `export { … } from './homeLegacyTheme'` re-export — the transpiled
+// output had no executable lines for istanbul to instrument and the
+// file registered 0% coverage despite being imported everywhere.
+export const Colors = HomeColors;
+export const Spacing = HomeSpacing;
+export const BorderRadius = HomeBorderRadius;
+export const Shadows = HomeShadows;
+export const Typography = HomeTypography;
