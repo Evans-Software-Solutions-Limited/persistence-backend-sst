@@ -1,12 +1,5 @@
-import { ComingSoon } from "../../../src/ui/components";
+import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 
 export default function WorkoutsTab() {
-  return (
-    <ComingSoon
-      icon="barbell-outline"
-      title="Workouts"
-      description="Workout builder and active sessions arrive in milestone 04."
-      testID="workouts-tab"
-    />
-  );
+  return <WorkoutsListContainer />;
 }

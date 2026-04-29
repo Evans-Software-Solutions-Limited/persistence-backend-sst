@@ -12,16 +12,22 @@ import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   ApiPort,
   ApiProfile,
-  ApiWorkout,
   ApiSession,
   ApiExerciseSet,
   ApiGoal,
-  CreateWorkoutInput,
+  GetWorkoutsParams,
+  GetWorkoutsResult,
   CreateSessionInput,
   UpdateSessionInput,
   CreateSetInput,
   CreateGoalInput,
 } from "@/domain/ports/api.port";
+import type {
+  CreateWorkoutInput,
+  UpdateWorkoutInput,
+  Workout,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -31,7 +37,8 @@ import type { PaginatedResult, PaginationParams } from "@/shared/types";
  */
 export class InMemoryApiAdapter implements ApiPort {
   public profiles: ApiProfile[] = [];
-  public workouts: ApiWorkout[] = [];
+  public workouts: Workout[] = [];
+  public workoutQuota: WorkoutQuota | null = null;
   public sessions: ApiSession[] = [];
   public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
@@ -75,11 +82,24 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.getProfile();
   }
 
-  async getWorkouts(_params?: PaginationParams) {
-    return this.mayFail(this.workouts);
+  async getWorkouts(
+    params?: GetWorkoutsParams,
+  ): Promise<Result<GetWorkoutsResult, ApiError>> {
+    const type = params?.type ?? "mine";
+    const filtered = this.workouts.filter((w) => {
+      if (type === "mine") return w.createdBy === "test-user";
+      if (type === "default")
+        return w.visibility === "public" && w.createdBy !== "test-user";
+      return true; // assigned: in-memory fake doesn't track assignments
+    });
+    return this.mayFail<GetWorkoutsResult>({
+      workouts: filtered,
+      total: filtered.length,
+      quota: type === "mine" ? this.workoutQuota : null,
+    });
   }
 
-  async getWorkout(id: string) {
+  async getWorkout(id: string): Promise<Result<Workout, ApiError>> {
     const w = this.workouts.find((w) => w.id === id);
     if (!w)
       return fail<ApiError>({
@@ -90,22 +110,42 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(w);
   }
 
-  async createWorkout(data: CreateWorkoutInput) {
-    const workout: ApiWorkout = {
-      id: `workout-${this.workouts.length + 1}`,
+  async createWorkout(
+    data: CreateWorkoutInput,
+  ): Promise<Result<Workout, ApiError>> {
+    const id = `workout-${this.workouts.length + 1}`;
+    const now = new Date().toISOString();
+    const workout: Workout = {
+      id,
       name: data.name,
       description: data.description ?? null,
       createdBy: "test-user",
       visibility: data.visibility ?? "private",
-      estimatedDurationMinutes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      estimatedDurationMinutes: data.estimatedDurationMinutes ?? 30,
+      exercises: data.exercises.map((ex, idx) => ({
+        id: `we-${id}-${idx}`,
+        exerciseId: ex.exerciseId,
+        sortOrder: ex.sortOrder,
+        supersetGroup: ex.supersetGroup ?? null,
+        targetSets: ex.targetSets ?? null,
+        targetRepsMin: ex.targetRepsMin ?? 1,
+        targetRepsMax: ex.targetRepsMax ?? 1,
+        targetDurationSeconds: ex.targetDurationSeconds ?? null,
+        restSeconds: ex.restSeconds ?? 90,
+        notes: ex.notes ?? null,
+        exercise: null,
+      })),
+      createdAt: now,
+      updatedAt: now,
     };
     this.workouts.push(workout);
     return this.mayFail(workout);
   }
 
-  async updateWorkout(id: string, data: Partial<CreateWorkoutInput>) {
+  async updateWorkout(
+    id: string,
+    data: UpdateWorkoutInput,
+  ): Promise<Result<Workout, ApiError>> {
     const idx = this.workouts.findIndex((w) => w.id === id);
     if (idx === -1)
       return fail<ApiError>({
@@ -115,15 +155,37 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     const result = this.mayFail(undefined);
     if (!result.ok) return fail<ApiError>(result.error);
-    this.workouts[idx] = {
-      ...this.workouts[idx],
-      ...data,
+    const existing = this.workouts[idx];
+    const updated: Workout = {
+      ...existing,
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.visibility !== undefined && { visibility: data.visibility }),
+      ...(data.estimatedDurationMinutes !== undefined && {
+        estimatedDurationMinutes: data.estimatedDurationMinutes,
+      }),
+      ...(data.exercises !== undefined && {
+        exercises: data.exercises.map((ex, exIdx) => ({
+          id: `we-${id}-${exIdx}`,
+          exerciseId: ex.exerciseId,
+          sortOrder: ex.sortOrder,
+          supersetGroup: ex.supersetGroup ?? null,
+          targetSets: ex.targetSets ?? null,
+          targetRepsMin: ex.targetRepsMin ?? 1,
+          targetRepsMax: ex.targetRepsMax ?? 1,
+          targetDurationSeconds: ex.targetDurationSeconds ?? null,
+          restSeconds: ex.restSeconds ?? 90,
+          notes: ex.notes ?? null,
+          exercise: null,
+        })),
+      }),
       updatedAt: new Date().toISOString(),
     };
-    return ok(this.workouts[idx]);
+    this.workouts[idx] = updated;
+    return ok(updated);
   }
 
-  async deleteWorkout(id: string) {
+  async deleteWorkout(id: string): Promise<Result<void, ApiError>> {
     this.workouts = this.workouts.filter((w) => w.id !== id);
     return this.mayFail(undefined);
   }

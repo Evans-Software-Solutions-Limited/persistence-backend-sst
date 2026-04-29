@@ -21,12 +21,19 @@ import type {
   ApiExercise,
   ApiExerciseSet,
   ApiGoal,
-  CreateWorkoutInput,
+  GetWorkoutsParams,
+  GetWorkoutsResult,
   CreateSessionInput,
   UpdateSessionInput,
   CreateSetInput,
   CreateGoalInput,
 } from "@/domain/ports/api.port";
+import type {
+  CreateWorkoutInput,
+  UpdateWorkoutInput,
+  Workout,
+  WorkoutQuota,
+} from "@/domain/models/workout";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -254,30 +261,57 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
-  // -- Workouts --
-  async getWorkouts(params?: PaginationParams) {
-    return this.requestEnvelope<ApiWorkout[]>("/workouts", { params });
+  // -- Workouts (M2) --
+  async getWorkouts(
+    params?: GetWorkoutsParams,
+  ): Promise<Result<GetWorkoutsResult, ApiError>> {
+    const queryParams: Record<string, string | number | undefined> = {};
+    if (params?.type) queryParams.type = params.type;
+    if (params?.limit !== undefined) queryParams.limit = params.limit;
+    if (params?.offset !== undefined) queryParams.offset = params.offset;
+
+    // Backend list endpoint is double-envelope `{ data, meta }`. We
+    // request the raw envelope (skipping `requestEnvelope`'s single-
+    // unwrap) so the meta block is preserved.
+    const result = await this.request<{
+      data: ApiWorkout[];
+      meta: {
+        pagination: { limit: number; offset: number; total: number };
+        quota?: WorkoutQuota;
+      };
+    }>("/workouts", { params: queryParams });
+    if (!result.ok) return result;
+    return ok({
+      workouts: result.value.data,
+      total: result.value.meta.pagination.total,
+      quota: result.value.meta.quota ?? null,
+    });
   }
 
-  async getWorkout(id: string) {
-    return this.requestEnvelope<ApiWorkout>(`/workouts/${id}`);
+  async getWorkout(id: string): Promise<Result<Workout, ApiError>> {
+    return this.requestEnvelope<Workout>(`/workouts/${id}`);
   }
 
-  async createWorkout(data: CreateWorkoutInput) {
-    return this.requestEnvelope<ApiWorkout>("/workouts", {
+  async createWorkout(
+    data: CreateWorkoutInput,
+  ): Promise<Result<Workout, ApiError>> {
+    return this.requestEnvelope<Workout>("/workouts", {
       method: "POST",
       body: data,
     });
   }
 
-  async updateWorkout(id: string, data: Partial<CreateWorkoutInput>) {
-    return this.requestEnvelope<ApiWorkout>(`/workouts/${id}`, {
+  async updateWorkout(
+    id: string,
+    data: UpdateWorkoutInput,
+  ): Promise<Result<Workout, ApiError>> {
+    return this.requestEnvelope<Workout>(`/workouts/${id}`, {
       method: "PATCH",
       body: data,
     });
   }
 
-  async deleteWorkout(id: string) {
+  async deleteWorkout(id: string): Promise<Result<void, ApiError>> {
     return this.request<void>(`/workouts/${id}`, { method: "DELETE" });
   }
 

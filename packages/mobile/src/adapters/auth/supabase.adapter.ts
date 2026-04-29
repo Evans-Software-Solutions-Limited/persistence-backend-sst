@@ -26,6 +26,28 @@ const supabaseAnonKey =
   "";
 
 /**
+ * Per-provider OAuth query params forwarded to the upstream provider via
+ * Supabase's `signInWithOAuth({ options: { queryParams } })`. Forces the
+ * provider's account picker on every sign-in so that signing out and
+ * back in lets the user choose a different account — without these
+ * hints, the system browser's provider-side cookie was silently
+ * re-authenticating the previously-signed-in account.
+ *
+ * - Google: `prompt=select_account` is the canonical hint.
+ * - Facebook: `auth_type=reauthenticate` re-asks for credentials.
+ * - Apple: no equivalent hint — Sign in with Apple handles account
+ *   selection natively, so no params needed.
+ */
+const QUERY_PARAMS_BY_PROVIDER: Record<
+  OAuthProvider,
+  Record<string, string> | undefined
+> = {
+  google: { prompt: "select_account" },
+  facebook: { auth_type: "reauthenticate" },
+  apple: undefined,
+};
+
+/**
  * Supabase auth adapter implementing AuthPort.
  *
  * Used ONLY for authentication (session/token management).
@@ -127,11 +149,20 @@ export class SupabaseAuthAdapter implements AuthPort {
       // Linking.createURL handles both Expo Go (exp://) and production (persistencemobile://)
       const redirectUrl = Linking.createURL("auth/callback");
 
+      // `prompt=select_account` (Google) / `auth_type=reauthenticate`
+      // (Facebook) tells the provider to show the account picker on
+      // every sign-in instead of silently re-using the cached login.
+      // Without this, after Supabase sign-out the system browser's
+      // provider-side cookie was still valid → the next OAuth start
+      // logged the user back into the same account with no picker.
+      const queryParams = QUERY_PARAMS_BY_PROVIDER[provider];
+
       const { data, error } = await this.client.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
+          queryParams,
         },
       });
 
@@ -143,9 +174,15 @@ export class SupabaseAuthAdapter implements AuthPort {
         });
       }
 
+      // `preferEphemeralSession: true` runs the auth web view in an
+      // isolated cookie jar. Belt-and-braces with `prompt=select_account`
+      // — even if the provider ignores the prompt hint, an ephemeral
+      // session means no cached cookies to silently re-auth against.
+      // iOS only; Android `WebBrowser.openAuthSessionAsync` ignores it.
       const result = await WebBrowser.openAuthSessionAsync(
         data.url,
         redirectUrl,
+        { preferEphemeralSession: true },
       );
 
       if (result.type !== "success") {

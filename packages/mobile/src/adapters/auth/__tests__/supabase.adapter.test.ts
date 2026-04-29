@@ -321,6 +321,85 @@ describe("SupabaseAuthAdapter", () => {
         expect(result.error.message).toBe("Provider not enabled");
       }
     });
+
+    it("forwards prompt=select_account to Google so the account picker shows on every sign-in", async () => {
+      mockSignInWithOAuth.mockResolvedValue({
+        data: { url: "https://supabase.co/auth" },
+        error: null,
+      });
+      (WebBrowser.openAuthSessionAsync as jest.Mock).mockResolvedValue({
+        type: "cancel",
+      });
+
+      await adapter.signInWithOAuth("google");
+
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "google",
+          options: expect.objectContaining({
+            queryParams: { prompt: "select_account" },
+          }),
+        }),
+      );
+    });
+
+    it("forwards auth_type=reauthenticate to Facebook for the same reason", async () => {
+      mockSignInWithOAuth.mockResolvedValue({
+        data: { url: "https://supabase.co/auth" },
+        error: null,
+      });
+      (WebBrowser.openAuthSessionAsync as jest.Mock).mockResolvedValue({
+        type: "cancel",
+      });
+
+      await adapter.signInWithOAuth("facebook");
+
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "facebook",
+          options: expect.objectContaining({
+            queryParams: { auth_type: "reauthenticate" },
+          }),
+        }),
+      );
+    });
+
+    it("omits queryParams for Apple (provider has no equivalent hint)", async () => {
+      mockSignInWithOAuth.mockResolvedValue({
+        data: { url: "https://supabase.co/auth" },
+        error: null,
+      });
+      (WebBrowser.openAuthSessionAsync as jest.Mock).mockResolvedValue({
+        type: "cancel",
+      });
+
+      await adapter.signInWithOAuth("apple");
+
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "apple",
+          options: expect.objectContaining({ queryParams: undefined }),
+        }),
+      );
+    });
+
+    it("opens the auth web view with preferEphemeralSession=true so the system browser's provider cookie can't silently re-auth", async () => {
+      mockSignInWithOAuth.mockResolvedValue({
+        data: { url: "https://supabase.co/auth" },
+        error: null,
+      });
+      (WebBrowser.openAuthSessionAsync as jest.Mock).mockResolvedValue({
+        type: "cancel",
+      });
+
+      await adapter.signInWithOAuth("google");
+
+      expect(WebBrowser.openAuthSessionAsync).toHaveBeenCalledWith(
+        "https://supabase.co/auth",
+        expect.any(String),
+        { preferEphemeralSession: true },
+      );
+    });
   });
 
   // -- signOut --
