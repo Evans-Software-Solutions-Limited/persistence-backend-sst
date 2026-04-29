@@ -80,8 +80,12 @@ export function WorkoutsListContainer() {
     const limit = sections.quota?.limit ?? null;
     const isAtLimit = limit !== null && used >= limit;
 
+    // Note: `myAndAssigned.map(toCardView)` is intentionally NOT in the
+    // returned shape. The presenter only consumes `filteredMyWorkouts`
+    // (which already covers the unfiltered case when searchQuery is
+    // empty — `filterByName` is a passthrough then). Computing both was
+    // duplicate work flagged by bugbot.
     return {
-      myAndAssigned: myAndAssigned.map(toCardView),
       myAndAssignedCount: myAndAssigned.length,
       mineCount: sections.mine.length,
       assignedCount: sections.assigned.length,

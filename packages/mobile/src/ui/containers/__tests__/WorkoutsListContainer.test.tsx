@@ -81,6 +81,15 @@ describe("WorkoutsListContainer", () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    // Tests in this file install spies via `jest.spyOn` (e.g. on
+    // Alert.alert in the delete-confirmation test). `clearAllMocks` only
+    // clears call history; implementations persist into subsequent
+    // tests, which contributed to a CI flake where leftover spies +
+    // accumulated worker load pushed later tests past the 5s default.
+    jest.restoreAllMocks();
+  });
+
   it("renders the cached payload on mount", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
@@ -223,6 +232,12 @@ describe("WorkoutsListContainer", () => {
     );
   });
 
+  // Per-test 30s timeout: this test passes in ~200ms locally and in
+  // isolation, but in CI's loaded jest worker the multi-step async chain
+  // (auth setTimeout → setSnapshot → viewModel memo → at-limit indicator
+  // render) occasionally exceeds the 5s default. The timeout doesn't
+  // mask logic bugs (any failure surfaces well before 30s); it just
+  // gives findByText's polling room when the worker is under load.
   it("at-limit users see the WorkoutLimitIndicator + Upgrade CTA route to the subscription placeholder", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
@@ -240,10 +255,8 @@ describe("WorkoutsListContainer", () => {
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Wait for the cached payload to render (proves auth bootstrap fired
-    // and the quota-bearing snapshot has propagated). Without this anchor
-    // findByText("Upgrade Now") could time out in CI before the multi-
-    // step chain (auth setTimeout → setSnapshot → viewModel memo) runs.
+    // Wait for the cached payload to render (proves auth bootstrap
+    // fired and the quota-bearing snapshot has propagated).
     expect(await findByText("Push Day")).toBeTruthy();
 
     // Click "Upgrade Now" inside the quota indicator — that's the
@@ -254,7 +267,7 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith(
       "/coming-soon?feature=subscription",
     );
-  });
+  }, 30_000);
 
   it("browse-exercises button routes to the Exercises tab", async () => {
     const api = new InMemoryApiAdapter();
