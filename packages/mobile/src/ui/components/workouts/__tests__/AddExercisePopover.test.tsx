@@ -126,6 +126,38 @@ describe("AddExercisePopover", () => {
     expect(queryByText("Bench Press")).toBeNull();
   });
 
+  it("preserves selections that get filtered out by an active search", () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({ id: "a", name: "Bench Press" }),
+      buildExercise({ id: "b", name: "Squat" }),
+    ]);
+    const onAddExercises = jest.fn();
+    const { getByText, getByPlaceholderText, getByTestId, queryByText } =
+      renderWithTheme(
+        withAdapters(
+          makeAdapters(api, storage),
+          <AddExercisePopover
+            visible
+            onClose={jest.fn()}
+            onAddExercises={onAddExercises}
+            onAddSuperset={jest.fn()}
+          />,
+        ),
+      );
+    // Select Bench, then narrow the search so Bench is hidden.
+    fireEvent.press(getByText("Bench Press"));
+    fireEvent.changeText(getByPlaceholderText("Search exercises..."), "squ");
+    expect(queryByText("Bench Press")).toBeNull();
+
+    fireEvent.press(getByTestId("add-exercises-button"));
+    expect(onAddExercises).toHaveBeenCalledTimes(1);
+    const arg = onAddExercises.mock.calls[0][0] as Array<{ id: string }>;
+    // Bench remains in the emitted set despite being out of view.
+    expect(arg.map((ex) => ex.id)).toEqual(["a"]);
+  });
+
   it("toggles selection and emits onAddExercises with the selected rows", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

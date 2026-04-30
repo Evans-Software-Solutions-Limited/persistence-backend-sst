@@ -90,14 +90,21 @@ function AddExercisePopoverContainer({
     [cacheRead.exercises, api],
   );
 
+  // Full mapped list — used for selection lookups so a search filter
+  // can't silently drop exercises the user already selected before
+  // typing. `filteredLegacy` is the search-filtered subset rendered
+  // by the inner list; selection resolution and detail drill-in
+  // always go through `allLegacy`.
+  const allLegacy = useMemo(
+    () => enrichedExercises.map(toLegacyExerciseRow),
+    [enrichedExercises],
+  );
+
   const filteredLegacy = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const filtered =
-      q.length === 0
-        ? enrichedExercises
-        : enrichedExercises.filter((ex) => ex.name.toLowerCase().includes(q));
-    return filtered.map(toLegacyExerciseRow);
-  }, [enrichedExercises, searchQuery]);
+    if (q.length === 0) return allLegacy;
+    return allLegacy.filter((ex) => ex.name.toLowerCase().includes(q));
+  }, [allLegacy, searchQuery]);
 
   // One-shot refresh when stale, mirroring ExerciseListContainer. The
   // initial visit warms the cache; subsequent opens reuse it.
@@ -125,7 +132,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleExerciseInfo = (exerciseId: string) => {
-    const exercise = filteredLegacy.find((ex) => ex.id === exerciseId);
+    const exercise = allLegacy.find((ex) => ex.id === exerciseId);
     if (exercise) {
       setSelectedExercise(exercise);
       setCurrentView("details");
@@ -150,7 +157,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleAddExercisesClick = () => {
-    const selectedExercises = filteredLegacy.filter((ex) =>
+    const selectedExercises = allLegacy.filter((ex) =>
       selectedExerciseIds.includes(ex.id),
     );
     onAddExercises(selectedExercises);
@@ -158,7 +165,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleAddSupersetClick = () => {
-    const selectedExercises = filteredLegacy.filter((ex) =>
+    const selectedExercises = allLegacy.filter((ex) =>
       selectedExerciseIds.includes(ex.id),
     );
     onAddSuperset(selectedExercises);
