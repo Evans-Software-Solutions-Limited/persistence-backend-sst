@@ -59,6 +59,14 @@ export default function AppLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="workouts/[id]/edit"
+          options={{
+            title: "Edit workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
       </Stack>
     </ExerciseFiltersProvider>
   );
