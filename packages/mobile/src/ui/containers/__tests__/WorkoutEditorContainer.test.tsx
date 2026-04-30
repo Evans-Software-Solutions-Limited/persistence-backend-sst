@@ -168,15 +168,13 @@ describe("WorkoutEditorContainer", () => {
 
   it("renders the error state when fetch fails and no cache exists", async () => {
     const api = new InMemoryApiAdapter();
-    jest
-      .spyOn(api, "getWorkout")
-      .mockResolvedValue(
-        fail({
-          kind: "api",
-          code: "not_found",
-          message: "Workout not found",
-        }),
-      );
+    jest.spyOn(api, "getWorkout").mockResolvedValue(
+      fail({
+        kind: "api",
+        code: "not_found",
+        message: "Workout not found",
+      }),
+    );
     const storage = new InMemoryStorageAdapter();
     const { findByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
@@ -356,6 +354,56 @@ describe("WorkoutEditorContainer", () => {
     await waitFor(() =>
       expect(getByTestId("save-workout-button")).toBeTruthy(),
     );
+  });
+
+  it("surfaces command validation failure as submitError", async () => {
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", buildWorkout());
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+
+    // targetRepsMin > targetRepsMax — passes container pre-check, fails
+    // `updateWorkoutCommand`'s lightweight validation.
+    fireEvent.changeText(getByTestId("reps-min-input"), "20");
+    fireEvent(getByTestId("reps-min-input"), "blur");
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    expect(await findByText("Min reps cannot exceed max reps")).toBeTruthy();
+    expect(mockRouterBack).not.toHaveBeenCalled();
+  });
+
+  it("dirty cancel + Discard tap invokes router.back", async () => {
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", buildWorkout());
+    jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
+      const destructive = (
+        buttons as Array<{ style?: string; onPress?: () => void }> | undefined
+      )?.find((b) => b.style === "destructive");
+      destructive?.onPress?.();
+    });
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+    await act(async () => {
+      fireEvent.changeText(getByTestId("workout-name-input"), "Different");
+    });
+    fireEvent.press(getByTestId("editor-back-button"));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-hydrate the form on a subsequent detail.workout change", async () => {

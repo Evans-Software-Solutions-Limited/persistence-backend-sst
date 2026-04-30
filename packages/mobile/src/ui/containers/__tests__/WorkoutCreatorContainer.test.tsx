@@ -171,6 +171,57 @@ describe("WorkoutCreatorContainer", () => {
     expect(alertSpy.mock.calls[0][0]).toBe("Discard Changes");
   });
 
+  it("surfaces command validation failure as submitError", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+
+    expect(await findByText("Create Workout")).toBeTruthy();
+    fireEvent.changeText(getByTestId("workout-name-input"), "Push Day");
+
+    fireEvent.press(getByTestId("add-exercise-button"));
+    fireEvent.press(await findByText("Bench"));
+    await act(async () => {
+      fireEvent.press(getByTestId("add-exercises-button"));
+    });
+
+    // Drive targetSets to 0 — passes the container pre-check (name OK,
+    // ≥1 exercise) but fails `createWorkoutCommand`'s validation.
+    fireEvent.changeText(getByTestId("sets-input"), "0");
+    fireEvent(getByTestId("sets-input"), "blur");
+
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    expect(await findByText("Sets must be at least 1")).toBeTruthy();
+    expect(mockRouterBack).not.toHaveBeenCalled();
+  });
+
+  it("dirty cancel + Discard tap invokes router.back", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Fire the destructive button immediately when Alert.alert is called.
+    jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
+      const destructive = (
+        buttons as Array<{ style?: string; onPress?: () => void }> | undefined
+      )?.find((b) => b.style === "destructive");
+      destructive?.onPress?.();
+    });
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    await act(async () => {
+      fireEvent.changeText(getByTestId("workout-name-input"), "Anything");
+    });
+    fireEvent.press(getByTestId("creator-back-button"));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
+
   it("renders supersets with shared-fields propagation through picker", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
