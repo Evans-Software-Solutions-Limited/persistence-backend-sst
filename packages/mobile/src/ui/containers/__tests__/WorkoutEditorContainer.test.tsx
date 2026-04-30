@@ -322,6 +322,11 @@ describe("WorkoutEditorContainer", () => {
     expect(mockRouterBack).not.toHaveBeenCalled();
   });
 
+  // Explicit 30s timeout — this test chains five cascading async waits
+  // (auth bootstrap → useWorkout cache hit → form hydrate → picker
+  // open → picker dismiss). Each `findBy*` polls for up to 4.5s, and
+  // a loaded CI worker can blow past the 5s default cumulatively. See
+  // brief learning #9 (M2 follow-up).
   it("appends exercises through the picker and dismisses it", async () => {
     const api = new InMemoryApiAdapter();
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
@@ -335,6 +340,8 @@ describe("WorkoutEditorContainer", () => {
     const { findByText, getByTestId, queryByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
     );
+    // Anchor on hydrate first — proves auth + cache + form reset
+    // have all propagated before we open the picker.
     expect(await findByText("Edit Workout")).toBeTruthy();
     await waitFor(() =>
       expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
@@ -350,11 +357,10 @@ describe("WorkoutEditorContainer", () => {
     // Picker dismissed (close button no longer in the tree because
     // visible=false makes Popover return null).
     await waitFor(() => expect(queryByTestId("close-button")).toBeNull());
-    // Both new exercises rendered as superset peers; original + 2 new = 3 rows.
     await waitFor(() =>
       expect(getByTestId("save-workout-button")).toBeTruthy(),
     );
-  });
+  }, 30_000);
 
   it("surfaces command validation failure as submitError", async () => {
     const api = new InMemoryApiAdapter();

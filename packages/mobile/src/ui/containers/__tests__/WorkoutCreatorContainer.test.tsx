@@ -118,6 +118,10 @@ describe("WorkoutCreatorContainer", () => {
     expect(await findByText("Please add at least one exercise")).toBeTruthy();
   });
 
+  // Explicit 30s timeout — picker-chain tests cascade four+ async waits
+  // (auth bootstrap → picker open → exercise select → submit) and a
+  // loaded CI worker can blow past the 5s default cumulatively. See
+  // brief learning #9.
   it("happy path: name + exercise → submit → router.back + cached row", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
@@ -146,7 +150,7 @@ describe("WorkoutCreatorContainer", () => {
     const cachedMine = storage.getCachedWorkoutsList("user-1", "mine");
     expect(cachedMine?.workouts.length).toBe(1);
     expect(cachedMine?.workouts[0].name).toBe("Push Day");
-  });
+  }, 30_000);
 
   it("dirty-form cancel triggers Alert.alert; clean cancel goes back", async () => {
     const api = new InMemoryApiAdapter();
@@ -198,7 +202,7 @@ describe("WorkoutCreatorContainer", () => {
 
     expect(await findByText("Sets must be at least 1")).toBeTruthy();
     expect(mockRouterBack).not.toHaveBeenCalled();
-  });
+  }, 30_000);
 
   it("dirty cancel + Discard tap invokes router.back", async () => {
     const api = new InMemoryApiAdapter();
@@ -250,5 +254,5 @@ describe("WorkoutCreatorContainer", () => {
     // Lead row's input is editable; peer's is not.
     expect(setsInputs[0].props.editable).toBe(true);
     expect(setsInputs[1].props.editable).toBe(false);
-  });
+  }, 30_000);
 });
