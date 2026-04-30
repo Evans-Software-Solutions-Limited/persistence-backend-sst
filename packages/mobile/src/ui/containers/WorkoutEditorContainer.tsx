@@ -149,7 +149,11 @@ export function WorkoutEditorContainer() {
       submitError={submitError}
       pickerVisible={pickerVisible}
       isLoading={detail.isLoading && detail.workout === null}
-      loadError={detail.error}
+      // Only surface the error screen when there's no cached workout
+      // to edit — a refresh failure with a populated cache (e.g.
+      // airplane mode) should fall through to the form so the user
+      // can keep editing offline. STORY-008 AC 8.4.
+      loadError={detail.workout === null ? detail.error : null}
       onSetName={form.setName}
       onSetDescription={form.setDescription}
       onSetVisibility={form.setVisibility}

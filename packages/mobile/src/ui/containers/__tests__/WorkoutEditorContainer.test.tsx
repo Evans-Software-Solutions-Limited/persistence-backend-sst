@@ -182,6 +182,37 @@ describe("WorkoutEditorContainer", () => {
     expect(await findByTestId("editor-error")).toBeTruthy();
   });
 
+  it("falls through to the editor form when refresh fails but cache exists (offline edit)", async () => {
+    const api = new InMemoryApiAdapter();
+    // Cache populated (user has been here before); refresh now fails.
+    jest.spyOn(api, "getWorkout").mockResolvedValue(
+      fail({
+        kind: "api",
+        code: "network",
+        message: "offline",
+      }),
+    );
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail(
+      "user-1",
+      buildWorkout({ name: "Cached offline workout" }),
+    );
+
+    const { findByText, getByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+
+    // The editor form renders and pre-populates from the cache; the
+    // error screen does NOT clobber the editing surface.
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe(
+        "Cached offline workout",
+      ),
+    );
+    expect(queryByTestId("editor-error")).toBeNull();
+  });
+
   it("submits a full-replacement PATCH and navigates back", async () => {
     const api = new InMemoryApiAdapter();
     const cached = buildWorkout({ name: "Push Day" });
