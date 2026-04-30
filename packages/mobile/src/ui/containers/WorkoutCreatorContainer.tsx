@@ -28,10 +28,19 @@ export function WorkoutCreatorContainer() {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
-  const form = useWorkoutForm(
-    EMPTY_FORM_STATE,
+  // Stable identity — without `useCallback`, every render produces a
+  // new generator reference, which cascades through `useWorkoutForm`'s
+  // internal `useCallback`s and rebuilds the form handle each render.
+  // That in turn invalidates downstream container callbacks and causes
+  // the AddExercisePopover to re-render on every keystroke. Empty
+  // dep list is correct: this is a pure id factory with no captured
+  // state.
+  const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    [],
   );
+
+  const form = useWorkoutForm(EMPTY_FORM_STATE, generateId);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -41,23 +50,24 @@ export function WorkoutCreatorContainer() {
   const onAddExercise = useCallback(() => setPickerVisible(true), []);
   const onClosePicker = useCallback(() => setPickerVisible(false), []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onAddExercises = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addExercises(exercises);
       setPickerVisible(false);
     },
-    [form],
+    // Depend on the specific method, not the whole form handle —
+    // `form` rebuilds every render, but `form.addExercises` is stable
+    // across renders once `generateId` is stable.
+    [form.addExercises],
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onAddSuperset = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addSuperset(exercises);
       setPickerVisible(false);
     },
-    [form],
+    [form.addSuperset],
   );
 
   const onSubmit = useCallback(() => {
@@ -78,12 +88,7 @@ export function WorkoutCreatorContainer() {
     try {
       const input = toCreateWorkoutInput(form.state);
       const result = createWorkoutCommand(
-        {
-          storage,
-          userId,
-          generateId: () =>
-            `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        },
+        { storage, userId, generateId },
         input,
       );
       if (!result.ok) {
@@ -96,7 +101,7 @@ export function WorkoutCreatorContainer() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [storage, userId, form.state]);
+  }, [storage, userId, generateId, form.state]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {

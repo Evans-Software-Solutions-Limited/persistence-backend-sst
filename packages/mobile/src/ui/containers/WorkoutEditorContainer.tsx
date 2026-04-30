@@ -40,10 +40,14 @@ export function WorkoutEditorContainer() {
   const userId = session?.userId ?? null;
 
   const detail = useWorkout(workoutId);
-  const form = useWorkoutForm(
-    EMPTY_FORM_STATE,
+  // Stable identity — see WorkoutCreatorContainer for the cascade
+  // rationale. Without this, every render rebuilds the form handle
+  // and every downstream callback.
+  const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    [],
   );
+  const form = useWorkoutForm(EMPTY_FORM_STATE, generateId);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -61,7 +65,7 @@ export function WorkoutEditorContainer() {
     if (hydratedForRef.current === key) return;
     hydratedForRef.current = key;
     form.reset(toFormState(detail.workout));
-  }, [detail.workout, userId, workoutId, form]);
+  }, [detail.workout, userId, workoutId, form.reset]);
 
   const onAddExerciseTap = useCallback(() => setPickerVisible(true), []);
   const onClosePicker = useCallback(() => setPickerVisible(false), []);
@@ -72,7 +76,7 @@ export function WorkoutEditorContainer() {
       form.addExercises(exercises);
       setPickerVisible(false);
     },
-    [form],
+    [form.addExercises],
   );
   const onAddSuperset = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,7 +84,7 @@ export function WorkoutEditorContainer() {
       form.addSuperset(exercises);
       setPickerVisible(false);
     },
-    [form],
+    [form.addSuperset],
   );
 
   const onSubmit = useCallback(() => {
@@ -99,12 +103,7 @@ export function WorkoutEditorContainer() {
     try {
       const input = toUpdateWorkoutInput(form.state);
       const result = updateWorkoutCommand(
-        {
-          storage,
-          userId,
-          generateId: () =>
-            `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        },
+        { storage, userId, generateId },
         workoutId,
         input,
       );
@@ -118,7 +117,7 @@ export function WorkoutEditorContainer() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [storage, userId, workoutId, form.state]);
+  }, [storage, userId, workoutId, generateId, form.state]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {

@@ -81,7 +81,7 @@ export default function ExerciseConfigCard({
       {isInSuperset && isSupersetStart && (
         <View style={styles.supersetConnector}>
           <View style={styles.supersetLineStart} />
-          {supersetGroupNumber && (
+          {supersetGroupNumber != null && (
             <View style={styles.supersetBadge}>
               <Text style={styles.supersetBadgeText}>
                 Superset {supersetGroupNumber}

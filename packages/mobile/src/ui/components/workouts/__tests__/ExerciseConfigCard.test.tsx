@@ -120,6 +120,26 @@ describe("ExerciseConfigCard", () => {
     expect(getByText("Superset 2")).toBeTruthy();
   });
 
+  it("renders the superset badge correctly when group number is 0", () => {
+    // Falsy-but-valid case: a zero-indexed superset group from the
+    // server should still render the badge — the legacy
+    // `{supersetGroupNumber && ...}` pattern silently rendered the
+    // string "0" as a bare text node here.
+    const { getByText, queryByText } = renderWithTheme(
+      <ExerciseConfigCard
+        exercise={{ ...baseExercise, superset_group: 0 }}
+        index={0}
+        onRemove={jest.fn()}
+        onConfigChange={jest.fn()}
+        isSupersetStart
+        supersetGroupNumber={0}
+      />,
+    );
+    expect(getByText("Superset 0")).toBeTruthy();
+    // No bare "0" text node leaking from a falsy-conditional.
+    expect(queryByText("0", { exact: true })).toBeNull();
+  });
+
   it("invokes onRemove when the trash button is pressed", () => {
     const onRemove = jest.fn();
     const { getByTestId } = renderWithTheme(
