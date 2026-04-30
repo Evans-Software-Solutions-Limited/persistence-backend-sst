@@ -111,9 +111,7 @@ export function WorkoutsListContainer() {
   // WorkoutLimitIndicator's "Upgrade Now" CTA is the explicit at-limit
   // path. Matches legacy behaviour.
   const onCreateWorkout = useCallback(() => {
-    // TODO(M2 mobile follow-up): wire to /workouts/create once the
-    // creator surface lands on the next mobile PR.
-    router.push("/coming-soon?feature=workout-creator" as never);
+    router.push("/(app)/workouts/create" as never);
   }, []);
 
   const onBrowseExercises = useCallback(() => {
@@ -130,9 +128,7 @@ export function WorkoutsListContainer() {
   );
 
   const onEditWorkout = useCallback((workout: { id: string }) => {
-    // TODO(M2 mobile follow-up): wire to /workouts/[id]/edit.
-    void workout;
-    router.push("/coming-soon?feature=workout-editor" as never);
+    router.push(`/(app)/workouts/${workout.id}/edit` as never);
   }, []);
 
   const onStartWorkout = useCallback((workoutId: string) => {

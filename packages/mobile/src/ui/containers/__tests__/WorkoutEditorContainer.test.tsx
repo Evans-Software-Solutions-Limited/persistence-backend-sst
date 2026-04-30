@@ -171,7 +171,11 @@ describe("WorkoutEditorContainer", () => {
     jest
       .spyOn(api, "getWorkout")
       .mockResolvedValue(
-        fail({ kind: "not_found", message: "Workout not found" }),
+        fail({
+          kind: "api",
+          code: "not_found",
+          message: "Workout not found",
+        }),
       );
     const storage = new InMemoryStorageAdapter();
     const { findByTestId } = renderWithTheme(

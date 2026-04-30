@@ -213,7 +213,7 @@ describe("WorkoutsListContainer", () => {
     expect(storage.getCachedWorkoutDetail("test-user", "w-delete")).toBeNull();
   });
 
-  it("create button routes to the workout-creator placeholder when under quota", async () => {
+  it("create button routes to the workout-creator modal when under quota", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheWorkoutsList("test-user", "mine", [], { used: 0, limit: 3 });
@@ -227,9 +227,7 @@ describe("WorkoutsListContainer", () => {
 
     fireEvent.press(await findByText("Create New Workout"));
 
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=workout-creator",
-    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/create");
   });
 
   // Per-test 30s timeout: this test passes in ~200ms locally and in
@@ -285,7 +283,7 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/exercises");
   });
 
-  it("the popover Start CTA + edit button route to their respective placeholders", async () => {
+  it("edit button routes to the editor modal; popover Start CTA stubs to active-session", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const w = buildWorkout({ id: "w-1", name: "Push Day" });
@@ -298,13 +296,11 @@ describe("WorkoutsListContainer", () => {
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Edit CTA on the card → workout-editor placeholder.
+    // Edit CTA on the card → workout-editor modal.
     fireEvent.press(await findByText("Edit"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=workout-editor",
-    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
 
-    // Open the popover → Start Workout button.
+    // Open the popover → Start Workout button (M3 placeholder).
     fireEvent.press(await findByText("Push Day"));
     fireEvent.press(getByText("Start Workout"));
     expect(mockRouterPush).toHaveBeenCalledWith(
