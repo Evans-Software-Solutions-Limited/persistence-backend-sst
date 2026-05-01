@@ -215,4 +215,56 @@ describe("useWorkouts", () => {
     // Cached workout still visible
     expect(result.current.mine.workouts[0].id).toBe("w-cached");
   });
+
+  it("rereadCache picks up an external storage write without hitting the API", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Seed cache so the on-mount auto-refresh doesn't fire.
+    storage.cacheWorkoutsList(
+      "test-user",
+      "mine",
+      [buildWorkout({ id: "w-old", name: "Old" })],
+      null,
+    );
+    storage.cacheWorkoutsList("test-user", "assigned", [], null);
+    storage.cacheWorkoutsList("test-user", "default", [], null);
+    const getSpy = jest.spyOn(api, "getWorkouts");
+
+    const adapters = makeAdapters(api, storage);
+    const { result } = renderHook(() => useWorkouts(), {
+      wrapper: wrap(adapters),
+    });
+
+    await waitFor(() =>
+      expect(result.current.mine.workouts[0]?.id).toBe("w-old"),
+    );
+
+    // Simulate an external mutation (the creator command writing to
+    // SQLite from inside the modal stack).
+    storage.cacheWorkoutsList(
+      "test-user",
+      "mine",
+      [
+        buildWorkout({ id: "w-new", name: "New" }),
+        buildWorkout({ id: "w-old", name: "Old" }),
+      ],
+      null,
+    );
+
+    // Hook hasn't picked it up yet — no signal to re-read.
+    expect(result.current.mine.workouts.map((w) => w.id)).toEqual(["w-old"]);
+
+    act(() => {
+      result.current.rereadCache();
+    });
+
+    await waitFor(() =>
+      expect(result.current.mine.workouts.map((w) => w.id)).toEqual([
+        "w-new",
+        "w-old",
+      ]),
+    );
+    // No API call fired — soft re-read should never hit the network.
+    expect(getSpy).not.toHaveBeenCalled();
+  });
 });

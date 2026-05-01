@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
@@ -30,6 +30,21 @@ export function WorkoutsListContainer() {
   const { workoutId: routeWorkoutId } = useLocalSearchParams<{
     workoutId?: string;
   }>();
+
+  // Re-read the cache whenever the tab regains focus. Mutations from
+  // the modal stack (`/workouts/create`, `/workouts/[id]/edit`) write
+  // through to SQLite via `createWorkoutCommand` /
+  // `updateWorkoutCommand`, but `useWorkouts` only recomputes its
+  // snapshot when its internal `cacheVersion` ticks. Without this
+  // hook, navigating back from the creator/editor modal lands on a
+  // stale list and the new/updated workout is invisible until pull-
+  // to-refresh.
+  const rereadCache = workouts.rereadCache;
+  useFocusEffect(
+    useCallback(() => {
+      rereadCache();
+    }, [rereadCache]),
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
   const [popoverWorkoutId, setPopoverWorkoutId] = useState<string | null>(null);

@@ -23,6 +23,14 @@ export type WorkoutsState = WorkoutsQueryResult & {
   isRefreshing: boolean;
   error: ApiError | null;
   refresh: () => Promise<void>;
+  /**
+   * Re-read the cache without hitting the network. Use this when an
+   * external mutation (e.g. a workout created from the modal stack)
+   * has updated the SQLite cache and the list needs to pick up the
+   * new state — `refresh()` would also re-hit the API, which isn't
+   * needed if the cache is the source of truth for the new row.
+   */
+  rereadCache: () => void;
 };
 
 const EMPTY_QUERY_RESULT: WorkoutsQueryResult = {
@@ -108,10 +116,18 @@ export function useWorkouts(): WorkoutsState {
     void refresh();
   }, [userId, anyStale, refresh]);
 
+  // Soft re-read: bump cacheVersion so `initial` recomputes from
+  // storage. Stable identity (no deps) so callers can safely list it
+  // in `useFocusEffect` / `useEffect` deps without re-firing.
+  const rereadCache = useCallback(() => {
+    setCacheVersion((v) => v + 1);
+  }, []);
+
   return {
     ...snapshot,
     isRefreshing,
     error,
     refresh,
+    rereadCache,
   };
 }

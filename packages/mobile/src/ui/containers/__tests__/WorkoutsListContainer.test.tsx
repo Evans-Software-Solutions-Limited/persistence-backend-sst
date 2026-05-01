@@ -68,13 +68,23 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 // are allowed to access.
 const mockRouterPush = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}));
-jest.mock("expo-router", () => ({
-  __esModule: true,
-  router: {
-    push: (...args: unknown[]) => mockRouterPush(...args),
-  },
-  useLocalSearchParams: () => mockUseLocalSearchParams(),
-}));
+jest.mock("expo-router", () => {
+  // useFocusEffect's prod implementation registers with the React
+  // Navigation focus lifecycle. In test we collapse it to a plain
+  // useEffect on mount — the unit under test is the rereadCache
+  // wiring, not the navigation lifecycle itself.
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    __esModule: true,
+    router: {
+      push: (...args: unknown[]) => mockRouterPush(...args),
+    },
+    useLocalSearchParams: () => mockUseLocalSearchParams(),
+    useFocusEffect: (cb: React.EffectCallback) => {
+      React.useEffect(() => cb(), [cb]);
+    },
+  };
+});
 
 describe("WorkoutsListContainer", () => {
   beforeEach(() => {
