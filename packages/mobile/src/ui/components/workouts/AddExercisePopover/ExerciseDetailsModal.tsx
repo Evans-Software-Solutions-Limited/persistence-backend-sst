@@ -10,7 +10,6 @@ import {
   Alert,
   Image,
   Linking,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -61,7 +60,7 @@ export function ExerciseDetailsModal({
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         {/* Video/Image Section */}
         <View style={styles.mediaSection}>
           {(() => {
@@ -205,14 +204,15 @@ export function ExerciseDetailsModal({
             </View>
           )}
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // No `flex: 1` here — this surface renders inside Popover's
+  // ScrollView, where flex-grow children collapse to 0 height.
   container: {
-    flex: 1,
     backgroundColor: Colors.background.primary,
   },
   difficultyBadgeText: {
@@ -251,9 +251,7 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 40,
   },
-  content: {
-    flex: 1,
-  },
+  content: {},
   mediaSection: {
     width: "100%",
     height: 250,

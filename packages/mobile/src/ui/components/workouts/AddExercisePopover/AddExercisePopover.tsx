@@ -100,10 +100,19 @@ function AddExercisePopoverContainer({
     [enrichedExercises],
   );
 
+  // Cap to 100 rendered rows — matches the legacy `useGetExercises({
+  // limit: 100 })` ceiling and prevents the picker from rendering
+  // 2k+ non-virtualised rows on a wide library, which made the modal
+  // "take ages" to show selection feedback.
+  const PICKER_DISPLAY_LIMIT = 100;
+
   const filteredLegacy = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (q.length === 0) return allLegacy;
-    return allLegacy.filter((ex) => ex.name.toLowerCase().includes(q));
+    const matched =
+      q.length === 0
+        ? allLegacy
+        : allLegacy.filter((ex) => ex.name.toLowerCase().includes(q));
+    return matched.slice(0, PICKER_DISPLAY_LIMIT);
   }, [allLegacy, searchQuery]);
 
   // One-shot refresh when stale, mirroring ExerciseListContainer. The
@@ -253,70 +262,67 @@ function AddExercisePopoverPresenter({
     );
   }
 
+  // Header slot is row-flexed by Popover; we render a column-flex
+  // wrapper inside it so the title row sits above the search bar
+  // (instead of getting jammed alongside it). Footer/content are
+  // passed bare — Popover already provides padding + borders, so
+  // double-wrapping was producing the visual "out of place" overlap
+  // bug Brad hit on the simulator.
   return (
     <Popover
       visible={visible}
       onClose={onClose}
       showCloseButton={false}
       header={
-        <View style={styles.container}>
-          {/* Header */}
-          <View style={styles.headerContainer}>
-            <View style={styles.header}>
-              <Text style={styles.title}>Add Exercises</Text>
-              <View style={styles.headerActions}>
-                <TouchableOpacity
-                  onPress={onCreateExercise}
-                  style={styles.createButton}
-                  testID="create-exercise-button"
-                >
-                  <Text style={styles.createButtonText}>Create</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={onClose}
-                  style={styles.closeButton}
-                  testID="close-button"
-                >
-                  <Ionicons
-                    name="close"
-                    size={24}
-                    color={Colors.text.primary}
-                  />
-                </TouchableOpacity>
-              </View>
+        <View>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Add Exercises</Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                onPress={onCreateExercise}
+                style={styles.createButton}
+                testID="create-exercise-button"
+              >
+                <Text style={styles.createButtonText}>Create</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.closeButton}
+                testID="close-button"
+              >
+                <Ionicons name="close" size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
             </View>
-
-            {/* Search Bar */}
-            <View style={styles.searchContainer}>
-              <Ionicons
-                name="search"
-                size={20}
-                color={Colors.text.secondary}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search exercises..."
-                placeholderTextColor={Colors.text.tertiary}
-                value={searchQuery}
-                onChangeText={onSearchChange}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => onSearchChange("")}
-                  style={styles.clearButton}
-                  testID="clear-search-button"
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={20}
-                    color={Colors.text.secondary}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
+          </View>
+          <View style={styles.searchContainer}>
+            <Ionicons
+              name="search"
+              size={20}
+              color={Colors.text.secondary}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search exercises..."
+              placeholderTextColor={Colors.text.tertiary}
+              value={searchQuery}
+              onChangeText={onSearchChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => onSearchChange("")}
+                style={styles.clearButton}
+                testID="clear-search-button"
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={20}
+                  color={Colors.text.secondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       }
@@ -331,7 +337,7 @@ function AddExercisePopoverPresenter({
         />
       }
       footer={
-        <View style={styles.footer}>
+        <View style={styles.footerRow}>
           <TouchableOpacity
             style={[
               styles.footerButton,

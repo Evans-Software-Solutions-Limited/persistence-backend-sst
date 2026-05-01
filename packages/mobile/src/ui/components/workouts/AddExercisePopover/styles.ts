@@ -7,14 +7,13 @@ import {
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  // Header slot — Popover wraps the slot in row-flex with its own
+  // padding + bottom border. Inside the slot we stack title + search
+  // vertically. No outer wrapper or padding here (Popover provides).
+  titleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: Spacing.lg,
   },
   headerActions: {
     flexDirection: "row",
@@ -30,7 +29,6 @@ export const styles = StyleSheet.create({
     color: Colors.primary.DEFAULT,
     fontWeight: "600",
   },
-  headerContainer: {},
   title: {
     ...Typography.h3,
     color: Colors.text.primary,
@@ -46,11 +44,7 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    marginHorizontal: Spacing.lg,
-    marginVertical: Spacing.sm,
-  },
-  scrollContainer: {
-    flex: 1,
+    marginTop: Spacing.sm,
   },
   searchIcon: {
     marginRight: Spacing.sm,
@@ -64,18 +58,16 @@ export const styles = StyleSheet.create({
   clearButton: {
     padding: Spacing.xs,
   },
-  contentContainer: {
-    flex: 1,
-    paddingHorizontal: Spacing.lg,
-  },
-  loader: {
-    marginTop: Spacing.xl,
-  },
+
+  // List slot — Popover content already has `padding: lg` from the
+  // wrapper ScrollView, so the inner list container just needs to
+  // size naturally. No `flex: 1` here; that collapses inside a
+  // ScrollView and was a chunk of the original layout breakage.
+  contentContainer: {},
   emptyState: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     paddingVertical: Spacing.xl,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyText: {
     ...Typography.body2,
@@ -160,15 +152,12 @@ export const styles = StyleSheet.create({
   checkboxDisabled: {
     opacity: 0.3,
   },
-  footer: {
+
+  // Footer slot — Popover wraps it in `padding: lg` + top border, so
+  // we just lay out the two buttons in a flex row with a gap.
+  footerRow: {
     flexDirection: "row",
     gap: Spacing.md,
-    padding: Spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
-  },
-  button: {
-    flex: 1,
   },
   footerButton: {
     flex: 1,
