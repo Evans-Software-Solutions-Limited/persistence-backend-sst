@@ -168,22 +168,30 @@ export function WorkoutsListContainer() {
             onPress: () => {
               setDeletingWorkoutIds((prev) => new Set(prev).add(workout.id));
               // The command is synchronous and only touches storage —
-              // it can't fail in practice. Optimistic cache removal
-              // happens inside the command; the post-call refresh
-              // syncs the React snapshot with storage.
+              // optimistic cache removal happens inside the command,
+              // and a DELETE intent goes onto the sync queue. We
+              // intentionally `rereadCache()` instead of `refresh()`
+              // here: refresh would race the still-pending DELETE
+              // against the server (the server returns the not-yet-
+              // deleted row, the cache gets overwritten, and the
+              // workout reappears until the next hard reload).
+              // `rereadCache` just propagates the local removal to
+              // the snapshot; the queue worker eventually flushes
+              // the DELETE on the next refresh / foreground / sync
+              // tick.
               deleteWorkoutCommand({ storage, userId }, workout.id);
               setDeletingWorkoutIds((prev) => {
                 const next = new Set(prev);
                 next.delete(workout.id);
                 return next;
               });
-              void workoutsRefresh();
+              rereadCache();
             },
           },
         ],
       );
     },
-    [storage, userId, workoutsRefresh],
+    [storage, userId, rereadCache],
   );
 
   // Popover detail — read from cached_workout_detail (populated by the
