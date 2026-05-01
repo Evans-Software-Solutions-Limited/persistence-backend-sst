@@ -9,6 +9,14 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 
+const mockFetch = jest.fn();
+(globalThis as Record<string, unknown>).fetch = mockFetch;
+
+jest.mock("@/adapters/api", () => ({
+  ...jest.requireActual("@/adapters/api"),
+  getApiBaseUrl: () => "https://api.test",
+}));
+
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",
   name: overrides.name ?? "Push",
@@ -214,6 +222,64 @@ describe("useWorkouts", () => {
 
     // Cached workout still visible
     expect(result.current.mine.workouts[0].id).toBe("w-cached");
+  });
+
+  it("flushes the sync queue before fetching during refresh()", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutsList(
+      "test-user",
+      "mine",
+      [buildWorkout({ id: "w-old" })],
+      null,
+    );
+    storage.cacheWorkoutsList("test-user", "assigned", [], null);
+    storage.cacheWorkoutsList("test-user", "default", [], null);
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-1",
+      operation: "create",
+      payload: { name: "Push Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    const callOrder: string[] = [];
+    mockFetch.mockReset();
+    mockFetch.mockImplementation((url: string) => {
+      callOrder.push(`fetch ${url}`);
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    const getSpy = jest
+      .spyOn(api, "getWorkouts")
+      .mockImplementation(async (params) => {
+        callOrder.push(`getWorkouts ${params?.type ?? "all"}`);
+        return ok({ workouts: [], total: 0, quota: null });
+      });
+
+    const adapters = makeAdapters(api, storage);
+    const { result } = renderHook(() => useWorkouts(), {
+      wrapper: wrap(adapters),
+    });
+
+    // Wait for auth bootstrap.
+    await waitFor(() =>
+      expect(result.current.mine.workouts[0]?.id).toBe("w-old"),
+    );
+
+    callOrder.length = 0;
+    mockFetch.mockClear();
+    getSpy.mockClear();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // Sync queue's POST went out before any GET /workouts call.
+    expect(callOrder[0]).toBe("fetch https://api.test/workouts");
+    expect(callOrder.slice(1).every((c) => c.startsWith("getWorkouts"))).toBe(
+      true,
+    );
   });
 
   it("rereadCache picks up an external storage write without hitting the API", async () => {
