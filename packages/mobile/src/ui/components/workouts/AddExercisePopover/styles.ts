@@ -7,35 +7,77 @@ import {
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
-  // Header slot — Popover wraps the slot in row-flex with its own
-  // padding + bottom border. Inside the slot we stack title + search
-  // vertically. No outer wrapper or padding here (Popover provides).
-  titleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  // Full-screen modal shell — pageSheet presentation gives a partial
+  // sheet on iOS (matches the create-workout modal). On Android the
+  // modal fills the screen.
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: Colors.background.primary,
   },
-  headerActions: {
+
+  // Sticky header (list view) — back arrow + centered title + Create
+  // CTA. Same paddings as the workout-creator/editor screen header.
+  modalHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface.border,
+  },
+  modalTitle: {
+    ...Typography.body1,
+    fontWeight: "600",
+    flex: 1,
+    textAlign: "center",
+    color: Colors.text.primary,
+  },
+  backButton: {
+    padding: Spacing.sm,
+    minWidth: 40,
+  },
+  headerSpacer: {
+    width: 40,
   },
   createButton: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
+    minWidth: 40,
+    alignItems: "flex-end",
   },
   createButtonText: {
     ...Typography.body2,
     color: Colors.primary.DEFAULT,
     fontWeight: "600",
   },
-  title: {
-    ...Typography.h3,
-    color: Colors.text.primary,
-    fontWeight: "600",
+
+  // Sticky header (details view) — same shape, no Create CTA on the
+  // right (just a spacer to keep the title centered).
+  detailsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface.border,
   },
-  closeButton: {
-    padding: Spacing.xs,
+  detailsTitle: {
+    ...Typography.body1,
+    fontWeight: "600",
+    flex: 1,
+    textAlign: "center",
+    color: Colors.text.primary,
+  },
+
+  // Sticky search bar (between header and scrollable list).
+  searchWrapper: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
   },
   searchContainer: {
     flexDirection: "row",
@@ -44,7 +86,6 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
   },
   searchIcon: {
     marginRight: Spacing.sm,
@@ -59,11 +100,14 @@ export const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
 
-  // List slot — Popover content already has `padding: lg` from the
-  // wrapper ScrollView, so the inner list container just needs to
-  // size naturally. No `flex: 1` here; that collapses inside a
-  // ScrollView and was a chunk of the original layout breakage.
-  contentContainer: {},
+  // Scrollable list region — flex: 1 so it consumes everything
+  // between the sticky search bar above and the sticky footer below.
+  modalScroll: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingHorizontal: Spacing.lg,
+  },
   emptyState: {
     paddingVertical: Spacing.xl,
     alignItems: "center",
@@ -73,6 +117,8 @@ export const styles = StyleSheet.create({
     ...Typography.body2,
     color: Colors.text.secondary,
   },
+
+  // List rows.
   exerciseRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -153,11 +199,16 @@ export const styles = StyleSheet.create({
     opacity: 0.3,
   },
 
-  // Footer slot — Popover wraps it in `padding: lg` + top border, so
-  // we just lay out the two buttons in a flex row with a gap.
-  footerRow: {
+  // Sticky footer — Add + Superset CTAs in a flex row above the safe
+  // area inset.
+  modalFooter: {
     flexDirection: "row",
     gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surface.border,
   },
   footerButton: {
     flex: 1,

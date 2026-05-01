@@ -19,7 +19,6 @@ import {
 interface ExerciseDetailsModalProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly exercise: any; // Using any to match the original
-  readonly onBack: () => void;
 }
 
 const getDifficultyColor = (difficulty: string | null | undefined) => {
@@ -39,27 +38,18 @@ const getDifficultyColor = (difficulty: string | null | undefined) => {
   }
 };
 
-export function ExerciseDetailsModal({
-  exercise,
-  onBack,
-}: ExerciseDetailsModalProps) {
+export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
   const handlePlayVideo = (videoUrl: string) => {
     Linking.openURL(videoUrl).catch(() => {
       Alert.alert("Error", "Could not open video");
     });
   };
 
+  // Content-only — the modal frame (header w/ back button, title) is
+  // owned by the parent AddExercisePopover. This component renders
+  // just the body of the details surface.
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.screenTitle}>Exercise Details</Text>
-        <View style={styles.placeholder} />
-      </View>
-
       <View style={styles.content}>
         {/* Video/Image Section */}
         <View style={styles.mediaSection}>

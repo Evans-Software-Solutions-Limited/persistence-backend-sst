@@ -1,4 +1,3 @@
-import { Popover } from "@/ui/components/Popover";
 import { Colors } from "@/ui/theme/workoutsLegacyTheme";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
@@ -15,7 +14,15 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  Modal,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { AddExerciseList } from "./AddExerciseList";
 import { ExerciseDetailsModal } from "./ExerciseDetailsModal";
 import { styles } from "./styles";
@@ -246,54 +253,74 @@ function AddExercisePopoverPresenter({
   const hasAtLeastOne = selectedExerciseIds.length >= 1;
   const hasAtLeastTwo = selectedExerciseIds.length >= 2;
 
+  // Full-screen slide-up modal — matches the create-workout modal's
+  // presentation (stack-modal, slide animation) so the picker feels
+  // like a navigational push within the modal flow rather than a
+  // disconnected overlay. Header gets a back arrow (returns to the
+  // creator/editor) instead of an X close.
   if (currentView === "details" && selectedExercise) {
     return (
-      <Popover
+      <Modal
         visible={visible}
-        onClose={onClose}
-        showCloseButton={false}
-        content={
-          <ExerciseDetailsModal
-            exercise={selectedExercise}
-            onBack={onBackToList}
-          />
-        }
-      />
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onBackToList}
+      >
+        <SafeAreaView style={styles.modalSafeArea} edges={["top"]}>
+          <View style={styles.detailsHeader}>
+            <TouchableOpacity
+              onPress={onBackToList}
+              style={styles.backButton}
+              testID="details-back-button"
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={Colors.text.primary}
+              />
+            </TouchableOpacity>
+            <Text style={styles.detailsTitle}>Exercise Details</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <ExerciseDetailsModal exercise={selectedExercise} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     );
   }
 
-  // Header slot is row-flexed by Popover; we render a column-flex
-  // wrapper inside it so the title row sits above the search bar
-  // (instead of getting jammed alongside it). Footer/content are
-  // passed bare — Popover already provides padding + borders, so
-  // double-wrapping was producing the visual "out of place" overlap
-  // bug Brad hit on the simulator.
   return (
-    <Popover
+    <Modal
       visible={visible}
-      onClose={onClose}
-      showCloseButton={false}
-      header={
-        <View>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>Add Exercises</Text>
-            <View style={styles.headerActions}>
-              <TouchableOpacity
-                onPress={onCreateExercise}
-                style={styles.createButton}
-                testID="create-exercise-button"
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={onClose}
-                style={styles.closeButton}
-                testID="close-button"
-              >
-                <Ionicons name="close" size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.modalSafeArea} edges={["top"]}>
+        {/* Sticky header — back arrow on the left (returns to the
+            workout creator / editor), title centered, Create CTA on
+            the right. */}
+        <View style={styles.modalHeader}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.backButton}
+            testID="close-button"
+          >
+            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Add Exercises</Text>
+          <TouchableOpacity
+            onPress={onCreateExercise}
+            style={styles.createButton}
+            testID="create-exercise-button"
+          >
+            <Text style={styles.createButtonText}>Create</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Sticky search bar */}
+        <View style={styles.searchWrapper}>
           <View style={styles.searchContainer}>
             <Ionicons
               name="search"
@@ -325,19 +352,25 @@ function AddExercisePopoverPresenter({
             )}
           </View>
         </View>
-      }
-      content={
-        <AddExerciseList
-          exercises={exercises}
-          selectedExerciseIds={selectedExerciseIds}
-          onToggleExercise={onToggleExercise}
-          onExerciseInfo={onExerciseInfo}
-          isLoading={isLoading}
-          existingExerciseIds={existingExerciseIds}
-        />
-      }
-      footer={
-        <View style={styles.footerRow}>
+
+        {/* Scrollable list — fills the remaining vertical space
+            between the sticky search bar and the sticky footer. */}
+        <ScrollView
+          style={styles.modalScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <AddExerciseList
+            exercises={exercises}
+            selectedExerciseIds={selectedExerciseIds}
+            onToggleExercise={onToggleExercise}
+            onExerciseInfo={onExerciseInfo}
+            isLoading={isLoading}
+            existingExerciseIds={existingExerciseIds}
+          />
+        </ScrollView>
+
+        {/* Sticky footer — Add + Superset CTAs */}
+        <View style={styles.modalFooter}>
           <TouchableOpacity
             style={[
               styles.footerButton,
@@ -375,8 +408,8 @@ function AddExercisePopoverPresenter({
             </Text>
           </TouchableOpacity>
         </View>
-      }
-    />
+      </SafeAreaView>
+    </Modal>
   );
 }
 
