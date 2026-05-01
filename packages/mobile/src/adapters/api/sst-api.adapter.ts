@@ -48,6 +48,16 @@ function isErrorResponse<T>(body: ApiResponse<T>): body is ApiErrorResponse {
 const API_URL =
   Constants.expoConfig?.extra?.apiUrl ?? process.env.EXPO_PUBLIC_API_URL ?? "";
 
+/**
+ * Resolve the SST API base URL the same way the adapter does.
+ * Exported so non-adapter callers (e.g. the sync queue worker, which
+ * uses raw `fetch` rather than the adapter's request helpers) can
+ * read the configured host without re-implementing the lookup.
+ */
+export function getApiBaseUrl(): string {
+  return API_URL;
+}
+
 function validateApiUrl(url: string): void {
   if (!url) {
     throw new Error(
