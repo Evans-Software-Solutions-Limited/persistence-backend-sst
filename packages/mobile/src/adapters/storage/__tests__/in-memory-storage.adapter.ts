@@ -184,6 +184,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this.dashboardCache.get(userId)?.syncedAt ?? null;
   }
 
+  invalidateDashboard(userId: string): void {
+    this.dashboardCache.delete(userId);
+  }
+
   // -- Workouts Cache (M2) --
 
   getCachedWorkoutsList(

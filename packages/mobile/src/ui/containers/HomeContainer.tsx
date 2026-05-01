@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { Goal } from "@/ui/components/home/GoalsSection";
@@ -197,6 +197,19 @@ export function HomeContainer() {
     void Promise.all([dashboardRefresh(), healthRefresh()]);
   }, [dashboardRefresh, healthRefresh]);
 
+  // Re-fetch the dashboard whenever the home tab regains focus.
+  // Mutations from the workouts tab (create / edit / delete) call
+  // `storage.invalidateDashboard(userId)`, but the cache delete
+  // doesn't propagate to React state — the home hook still has
+  // the old payload until something pulls fresh data. The hook's
+  // `inFlightRef` dedupes if a refresh is already in flight, so
+  // cost is at most one GET /dashboard per focus.
+  useFocusEffect(
+    useCallback(() => {
+      void dashboardRefresh();
+    }, [dashboardRefresh]),
+  );
+
   const onUpgradePress = useCallback(() => {
     Alert.alert(
       "Upgrade coming soon",
@@ -211,16 +224,23 @@ export function HomeContainer() {
     );
   }, []);
 
+  // Deeplink the workouts tab with `?workoutId=X` so its container's
+  // useLocalSearchParams handler auto-opens the matching popover.
+  // Without the param, tapping a card on home dropped the user onto
+  // the workouts tab with nothing focused — looked broken.
   const onWorkoutPress = useCallback(
-    (_workoutId: string) => {
-      router.push("/(app)/(tabs)/workouts");
+    (workoutId: string) => {
+      router.push(`/(app)/(tabs)/workouts?workoutId=${workoutId}` as never);
     },
     [router],
   );
 
+  // Start CTA (M3 owns the active-session screen). For now, deeplink
+  // the workouts tab to that specific workout's popover so the user
+  // can pick their start path from there. M3 will replace this.
   const onWorkoutStart = useCallback(
-    (_workoutId: string) => {
-      router.push("/(app)/(tabs)/workouts");
+    (workoutId: string) => {
+      router.push(`/(app)/(tabs)/workouts?workoutId=${workoutId}` as never);
     },
     [router],
   );

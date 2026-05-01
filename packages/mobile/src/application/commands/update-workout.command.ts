@@ -126,5 +126,10 @@ export function updateWorkoutCommand(
     method: "PATCH",
   });
 
+  // Dashboard depends on the workout list — drop its cache so the
+  // next home-tab focus refetches with the edited row instead of
+  // serving the pre-edit snapshot until the dashboard TTL elapses.
+  deps.storage.invalidateDashboard(deps.userId);
+
   return ok(updated);
 }
