@@ -69,6 +69,9 @@ Parent milestone: **M3 Active session (offline-critical)**. Backend brief verifi
 
 ## Phase 6: UI — Session Summary
 
+- [x] **Decide PR-detection placement: hybrid** — server canonical, client predictive (decided 2026-05-02; see [`specs/milestones/M3-active-session/BACKEND_BRIEF.md`](../milestones/M3-active-session/BACKEND_BRIEF.md) § "PR-detection decision" and `design.md` § "Personal-record detection: hybrid")
+  - [ ] Server: implement PR upsert in `sessionsUpdateHandler` when status transitions to `completed`; flag winning sets `is_personal_record = true`
+  - [ ] Client: cache `personal_records` slice via `GET /personal-records`; feed quick-fill + Summary screen detection
 - [ ] Create `SessionSummaryPresenter` (duration, volume, completion, PRs)
 - [ ] Create `SessionSummaryContainer` (computes summary from completed session)
 - [ ] Create confirmation dialog (save/discard)

@@ -22,7 +22,7 @@ export interface SessionExercise {
   id: string;
   exerciseId: string;
   exerciseName: string;
-  orderIndex: number;
+  sortOrder: number; // matches the wire-format field used across workouts + sessions
   supersetGroup: number | null;
   sets: ExerciseSet[];
   isSubstituted: boolean;
@@ -161,6 +161,14 @@ This is the most offline-critical feature:
 
 - **Every set logged** writes to SQLite immediately (not batched)
 - **Session state** fully recoverable from SQLite alone
-- **Sync** happens only on session complete/cancel (one API call per session)
+- **Sync** happens only on session complete/cancel (one batched flush per session — `createSession` → many `createSessionExercise` → many `createSessionSet` → `updateSession {status: completed|cancelled}`, in dependency order)
 - **No network dependency** during workout logging
 - **Timer** continues even with no network
+
+### Personal-record detection: hybrid
+
+Decided 2026-05-02 in [`specs/milestones/M3-active-session/BACKEND_BRIEF.md`](../milestones/M3-active-session/BACKEND_BRIEF.md) § "PR-detection decision".
+
+- **Server is canonical.** When `PATCH /sessions/:id` transitions `status` to `completed`, the handler iterates the session's sets, computes `one_rep_max` (Epley: `weightKg × (1 + reps / 30)`) and `volume` (`weightKg × reps`) candidates, and upserts into `personal_records` keyed by `(userId, exerciseId, recordType)` with `ON CONFLICT … DO UPDATE WHERE EXCLUDED.value > personal_records.value`. Idempotent on replay; winning sets are flagged `is_personal_record = true`.
+- **Client is predictive.** Mobile maintains an opportunistically-cached `personal_records` slice (synced via `GET /personal-records`) used to (a) populate quick-fill suggestions during set logging, (b) compute the Summary screen's PR list immediately on session complete — even when offline. Server reconciles into the cache after the queued PATCH flushes, picked up by the next focus refresh on the home tab.
+- **Why hybrid:** the Summary screen must render fully offline; the `personal_records` table must have a single canonical writer for M4's PR carousel and any downstream analytics.
