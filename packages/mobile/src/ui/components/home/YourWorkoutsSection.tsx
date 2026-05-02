@@ -40,9 +40,13 @@ export function YourWorkoutsSection({
   const screenWidth = Dimensions.get("window").width;
   const cardWidth = screenWidth * 0.85; // 85% of screen width
   const itemWidth = cardWidth + Spacing.md; // Add spacing between cards
-  // Fixed height that matches typical WorkoutCard content (title,
-  // description, metadata, actions).
-  const carouselHeight = 200;
+  // Fixed height — sized to fit the WorkoutCard's title + metadata
+  // row + action buttons with a 2-line description, with a touch of
+  // breathing room. The previous 200 was tuned for verbatim parity
+  // with the legacy carousel; the V2 cards render slightly tighter
+  // and 200 left a noticeable gap below short cards. 170 is close
+  // to legacy density without the extra padding.
+  const carouselHeight = 170;
 
   if (workouts.length === 0) {
     return null;
