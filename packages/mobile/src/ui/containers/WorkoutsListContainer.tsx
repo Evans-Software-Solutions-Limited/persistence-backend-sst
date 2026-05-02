@@ -1,5 +1,5 @@
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
 import type { Workout } from "@/domain/models/workout";
@@ -27,9 +27,6 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
-  const { workoutId: routeWorkoutId } = useLocalSearchParams<{
-    workoutId?: string;
-  }>();
 
   // Re-read the cache whenever the tab regains focus. Mutations from
   // the modal stack (`/workouts/create`, `/workouts/[id]/edit`) write
@@ -47,7 +44,6 @@ export function WorkoutsListContainer() {
   );
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [popoverWorkoutId, setPopoverWorkoutId] = useState<string | null>(null);
   const [deletingWorkoutIds, setDeletingWorkoutIds] = useState<Set<string>>(
     new Set(),
   );
@@ -137,10 +133,13 @@ export function WorkoutsListContainer() {
     router.push("/coming-soon?feature=subscription" as never);
   }, []);
 
-  const onWorkoutPress = useCallback(
-    (workout: { id: string }) => setPopoverWorkoutId(workout.id),
-    [],
-  );
+  // Card tap pushes the workout-detail SCREEN at /(app)/workouts/[id]
+  // — replaces the prior in-list `WorkoutPopover` overlay so the
+  // detail surface is a proper deep-linkable route, has stack-back
+  // navigation, and matches the create/edit modals' presentation.
+  const onWorkoutPress = useCallback((workout: { id: string }) => {
+    router.push(`/(app)/workouts/${workout.id}` as never);
+  }, []);
 
   const onEditWorkout = useCallback((workout: { id: string }) => {
     router.push(`/(app)/workouts/${workout.id}/edit` as never);
@@ -151,8 +150,6 @@ export function WorkoutsListContainer() {
     void workoutId;
     router.push("/coming-soon?feature=active-session" as never);
   }, []);
-
-  const onClosePopover = useCallback(() => setPopoverWorkoutId(null), []);
 
   const onDeleteWorkout = useCallback(
     (workout: { id: string; name: string }) => {
@@ -194,24 +191,6 @@ export function WorkoutsListContainer() {
     [storage, userId, rereadCache],
   );
 
-  // Popover detail — read from cached_workout_detail (populated by the
-  // list refresh's splatter step) or fall back to the matching slice
-  // entry. No separate getById call needed for cache-warm popover.
-  const popoverWorkout = useMemo<Workout | null>(() => {
-    if (!popoverWorkoutId) return null;
-    const all = [...sections.mine, ...sections.assigned, ...sections.default];
-    return all.find((w) => w.id === popoverWorkoutId) ?? null;
-  }, [popoverWorkoutId, sections]);
-
-  // Surface route-param deeplink (e.g. notification tap with workoutId).
-  React.useEffect(() => {
-    if (!routeWorkoutId || popoverWorkoutId) return;
-    const all = [...sections.mine, ...sections.assigned, ...sections.default];
-    if (all.some((w) => w.id === routeWorkoutId)) {
-      setPopoverWorkoutId(routeWorkoutId);
-    }
-  }, [routeWorkoutId, popoverWorkoutId, sections]);
-
   return (
     <WorkoutsListPresenter
       isInitialLoading={
@@ -243,9 +222,6 @@ export function WorkoutsListContainer() {
       onStartWorkout={onStartWorkout}
       onRetry={onRefresh}
       onRefresh={onRefresh}
-      popoverVisible={popoverWorkoutId !== null}
-      popoverWorkout={popoverWorkout}
-      onClosePopover={onClosePopover}
     />
   );
 }

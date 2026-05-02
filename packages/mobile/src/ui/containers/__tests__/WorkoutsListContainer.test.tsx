@@ -153,7 +153,7 @@ describe("WorkoutsListContainer", () => {
     await waitFor(() => expect(queryByText("Pull Day")).toBeNull());
   });
 
-  it("opens and closes the popover when a card is pressed", async () => {
+  it("pushes the workout-detail route when a card is pressed", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheWorkoutsList(
@@ -166,19 +166,13 @@ describe("WorkoutsListContainer", () => {
     storage.cacheWorkoutsList("test-user", "default", [], null);
 
     const adapters = makeAdapters(api, storage);
-    const { findByText, queryByTestId, getByTestId } = renderWithTheme(
+    const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Press the card → popover opens.
     const card = await findByText("Push Day");
     fireEvent.press(card);
-    await waitFor(() => expect(getByTestId("popover")).toBeTruthy());
-
-    // Close button → popover dismisses.
-    const closeButton = getByTestId("close-button");
-    fireEvent.press(closeButton);
-    await waitFor(() => expect(queryByTestId("popover")).toBeNull());
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1");
   });
 
   it("delete confirmation enqueues a DELETE sync intent and clears the storage cache", async () => {
@@ -293,7 +287,7 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/exercises");
   });
 
-  it("edit button routes to the editor modal; popover Start CTA stubs to active-session", async () => {
+  it("edit button routes to the editor modal", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const w = buildWorkout({ id: "w-1", name: "Push Day" });
@@ -302,67 +296,11 @@ describe("WorkoutsListContainer", () => {
     storage.cacheWorkoutsList("test-user", "default", [], null);
 
     const adapters = makeAdapters(api, storage);
-    const { findByText, getByText } = renderWithTheme(
+    const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Edit CTA on the card → workout-editor modal.
     fireEvent.press(await findByText("Edit"));
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
-
-    // Open the popover → Start Workout button (M3 placeholder).
-    fireEvent.press(await findByText("Push Day"));
-    fireEvent.press(getByText("Start Workout"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=active-session",
-    );
-  });
-
-  it("opens the popover automatically when the route param matches a cached workout (deeplink)", async () => {
-    // Persistent return — the container reads useLocalSearchParams on
-    // every render until the deeplink effect commits.
-    mockUseLocalSearchParams.mockReturnValue({ workoutId: "w-deep" });
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    const w = buildWorkout({ id: "w-deep", name: "Deeplinked Workout" });
-    storage.cacheWorkoutsList("test-user", "mine", [w], null);
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
-
-    const adapters = makeAdapters(api, storage);
-    const { findByTestId } = renderWithTheme(
-      withAdapters(adapters, <WorkoutsListContainer />),
-    );
-
-    // Popover should auto-open with the deeplinked workout.
-    expect(await findByTestId("popover")).toBeTruthy();
-
-    // Reset the persistent mock so it doesn't leak into subsequent tests.
-    mockUseLocalSearchParams.mockReturnValue({});
-  });
-
-  it("ignores unknown route-param workout ids (no popover opens)", async () => {
-    mockUseLocalSearchParams.mockReturnValue({ workoutId: "missing" });
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList(
-      "test-user",
-      "mine",
-      [buildWorkout({ id: "w-1", name: "Push Day" })],
-      null,
-    );
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
-
-    const adapters = makeAdapters(api, storage);
-    const { findByText, queryByTestId } = renderWithTheme(
-      withAdapters(adapters, <WorkoutsListContainer />),
-    );
-
-    // Wait for the list to render so the deeplink effect has run.
-    expect(await findByText("Push Day")).toBeTruthy();
-    expect(queryByTestId("popover")).toBeNull();
-
-    mockUseLocalSearchParams.mockReturnValue({});
   });
 });

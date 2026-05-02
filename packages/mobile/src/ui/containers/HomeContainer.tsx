@@ -224,23 +224,23 @@ export function HomeContainer() {
     );
   }, []);
 
-  // Deeplink the workouts tab with `?workoutId=X` so its container's
-  // useLocalSearchParams handler auto-opens the matching popover.
-  // Without the param, tapping a card on home dropped the user onto
-  // the workouts tab with nothing focused — looked broken.
+  // Push the workout-detail SCREEN at /(app)/workouts/[id]. PR #41
+  // converted the detail surface from an in-list popover to a real
+  // route, so home can navigate straight to it without the
+  // `?workoutId=` deeplink hack on the workouts tab.
   const onWorkoutPress = useCallback(
     (workoutId: string) => {
-      router.push(`/(app)/(tabs)/workouts?workoutId=${workoutId}` as never);
+      router.push(`/(app)/workouts/${workoutId}` as never);
     },
     [router],
   );
 
-  // Start CTA (M3 owns the active-session screen). For now, deeplink
-  // the workouts tab to that specific workout's popover so the user
-  // can pick their start path from there. M3 will replace this.
+  // Start CTA — same target. M3 owns the active-session route and
+  // will replace this; until then the detail screen exposes a Start
+  // button that stubs to /coming-soon.
   const onWorkoutStart = useCallback(
     (workoutId: string) => {
-      router.push(`/(app)/(tabs)/workouts?workoutId=${workoutId}` as never);
+      router.push(`/(app)/workouts/${workoutId}` as never);
     },
     [router],
   );

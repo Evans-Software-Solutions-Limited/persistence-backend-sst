@@ -319,7 +319,7 @@ describe("HomeContainer", () => {
     });
   });
 
-  it("routes to /workouts with the tapped workout's id as a deeplink param", async () => {
+  it("routes to the workout-detail screen for the tapped workout", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -335,9 +335,7 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     fireEvent.press(getByTestId("stub-workout"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(app)/(tabs)/workouts?workoutId=w1",
-    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w1");
   });
 
   it("routes the view-all and connect-health taps correctly", async () => {
@@ -372,7 +370,7 @@ describe("HomeContainer", () => {
     expect(health.requestPermissions).toHaveBeenCalled();
   });
 
-  it("workout-start tap deeplinks the workouts tab with the workout id (M3 stub)", async () => {
+  it("workout-start tap routes to the workout-detail screen (M3 stub)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -388,9 +386,7 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     fireEvent.press(getByTestId("stub-workout-start"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(app)/(tabs)/workouts?workoutId=w1",
-    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w1");
   });
 
   it("surfaces an Alert when the manage-subscription CTA fires", async () => {

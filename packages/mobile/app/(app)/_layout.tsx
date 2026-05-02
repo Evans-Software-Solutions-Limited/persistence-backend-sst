@@ -67,6 +67,14 @@ export default function AppLayout() {
           }}
         />
         <Stack.Screen
+          name="workouts/[id]/index"
+          options={{
+            title: "Workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
           name="workouts/[id]/edit"
           options={{
             title: "Edit workout",
