@@ -30,5 +30,9 @@ export function deleteWorkoutCommand(
     endpoint: `/workouts/${workoutId}`,
     method: "DELETE",
   });
+  // Dashboard's `recentWorkouts` slice depends on the workout list;
+  // drop its cache so home doesn't keep showing the deleted row
+  // until the dashboard TTL elapses.
+  deps.storage.invalidateDashboard(deps.userId);
   return ok(undefined);
 }

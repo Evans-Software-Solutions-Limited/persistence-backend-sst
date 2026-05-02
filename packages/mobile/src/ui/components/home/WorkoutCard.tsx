@@ -234,6 +234,11 @@ const styles = {
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.sm,
+    // Fill the carousel slot height (200) so cards without a
+    // description don't look squat next to cards with one. The
+    // description block uses numberOfLines={2} which gives the
+    // taller layout; this lets shorter cards stretch to match.
+    height: "100%" as const,
     ...Shadows.medium,
   },
   workoutCardDisabled: {

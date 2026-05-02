@@ -1,1 +1,1 @@
-export { SSTApiAdapter } from "./sst-api.adapter";
+export { SSTApiAdapter, getApiBaseUrl } from "./sst-api.adapter";

@@ -228,3 +228,83 @@ describe("deleteWorkoutCommand", () => {
     expect(pending[0].method).toBe("DELETE");
   });
 });
+
+describe("workout commands invalidate the dashboard cache", () => {
+  // Dashboard's `recentWorkouts` slice depends on the workout list, so
+  // every workout mutation must drop the dashboard cache — otherwise
+  // the home tab keeps showing the pre-mutation snapshot until the
+  // dashboard's own 5-minute TTL elapses.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const {
+    DASHBOARD_FIXTURE,
+  } = require("@/adapters/api/__tests__/fixtures/dashboard.fixture");
+  const buildDashboard = () => DASHBOARD_FIXTURE;
+
+  it("createWorkoutCommand invalidates the dashboard cache", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheDashboard("user-1", buildDashboard());
+    expect(storage.getCachedDashboard("user-1")).not.toBeNull();
+
+    const idGen = (() => {
+      let i = 0;
+      return () => `id-${++i}`;
+    })();
+    createWorkoutCommand(
+      { storage, userId: "user-1", generateId: idGen },
+      {
+        name: "Push",
+        exercises: [{ exerciseId: "e1", sortOrder: 0 }],
+      },
+    );
+
+    expect(storage.getCachedDashboard("user-1")).toBeNull();
+  });
+
+  it("updateWorkoutCommand invalidates the dashboard cache", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheDashboard("user-1", buildDashboard());
+    storage.cacheWorkoutDetail("user-1", {
+      id: "w-1",
+      name: "Push",
+      description: null,
+      createdBy: "user-1",
+      visibility: "private",
+      estimatedDurationMinutes: 30,
+      exercises: [],
+      createdAt: "2026-04-27T00:00:00Z",
+      updatedAt: "2026-04-27T00:00:00Z",
+    });
+
+    const idGen = (() => {
+      let i = 0;
+      return () => `id-${++i}`;
+    })();
+    updateWorkoutCommand(
+      { storage, userId: "user-1", generateId: idGen },
+      "w-1",
+      { name: "Push v2" },
+    );
+
+    expect(storage.getCachedDashboard("user-1")).toBeNull();
+  });
+
+  it("deleteWorkoutCommand invalidates the dashboard cache", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheDashboard("user-1", buildDashboard());
+    storage.cacheWorkoutDetail("user-1", {
+      id: "w-1",
+      name: "Push",
+      description: null,
+      createdBy: "user-1",
+      visibility: "private",
+      estimatedDurationMinutes: 30,
+      exercises: [],
+      createdAt: "2026-04-27T00:00:00Z",
+      updatedAt: "2026-04-27T00:00:00Z",
+    });
+
+    deleteWorkoutCommand({ storage, userId: "user-1" }, "w-1");
+
+    expect(storage.getCachedDashboard("user-1")).toBeNull();
+  });
+});

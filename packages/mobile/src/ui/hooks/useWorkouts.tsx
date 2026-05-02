@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getApiBaseUrl } from "@/adapters/api";
+import { processSyncQueue } from "@/application/commands/sync.command";
 import {
   getWorkoutsQuery,
   refreshAllWorkouts,
@@ -23,6 +25,14 @@ export type WorkoutsState = WorkoutsQueryResult & {
   isRefreshing: boolean;
   error: ApiError | null;
   refresh: () => Promise<void>;
+  /**
+   * Re-read the cache without hitting the network. Use this when an
+   * external mutation (e.g. a workout created from the modal stack)
+   * has updated the SQLite cache and the list needs to pick up the
+   * new state — `refresh()` would also re-hit the API, which isn't
+   * needed if the cache is the source of truth for the new row.
+   */
+  rereadCache: () => void;
 };
 
 const EMPTY_QUERY_RESULT: WorkoutsQueryResult = {
@@ -32,7 +42,7 @@ const EMPTY_QUERY_RESULT: WorkoutsQueryResult = {
 };
 
 export function useWorkouts(): WorkoutsState {
-  const { api, storage } = useAdapters();
+  const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
@@ -71,6 +81,23 @@ export function useWorkouts(): WorkoutsState {
     setError(null);
     const work = (async () => {
       try {
+        // Drain the sync queue BEFORE fetching. Otherwise the GET races
+        // any pending POST/PATCH/DELETE — the server returns a list
+        // that doesn't yet reflect the user's optimistic mutation, the
+        // adapter overwrites cache with the stale response, and the
+        // optimistic row vanishes (or in the delete case, comes back).
+        // Flushing first means the server sees every queued mutation
+        // before we ask it for the canonical list.
+        try {
+          await processSyncQueue(storage, auth, getApiBaseUrl());
+        } catch (err) {
+          // Queue worker errors are isolated per-entry inside
+          // processSyncQueue; an outer throw means a shell-level
+          // failure (e.g. base-URL config). Log and continue —
+          // refusing to refresh would be worse than fetching.
+          console.error("[useWorkouts] queue flush failed:", err);
+        }
+        if (latestUserIdRef.current !== userId) return;
         const results = await refreshAllWorkouts(api, storage, userId);
         if (latestUserIdRef.current !== userId) return;
         // Surface the first error we see; cache writes for successful
@@ -91,7 +118,7 @@ export function useWorkouts(): WorkoutsState {
     })();
     inFlightRef.current = { userId, promise: work };
     return work;
-  }, [api, storage, userId]);
+  }, [api, auth, storage, userId]);
 
   // One-shot auto-refresh when any section is stale (or no cache).
   const autoRefreshedForUserRef = useRef<string | null>(null);
@@ -108,10 +135,18 @@ export function useWorkouts(): WorkoutsState {
     void refresh();
   }, [userId, anyStale, refresh]);
 
+  // Soft re-read: bump cacheVersion so `initial` recomputes from
+  // storage. Stable identity (no deps) so callers can safely list it
+  // in `useFocusEffect` / `useEffect` deps without re-firing.
+  const rereadCache = useCallback(() => {
+    setCacheVersion((v) => v + 1);
+  }, []);
+
   return {
     ...snapshot,
     isRefreshing,
     error,
     refresh,
+    rereadCache,
   };
 }

@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
 import type { Workout } from "@/domain/models/workout";
@@ -27,12 +27,23 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
-  const { workoutId: routeWorkoutId } = useLocalSearchParams<{
-    workoutId?: string;
-  }>();
+
+  // Re-read the cache whenever the tab regains focus. Mutations from
+  // the modal stack (`/workouts/create`, `/workouts/[id]/edit`) write
+  // through to SQLite via `createWorkoutCommand` /
+  // `updateWorkoutCommand`, but `useWorkouts` only recomputes its
+  // snapshot when its internal `cacheVersion` ticks. Without this
+  // hook, navigating back from the creator/editor modal lands on a
+  // stale list and the new/updated workout is invisible until pull-
+  // to-refresh.
+  const rereadCache = workouts.rereadCache;
+  useFocusEffect(
+    useCallback(() => {
+      rereadCache();
+    }, [rereadCache]),
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [popoverWorkoutId, setPopoverWorkoutId] = useState<string | null>(null);
   const [deletingWorkoutIds, setDeletingWorkoutIds] = useState<Set<string>>(
     new Set(),
   );
@@ -111,9 +122,7 @@ export function WorkoutsListContainer() {
   // WorkoutLimitIndicator's "Upgrade Now" CTA is the explicit at-limit
   // path. Matches legacy behaviour.
   const onCreateWorkout = useCallback(() => {
-    // TODO(M2 mobile follow-up): wire to /workouts/create once the
-    // creator surface lands on the next mobile PR.
-    router.push("/coming-soon?feature=workout-creator" as never);
+    router.push("/(app)/workouts/create" as never);
   }, []);
 
   const onBrowseExercises = useCallback(() => {
@@ -124,15 +133,16 @@ export function WorkoutsListContainer() {
     router.push("/coming-soon?feature=subscription" as never);
   }, []);
 
-  const onWorkoutPress = useCallback(
-    (workout: { id: string }) => setPopoverWorkoutId(workout.id),
-    [],
-  );
+  // Card tap pushes the workout-detail SCREEN at /(app)/workouts/[id]
+  // — replaces the prior in-list `WorkoutPopover` overlay so the
+  // detail surface is a proper deep-linkable route, has stack-back
+  // navigation, and matches the create/edit modals' presentation.
+  const onWorkoutPress = useCallback((workout: { id: string }) => {
+    router.push(`/(app)/workouts/${workout.id}` as never);
+  }, []);
 
   const onEditWorkout = useCallback((workout: { id: string }) => {
-    // TODO(M2 mobile follow-up): wire to /workouts/[id]/edit.
-    void workout;
-    router.push("/coming-soon?feature=workout-editor" as never);
+    router.push(`/(app)/workouts/${workout.id}/edit` as never);
   }, []);
 
   const onStartWorkout = useCallback((workoutId: string) => {
@@ -140,8 +150,6 @@ export function WorkoutsListContainer() {
     void workoutId;
     router.push("/coming-soon?feature=active-session" as never);
   }, []);
-
-  const onClosePopover = useCallback(() => setPopoverWorkoutId(null), []);
 
   const onDeleteWorkout = useCallback(
     (workout: { id: string; name: string }) => {
@@ -157,41 +165,31 @@ export function WorkoutsListContainer() {
             onPress: () => {
               setDeletingWorkoutIds((prev) => new Set(prev).add(workout.id));
               // The command is synchronous and only touches storage —
-              // it can't fail in practice. Optimistic cache removal
-              // happens inside the command; the post-call refresh
-              // syncs the React snapshot with storage.
+              // optimistic cache removal happens inside the command,
+              // and a DELETE intent goes onto the sync queue. We
+              // intentionally `rereadCache()` instead of `refresh()`
+              // here: refresh would race the still-pending DELETE
+              // against the server (the server returns the not-yet-
+              // deleted row, the cache gets overwritten, and the
+              // workout reappears until the next hard reload).
+              // `rereadCache` just propagates the local removal to
+              // the snapshot; the queue worker eventually flushes
+              // the DELETE on the next refresh / foreground / sync
+              // tick.
               deleteWorkoutCommand({ storage, userId }, workout.id);
               setDeletingWorkoutIds((prev) => {
                 const next = new Set(prev);
                 next.delete(workout.id);
                 return next;
               });
-              void workoutsRefresh();
+              rereadCache();
             },
           },
         ],
       );
     },
-    [storage, userId, workoutsRefresh],
+    [storage, userId, rereadCache],
   );
-
-  // Popover detail — read from cached_workout_detail (populated by the
-  // list refresh's splatter step) or fall back to the matching slice
-  // entry. No separate getById call needed for cache-warm popover.
-  const popoverWorkout = useMemo<Workout | null>(() => {
-    if (!popoverWorkoutId) return null;
-    const all = [...sections.mine, ...sections.assigned, ...sections.default];
-    return all.find((w) => w.id === popoverWorkoutId) ?? null;
-  }, [popoverWorkoutId, sections]);
-
-  // Surface route-param deeplink (e.g. notification tap with workoutId).
-  React.useEffect(() => {
-    if (!routeWorkoutId || popoverWorkoutId) return;
-    const all = [...sections.mine, ...sections.assigned, ...sections.default];
-    if (all.some((w) => w.id === routeWorkoutId)) {
-      setPopoverWorkoutId(routeWorkoutId);
-    }
-  }, [routeWorkoutId, popoverWorkoutId, sections]);
 
   return (
     <WorkoutsListPresenter
@@ -224,9 +222,6 @@ export function WorkoutsListContainer() {
       onStartWorkout={onStartWorkout}
       onRetry={onRefresh}
       onRefresh={onRefresh}
-      popoverVisible={popoverWorkoutId !== null}
-      popoverWorkout={popoverWorkout}
-      onClosePopover={onClosePopover}
     />
   );
 }

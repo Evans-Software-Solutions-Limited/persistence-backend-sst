@@ -8,14 +8,12 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { Workout } from "@/domain/models/workout";
 import type { ApiError } from "@/shared/errors";
 import { ErrorState } from "@/ui/components/ErrorState";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { QuickActions } from "@/ui/components/workouts/QuickActions";
 import { WorkoutCard } from "@/ui/components/workouts/WorkoutCard";
 import { WorkoutLimitIndicator } from "@/ui/components/workouts/WorkoutLimitIndicator";
-import { WorkoutPopover } from "@/ui/components/workouts/WorkoutPopover";
 import { WorkoutSection } from "@/ui/components/workouts/WorkoutSection";
 import {
   BorderRadius,
@@ -59,9 +57,6 @@ export interface WorkoutsListPresenterProps {
   onStartWorkout: (workoutId: string) => void;
   onRetry: () => void;
   onRefresh: () => void;
-  popoverVisible: boolean;
-  popoverWorkout: Workout | null;
-  onClosePopover: () => void;
 }
 
 export function WorkoutsListPresenter({
@@ -89,9 +84,6 @@ export function WorkoutsListPresenter({
   onStartWorkout,
   onRetry,
   onRefresh,
-  popoverVisible,
-  popoverWorkout,
-  onClosePopover,
 }: WorkoutsListPresenterProps) {
   // Blocking error state when the cache is empty + refresh failed.
   if (
@@ -234,15 +226,6 @@ export function WorkoutsListPresenter({
           </>
         )}
       </ScrollView>
-
-      <WorkoutPopover
-        visible={popoverVisible}
-        workout={popoverWorkout}
-        isLoading={false}
-        error={null}
-        onClose={onClosePopover}
-        onStartWorkout={onStartWorkout}
-      />
     </View>
   );
 }

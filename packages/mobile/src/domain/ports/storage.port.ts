@@ -150,6 +150,14 @@ export interface StoragePort {
    * cheaper when only the timestamp is needed (stale-indicator caption).
    */
   getDashboardAge(userId: string): string | null;
+  /**
+   * Drop the cached dashboard payload for a user. Called by mutation
+   * commands that change data the dashboard depends on (e.g. workout
+   * create / edit / delete affects `recentWorkouts`) so the next
+   * dashboard read sees the cache as missing/stale and triggers a
+   * fresh fetch instead of showing the pre-mutation snapshot.
+   */
+  invalidateDashboard(userId: string): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

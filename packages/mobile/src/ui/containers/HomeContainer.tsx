@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { Goal } from "@/ui/components/home/GoalsSection";
@@ -197,6 +197,19 @@ export function HomeContainer() {
     void Promise.all([dashboardRefresh(), healthRefresh()]);
   }, [dashboardRefresh, healthRefresh]);
 
+  // Re-fetch the dashboard whenever the home tab regains focus.
+  // Mutations from the workouts tab (create / edit / delete) call
+  // `storage.invalidateDashboard(userId)`, but the cache delete
+  // doesn't propagate to React state — the home hook still has
+  // the old payload until something pulls fresh data. The hook's
+  // `inFlightRef` dedupes if a refresh is already in flight, so
+  // cost is at most one GET /dashboard per focus.
+  useFocusEffect(
+    useCallback(() => {
+      void dashboardRefresh();
+    }, [dashboardRefresh]),
+  );
+
   const onUpgradePress = useCallback(() => {
     Alert.alert(
       "Upgrade coming soon",
@@ -211,16 +224,23 @@ export function HomeContainer() {
     );
   }, []);
 
+  // Push the workout-detail SCREEN at /(app)/workouts/[id]. PR #41
+  // converted the detail surface from an in-list popover to a real
+  // route, so home can navigate straight to it without the
+  // `?workoutId=` deeplink hack on the workouts tab.
   const onWorkoutPress = useCallback(
-    (_workoutId: string) => {
-      router.push("/(app)/(tabs)/workouts");
+    (workoutId: string) => {
+      router.push(`/(app)/workouts/${workoutId}` as never);
     },
     [router],
   );
 
+  // Start CTA — same target. M3 owns the active-session route and
+  // will replace this; until then the detail screen exposes a Start
+  // button that stubs to /coming-soon.
   const onWorkoutStart = useCallback(
-    (_workoutId: string) => {
-      router.push("/(app)/(tabs)/workouts");
+    (workoutId: string) => {
+      router.push(`/(app)/workouts/${workoutId}` as never);
     },
     [router],
   );

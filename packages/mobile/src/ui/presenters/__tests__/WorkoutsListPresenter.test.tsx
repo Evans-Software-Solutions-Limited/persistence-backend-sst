@@ -1,5 +1,4 @@
 import React from "react";
-import type { Workout } from "@/domain/models/workout";
 import { WorkoutsListPresenter } from "../WorkoutsListPresenter";
 import { renderWithTheme as render } from "../../../../__tests__/test-utils";
 
@@ -28,9 +27,6 @@ const baseProps = {
   onStartWorkout: jest.fn(),
   onRetry: jest.fn(),
   onRefresh: jest.fn(),
-  popoverVisible: false,
-  popoverWorkout: null,
-  onClosePopover: jest.fn(),
 };
 
 const buildCardView = (overrides: Record<string, unknown> = {}) => ({
@@ -155,29 +151,6 @@ describe("WorkoutsListPresenter", () => {
     const { getByText } = render(<WorkoutsListPresenter {...baseProps} />);
     expect(getByText("Create New Workout")).toBeTruthy();
     expect(getByText("Browse Exercises")).toBeTruthy();
-  });
-
-  it("renders the popover when popoverVisible + popoverWorkout are set", () => {
-    const popoverWorkout: Workout = {
-      id: "wo-1",
-      name: "Push Day",
-      description: "Hard session",
-      createdBy: "test-user",
-      visibility: "private",
-      estimatedDurationMinutes: 60,
-      exercises: [],
-      createdAt: "2026-04-28T00:00:00Z",
-      updatedAt: "2026-04-28T00:00:00Z",
-    };
-    const { getByText } = render(
-      <WorkoutsListPresenter
-        {...baseProps}
-        popoverVisible={true}
-        popoverWorkout={popoverWorkout}
-      />,
-    );
-    // Popover header repeats workout name
-    expect(getByText("Push Day")).toBeTruthy();
   });
 
   it("renders WorkoutCard with description, targeted_muscles, and owner actions for owned workouts", () => {

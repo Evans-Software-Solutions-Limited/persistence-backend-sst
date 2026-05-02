@@ -100,5 +100,11 @@ export function createWorkoutCommand(
     method: "POST",
   });
 
+  // Dashboard's `recentWorkouts` slice depends on the workout list;
+  // dropping the cache here means the next home-tab focus refetches
+  // and picks up the new row instead of showing the pre-create
+  // snapshot until the dashboard's own 5-minute TTL elapses.
+  deps.storage.invalidateDashboard(deps.userId);
+
   return ok(workout);
 }

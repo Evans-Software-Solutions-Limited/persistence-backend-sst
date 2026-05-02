@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getApiBaseUrl } from "@/adapters/api";
+import { processSyncQueue } from "@/application/commands/sync.command";
 import { getDashboardQuery } from "@/application/queries/dashboard.query";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { ApiError } from "@/shared/errors";
@@ -35,7 +37,7 @@ export type DashboardState = {
 };
 
 export function useDashboard(): DashboardState {
-  const { api, storage } = useAdapters();
+  const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
@@ -108,6 +110,24 @@ export function useDashboard(): DashboardState {
     setError(null);
     const work = (async () => {
       try {
+        // Drain the sync queue BEFORE fetching. Otherwise GET
+        // /dashboard races any pending workout POST/PATCH/DELETE —
+        // the server returns a `recentWorkouts` slice that doesn't
+        // yet reflect the user's optimistic mutation, the cache
+        // gets overwritten with the stale response, and the new
+        // workout never appears on home until the next manual
+        // refresh after the queue settles. Mirrors the same fix
+        // applied to useWorkouts.refresh.
+        try {
+          await processSyncQueue(storage, auth, getApiBaseUrl());
+        } catch (err) {
+          // Per-entry errors are caught inside processSyncQueue;
+          // an outer throw means a shell-level failure (e.g.
+          // missing base URL). Log and proceed — refusing to
+          // refresh is worse than fetching stale.
+          console.error("[useDashboard] queue flush failed:", err);
+        }
+        if (latestUserIdRef.current !== userId) return;
         // Fetch first; DO NOT write to storage or state yet. If the
         // session flipped during the fetch, the writes below are
         // skipped — preventing cross-user state pollution + the
@@ -141,7 +161,7 @@ export function useDashboard(): DashboardState {
     })();
     inFlightRef.current = { userId, promise: work };
     return work;
-  }, [api, storage, userId]);
+  }, [api, auth, storage, userId]);
 
   // One-shot auto-refresh per user when the cache is stale or empty.
   // The guard is keyed on `userId` — if the signed-in user changes

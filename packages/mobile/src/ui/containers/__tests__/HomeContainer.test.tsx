@@ -3,9 +3,18 @@
 // Jest hoists jest.mock factories — prefix captured refs with `mock*`.
 
 const mockRouterPush = jest.fn();
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush }),
-}));
+jest.mock("expo-router", () => {
+  // Collapse useFocusEffect to a plain useEffect on mount — tests
+  // assert dashboard.refresh is invoked, not the navigation focus
+  // lifecycle itself.
+  const React = require("react");
+  return {
+    useRouter: () => ({ push: mockRouterPush }),
+    useFocusEffect: (cb: any) => {
+      React.useEffect(() => cb(), [cb]);
+    },
+  };
+});
 
 const mockHomePresenterProps: { current: any } = { current: null };
 // Records the props passed on each render. Used by the identity-
@@ -310,7 +319,7 @@ describe("HomeContainer", () => {
     });
   });
 
-  it("routes to /workouts on workout tap", async () => {
+  it("routes to the workout-detail screen for the tapped workout", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -326,7 +335,7 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     fireEvent.press(getByTestId("stub-workout"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/workouts");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w1");
   });
 
   it("routes the view-all and connect-health taps correctly", async () => {
@@ -361,7 +370,7 @@ describe("HomeContainer", () => {
     expect(health.requestPermissions).toHaveBeenCalled();
   });
 
-  it("routes to /workouts on workout-start tap", async () => {
+  it("workout-start tap routes to the workout-detail screen (M3 stub)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -377,7 +386,7 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     fireEvent.press(getByTestId("stub-workout-start"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/workouts");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w1");
   });
 
   it("surfaces an Alert when the manage-subscription CTA fires", async () => {

@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
+import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
 /**
@@ -28,6 +29,12 @@ import { colorPalette } from "../../src/ui/theme";
  * we want. Keep them here.
  */
 export default function AppLayout() {
+  // Drain the sync queue on launch + on every foreground transition.
+  // Mounted at the authenticated layout root so it runs for the entire
+  // signed-in surface and unmounts cleanly on sign-out (auth boundary
+  // unmounts this tree).
+  useSyncWorker();
+
   return (
     <ExerciseFiltersProvider>
       <Stack
@@ -49,6 +56,30 @@ export default function AppLayout() {
           options={{
             title: "Filters",
             presentation: "modal",
+          }}
+        />
+        <Stack.Screen
+          name="workouts/create"
+          options={{
+            title: "New workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="workouts/[id]/index"
+          options={{
+            title: "Workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="workouts/[id]/edit"
+          options={{
+            title: "Edit workout",
+            presentation: "modal",
+            headerShown: false,
           }}
         />
       </Stack>

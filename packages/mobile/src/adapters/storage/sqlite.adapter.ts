@@ -495,6 +495,11 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows[0]?.synced_at ?? null;
   }
 
+  invalidateDashboard(userId: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_dashboard WHERE user_id = ?`, [userId]);
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`

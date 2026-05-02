@@ -10,6 +10,14 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 
+const mockFetch = jest.fn();
+(globalThis as Record<string, unknown>).fetch = mockFetch;
+
+jest.mock("@/adapters/api", () => ({
+  ...jest.requireActual("@/adapters/api"),
+  getApiBaseUrl: () => "https://api.test",
+}));
+
 function makeAdapters(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
@@ -597,5 +605,61 @@ describe("useDashboard", () => {
         callsAfterUser1,
       );
     });
+  });
+
+  it("flushes the sync queue before fetching during refresh()", async () => {
+    // Regression: when a user creates a workout then lands on home,
+    // useFocusEffect → dashboard.refresh() used to GET /dashboard
+    // before the queued POST /workouts had settled. Server returned
+    // a recentWorkouts slice without the new workout; the cache
+    // overwrote and the carousel never showed it. Refresh() must
+    // drain the sync queue first so the POST lands before we ask
+    // the server for the canonical list.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-1",
+      operation: "create",
+      payload: { name: "Push Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    const callOrder: string[] = [];
+    mockFetch.mockReset();
+    mockFetch.mockImplementation((url: string) => {
+      callOrder.push(`fetch ${url}`);
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    const dashSpy = jest
+      .spyOn(api, "getDashboard")
+      .mockImplementation(async () => {
+        callOrder.push("getDashboard");
+        return ok(DASHBOARD_FIXTURE);
+      });
+
+    const adapters = makeAdapters(api, storage);
+    const { result } = renderHook(() => useDashboard(), {
+      wrapper: wrap(adapters),
+    });
+
+    await waitFor(() => expect(result.current.payload).not.toBeNull());
+
+    callOrder.length = 0;
+    mockFetch.mockClear();
+    dashSpy.mockClear();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // The queue worker's POST went out before getDashboard.
+    expect(callOrder[0]).toBe("fetch https://api.test/workouts");
+    expect(callOrder.includes("getDashboard")).toBe(true);
+    expect(callOrder.indexOf("fetch https://api.test/workouts")).toBeLessThan(
+      callOrder.indexOf("getDashboard"),
+    );
   });
 });

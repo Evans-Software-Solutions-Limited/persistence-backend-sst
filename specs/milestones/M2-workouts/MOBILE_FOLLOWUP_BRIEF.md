@@ -23,6 +23,7 @@ Each commit ends with the standard footer (`Spec alignment:` + `Co-Authored-By:`
 **Pure domain functions** in `src/domain/services/workout.service.ts`: `validateWorkoutInput`, `sanitizeCreateWorkoutInput`, `calculateEstimatedDuration`, `reorderExercises`, `groupAsSuperSet`, `ungroupSuperSet`, `propagateSupersetSharedFields`. Reuse these in the form reducer — don't reinvent.
 
 **Application layer:**
+
 - `src/application/queries/workouts.query.ts` — `getWorkoutsQuery`, `refreshWorkouts`, `refreshAllWorkouts`.
 - `src/application/commands/create-workout.command.ts` — offline-first; validates → sanitizes → temp `local-` UUID → cache → enqueue POST. **Already integrates with the sync queue** — your container just calls it.
 - `src/application/commands/update-workout.command.ts` — full-replacement on `exercises` when present; merges metadata; enqueues PATCH.
@@ -31,11 +32,13 @@ Each commit ends with the standard footer (`Spec alignment:` + `Co-Authored-By:`
 **Hook:** `src/ui/hooks/useWorkouts.tsx` (3-section parallel) and `src/ui/hooks/useWorkout.tsx` (single workout for the editor's initial load — you'll need to add this if it's not there yet; check and clone the useDashboard pattern keyed on `workoutId`).
 
 **Verbatim-ported components** already in the tree:
+
 - `src/ui/components/workouts/{WorkoutCard,WorkoutSection,WorkoutPopover,WorkoutLimitIndicator,QuickActions}/` — list-side. You don't touch these.
 - `src/ui/components/Popover.tsx` — generic modal wrapper. Reusable for the picker if needed.
 - `src/ui/theme/workoutsLegacyTheme.ts` — re-export shim. Both creator and editor use this for theme imports.
 
 **Stub routes** that you'll replace:
+
 - `app/(app)/coming-soon.tsx` — generic placeholder. The list track routes Create / Edit / Start / Upgrade CTAs here. Your job replaces the Create + Edit redirects with real routes; Start (M3) and Upgrade (M10) stay on `coming-soon`.
 
 ## What you're building (in scope)
@@ -44,15 +47,15 @@ Each commit ends with the standard footer (`Spec alignment:` + `Co-Authored-By:`
 
 Paste JSX + StyleSheet unchanged, swap `@/constants/theme` → `@/ui/theme/workoutsLegacyTheme`. Same discipline as the list track. No redesign, no Tamagui primitives, no "improvements." If you're tempted, write `// TODO(M11): <note>` and move on.
 
-| Legacy file | LOC | V2 destination |
-|---|---|---|
-| `components/workouts/AddExercisePopover/AddExercisePopover.tsx` | 261 | `src/ui/components/workouts/AddExercisePopover/AddExercisePopover.tsx` |
-| `components/workouts/AddExercisePopover/AddExerciseList.tsx` | 57 | `src/ui/components/workouts/AddExercisePopover/AddExerciseList.tsx` |
-| `components/workouts/AddExercisePopover/AddExerciseListItem.tsx` | 74 | `src/ui/components/workouts/AddExercisePopover/AddExerciseListItem.tsx` |
+| Legacy file                                                       | LOC | V2 destination                                                           |
+| ----------------------------------------------------------------- | --- | ------------------------------------------------------------------------ |
+| `components/workouts/AddExercisePopover/AddExercisePopover.tsx`   | 261 | `src/ui/components/workouts/AddExercisePopover/AddExercisePopover.tsx`   |
+| `components/workouts/AddExercisePopover/AddExerciseList.tsx`      | 57  | `src/ui/components/workouts/AddExercisePopover/AddExerciseList.tsx`      |
+| `components/workouts/AddExercisePopover/AddExerciseListItem.tsx`  | 74  | `src/ui/components/workouts/AddExercisePopover/AddExerciseListItem.tsx`  |
 | `components/workouts/AddExercisePopover/ExerciseDetailsModal.tsx` | 460 | `src/ui/components/workouts/AddExercisePopover/ExerciseDetailsModal.tsx` |
-| `components/workouts/AddExercisePopover/styles.ts` | 168 | `src/ui/components/workouts/AddExercisePopover/styles.ts` |
-| `components/workouts/ExerciseConfigCard/ExerciseConfigCard.tsx` | 318 | `src/ui/components/workouts/ExerciseConfigCard/ExerciseConfigCard.tsx` |
-| `components/workouts/ExerciseConfigCard/styles.ts` | 58 | `src/ui/components/workouts/ExerciseConfigCard/styles.ts` |
+| `components/workouts/AddExercisePopover/styles.ts`                | 168 | `src/ui/components/workouts/AddExercisePopover/styles.ts`                |
+| `components/workouts/ExerciseConfigCard/ExerciseConfigCard.tsx`   | 318 | `src/ui/components/workouts/ExerciseConfigCard/ExerciseConfigCard.tsx`   |
+| `components/workouts/ExerciseConfigCard/styles.ts`                | 58  | `src/ui/components/workouts/ExerciseConfigCard/styles.ts`                |
 
 **Critical:** the legacy `AddExercisePopover` uses `useGetExercises` + `useGetExerciseDetails` hooks for its inner exercise list. **Do NOT port those hooks.** Instead, wrap M0's `ExerciseListContainer` (already in V2 at `src/ui/containers/ExerciseListContainer.tsx`) inside the popover as the inner list view. This is the only structural deviation from verbatim — and it's the correct one because M0 already built the V2 exercise picker. Document it inline with a comment.
 
@@ -111,6 +114,7 @@ Aim for 90% global aggregate (mobile package's threshold). Per-file dips are OK 
 ## Acceptance criteria (from parent spec)
 
 Closes:
+
 - `04-workout-management/requirements.md` STORY-002 ACs 2.1–2.12 (creator)
 - `04-workout-management/requirements.md` STORY-003 ACs 3.1–3.4 (supersets — most of the visible UX lives in the creator/editor)
 - `04-workout-management/requirements.md` STORY-004 ACs 4.1–4.8 (editor)
@@ -147,10 +151,12 @@ These were paid for in PRs #39 + #40. Burned a CI cycle each.
 8. **TOCTOU on ownership-checked mutations.** PATCH/DELETE handlers fold ownership into the WHERE clause: `where(and(eq(id), eq(createdBy, userId)))`. Empty `returning()` → not-found-or-not-owner → 404. No separate SELECT, no race window. The mobile-side commands don't need this (they're storage-only) — but if you ever add a direct API call from a command, mirror the pattern.
 
 9. **Test stabilisation pattern: anchor on a cache-derived element first.** Tests that rely on the auth bootstrap → setSnapshot → memo chain can race against `findByText`'s 4500ms timeout in CI. Anchor by waiting for an element you know will appear from the cache, then interact:
+
    ```ts
-   expect(await findByText("Push Day")).toBeTruthy();   // anchor — proves cache propagated
-   fireEvent.press(await findByText("Edit"));            // then interact
+   expect(await findByText("Push Day")).toBeTruthy(); // anchor — proves cache propagated
+   fireEvent.press(await findByText("Edit")); // then interact
    ```
+
    For cases where even this might race in a loaded CI worker, pass an explicit timeout as the third arg to `it()`: `it("...", async () => {...}, 30_000)`.
 
 10. **The Popover wrapper at `src/ui/components/Popover.tsx`** wraps `Modal` with `transparent + animationType="fade"`. Returns `null` when `visible={false}`. Has `header`, `content`, `footer` slots and a `close-button` testID. Reusable for any modal-style sheet — the `AddExercisePopover` should compose it.
