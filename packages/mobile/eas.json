@@ -9,6 +9,7 @@
       "distribution": "store",
       "channel": "staging",
       "environment": "preview",
+      "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.staging.persistence.evans-software-solutions.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
