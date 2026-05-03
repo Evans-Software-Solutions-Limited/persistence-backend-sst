@@ -38,58 +38,46 @@ Two submit profiles share the same App Store Connect API key but submit to disti
 | ------------ | ---------------------------------------------------------------- |
 | `EXPO_TOKEN` | https://expo.dev/settings/access-tokens · scope: account / build |
 
-### Per-environment (`staging`, `Production` — same values for both unless tracking different App Store apps)
+### Per-environment
 
-| Secret name             | Where to get it                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------ |
-| `APPLE_TEAM_ID`         | App Store Connect → Membership → Team ID                                                               |
-| `ASC_APP_ID`            | App Store Connect → My Apps → \[app] → App Information → Apple ID (the numeric one)                    |
-| `ASC_API_KEY_ID`        | App Store Connect → Users and Access → Integrations → Keys → Key ID column                             |
-| `ASC_API_KEY_ISSUER_ID` | Same page as above → "Issuer ID" at the top of the Keys tab                                            |
-| `ASC_API_KEY`           | Contents of the `.p8` file you downloaded when generating the API key (multi-line string, store as-is) |
+No App Store Connect secrets needed in GitHub. EAS handles ASC auth via the API key registered globally to the EAS project (one-time `eas credentials → App Store Connect: Manage your API Key` flow). EAS auto-detects `appleTeamId` and `ascAppId` from the bundle ID's existing App Store Connect record.
+
+`SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` are still required for the **backend** deploy workflows (per [`supabase/README.md`](../supabase/README.md)), but those are unrelated to mobile builds.
 
 ```bash
 # Repo-level (set once, used by both envs)
 gh secret set EXPO_TOKEN
-
-# Per environment — staging
-gh secret set APPLE_TEAM_ID         --env staging
-gh secret set ASC_APP_ID            --env staging
-gh secret set ASC_API_KEY_ID        --env staging
-gh secret set ASC_API_KEY_ISSUER_ID --env staging
-gh secret set ASC_API_KEY           --env staging < ./asc-api-key.p8
-
-# Per environment — Production
-gh secret set APPLE_TEAM_ID         --env Production
-gh secret set ASC_APP_ID            --env Production
-gh secret set ASC_API_KEY_ID        --env Production
-gh secret set ASC_API_KEY_ISSUER_ID --env Production
-gh secret set ASC_API_KEY           --env Production < ./asc-api-key.p8
 ```
 
-## App Store Connect API key (one-time)
+That's the only mobile-side GitHub secret. Everything else lives in EAS.
 
-`eas submit` needs an App Store Connect API key to upload IPAs non-interactively. Setup once:
+## One-time local setup
 
-1. App Store Connect → **Users and Access** → **Integrations** → **Keys** → **Generate API Key**.
-2. Role: **Developer** (sufficient for `eas submit`; reduce to least privilege).
-3. Download the `.p8` file when the modal pops — **one-time download**, store it offline (e.g. 1Password). If lost, generate a new key.
-4. Note the **Key ID** from the row and the **Issuer ID** from the top of the page.
-5. Save those three values into the secrets above.
-
-## Code signing (one-time)
-
-EAS manages iOS distribution certificates and provisioning profiles in its credentials vault. To bring across what's already issued for `com.bradleyevans96.persistence`:
+All credentials live inside EAS's vault. CI just kicks off `eas build` / `eas submit` — no per-run secret juggling.
 
 ```bash
 cd packages/mobile
+
+# 1. Authenticate the CLI
 eas login
+
+# 2. Register the App Store Connect API key globally with EAS.
+#    EAS uses this for both eas submit (uploads) AND eas credentials
+#    (creating distribution certs / provisioning profiles via Apple's API).
 eas credentials
-# Choose: iOS → production (or whichever is queried) → Use existing
-# Walk through the .p12 / mobileprovision import wizard
+# Walk through: App Store Connect: Manage your API Key
+#   → Set up your project to use an API Key for EAS Submit
+#   → Provide the .p8 file path, Key ID, Issuer ID
+
+# 3. Set up iOS distribution credentials (cert + provisioning profile).
+eas credentials
+# Walk through: Build Credentials → iOS → production →
+#   Distribution Certificate → "Set up a new Distribution Certificate" →
+#   Let Expo handle it (uses the API key you just registered).
+# Repeat for the staging build profile (reuse the production cert when prompted).
 ```
 
-After this, every `eas build` pulls signing material from EAS automatically. No CI-side cert management.
+After step 2, EAS no longer needs Apple credentials passed via CI. `eas submit` reads the registered API key from your EAS project state. After step 3, `eas build` pulls signing material from EAS's vault on every build.
 
 ## App-side environment variables
 
@@ -149,9 +137,7 @@ Two paths, both gated on a GitHub release:
 1. **Checkout + setup** — same Bun/cache setup as the SST workflows.
 2. **Install Expo + EAS CLI** via [`expo/expo-github-action@v8`](https://github.com/expo/expo-github-action), authed by `EXPO_TOKEN`.
 3. **`eas build --non-interactive --no-wait`** kicks off the build on EAS's cloud builders. The CI step returns immediately once the build is queued (typical wall-clock: 15–30 min on EAS's `m-medium` resource class, but invisible to the runner).
-4. **Materialise the `.p8`** API key onto disk under `packages/mobile/asc-api-key.p8` with `umask 077` (only the runner user can read it).
-5. **`eas submit --latest --non-interactive --wait`** picks the most recent build for the profile and uploads it to App Store Connect. `--wait` blocks until Apple confirms receipt — typically another 5–10 min for staging (TestFlight processing) or 20+ min for production (App Store ingest).
-6. **Cleanup** removes the `.p8` regardless of success/failure (`if: always()`).
+4. **`eas submit --latest --non-interactive --wait`** picks the most recent build for the profile and uploads it to App Store Connect. EAS authenticates using the API key you registered globally via `eas credentials → App Store Connect: Manage your API Key`; `appleTeamId` and `ascAppId` are auto-detected from the bundle ID's record. `--wait` blocks until Apple confirms receipt — typically another 5–10 min for staging (TestFlight processing) or 20+ min for production (App Store ingest).
 
 ## Caveats
 

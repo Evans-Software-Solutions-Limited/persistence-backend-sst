@@ -18,7 +18,14 @@ jobs:
   install:
     name: Install
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !contains(github.event.head_commit.message, 'release-please') && !contains(github.event.head_commit.message, 'Release ')) }}
+    # Skip the release-please bot's own push (chore(main): release …) — production-deploy.yml
+    # fires on the resulting GitHub release. `startsWith` matches only the commit subject (first
+    # line), so a feature commit body that happens to mention "release" no longer triggers a skip.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'push'
+              && !startsWith(github.event.head_commit.message, 'chore(main): release')
+              && !startsWith(github.event.head_commit.message, 'release-please')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

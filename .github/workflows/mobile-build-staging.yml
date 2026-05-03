@@ -60,21 +60,12 @@ jobs:
             --non-interactive \
             --no-wait
 
-      - name: Materialise ASC API key
+      - name: Submit to TestFlight (iOS)
         # Push events: always submit (iOS-only by default).
         # Manual dispatch: respect the `submit` input + platform choice.
+        # Auth: EAS uses the App Store Connect API key registered globally via
+        # `eas credentials` (one-time local setup) — no per-run secrets needed.
         if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
-        run: |
-          umask 077
-          printf '%s' "${{ secrets.ASC_API_KEY }}" > asc-api-key.p8
-
-      - name: Submit to TestFlight (iOS)
-        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_API_KEY_ISSUER_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
         run: |
           eas submit \
             --platform ios \
@@ -82,7 +73,3 @@ jobs:
             --latest \
             --non-interactive \
             --wait
-
-      - name: Cleanup ASC API key
-        if: always()
-        run: rm -f asc-api-key.p8

@@ -42,23 +42,7 @@
     }
   },
   "submit": {
-    "staging": {
-      "ios": {
-        "appleTeamId": "$APPLE_TEAM_ID",
-        "ascAppId": "$ASC_APP_ID",
-        "ascApiKeyId": "$ASC_API_KEY_ID",
-        "ascApiKeyIssuerId": "$ASC_API_KEY_ISSUER_ID",
-        "ascApiKeyPath": "./asc-api-key.p8"
-      }
-    },
-    "production": {
-      "ios": {
-        "appleTeamId": "$APPLE_TEAM_ID",
-        "ascAppId": "$ASC_APP_ID",
-        "ascApiKeyId": "$ASC_API_KEY_ID",
-        "ascApiKeyIssuerId": "$ASC_API_KEY_ISSUER_ID",
-        "ascApiKeyPath": "./asc-api-key.p8"
-      }
-    }
+    "staging": {},
+    "production": {}
   }
 }
