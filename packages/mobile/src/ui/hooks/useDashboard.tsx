@@ -68,13 +68,31 @@ export function useDashboard(): DashboardState {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
-  // Re-sync local state when the cache read produces fresh values
-  // (e.g. after a sign-in swaps `userId`).
+  // Re-sync local state when the SIGNED-IN USER changes (sign-out then
+  // sign-in as a different account swaps `userId` and the cache read
+  // for the new user produces fresh values that need to land in state).
+  //
+  // Cache updates from the same user — e.g. after `refresh()` writes a
+  // new payload — are NOT handled here: the refresh path at line ~142
+  // calls `setPayload(result.value)` directly. Trying to mirror that
+  // here too would (a) double-set state and (b) trip React's "not
+  // wrapped in act(...)" warning in tests because the cacheVersion-
+  // driven memo recompute lands outside the test's await.
+  //
+  // First-render runs the gate-check then bails — useState above
+  // already initialised state from `initial`, so mounting needs no
+  // setState.
+  const previousUserIdRef = useRef<string | null>(userId);
   useEffect(() => {
+    if (previousUserIdRef.current === userId) return;
+    previousUserIdRef.current = userId;
     setPayload(initial.payload);
     setIsStale(initial.isStale);
     setSyncedAt(initial.syncedAt);
-  }, [initial]);
+    // initial.* are read on userId change only — no need to depend on
+    // them, since the userId guard is what decides whether to sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Mirror the live userId into a ref so a refresh IIFE can check
   // whether the session is still the one it started against. Without
