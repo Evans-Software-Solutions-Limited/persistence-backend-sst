@@ -18,14 +18,19 @@ import type {
   ApiProfile,
   ApiWorkout,
   ApiSession,
+  ApiSessionExercise,
   ApiExercise,
   ApiExerciseSet,
   ApiGoal,
+  ApiPersonalRecord,
+  CreateSessionExerciseInput,
+  GetPersonalRecordsParams,
   GetWorkoutsParams,
   GetWorkoutsResult,
   CreateSessionInput,
   UpdateSessionInput,
   CreateSetInput,
+  UpdateSetInput,
   CreateGoalInput,
 } from "@/domain/ports/api.port";
 import type {
@@ -352,6 +357,35 @@ export class SSTApiAdapter implements ApiPort {
     return this.request<void>(`/sessions/${id}`, { method: "DELETE" });
   }
 
+  async getActiveSession(): Promise<Result<ApiSession | null, ApiError>> {
+    // Wraps GET /sessions?status=in_progress&limit=1. M3 mobile uses
+    // this on app launch (`useResumeSession`) to detect a resumable
+    // session and surface the resume prompt. Returns ok(null) when
+    // the user has no active session — distinct from a transport
+    // failure, which still returns Result.err.
+    const result = await this.requestEnvelope<ApiSession[]>("/sessions", {
+      params: { status: "in_progress", limit: 1 },
+    });
+    if (!result.ok) return result;
+    return ok(result.value[0] ?? null);
+  }
+
+  async createSessionExercise(
+    sessionId: string,
+    data: CreateSessionExerciseInput,
+  ) {
+    return this.requestEnvelope<ApiSessionExercise>(
+      `/sessions/${sessionId}/exercises`,
+      { method: "POST", body: data },
+    );
+  }
+
+  async getPersonalRecords(params?: GetPersonalRecordsParams) {
+    return this.requestEnvelope<ApiPersonalRecord[]>("/personal-records", {
+      params,
+    });
+  }
+
   // -- Exercises --
   async getExercises(
     filters?: ExerciseFilters,
@@ -576,7 +610,7 @@ export class SSTApiAdapter implements ApiPort {
     sessionId: string,
     exerciseId: string,
     setId: string,
-    data: Partial<CreateSetInput>,
+    data: UpdateSetInput,
   ) {
     return this.requestEnvelope<ApiExerciseSet>(
       `/sessions/${sessionId}/exercises/${exerciseId}/sets/${setId}`,

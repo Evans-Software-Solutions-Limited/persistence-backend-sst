@@ -246,6 +246,37 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
+  async getActiveSession() {
+    const active = this.sessions.find((s) => s.status === "in_progress");
+    return this.mayFail(active ?? null);
+  }
+
+  async createSessionExercise(
+    sessionId: string,
+    data: import("@/domain/ports/api.port").CreateSessionExerciseInput,
+  ) {
+    const created: import("@/domain/ports/api.port").ApiSessionExercise = {
+      id: `local-session-exercise-${Date.now()}`,
+      sessionId,
+      exerciseId: data.exerciseId,
+      sortOrder: data.sortOrder ?? 1,
+      supersetGroup: data.supersetGroup ?? null,
+      isSubstituted: data.isSubstituted ?? false,
+      originalExerciseId: data.originalExerciseId ?? null,
+      notes: data.notes ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    return this.mayFail(created);
+  }
+
+  async getPersonalRecords(
+    _params?: import("@/domain/ports/api.port").GetPersonalRecordsParams,
+  ) {
+    return this.mayFail(
+      [] as import("@/domain/ports/api.port").ApiPersonalRecord[],
+    );
+  }
+
   /**
    * No-op in tests — the in-memory adapter doesn't resolve UUIDs because
    * its `exercises` array holds domain-shape rows with labels already
@@ -381,6 +412,8 @@ export class InMemoryApiAdapter implements ApiPort {
       distanceMeters: data.distanceMeters ?? null,
       rpe: data.rpe ?? null,
       isPersonalRecord: false,
+      isCompleted: data.isCompleted ?? false,
+      completedAt: data.completedAt ?? null,
     };
     this.sets.push(set);
     return this.mayFail(set);
@@ -390,7 +423,7 @@ export class InMemoryApiAdapter implements ApiPort {
     _sessionId: string,
     _exerciseId: string,
     setId: string,
-    data: Partial<CreateSetInput>,
+    data: import("@/domain/ports/api.port").UpdateSetInput,
   ) {
     const idx = this.sets.findIndex((s) => s.id === setId);
     if (idx === -1)
