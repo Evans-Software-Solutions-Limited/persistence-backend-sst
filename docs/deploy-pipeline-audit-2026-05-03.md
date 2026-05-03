@@ -244,17 +244,17 @@ The PR can land before, in parallel with, or after the mobile-pipeline PR — th
 
 ---
 
-## Decision summary
+## Decision summary (updated 2026-05-03 after user direction)
 
-| Concern              | Status / Recommendation                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Single Supabase      | ⏯ Already addressed in `aab4280`; doc note added to `supabase/README.md`. Set the same secrets in both GH envs.       |
-| Mobile build / store | 🆕 New PR after M3 backend merges. ~4-6 hr scope. Unblocks M3 frontend smoke. Exact secrets list above.                |
-| Exercise seeding     | 🆕 New PR, option B (mirror legacy seeds verbatim under `supabase/seeds/`). Small effort. Closes local-dev parity gap. |
+| Concern              | Status / Recommendation                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two Supabase DBs     | ⏯ Workflow design unchanged in PR #42 — already environment-scoped. `supabase/README.md` rewritten to describe the two-project topology as the steady state with a transitional note for the period before the second project is provisioned. User to point `Production`'s secrets at the second project once it exists. |
+| Mobile build / store | ⏯ Shipped in PR #42 — `eas.json` with development / staging / production profiles, `mobile-build-staging.yml` (manual dispatch → TestFlight), `mobile-build-production.yml` (release publish or manual → App Store), and full setup walkthrough at [`docs/mobile-release-pipeline.md`](./mobile-release-pipeline.md).    |
+| Exercise seeding     | 🆕 Still queued — separate PR, option B (mirror legacy seeds verbatim under `supabase/seeds/`). Small effort. Closes local-dev parity gap.                                                                                                                                                                                |
 
-## Open questions for the user
+## Resolved decisions
 
-1. **Should I open the mobile-pipeline PR next** (before M3 commits 4–8), or queue it as a follow-up after M3 backend merges? Doing it next would unblock the M3 frontend agent's smoke test, but stretches M3's timeline.
-2. **EAS plan check.** Free EAS tier = 30 iOS builds/month. Push-to-main on staging could chew through this if mobile churn is high. Are you happy with workflow_dispatch only for staging, or do you want push-to-main automation?
-3. **Apple Developer account access for the audit.** I can't fully validate the ASC API key path without poking the App Store Connect dashboard — happy to write the workflows blind against the documented API, but you'd validate end-to-end by running the first build manually.
-4. **Seed format for exercises.** Going with option B (verbatim mirror) unless you'd rather invest in option C now (CSV-driven, regeneratable from a Google Sheet). C is more work but unlocks "edit the spreadsheet → PR diff is human-readable" later.
+1. **M3 commit 4 vs mobile-pipeline first.** Mobile pipeline shipped in this PR — no separate gating decision needed. M3 commit 4 (handler updates) follows.
+2. **EAS plan / triggers.** Defaulted both workflows to **manual dispatch only** to keep build-credit burn predictable while iteration is high. `mobile-build-production.yml` also fires on `release: published`. The staging workflow has a commented `push:` block ready to uncomment once cadence stabilises.
+3. **Apple Developer dashboard validation.** Workflows authored against the documented EAS / ASC API. User validates end-to-end by running `gh workflow run mobile-build-staging.yml --field platform=ios --field submit=true` once secrets are set, per the checklist in [`docs/mobile-release-pipeline.md`](./mobile-release-pipeline.md) § "First-time validation checklist".
+4. **Seed format.** Open. Recommendation still B; will be picked up in a follow-up PR.
