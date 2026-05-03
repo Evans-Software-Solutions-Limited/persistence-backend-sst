@@ -4,22 +4,54 @@
  *
  * Stages:
  * - `production` → api.persistence.evans-software-solutions.com
+ *   (parent zone: evans-software-solutions.com, in the production AWS account)
  * - `staging`    → api.staging.persistence.evans-software-solutions.com
+ *   (parent zone: staging.persistence.evans-software-solutions.com, in the
+ *   staging AWS account; sub-delegated from the production zone via NS
+ *   records on `staging.persistence` in the parent)
  * - everything else (dev / personal stages) → no custom domain; the mobile
  *   client points at staging via `EXPO_PUBLIC_API_URL`, the web client uses
  *   the auto-generated API Gateway URL or a localhost proxy.
  *
- * Mirrors the funds-distribution-platform pattern so the two projects stay
- * legible from each other.
+ * Per-env hosted-zone IDs are hardcoded (zone IDs are not sensitive — they
+ * appear in NS records and WHOIS) and passed to SST explicitly via
+ * `dns: sst.aws.dns({ zone })` so the deploy doesn't have to walk parent
+ * zones via `route53:ListHostedZones`. This is the same pattern the
+ * funds-distribution-platform repo uses for its qa / preprod / prod
+ * accounts; each account writes only into its own delegated zone.
  */
 
 export const BASE_DOMAIN = "persistence.evans-software-solutions.com";
+
+/**
+ * Route 53 hosted zone IDs per environment.
+ *
+ * - `production`: the parent `evans-software-solutions.com` zone in the
+ *   ESS production AWS account. Records under `*.persistence.*` are
+ *   created directly in this zone.
+ * - `staging`: a sub-delegated zone for `staging.persistence.evans-software-
+ *   solutions.com` in the staging AWS account. The production parent zone
+ *   has NS records on `staging.persistence` pointing at this zone's name
+ *   servers, so the staging account fully owns its subtree without ever
+ *   touching the production zone.
+ *
+ * Dev / personal stages: undefined — no custom domain, no zone needed.
+ */
+const ZONE_IDS: Record<"production" | "staging", string> = {
+  production: "Z00258092KJ0WAEWI2IF8",
+  staging: "Z051866999VDKAQLS5RX",
+};
 
 export type Environment = "production" | "staging" | "dev";
 
 export interface DomainConfig {
   /** API custom domain for SST. `null` for dev — no custom domain. */
   apiHost: string | null;
+  /**
+   * Route 53 hosted zone ID for the env's parent zone. `undefined` for
+   * dev (no DNS-managed deploy). Passed to SST as `sst.aws.dns({ zone })`.
+   */
+  zoneId: string | undefined;
 }
 
 /**
@@ -34,17 +66,21 @@ export function getEnvironment(stage: string): Environment {
 }
 
 /**
- * Derives the API host from the stage. Returns `null` for dev so callers
- * (and SST) can gracefully fall back to the auto-generated API Gateway URL.
+ * Derives the API host + zone ID from the stage. Returns `null` /
+ * `undefined` for dev so callers (and SST) can gracefully fall back to
+ * the auto-generated API Gateway URL.
  */
 export function getDomainConfig(stage: string): DomainConfig {
   const environment = getEnvironment(stage);
   switch (environment) {
     case "production":
-      return { apiHost: `api.${BASE_DOMAIN}` };
+      return { apiHost: `api.${BASE_DOMAIN}`, zoneId: ZONE_IDS.production };
     case "staging":
-      return { apiHost: `api.staging.${BASE_DOMAIN}` };
+      return {
+        apiHost: `api.staging.${BASE_DOMAIN}`,
+        zoneId: ZONE_IDS.staging,
+      };
     case "dev":
-      return { apiHost: null };
+      return { apiHost: null, zoneId: undefined };
   }
 }

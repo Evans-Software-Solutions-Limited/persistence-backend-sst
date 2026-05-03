@@ -42,5 +42,26 @@ describe("domain-config", () => {
       expect(getDomainConfig("pr-42").apiHost).toBeNull();
       expect(getDomainConfig("feature-active-session").apiHost).toBeNull();
     });
+
+    it("returns the production zone ID for production", () => {
+      // Parent zone evans-software-solutions.com in the ESS production
+      // AWS account.
+      expect(getDomainConfig("production").zoneId).toBe(
+        "Z00258092KJ0WAEWI2IF8",
+      );
+    });
+
+    it("returns the sub-delegated staging zone ID for staging", () => {
+      // staging.persistence.evans-software-solutions.com in the staging
+      // AWS account; sub-delegated from the parent via NS records.
+      expect(getDomainConfig("staging").zoneId).toBe("Z051866999VDKAQLS5RX");
+    });
+
+    it("returns undefined zoneId for dev / personal / unknown stages", () => {
+      expect(getDomainConfig("dev").zoneId).toBeUndefined();
+      expect(getDomainConfig("brad").zoneId).toBeUndefined();
+      expect(getDomainConfig("pr-42").zoneId).toBeUndefined();
+      expect(getDomainConfig("feature-active-session").zoneId).toBeUndefined();
+    });
   });
 });
