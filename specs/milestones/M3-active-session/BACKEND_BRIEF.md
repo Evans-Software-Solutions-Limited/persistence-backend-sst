@@ -28,7 +28,7 @@ The PR-detection question (`tasks.md` Phase 6) has been resolved: **hybrid — s
 
 ### 1. Schema migration — additive only
 
-Add to `packages/db/src/schema.ts` and a new SQL migration in `packages/db/migrations/`:
+Add to `packages/db/src/schema.ts` and a new SQL migration in `supabase/migrations/` (Supabase-CLI layout adopted by [`supabase/README.md`](../../../supabase/README.md); applied to staging + production by the `Migrate database` step in `deploy-staging.yml` / `production-deploy.yml`):
 
 | Table               | Column                 | Type                                               | Default  | Notes                                                                                                            |
 | ------------------- | ---------------------- | -------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -41,7 +41,7 @@ Add to `packages/db/src/schema.ts` and a new SQL migration in `packages/db/migra
 
 **Naming note:** keep `sort_order` on `session_exercises` (not renaming to `order_index`). The existing M0/M2 wire format already uses `sortOrder` on workouts/exercises; renaming on sessions only would be churn. The spec's `design.md` will be edited to reflect this in the spec-update commit.
 
-Migration must be idempotent (`ADD COLUMN IF NOT EXISTS` per Neon convention; the M0 migrations are the reference) and reversible.
+Migration must be idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE … IF NOT EXISTS`) per [`supabase/README.md`](../../../supabase/README.md) § "Authoring rules". Rollbacks happen via forward migrations, never by editing or deleting an applied file.
 
 ### 2. Handler updates
 
@@ -166,7 +166,9 @@ This first commit lands the spec changes only — implementation commits cite sp
 1. `docs(M3): backend audit + brief + spec updates for active-session lifecycle`
    — Authors `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, `SMOKE_TEST.md`; edits `design.md` (sortOrder, hybrid PR note) + `tasks.md` Phase 6; expands `BRIEF.md` with the audit conclusion.
 2. `feat(db): add session-lifecycle columns + workout_sessions.updated_at`
-   — Schema + idempotent migration. Drizzle types regenerate.
+   — Schema (`packages/db/src/schema.ts`) + idempotent migration. Drizzle types regenerate. _Initial commit landed the migration under `packages/db/migrations/`; relocated in commit 2.5._
+   2.5. `feat(ci): adopt Supabase CLI migration layout + wire CI/CD`
+   — Mirror legacy `supabase/migrations/` (18 historical files + the M3 file timestamped forward); add `supabase/config.toml`, `supabase/README.md`. Wire `supabase db push --linked` as a pre-deploy step in `deploy-staging.yml` and `production-deploy.yml` — migrations land before the SST code that depends on them. Required GitHub secrets documented in `supabase/README.md` § "Required GitHub secrets".
 3. `feat(core): wire isCompleted / supersetGroup / substitution on session handlers`
    — Handler body schemas + repository column lists + tests for new fields. `updated_at` refreshed on every mutation.
 4. `feat(core): GET /sessions?status=… + GET /personal-records`
@@ -178,7 +180,7 @@ This first commit lands the spec changes only — implementation commits cite sp
 7. `feat(mobile): extend ApiPort + sst-api adapter for M3 wire format`
    — `ApiSessionExercise`, `ApiSession.exercises`, `ApiExerciseSet.isCompleted`, `getActiveSession`, `createSessionExercise`, `getPersonalRecords`. No domain or UI code yet — that's the frontend PR.
 
-7 commits. If commit 5 sprawls (PR detection + transactionality), split into 5a (PR detection helper + tests) and 5b (handler integration).
+8 commits (the 7 originally planned + 2.5 for migration tooling that landed mid-PR after audit-time gap was caught). If commit 5 sprawls (PR detection + transactionality), split into 5a (PR detection helper + tests) and 5b (handler integration).
 
 ## Quality gates
 
