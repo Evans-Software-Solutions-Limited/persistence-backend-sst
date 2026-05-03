@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { SessionService } from "../../repositories/sessionService";
+import { PersonalRecordsService } from "../../repositories/personalRecordsService";
 import {
   getAuthUser,
   requireAuth,
@@ -12,6 +13,7 @@ export const sessionsUpdateHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(SessionService)
+  .use(PersonalRecordsService)
   .patch(
     "/sessions/:sessionId",
     async (ctx) => {
@@ -44,6 +46,12 @@ export const sessionsUpdateHandler = new Elysia()
         return { error: "No valid fields to update" };
       }
 
+      // Snapshot pre-update status so we can detect the
+      // in_progress → completed transition that triggers server-side
+      // PR detection. Read uses the same JWT scope as `update`, so
+      // a non-owner gets the 404 from the update path below.
+      const previous = await ctx.SessionRepository.getById(sessionId, userId);
+
       const session = await ctx.SessionRepository.update(
         sessionId,
         userId,
@@ -53,6 +61,33 @@ export const sessionsUpdateHandler = new Elysia()
       if (!session) {
         ctx.set.status = 404;
         return { error: "Session not found" };
+      }
+
+      // Detect the in_progress → completed transition. Run AFTER the
+      // session update commits so a PR-detection failure doesn't roll
+      // back the session-complete state — the user always sees their
+      // session marked done. PR detection is idempotent (unique index
+      // + value comparison in personalRecordsRepository), so a missed
+      // run can be re-attempted safely on a follow-up PATCH.
+      const wasCompletedBefore = previous?.status === "completed";
+      const isCompletedNow = session.status === "completed";
+      if (!wasCompletedBefore && isCompletedNow) {
+        try {
+          await ctx.PersonalRecordsRepository.recordPRsForSession(
+            userId,
+            sessionId,
+          );
+        } catch (err) {
+          // Don't fail the request — session is already in completed
+          // state. Log so we can investigate; client-side predictive
+          // PR detection still surfaces the values on the Summary
+          // screen even if the server-side write didn't happen yet.
+          console.error("[sessionsUpdateHandler] PR detection failed", {
+            userId,
+            sessionId,
+            error: err,
+          });
+        }
       }
 
       return { data: session };
