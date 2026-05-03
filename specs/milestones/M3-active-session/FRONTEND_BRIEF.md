@@ -6,7 +6,7 @@ This brief inherits everything from M2 (PRs #39, #40, #41) and the 14 learnings 
 
 ## TL;DR
 
-Build the offline-first set logger. User taps **Start Workout** on a template (or *Quick Start* for an empty session), lands in `ActiveSessionContainer`, logs sets one-by-one (writes to SQLite immediately, no per-set network), completes through a `SessionSummary` screen that detects PRs **client-side** for the offline UX, then enqueues a single batched flush. App-launch detects an unfinished session and prompts to resume.
+Build the offline-first set logger. User taps **Start Workout** on a template (or _Quick Start_ for an empty session), lands in `ActiveSessionContainer`, logs sets one-by-one (writes to SQLite immediately, no per-set network), completes through a `SessionSummary` screen that detects PRs **client-side** for the offline UX, then enqueues a single batched flush. App-launch detects an unfinished session and prompts to resume.
 
 This is the most offline-critical surface in the app. Every keystroke must persist locally before any UI feedback. The session must survive app backgrounding, device restart, and full network loss.
 
@@ -40,12 +40,12 @@ If the backend PR is still in flight, you can rebase iteratively — but do **no
 export type SessionStatus = "in_progress" | "completed" | "cancelled";
 
 export interface WorkoutSession {
-  id: string;                    // local- prefix until server returns canonical id
+  id: string; // local- prefix until server returns canonical id
   userId: string;
   workoutId: string | null;
   name: string;
   status: SessionStatus;
-  startedAt: string;             // ISO
+  startedAt: string; // ISO
   completedAt: string | null;
   exercises: SessionExercise[];
   notes: string | null;
@@ -55,7 +55,7 @@ export interface SessionExercise {
   id: string;
   sessionId: string;
   exerciseId: string;
-  exerciseName: string;          // joined from exercises table for display
+  exerciseName: string; // joined from exercises table for display
   sortOrder: number;
   supersetGroup: number | null;
   isSubstituted: boolean;
@@ -70,7 +70,7 @@ export interface ExerciseSet {
   setNumber: number;
   weightKg: number | null;
   reps: number | null;
-  rpe: number | null;            // 1-10
+  rpe: number | null; // 1-10
   durationSeconds: number | null;
   distanceMeters: number | null;
   isCompleted: boolean;
@@ -87,8 +87,8 @@ export interface PersonalRecord {
 }
 
 export interface SessionSummary {
-  duration: number;              // seconds
-  totalVolume: number;           // sum of weight*reps across completed sets
+  duration: number; // seconds
+  totalVolume: number; // sum of weight*reps across completed sets
   exercisesCompleted: number;
   totalExercises: number;
   setsCompleted: number;
@@ -191,12 +191,12 @@ The in-memory test adapter at `packages/mobile/src/adapters/storage/__tests__/in
 
 `packages/mobile/src/application/commands/sync.command.ts` already supports generic POST/PATCH/DELETE. The new intent shapes are:
 
-| Kind | Endpoint | Method | Body |
-|---|---|---|---|
-| `createSession` | `/sessions` | POST | session core fields |
-| `createSessionExercise` | `/sessions/:sid/exercises` | POST | exercise + supersetGroup, isSubstituted, originalExerciseId |
-| `createSessionSet` | `/sessions/:sid/exercises/:eid/sets` | POST | set fields |
-| `updateSession` | `/sessions/:sid` | PATCH | `{ status, completedAt, totalDurationSeconds, userNotes }` |
+| Kind                    | Endpoint                             | Method | Body                                                        |
+| ----------------------- | ------------------------------------ | ------ | ----------------------------------------------------------- |
+| `createSession`         | `/sessions`                          | POST   | session core fields                                         |
+| `createSessionExercise` | `/sessions/:sid/exercises`           | POST   | exercise + supersetGroup, isSubstituted, originalExerciseId |
+| `createSessionSet`      | `/sessions/:sid/exercises/:eid/sets` | POST   | set fields                                                  |
+| `updateSession`         | `/sessions/:sid`                     | PATCH  | `{ status, completedAt, totalDurationSeconds, userNotes }`  |
 
 Replay must be **dependency-ordered**: a session's exercise creates depend on its session create, and set creates depend on the parent exercise create. The worker today is FIFO — confirm that's enough (since enqueue order is dependency order). If the worker reorders, add a per-batch dependency hint. **Verify with a regression test before relying on FIFO ordering**.
 
@@ -272,12 +272,12 @@ Every one of these (except `resume`) calls `storage.invalidateDashboard(userId)`
 
 Per `BRIEF.md` § "/coming-soon stubs M3 must replace":
 
-| File | Current | New |
-|---|---|---|
-| `WorkoutsListContainer.onStartWorkout` | `/coming-soon?feature=active-session` | `/(app)/session?workoutId=<id>` |
-| `WorkoutDetailContainer.onStartWorkout` | `/coming-soon?feature=active-session&workoutId=…` | `/(app)/session?workoutId=<id>` |
-| `HomeContainer.onWorkoutStart` | `/(app)/workouts/<id>` (M3 stub) | `/(app)/session?workoutId=<id>` |
-| `app/(app)/coming-soon.tsx` | `active-session` COPY entry | drop after all four routes wired |
+| File                                    | Current                                           | New                              |
+| --------------------------------------- | ------------------------------------------------- | -------------------------------- |
+| `WorkoutsListContainer.onStartWorkout`  | `/coming-soon?feature=active-session`             | `/(app)/session?workoutId=<id>`  |
+| `WorkoutDetailContainer.onStartWorkout` | `/coming-soon?feature=active-session&workoutId=…` | `/(app)/session?workoutId=<id>`  |
+| `HomeContainer.onWorkoutStart`          | `/(app)/workouts/<id>` (M3 stub)                  | `/(app)/session?workoutId=<id>`  |
+| `app/(app)/coming-soon.tsx`             | `active-session` COPY entry                       | drop after all four routes wired |
 
 Recent Activity row tap (`HomeContainer.onActivityPress`) currently routes to the workouts tab. Punt to M4 — leave it as-is until the Progress milestone ships the completed-session detail surface.
 

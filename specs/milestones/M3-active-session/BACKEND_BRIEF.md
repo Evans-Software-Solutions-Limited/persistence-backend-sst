@@ -17,9 +17,9 @@ The PR-detection question (`tasks.md` Phase 6) has been resolved: **hybrid — s
 **Hybrid, leaning server-authoritative:**
 
 - **Server is canonical.** When a session PATCH transitions `status: in_progress → completed`, the handler iterates the session's sets, compares each against the `personal_records` table for that `(userId, exerciseId, recordType)` and writes new PR rows via `INSERT … ON CONFLICT (user_id, exercise_id, record_type) DO UPDATE WHERE excluded.value > personal_records.value`. The unique index at `schema.ts:456` (`personal_records_user_exercise_type_idx`) guarantees idempotency on replay.
-- **Client is predictive.** Mobile keeps an opportunistically-cached `personalRecords` table (synced via `GET /personal-records`) and uses it to (a) populate quick-fill suggestions during set logging, (b) compute the *Summary Screen's* PR list immediately on session complete — even when offline. When the queued `PATCH /sessions/:id { status: 'completed' }` flushes, the server's authoritative PR list reconciles into the local cache via the home tab's existing `invalidateDashboard` → next focus refresh.
+- **Client is predictive.** Mobile keeps an opportunistically-cached `personalRecords` table (synced via `GET /personal-records`) and uses it to (a) populate quick-fill suggestions during set logging, (b) compute the _Summary Screen's_ PR list immediately on session complete — even when offline. When the queued `PATCH /sessions/:id { status: 'completed' }` flushes, the server's authoritative PR list reconciles into the local cache via the home tab's existing `invalidateDashboard` → next focus refresh.
 - **Why hybrid, not client-only:** the `personal_records` table is referenced by M4 (PR carousel), M8 (trainer dashboards), and any future analytics surface. A single canonical writer keeps that simple.
-- **Why hybrid, not server-only:** offline session completion must show a full summary screen *now*, not after reconnect. M3 is the most offline-critical surface in the app — see `BRIEF.md` § "What you're inheriting" and `design.md` § Offline Resilience.
+- **Why hybrid, not server-only:** offline session completion must show a full summary screen _now_, not after reconnect. M3 is the most offline-critical surface in the app — see `BRIEF.md` § "What you're inheriting" and `design.md` § Offline Resilience.
 - **Two record types in scope for M3:** `one_rep_max` (peak weight × reps for an exercise) and `volume` (highest single-set weight × reps). Other record types (`endurance`, `pace`, etc.) defer to M4. The enum in `schema.ts` already supports the broader set; the M3 handler just doesn't write them.
 
 `tasks.md` Phase 6 should be edited to reflect this decision as part of the spec-update commit (see § Planned commit shape below).
@@ -30,14 +30,14 @@ The PR-detection question (`tasks.md` Phase 6) has been resolved: **hybrid — s
 
 Add to `packages/db/src/schema.ts` and a new SQL migration in `packages/db/migrations/`:
 
-| Table | Column | Type | Default | Notes |
-|---|---|---|---|---|
-| `workout_sessions` | `updated_at` | `timestamp with timezone` | `NOW()` | Already documented as required in `microservices/core/src/application/sessions/CLAUDE.md` § "Status Transitions" |
-| `session_exercises` | `superset_group` | `integer` | nullable | Groups exercises for superset cycling UI |
-| `session_exercises` | `is_substituted` | `boolean NOT NULL` | `false` | Flags exercises swapped mid-session |
-| `session_exercises` | `original_exercise_id` | `uuid REFERENCES exercises(id) ON DELETE SET NULL` | nullable | Original exercise before substitution |
-| `exercise_sets` | `is_completed` | `boolean NOT NULL` | `false` | Set marked done by user |
-| `exercise_sets` | `completed_at` | `timestamp with timezone` | nullable | Set when `is_completed` flips true |
+| Table               | Column                 | Type                                               | Default  | Notes                                                                                                            |
+| ------------------- | ---------------------- | -------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `workout_sessions`  | `updated_at`           | `timestamp with timezone`                          | `NOW()`  | Already documented as required in `microservices/core/src/application/sessions/CLAUDE.md` § "Status Transitions" |
+| `session_exercises` | `superset_group`       | `integer`                                          | nullable | Groups exercises for superset cycling UI                                                                         |
+| `session_exercises` | `is_substituted`       | `boolean NOT NULL`                                 | `false`  | Flags exercises swapped mid-session                                                                              |
+| `session_exercises` | `original_exercise_id` | `uuid REFERENCES exercises(id) ON DELETE SET NULL` | nullable | Original exercise before substitution                                                                            |
+| `exercise_sets`     | `is_completed`         | `boolean NOT NULL`                                 | `false`  | Set marked done by user                                                                                          |
+| `exercise_sets`     | `completed_at`         | `timestamp with timezone`                          | nullable | Set when `is_completed` flips true                                                                               |
 
 **Naming note:** keep `sort_order` on `session_exercises` (not renaming to `order_index`). The existing M0/M2 wire format already uses `sortOrder` on workouts/exercises; renaming on sessions only would be churn. The spec's `design.md` will be edited to reflect this in the spec-update commit.
 
@@ -45,18 +45,18 @@ Migration must be idempotent (`ADD COLUMN IF NOT EXISTS` per Neon convention; th
 
 ### 2. Handler updates
 
-| Handler | Change |
-|---|---|
-| `sessionsCreateHandler` | No body change. Repository sets `updatedAt: new Date()` on insert (or DB default handles it). |
-| `sessionsUpdateHandler` | Repository writes `updatedAt: new Date()` on every mutation. **PR-detection hook**: when `data.status === "completed"` and previous status was `in_progress`, run server-side PR detection (see § 3) inside the same DB transaction. |
-| `sessionsListHandler` | Add `status?: SessionStatus` query param (Elysia `t.Optional(t.Union([t.Literal("in_progress"), t.Literal("completed"), t.Literal("cancelled")]))`). Repository: `where(and(eq(userId), status ? eq(status) : undefined))`. |
-| `sessionExercisesCreateHandler` | Body accepts: `supersetGroup?: number`, `isSubstituted?: boolean`, `originalExerciseId?: string`. Repository persists them. |
-| `sessionExercisesGetHandler` | Response includes the three new fields. |
-| `sessionsGetHandler` (via `SessionRepository.getById`) | Explicit column select at `sessionRepository.ts:56-64` extends to include `supersetGroup`, `isSubstituted`, `originalExerciseId`. |
-| `setsCreateHandler` | Body accepts: `isCompleted?: boolean`, `completedAt?: string`. Default `isCompleted: false`. |
-| `setsUpdateHandler` | Body accepts: `isCompleted?: boolean`, `completedAt?: string`. Repository: **fold ownership into mutation WHERE** (see § 4). |
-| `setsDeleteHandler` | Repository: **fold ownership into mutation WHERE** (see § 4). |
-| `setsGetHandler` | Response includes the two new fields. |
+| Handler                                                | Change                                                                                                                                                                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sessionsCreateHandler`                                | No body change. Repository sets `updatedAt: new Date()` on insert (or DB default handles it).                                                                                                                                        |
+| `sessionsUpdateHandler`                                | Repository writes `updatedAt: new Date()` on every mutation. **PR-detection hook**: when `data.status === "completed"` and previous status was `in_progress`, run server-side PR detection (see § 3) inside the same DB transaction. |
+| `sessionsListHandler`                                  | Add `status?: SessionStatus` query param (Elysia `t.Optional(t.Union([t.Literal("in_progress"), t.Literal("completed"), t.Literal("cancelled")]))`). Repository: `where(and(eq(userId), status ? eq(status) : undefined))`.          |
+| `sessionExercisesCreateHandler`                        | Body accepts: `supersetGroup?: number`, `isSubstituted?: boolean`, `originalExerciseId?: string`. Repository persists them.                                                                                                          |
+| `sessionExercisesGetHandler`                           | Response includes the three new fields.                                                                                                                                                                                              |
+| `sessionsGetHandler` (via `SessionRepository.getById`) | Explicit column select at `sessionRepository.ts:56-64` extends to include `supersetGroup`, `isSubstituted`, `originalExerciseId`.                                                                                                    |
+| `setsCreateHandler`                                    | Body accepts: `isCompleted?: boolean`, `completedAt?: string`. Default `isCompleted: false`.                                                                                                                                         |
+| `setsUpdateHandler`                                    | Body accepts: `isCompleted?: boolean`, `completedAt?: string`. Repository: **fold ownership into mutation WHERE** (see § 4).                                                                                                         |
+| `setsDeleteHandler`                                    | Repository: **fold ownership into mutation WHERE** (see § 4).                                                                                                                                                                        |
+| `setsGetHandler`                                       | Response includes the two new fields.                                                                                                                                                                                                |
 
 ### 3. New endpoints
 
@@ -108,9 +108,13 @@ return db
       eq(exerciseSets.id, setId),
       inArray(
         exerciseSets.sessionExerciseId,
-        db.select({ id: sessionExercises.id })
+        db
+          .select({ id: sessionExercises.id })
           .from(sessionExercises)
-          .innerJoin(workoutSessions, eq(sessionExercises.sessionId, workoutSessions.id))
+          .innerJoin(
+            workoutSessions,
+            eq(sessionExercises.sessionId, workoutSessions.id),
+          )
           .where(eq(workoutSessions.userId, userId)),
       ),
     ),

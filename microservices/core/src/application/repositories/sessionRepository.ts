@@ -59,6 +59,9 @@ export class SessionRepository {
         sessionId: sessionExercises.sessionId,
         exerciseId: sessionExercises.exerciseId,
         sortOrder: sessionExercises.sortOrder,
+        supersetGroup: sessionExercises.supersetGroup,
+        isSubstituted: sessionExercises.isSubstituted,
+        originalExerciseId: sessionExercises.originalExerciseId,
         notes: sessionExercises.notes,
         createdAt: sessionExercises.createdAt,
       })

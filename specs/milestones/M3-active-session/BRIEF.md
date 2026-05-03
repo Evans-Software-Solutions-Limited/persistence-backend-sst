@@ -16,6 +16,7 @@ Two branches off fresh `main` (after PR #41 merges) — one backend, one fronten
 If the backend audit reveals zero gaps, that branch ships as a tiny verification-only PR and the milestone is effectively single-PR. If it reveals real gaps, ship them first so the mobile branch can rebase onto the additive backend changes without conflict. Decide after the audit.
 
 **PR title pattern:**
+
 - Backend: `feat: session lifecycle audit + gap fills (M3 backend)`
 - Frontend: `feat(mobile): active session — set logger + rest timer + recovery (M3)`
 
@@ -55,12 +56,12 @@ Audit landed real backend gaps — this is **not** a verification-only PR. See [
 
 PR #41 wired four CTA paths to `/coming-soon?feature=active-session`. M3 replaces all four:
 
-| File | Handler | Current target | M3 target |
-|---|---|---|---|
-| [`packages/mobile/src/ui/containers/WorkoutsListContainer.tsx:onStartWorkout`](../../../packages/mobile/src/ui/containers/WorkoutsListContainer.tsx) | "Start" button on `WorkoutCard` | `/coming-soon?feature=active-session` | `/(app)/session?workoutId=X` (start a session from this template) |
-| [`packages/mobile/src/ui/containers/WorkoutDetailContainer.tsx:onStartWorkout`](../../../packages/mobile/src/ui/containers/WorkoutDetailContainer.tsx) | "Start Workout" CTA at the bottom of detail screen | `/coming-soon?feature=active-session&workoutId=X` | same `/(app)/session?workoutId=X` |
-| [`packages/mobile/src/ui/containers/HomeContainer.tsx:onWorkoutStart`](../../../packages/mobile/src/ui/containers/HomeContainer.tsx) | (currently routes to detail screen as M3 stub — replace with direct session start) | `/(app)/workouts/<id>` | `/(app)/session?workoutId=X` |
-| [`packages/mobile/app/(app)/coming-soon.tsx`](../../../packages/mobile/app/(app)/coming-soon.tsx) | `active-session` COPY map entry | retained as fallback | drop the `active-session` entry once all four callers route to the real screen |
+| File                                                                                                                                                   | Handler                                                                            | Current target                                    | M3 target                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`packages/mobile/src/ui/containers/WorkoutsListContainer.tsx:onStartWorkout`](../../../packages/mobile/src/ui/containers/WorkoutsListContainer.tsx)   | "Start" button on `WorkoutCard`                                                    | `/coming-soon?feature=active-session`             | `/(app)/session?workoutId=X` (start a session from this template)              |
+| [`packages/mobile/src/ui/containers/WorkoutDetailContainer.tsx:onStartWorkout`](../../../packages/mobile/src/ui/containers/WorkoutDetailContainer.tsx) | "Start Workout" CTA at the bottom of detail screen                                 | `/coming-soon?feature=active-session&workoutId=X` | same `/(app)/session?workoutId=X`                                              |
+| [`packages/mobile/src/ui/containers/HomeContainer.tsx:onWorkoutStart`](../../../packages/mobile/src/ui/containers/HomeContainer.tsx)                   | (currently routes to detail screen as M3 stub — replace with direct session start) | `/(app)/workouts/<id>`                            | `/(app)/session?workoutId=X`                                                   |
+| [`packages/mobile/app/(app)/coming-soon.tsx`](<../../../packages/mobile/app/(app)/coming-soon.tsx>)                                                    | `active-session` COPY map entry                                                    | retained as fallback                              | drop the `active-session` entry once all four callers route to the real screen |
 
 The Recent Activity row tap on home (`onActivityPress`) currently routes to `/(app)/(tabs)/workouts`. Decide what M3 does with it — likely opens a completed-session detail view, or stays a stub for M4 (Progress) to wire.
 

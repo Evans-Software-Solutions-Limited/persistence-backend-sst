@@ -100,6 +100,7 @@ This is the review gate cited in [`BRIEF.md`](./BRIEF.md) § "Review gate" and [
 2. **Sign out → sign in as User B.**
 
 3. **From User B's API token:**
+
    ```bash
    curl -i $API/sessions/$USER_A_SESSION_ID -H "Authorization: Bearer $USER_B_JWT"
    # expect: 404

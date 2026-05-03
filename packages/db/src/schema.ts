@@ -402,6 +402,7 @@ export const workoutSessions = pgTable("workout_sessions", {
   overallRpe: integer("overall_rpe"),
   difficultyRanking: integer("difficulty_ranking"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 export const sessionExercises = pgTable("session_exercises", {
@@ -413,6 +414,12 @@ export const sessionExercises = pgTable("session_exercises", {
     .notNull()
     .references(() => exercises.id, { onDelete: "cascade" }),
   sortOrder: integer("sort_order").notNull(),
+  supersetGroup: integer("superset_group"),
+  isSubstituted: boolean("is_substituted").notNull().default(false),
+  originalExerciseId: uuid("original_exercise_id").references(
+    () => exercises.id,
+    { onDelete: "set null" },
+  ),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
@@ -430,6 +437,8 @@ export const exerciseSets = pgTable("exercise_sets", {
   rpe: integer("rpe"),
   restAfterSeconds: integer("rest_after_seconds"),
   isPersonalRecord: boolean("is_personal_record").default(false),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
