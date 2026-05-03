@@ -75,7 +75,11 @@ describe("SessionsListHandler", () => {
         headers: { authorization: "Bearer token" },
       }),
     );
-    expect(mocks.list).toHaveBeenCalledWith("test-user-id", 10, 5);
+    expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
+      limit: 10,
+      offset: 5,
+      status: undefined,
+    });
   });
 
   it("should use default limit and offset", async () => {
@@ -86,6 +90,38 @@ describe("SessionsListHandler", () => {
         headers: { authorization: "Bearer token" },
       }),
     );
-    expect(mocks.list).toHaveBeenCalledWith("test-user-id", 20, 0);
+    expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
+      limit: 20,
+      offset: 0,
+      status: undefined,
+    });
+  });
+
+  it("forwards the ?status=in_progress filter to the repository", async () => {
+    const { sessionsListHandler } = await import("../sessionsListHandler");
+    await sessionsListHandler.handle(
+      new Request("http://localhost/sessions?status=in_progress", {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
+      limit: 20,
+      offset: 0,
+      status: "in_progress",
+    });
+  });
+
+  it("rejects unknown status values via the query schema", async () => {
+    const { sessionsListHandler } = await import("../sessionsListHandler");
+    const response = await sessionsListHandler.handle(
+      new Request("http://localhost/sessions?status=banana", {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    // Elysia returns 422 for invalid query params per the t.Union schema.
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
   });
 });

@@ -138,7 +138,7 @@ describe("SessionRepository", () => {
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
-      const result = await repo.list("u1", 20, 0);
+      const result = await repo.list("u1", { limit: 20, offset: 0 });
 
       expect(result).toEqual([mockSession]);
     });

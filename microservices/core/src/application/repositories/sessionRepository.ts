@@ -21,15 +21,31 @@ export class SessionRepository {
 
   async list(
     userId: string,
-    limit = 20,
-    offset = 0,
+    options: {
+      limit?: number;
+      offset?: number;
+      /**
+       * Filter by session status. Used by the mobile client's resume-on-
+       * launch flow (`?status=in_progress` returns the user's active
+       * session if any).
+       */
+      status?: "in_progress" | "completed" | "cancelled";
+    } = {},
   ): Promise<WorkoutSession[]> {
     const db = getDb();
+    const { limit = 20, offset = 0, status } = options;
+
+    const whereClause = status
+      ? and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.status, status),
+        )
+      : eq(workoutSessions.userId, userId);
 
     return db
       .select()
       .from(workoutSessions)
-      .where(eq(workoutSessions.userId, userId))
+      .where(whereClause)
       .orderBy(desc(workoutSessions.startedAt))
       .limit(limit)
       .offset(offset);
