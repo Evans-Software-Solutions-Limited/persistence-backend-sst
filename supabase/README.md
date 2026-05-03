@@ -86,37 +86,35 @@ Each workflow:
 
 A failure in step 2 or 3 aborts the workflow — the SST deploy never runs.
 
-## Two-environment topology (one Supabase project per env)
+## Single-Supabase reality (current — free tier)
 
-The intended steady state is **two Supabase projects** — one per GitHub environment, one per stage:
+This project runs on **one** Supabase project, shared between staging and production. Both GitHub environments (`staging`, `Production`) carry identical `SUPABASE_PROJECT_REF` + `SUPABASE_DB_PASSWORD` values — the per-environment scoping is for permission / approval gating, not for routing.
 
-| GitHub environment | Supabase project      | Purpose                                                                          |
-| ------------------ | --------------------- | -------------------------------------------------------------------------------- |
-| `staging`          | `persistence-staging` | DB for the staging-stage SST deployment. Schema changes land here first.         |
-| `Production`       | `persistence-prod`    | DB for the production-stage SST deployment. Migrated when the release publishes. |
+**What this means in practice:**
 
-Each environment carries its own `SUPABASE_PROJECT_REF` + `SUPABASE_DB_PASSWORD` GitHub secrets — the workflow's `environment:` directive routes them automatically. The runtime `DATABASE_URL` (held in SST's `PersistenceDatabaseUrl` secret per stage) likewise points to the matching project.
+- **Migrations land at staging-deploy time.** Push to `main` → `deploy-staging.yml` runs → `supabase db push --linked` applies the new migration to the shared DB. The next release publish triggers `production-deploy.yml` → `supabase db push --linked` is a **no-op** because the migration is already recorded in the shared DB's `supabase_migrations.schema_migrations` table.
+- **Production code deploys against an already-migrated DB.** Ordering is correct, just not the way "two-environment" usually implies.
+- **A bad migration affects both stages immediately.** No DB isolation. The dry-run + idempotent + additive-only authoring rules are the only safety net. Treat every migration like a production change.
 
-**Migration ordering, with isolation:**
+### Upgrade path (two-project topology)
 
-1. PR lands on `main` → `deploy-staging.yml` runs → `supabase db push --linked` applies the new migration to **staging** → SST deploys staging code that reads/writes the new schema.
-2. Validate on staging.
-3. Cut a release → `production-deploy.yml` runs → `supabase db push --linked` applies the same migration to **production** (independent DB; the file is unchanged but the remote tracking table doesn't have it yet) → SST deploys production code.
+When the project moves off the free tier:
 
-The same migration file is applied to both projects in turn. Idempotent + additive-only authoring still matters — it's what keeps the production apply boring once staging has validated it.
+1. Provision a second Supabase project (`persistence-prod` or similar).
+2. Apply the legacy seeds + run all current migrations against it once (`supabase db push --linked` against the new project).
+3. Update the `Production` GitHub environment's `SUPABASE_PROJECT_REF` + `SUPABASE_DB_PASSWORD` to point at the new project.
+4. Update SST's `PersistenceDatabaseUrl` secret on the production stage similarly.
 
-### Transitional (free-tier) note
-
-Until both projects exist, the same `SUPABASE_PROJECT_REF` + `SUPABASE_DB_PASSWORD` are set in both GitHub environments. The workflow runs are then a no-op on the production side because the migration's already in the shared DB's `supabase_migrations.schema_migrations` table. When the second project is provisioned, point the `Production` environment's secrets at it — no workflow code changes.
+After that, migrations land first on staging (via `deploy-staging.yml`), are validated, then re-apply to production on the next release publish (independent DB, independent tracking table). The workflow code doesn't change — only the secret values diverge.
 
 ## Required GitHub secrets
 
 Per environment (`staging`, `Production`):
 
-| Secret name            | Where to find it                                                              | Notes                                                                         |
-| ---------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                | Per environment — staging and Production point at distinct Supabase projects. |
-| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password | Per environment, paired with the project ref above.                           |
+| Secret name            | Where to find it                                                              | Notes                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                | Same value in both envs while on a single project. Diverges per env once each has its own project. |
+| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password | Same value in both envs while on a single project.                                                 |
 
 Repo-level (account-scoped, shared across environments):
 

@@ -9,6 +9,11 @@
       "distribution": "store",
       "channel": "staging",
       "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.staging.persistence.evans-software-solutions.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZXllYmdka3RmdGVxbGFjbXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTMzMDUsImV4cCI6MjA3NTY2OTMwNX0.zW82kwUAFOL8djHC8cmEIS0dmB-8k1ONN-ciYF1T_WQ"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -22,6 +27,11 @@
       "channel": "production",
       "environment": "production",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.persistence.evans-software-solutions.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZXllYmdka3RmdGVxbGFjbXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTMzMDUsImV4cCI6MjA3NTY2OTMwNX0.zW82kwUAFOL8djHC8cmEIS0dmB-8k1ONN-ciYF1T_WQ"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },

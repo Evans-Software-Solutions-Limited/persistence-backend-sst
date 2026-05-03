@@ -91,27 +91,27 @@ eas credentials
 
 After this, every `eas build` pulls signing material from EAS automatically. No CI-side cert management.
 
-## EAS environment variables (one-time, per env)
+## App-side environment variables
 
-App-side env vars (`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`) live in **EAS-managed env**, not in GitHub or in `eas.json`. The `environment` field on each build profile maps to an EAS env scope (`development`, `preview`, `production`).
+The `EXPO_PUBLIC_*` values that get baked into each build live directly in [`packages/mobile/eas.json`](../packages/mobile/eas.json) under each profile's `env` block. Three values per profile:
 
-```bash
-cd packages/mobile
+| Key                             | Staging                                                        | Production                                             |
+| ------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
+| `EXPO_PUBLIC_API_URL`           | `https://api.staging.persistence.evans-software-solutions.com` | `https://api.persistence.evans-software-solutions.com` |
+| `EXPO_PUBLIC_SUPABASE_URL`      | the Supabase project URL                                       | same (single project for now)                          |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | the Supabase anon key                                          | same                                                   |
 
-# Staging values (preview env)
-eas env:create --environment preview --name EXPO_PUBLIC_API_URL          --value 'https://api.staging.persistence.evans-software-solutions.com'
-eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_URL     --value 'https://<staging-ref>.supabase.co'
-eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value '<staging anon key>'
+These three values are **public by design**:
 
-# Production values
-eas env:create --environment production --name EXPO_PUBLIC_API_URL          --value 'https://api.persistence.evans-software-solutions.com'
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL     --value 'https://<prod-ref>.supabase.co'
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value '<prod anon key>'
-```
+- Anon keys are part of Supabase's security model assuming they're shipped in every client bundle. RLS does the actual access control.
+- API URLs are visible in any network inspector during normal app use.
+- Custom-domain hostnames are stable across stack rebuilds (driven by [`packages/api-utils/src/domains/domain-config.ts`](../packages/api-utils/src/domains/domain-config.ts)) — set once, forget.
 
-Anon keys are designed to be embedded in client bundles, so they can also be hardcoded in `eas.json`'s `env` block if you'd rather. EAS env keeps them out of source.
+So embedding them in source is the right trade-off: zero out-of-band CLI dance, full diff visibility on rotation.
 
-API URLs are stable — they're custom-domain hosts derived from `packages/api-utils/src/domains/domain-config.ts` (`api.persistence.evans-software-solutions.com` for production, `api.staging.persistence.evans-software-solutions.com` for staging). They don't change across stack rebuilds, so you set them once and forget. The first deploy will provision the ACM cert + Route 53 records automatically via SST.
+The `"environment": "preview"` / `"environment": "production"` fields on each build profile remain — that's where you'd add **truly sensitive** values via `eas env:create` later (e.g. a Stripe secret key for in-app checkout). EAS-managed env vars override the `eas.json` `env` block when both define the same key.
+
+When the project moves to two Supabase projects, the staging-side URL + anon key in `eas.json` flip to the new project's values; production stays put. Two-line edit, no infra change.
 
 ## Triggering a build
 
@@ -160,7 +160,7 @@ Two paths, both gated on a GitHub release:
 - **Build-number conflicts.** `appVersionSource: "remote"` (set in [`packages/mobile/eas.json`](../packages/mobile/eas.json)) means EAS auto-increments the build number per profile. Don't manually bump `ios.buildNumber` in `app.json` — EAS owns it.
 - **OTA updates aren't wired yet.** When they are (probably M11), set `runtimeVersion: { policy: "appVersion" }` in `app.json` so OTA updates only ship to compatible builds. Until then, every fix means a new store submission.
 - **Android build is wired but unsigned.** The workflows accept `platform: android` but you'll need to set up Android signing via `eas credentials` first. Skip until iOS is shipping cleanly.
-- **EAS env vs `eas.json` env.** I picked EAS-managed env (referenced via the `environment` field on each build profile) over hardcoded values in `eas.json`'s `env` block. You can mix the two if helpful — `eas.json` env wins over EAS env when both define the same key.
+- **EAS env vs `eas.json` env.** Public values (anon keys, API URLs) live in `eas.json`'s `env` block — simplest, fully self-contained. EAS-managed env (`eas env:create` + the `"environment"` field on each profile) is reserved for genuinely sensitive values (Stripe secrets, etc) that shouldn't be in source. EAS env wins over `eas.json` env when both define the same key — useful if you want to override one value without re-deploying code.
 
 ## First-time validation checklist
 
