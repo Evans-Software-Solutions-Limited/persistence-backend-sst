@@ -7,22 +7,26 @@ This doc replaces the manual TestFlight workflow that the legacy `persistence-mo
 ## Topology
 
 ```
-push to main         ┐                                                ┌─→ TestFlight
-                     │                                                │   (staging EAS env)
-manual dispatch  ───→├─→  mobile-build-staging.yml  ─→  EAS build  ──┤
-                     │                                                │
-release: published  ─├─→  mobile-build-production.yml  ─→ EAS build ─┴─→ App Store
-                     │                                                    (production EAS env)
-manual dispatch  ───→┘
+push to main          ─→  mobile-build-staging.yml      ─→ EAS build ─→ TestFlight
+                          (or manual dispatch)             (preview env)
+
+release-please           ┌─→ release-please.yml opens "chore: release" PR
+push to main  ──────────→┤
+                          └─→ on PR merge → GitHub release published
+                              ─→ mobile-build-production.yml             ─→ EAS build ─→ App Store
+                                  (or manual dispatch)                      (production env)
 ```
+
+The mobile flow mirrors the backend deploy flow exactly: every push to `main` ships TestFlight; every release-please release ships the App Store. No separate mobile cadence to keep in sync — both platforms (server + iOS) move together.
 
 Two build profiles in [`packages/mobile/eas.json`](../packages/mobile/eas.json):
 
-| Profile     | Distribution | EAS env       | Channel       | Bumps build #           |
-| ----------- | ------------ | ------------- | ------------- | ----------------------- |
-| development | internal     | `development` | `development` | per-build (interactive) |
-| staging     | store        | `preview`     | `staging`     | per-build (remote)      |
-| production  | store        | `production`  | `production`  | auto-incremented        |
+| Profile    | Distribution | EAS env      | Channel      | Bumps build #      |
+| ---------- | ------------ | ------------ | ------------ | ------------------ |
+| staging    | store        | `preview`    | `staging`    | per-build (remote) |
+| production | store        | `production` | `production` | auto-incremented   |
+
+No `development` profile — local dev points at staging via `expo run:ios` / `expo start` against `EXPO_PUBLIC_API_URL=<staging-api>` and the staging Supabase project. EAS builds are reserved for store distribution.
 
 Two submit profiles share the same App Store Connect API key but submit to distinct release tracks (TestFlight vs App Store). Apple itself separates internal testing (TestFlight) from external review (App Store) on the receiving end — we don't need separate apps.
 
@@ -113,7 +117,9 @@ The API URL fields will need real values once SST has deployed. The current `inf
 
 ### Staging → TestFlight
 
-By default, the staging workflow is **manual dispatch only** — keeps EAS build credits predictable while iteration is high. To run one:
+Every push to `main` that touches `packages/mobile/**` automatically fires a TestFlight build via [`.github/workflows/mobile-build-staging.yml`](../.github/workflows/mobile-build-staging.yml). No manual step.
+
+To rebuild without a code change (e.g. after rotating an env var) or to skip the TestFlight submit step, manual dispatch is also wired:
 
 ```bash
 gh workflow run mobile-build-staging.yml \
@@ -123,20 +129,20 @@ gh workflow run mobile-build-staging.yml \
 
 Or via the GitHub UI: Actions → "Mobile Build (Staging → TestFlight)" → Run workflow.
 
-To enable push-to-main builds (every change under `packages/mobile/**` queues a TestFlight build), uncomment the `push:` block in [`.github/workflows/mobile-build-staging.yml`](../.github/workflows/mobile-build-staging.yml). Worth doing once iteration cadence steadies.
+> **EAS build credits.** Free plan = 30 iOS builds/month. The push-to-main trigger is `paths`-filtered to `packages/mobile/**` to keep credit burn aligned with mobile churn — backend-only PRs don't trigger a build. If you blow the quota, comment out the `push:` block in the workflow and fall back to manual dispatch only.
 
 ### Production → App Store
 
-Two paths:
+Two paths, both gated on a GitHub release:
 
-1. **Release-driven (recommended).** Cut a GitHub release; `mobile-build-production.yml` fires on `release: published`. The release tag is checked out for the build, so the version on the App Store matches the release tag.
-2. **Manual dispatch.** Same `gh workflow run` shape as staging, but for the production workflow. Useful for rebuilds without cutting a new release.
+1. **Release-please (recommended).** Conventional-commit-driven. Push to `main` updates a "chore: release" PR via [`release-please.yml`](../.github/workflows/release-please.yml); merging that PR publishes a GitHub release; [`mobile-build-production.yml`](../.github/workflows/mobile-build-production.yml) fires on `release: published`. The release tag is checked out for the build, so the App Store binary matches the tagged commit. Same flow [`production-deploy.yml`](../.github/workflows/production-deploy.yml) follows for the SST backend — server + app version bump together.
+2. **Manual dispatch.** Useful for rebuilds without cutting a new release (e.g. resubmit after Apple rejects the binary). Same `gh workflow run` shape as staging:
 
-```bash
-gh workflow run mobile-build-production.yml \
-  --field platform=ios \
-  --field submit=true
-```
+   ```bash
+   gh workflow run mobile-build-production.yml \
+     --field platform=ios \
+     --field submit=true
+   ```
 
 ## What happens during a run
 

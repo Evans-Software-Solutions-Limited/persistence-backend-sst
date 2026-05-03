@@ -5,19 +5,6 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "channel": "development",
-      "environment": "development",
-      "ios": {
-        "resourceClass": "m-medium",
-        "simulator": true
-      },
-      "android": {
-        "resourceClass": "medium"
-      }
-    },
     "staging": {
       "distribution": "store",
       "channel": "staging",

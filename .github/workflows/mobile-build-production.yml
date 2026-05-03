@@ -57,13 +57,15 @@ jobs:
             --no-wait
 
       - name: Materialise ASC API key
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' || github.event_name == 'release') }}
+        # Release events: always submit (iOS-only by default — release-please publishes the GitHub release).
+        # Manual dispatch: respect the `submit` input + platform choice.
+        if: ${{ github.event_name == 'release' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
         run: |
           umask 077
           printf '%s' "${{ secrets.ASC_API_KEY }}" > asc-api-key.p8
 
       - name: Submit to App Store (iOS)
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' || github.event_name == 'release') }}
+        if: ${{ github.event_name == 'release' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_API_KEY_ISSUER_ID }}

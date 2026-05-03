@@ -60,11 +60,9 @@ existing `persistence-mobile` app.
 
 ### EAS Build
 
-- No `eas.json` in the new package yet
-- When ready, copy build profiles from old app:
-  - `development`: internal distribution, dev client
-  - `preview`: store distribution for staging
-  - `production`: store distribution
+- `eas.json` lives in this package with two profiles: `staging` (TestFlight) and `production` (App Store). Local dev points at staging via `expo run:ios` / `expo start` against `EXPO_PUBLIC_API_URL=<staging-api>` — no separate dev profile.
+- CI/CD: push to main → TestFlight via `.github/workflows/mobile-build-staging.yml`. Release-please published release → App Store via `.github/workflows/mobile-build-production.yml`.
+- Full setup walkthrough: [`docs/mobile-release-pipeline.md`](../../docs/mobile-release-pipeline.md).
 
 ---
 

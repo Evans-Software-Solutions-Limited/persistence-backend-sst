@@ -1,9 +1,14 @@
 name: Mobile Build (Staging → TestFlight)
 
-# Defaults to manual dispatch only to keep monthly EAS build credits predictable.
-# Uncomment the `push` block below if you want every change under packages/mobile/
-# to fire a TestFlight build automatically.
+# Mirrors the backend release flow — push to main fires a TestFlight build
+# (release-please's "chore: release" PR is the gate to production via the
+# release-published trigger on mobile-build-production.yml).
 on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/mobile/**"
+      - ".github/workflows/mobile-build-staging.yml"
   workflow_dispatch:
     inputs:
       platform:
@@ -17,11 +22,6 @@ on:
         required: true
         type: boolean
         default: true
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "packages/mobile/**"
-  #     - ".github/workflows/mobile-build-staging.yml"
 
 concurrency:
   group: mobile-build-staging-${{ github.event.inputs.platform || 'ios' }}
@@ -61,13 +61,15 @@ jobs:
             --no-wait
 
       - name: Materialise ASC API key
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all') }}
+        # Push events: always submit (iOS-only by default).
+        # Manual dispatch: respect the `submit` input + platform choice.
+        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
         run: |
           umask 077
           printf '%s' "${{ secrets.ASC_API_KEY }}" > asc-api-key.p8
 
       - name: Submit to TestFlight (iOS)
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all') }}
+        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_API_KEY_ISSUER_ID }}
