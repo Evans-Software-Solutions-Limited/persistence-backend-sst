@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./auth/supabaseAuth": "./src/auth/supabaseAuth.ts",
+    "./domains": "./src/domains/index.ts",
     "./env": "./src/env/index.ts",
     "./jwt": "./src/jwt/index.ts"
   },

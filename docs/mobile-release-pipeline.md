@@ -99,19 +99,19 @@ App-side env vars (`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBL
 cd packages/mobile
 
 # Staging values (preview env)
-eas env:create --environment preview --name EXPO_PUBLIC_API_URL          --value 'https://<staging-api-gateway>'
+eas env:create --environment preview --name EXPO_PUBLIC_API_URL          --value 'https://api.staging.persistence.evans-software-solutions.com'
 eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_URL     --value 'https://<staging-ref>.supabase.co'
 eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value '<staging anon key>'
 
 # Production values
-eas env:create --environment production --name EXPO_PUBLIC_API_URL          --value 'https://<prod-api-gateway>'
+eas env:create --environment production --name EXPO_PUBLIC_API_URL          --value 'https://api.persistence.evans-software-solutions.com'
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL     --value 'https://<prod-ref>.supabase.co'
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value '<prod anon key>'
 ```
 
 Anon keys are designed to be embedded in client bundles, so they can also be hardcoded in `eas.json`'s `env` block if you'd rather. EAS env keeps them out of source.
 
-The API URL fields will need real values once SST has deployed. The current `infra/api.ts` uses the auto-generated API Gateway URL per stage (no custom domain yet) — pull from `bunx sst outputs --stage <staging|production>` after a deploy and feed it back into EAS env.
+API URLs are stable — they're custom-domain hosts derived from `packages/api-utils/src/domains/domain-config.ts` (`api.persistence.evans-software-solutions.com` for production, `api.staging.persistence.evans-software-solutions.com` for staging). They don't change across stack rebuilds, so you set them once and forget. The first deploy will provision the ACM cert + Route 53 records automatically via SST.
 
 ## Triggering a build
 
