@@ -86,14 +86,23 @@ Each workflow:
 
 A failure in step 2 or 3 aborts the workflow — the SST deploy never runs.
 
+## Single-Supabase reality (free tier)
+
+This project runs on **one** Supabase project. Both the `staging` and `Production` GitHub environments link to the same project ref. Implications:
+
+- **Both environments take the same secret values.** Set `SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` to the same string in both environments — the GitHub-environment scoping is for permission / approval gating, not for routing.
+- **Migrations land on whichever workflow runs first.** Push to `main` triggers `deploy-staging.yml`, which migrates and code-deploys staging. The next release publish triggers `production-deploy.yml`, which sees zero pending migrations (`db push` is a no-op) and just deploys the Lambdas. So the schema actually changes at staging-deploy time — production code is updated later against an already-migrated DB.
+- **A bad migration affects both stages immediately.** No isolation. The dry-run + idempotent + additive-only authoring rules are the only safety net. Treat every migration like a production change.
+- **When the project moves off the free tier**, switch to one Supabase project per environment: different `SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` per env. The workflow files don't need changing — only the secret values.
+
 ## Required GitHub secrets
 
 Per environment (`staging`, `Production`):
 
-| Secret name            | Where to find it                                                              | Notes                                                     |
-| ---------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                | Per-environment (different ref for staging vs production) |
-| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password | Per-environment                                           |
+| Secret name            | Where to find it                                                              | Notes                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                | Same value in both envs while on free tier. Different value per env once each environment has its own project. |
+| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password | Same value in both envs while on free tier.                                                                    |
 
 Repo-level (account-scoped, shared across environments):
 
@@ -107,7 +116,7 @@ To set them:
 # Repo-level (one secret, shared)
 gh secret set SUPABASE_ACCESS_TOKEN
 
-# Per-environment (one set for each)
+# Per-environment (one set for each — same values both times while on free tier)
 gh secret set SUPABASE_PROJECT_REF  --env staging
 gh secret set SUPABASE_DB_PASSWORD  --env staging
 gh secret set SUPABASE_PROJECT_REF  --env Production
