@@ -31,6 +31,19 @@ export const sessionExercisesCreateHandler = new Elysia()
         exerciseId: body.exerciseId as string,
         sortOrder: (body.sortOrder as number) ?? 1,
         notes: body.notes as string | undefined,
+        // M3 active-session fields. Defaults match the column defaults
+        // in supabase/migrations/20260503000000_m3_session_lifecycle.sql:
+        // supersetGroup is nullable; isSubstituted defaults to false;
+        // originalExerciseId is nullable.
+        supersetGroup:
+          body.supersetGroup !== undefined
+            ? (body.supersetGroup as number | null)
+            : null,
+        isSubstituted: (body.isSubstituted as boolean) ?? false,
+        originalExerciseId:
+          body.originalExerciseId !== undefined
+            ? (body.originalExerciseId as string | null)
+            : null,
       };
 
       const exercise = await ctx.SessionRepository.addExercise(exerciseData);
@@ -46,6 +59,9 @@ export const sessionExercisesCreateHandler = new Elysia()
         exerciseId: t.String(),
         sortOrder: t.Optional(t.Number()),
         notes: t.Optional(t.String()),
+        supersetGroup: t.Optional(t.Union([t.Number(), t.Null()])),
+        isSubstituted: t.Optional(t.Boolean()),
+        originalExerciseId: t.Optional(t.Union([t.String(), t.Null()])),
       }),
     },
   );

@@ -33,6 +33,19 @@ export const setsCreateHandler = new Elysia()
         return { error: "Exercise not found in session" };
       }
 
+      // Per M3 spec, mobile clients can mark a set complete at log time
+      // with `isCompleted: true` + a wall-clock `completedAt`. If the
+      // client passes only `isCompleted: true` without a timestamp, we
+      // stamp `completedAt = now` server-side so the row always has
+      // both consistently.
+      const isCompletedFlag = body.isCompleted as boolean | undefined;
+      const completedAtIso =
+        body.completedAt !== undefined
+          ? (body.completedAt as string | null)
+          : isCompletedFlag === true
+            ? new Date().toISOString()
+            : undefined;
+
       const setData = {
         sessionExerciseId: sessionExercise.id,
         setNumber: (body.setNumber as number) ?? 1,
@@ -47,6 +60,8 @@ export const setsCreateHandler = new Elysia()
         rpe: body.rpe as number | undefined | null,
         restAfterSeconds: body.restAfterSeconds as number | undefined | null,
         isPersonalRecord: (body.isPersonalRecord as boolean) ?? false,
+        isCompleted: isCompletedFlag ?? false,
+        completedAt: completedAtIso ? new Date(completedAtIso) : null,
       };
 
       const set = await ctx.SessionRepository.addSet(setData);
@@ -68,6 +83,8 @@ export const setsCreateHandler = new Elysia()
         rpe: t.Optional(t.Number()),
         restAfterSeconds: t.Optional(t.Number()),
         isPersonalRecord: t.Optional(t.Boolean()),
+        isCompleted: t.Optional(t.Boolean()),
+        completedAt: t.Optional(t.Union([t.String(), t.Null()])),
       }),
     },
   );

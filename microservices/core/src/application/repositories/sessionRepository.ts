@@ -112,9 +112,14 @@ export class SessionRepository {
       return null;
     }
 
+    // Refresh updatedAt on every mutation. Per
+    // microservices/core/src/application/sessions/CLAUDE.md § Status
+    // Transitions: "Status change must update `updatedAt` timestamp."
+    // Stamping unconditionally on every PATCH covers status + notes +
+    // any future fields without each handler having to remember.
     const result = await db
       .update(workoutSessions)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(workoutSessions.id, id))
       .returning();
 

@@ -43,6 +43,24 @@ export const setsUpdateHandler = new Elysia()
         updateData.restAfterSeconds = body.restAfterSeconds;
       if (body.isPersonalRecord !== undefined)
         updateData.isPersonalRecord = body.isPersonalRecord;
+      // M3: clients flip isCompleted = true when the user marks a set
+      // done. Stamp completedAt server-side if the client didn't pass
+      // one explicitly, so the two columns stay consistent. Allow
+      // explicit null to un-complete a set if needed (e.g. sync
+      // reconciliation after a discard).
+      if (body.isCompleted !== undefined) {
+        updateData.isCompleted = body.isCompleted;
+        if (body.completedAt === undefined) {
+          updateData.completedAt =
+            body.isCompleted === true ? new Date() : null;
+        }
+      }
+      if (body.completedAt !== undefined) {
+        updateData.completedAt =
+          body.completedAt === null
+            ? null
+            : new Date(body.completedAt as string);
+      }
 
       if (Object.keys(updateData).length === 0) {
         ctx.set.status = 400;
@@ -75,6 +93,8 @@ export const setsUpdateHandler = new Elysia()
         rpe: t.Optional(t.Number()),
         restAfterSeconds: t.Optional(t.Number()),
         isPersonalRecord: t.Optional(t.Boolean()),
+        isCompleted: t.Optional(t.Boolean()),
+        completedAt: t.Optional(t.Union([t.String(), t.Null()])),
       }),
     },
   );
