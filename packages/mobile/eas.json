@@ -42,7 +42,17 @@
     }
   },
   "submit": {
-    "staging": {},
-    "production": {}
+    "staging": {
+      "ios": {
+        "ascAppId": "6755091280",
+        "appleTeamId": "U9S9BFTM4V"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "6755091280",
+        "appleTeamId": "U9S9BFTM4V"
+      }
+    }
   }
 }
