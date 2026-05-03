@@ -1,0 +1,84 @@
+name: Mobile Build (Production → App Store)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Which platform to build"
+        required: true
+        type: choice
+        options: [ios, android, all]
+        default: ios
+      submit:
+        description: "Submit to App Store after build?"
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: mobile-build-production-${{ github.event.inputs.platform || 'ios' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build + Submit to App Store
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: packages/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install Expo + EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build (EAS)
+        run: |
+          eas build \
+            --platform ${{ github.event.inputs.platform || 'ios' }} \
+            --profile production \
+            --non-interactive \
+            --no-wait
+
+      - name: Materialise ASC API key
+        # Release events: always submit (iOS-only by default — release-please publishes the GitHub release).
+        # Manual dispatch: respect the `submit` input + platform choice.
+        if: ${{ github.event_name == 'release' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
+        run: |
+          umask 077
+          printf '%s' "${{ secrets.ASC_API_KEY }}" > asc-api-key.p8
+
+      - name: Submit to App Store (iOS)
+        if: ${{ github.event_name == 'release' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_API_KEY_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+        run: |
+          eas submit \
+            --platform ios \
+            --profile production \
+            --latest \
+            --non-interactive \
+            --wait
+
+      - name: Cleanup ASC API key
+        if: always()
+        run: rm -f asc-api-key.p8

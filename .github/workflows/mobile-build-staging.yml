@@ -1,0 +1,88 @@
+name: Mobile Build (Staging → TestFlight)
+
+# Mirrors the backend release flow — push to main fires a TestFlight build
+# (release-please's "chore: release" PR is the gate to production via the
+# release-published trigger on mobile-build-production.yml).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/mobile/**"
+      - ".github/workflows/mobile-build-staging.yml"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Which platform to build"
+        required: true
+        type: choice
+        options: [ios, android, all]
+        default: ios
+      submit:
+        description: "Submit to TestFlight after build?"
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: mobile-build-staging-${{ github.event.inputs.platform || 'ios' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build + Submit to TestFlight
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: packages/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install Expo + EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build (EAS)
+        run: |
+          eas build \
+            --platform ${{ github.event.inputs.platform || 'ios' }} \
+            --profile staging \
+            --non-interactive \
+            --no-wait
+
+      - name: Materialise ASC API key
+        # Push events: always submit (iOS-only by default).
+        # Manual dispatch: respect the `submit` input + platform choice.
+        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
+        run: |
+          umask 077
+          printf '%s' "${{ secrets.ASC_API_KEY }}" > asc-api-key.p8
+
+      - name: Submit to TestFlight (iOS)
+        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')) }}
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_API_KEY_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+        run: |
+          eas submit \
+            --platform ios \
+            --profile staging \
+            --latest \
+            --non-interactive \
+            --wait
+
+      - name: Cleanup ASC API key
+        if: always()
+        run: rm -f asc-api-key.p8

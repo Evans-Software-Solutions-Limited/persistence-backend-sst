@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json.schemastore.org/eas.json",
+  "cli": {
+    "version": ">= 7.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "staging": {
+      "distribution": "store",
+      "channel": "staging",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.staging.persistence.evans-software-solutions.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZXllYmdka3RmdGVxbGFjbXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTMzMDUsImV4cCI6MjA3NTY2OTMwNX0.zW82kwUAFOL8djHC8cmEIS0dmB-8k1ONN-ciYF1T_WQ"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "resourceClass": "medium",
+        "buildType": "app-bundle"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "environment": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.persistence.evans-software-solutions.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZXllYmdka3RmdGVxbGFjbXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTMzMDUsImV4cCI6MjA3NTY2OTMwNX0.zW82kwUAFOL8djHC8cmEIS0dmB-8k1ONN-ciYF1T_WQ"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "resourceClass": "medium",
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "staging": {
+      "ios": {
+        "appleTeamId": "$APPLE_TEAM_ID",
+        "ascAppId": "$ASC_APP_ID",
+        "ascApiKeyId": "$ASC_API_KEY_ID",
+        "ascApiKeyIssuerId": "$ASC_API_KEY_ISSUER_ID",
+        "ascApiKeyPath": "./asc-api-key.p8"
+      }
+    },
+    "production": {
+      "ios": {
+        "appleTeamId": "$APPLE_TEAM_ID",
+        "ascAppId": "$ASC_APP_ID",
+        "ascApiKeyId": "$ASC_API_KEY_ID",
+        "ascApiKeyIssuerId": "$ASC_API_KEY_ISSUER_ID",
+        "ascApiKeyPath": "./asc-api-key.p8"
+      }
+    }
+  }
+}
