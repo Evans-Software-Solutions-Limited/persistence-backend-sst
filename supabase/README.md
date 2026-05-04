@@ -102,19 +102,19 @@ When the project moves off the free tier:
 
 1. Provision a second Supabase project (`persistence-prod` or similar).
 2. Apply the legacy seeds + run all current migrations against it once (`supabase db push --linked` against the new project).
-3. Update the `Production` GitHub environment's `SUPABASE_PROJECT_REF` + `SUPABASE_DB_PASSWORD` to point at the new project.
-4. Update SST's `PersistenceDatabaseUrl` secret on the production stage similarly.
+3. Update the `Production` GitHub environment's `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`, and `DATABASE_URL` to point at the new project.
 
-After that, migrations land first on staging (via `deploy-staging.yml`), are validated, then re-apply to production on the next release publish (independent DB, independent tracking table). The workflow code doesn't change — only the secret values diverge.
+The next `production-deploy.yml` run picks the new values up automatically — its `Set SST secrets` step writes the production-stage `PersistenceDatabaseUrl` slot from `secrets.DATABASE_URL` before deploy. After that, migrations land first on staging (via `deploy-staging.yml`), are validated, then re-apply to production on the next release publish (independent DB, independent tracking table). The workflow code doesn't change — only the per-environment GH secret values diverge.
 
 ## Required GitHub secrets
 
 Per environment (`staging`, `Production`):
 
-| Secret name            | Where to find it                                                              | Notes                                                                                              |
-| ---------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                | Same value in both envs while on a single project. Diverges per env once each has its own project. |
-| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password | Same value in both envs while on a single project.                                                 |
+| Secret name            | Where to find it                                                                                                               | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_PROJECT_REF` | Supabase Dashboard → Project Settings → General → Reference ID                                                                 | Same value in both envs while on a single project. Diverges per env once each has its own project.                                                                                                                                                                                                                                                                                                                                             |
+| `SUPABASE_DB_PASSWORD` | Supabase Dashboard → Project Settings → Database → Connection string password                                                  | Same value in both envs while on a single project.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `DATABASE_URL`         | Supabase Dashboard → Project Settings → Database → **Connection pooling** tab → Transaction mode (port 6543) connection string | The runtime URL the Lambda uses. **Must be the transaction-mode pooler** (`aws-1-<region>.pooler.supabase.com:6543`), NOT the direct connection (`db.<ref>.supabase.co:5432`) — Lambda needs the pooler for connection multiplexing across cold starts. CI runs `sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage <stage>` before each deploy, so this GH secret is the source of truth for the deployed Lambda's `DATABASE_URL`. |
 
 Repo-level (account-scoped, shared across environments):
 
@@ -132,9 +132,21 @@ gh secret set SUPABASE_ACCESS_TOKEN
 # same values temporarily while only one project exists (see § "Transitional (free-tier) note" above).
 gh secret set SUPABASE_PROJECT_REF  --env staging
 gh secret set SUPABASE_DB_PASSWORD  --env staging
+gh secret set DATABASE_URL          --env staging
 gh secret set SUPABASE_PROJECT_REF  --env Production
 gh secret set SUPABASE_DB_PASSWORD  --env Production
+gh secret set DATABASE_URL          --env Production
 ```
+
+### Why CI sets the SST secret (not just `sst secret set` from a dev machine)
+
+`sst secret set Foo <value>` writes to AWS SSM Parameter Store under a stage-scoped key. Running it locally only updates the stage your local CLI is pointed at — typically the developer's personal stage (e.g. `dev`). The deployed `staging` and `production` Lambdas read from their own stage-scoped slots, which a developer's `sst secret set` never touches. That gap caused the 2026-05-04 staging dashboard outage: the developer's `PersistenceDatabaseUrl` was correct, but the staging-stage slot was either empty or stale, so the Lambda couldn't reach the DB.
+
+The deploy workflows now run `sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage <stage>` before `sst deploy`. Effects:
+
+- **CI is the source of truth.** Every deploy re-applies the value, so manual `sst secret set` from any machine is overwritten on the next CI run. Drift between developer machines and the deployed Lambda becomes impossible.
+- **Fail-fast on missing secret.** If the GH environment secret is unset, the deploy step exits with a clear error before `sst deploy` runs — no more silent `DATABASE_URL=""` injection.
+- **One source of truth per env.** Rotating the password is "update the GH secret + re-run the workflow" — no `sst secret set` from any developer machine needed.
 
 ## Manual application (escape hatch)
 
