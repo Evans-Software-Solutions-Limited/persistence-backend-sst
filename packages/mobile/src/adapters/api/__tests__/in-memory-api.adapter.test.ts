@@ -1,6 +1,10 @@
 import { InMemoryApiAdapter } from "./in-memory-api.adapter";
 import type { Exercise } from "@/domain/models/exercise";
-import type { ApiProfile } from "@/domain/ports/api.port";
+import type {
+  ApiPersonalRecord,
+  ApiProfile,
+  RecordSessionInput,
+} from "@/domain/ports/api.port";
 
 describe("InMemoryApiAdapter", () => {
   let api: InMemoryApiAdapter;
@@ -91,6 +95,211 @@ describe("InMemoryApiAdapter", () => {
         expect(result.value.name).toBe("Morning workout");
         expect(result.value.status).toBe("in_progress");
       }
+    });
+
+    describe("getActiveSession", () => {
+      it("returns null when no session is in_progress", async () => {
+        const result = await api.getActiveSession();
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value).toBeNull();
+      });
+
+      it("returns the in_progress session when one exists", async () => {
+        await api.createSession({ name: "Active workout" });
+        const result = await api.getActiveSession();
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value?.name).toBe("Active workout");
+          expect(result.value?.status).toBe("in_progress");
+        }
+      });
+
+      it("ignores completed / cancelled sessions", async () => {
+        // Seed two non-active sessions; expect ok(null) — distinct from
+        // the failure case which exercises shouldFail below.
+        const created = await api.createSession({ name: "Done session" });
+        if (created.ok) {
+          await api.updateSession(created.value.id, { status: "completed" });
+        }
+        const result = await api.getActiveSession();
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value).toBeNull();
+      });
+
+      it("propagates the failure flag", async () => {
+        api.shouldFail = true;
+        const result = await api.getActiveSession();
+        expect(result.ok).toBe(false);
+      });
+    });
+
+    describe("recordSession (bulk-record path)", () => {
+      // Minimal valid payload mirroring the M3 BACKEND_BRIEF § 7 wire
+      // shape — single exercise, single set. Tests at the call sites
+      // can spread + extend this without re-stating boilerplate.
+      const basePayload = (
+        overrides: Partial<RecordSessionInput> = {},
+      ): RecordSessionInput => ({
+        workoutId: "workout-1",
+        name: "Push Day",
+        startedAt: "2026-05-04T10:00:00.000Z",
+        completedAt: "2026-05-04T11:00:00.000Z",
+        status: "completed",
+        totalDurationSeconds: 3600,
+        exercises: [
+          {
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            sets: [
+              {
+                setNumber: 1,
+                reps: 5,
+                weightKg: 100,
+                isCompleted: true,
+                completedAt: "2026-05-04T10:05:00.000Z",
+              },
+            ],
+          },
+        ],
+        ...overrides,
+      });
+
+      it("returns the recorded session with nested exercises + sets", async () => {
+        const result = await api.recordSession(basePayload());
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.status).toBe("completed");
+        expect(result.value.exercises).toHaveLength(1);
+        expect(result.value.exercises[0]?.sets).toHaveLength(1);
+        expect(result.value.exercises[0]?.sets[0]?.reps).toBe(5);
+        expect(result.value.exercises[0]?.sets[0]?.weightKg).toBe(100);
+      });
+
+      it("registers the recorded session in the flat sessions list (so getSession finds it)", async () => {
+        // The mobile sync intent flushes recordSession then expects the
+        // returned id to be queryable via getSession for the Summary
+        // screen's post-flush re-fetch. This invariant is set in the
+        // adapter to mirror the SST adapter's same behaviour
+        // post-`POST /sessions/record`.
+        const result = await api.recordSession(basePayload());
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        const fetched = await api.getSession(result.value.id);
+        expect(fetched.ok).toBe(true);
+        if (fetched.ok) expect(fetched.value.id).toBe(result.value.id);
+      });
+
+      it("accepts a status: cancelled payload (discard flow)", async () => {
+        const result = await api.recordSession(
+          basePayload({ status: "cancelled", completedAt: null }),
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.status).toBe("cancelled");
+      });
+
+      it("propagates the failure flag", async () => {
+        api.shouldFail = true;
+        const result = await api.recordSession(basePayload());
+        expect(result.ok).toBe(false);
+      });
+    });
+
+    describe("createSessionExercise", () => {
+      it("creates an exercise scoped to the given session id", async () => {
+        const result = await api.createSessionExercise("session-99", {
+          exerciseId: "ex-1",
+          sortOrder: 2,
+        });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.sessionId).toBe("session-99");
+          expect(result.value.exerciseId).toBe("ex-1");
+          expect(result.value.sortOrder).toBe(2);
+        }
+      });
+
+      it("propagates the failure flag", async () => {
+        api.shouldFail = true;
+        const result = await api.createSessionExercise("s1", {
+          exerciseId: "e1",
+        });
+        expect(result.ok).toBe(false);
+      });
+    });
+  });
+
+  describe("personal records", () => {
+    const seedPR = (
+      overrides: Partial<ApiPersonalRecord> = {},
+    ): ApiPersonalRecord => ({
+      id: overrides.id ?? `pr-${api.personalRecords.length + 1}`,
+      userId: "test-user",
+      exerciseId: "ex-1",
+      recordType: "1rm",
+      value: "120.50",
+      setId: "set-1",
+      achievedAt: "2026-05-01T10:00:00.000Z",
+      ...overrides,
+    });
+
+    it("returns an empty list by default (nothing seeded)", async () => {
+      const result = await api.getPersonalRecords();
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toEqual([]);
+    });
+
+    it("returns seeded records unfiltered when no params are given", async () => {
+      api.personalRecords.push(seedPR({ id: "pr-1", exerciseId: "ex-1" }));
+      api.personalRecords.push(seedPR({ id: "pr-2", exerciseId: "ex-2" }));
+      const result = await api.getPersonalRecords();
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toHaveLength(2);
+    });
+
+    it("filters by exerciseId when provided (quick-fill flow)", async () => {
+      api.personalRecords.push(seedPR({ id: "pr-1", exerciseId: "ex-1" }));
+      api.personalRecords.push(seedPR({ id: "pr-2", exerciseId: "ex-2" }));
+      const result = await api.getPersonalRecords({ exerciseId: "ex-1" });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0]?.exerciseId).toBe("ex-1");
+      }
+    });
+
+    it("filters by recordType when provided", async () => {
+      api.personalRecords.push(
+        seedPR({ id: "pr-1", recordType: "1rm" }),
+        seedPR({ id: "pr-2", recordType: "max_reps" }),
+      );
+      const result = await api.getPersonalRecords({ recordType: "max_reps" });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0]?.recordType).toBe("max_reps");
+      }
+    });
+
+    it("applies offset + limit slicing to the filtered set", async () => {
+      // 3 PRs, limit 2 with offset 1 — expect IDs 2 and 3 in order.
+      api.personalRecords.push(
+        seedPR({ id: "pr-1" }),
+        seedPR({ id: "pr-2" }),
+        seedPR({ id: "pr-3" }),
+      );
+      const result = await api.getPersonalRecords({ limit: 2, offset: 1 });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.map((r) => r.id)).toEqual(["pr-2", "pr-3"]);
+      }
+    });
+
+    it("propagates the failure flag", async () => {
+      api.personalRecords.push(seedPR());
+      api.shouldFail = true;
+      const result = await api.getPersonalRecords();
+      expect(result.ok).toBe(false);
     });
   });
 
