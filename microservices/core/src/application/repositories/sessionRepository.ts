@@ -222,14 +222,13 @@ export class SessionRepository {
         } as NewWorkoutSession)
         .returning();
 
-      const recordedExercises: Array<
-        SessionExercise & { sets: ExerciseSet[] }
-      > = [];
-
       // 2. Insert each exercise + its sets in payload order. Sequential
       //    inserts within the tx — N round-trips inside one DB tx,
       //    not N separate API roundtrips. For typical M3 sessions
-      //    (3-8 exercises × 3-5 sets) the cost is bounded.
+      //    (3-8 exercises × 3-5 sets) the cost is bounded. Discard the
+      //    .returning() snapshots: PR detection in step 3 will flip
+      //    is_personal_record on some of these rows, so we re-fetch
+      //    the canonical state in step 4 before responding.
       for (const ex of payload.exercises) {
         const [exerciseRow] = await tx
           .insert(sessionExercises)
@@ -242,56 +241,85 @@ export class SessionRepository {
             originalExerciseId: ex.originalExerciseId ?? null,
             notes: ex.notes ?? null,
           } as NewSessionExercise)
-          .returning();
+          .returning({ id: sessionExercises.id });
 
-        const recordedSets: ExerciseSet[] = [];
         for (const set of ex.sets) {
-          const [setRow] = await tx
-            .insert(exerciseSets)
-            .values({
-              sessionExerciseId: exerciseRow.id,
-              setNumber: set.setNumber,
-              reps: set.reps ?? null,
-              weightKg:
-                set.weightKg !== undefined && set.weightKg !== null
-                  ? String(set.weightKg)
-                  : null,
-              durationSeconds: set.durationSeconds ?? null,
-              distanceMeters:
-                set.distanceMeters !== undefined && set.distanceMeters !== null
-                  ? String(set.distanceMeters)
-                  : null,
-              rpe: set.rpe ?? null,
-              restAfterSeconds: set.restAfterSeconds ?? null,
-              isCompleted: set.isCompleted ?? false,
-              completedAt: set.completedAt ? new Date(set.completedAt) : null,
-              isPersonalRecord: false, // PR detection sets this in step 4
-            } as NewExerciseSet)
-            .returning();
-          recordedSets.push(setRow);
+          await tx.insert(exerciseSets).values({
+            sessionExerciseId: exerciseRow.id,
+            setNumber: set.setNumber,
+            reps: set.reps ?? null,
+            weightKg:
+              set.weightKg !== undefined && set.weightKg !== null
+                ? String(set.weightKg)
+                : null,
+            durationSeconds: set.durationSeconds ?? null,
+            distanceMeters:
+              set.distanceMeters !== undefined && set.distanceMeters !== null
+                ? String(set.distanceMeters)
+                : null,
+            rpe: set.rpe ?? null,
+            restAfterSeconds: set.restAfterSeconds ?? null,
+            isCompleted: set.isCompleted ?? false,
+            completedAt: set.completedAt ? new Date(set.completedAt) : null,
+            isPersonalRecord: false, // PR detection flips this in step 3
+          } as NewExerciseSet);
         }
-
-        recordedExercises.push({ ...exerciseRow, sets: recordedSets });
       }
 
       // 3. PR detection inside the same transaction. Injected so this
       //    repo doesn't depend on personalRecordsRepository directly
       //    — the handler wires the two together. Skipped for cancelled
       //    sessions per `recordWorkout` legacy parity (a discarded
-      //    workout shouldn't generate PRs).
+      //    workout shouldn't generate PRs). The detection pass upserts
+      //    `personal_records` and flips `is_personal_record` on the
+      //    canonical PR sets via the DEMOTE/PROMOTE flag re-sync.
       if (session.status === "completed") {
         await runPRDetection(userId, session.id, tx);
       }
 
-      // 4. Return the full nested shape. The PR-detection step above
-      //    may have flipped is_personal_record on some sets, but we
-      //    snapshotted them BEFORE the flip — that's fine for the
-      //    response. Mobile re-fetches the session if it needs the
-      //    canonical PR flags (the Summary screen reads its own
-      //    client-side prediction first anyway).
+      // 4. Re-fetch the full nested session inside the same tx so the
+      //    response reflects the post-PR-detection state — in
+      //    particular the `is_personal_record` flags step 3 just
+      //    flipped on canonical PR sets. The bare `.returning()`
+      //    snapshots from step 2 are pre-detection and would lie on
+      //    the wire (mobile relies on these flags for the Summary
+      //    screen's PR badge). Querying inside the tx guarantees we
+      //    see our own writes. Spec: BACKEND_BRIEF § 7 step 5.
+      const [refreshedSession] = await tx
+        .select()
+        .from(workoutSessions)
+        .where(eq(workoutSessions.id, session.id))
+        .limit(1);
+
+      const refreshedExercises = await tx
+        .select()
+        .from(sessionExercises)
+        .where(eq(sessionExercises.sessionId, session.id))
+        .orderBy(sessionExercises.sortOrder);
+
+      const exerciseIds = refreshedExercises.map((e) => e.id);
+      const refreshedSets =
+        exerciseIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(exerciseSets)
+              .where(inArray(exerciseSets.sessionExerciseId, exerciseIds))
+              .orderBy(exerciseSets.setNumber);
+
+      const setsByExerciseId = new Map<string, ExerciseSet[]>();
+      for (const s of refreshedSets) {
+        const arr = setsByExerciseId.get(s.sessionExerciseId);
+        if (arr) arr.push(s);
+        else setsByExerciseId.set(s.sessionExerciseId, [s]);
+      }
+
       return {
-        ...session,
-        exercises: recordedExercises,
+        ...refreshedSession,
+        exercises: refreshedExercises.map((e) => ({
+          ...e,
+          sets: setsByExerciseId.get(e.id) ?? [],
+        })),
       };
     });
   }
