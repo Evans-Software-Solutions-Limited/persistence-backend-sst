@@ -77,25 +77,37 @@ export const coreErrorHandler = new Elysia({
     const message = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? error.stack : undefined;
     const causeChain = collectCauseChain(error);
+    const causeSummaries = causeChain.map(summarizeCause);
 
-    // Single structured log line per failed request. Stack on a separate
-    // line so CloudWatch's default row wrap still renders the summary.
+    // Single structured JSON line per failed request. Earlier impl
+    // split summary / stack / cause across THREE separate console.error
+    // calls; CloudWatch sometimes orphans those into different log
+    // entries (especially when copy/pasted out of the console UI), so a
+    // user reading "Failed query: ..." in isolation never saw the
+    // postgres-side cause. Bundling everything into one line guarantees
+    // the cause travels with the summary regardless of how the log is
+    // viewed.
+    //
+    // The leading `[api:error] ${method} ${path} → ${status}` prefix is
+    // kept human-scannable for log-tail use; the JSON payload after `· `
+    // is what carries the structured detail.
     console.error(
-      `[api:error] ${method} ${path} → ${status} · code=${code} · ${message}${
-        requestId ? ` · reqId=${requestId}` : ""
-      }`,
+      `[api:error] ${method} ${path} → ${status} · ${JSON.stringify({
+        code,
+        message,
+        requestId,
+        // Drizzle (and many ORMs) wrap the real driver error as
+        // `.cause` on the thrown Error. Without unwinding that chain
+        // the log just shows the outer "Failed query: <sql>" wrapper
+        // and the actual Postgres reason (auth, SSL, permission,
+        // timeout, pgbouncer mode mismatch, etc.) stays invisible.
+        // Inlining `causes` here guarantees the real signal lands
+        // alongside the summary.
+        causes: causeSummaries,
+      })}`,
     );
     if (stack) {
       console.error(stack);
-    }
-    // Drizzle (and many ORMs) wrap the real driver error as `.cause` on the
-    // thrown Error. Without unwinding that chain the log just shows the
-    // outer "Failed query: <sql>" wrapper and the actual Postgres reason
-    // (auth, SSL, permission, timeout, pgbouncer mode mismatch, etc.)
-    // stays invisible. We log each link so whichever layer produced the
-    // real signal lands in CloudWatch.
-    for (const [depth, link] of causeChain.entries()) {
-      console.error(`[api:error] cause[${depth}]`, link);
     }
 
     // Validation errors carry Elysia's own `all` array under the hood;
@@ -133,9 +145,7 @@ export const coreErrorHandler = new Elysia({
         ? {}
         : {
             stack,
-            ...(causeChain.length > 0
-              ? { causes: causeChain.map(summarizeCause) }
-              : {}),
+            ...(causeSummaries.length > 0 ? { causes: causeSummaries } : {}),
           }),
     };
   },
@@ -178,6 +188,12 @@ function summarizeCause(link: unknown): Record<string, unknown> | string {
     summary.name = link.name;
     summary.message = link.message;
   }
+  // Postgres driver errors tack their useful fields directly on the
+  // Error instance (`code`, `detail`, `hint`, `severity`, etc.). Node
+  // net / dns errors carry `errno`, `syscall`, `address`, `port` —
+  // including those means connection-refused / TLS / timeout failure
+  // modes show up structured rather than as opaque "Failed query"
+  // wrappers.
   for (const key of [
     "code",
     "detail",
@@ -190,6 +206,10 @@ function summarizeCause(link: unknown): Record<string, unknown> | string {
     "where",
     "position",
     "routine",
+    "errno",
+    "syscall",
+    "address",
+    "port",
   ]) {
     if (obj[key] !== undefined) {
       summary[key] = obj[key];

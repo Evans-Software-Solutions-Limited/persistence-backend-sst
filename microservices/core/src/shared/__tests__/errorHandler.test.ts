@@ -213,11 +213,19 @@ describe("coreErrorHandler", () => {
     expect(causes[0]?.code).toBe("28P01");
     expect(causes[0]?.severity).toBe("FATAL");
     expect(causes[0]?.message).toContain("password authentication failed");
-    // Each cause link also logged separately so CloudWatch has them.
-    const causeLogs = consoleErrorSpy.mock.calls.filter((c) =>
-      String(c[0]).startsWith("[api:error] cause["),
+    // Causes are folded INTO the main `[api:error]` summary line as
+    // JSON. Earlier impl logged each cause on a separate line, but
+    // CloudWatch sometimes orphaned those into separate entries when
+    // copy/pasted, leaving triage users staring at "Failed query: ..."
+    // without the postgres-side reason. The assertion now requires
+    // the cause's driver code to appear inline in the summary log.
+    const summaryLogs = consoleErrorSpy.mock.calls.filter((c) =>
+      String(c[0]).startsWith("[api:error]"),
     );
-    expect(causeLogs.length).toBeGreaterThan(0);
+    expect(summaryLogs.length).toBeGreaterThan(0);
+    const summaryLine = String(summaryLogs[0]?.[0]);
+    expect(summaryLine).toContain("28P01");
+    expect(summaryLine).toContain("password authentication failed");
   });
 
   it("strips the `causes` field in production", async () => {
