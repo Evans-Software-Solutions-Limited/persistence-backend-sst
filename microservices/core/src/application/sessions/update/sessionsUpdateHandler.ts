@@ -46,11 +46,18 @@ export const sessionsUpdateHandler = new Elysia()
         return { error: "No valid fields to update" };
       }
 
-      // Snapshot pre-update status so we can detect the
-      // in_progress → completed transition that triggers server-side
-      // PR detection. Read uses the same JWT scope as `update`, so
-      // a non-owner gets the 404 from the update path below.
-      const previous = await ctx.SessionRepository.getById(sessionId, userId);
+      // Only snapshot the pre-update state when the PATCH could
+      // transition the session to `completed` — i.e. when the body
+      // explicitly sets `status: "completed"`. Otherwise we'd burn
+      // 2 extra DB queries (getById = session SELECT + exercises
+      // JOIN) on every PATCH that touches notes / rating / RPE /
+      // any other non-status field. That's a 4× round-trip
+      // amplification on the hot path the mobile client uses for
+      // mid-session metadata updates (bugbot finding, PR #48).
+      const couldTransitionToCompleted = body.status === "completed";
+      const previous = couldTransitionToCompleted
+        ? await ctx.SessionRepository.getById(sessionId, userId)
+        : null;
 
       const session = await ctx.SessionRepository.update(
         sessionId,
@@ -69,9 +76,12 @@ export const sessionsUpdateHandler = new Elysia()
       // session marked done. PR detection is idempotent (unique index
       // + value comparison in personalRecordsRepository), so a missed
       // run can be re-attempted safely on a follow-up PATCH.
+      //
+      // Gated on couldTransitionToCompleted so we never reach this
+      // path without `previous` being snapshotted above.
       const wasCompletedBefore = previous?.status === "completed";
       const isCompletedNow = session.status === "completed";
-      if (!wasCompletedBefore && isCompletedNow) {
+      if (couldTransitionToCompleted && !wasCompletedBefore && isCompletedNow) {
         try {
           await ctx.PersonalRecordsRepository.recordPRsForSession(
             userId,
