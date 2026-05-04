@@ -24,6 +24,7 @@ import { sessionsListHandler } from "./application/sessions/list/sessionsListHan
 import { sessionsGetHandler } from "./application/sessions/get/sessionsGetHandler";
 import { sessionsUpdateHandler } from "./application/sessions/update/sessionsUpdateHandler";
 import { sessionsDeleteHandler } from "./application/sessions/delete/sessionsDeleteHandler";
+import { sessionsRecordHandler } from "./application/sessions/record/sessionsRecordHandler";
 import { sessionExercisesCreateHandler } from "./application/sessions/exercises/create/sessionExercisesCreateHandler";
 import { sessionExercisesGetHandler } from "./application/sessions/exercises/get/sessionExercisesGetHandler";
 import { sessionExercisesDeleteHandler } from "./application/sessions/exercises/delete/sessionExercisesDeleteHandler";
@@ -69,6 +70,7 @@ const app = new Elysia()
   .use(sessionsGetHandler)
   .use(sessionsUpdateHandler)
   .use(sessionsDeleteHandler)
+  .use(sessionsRecordHandler)
   .use(sessionExercisesCreateHandler)
   .use(sessionExercisesGetHandler)
   .use(sessionExercisesDeleteHandler)
