@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   exerciseSets,
   personalRecords,
@@ -169,31 +169,80 @@ export class PersonalRecordsRepository {
 
     if (completedSets.length === 0) return;
 
-    // Query the canonical PR rows that point at any set from this
-    // session and flip is_personal_record on those sets only. This is
-    // the source of truth — beats any heuristic about which sets
-    // "won" inside the loop above (multiple sets for the same
-    // exercise overwrite each other on the way through).
-    const sessionSetIds = completedSets.map((s) => s.setId);
-    const winners = await db
+    // Re-sync the `is_personal_record` flag on `exercise_sets` to
+    // match the canonical state in `personal_records`. Two-step
+    // process so the flag stays correct over time, not just at the
+    // moment a set is recorded:
+    //
+    //   1. Demote: clear the flag on any previously-flagged set that
+    //      no longer holds a canonical PR. Without this, sets from
+    //      earlier sessions that were beaten by a later session would
+    //      retain a stale `is_personal_record = true` indefinitely.
+    //   2. Promote: set the flag on the current canonical PR setIds.
+    //
+    // Scope is bounded to the exercises this session touched. A
+    // user's other exercises (and other users' data) are never
+    // queried or modified — the WHERE clause threads userId via the
+    // session_exercises ⨝ workout_sessions join.
+    const touchedExerciseIds = [
+      ...new Set(completedSets.map((s) => s.exerciseId)),
+    ];
+
+    const canonicalPRs = await db
       .select({ setId: personalRecords.setId })
       .from(personalRecords)
       .where(
         and(
           eq(personalRecords.userId, userId),
-          inArray(personalRecords.setId, sessionSetIds),
+          inArray(personalRecords.exerciseId, touchedExerciseIds),
         ),
       );
 
-    const winningSetIds = winners
-      .map((w) => w.setId)
+    const canonicalSetIds = canonicalPRs
+      .map((p) => p.setId)
       .filter((id): id is string => id !== null);
 
-    if (winningSetIds.length > 0) {
+    // The user's session_exercises rows for the touched exercises —
+    // i.e. every session_exercise this user has ever logged for any
+    // of these exercises. Used as the scope of both demote (which
+    // sets to maybe-clear) and promote (which sets to maybe-flag).
+    // Reused as a subquery; Drizzle compiles it inline both times.
+    const userSessionExerciseIdsScope = db
+      .select({ id: sessionExercises.id })
+      .from(sessionExercises)
+      .innerJoin(
+        workoutSessions,
+        eq(sessionExercises.sessionId, workoutSessions.id),
+      )
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          inArray(sessionExercises.exerciseId, touchedExerciseIds),
+        ),
+      );
+
+    // Demote: clear the flag on flagged sets in scope that aren't
+    // current canonical PRs. When canonicalSetIds is empty, the
+    // notInArray clause is dropped so we still clear orphaned flags.
+    const demoteFilters = [
+      eq(exerciseSets.isPersonalRecord, true),
+      inArray(exerciseSets.sessionExerciseId, userSessionExerciseIdsScope),
+    ];
+    if (canonicalSetIds.length > 0) {
+      demoteFilters.push(notInArray(exerciseSets.id, canonicalSetIds));
+    }
+    await db
+      .update(exerciseSets)
+      .set({ isPersonalRecord: false })
+      .where(and(...demoteFilters));
+
+    // Promote: flag the current canonical PR setIds. Reaffirms any
+    // pre-existing flags AND lights up new winners from this session.
+    if (canonicalSetIds.length > 0) {
       await db
         .update(exerciseSets)
         .set({ isPersonalRecord: true })
-        .where(inArray(exerciseSets.id, winningSetIds));
+        .where(inArray(exerciseSets.id, canonicalSetIds));
     }
   }
 }
