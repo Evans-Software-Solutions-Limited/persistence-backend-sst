@@ -1,15 +1,37 @@
 # CLAUDE.md – Persistence Backend SST
 
-## Current execution model (as of 2026-04-19)
+## Current execution model (as of 2026-05-04)
 
 Work ships via milestone-driven parallel agents. Specs are the source of truth; briefs drive PRs.
 
 - **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
 - **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
 - **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
-- **Current milestone: M0 — Integration baseline** (briefs pending). M0 closes Exercise Library wire-format drift, adds backend `POST/PATCH/DELETE /exercises`, and shifts mobile filters onto API-sourced reference data.
+- **Current milestone: M3 — Active Session.** Backend shipped (PR #46 merged 2026-05-04: handlers wired with M3 columns, `GET /sessions?status=` + `GET /personal-records`, server-side PR detection on session-complete, TOCTOU fix on set updates, mobile `ApiPort` extensions). Bulk-record session pivot in flight (PR #48 — `POST /sessions/record` + `SessionRepository.recordSession` running everything in `db.transaction(...)`). **M3 frontend is next.** Spec at `specs/milestones/M3-active-session/FRONTEND_BRIEF.md` — read it end-to-end before starting.
 
 See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the full M0 → M11 list, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
+
+## Active-session sync model — bulk-record (decided 2026-05-04)
+
+The M3 active-session flush path is **bulk-record, not piecemeal**. Mobile keeps the active session in local state + SQLite for crash recovery; on Finish (or Discard), one POST to `/sessions/record` carrying the full session payload (root + nested exercises + nested sets). Server inserts everything in one Postgres transaction including PR detection. Mirrors the legacy `persistence-mobile` repo's `recordWorkout` mutation.
+
+The piecemeal endpoints (`POST /sessions`, `POST /sessions/:id/exercises`, `POST .../sets`, `PATCH /sessions/:id`) **stay** for the editing-completed-session use cases that M4 progress edits and M8 trainer review notes will need. Don't reach for them from the active-session flush path — that's the bulk endpoint's job.
+
+Sync queue intent kind for active sessions: just `recordSession`. Single intent per session. If you find yourself implementing chained intents with dependency ordering and ID swapping, you've drifted from the bulk pattern — re-read [`specs/milestones/M3-active-session/BACKEND_BRIEF.md`](./specs/milestones/M3-active-session/BACKEND_BRIEF.md) § 7.
+
+## Domain config — single source of truth
+
+Per-environment config lives in `packages/api-utils/src/domains/domain-config.ts`. Public values only:
+
+- `BASE_DOMAIN` = `persistence.evans-software-solutions.com`
+- `ZONE_IDS` per env (production zone is the parent `evans-software-solutions.com`, staging zone is sub-delegated `staging.persistence.evans-software-solutions.com`)
+- `SUPABASE_URLS` per env (currently identical — single free-tier Supabase project)
+
+`infra/domains/index.ts` wraps with SST's `$app.stage` lookup. `infra/api.ts` consumes via `coreApiDomain` / `hostedZoneId` / `supabaseUrl`. **Don't read `process.env.SUPABASE_URL` (or other env vars) directly in `infra/`** — that's read at SST build time on the GH runner where the value isn't set, ships empty into the Lambda, breaks runtime. The bug pattern was caught and fixed in PR #49; if you see `process.env.X` anywhere under `infra/`, suspect it.
+
+## Single Supabase reality
+
+Both staging and production currently target one free-tier Supabase project (`dfeyebgdktfteqlacmru.supabase.co`). Migrations apply on first push to main (via staging-deploy); production-deploy's `db push` is a no-op against the already-migrated DB. **A bad migration affects both stages immediately** — no DB isolation. Treat every migration like a production change. The dry-run + idempotent + additive-only authoring rules are the only safety net. See [`supabase/README.md`](./supabase/README.md) § "Single-Supabase reality (free tier)".
 
 ## What This Repo Is
 
