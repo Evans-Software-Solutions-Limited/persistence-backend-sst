@@ -63,5 +63,52 @@ describe("domain-config", () => {
       expect(getDomainConfig("pr-42").zoneId).toBeUndefined();
       expect(getDomainConfig("feature-active-session").zoneId).toBeUndefined();
     });
+
+    it("returns the canonical Supabase URL for production", () => {
+      expect(getDomainConfig("production").supabaseUrl).toBe(
+        "https://dfeyebgdktfteqlacmru.supabase.co",
+      );
+    });
+
+    it("returns the same Supabase URL for staging while on a single project", () => {
+      // While the project shares one free-tier Supabase, both stages
+      // resolve to the same URL. When production gets its own project
+      // this test will need to flip; SUPABASE_URLS in domain-config.ts
+      // is the single point of change.
+      expect(getDomainConfig("staging").supabaseUrl).toBe(
+        "https://dfeyebgdktfteqlacmru.supabase.co",
+      );
+    });
+
+    it("falls back to process.env.SUPABASE_URL for dev", () => {
+      const originalEnv = process.env.SUPABASE_URL;
+      process.env.SUPABASE_URL = "https://my-local-supabase.test.co";
+      try {
+        expect(getDomainConfig("dev").supabaseUrl).toBe(
+          "https://my-local-supabase.test.co",
+        );
+        expect(getDomainConfig("brad").supabaseUrl).toBe(
+          "https://my-local-supabase.test.co",
+        );
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env.SUPABASE_URL;
+        } else {
+          process.env.SUPABASE_URL = originalEnv;
+        }
+      }
+    });
+
+    it("returns empty string supabaseUrl for dev when no env var set", () => {
+      const originalEnv = process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_URL;
+      try {
+        expect(getDomainConfig("dev").supabaseUrl).toBe("");
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.SUPABASE_URL = originalEnv;
+        }
+      }
+    });
   });
 });
