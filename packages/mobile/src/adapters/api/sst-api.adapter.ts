@@ -32,6 +32,8 @@ import type {
   CreateSetInput,
   UpdateSetInput,
   CreateGoalInput,
+  RecordSessionInput,
+  RecordedApiSession,
 } from "@/domain/ports/api.port";
 import type {
   CreateWorkoutInput,
@@ -355,6 +357,13 @@ export class SSTApiAdapter implements ApiPort {
 
   async deleteSession(id: string) {
     return this.request<void>(`/sessions/${id}`, { method: "DELETE" });
+  }
+
+  async recordSession(payload: RecordSessionInput) {
+    return this.requestEnvelope<RecordedApiSession>("/sessions/record", {
+      method: "POST",
+      body: payload,
+    });
   }
 
   async getActiveSession(): Promise<Result<ApiSession | null, ApiError>> {

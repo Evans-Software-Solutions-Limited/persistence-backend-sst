@@ -153,6 +153,100 @@ The first implementation-adjacent commit must edit:
 
 This first commit lands the spec changes only — implementation commits cite spec sections after.
 
+## 7. Bulk-record session endpoint (post-bugbot pivot — Option A)
+
+**Decided 2026-05-04** after discussion with the report owner. The piecemeal CRUD pattern (`POST /sessions` → many `POST /sessions/:id/exercises` → many `POST /sessions/:id/.../sets` → `PATCH /sessions/:id { status: completed }`) is **replaced for the active-session flush path** by a single bulk endpoint that mirrors the legacy `persistence-mobile` repo's `recordWorkout` mutation.
+
+### Why pivoting
+
+- **Legacy app proved the model.** `lib/supabase/queries/workoutMutations.ts:recordWorkout` is the bulk mutation the legacy mobile app called on Finish. It worked for real users at production scale.
+- **Atomic.** Session row + exercises + sets + PR detection all run in one Postgres transaction. No partial-flush states; either the whole session lands or none of it does.
+- **Mid-session reordering / supersetting come for free.** Active session lives in mobile local state (SQLite + React); reordering / supersetting / substitution mutate that local state; the final shape lands in the bulk POST. **No `PATCH /sessions/:id/exercises/:eid` endpoint needed** for in-flight session mutations.
+- **Sync queue is one-intent-per-session.** Mobile flushes a single `recordSession` entry instead of chaining four intents in dependency order with ID swapping.
+- **Server-load reduction.** N+M+2 round-trips per session → 1.
+
+### Endpoint contract
+
+```
+POST /sessions/record
+Authorization: Bearer <jwt>
+Content-Type: application/json
+
+{
+  "workoutId": "uuid | null",
+  "name": "string | null",
+  "startedAt": "ISO-8601 string",
+  "completedAt": "ISO-8601 string | null",
+  "status": "completed | cancelled",
+  "totalDurationSeconds": number | null,
+  "userNotes": "string | null",
+  "sessionRating": number | null,
+  "overallRpe": number | null,
+  "difficultyRanking": number | null,
+  "exercises": [
+    {
+      "exerciseId": "uuid",
+      "sortOrder": number,
+      "supersetGroup": number | null,
+      "isSubstituted": boolean,
+      "originalExerciseId": "uuid | null",
+      "notes": "string | null",
+      "sets": [
+        {
+          "setNumber": number,
+          "reps": number | null,
+          "weightKg": "decimal string | number | null",
+          "durationSeconds": number | null,
+          "distanceMeters": "decimal string | number | null",
+          "rpe": number | null,
+          "restAfterSeconds": number | null,
+          "isCompleted": boolean,
+          "completedAt": "ISO-8601 string | null"
+        }
+      ]
+    }
+  ]
+}
+
+Response 201:
+{
+  "data": {
+    "id": "<server uuid>",
+    "userId": "<derived from jwt>",
+    ...all the row fields...,
+    "exercises": [
+      {
+        "id": "<server uuid>",
+        "sets": [{ "id": "<server uuid>", ... }, ...],
+        ...
+      }
+    ]
+  }
+}
+```
+
+### Implementation
+
+- New module: `microservices/core/src/application/sessions/record/sessionsRecordHandler.ts`
+- New repository method: `SessionRepository.recordSession(userId, payload)` — runs everything in `db.transaction(async (tx) => { ... })`:
+  1. Insert into `workout_sessions` (with `userId` from JWT, never the body)
+  2. For each exercise: insert into `session_exercises` (with the parent's server id)
+  3. For each set: insert into `exercise_sets` (with the parent's server id)
+  4. If `status === 'completed'`: call `personalRecordsRepository.recordPRsForSession(userId, sessionId, tx)` — note the `tx` param; the existing method gets a tx-aware overload so it can run inside the bulk transaction.
+  5. Re-fetch the full session with nested exercises + sets and return it.
+- All ownership checks fold into the JWT-scoped `userId` — no cross-user inserts possible because `userId` is derived from the auth token, not the body.
+- Validation: server rejects payloads with empty `exercises` (legacy required at least one), invalid timestamps, completed-before-started, etc. Mirrors `recordWorkout`'s validation block.
+
+### Existing piecemeal endpoints stay
+
+- `POST /sessions/:id/exercises` and `POST /sessions/:id/exercises/:eid/sets` and the corresponding PATCHes / DELETEs **remain** for editing completed sessions (M4 progress edits, trainer review notes in M8).
+- The piecemeal handlers still pass through `updatedAt: new Date()` on every mutation per CLAUDE.md.
+- The previous `sessionsUpdateHandler` post-hoc PR-detection trigger (commit 5 in PR #46) is retained for the case where someone PATCHes a status to `completed` via the piecemeal path. The bulk endpoint short-circuits this — its in-tx PR detection runs first and idempotently.
+
+### What this means for the M3 frontend brief
+
+[`FRONTEND_BRIEF.md`](./FRONTEND_BRIEF.md) §§ "Sync cadence" + "Group B: commands" updated. The mobile sync queue gets a single `recordSession` intent kind. `createSessionExercise` and `createSet` are no longer called from the active-session flush path; they remain on the `ApiPort` for the editing-completed-session use case.
+
 ## Out of scope (don't pull in)
 
 - M4's PR carousel UI. This PR ships the **endpoint** and the **server-side write**, nothing more.

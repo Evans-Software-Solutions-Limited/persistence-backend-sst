@@ -6,7 +6,7 @@ This brief inherits everything from M2 (PRs #39, #40, #41) and the 14 learnings 
 
 ## TL;DR
 
-Build the offline-first set logger. User taps **Start Workout** on a template (or _Quick Start_ for an empty session), lands in `ActiveSessionContainer`, logs sets one-by-one (writes to SQLite immediately, no per-set network), completes through a `SessionSummary` screen that detects PRs **client-side** for the offline UX, then enqueues a single batched flush. App-launch detects an unfinished session and prompts to resume.
+Build the offline-first set logger. User taps **Start Workout** on a template (or _Quick Start_ for an empty session), lands in `ActiveSessionContainer`, logs sets one-by-one (writes to SQLite immediately, no per-set network), completes through a `SessionSummary` screen that detects PRs **client-side** for the offline UX, then fires **one bulk POST** carrying the full session payload. App-launch detects an unfinished session and prompts to resume.
 
 This is the most offline-critical surface in the app. Every keystroke must persist locally before any UI feedback. The session must survive app backgrounding, device restart, and full network loss.
 
@@ -26,7 +26,7 @@ If the backend PR is still in flight, you can rebase iteratively — but do **no
 ## Decision recap from the audit (don't re-litigate)
 
 - **PR detection: hybrid.** Client predicts for the summary screen using a locally-cached `personalRecords` slice; server is canonical and reconciles on flush. See [`BACKEND_BRIEF.md`](./BACKEND_BRIEF.md) § PR-detection decision.
-- **Sync cadence: one batched flush per session.** Sets DO NOT enqueue per-log. They enqueue when the user taps **Finish** or **Discard** — at which point the entire session (`createSession` → many `createSessionExercise` → many `createSessionSet` → `updateSession {status: completed|cancelled}`) hits the queue in dependency order.
+- **Sync cadence: one bulk POST per session, atomic on the server side.** Sets DO NOT enqueue per-log. They don't enqueue per-exercise either. They enqueue as a **single `recordSession` intent** when the user taps **Finish** or **Discard** — payload carries the entire session (root row + all exercises with `sortOrder` / `supersetGroup` / substitution metadata + all sets with `weightKg` / `reps` / `isCompleted`). Backend writes everything in one transaction, runs PR detection inside the same tx, returns the canonical session with server-assigned IDs. Mirrors the legacy app's `recordWorkout` pattern. _The piecemeal `createSession` / `createSessionExercise` / `createSet` endpoints still exist for editing-completed-session use cases — M4 progress edits will use them — but the active-session flush path is bulk-only._
 - **Field naming: `sortOrder` not `orderIndex`** (matches existing wire format on workouts). The spec was edited to reflect this.
 - **Substitution: never PATCH session_exercise.** When a user swaps an exercise, the local model marks the old `session_exercise` row `isSubstituted = true` and creates a new row with `originalExerciseId` populated. The old row's sets are preserved (per Story-004 AC). On flush, both rows are POSTed independently.
 
@@ -211,7 +211,7 @@ ID swapping: when `createSession` returns a server `id`, the worker rewrites the
 - `complete-set.command.ts` — flips `isCompleted: true`, sets `completedAt: new Date().toISOString()`, returns the updated session. Trigger for the rest timer is a separate UI-layer concern; this command is pure-data.
 - `substitute-exercise.command.ts` — old exercise marked `isSubstituted: true`; new row with `originalExerciseId` inserted at the same `sortOrder + 1` (existing rows shifted down).
 - `add-exercise.command.ts` — appends an exercise to the session.
-- `complete-session.command.ts` — sets `status: 'completed'`, `completedAt: now()`, computes `totalDurationSeconds`, **enqueues the entire batched flush** (`createSession` → many `createSessionExercise` → many `createSessionSet` → `updateSession {status: completed}`), invalidates dashboard, then optionally clears the active-session SQLite row (or marks status — your call; cleanest is to keep the row until sync confirms).
+- `complete-session.command.ts` — sets `status: 'completed'`, `completedAt: now()`, computes `totalDurationSeconds`, **enqueues a single `recordSession` intent** carrying the full session payload (root + nested exercises + nested sets — see § "Bulk-record wire format" below for the exact shape), invalidates dashboard, then keeps the active-session SQLite row until the sync flush confirms server-assigned IDs (then clears it on the worker's reply path).
 - `cancel-session.command.ts` — same shape as complete but `status: 'cancelled'`. Logged sets are preserved (Story-007 AC).
 - `resume-session.command.ts` — wraps `storage.getActiveSession(userId)`; returns `null` if none.
 

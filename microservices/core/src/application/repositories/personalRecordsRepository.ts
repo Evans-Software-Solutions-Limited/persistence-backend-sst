@@ -10,6 +10,21 @@ import {
 import { getDb } from "@persistence/db/client";
 
 /**
+ * Either the standalone Drizzle DB handle (`getDb()`) or a transaction
+ * handle returned from `db.transaction(async (tx) => { ... })`. Both
+ * support the same `select` / `insert` / `update` surface, but `tx`
+ * lacks `$client` and `transaction` (no nested transactions) — so the
+ * intersection is what callers can portably depend on.
+ *
+ * Used by `recordPRsForSession` so the same method body works for the
+ * standalone post-hoc trigger (passes nothing → uses `getDb()`) AND
+ * the bulk-record path that runs inside `SessionRepository.
+ * recordSession`'s transaction (passes `tx` → all writes land in the
+ * same atomic transaction as the session insert).
+ */
+export type DbOrTx = Omit<ReturnType<typeof getDb>, "$client" | "transaction">;
+
+/**
  * Type alias mirroring the `record_type` Postgres enum at
  * `packages/db/src/schema.ts:60`. Kept as a separate type so callers
  * (handlers, services, tests) don't have to reach into the Drizzle
@@ -103,8 +118,17 @@ export class PersonalRecordsRepository {
    * session in `completed` state with PRs not-yet-recorded — the next
    * call (or a manual retry) reconciles.
    */
-  async recordPRsForSession(userId: string, sessionId: string): Promise<void> {
-    const db = getDb();
+  async recordPRsForSession(
+    userId: string,
+    sessionId: string,
+    tx?: DbOrTx,
+  ): Promise<void> {
+    // Use the caller-provided transaction handle when present (e.g.
+    // SessionRepository.recordSession runs the bulk-record flow inside
+    // db.transaction(...) and passes `tx` here so PR detection lands
+    // in the same atomic write). Falls back to getDb() for the
+    // standalone post-hoc trigger from sessionsUpdateHandler.
+    const db = tx ?? getDb();
 
     const completedSets = await db
       .select({

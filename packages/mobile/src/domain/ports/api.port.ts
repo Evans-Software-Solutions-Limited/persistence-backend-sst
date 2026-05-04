@@ -82,6 +82,33 @@ export interface ApiPort {
   getActiveSession(): Promise<Result<ApiSession | null, ApiError>>;
 
   /**
+   * M3: bulk-record a completed (or cancelled) session in one
+   * atomic server-side transaction. The active-session flush path —
+   * mobile keeps the active session in local state, then on Finish
+   * builds the full `RecordSessionInput` payload and POSTs once via
+   * this method.
+   *
+   * Backend writes session row + every exercise + every set + runs
+   * PR detection in one Postgres transaction. Returns the canonical
+   * session with server-assigned UUIDs so the mobile sync worker can
+   * swap its `local-…` ids for the real ones.
+   *
+   * Mirrors the legacy `persistence-mobile` repo's `recordWorkout`
+   * mutation. Wraps `POST /sessions/record`.
+   *
+   * NOT idempotent on retry: calling this twice for the same mobile-
+   * side session writes two DB sessions. The sync worker is
+   * responsible for not retrying past success — typically by
+   * checking the queue entry's `committedAt` / response cache before
+   * re-firing.
+   *
+   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § 7.
+   */
+  recordSession(
+    payload: RecordSessionInput,
+  ): Promise<Result<RecordedApiSession, ApiError>>;
+
+  /**
    * M3: create a session_exercise row. Used by the sync queue when
    * flushing a completed session — once the parent session is created
    * server-side, each child exercise is POSTed via this method,
@@ -434,6 +461,60 @@ export type GetPersonalRecordsParams = {
   recordType?: PersonalRecordType;
   limit?: number;
   offset?: number;
+};
+
+/**
+ * M3: payload shape for the bulk-record session flush. Mobile builds
+ * this once on Finish from local state, server writes everything in
+ * one transaction (root + all exercises + all sets + PR detection).
+ *
+ * Mirrors `RecordSessionInput` on the backend exactly — keep the two
+ * in sync.
+ */
+export type RecordSessionInput = {
+  workoutId?: string | null;
+  name?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  status: "completed" | "cancelled";
+  totalDurationSeconds?: number | null;
+  userNotes?: string | null;
+  sessionRating?: number | null;
+  overallRpe?: number | null;
+  difficultyRanking?: number | null;
+  exercises: Array<{
+    exerciseId: string;
+    sortOrder: number;
+    supersetGroup?: number | null;
+    isSubstituted?: boolean;
+    originalExerciseId?: string | null;
+    notes?: string | null;
+    sets: Array<{
+      setNumber: number;
+      reps?: number | null;
+      weightKg?: string | number | null;
+      durationSeconds?: number | null;
+      distanceMeters?: string | number | null;
+      rpe?: number | null;
+      restAfterSeconds?: number | null;
+      isCompleted?: boolean;
+      completedAt?: string | null;
+    }>;
+  }>;
+};
+
+/**
+ * M3: response shape from `POST /sessions/record`. Same as `ApiSession`
+ * with the nested `exercises` always populated, and each exercise
+ * carrying its own nested `sets[]`. Mobile uses the server-assigned
+ * UUIDs to swap its local- prefixed ids in the SQLite mirror.
+ */
+export type RecordedApiSession = ApiSession & {
+  exercises: Array<
+    ApiSessionExercise & {
+      sets: ApiExerciseSet[];
+    }
+  >;
 };
 
 export type CreateGoalInput = {

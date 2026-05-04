@@ -700,4 +700,226 @@ describe("SessionRepository", () => {
       expect(result).toBe(false);
     });
   });
+
+  // BACKEND_BRIEF § 7 step 5: after the bulk insert + PR detection,
+  // re-fetch the full session inside the same tx so the response
+  // reflects post-detection state (is_personal_record flags).
+  describe("recordSession", () => {
+    /**
+     * Build a tx mock that simulates Postgres flipping
+     * is_personal_record on the persisted set during PR detection.
+     * Step 2 inserts return only id refs (no isPersonalRecord); step
+     * 4's SELECTs are the canonical source of truth, so we wire the
+     * SELECT chain to return the post-PR-detection rows.
+     */
+    function makeRecordSessionTx(refreshed: {
+      session: any;
+      exercises: any[];
+      sets: any[];
+    }) {
+      const tx = {
+        insert: vi.fn().mockImplementation(() => {
+          const chain: any = {
+            values: vi.fn().mockImplementation(() => {
+              // Two insert shapes inside recordSession:
+              //   - workoutSessions  (returning() → [session])
+              //   - sessionExercises (returning({ id }) → [{ id }])
+              //   - exerciseSets     (no returning() — just resolves)
+              return {
+                returning: vi.fn().mockImplementation((selection?: any) => {
+                  if (selection && "id" in selection) {
+                    return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+                  }
+                  return Promise.resolve([refreshed.session]);
+                }),
+                // exerciseSets insert call has no .returning() chain;
+                // tx.insert(...).values(...) is awaited directly.
+                then: (resolve: (v: unknown) => unknown) =>
+                  Promise.resolve(undefined).then(resolve),
+              };
+            }),
+          };
+          return chain;
+        }),
+        // Three select calls in step 4: refreshedSession, exercises,
+        // sets. Drive them off a queue.
+        select: vi
+          .fn()
+          .mockReturnValueOnce({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([refreshed.session]),
+              }),
+            }),
+          })
+          .mockReturnValueOnce({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockResolvedValue(refreshed.exercises),
+              }),
+            }),
+          })
+          .mockReturnValueOnce({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockResolvedValue(refreshed.sets),
+              }),
+            }),
+          }),
+      };
+      return tx;
+    }
+
+    const payload = {
+      workoutId: "w1",
+      name: "Push Day",
+      startedAt: "2026-05-04T10:00:00.000Z",
+      completedAt: "2026-05-04T11:00:00.000Z",
+      status: "completed" as const,
+      totalDurationSeconds: 3600,
+      exercises: [
+        {
+          exerciseId: "ex-1",
+          sortOrder: 1,
+          sets: [
+            {
+              setNumber: 1,
+              reps: 5,
+              weightKg: 100,
+              isCompleted: true,
+              completedAt: "2026-05-04T10:05:00.000Z",
+            },
+          ],
+        },
+      ],
+    };
+
+    it("returns the post-PR-detection isPersonalRecord flag (re-fetches inside tx)", async () => {
+      const refreshed = {
+        session: {
+          id: "s1",
+          userId: "u1",
+          workoutId: "w1",
+          name: "Push Day",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se1",
+            sessionId: "s1",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        // Post-PR-detection: the canonical PR set has isPersonalRecord
+        // = true. The bare insert .returning() snapshot would have had
+        // false; if the repo returned that pre-detection snapshot the
+        // bugbot finding would still fire.
+        sets: [
+          {
+            id: "set1",
+            sessionExerciseId: "se1",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isCompleted: true,
+            isPersonalRecord: true,
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      const tx = makeRecordSessionTx(refreshed);
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue(undefined);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.recordSession("u1", payload, runPRDetection);
+
+      expect(runPRDetection).toHaveBeenCalledWith("u1", "s1", tx);
+      expect(result.exercises[0]?.sets[0]?.isPersonalRecord).toBe(true);
+      // The response should also reflect any other state the canonical
+      // table holds — id, weight, etc. — pulled via the re-fetch, not
+      // the insert snapshot.
+      expect(result.exercises[0]?.sets[0]?.id).toBe("set1");
+    });
+
+    it("skips PR detection when status is cancelled (legacy recordWorkout parity)", async () => {
+      const refreshed = {
+        session: {
+          id: "s1",
+          userId: "u1",
+          workoutId: "w1",
+          name: "Discarded",
+          status: "cancelled",
+          startedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se1",
+            sessionId: "s1",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set1",
+            sessionExerciseId: "se1",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isCompleted: false,
+            isPersonalRecord: false,
+            completedAt: null,
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      const tx = makeRecordSessionTx(refreshed);
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue(undefined);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.recordSession(
+        "u1",
+        { ...payload, status: "cancelled", completedAt: null },
+        runPRDetection,
+      );
+
+      expect(runPRDetection).not.toHaveBeenCalled();
+      expect(result.exercises[0]?.sets[0]?.isPersonalRecord).toBe(false);
+    });
+  });
 });

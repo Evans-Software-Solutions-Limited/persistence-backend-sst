@@ -251,6 +251,71 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(active ?? null);
   }
 
+  async recordSession(
+    payload: import("@/domain/ports/api.port").RecordSessionInput,
+  ) {
+    const sessionId = `local-recorded-session-${this.sessions.length + 1}`;
+    const session: import("@/domain/ports/api.port").RecordedApiSession = {
+      id: sessionId,
+      userId: "test-user",
+      workoutId: payload.workoutId ?? null,
+      name: payload.name ?? null,
+      status: payload.status,
+      startedAt: payload.startedAt,
+      completedAt: payload.completedAt ?? null,
+      totalDurationSeconds: payload.totalDurationSeconds ?? null,
+      userNotes: payload.userNotes ?? null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      exercises: payload.exercises.map((ex, exIdx) => ({
+        id: `local-recorded-ex-${sessionId}-${exIdx}`,
+        sessionId,
+        exerciseId: ex.exerciseId,
+        sortOrder: ex.sortOrder,
+        supersetGroup: ex.supersetGroup ?? null,
+        isSubstituted: ex.isSubstituted ?? false,
+        originalExerciseId: ex.originalExerciseId ?? null,
+        notes: ex.notes ?? null,
+        createdAt: new Date().toISOString(),
+        sets: ex.sets.map((set, setIdx) => ({
+          id: `local-recorded-set-${sessionId}-${exIdx}-${setIdx}`,
+          sessionExerciseId: `local-recorded-ex-${sessionId}-${exIdx}`,
+          setNumber: set.setNumber,
+          reps: set.reps ?? null,
+          weightKg:
+            set.weightKg !== undefined && set.weightKg !== null
+              ? Number(set.weightKg)
+              : null,
+          durationSeconds: set.durationSeconds ?? null,
+          distanceMeters:
+            set.distanceMeters !== undefined && set.distanceMeters !== null
+              ? Number(set.distanceMeters)
+              : null,
+          rpe: set.rpe ?? null,
+          isPersonalRecord: false,
+          isCompleted: set.isCompleted ?? false,
+          completedAt: set.completedAt ?? null,
+        })),
+      })),
+    };
+    // Also store the flat session record so getSession / getSessions
+    // can find it by id afterwards.
+    this.sessions.push({
+      id: session.id,
+      userId: session.userId,
+      workoutId: session.workoutId,
+      name: session.name,
+      status: session.status,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      totalDurationSeconds: session.totalDurationSeconds,
+      userNotes: session.userNotes,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    });
+    return this.mayFail(session);
+  }
+
   async createSessionExercise(
     sessionId: string,
     data: import("@/domain/ports/api.port").CreateSessionExerciseInput,

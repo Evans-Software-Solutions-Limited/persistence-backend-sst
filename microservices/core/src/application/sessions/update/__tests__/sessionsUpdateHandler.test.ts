@@ -164,6 +164,63 @@ describe("SessionsUpdateHandler", () => {
     expect(prMocks.recordPRsForSession).not.toHaveBeenCalled();
   });
 
+  it("skips the getById pre-fetch on PATCHes that can't transition to completed (bugbot perf)", async () => {
+    // Bugbot caught: getById was running unconditionally on every
+    // PATCH, doubling DB round-trips for non-status updates (notes,
+    // rating, RPE). The pre-fetch is only needed when the body sets
+    // status to "completed" — that's the only path that triggers PR
+    // detection. Verifying the call counts here pins the regression.
+    sessionMocks.update.mockResolvedValue({
+      id: "session-1",
+      userId: "test-user-id",
+      status: "in_progress",
+      startedAt: new Date(),
+      createdAt: new Date(),
+    });
+    const { sessionsUpdateHandler } = await import("../sessionsUpdateHandler");
+    await sessionsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1", {
+        method: "PATCH",
+        body: JSON.stringify({ userNotes: "good session", sessionRating: 4 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    // No getById call: the gate (body.status === "completed") is
+    // false for a notes+rating PATCH, so the pre-fetch is skipped.
+    expect(sessionMocks.getById).not.toHaveBeenCalled();
+    // update still ran exactly once.
+    expect(sessionMocks.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the getById pre-fetch on PATCHes that set status to a non-completed value", async () => {
+    // E.g. PATCH cancelling a session: status: "cancelled" doesn't
+    // need the snapshot either, since PR detection only fires on the
+    // completed-transition.
+    sessionMocks.update.mockResolvedValue({
+      id: "session-1",
+      userId: "test-user-id",
+      status: "cancelled",
+      startedAt: new Date(),
+      createdAt: new Date(),
+    });
+    const { sessionsUpdateHandler } = await import("../sessionsUpdateHandler");
+    await sessionsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1", {
+        method: "PATCH",
+        body: JSON.stringify({ status: "cancelled" }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(sessionMocks.getById).not.toHaveBeenCalled();
+    expect(prMocks.recordPRsForSession).not.toHaveBeenCalled();
+  });
+
   it("returns 200 even when PR detection throws (logs + carries on)", async () => {
     prMocks.recordPRsForSession.mockRejectedValue(
       new Error("transient db error"),
