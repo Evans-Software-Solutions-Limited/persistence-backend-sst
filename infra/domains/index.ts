@@ -39,3 +39,16 @@ export const coreApiDomain = domainConfig.apiHost;
  * is the case for staging).
  */
 export const hostedZoneId = domainConfig.zoneId;
+
+/**
+ * Supabase project URL for the env. Baked into the Lambda environment
+ * at SST build time, used by `@persistence/api-utils/auth/supabaseAuth`
+ * to fetch JWKS for JWT verification.
+ *
+ * The previous wiring read `process.env.SUPABASE_URL` from the GH
+ * Actions runner env at deploy time — but the runner never had that
+ * env var set, so the Lambda shipped with `SUPABASE_URL=""` and every
+ * authenticated request 500'd at the JWKS lookup. This static config
+ * removes the deploy-time env-var dependency entirely.
+ */
+export const supabaseUrl = domainConfig.supabaseUrl;

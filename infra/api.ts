@@ -1,5 +1,5 @@
 import { databaseUrl } from "./secrets";
-import { coreApiDomain, hostedZoneId } from "./domains";
+import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 
 // Custom domain only on stable named stages (production / staging). Personal
 // dev stages fall back to the auto-generated API Gateway URL — the mobile
@@ -34,7 +34,7 @@ coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   environment: {
     DATABASE_URL: databaseUrl.value,
-    SUPABASE_URL: process.env.SUPABASE_URL ?? "",
+    SUPABASE_URL: supabaseUrl,
   },
 });
 
@@ -42,7 +42,7 @@ otherServiceAPI.route("$default", {
   handler: "microservices/other-service/src/api.handler",
   environment: {
     DATABASE_URL: databaseUrl.value,
-    SUPABASE_URL: process.env.SUPABASE_URL ?? "",
+    SUPABASE_URL: supabaseUrl,
   },
 });
 

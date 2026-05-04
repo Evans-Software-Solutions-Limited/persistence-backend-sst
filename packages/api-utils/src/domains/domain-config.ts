@@ -42,6 +42,34 @@ const ZONE_IDS: Record<"production" | "staging", string> = {
   staging: "Z051866999VDKAQLS5RX",
 };
 
+/**
+ * Supabase project URLs per environment.
+ *
+ * Public values — the URL is half of every Supabase request and the anon
+ * key (its sibling in the mobile bundle) is public-by-design. Keeping
+ * them in source means:
+ *
+ *   1. The Lambda gets the value baked in at SST build time without any
+ *      `process.env.SUPABASE_URL` indirection on the runner. The
+ *      previous wiring (`process.env.SUPABASE_URL ?? ""`) silently
+ *      shipped an empty string when the runner had no such env var,
+ *      which broke every JWT-validating handler at runtime.
+ *   2. Single source of truth across Lambda runtime + the mobile client
+ *      (mobile reads its mirror from `eas.json`'s `env` block — the
+ *      anon key alongside the URL — so no code reads a missing env var
+ *      either side).
+ *   3. When the project moves off the free tier, this map gets a
+ *      different value per environment in one PR — no per-stage SST
+ *      Secret rotation, no GH-secret drift.
+ *
+ * Currently identical across stages because the project shares one
+ * Supabase free-tier DB. Diverges when production gets its own project.
+ */
+const SUPABASE_URLS: Record<"production" | "staging", string> = {
+  production: "https://dfeyebgdktfteqlacmru.supabase.co",
+  staging: "https://dfeyebgdktfteqlacmru.supabase.co",
+};
+
 export type Environment = "production" | "staging" | "dev";
 
 export interface DomainConfig {
@@ -52,6 +80,13 @@ export interface DomainConfig {
    * dev (no DNS-managed deploy). Passed to SST as `sst.aws.dns({ zone })`.
    */
   zoneId: string | undefined;
+  /**
+   * Supabase project URL the Lambda uses for JWT verification (fetches
+   * `/auth/v1/.well-known/jwks.json` against this host). Empty string
+   * for dev so local-dev `bun run dev` falls back to whatever's in the
+   * runner's process.env — same as before this field existed.
+   */
+  supabaseUrl: string;
 }
 
 /**
@@ -74,13 +109,24 @@ export function getDomainConfig(stage: string): DomainConfig {
   const environment = getEnvironment(stage);
   switch (environment) {
     case "production":
-      return { apiHost: `api.${BASE_DOMAIN}`, zoneId: ZONE_IDS.production };
+      return {
+        apiHost: `api.${BASE_DOMAIN}`,
+        zoneId: ZONE_IDS.production,
+        supabaseUrl: SUPABASE_URLS.production,
+      };
     case "staging":
       return {
         apiHost: `api.staging.${BASE_DOMAIN}`,
         zoneId: ZONE_IDS.staging,
+        supabaseUrl: SUPABASE_URLS.staging,
       };
     case "dev":
-      return { apiHost: null, zoneId: undefined };
+      // Local dev / personal stages fall back to process.env so
+      // `bun run dev` against a developer's own .env keeps working.
+      return {
+        apiHost: null,
+        zoneId: undefined,
+        supabaseUrl: process.env.SUPABASE_URL ?? "",
+      };
   }
 }
