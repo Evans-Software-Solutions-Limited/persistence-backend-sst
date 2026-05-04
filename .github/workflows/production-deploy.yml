@@ -92,5 +92,28 @@ jobs:
       - name: Unlock SST (clear stale lock from previous runs)
         run: bunx sst unlock --stage production || true
 
+      # SST secrets must be set per-stage in SSM before `sst deploy` runs;
+      # `databaseUrl.value` in `infra/api.ts` resolves at deploy time from
+      # the production-stage secret slot. Setting them here makes CI the
+      # source of truth — drift between a developer's `sst secret set`
+      # and the deployed Lambda is impossible. See deploy-staging.yml for
+      # the matching staging-stage step + the 2026-05-04 incident this
+      # closes. While the project is on a single shared Supabase project,
+      # the `DATABASE_URL` GH secret on the Production environment is
+      # identical to the staging one; once production gets its own
+      # Supabase project, only the per-environment secret value diverges.
+      - name: Set SST secrets (PersistenceDatabaseUrl)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL is not set on the Production GitHub environment."
+            echo "Add it under Settings → Environments → Production → Secrets."
+            echo "Expected format:"
+            echo "  postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres"
+            exit 1
+          fi
+          bunx sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage production
+
       - name: Deploy
         run: bunx sst deploy --stage production
