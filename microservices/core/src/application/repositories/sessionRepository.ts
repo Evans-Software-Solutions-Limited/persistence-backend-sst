@@ -11,9 +11,58 @@ import {
   type NewExerciseSet,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DbOrTx } from "./personalRecordsRepository";
 
 export interface SessionWithExercises extends WorkoutSession {
   exercises: SessionExercise[];
+}
+
+/**
+ * Bulk-record session input — payload shape for the M3
+ * `POST /sessions/record` flush path. Mirrors the legacy
+ * `persistence-mobile` repo's `recordWorkout` mutation. Mobile
+ * builds this once on Finish, server writes everything in a single
+ * transaction including PR detection. See
+ * `specs/milestones/M3-active-session/BACKEND_BRIEF.md` § 7.
+ */
+export interface RecordSessionInput {
+  workoutId?: string | null;
+  name?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  status: "completed" | "cancelled";
+  totalDurationSeconds?: number | null;
+  userNotes?: string | null;
+  sessionRating?: number | null;
+  overallRpe?: number | null;
+  difficultyRanking?: number | null;
+  exercises: Array<{
+    exerciseId: string;
+    sortOrder: number;
+    supersetGroup?: number | null;
+    isSubstituted?: boolean;
+    originalExerciseId?: string | null;
+    notes?: string | null;
+    sets: Array<{
+      setNumber: number;
+      reps?: number | null;
+      weightKg?: string | number | null;
+      durationSeconds?: number | null;
+      distanceMeters?: string | number | null;
+      rpe?: number | null;
+      restAfterSeconds?: number | null;
+      isCompleted?: boolean;
+      completedAt?: string | null;
+    }>;
+  }>;
+}
+
+export interface RecordedSession extends WorkoutSession {
+  exercises: Array<
+    SessionExercise & {
+      sets: ExerciseSet[];
+    }
+  >;
 }
 
 export class SessionRepository {
@@ -106,6 +155,145 @@ export class SessionRepository {
       .returning();
 
     return result[0];
+  }
+
+  /**
+   * Bulk-record a completed (or cancelled) session in one transaction.
+   * The M3 active-session flush path: mobile keeps the active session
+   * in local state, then on Finish posts the entire payload here.
+   *
+   * Sequence inside the transaction:
+   *
+   *   1. Insert workout_sessions row (userId from JWT, never the body)
+   *   2. For each input exercise: insert session_exercises row, capturing
+   *      the server id
+   *   3. For each input set under that exercise: insert exercise_sets
+   *      row pointed at the session_exercises id from step 2
+   *   4. If status === 'completed': call
+   *      personalRecordsRepository.recordPRsForSession(userId, sid, tx)
+   *      so PR detection lands inside the same transaction. The PR
+   *      repo is injected via constructor — we don't import it here
+   *      to keep the SessionRepository module free of the cross-repo
+   *      coupling that DI exists to manage.
+   *   5. Return the inserted session with nested exercises + sets so
+   *      the mobile client can swap its `local-` ids for server uuids.
+   *
+   * Atomicity: any failure rolls the whole transaction back. Either
+   * the entire session lands or none of it does. There's no
+   * "session created but sets failed" intermediate state.
+   *
+   * Idempotency: NOT replay-safe. Calling this twice for the same
+   * mobile-side session would create two DB sessions. The mobile sync
+   * worker is responsible for not retrying past success. (Distinct
+   * from `recordPRsForSession`, which IS idempotent on its own.)
+   *
+   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § 7.
+   */
+  async recordSession(
+    userId: string,
+    payload: RecordSessionInput,
+    runPRDetection: (
+      userId: string,
+      sessionId: string,
+      tx: DbOrTx,
+    ) => Promise<void>,
+  ): Promise<RecordedSession> {
+    const db = getDb();
+
+    return db.transaction(async (tx) => {
+      // 1. Insert the session root.
+      const [session] = await tx
+        .insert(workoutSessions)
+        .values({
+          userId,
+          workoutId: payload.workoutId ?? null,
+          name: payload.name ?? null,
+          status: payload.status,
+          startedAt: new Date(payload.startedAt),
+          completedAt: payload.completedAt
+            ? new Date(payload.completedAt)
+            : null,
+          totalDurationSeconds: payload.totalDurationSeconds ?? null,
+          userNotes: payload.userNotes ?? null,
+          sessionRating: payload.sessionRating ?? null,
+          overallRpe: payload.overallRpe ?? null,
+          difficultyRanking: payload.difficultyRanking ?? null,
+          updatedAt: new Date(),
+        } as NewWorkoutSession)
+        .returning();
+
+      const recordedExercises: Array<
+        SessionExercise & { sets: ExerciseSet[] }
+      > = [];
+
+      // 2. Insert each exercise + its sets in payload order. Sequential
+      //    inserts within the tx — N round-trips inside one DB tx,
+      //    not N separate API roundtrips. For typical M3 sessions
+      //    (3-8 exercises × 3-5 sets) the cost is bounded.
+      for (const ex of payload.exercises) {
+        const [exerciseRow] = await tx
+          .insert(sessionExercises)
+          .values({
+            sessionId: session.id,
+            exerciseId: ex.exerciseId,
+            sortOrder: ex.sortOrder,
+            supersetGroup: ex.supersetGroup ?? null,
+            isSubstituted: ex.isSubstituted ?? false,
+            originalExerciseId: ex.originalExerciseId ?? null,
+            notes: ex.notes ?? null,
+          } as NewSessionExercise)
+          .returning();
+
+        const recordedSets: ExerciseSet[] = [];
+        for (const set of ex.sets) {
+          const [setRow] = await tx
+            .insert(exerciseSets)
+            .values({
+              sessionExerciseId: exerciseRow.id,
+              setNumber: set.setNumber,
+              reps: set.reps ?? null,
+              weightKg:
+                set.weightKg !== undefined && set.weightKg !== null
+                  ? String(set.weightKg)
+                  : null,
+              durationSeconds: set.durationSeconds ?? null,
+              distanceMeters:
+                set.distanceMeters !== undefined && set.distanceMeters !== null
+                  ? String(set.distanceMeters)
+                  : null,
+              rpe: set.rpe ?? null,
+              restAfterSeconds: set.restAfterSeconds ?? null,
+              isCompleted: set.isCompleted ?? false,
+              completedAt: set.completedAt ? new Date(set.completedAt) : null,
+              isPersonalRecord: false, // PR detection sets this in step 4
+            } as NewExerciseSet)
+            .returning();
+          recordedSets.push(setRow);
+        }
+
+        recordedExercises.push({ ...exerciseRow, sets: recordedSets });
+      }
+
+      // 3. PR detection inside the same transaction. Injected so this
+      //    repo doesn't depend on personalRecordsRepository directly
+      //    — the handler wires the two together. Skipped for cancelled
+      //    sessions per `recordWorkout` legacy parity (a discarded
+      //    workout shouldn't generate PRs).
+      if (session.status === "completed") {
+        await runPRDetection(userId, session.id, tx);
+      }
+
+      // 4. Return the full nested shape. The PR-detection step above
+      //    may have flipped is_personal_record on some sets, but we
+      //    snapshotted them BEFORE the flip — that's fine for the
+      //    response. Mobile re-fetches the session if it needs the
+      //    canonical PR flags (the Summary screen reads its own
+      //    client-side prediction first anyway).
+      return {
+        ...session,
+        exercises: recordedExercises,
+      };
+    });
   }
 
   async update(
