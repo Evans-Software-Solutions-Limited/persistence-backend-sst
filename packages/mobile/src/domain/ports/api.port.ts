@@ -391,12 +391,15 @@ export type CreateSetInput = {
 };
 
 /**
- * M3: PATCH body for `updateSet`. Mirrors `CreateSetInput` field-set
- * but everything is optional, including `setNumber`. Same isCompleted
- * + completedAt server-side semantics as create.
+ * M3: PATCH body for `updateSet`. Same field set as `CreateSetInput`
+ * with everything optional EXCEPT `setNumber` — set position within
+ * an exercise is fixed at creation time. Drag-and-drop set
+ * reordering is M11 polish per BRIEF.md, and the backend handler
+ * silently ignores `setNumber` on PATCH anyway, so including it on
+ * this type would be a typed contract that doesn't match runtime
+ * behaviour.
  */
 export type UpdateSetInput = {
-  setNumber?: number;
   reps?: number;
   weightKg?: number;
   durationSeconds?: number;
