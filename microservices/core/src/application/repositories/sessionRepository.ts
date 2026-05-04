@@ -1,4 +1,4 @@
-import { and, eq, desc } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   workoutSessions,
   sessionExercises,
@@ -21,15 +21,31 @@ export class SessionRepository {
 
   async list(
     userId: string,
-    limit = 20,
-    offset = 0,
+    options: {
+      limit?: number;
+      offset?: number;
+      /**
+       * Filter by session status. Used by the mobile client's resume-on-
+       * launch flow (`?status=in_progress` returns the user's active
+       * session if any).
+       */
+      status?: "in_progress" | "completed" | "cancelled";
+    } = {},
   ): Promise<WorkoutSession[]> {
     const db = getDb();
+    const { limit = 20, offset = 0, status } = options;
+
+    const whereClause = status
+      ? and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.status, status),
+        )
+      : eq(workoutSessions.userId, userId);
 
     return db
       .select()
       .from(workoutSessions)
-      .where(eq(workoutSessions.userId, userId))
+      .where(whereClause)
       .orderBy(desc(workoutSessions.startedAt))
       .limit(limit)
       .offset(offset);
@@ -112,9 +128,14 @@ export class SessionRepository {
       return null;
     }
 
+    // Refresh updatedAt on every mutation. Per
+    // microservices/core/src/application/sessions/CLAUDE.md § Status
+    // Transitions: "Status change must update `updatedAt` timestamp."
+    // Stamping unconditionally on every PATCH covers status + notes +
+    // any future fields without each handler having to remember.
     const result = await db
       .update(workoutSessions)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(workoutSessions.id, id))
       .returning();
 
@@ -264,6 +285,21 @@ export class SessionRepository {
     return rows[0]?.set ?? null;
   }
 
+  /**
+   * Folds JWT-scoped ownership into the mutation WHERE via a
+   * correlated subquery. Single round-trip; race-free; the set is
+   * only mutated if it belongs to a session_exercise whose session
+   * belongs to `userId`. Returns null when the join filters everything
+   * out (set doesn't exist, or it does but isn't ours) — same surface
+   * as the prior SELECT-then-update implementation, no client-visible
+   * change.
+   *
+   * Fixes the M2 learning #14 regression flagged in the M3 BACKEND_BRIEF
+   * § 4: the previous implementation cascaded SELECT exerciseSets →
+   * SELECT sessionExercises → SELECT workoutSessions → mutate, leaving
+   * a TOCTOU window between the final ownership check and the
+   * mutation.
+   */
   async updateSet(
     setId: string,
     userId: string,
@@ -271,93 +307,52 @@ export class SessionRepository {
   ): Promise<ExerciseSet | null> {
     const db = getDb();
 
-    // Verify ownership by checking if set's session belongs to user
-    const setRecord = await db
-      .select({ sessionExerciseId: exerciseSets.sessionExerciseId })
-      .from(exerciseSets)
-      .where(eq(exerciseSets.id, setId))
-      .limit(1);
-
-    if (!setRecord[0]) {
-      return null;
-    }
-
-    const sessionExercise = await db
-      .select({ sessionId: sessionExercises.sessionId })
-      .from(sessionExercises)
-      .where(eq(sessionExercises.id, setRecord[0].sessionExerciseId))
-      .limit(1);
-
-    if (!sessionExercise[0]) {
-      return null;
-    }
-
-    const session = await db
-      .select()
-      .from(workoutSessions)
-      .where(
-        and(
-          eq(workoutSessions.id, sessionExercise[0].sessionId),
-          eq(workoutSessions.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (!session[0]) {
-      return null;
-    }
-
     const result = await db
       .update(exerciseSets)
       .set(data)
-      .where(eq(exerciseSets.id, setId))
+      .where(
+        and(
+          eq(exerciseSets.id, setId),
+          inArray(
+            exerciseSets.sessionExerciseId,
+            db
+              .select({ id: sessionExercises.id })
+              .from(sessionExercises)
+              .innerJoin(
+                workoutSessions,
+                eq(sessionExercises.sessionId, workoutSessions.id),
+              )
+              .where(eq(workoutSessions.userId, userId)),
+          ),
+        ),
+      )
       .returning();
 
     return result[0] ?? null;
   }
 
+  /** Same TOCTOU-safe pattern as `updateSet`. See its docstring. */
   async deleteSet(setId: string, userId: string): Promise<boolean> {
     const db = getDb();
 
-    // Verify ownership by checking if set's session belongs to user
-    const setRecord = await db
-      .select({ sessionExerciseId: exerciseSets.sessionExerciseId })
-      .from(exerciseSets)
-      .where(eq(exerciseSets.id, setId))
-      .limit(1);
-
-    if (!setRecord[0]) {
-      return false;
-    }
-
-    const sessionExercise = await db
-      .select({ sessionId: sessionExercises.sessionId })
-      .from(sessionExercises)
-      .where(eq(sessionExercises.id, setRecord[0].sessionExerciseId))
-      .limit(1);
-
-    if (!sessionExercise[0]) {
-      return false;
-    }
-
-    const session = await db
-      .select()
-      .from(workoutSessions)
-      .where(
-        and(
-          eq(workoutSessions.id, sessionExercise[0].sessionId),
-          eq(workoutSessions.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (!session[0]) {
-      return false;
-    }
-
     const result = await db
       .delete(exerciseSets)
-      .where(eq(exerciseSets.id, setId))
+      .where(
+        and(
+          eq(exerciseSets.id, setId),
+          inArray(
+            exerciseSets.sessionExerciseId,
+            db
+              .select({ id: sessionExercises.id })
+              .from(sessionExercises)
+              .innerJoin(
+                workoutSessions,
+                eq(sessionExercises.sessionId, workoutSessions.id),
+              )
+              .where(eq(workoutSessions.userId, userId)),
+          ),
+        ),
+      )
       .returning();
 
     return !!result[0];

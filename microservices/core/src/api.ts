@@ -32,6 +32,7 @@ import { setsGetHandler } from "./application/sessions/sets/get/setsGetHandler";
 import { setsUpdateHandler } from "./application/sessions/sets/update/setsUpdateHandler";
 import { setsDeleteHandler } from "./application/sessions/sets/delete/setsDeleteHandler";
 import { recordsListHandler } from "./application/records/list/recordsListHandler";
+import { personalRecordsListHandler } from "./application/personalRecords/list/personalRecordsListHandler";
 import { measurementsCreateHandler } from "./application/measurements/create/measurementsCreateHandler";
 import { measurementsListHandler } from "./application/measurements/list/measurementsListHandler";
 import { goalsCreateHandler } from "./application/goals/create/goalsCreateHandler";
@@ -76,6 +77,7 @@ const app = new Elysia()
   .use(setsUpdateHandler)
   .use(setsDeleteHandler)
   .use(recordsListHandler)
+  .use(personalRecordsListHandler)
   .use(measurementsCreateHandler)
   .use(measurementsListHandler)
   .use(goalsCreateHandler)

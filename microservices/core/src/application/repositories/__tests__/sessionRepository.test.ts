@@ -138,7 +138,7 @@ describe("SessionRepository", () => {
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
-      const result = await repo.list("u1", 20, 0);
+      const result = await repo.list("u1", { limit: 20, offset: 0 });
 
       expect(result).toEqual([mockSession]);
     });
@@ -536,8 +536,15 @@ describe("SessionRepository", () => {
     });
   });
 
+  // After commit 6 (M3 BACKEND_BRIEF § 4 / M2 learning #14), updateSet
+  // and deleteSet fold ownership into a single mutation WHERE via a
+  // correlated subquery. The mock therefore needs to handle ONE chain
+  // call per method (no SELECT cascade), and the WHERE clause is what
+  // the join filters against — when the join filters everything out
+  // (set doesn't exist, or it does but isn't ours), the mutation
+  // returning() yields an empty array.
   describe("updateSet", () => {
-    it("should update a set", async () => {
+    it("updates the set in a single round-trip when the join matches", async () => {
       const mockSet = {
         id: "set1",
         sessionExerciseId: "se1",
@@ -549,41 +556,31 @@ describe("SessionRepository", () => {
         setNumber: 1,
         rpe: 8,
         isPersonalRecord: false,
-        createdAt: new Date(),
-      };
-
-      const mockExercise = {
-        id: "se1",
-        sessionId: "s1",
-        exerciseId: "ex1",
-        sortOrder: 1,
-        notes: null,
-        createdAt: new Date(),
-      };
-
-      const mockSession = {
-        id: "s1",
-        userId: "u1",
-        workoutId: "w1",
-        name: "Session 1",
-        status: "in_progress" as const,
-        startedAt: new Date(),
+        isCompleted: false,
         completedAt: null,
-        totalDurationSeconds: null,
-        userNotes: null,
-        trainerFeedback: null,
-        sessionRating: null,
-        overallRpe: null,
-        difficultyRanking: null,
         createdAt: new Date(),
       };
 
+      // The subquery in the WHERE clause is itself a `db.select(...)`
+      // expression Drizzle uses positionally. We don't need to mock
+      // it — the production update().set().where().returning() chain
+      // resolves to the rows from `returning()`, which is what the
+      // mock controls.
       const mockDb = {
-        select: vi
-          .fn()
-          .mockReturnValueOnce(makeSelectChain([mockSet]))
-          .mockReturnValueOnce(makeSelectChain([mockExercise]))
-          .mockReturnValueOnce(makeSelectChain([mockSession])),
+        // The TOCTOU-safe updateSet/deleteSet use a correlated
+        // subquery inside their WHERE: `db.select({...}).from(...)
+        // .innerJoin(...).where(...)`. The subquery is passed as a
+        // value to inArray() — Drizzle never AWAITS it (Postgres
+        // executes it server-side), so the mock can return any chain
+        // stub that supports the dotted method calls; the actual
+        // filtering happens at the SQL layer in production.
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({}),
+            }),
+          }),
+        }),
         update: vi.fn().mockReturnValue(makeUpdateChain([mockSet])),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -597,42 +594,29 @@ describe("SessionRepository", () => {
       });
 
       expect(result).toEqual(mockSet);
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
     });
 
-    it("should return null when set not found", async () => {
+    it("returns null when the join filters everything out (set doesn't exist or wrong user)", async () => {
+      // Empty returning() — covers both "no such set" and "set exists
+      // but session belongs to another user" since a single mutation
+      // is now the only round-trip.
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([])),
-      };
-      (getDb as any).mockReturnValue(mockDb);
-
-      const { SessionRepository } = await import("../sessionRepository");
-      const repo = new SessionRepository();
-      const result = await repo.updateSet("set1", "u1", { reps: 10 });
-
-      expect(result).toBeNull();
-    });
-
-    it("should return null when session does not belong to user", async () => {
-      const mockSet = {
-        id: "set1",
-        sessionExerciseId: "se1",
-        reps: 10,
-        weightKg: "50.00" as any,
-        durationSeconds: null,
-        distanceMeters: null,
-        restAfterSeconds: 90,
-        setNumber: 1,
-        rpe: null,
-        isPersonalRecord: false,
-        createdAt: new Date(),
-      };
-
-      const mockDb = {
-        select: vi
-          .fn()
-          .mockReturnValueOnce(makeSelectChain([mockSet]))
-          .mockReturnValueOnce(makeSelectChain([]))
-          .mockReturnValueOnce(makeSelectChain([])),
+        // The TOCTOU-safe updateSet/deleteSet use a correlated
+        // subquery inside their WHERE: `db.select({...}).from(...)
+        // .innerJoin(...).where(...)`. The subquery is passed as a
+        // value to inArray() — Drizzle never AWAITS it (Postgres
+        // executes it server-side), so the mock can return any chain
+        // stub that supports the dotted method calls; the actual
+        // filtering happens at the SQL layer in production.
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({}),
+            }),
+          }),
+        }),
+        update: vi.fn().mockReturnValue(makeUpdateChain([])),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -645,7 +629,7 @@ describe("SessionRepository", () => {
   });
 
   describe("deleteSet", () => {
-    it("should delete a set", async () => {
+    it("deletes the set in a single round-trip when the join matches", async () => {
       const mockSet = {
         id: "set1",
         sessionExerciseId: "se1",
@@ -657,41 +641,26 @@ describe("SessionRepository", () => {
         setNumber: 1,
         rpe: null,
         isPersonalRecord: false,
-        createdAt: new Date(),
-      };
-
-      const mockExercise = {
-        id: "se1",
-        sessionId: "s1",
-        exerciseId: "ex1",
-        sortOrder: 1,
-        notes: null,
-        createdAt: new Date(),
-      };
-
-      const mockSession = {
-        id: "s1",
-        userId: "u1",
-        workoutId: "w1",
-        name: "Session 1",
-        status: "in_progress" as const,
-        startedAt: new Date(),
+        isCompleted: false,
         completedAt: null,
-        totalDurationSeconds: null,
-        userNotes: null,
-        trainerFeedback: null,
-        sessionRating: null,
-        overallRpe: null,
-        difficultyRanking: null,
         createdAt: new Date(),
       };
 
       const mockDb = {
-        select: vi
-          .fn()
-          .mockReturnValueOnce(makeSelectChain([mockSet]))
-          .mockReturnValueOnce(makeSelectChain([mockExercise]))
-          .mockReturnValueOnce(makeSelectChain([mockSession])),
+        // The TOCTOU-safe updateSet/deleteSet use a correlated
+        // subquery inside their WHERE: `db.select({...}).from(...)
+        // .innerJoin(...).where(...)`. The subquery is passed as a
+        // value to inArray() — Drizzle never AWAITS it (Postgres
+        // executes it server-side), so the mock can return any chain
+        // stub that supports the dotted method calls; the actual
+        // filtering happens at the SQL layer in production.
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({}),
+            }),
+          }),
+        }),
         delete: vi.fn().mockReturnValue(makeDeleteChain([mockSet])),
       };
       (getDb as any).mockReturnValue(mockDb);
@@ -701,42 +670,26 @@ describe("SessionRepository", () => {
       const result = await repo.deleteSet("set1", "u1");
 
       expect(result).toBe(true);
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
     });
 
-    it("should return false when set not found", async () => {
+    it("returns false when the join filters everything out (set doesn't exist or wrong user)", async () => {
       const mockDb = {
-        select: vi.fn().mockReturnValue(makeSelectChain([])),
-      };
-      (getDb as any).mockReturnValue(mockDb);
-
-      const { SessionRepository } = await import("../sessionRepository");
-      const repo = new SessionRepository();
-      const result = await repo.deleteSet("set1", "u1");
-
-      expect(result).toBe(false);
-    });
-
-    it("should return false when session does not belong to user", async () => {
-      const mockSet = {
-        id: "set1",
-        sessionExerciseId: "se1",
-        reps: 10,
-        weightKg: "50.00" as any,
-        durationSeconds: null,
-        distanceMeters: null,
-        restAfterSeconds: 90,
-        setNumber: 1,
-        rpe: null,
-        isPersonalRecord: false,
-        createdAt: new Date(),
-      };
-
-      const mockDb = {
-        select: vi
-          .fn()
-          .mockReturnValueOnce(makeSelectChain([mockSet]))
-          .mockReturnValueOnce(makeSelectChain([]))
-          .mockReturnValueOnce(makeSelectChain([])),
+        // The TOCTOU-safe updateSet/deleteSet use a correlated
+        // subquery inside their WHERE: `db.select({...}).from(...)
+        // .innerJoin(...).where(...)`. The subquery is passed as a
+        // value to inArray() — Drizzle never AWAITS it (Postgres
+        // executes it server-side), so the mock can return any chain
+        // stub that supports the dotted method calls; the actual
+        // filtering happens at the SQL layer in production.
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({}),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue(makeDeleteChain([])),
       };
       (getDb as any).mockReturnValue(mockDb);
 

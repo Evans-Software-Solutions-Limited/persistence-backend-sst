@@ -319,4 +319,120 @@ describe("SetsUpdateHandler", () => {
     );
     expect(response.status).toBe(200);
   });
+
+  describe("isCompleted / completedAt invariant (bugbot)", () => {
+    function setupExistingSet() {
+      mocks.getSetInSession.mockResolvedValue({
+        id: "set1",
+        sessionExerciseId: "se-1",
+        setNumber: 1,
+        createdAt: new Date(),
+      });
+    }
+
+    it("auto-stamps completedAt = now when isCompleted: true and completedAt is null", async () => {
+      // Bugbot scenario: explicit `completedAt: null` paired with
+      // `isCompleted: true`. Old logic checked `!== undefined` (true
+      // for null) which bypassed the auto-stamp. New logic stamps
+      // server-side regardless.
+      setupExistingSet();
+      const before = Date.now();
+      const { setsUpdateHandler } = await import("../setsUpdateHandler");
+      await setsUpdateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+          method: "PATCH",
+          body: JSON.stringify({ isCompleted: true, completedAt: null }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const updateData = mocks.updateSet.mock.calls[0]?.[2];
+      expect(updateData?.isCompleted).toBe(true);
+      expect(updateData?.completedAt).toBeInstanceOf(Date);
+      expect(updateData?.completedAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("auto-stamps when isCompleted: true and completedAt is omitted", async () => {
+      setupExistingSet();
+      const before = Date.now();
+      const { setsUpdateHandler } = await import("../setsUpdateHandler");
+      await setsUpdateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+          method: "PATCH",
+          body: JSON.stringify({ isCompleted: true }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const updateData = mocks.updateSet.mock.calls[0]?.[2];
+      expect(updateData?.isCompleted).toBe(true);
+      expect(updateData?.completedAt).toBeInstanceOf(Date);
+      expect(updateData?.completedAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("uses the client-provided completedAt when an ISO string is sent", async () => {
+      setupExistingSet();
+      const explicitTime = "2026-05-04T10:30:00.000Z";
+      const { setsUpdateHandler } = await import("../setsUpdateHandler");
+      await setsUpdateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+          method: "PATCH",
+          body: JSON.stringify({
+            isCompleted: true,
+            completedAt: explicitTime,
+          }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const updateData = mocks.updateSet.mock.calls[0]?.[2];
+      expect(updateData?.isCompleted).toBe(true);
+      expect(updateData?.completedAt).toEqual(new Date(explicitTime));
+    });
+
+    it("clears completedAt to null when isCompleted: false", async () => {
+      setupExistingSet();
+      const { setsUpdateHandler } = await import("../setsUpdateHandler");
+      await setsUpdateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+          method: "PATCH",
+          body: JSON.stringify({ isCompleted: false }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const updateData = mocks.updateSet.mock.calls[0]?.[2];
+      expect(updateData?.isCompleted).toBe(false);
+      expect(updateData?.completedAt).toBeNull();
+    });
+
+    it("PATCH with only completedAt: null clears the timestamp without touching isCompleted", async () => {
+      // Edge case: client wants to clear the timestamp while leaving
+      // isCompleted alone (sync-reconciliation scenario). Should not
+      // auto-stamp.
+      setupExistingSet();
+      const { setsUpdateHandler } = await import("../setsUpdateHandler");
+      await setsUpdateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
+          method: "PATCH",
+          body: JSON.stringify({ completedAt: null }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const updateData = mocks.updateSet.mock.calls[0]?.[2];
+      expect(updateData?.completedAt).toBeNull();
+      expect(updateData?.isCompleted).toBeUndefined();
+    });
+  });
 });

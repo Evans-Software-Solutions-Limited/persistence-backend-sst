@@ -71,6 +71,44 @@ export interface ApiPort {
   deleteSession(id: string): Promise<Result<void, ApiError>>;
 
   /**
+   * M3: app-launch resume detection. Returns the user's most recent
+   * `in_progress` session (if any) — used to populate the
+   * `<ResumePrompt>` overlay on app launch ("Continue Push Day?").
+   * Returns `null` (Result.ok) when the user has no active session;
+   * Result.err only on transport / auth failures.
+   *
+   * Wraps `GET /sessions?status=in_progress&limit=1`.
+   */
+  getActiveSession(): Promise<Result<ApiSession | null, ApiError>>;
+
+  /**
+   * M3: create a session_exercise row. Used by the sync queue when
+   * flushing a completed session — once the parent session is created
+   * server-side, each child exercise is POSTed via this method,
+   * carrying the M3 substitution fields (`supersetGroup`,
+   * `isSubstituted`, `originalExerciseId`).
+   *
+   * Mobile DELETE on session_exercise is unused in M3 (substitution
+   * flow creates a new row rather than deleting the old one — the old
+   * row stays with `isSubstituted: true` to preserve its sets).
+   */
+  createSessionExercise(
+    sessionId: string,
+    data: CreateSessionExerciseInput,
+  ): Promise<Result<ApiSessionExercise, ApiError>>;
+
+  /**
+   * M3: list the user's PRs, optionally filtered by exercise and / or
+   * record type. Mobile uses this for (a) quick-fill suggestions
+   * during set logging, (b) populating the local cache that the
+   * Summary screen's predictive PR detection reads, (c) M4's PR
+   * carousel.
+   */
+  getPersonalRecords(
+    params?: GetPersonalRecordsParams,
+  ): Promise<Result<ApiPersonalRecord[], ApiError>>;
+
+  /**
    * Seed the adapter's in-memory id→label + name→id reference-list
    * lookups from a previously-cached set of entries (typically loaded
    * from StoragePort at app start). Normally the adapter populates
@@ -130,7 +168,7 @@ export interface ApiPort {
     sessionId: string,
     exerciseId: string,
     setId: string,
-    data: Partial<CreateSetInput>,
+    data: UpdateSetInput,
   ): Promise<Result<ApiExerciseSet, ApiError>>;
   deleteSet(
     sessionId: string,
@@ -211,7 +249,61 @@ export type ApiSession = {
   userNotes: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Nested session-exercise list. M3 backend's `GET /sessions/:id`
+   * returns the parent session row joined with its `session_exercises`
+   * children (see `microservices/core/src/application/repositories/
+   * sessionRepository.ts:38` `getById`). Optional on the type because
+   * list responses (`GET /sessions`) emit the flat row only — only
+   * single-session reads include the nested array.
+   */
+  exercises?: ApiSessionExercise[];
 };
+
+/**
+ * M3 wire shape for a session_exercise row. Mirrors the columns
+ * selected by `SessionRepository.getById` (sessionRepository.ts:56)
+ * — including the M3-additive columns `superset_group`,
+ * `is_substituted`, `original_exercise_id`.
+ */
+export type ApiSessionExercise = {
+  id: string;
+  sessionId: string;
+  exerciseId: string;
+  sortOrder: number;
+  supersetGroup: number | null;
+  isSubstituted: boolean;
+  originalExerciseId: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+/**
+ * M3 wire shape for a personal_records row. The `recordType` enum is
+ * the canonical Postgres `record_type` enum (`packages/db/src/schema.
+ * ts:60`). M3's server-side detection writes `1rm` only; M4 may
+ * extend.
+ */
+export type ApiPersonalRecord = {
+  id: string;
+  userId: string;
+  exerciseId: string;
+  recordType: PersonalRecordType;
+  /** Wire format is decimal string (e.g. `"120.50"`). Parse on read. */
+  value: string;
+  setId: string | null;
+  achievedAt: string;
+};
+
+export type PersonalRecordType =
+  | "1rm"
+  | "3rm"
+  | "5rm"
+  | "10rm"
+  | "max_reps"
+  | "max_weight"
+  | "best_time"
+  | "longest_distance";
 
 export type ApiExercise = {
   id: string;
@@ -246,6 +338,9 @@ export type ApiExerciseSet = {
   distanceMeters: number | null;
   rpe: number | null;
   isPersonalRecord: boolean;
+  /** M3: client marks set complete + server stamps timestamp. */
+  isCompleted: boolean;
+  completedAt: string | null;
 };
 
 export type ApiGoal = {
@@ -286,6 +381,59 @@ export type CreateSetInput = {
   durationSeconds?: number;
   distanceMeters?: number;
   rpe?: number;
+  /**
+   * M3: clients flip these when a user marks a set done. If
+   * `isCompleted: true` is sent without `completedAt`, the server
+   * stamps `completedAt = now()` so the two columns stay consistent.
+   */
+  isCompleted?: boolean;
+  completedAt?: string | null;
+};
+
+/**
+ * M3: PATCH body for `updateSet`. Same field set as `CreateSetInput`
+ * with everything optional EXCEPT `setNumber` — set position within
+ * an exercise is fixed at creation time. Drag-and-drop set
+ * reordering is M11 polish per BRIEF.md, and the backend handler
+ * silently ignores `setNumber` on PATCH anyway, so including it on
+ * this type would be a typed contract that doesn't match runtime
+ * behaviour.
+ */
+export type UpdateSetInput = {
+  reps?: number;
+  weightKg?: number;
+  durationSeconds?: number;
+  distanceMeters?: number;
+  rpe?: number;
+  isCompleted?: boolean;
+  completedAt?: string | null;
+};
+
+/**
+ * M3: POST body for creating a session_exercise. Includes the new
+ * substitution fields (`isSubstituted`, `originalExerciseId`) so a
+ * mobile sync flush can replay a substituted exercise as a fresh
+ * row pointing back at the original.
+ */
+export type CreateSessionExerciseInput = {
+  exerciseId: string;
+  sortOrder?: number;
+  notes?: string;
+  supersetGroup?: number | null;
+  isSubstituted?: boolean;
+  originalExerciseId?: string | null;
+};
+
+/**
+ * M3: GET /personal-records query params. All optional. Mobile uses
+ * `exerciseId` to populate quick-fill suggestions while logging sets;
+ * M4's PR carousel will issue the unfiltered version.
+ */
+export type GetPersonalRecordsParams = {
+  exerciseId?: string;
+  recordType?: PersonalRecordType;
+  limit?: number;
+  offset?: number;
 };
 
 export type CreateGoalInput = {
