@@ -278,4 +278,137 @@ describe("SetsCreateHandler", () => {
     );
     expect(response.status).toBe(201);
   });
+
+  describe("isCompleted / completedAt invariant (bugbot)", () => {
+    function setupSession() {
+      mocks.getById.mockResolvedValue({
+        id: "s1",
+        exercises: [
+          {
+            id: "se-1",
+            sessionId: "s1",
+            exerciseId: "ex1",
+            sortOrder: 1,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+      });
+    }
+
+    it("auto-stamps completedAt = now when isCompleted: true and completedAt is null", async () => {
+      // The bugbot scenario: client sends an explicit `completedAt: null`
+      // alongside `isCompleted: true`. Old logic checked `!== undefined`
+      // which is true for null and bypassed the auto-stamp, producing a
+      // row with isCompleted=true / completedAt=null. New logic stamps
+      // server-side regardless.
+      setupSession();
+      const before = Date.now();
+      const { setsCreateHandler } = await import("../setsCreateHandler");
+      await setsCreateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+          method: "POST",
+          body: JSON.stringify({
+            reps: 5,
+            weightKg: 100,
+            isCompleted: true,
+            completedAt: null,
+          }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const persisted = mocks.addSet.mock.calls[0]?.[0];
+      expect(persisted?.isCompleted).toBe(true);
+      expect(persisted?.completedAt).toBeInstanceOf(Date);
+      expect(persisted?.completedAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("auto-stamps when isCompleted: true and completedAt is omitted", async () => {
+      setupSession();
+      const before = Date.now();
+      const { setsCreateHandler } = await import("../setsCreateHandler");
+      await setsCreateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+          method: "POST",
+          body: JSON.stringify({ reps: 5, weightKg: 100, isCompleted: true }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const persisted = mocks.addSet.mock.calls[0]?.[0];
+      expect(persisted?.isCompleted).toBe(true);
+      expect(persisted?.completedAt).toBeInstanceOf(Date);
+      expect(persisted?.completedAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("uses the client-provided completedAt when an ISO string is sent", async () => {
+      setupSession();
+      const explicitTime = "2026-05-04T10:30:00.000Z";
+      const { setsCreateHandler } = await import("../setsCreateHandler");
+      await setsCreateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+          method: "POST",
+          body: JSON.stringify({
+            reps: 5,
+            weightKg: 100,
+            isCompleted: true,
+            completedAt: explicitTime,
+          }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const persisted = mocks.addSet.mock.calls[0]?.[0];
+      expect(persisted?.isCompleted).toBe(true);
+      expect(persisted?.completedAt).toEqual(new Date(explicitTime));
+    });
+
+    it("leaves completedAt null when isCompleted is omitted (default false)", async () => {
+      setupSession();
+      const { setsCreateHandler } = await import("../setsCreateHandler");
+      await setsCreateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+          method: "POST",
+          body: JSON.stringify({ reps: 10, weightKg: 50 }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const persisted = mocks.addSet.mock.calls[0]?.[0];
+      expect(persisted?.isCompleted).toBe(false);
+      expect(persisted?.completedAt).toBeNull();
+    });
+
+    it("leaves completedAt null when isCompleted: false with explicit null", async () => {
+      setupSession();
+      const { setsCreateHandler } = await import("../setsCreateHandler");
+      await setsCreateHandler.handle(
+        new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+          method: "POST",
+          body: JSON.stringify({
+            reps: 10,
+            weightKg: 50,
+            isCompleted: false,
+            completedAt: null,
+          }),
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+      const persisted = mocks.addSet.mock.calls[0]?.[0];
+      expect(persisted?.isCompleted).toBe(false);
+      expect(persisted?.completedAt).toBeNull();
+    });
+  });
 });

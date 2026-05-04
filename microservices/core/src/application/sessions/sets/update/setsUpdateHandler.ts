@@ -43,23 +43,48 @@ export const setsUpdateHandler = new Elysia()
         updateData.restAfterSeconds = body.restAfterSeconds;
       if (body.isPersonalRecord !== undefined)
         updateData.isPersonalRecord = body.isPersonalRecord;
-      // M3: clients flip isCompleted = true when the user marks a set
-      // done. Stamp completedAt server-side if the client didn't pass
-      // one explicitly, so the two columns stay consistent. Allow
-      // explicit null to un-complete a set if needed (e.g. sync
-      // reconciliation after a discard).
+      // M3: clients flip `isCompleted: true` when the user marks a
+      // set done. The server enforces the invariant: a completed set
+      // ALWAYS has a `completedAt` timestamp. Resolution rules:
+      //
+      //   - PATCH includes `isCompleted: true`:
+      //       - With a real ISO string for `completedAt`: use it.
+      //       - With `completedAt: null` OR no `completedAt` key:
+      //         server stamps `now()`. (Bugbot caught this: the old
+      //         logic only auto-stamped when the key was absent —
+      //         `completedAt: null` paired with `isCompleted: true`
+      //         silently bypassed the stamp and produced an
+      //         inconsistent row.)
+      //   - PATCH includes `isCompleted: false`:
+      //       - With explicit `completedAt`: use it (rare, but lets
+      //         a client preserve a historical timestamp while
+      //         marking incomplete — sync reconciliation case).
+      //       - Without: clear to null.
+      //   - PATCH only includes `completedAt` (no isCompleted change):
+      //       - Set `completedAt` as the client requested. Caller is
+      //         responsible for ensuring isCompleted state matches.
+      const explicitCompletedAt =
+        typeof body.completedAt === "string" ? body.completedAt : null;
+      const completedAtKeyPresent = body.completedAt !== undefined;
+
       if (body.isCompleted !== undefined) {
         updateData.isCompleted = body.isCompleted;
-        if (body.completedAt === undefined) {
+        if (body.isCompleted === true) {
           updateData.completedAt =
-            body.isCompleted === true ? new Date() : null;
+            explicitCompletedAt !== null
+              ? new Date(explicitCompletedAt)
+              : new Date();
+        } else {
+          // isCompleted: false → clear unless an explicit timestamp
+          // was sent (uncommon).
+          updateData.completedAt =
+            explicitCompletedAt !== null ? new Date(explicitCompletedAt) : null;
         }
-      }
-      if (body.completedAt !== undefined) {
+      } else if (completedAtKeyPresent) {
+        // No isCompleted toggle — just update completedAt to whatever
+        // the client sent (including null).
         updateData.completedAt =
-          body.completedAt === null
-            ? null
-            : new Date(body.completedAt as string);
+          explicitCompletedAt !== null ? new Date(explicitCompletedAt) : null;
       }
 
       if (Object.keys(updateData).length === 0) {
