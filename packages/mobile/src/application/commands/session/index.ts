@@ -15,3 +15,13 @@ export {
   type CompleteSetCommandDeps,
   type CompleteSetInput,
 } from "./complete-set.command";
+export {
+  substituteExerciseCommand,
+  type SubstituteExerciseCommandDeps,
+  type SubstituteExerciseInput,
+} from "./substitute-exercise.command";
+export {
+  addExerciseCommand,
+  type AddExerciseCommandDeps,
+  type AddExerciseInput,
+} from "./add-exercise.command";
