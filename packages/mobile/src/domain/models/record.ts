@@ -40,4 +40,13 @@ export type PersonalRecord = {
   value: number;
   achievedAt: string;
   sessionId: string;
+  /**
+   * M3: id of the winning set inside the session. Null when the PR
+   * came from a legacy import or a piecemeal `personal_records` write
+   * that wasn't tied to a specific set. Wire-format-aligned with
+   * `ApiPersonalRecord.setId`.
+   *
+   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § PR-detection
+   */
+  setId: string | null;
 };
