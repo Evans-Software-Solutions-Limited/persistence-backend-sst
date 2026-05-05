@@ -3,11 +3,13 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
   CachedWorkoutsList,
@@ -158,6 +160,70 @@ export interface StoragePort {
    * fresh fetch instead of showing the pre-mutation snapshot.
    */
   invalidateDashboard(userId: string): void;
+
+  // -- Active Session (M3) --
+  /**
+   * Read the user's in-progress session, joining the three normalized
+   * tables (`active_sessions` + `session_exercises` + `exercise_sets`)
+   * back into a single `WorkoutSession`. Returns null when no row
+   * exists. Single-active-session invariant — at most one row per
+   * user.
+   *
+   * Spec: specs/05-active-session/requirements.md STORY-001 / STORY-008
+   *       specs/milestones/M3-active-session/FRONTEND_BRIEF.md § StoragePort extensions
+   */
+  getActiveSession(userId: string): WorkoutSession | null;
+
+  /**
+   * Write-through the entire session as a full upsert. Replaces the
+   * three nested tables atomically per EXECUTION_PLAN § 3.4 — the
+   * storage layer never sees partial sortOrder updates. Idempotent.
+   */
+  cacheActiveSession(userId: string, session: WorkoutSession): void;
+
+  /**
+   * Delete the user's in-progress session and cascade the children
+   * (`session_exercises`, `exercise_sets`). No-op when no row exists.
+   */
+  clearActiveSession(userId: string): void;
+
+  /**
+   * Return `ExerciseSet` rows for `(sessionId, exerciseId)` scoped to
+   * the user. Used by `SetLogger` quick-fill suggestions when the
+   * personalRecords cache has nothing for the exercise (FRONTEND_BRIEF
+   * § Group D).
+   *
+   * Empty array when the session is not the user's active session,
+   * the exercise is absent, or no sets exist yet — never throws.
+   */
+  getSessionSets(
+    userId: string,
+    sessionId: string,
+    exerciseId: string,
+  ): ExerciseSet[];
+
+  /**
+   * Upsert PR rows by `(userId, exerciseId, recordType)`. Latest write
+   * wins — server-canonical reconciliation overwrites the predictive
+   * client write after the bulk-record flush returns.
+   */
+  cachePersonalRecords(userId: string, records: PersonalRecord[]): void;
+
+  /**
+   * Read the user's PR cache, optionally filtered by exerciseId. Feeds
+   * the Summary screen's predictive PR detector + SetLogger quick-fill.
+   */
+  getPersonalRecords(userId: string, exerciseId?: string): PersonalRecord[];
+
+  /**
+   * Rewrite `local-…`-prefixed ids on the four M3 tables once the
+   * bulk-record flush returns server-assigned ids. Called from the
+   * sync worker's reply path. No-op when neither the session nor any
+   * nested row matches `localId`.
+   *
+   * Spec: specs/milestones/M3-active-session/EXECUTION_PLAN.md § 4
+   */
+  swapLocalSessionId(localId: string, serverId: string): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

@@ -1,5 +1,7 @@
 import { InMemoryStorageAdapter } from "./in-memory-storage.adapter";
 import type { Exercise } from "@/domain/models/exercise";
+import type { PersonalRecord } from "@/domain/models/record";
+import type { WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
@@ -394,6 +396,293 @@ describe("InMemoryStorageAdapter", () => {
 
       expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
       expect(storage.getCachedWorkoutDetail("user-1", "w-1")).toBeNull();
+    });
+  });
+
+  describe("active session (M3)", () => {
+    const buildSession = (
+      overrides: Partial<WorkoutSession> = {},
+    ): WorkoutSession => ({
+      id: overrides.id ?? "local-s1",
+      userId: overrides.userId ?? "user-1",
+      workoutId: "wk-1",
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: overrides.exercises ?? [
+        {
+          id: "local-se1",
+          sessionId: overrides.id ?? "local-s1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "local-set1",
+              sessionExerciseId: "local-se1",
+              setNumber: 1,
+              weightKg: 80,
+              reps: 8,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: true,
+              completedAt: "2026-05-05T10:05:00.000Z",
+            },
+          ],
+        },
+      ],
+      ...overrides,
+    });
+
+    it("cacheActiveSession + getActiveSession round-trips a full session", () => {
+      const session = buildSession();
+      storage.cacheActiveSession("user-1", session);
+      const loaded = storage.getActiveSession("user-1");
+      expect(loaded).not.toBeNull();
+      expect(loaded?.id).toBe("local-s1");
+      expect(loaded?.exercises[0].sets[0].weightKg).toBe(80);
+      expect(loaded?.exercises[0].sets[0].isCompleted).toBe(true);
+    });
+
+    it("getActiveSession returns null when no row exists", () => {
+      expect(storage.getActiveSession("user-1")).toBeNull();
+    });
+
+    it("getActiveSession returns null for completed sessions (filter on status)", () => {
+      storage.cacheActiveSession(
+        "user-1",
+        buildSession({ status: "completed" }),
+      );
+      expect(storage.getActiveSession("user-1")).toBeNull();
+    });
+
+    it("getActiveSession isolates by user (User B does not see User A's session)", () => {
+      storage.cacheActiveSession("user-A", buildSession({ userId: "user-A" }));
+      expect(storage.getActiveSession("user-B")).toBeNull();
+    });
+
+    it("cacheActiveSession is a full upsert — replaces nested rows", () => {
+      const first = buildSession();
+      storage.cacheActiveSession("user-1", first);
+      const second = buildSession({
+        exercises: [
+          {
+            id: "local-se2",
+            sessionId: "local-s1",
+            exerciseId: "ex-row",
+            exerciseName: "Row",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+          },
+        ],
+      });
+      storage.cacheActiveSession("user-1", second);
+      const loaded = storage.getActiveSession("user-1");
+      expect(loaded?.exercises).toHaveLength(1);
+      expect(loaded?.exercises[0].exerciseId).toBe("ex-row");
+    });
+
+    it("clearActiveSession deletes the in-progress session", () => {
+      storage.cacheActiveSession("user-1", buildSession());
+      storage.clearActiveSession("user-1");
+      expect(storage.getActiveSession("user-1")).toBeNull();
+    });
+
+    it("clearActiveSession is a no-op when no session exists", () => {
+      expect(() => storage.clearActiveSession("user-1")).not.toThrow();
+    });
+
+    it("returned session is decoupled from internal state (deep clone)", () => {
+      storage.cacheActiveSession("user-1", buildSession());
+      const loaded = storage.getActiveSession("user-1");
+      if (loaded) loaded.exercises[0].sets[0].weightKg = 999;
+      const reloaded = storage.getActiveSession("user-1");
+      expect(reloaded?.exercises[0].sets[0].weightKg).toBe(80);
+    });
+  });
+
+  describe("getSessionSets", () => {
+    it("returns sets for a matching exerciseId in the active session", () => {
+      const session: WorkoutSession = {
+        id: "local-s1",
+        userId: "user-1",
+        workoutId: null,
+        name: "Quick",
+        status: "in_progress",
+        startedAt: "ts",
+        completedAt: null,
+        notes: null,
+        exercises: [
+          {
+            id: "se-1",
+            sessionId: "local-s1",
+            exerciseId: "ex-bench",
+            exerciseName: "Bench",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [
+              {
+                id: "set-1",
+                sessionExerciseId: "se-1",
+                setNumber: 1,
+                weightKg: 100,
+                reps: 5,
+                rpe: null,
+                durationSeconds: null,
+                distanceMeters: null,
+                isCompleted: true,
+                completedAt: "ts",
+              },
+            ],
+          },
+        ],
+      };
+      storage.cacheActiveSession("user-1", session);
+      const sets = storage.getSessionSets("user-1", "local-s1", "ex-bench");
+      expect(sets).toHaveLength(1);
+      expect(sets[0].weightKg).toBe(100);
+    });
+
+    it("returns [] when sessionId does not match the active session", () => {
+      expect(storage.getSessionSets("user-1", "missing", "ex-bench")).toEqual(
+        [],
+      );
+    });
+  });
+
+  describe("personal records cache (M3)", () => {
+    const pr = (overrides: Partial<PersonalRecord> = {}): PersonalRecord => ({
+      id: "pr-1",
+      userId: "user-1",
+      exerciseId: "ex-bench",
+      exerciseName: "Bench Press",
+      recordType: "1rm",
+      value: 120,
+      achievedAt: "2026-05-01T00:00:00.000Z",
+      sessionId: "s-1",
+      setId: "set-1",
+      ...overrides,
+    });
+
+    it("upserts on (userId, exerciseId, recordType)", () => {
+      storage.cachePersonalRecords("user-1", [pr()]);
+      storage.cachePersonalRecords("user-1", [pr({ value: 130, id: "pr-2" })]);
+      const all = storage.getPersonalRecords("user-1");
+      expect(all).toHaveLength(1);
+      expect(all[0].value).toBe(130);
+      expect(all[0].id).toBe("pr-2");
+    });
+
+    it("filters by exerciseId when supplied", () => {
+      storage.cachePersonalRecords("user-1", [
+        pr({ id: "pr-bench", exerciseId: "ex-bench" }),
+        pr({ id: "pr-row", exerciseId: "ex-row" }),
+      ]);
+      const benchOnly = storage.getPersonalRecords("user-1", "ex-bench");
+      expect(benchOnly).toHaveLength(1);
+      expect(benchOnly[0].exerciseId).toBe("ex-bench");
+    });
+
+    it("isolates by userId", () => {
+      storage.cachePersonalRecords("user-A", [pr({ userId: "user-A" })]);
+      expect(storage.getPersonalRecords("user-B")).toEqual([]);
+    });
+
+    it("getPersonalRecords returns [] when nothing cached", () => {
+      expect(storage.getPersonalRecords("user-1")).toEqual([]);
+    });
+
+    it("orders by achievedAt DESC", () => {
+      storage.cachePersonalRecords("user-1", [
+        pr({
+          id: "old",
+          exerciseId: "ex-1",
+          achievedAt: "2026-01-01T00:00:00.000Z",
+        }),
+        pr({
+          id: "new",
+          exerciseId: "ex-2",
+          achievedAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ]);
+      const all = storage.getPersonalRecords("user-1");
+      expect(all[0].id).toBe("new");
+      expect(all[1].id).toBe("old");
+    });
+
+    it("cachePersonalRecords is a no-op for an empty list", () => {
+      storage.cachePersonalRecords("user-1", []);
+      expect(storage.getPersonalRecords("user-1")).toEqual([]);
+    });
+  });
+
+  describe("swapLocalSessionId (M3)", () => {
+    const seedActive = () => {
+      storage.cacheActiveSession("user-1", {
+        id: "local-abc",
+        userId: "user-1",
+        workoutId: null,
+        name: "Push",
+        status: "in_progress",
+        startedAt: "ts",
+        completedAt: null,
+        notes: null,
+        exercises: [],
+      });
+    };
+
+    it("rewrites the session id in active_sessions", () => {
+      seedActive();
+      storage.swapLocalSessionId("local-abc", "server-abc");
+      const loaded = storage.getActiveSession("user-1");
+      expect(loaded?.id).toBe("server-abc");
+    });
+
+    it("rewrites sessionId on PR rows that referenced the local id", () => {
+      seedActive();
+      storage.cachePersonalRecords("user-1", [
+        {
+          id: "pr-1",
+          userId: "user-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          recordType: "1rm",
+          value: 120,
+          achievedAt: "ts",
+          sessionId: "local-abc",
+          setId: null,
+        },
+      ]);
+      storage.swapLocalSessionId("local-abc", "server-abc");
+      expect(storage.getPersonalRecords("user-1")[0].sessionId).toBe(
+        "server-abc",
+      );
+    });
+
+    it("is a no-op when localId === serverId", () => {
+      seedActive();
+      storage.swapLocalSessionId("local-abc", "local-abc");
+      expect(storage.getActiveSession("user-1")?.id).toBe("local-abc");
+    });
+
+    it("is a no-op when nothing matches the local id", () => {
+      seedActive();
+      storage.swapLocalSessionId("local-zzz", "server-zzz");
+      expect(storage.getActiveSession("user-1")?.id).toBe("local-abc");
     });
   });
 });

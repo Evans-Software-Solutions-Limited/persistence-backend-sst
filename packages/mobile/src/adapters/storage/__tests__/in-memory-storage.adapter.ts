@@ -3,11 +3,13 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
   CachedWorkoutsList,
@@ -37,6 +39,8 @@ export class InMemoryStorageAdapter implements StoragePort {
   private dashboardCache: Map<string, CachedDashboard> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
+  private activeSessions: Map<string, WorkoutSession> = new Map();
+  private personalRecords: Map<string, PersonalRecord[]> = new Map();
   private nextId = 1;
 
   private workoutsListKey(userId: string, type: WorkoutListType): string {
@@ -251,6 +255,84 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  // -- Active Session (M3) --
+
+  getActiveSession(userId: string): WorkoutSession | null {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return null;
+    return cloneSession(session);
+  }
+
+  cacheActiveSession(userId: string, session: WorkoutSession): void {
+    this.activeSessions.set(userId, cloneSession(session));
+  }
+
+  clearActiveSession(userId: string): void {
+    const session = this.activeSessions.get(userId);
+    if (session && session.status === "in_progress") {
+      this.activeSessions.delete(userId);
+    }
+  }
+
+  getSessionSets(
+    userId: string,
+    sessionId: string,
+    exerciseId: string,
+  ): ExerciseSet[] {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.id !== sessionId) return [];
+    const matching = session.exercises.filter(
+      (ex) => ex.exerciseId === exerciseId,
+    );
+    const sets: ExerciseSet[] = [];
+    for (const ex of matching) {
+      for (const set of ex.sets) sets.push({ ...set });
+    }
+    return sets;
+  }
+
+  cachePersonalRecords(userId: string, records: PersonalRecord[]): void {
+    if (records.length === 0) return;
+    const existing = this.personalRecords.get(userId) ?? [];
+    const byKey = new Map(
+      existing.map((r) => [`${r.exerciseId}::${r.recordType}`, r] as const),
+    );
+    for (const rec of records) {
+      byKey.set(`${rec.exerciseId}::${rec.recordType}`, { ...rec });
+    }
+    this.personalRecords.set(userId, Array.from(byKey.values()));
+  }
+
+  getPersonalRecords(userId: string, exerciseId?: string): PersonalRecord[] {
+    const all = this.personalRecords.get(userId) ?? [];
+    const list = exerciseId
+      ? all.filter((r) => r.exerciseId === exerciseId)
+      : all;
+    return list
+      .slice()
+      .sort((a, b) => (a.achievedAt < b.achievedAt ? 1 : -1))
+      .map((r) => ({ ...r }));
+  }
+
+  swapLocalSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const [userId, session] of this.activeSessions) {
+      if (session.id !== localId) continue;
+      this.activeSessions.set(userId, { ...session, id: serverId });
+    }
+    for (const [userId, records] of this.personalRecords) {
+      let changed = false;
+      const next = records.map((r) => {
+        if (r.sessionId === localId) {
+          changed = true;
+          return { ...r, sessionId: serverId };
+        }
+        return r;
+      });
+      if (changed) this.personalRecords.set(userId, next);
+    }
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
@@ -259,6 +341,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.dashboardCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
+    this.activeSessions.clear();
+    this.personalRecords.clear();
     this.nextId = 1;
   }
 
@@ -266,4 +350,14 @@ export class InMemoryStorageAdapter implements StoragePort {
     const entry = this.queue.find((e) => e.id === id);
     if (entry) entry.status = status;
   }
+}
+
+function cloneSession(session: WorkoutSession): WorkoutSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) => ({
+      ...ex,
+      sets: ex.sets.map((set) => ({ ...set })),
+    })),
+  };
 }
