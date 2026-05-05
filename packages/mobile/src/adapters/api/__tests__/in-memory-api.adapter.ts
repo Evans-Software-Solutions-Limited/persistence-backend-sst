@@ -13,12 +13,19 @@ import type {
   ApiPort,
   ApiProfile,
   ApiSession,
+  ApiSessionExercise,
   ApiExerciseSet,
+  ApiPersonalRecord,
   ApiGoal,
   GetWorkoutsParams,
   GetWorkoutsResult,
+  GetPersonalRecordsParams,
   CreateSessionInput,
+  CreateSessionExerciseInput,
+  RecordSessionInput,
+  RecordedApiSession,
   UpdateSessionInput,
+  UpdateSetInput,
   CreateSetInput,
   CreateGoalInput,
 } from "@/domain/ports/api.port";
@@ -42,6 +49,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public sessions: ApiSession[] = [];
   public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
+  public personalRecords: ApiPersonalRecord[] = [];
   public goals: ApiGoal[] = [];
   public referenceLists: Partial<Record<ReferenceListKind, ReferenceEntry[]>> =
     {};
@@ -251,11 +259,9 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(active ?? null);
   }
 
-  async recordSession(
-    payload: import("@/domain/ports/api.port").RecordSessionInput,
-  ) {
+  async recordSession(payload: RecordSessionInput) {
     const sessionId = `local-recorded-session-${this.sessions.length + 1}`;
-    const session: import("@/domain/ports/api.port").RecordedApiSession = {
+    const session: RecordedApiSession = {
       id: sessionId,
       userId: "test-user",
       workoutId: payload.workoutId ?? null,
@@ -318,9 +324,9 @@ export class InMemoryApiAdapter implements ApiPort {
 
   async createSessionExercise(
     sessionId: string,
-    data: import("@/domain/ports/api.port").CreateSessionExerciseInput,
+    data: CreateSessionExerciseInput,
   ) {
-    const created: import("@/domain/ports/api.port").ApiSessionExercise = {
+    const created: ApiSessionExercise = {
       id: `local-session-exercise-${Date.now()}`,
       sessionId,
       exerciseId: data.exerciseId,
@@ -334,12 +340,27 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(created);
   }
 
-  async getPersonalRecords(
-    _params?: import("@/domain/ports/api.port").GetPersonalRecordsParams,
-  ) {
-    return this.mayFail(
-      [] as import("@/domain/ports/api.port").ApiPersonalRecord[],
-    );
+  /**
+   * Filter the seeded `personalRecords` array by the same params the
+   * SST adapter forwards to `GET /personal-records` (`exerciseId`,
+   * `recordType`, plus `limit` / `offset` for the trim window).
+   *
+   * Tests can seed via `api.personalRecords.push(...)` to drive the
+   * quick-fill / Summary-screen flows that the SST adapter would
+   * otherwise hit over HTTP. Default-empty when nothing's seeded
+   * keeps the existing zero-config tests passing.
+   */
+  async getPersonalRecords(params?: GetPersonalRecordsParams) {
+    let records = this.personalRecords;
+    if (params?.exerciseId) {
+      records = records.filter((r) => r.exerciseId === params.exerciseId);
+    }
+    if (params?.recordType) {
+      records = records.filter((r) => r.recordType === params.recordType);
+    }
+    const offset = params?.offset ?? 0;
+    const limit = params?.limit ?? records.length;
+    return this.mayFail(records.slice(offset, offset + limit));
   }
 
   /**
@@ -488,7 +509,7 @@ export class InMemoryApiAdapter implements ApiPort {
     _sessionId: string,
     _exerciseId: string,
     setId: string,
-    data: import("@/domain/ports/api.port").UpdateSetInput,
+    data: UpdateSetInput,
   ) {
     const idx = this.sets.findIndex((s) => s.id === setId);
     if (idx === -1)
