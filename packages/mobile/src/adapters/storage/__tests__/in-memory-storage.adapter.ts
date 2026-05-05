@@ -23,6 +23,7 @@ import type {
   SyncQueueEntry,
   SyncStats,
   EnqueueMutationInput,
+  RestTimerState,
 } from "@/domain/ports/storage.port";
 import type { SyncStatus } from "@/domain/ports/sync.types";
 
@@ -41,6 +42,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private activeSessions: Map<string, WorkoutSession> = new Map();
   private personalRecords: Map<string, PersonalRecord[]> = new Map();
+  private restTimers: Map<string, RestTimerState> = new Map();
   private nextId = 1;
 
   private workoutsListKey(userId: string, type: WorkoutListType): string {
@@ -314,6 +316,22 @@ export class InMemoryStorageAdapter implements StoragePort {
       .map((r) => ({ ...r }));
   }
 
+  getRestTimerState(userId: string): RestTimerState | null {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return null;
+    return this.restTimers.get(userId) ?? null;
+  }
+
+  setRestTimerState(userId: string, state: RestTimerState): void {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return;
+    this.restTimers.set(userId, { ...state });
+  }
+
+  clearRestTimerState(userId: string): void {
+    this.restTimers.delete(userId);
+  }
+
   swapLocalSessionId(localId: string, serverId: string): void {
     if (localId === serverId) return;
     for (const [userId, session] of this.activeSessions) {
@@ -343,6 +361,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.workoutDetailCache.clear();
     this.activeSessions.clear();
     this.personalRecords.clear();
+    this.restTimers.clear();
     this.nextId = 1;
   }
 

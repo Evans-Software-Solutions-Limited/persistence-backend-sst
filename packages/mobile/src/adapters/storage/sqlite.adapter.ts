@@ -27,6 +27,7 @@ import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   EnqueueMutationInput,
+  RestTimerState,
   SyncQueueEntry,
   SyncStats,
 } from "@/domain/ports/storage.port";
@@ -828,6 +829,54 @@ export class SQLiteStorageAdapter implements StoragePort {
         [serverId, localId],
       );
     });
+  }
+
+  getRestTimerState(userId: string): RestTimerState | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT rest_timer_started_at, rest_timer_total_seconds
+       FROM active_sessions
+       WHERE user_id = ? AND status = 'in_progress'
+       LIMIT 1`,
+      [userId],
+    ) as {
+      rest_timer_started_at: string | null;
+      rest_timer_total_seconds: number | null;
+    }[];
+    const row = rows[0];
+    if (
+      !row ||
+      !row.rest_timer_started_at ||
+      row.rest_timer_total_seconds == null
+    ) {
+      return null;
+    }
+    return {
+      startedAt: row.rest_timer_started_at,
+      totalSeconds: row.rest_timer_total_seconds,
+    };
+  }
+
+  setRestTimerState(userId: string, state: RestTimerState): void {
+    const db = this.getDb();
+    db.runSync(
+      `UPDATE active_sessions
+       SET rest_timer_started_at = ?, rest_timer_total_seconds = ?,
+           updated_at = ?
+       WHERE user_id = ? AND status = 'in_progress'`,
+      [state.startedAt, state.totalSeconds, new Date().toISOString(), userId],
+    );
+  }
+
+  clearRestTimerState(userId: string): void {
+    const db = this.getDb();
+    db.runSync(
+      `UPDATE active_sessions
+       SET rest_timer_started_at = NULL, rest_timer_total_seconds = NULL,
+           updated_at = ?
+       WHERE user_id = ? AND status = 'in_progress'`,
+      [new Date().toISOString(), userId],
+    );
   }
 
   clearAll(): void {

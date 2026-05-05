@@ -225,10 +225,42 @@ export interface StoragePort {
    */
   swapLocalSessionId(localId: string, serverId: string): void;
 
+  /**
+   * Read the rest-timer state (started-at + total-seconds) for the
+   * user's active session. Stored inline on `active_sessions` per
+   * EXECUTION_PLAN § 3.1 — single-active-session invariant means a
+   * separate timers table is overhead. Null when no active session
+   * or when the timer is not running.
+   */
+  getRestTimerState(userId: string): RestTimerState | null;
+
+  /**
+   * Persist rest-timer start. Drift-tolerant: the hook reconciles
+   * `wall-clock - startedAt` on resume so the timer survives
+   * backgrounding without a wakeup tick.
+   */
+  setRestTimerState(userId: string, state: RestTimerState): void;
+
+  /**
+   * Clear the rest-timer state (Skip / Dismiss / Done). No-op when
+   * no active session.
+   */
+  clearRestTimerState(userId: string): void;
+
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */
   clearAll(): void;
 }
+
+/**
+ * Persisted rest-timer state. Lives on the `active_sessions` row
+ * (rest_timer_started_at + rest_timer_total_seconds columns).
+ */
+export type RestTimerState = {
+  /** ISO timestamp the timer started. */
+  startedAt: string;
+  totalSeconds: number;
+};
 
 export type EnqueueMutationInput = {
   entityType: string;

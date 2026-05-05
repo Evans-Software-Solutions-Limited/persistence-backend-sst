@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { SSTApiAdapter } from "@/adapters/api";
 import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
-import { StubNotificationsAdapter } from "@/adapters/notifications";
+import { ExpoNotificationsAdapter } from "@/adapters/notifications";
 import { StubPaymentsAdapter } from "@/adapters/payments";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { Adapters } from "@/shared/types";
@@ -31,7 +31,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       auth,
       storage,
       health: createHealthAdapter(),
-      notifications: new StubNotificationsAdapter(),
+      notifications: new ExpoNotificationsAdapter(),
       payments: new StubPaymentsAdapter(),
     };
   }, []);

@@ -64,6 +64,16 @@ jest.mock("expo-linking", () => ({
   createURL: jest.fn((path: string) => `persistencemobile://${path}`),
 }));
 
+// Mock expo-notifications (M3 — native bindings unavailable in Jest).
+// The ExpoNotificationsAdapter is a thin wrapper; integration is verified
+// on staging EAS builds before merge per FRONTEND_BRIEF § Group C.
+jest.mock("expo-notifications", () => ({
+  requestPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
+  getPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
+  scheduleNotificationAsync: jest.fn(async () => "stub-notif-id"),
+  cancelScheduledNotificationAsync: jest.fn(async () => undefined),
+}));
+
 // Silence known-noisy warnings in tests unless debugging.
 // Other warnings (including React act() warnings) still surface.
 const SILENCED_WARNINGS = [
