@@ -33,12 +33,20 @@ export function useResumeSession(): UseResumeSession {
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
   // Once dismissed this app-launch, never re-show — even on tab
-  // switches that re-render the layout. Reset on userId change so
-  // sign-out → sign-in re-arms the prompt.
+  // switches or AdapterProvider re-renders that re-fire the effect.
+  // The flag MUST persist across same-user effect runs; only sign-out
+  // → sign-in (a real userId change) resets it. Tracking the
+  // previous userId in a ref scopes the reset correctly — a previous
+  // version reset on every effect run, which silently turned the
+  // dismissed-guard into dead code.
   const dismissedRef = useRef(false);
+  const previousUserIdRef = useRef<string | null>(userId);
 
   useEffect(() => {
-    dismissedRef.current = false;
+    if (previousUserIdRef.current !== userId) {
+      dismissedRef.current = false;
+      previousUserIdRef.current = userId;
+    }
     if (!userId) {
       setSession(null);
       return;

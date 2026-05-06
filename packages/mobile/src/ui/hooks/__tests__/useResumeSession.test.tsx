@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
-import type { ReactNode } from "react";
+import React, { useState, type ReactNode } from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -97,6 +97,65 @@ describe("useResumeSession", () => {
     act(() => {
       result.current.dismiss();
     });
+    expect(result.current.session).toBeNull();
+  });
+
+  it("dismiss() persists across effect re-runs caused by storage identity changes", async () => {
+    // Regression: a prior version reset `dismissedRef` at the top of
+    // every effect run, turning the dismissed-guard into dead code.
+    // If the underlying `storage` reference changes on the same
+    // userId — e.g. AdapterProvider re-renders with a fresh adapter
+    // instance — the effect re-fires and would resurrect the prompt.
+    // To genuinely exercise the bug we need a *different* storage
+    // identity that still reports an active session for the same
+    // user. We achieve this by swapping the in-memory adapter for a
+    // second one seeded with the same data.
+    const seed = {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push",
+      status: "in_progress" as const,
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    };
+    const storageA = new InMemoryStorageAdapter();
+    storageA.cacheActiveSession("user-1", seed);
+    const storageB = new InMemoryStorageAdapter();
+    storageB.cacheActiveSession("user-1", seed);
+
+    let triggerSwap: (() => void) | null = null;
+    function StatefulWrapper({ children }: { children: ReactNode }) {
+      const [storage, setStorage] = useState<InMemoryStorageAdapter>(storageA);
+      triggerSwap = () => setStorage(storageB);
+      return (
+        <AdapterProvider adapters={makeAdapters(storage)}>
+          {children}
+        </AdapterProvider>
+      );
+    }
+
+    const { result } = renderHook(() => useResumeSession(), {
+      wrapper: StatefulWrapper,
+    });
+    await waitFor(() => expect(result.current.session?.id).toBe("local-1"));
+
+    act(() => {
+      result.current.dismiss();
+    });
+    expect(result.current.session).toBeNull();
+
+    // Swap `storage` from A → B. Same userId, different storage
+    // reference. The hook's effect dep `[storage, userId]` re-fires.
+    // The dismissed guard MUST hold — without the previous-userId
+    // check the unconditional `dismissedRef.current = false` reset
+    // would resurrect the session here.
+    act(() => {
+      triggerSwap?.();
+    });
+    await waitFor(() => expect(result.current.session).toBeNull());
     expect(result.current.session).toBeNull();
   });
 });
