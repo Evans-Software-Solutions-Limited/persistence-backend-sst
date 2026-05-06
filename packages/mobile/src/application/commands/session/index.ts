@@ -25,3 +25,15 @@ export {
   type AddExerciseCommandDeps,
   type AddExerciseInput,
 } from "./add-exercise.command";
+export {
+  completeSessionCommand,
+  finalizeSessionCommand,
+  type CompleteSessionCommandDeps,
+  type CompleteSessionInput,
+  type CompletedSessionResult,
+} from "./complete-session.command";
+export {
+  cancelSessionCommand,
+  type CancelSessionCommandDeps,
+  type CancelSessionInput,
+} from "./cancel-session.command";

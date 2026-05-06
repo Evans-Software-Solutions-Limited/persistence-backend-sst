@@ -90,6 +90,14 @@ export default function AppLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="session/summary"
+          options={{
+            title: "Session summary",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
       </Stack>
     </ExerciseFiltersProvider>
   );
