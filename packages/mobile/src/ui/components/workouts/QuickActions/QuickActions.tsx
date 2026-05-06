@@ -8,12 +8,19 @@ interface QuickActionsProps {
   isAtLimit: boolean;
   onCreateWorkout: () => void;
   onBrowseExercises: () => void;
+  /**
+   * M3: Quick Start launches an empty active session that the user
+   * can fill on-the-fly via the picker. Optional so existing tests
+   * that don't exercise the session route can omit it.
+   */
+  onQuickStart?: () => void;
 }
 
 export function QuickActions({
   isAtLimit,
   onCreateWorkout,
   onBrowseExercises,
+  onQuickStart,
 }: QuickActionsProps) {
   return (
     <View style={styles.container}>
@@ -25,6 +32,20 @@ export function QuickActions({
         <Ionicons name="add" size={24} color={Colors.text.primary} />
         <Text style={styles.buttonText}>Create New Workout</Text>
       </TouchableOpacity>
+
+      {onQuickStart && (
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={onQuickStart}
+          testID="quick-start-button"
+          accessibilityLabel="Start a quick workout"
+        >
+          <Ionicons name="flash" size={24} color={Colors.primary.DEFAULT} />
+          <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+            Quick Start
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity
         style={styles.secondaryButton}

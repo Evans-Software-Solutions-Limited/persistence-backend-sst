@@ -49,6 +49,7 @@ export interface WorkoutsListPresenterProps {
   deletingWorkoutIds: Set<string>;
   onCreateWorkout: () => void;
   onBrowseExercises: () => void;
+  onQuickStart: () => void;
   onUpgrade: () => void;
   onSearchChange: (q: string) => void;
   onWorkoutPress: (w: WorkoutCardView) => void;
@@ -76,6 +77,7 @@ export function WorkoutsListPresenter({
   deletingWorkoutIds,
   onCreateWorkout,
   onBrowseExercises,
+  onQuickStart,
   onUpgrade,
   onSearchChange,
   onWorkoutPress,
@@ -160,6 +162,7 @@ export function WorkoutsListPresenter({
           <QuickActions
             isAtLimit={isAtLimit}
             onCreateWorkout={onCreateWorkout}
+            onQuickStart={onQuickStart}
             onBrowseExercises={onBrowseExercises}
           />
         )}

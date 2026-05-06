@@ -129,6 +129,14 @@ export function WorkoutsListContainer() {
     router.push("/(app)/(tabs)/exercises" as never);
   }, []);
 
+  // M3: Quick Start opens an empty active session — no template; user
+  // adds exercises on-the-fly via the picker. Routes through the
+  // /(app)/session modal which calls `startSessionCommand({})` when
+  // no `?workoutId=` is present (Story-009).
+  const onQuickStart = useCallback(() => {
+    router.push("/(app)/session" as never);
+  }, []);
+
   const onUpgrade = useCallback(() => {
     router.push("/coming-soon?feature=subscription" as never);
   }, []);
@@ -214,6 +222,7 @@ export function WorkoutsListContainer() {
       deletingWorkoutIds={deletingWorkoutIds}
       onCreateWorkout={onCreateWorkout}
       onBrowseExercises={onBrowseExercises}
+      onQuickStart={onQuickStart}
       onUpgrade={onUpgrade}
       onSearchChange={onSearchChange}
       onWorkoutPress={onWorkoutPress}

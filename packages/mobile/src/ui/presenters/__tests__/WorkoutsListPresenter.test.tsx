@@ -19,6 +19,7 @@ const baseProps = {
   deletingWorkoutIds: new Set<string>(),
   onCreateWorkout: jest.fn(),
   onBrowseExercises: jest.fn(),
+  onQuickStart: jest.fn(),
   onUpgrade: jest.fn(),
   onSearchChange: jest.fn(),
   onWorkoutPress: jest.fn(),

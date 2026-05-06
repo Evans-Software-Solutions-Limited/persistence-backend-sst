@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { ResumePromptContainer } from "../../src/ui/containers/ResumePromptContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
@@ -99,6 +100,7 @@ export default function AppLayout() {
           }}
         />
       </Stack>
+      <ResumePromptContainer />
     </ExerciseFiltersProvider>
   );
 }

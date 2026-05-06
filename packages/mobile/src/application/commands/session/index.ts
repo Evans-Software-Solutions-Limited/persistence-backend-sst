@@ -37,3 +37,7 @@ export {
   type CancelSessionCommandDeps,
   type CancelSessionInput,
 } from "./cancel-session.command";
+export {
+  resumeSessionCommand,
+  type ResumeSessionCommandDeps,
+} from "./resume-session.command";
