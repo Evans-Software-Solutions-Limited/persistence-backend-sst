@@ -336,7 +336,20 @@ export class InMemoryStorageAdapter implements StoragePort {
     if (localId === serverId) return;
     for (const [userId, session] of this.activeSessions) {
       if (session.id !== localId) continue;
-      this.activeSessions.set(userId, { ...session, id: serverId });
+      // Mirror the SQLite adapter (sqlite.adapter.ts § swapLocalSessionId):
+      // session_exercises.session_id is rewritten alongside the parent
+      // session.id. The in-memory representation nests exercises inside
+      // the session row, so rewrite each exercise.sessionId in the same
+      // pass — otherwise nested children carry the stale local id and
+      // tests using this adapter miss bugs where production code relies
+      // on `exercise.sessionId === session.id` post-flush.
+      this.activeSessions.set(userId, {
+        ...session,
+        id: serverId,
+        exercises: session.exercises.map((ex) =>
+          ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
+        ),
+      });
     }
     for (const [userId, records] of this.personalRecords) {
       let changed = false;

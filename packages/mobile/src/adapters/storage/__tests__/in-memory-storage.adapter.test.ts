@@ -673,6 +673,57 @@ describe("InMemoryStorageAdapter", () => {
       );
     });
 
+    it("rewrites sessionId on every nested exercise (parity with SQLite adapter)", () => {
+      // Regression test for the in-memory adapter skipping nested
+      // exercises[*].sessionId on swap. SQLite rewrites
+      // session_exercises.session_id explicitly; the in-memory
+      // representation nests exercises in the session row and must
+      // rewrite each one for behavioural parity.
+      storage.cacheActiveSession("user-1", {
+        id: "local-abc",
+        userId: "user-1",
+        workoutId: null,
+        name: "Push",
+        status: "in_progress",
+        startedAt: "ts",
+        completedAt: null,
+        notes: null,
+        exercises: [
+          {
+            id: "local-ex-1",
+            sessionId: "local-abc",
+            exerciseId: "ex-bench",
+            exerciseName: "Bench",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+          },
+          {
+            id: "local-ex-2",
+            sessionId: "local-abc",
+            exerciseId: "ex-row",
+            exerciseName: "Row",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+          },
+        ],
+      });
+      storage.swapLocalSessionId("local-abc", "server-abc");
+      const loaded = storage.getActiveSession("user-1");
+      expect(loaded?.id).toBe("server-abc");
+      expect(loaded?.exercises.map((ex) => ex.sessionId)).toEqual([
+        "server-abc",
+        "server-abc",
+      ]);
+    });
+
     it("is a no-op when localId === serverId", () => {
       seedActive();
       storage.swapLocalSessionId("local-abc", "local-abc");
