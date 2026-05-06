@@ -3,9 +3,13 @@ import { ComingSoon } from "@/ui/components/ComingSoon";
 
 /**
  * Generic placeholder screen used by surfaces whose real UI hasn't
- * landed yet (M2 mobile follow-up wires creator + editor; M3 wires
- * active-session; M10 wires subscription). The `feature` query param
- * picks the copy.
+ * landed yet (M10 wires subscription, etc.). The `feature` query
+ * param picks the copy.
+ *
+ * M3 update: the `active-session` entry was dropped after the four
+ * callers (WorkoutsList, WorkoutDetail, Home Start CTA, popover) all
+ * routed to `/(app)/session?workoutId=<id>`. The route remains for
+ * other features that haven't shipped yet.
  */
 export default function ComingSoonRoute() {
   const { feature } = useLocalSearchParams<{ feature?: string }>();
@@ -21,11 +25,6 @@ export default function ComingSoonRoute() {
 }
 
 const COPY = {
-  "active-session": {
-    icon: "play-circle-outline" as const,
-    title: "Active Session",
-    description: "Live workout tracking arrives in milestone M3.",
-  },
   "workout-creator": {
     icon: "add-circle-outline" as const,
     title: "Create Workout",

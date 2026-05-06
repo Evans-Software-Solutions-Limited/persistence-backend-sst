@@ -22,10 +22,10 @@ export function WorkoutDetailContainer() {
     router.back();
   }, []);
 
-  // M3 stub — Start CTA navigates to the active-session placeholder.
-  // The workout id is preserved in the deeplink so M3 can pick it up.
+  // M3 wired: Start CTA opens the active-session modal seeded from
+  // this workout template (Story-001).
   const onStartWorkout = useCallback((id: string) => {
-    router.push(`/coming-soon?feature=active-session&workoutId=${id}` as never);
+    router.push(`/(app)/session?workoutId=${id}` as never);
   }, []);
 
   // Push the existing exercise detail route. Stack-pushing it on top of

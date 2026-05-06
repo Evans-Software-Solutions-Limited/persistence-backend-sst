@@ -370,7 +370,7 @@ describe("HomeContainer", () => {
     expect(health.requestPermissions).toHaveBeenCalled();
   });
 
-  it("workout-start tap routes to the workout-detail screen (M3 stub)", async () => {
+  it("workout-start tap routes to the active-session modal seeded from the workout id (M3)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -386,7 +386,7 @@ describe("HomeContainer", () => {
       expect(mockHomePresenterProps.current).not.toBeNull();
     });
     fireEvent.press(getByTestId("stub-workout-start"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w1");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w1");
   });
 
   it("surfaces an Alert when the manage-subscription CTA fires", async () => {

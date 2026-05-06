@@ -154,9 +154,10 @@ export function WorkoutsListContainer() {
   }, []);
 
   const onStartWorkout = useCallback((workoutId: string) => {
-    // TODO(M3): wire to /workouts/[id]/active.
-    void workoutId;
-    router.push("/coming-soon?feature=active-session" as never);
+    // M3 wired: starts a session from this template via the
+    // /(app)/session modal. Container resolves ?workoutId= →
+    // startSessionCommand({ workout }) (Story-001).
+    router.push(`/(app)/session?workoutId=${workoutId}` as never);
   }, []);
 
   const onDeleteWorkout = useCallback(

@@ -149,7 +149,7 @@ describe("WorkoutDetailContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/ex-bench");
   });
 
-  it("Start Workout pushes coming-soon with the workout id", async () => {
+  it("Start Workout opens the active-session modal seeded from the workout id (M3)", async () => {
     const api = new InMemoryApiAdapter();
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
     const storage = new InMemoryStorageAdapter();
@@ -160,9 +160,7 @@ describe("WorkoutDetailContainer", () => {
     );
     await findByText("Push Day");
     fireEvent.press(getByTestId("workout-detail-start"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=active-session&workoutId=w-1",
-    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
   });
 
   it("renders the loader on cold start when no cached detail", async () => {

@@ -235,12 +235,12 @@ export function HomeContainer() {
     [router],
   );
 
-  // Start CTA — same target. M3 owns the active-session route and
-  // will replace this; until then the detail screen exposes a Start
-  // button that stubs to /coming-soon.
+  // Start CTA — M3 wired. Routes directly to the active-session modal
+  // seeded from this workout template (Story-001); skips the
+  // intermediate detail screen now that there's a real destination.
   const onWorkoutStart = useCallback(
     (workoutId: string) => {
-      router.push(`/(app)/workouts/${workoutId}` as never);
+      router.push(`/(app)/session?workoutId=${workoutId}` as never);
     },
     [router],
   );
