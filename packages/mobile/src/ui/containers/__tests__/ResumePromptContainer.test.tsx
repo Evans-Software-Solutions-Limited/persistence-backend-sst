@@ -1,5 +1,9 @@
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
+
+// M2 learning #13: cascading-async container tests blow the 5s default
+// on loaded CI workers.
+jest.setTimeout(15_000);
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";

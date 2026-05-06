@@ -20,6 +20,13 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
+// M2 learning #13: cascading-async tests (findByTestId →
+// fireEvent → waitFor on storage updates that fire through the
+// rest-timer adapter's Promise chain) blow the 5s default on loaded
+// CI workers. 30s here gives generous headroom; locally these tests
+// run in ~50–200ms each.
+jest.setTimeout(30_000);
+
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",
   name: overrides.name ?? "Push Day",
