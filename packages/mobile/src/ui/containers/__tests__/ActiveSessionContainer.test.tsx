@@ -416,4 +416,194 @@ describe("ActiveSessionContainer", () => {
     // session screen still mounts and the container didn't crash.
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
+
+  it("Mark Complete on a set persists isCompleted + auto-starts the rest timer", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: 80,
+              reps: 8,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const adapters = makeAdapters(api, storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+
+    // SetLogger renders one row → one action button per row. With a
+    // single set this resolves uniquely.
+    fireEvent.press(await findByTestId("set-logger-action"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets[0].isCompleted).toBe(true);
+    });
+    // Rest timer adapter received a schedule call (default 90s).
+    expect(adapters.notifications.scheduleLocalNotification).toHaveBeenCalled();
+  });
+
+  it("typing into a set's weight input persists onUpdateSet to the cache", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    const weightInput = await findByTestId("set-logger-weight");
+    fireEvent.changeText(weightInput, "100");
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets[0].weightKg).toBe(100);
+    });
+  });
+
+  it("removing a completed set strips it from the session cache", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: 80,
+              reps: 8,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              // Completed → action button becomes Remove (trash icon).
+              isCompleted: true,
+              completedAt: "2026-05-05T10:05:00.000Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("set-logger-action"));
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets).toHaveLength(0);
+    });
+  });
+
+  it("renders the empty-state Add CTA when the session has no exercises", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    expect(await findByTestId("active-session-empty")).toBeTruthy();
+    fireEvent.press(await findByTestId("active-session-empty-add"));
+    // Picker opens — the screen still mounts.
+    expect(await findByTestId("active-session-screen")).toBeTruthy();
+  });
 });

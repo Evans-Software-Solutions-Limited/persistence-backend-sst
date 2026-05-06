@@ -23,11 +23,9 @@
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addExerciseCommand,
   completeSetCommand,
   logSetCommand,
   startSessionCommand,
-  substituteExerciseCommand,
 } from "@/application/commands/session";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
@@ -37,16 +35,16 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
+import {
+  applyPickerSelection,
+  type ActiveSessionPickerMode,
+  type LegacyPickerRow,
+} from "@/ui/containers/active-session-picker";
 
 // Default rest seconds when the workout template doesn't carry one.
 // FRONTEND_BRIEF "Out of scope" notes M6 ships the configurator; M3
 // just consumes a sensible default here.
 const DEFAULT_REST_SECONDS = 90;
-
-type LegacyPickerRow = {
-  id: string;
-  name: string;
-};
 
 export function ActiveSessionContainer() {
   const { storage, api } = useAdapters();
@@ -223,11 +221,7 @@ export function ActiveSessionContainer() {
     [userId, storage, rereadCache],
   );
 
-  const [pickerMode, setPickerMode] = useState<
-    | { kind: "substitute"; oldSessionExerciseId: string }
-    | { kind: "add" }
-    | null
-  >(null);
+  const [pickerMode, setPickerMode] = useState<ActiveSessionPickerMode>(null);
 
   const onSubstitute = useCallback((sessionExerciseId: string) => {
     setPickerMode({
@@ -256,31 +250,19 @@ export function ActiveSessionContainer() {
 
   const onPickerAddExercises = useCallback(
     (rows: LegacyPickerRow[]) => {
-      if (!userId || rows.length === 0) {
+      if (!userId) {
         setPickerMode(null);
         return;
       }
-      if (pickerMode?.kind === "substitute") {
-        const exercise = resolveExercise(rows[0]);
-        if (exercise) {
-          substituteExerciseCommand(
-            { storage, generateId, userId },
-            {
-              oldSessionExerciseId: pickerMode.oldSessionExerciseId,
-              newExercise: exercise,
-            },
-          );
-          rereadCache();
-        }
-      } else if (pickerMode?.kind === "add") {
-        for (const row of rows) {
-          const exercise = resolveExercise(row);
-          if (exercise) {
-            addExerciseCommand({ storage, generateId, userId }, { exercise });
-          }
-        }
-        rereadCache();
-      }
+      applyPickerSelection({
+        rows,
+        mode: pickerMode,
+        resolveExercise,
+        storage,
+        generateId,
+        userId,
+        onAfter: rereadCache,
+      });
       setPickerMode(null);
     },
     [userId, pickerMode, resolveExercise, storage, generateId, rereadCache],
