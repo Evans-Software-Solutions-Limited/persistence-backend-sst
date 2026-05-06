@@ -82,6 +82,14 @@ export default function AppLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="session/index"
+          options={{
+            title: "Active session",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
       </Stack>
     </ExerciseFiltersProvider>
   );
