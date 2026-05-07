@@ -589,6 +589,75 @@ describe("ActiveSessionContainer", () => {
     });
   });
 
+  it("removing a completed set renumbers survivors so a subsequent log-set has a unique setNumber", async () => {
+    // Bugbot regression: pre-fix, [1,2,3] → remove 2 → [1,3] (length 2)
+    // → log-set used `length+1=3`, producing a duplicate setNumber 3.
+    // Post-fix: onRemoveSet calls renumberSets so survivors become
+    // [1,2], and addSetToExercise uses max+1 = 3 — unique.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [1, 2, 3].map((n) => ({
+            id: `set-${n}`,
+            sessionExerciseId: "se-1",
+            setNumber: n,
+            weightKg: 80,
+            reps: 8,
+            rpe: null,
+            durationSeconds: null,
+            distanceMeters: null,
+            // Set 2 is completed so SetLogger's action button =
+            // Remove (the trash icon path in onRemoveSet).
+            isCompleted: n === 2,
+            completedAt: n === 2 ? "2026-05-05T10:05:00.000Z" : null,
+          })),
+        },
+      ],
+    });
+
+    const { findAllByTestId, findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // Three rows render; press the action on the middle (completed) one.
+    const actions = await findAllByTestId("set-logger-action");
+    fireEvent.press(actions[1]);
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets.map((s) => s.setNumber)).toEqual([1, 2]);
+    });
+
+    // Now log a new set — its setNumber must be 3 (unique), not a
+    // duplicate of either survivor.
+    fireEvent.press(await findByTestId("session-exercise-add-set"));
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      const numbers = cached?.exercises[0].sets.map((s) => s.setNumber) ?? [];
+      expect(numbers).toEqual([1, 2, 3]);
+      expect(new Set(numbers).size).toBe(3);
+    });
+  });
+
   it("renders the empty-state Add CTA when the session has no exercises", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

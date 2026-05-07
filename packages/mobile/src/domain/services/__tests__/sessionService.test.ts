@@ -17,6 +17,7 @@ import {
   createEmptySession,
   createSessionFromWorkout,
   detectPersonalRecords,
+  renumberSets,
   substituteExercise,
 } from "../sessionService";
 import type { Exercise } from "@/domain/models/exercise";
@@ -195,6 +196,85 @@ describe("addSetToExercise", () => {
     const before = session.exercises[0].sets.length;
     addSetToExercise(session, targetExId, {}, idFactory());
     expect(session.exercises[0].sets.length).toBe(before);
+  });
+
+  it("uses max(setNumber)+1 — no duplicate setNumber after a gap from removal", () => {
+    // Mid-session remove → renumber: [1,2,3] → [1,3] simulates a
+    // codepath that doesn't renumber. addSetToExercise must STILL
+    // emit a unique setNumber (4), not 3 (length+1 would have).
+    let session = baseSession();
+    const targetExId = session.exercises[0].id;
+    // Hand-craft a gap by stripping middle set from the in-memory model.
+    session = {
+      ...session,
+      exercises: session.exercises.map((ex) =>
+        ex.id === targetExId
+          ? {
+              ...ex,
+              sets: [
+                { ...ex.sets[0], setNumber: 1 },
+                { ...ex.sets[2], setNumber: 3 },
+              ],
+            }
+          : ex,
+      ),
+    };
+    const updated = addSetToExercise(session, targetExId, {}, idFactory(900));
+    const numbers = updated.exercises[0].sets.map((s) => s.setNumber);
+    expect(numbers).toEqual([1, 3, 4]);
+    expect(new Set(numbers).size).toBe(3); // no duplicates
+  });
+});
+
+describe("renumberSets", () => {
+  it("renumbers the target exercise's sets to a contiguous 1..n sequence", () => {
+    let session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const targetExId = session.exercises[0].id;
+    // Synthesise a gap.
+    session = {
+      ...session,
+      exercises: session.exercises.map((ex) =>
+        ex.id === targetExId
+          ? {
+              ...ex,
+              sets: [
+                { ...ex.sets[0], setNumber: 1 },
+                { ...ex.sets[2], setNumber: 5 },
+              ],
+            }
+          : ex,
+      ),
+    };
+    const updated = renumberSets(session, targetExId);
+    expect(updated.exercises[0].sets.map((s) => s.setNumber)).toEqual([1, 2]);
+  });
+
+  it("leaves other exercises untouched", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const otherExId = session.exercises[1].id;
+    const before = session.exercises[1].sets.map((s) => s.setNumber);
+    const updated = renumberSets(session, session.exercises[0].id);
+    expect(updated.exercises[1].sets.map((s) => s.setNumber)).toEqual(before);
+  });
+
+  it("is a no-op when sessionExerciseId is unknown", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const before = session.exercises.map((ex) =>
+      ex.sets.map((s) => s.setNumber),
+    );
+    const updated = renumberSets(session, "missing");
+    expect(
+      updated.exercises.map((ex) => ex.sets.map((s) => s.setNumber)),
+    ).toEqual(before);
+  });
+
+  it("is idempotent on already-contiguous sets", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const once = renumberSets(session, session.exercises[0].id);
+    const twice = renumberSets(once, session.exercises[0].id);
+    expect(twice.exercises[0].sets.map((s) => s.setNumber)).toEqual(
+      once.exercises[0].sets.map((s) => s.setNumber),
+    );
   });
 });
 

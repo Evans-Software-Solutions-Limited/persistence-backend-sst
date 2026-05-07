@@ -10,6 +10,7 @@ export {
   createSessionFromWorkout,
   createEmptySession,
   addSetToExercise,
+  renumberSets,
   completeSet,
   substituteExercise,
   addExerciseToSession,

@@ -102,9 +102,12 @@ export function createEmptySession(
 }
 
 /**
- * Append a set to an exercise. The set's `setNumber` is one-based and
- * derived from the exercise's current set count + 1. Returns a new
- * session; original is untouched.
+ * Append a set to an exercise. The new `setNumber` is `max(existing) + 1`
+ * — defensive against gaps left by mid-session removals (without this,
+ * `[1,2,3]` → remove 2 → `[1,3]` → add → would re-emit `setNumber: 3`,
+ * a wire-shape duplicate that would corrupt the bulk-record flush).
+ *
+ * Returns a new session; original is untouched.
  */
 export function addSetToExercise(
   session: WorkoutSession,
@@ -121,10 +124,44 @@ export function addSetToExercise(
             sets: [
               ...ex.sets,
               {
-                ...emptySet(ex.id, ex.sets.length + 1, idFactory),
+                ...emptySet(ex.id, nextSetNumberFor(ex.sets), idFactory),
                 ...partial,
               },
             ],
+          }
+        : ex,
+    ),
+  };
+}
+
+function nextSetNumberFor(sets: readonly ExerciseSet[]): number {
+  let max = 0;
+  for (const s of sets) {
+    if (s.setNumber > max) max = s.setNumber;
+  }
+  return max + 1;
+}
+
+/**
+ * Renumber an exercise's sets to a contiguous 1..n sequence preserving
+ * array order. Used after a set is removed mid-session so the display
+ * (which prints `idx + 1`) stays in sync with the persisted
+ * `setNumber` and the wire shape stays gap-free for the bulk-record
+ * flush.
+ *
+ * Pure: returns a new session; original is untouched. Idempotent.
+ */
+export function renumberSets(
+  session: WorkoutSession,
+  sessionExerciseId: string,
+): WorkoutSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) =>
+      ex.id === sessionExerciseId
+        ? {
+            ...ex,
+            sets: ex.sets.map((s, idx) => ({ ...s, setNumber: idx + 1 })),
           }
         : ex,
     ),

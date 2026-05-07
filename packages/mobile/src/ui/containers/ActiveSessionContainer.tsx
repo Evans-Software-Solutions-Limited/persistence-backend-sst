@@ -27,6 +27,7 @@ import {
   logSetCommand,
   startSessionCommand,
 } from "@/application/commands/session";
+import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
@@ -153,16 +154,27 @@ export function ActiveSessionContainer() {
   const onCompleteSet = useCallback(
     (sessionExerciseId: string, setId: string) => {
       if (!userId || !session) return;
+      // Short-circuit if the set was already completed: `completeSet`
+      // is a no-op in that case and returns the unchanged session
+      // (it returns `ok` either way), so the command can't tell us
+      // whether anything actually changed. Without this guard a
+      // double-tap or a stale prop would re-fire the rest timer +
+      // re-schedule the notification. SetLogger's action button
+      // already swaps to Remove when isCompleted is true, so this is
+      // mostly a belt-and-braces guard against stale-prop double-taps.
+      const exercise = session.exercises.find(
+        (ex) => ex.id === sessionExerciseId,
+      );
+      const targetSet = exercise?.sets.find((s) => s.id === setId);
+      if (targetSet?.isCompleted) return;
+
       const result = completeSetCommand({ storage, userId }, { setId });
       rereadCache();
+      if (!result.ok) return;
       // Auto-start the rest timer per Story-003 AC. Use the workout
       // template's restSeconds if known, otherwise the global default.
       // Looked up by exerciseId on the original workout payload — the
       // session itself doesn't carry restSeconds.
-      if (!result.ok) return;
-      const exercise = session.exercises.find(
-        (ex) => ex.id === sessionExerciseId,
-      );
       const restSeconds =
         detail.workout?.exercises.find(
           (we) => we.exerciseId === exercise?.exerciseId,
@@ -206,7 +218,12 @@ export function ActiveSessionContainer() {
       if (!userId) return;
       const current = storage.getActiveSession(userId);
       if (!current) return;
-      const next = {
+      // Filter the removed set out, then renumber the survivors so
+      // `setNumber` stays a contiguous 1..n. Without renumbering the
+      // next addSetToExercise would emit a duplicate setNumber (e.g.
+      // [1,2,3] → remove 2 → [1,3] → add → [1,3,3]) which corrupts
+      // the bulk-record flush wire shape.
+      const filtered = {
         ...current,
         exercises: current.exercises.map((ex) =>
           ex.id === sessionExerciseId
@@ -214,6 +231,7 @@ export function ActiveSessionContainer() {
             : ex,
         ),
       };
+      const next = renumberSets(filtered, sessionExerciseId);
       storage.cacheActiveSession(userId, next);
       storage.invalidateDashboard(userId);
       rereadCache();
