@@ -367,11 +367,12 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   async getActiveSession(): Promise<Result<ApiSession | null, ApiError>> {
-    // Wraps GET /sessions?status=in_progress&limit=1. M3 mobile uses
-    // this on app launch (`useResumeSession`) to detect a resumable
-    // session and surface the resume prompt. Returns ok(null) when
-    // the user has no active session — distinct from a transport
-    // failure, which still returns Result.err.
+    // Wraps GET /sessions?status=in_progress&limit=1. M3 surfaces a
+    // resumable session via `ActiveSessionBanner` (driven by the
+    // local SQLite mirror); this endpoint exists for cross-device
+    // resume scenarios (M9+) and is currently unused on the client.
+    // Returns ok(null) when the user has no active session — distinct
+    // from a transport failure, which still returns Result.err.
     const result = await this.requestEnvelope<ApiSession[]>("/sessions", {
       params: { status: "in_progress", limit: 1 },
     });

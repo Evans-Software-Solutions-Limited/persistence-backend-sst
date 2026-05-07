@@ -1,11 +1,12 @@
 /**
  * SessionExerciseCard — exercise header + list of SetLogger rows +
- * "+ Add set" button + overflow menu (Substitute, Notes). (M3,
- * Story-002 / Story-004.)
+ * "+ Add set" button + inline action buttons (Notes, Substitute,
+ * Remove). (M3, Story-002 / Story-004.)
  *
  * Ported from persistence-mobile/components/workouts/ActiveExerciseRow
  * with the V2 Container/Presenter shape — all mutation handlers come
- * in as props from the container.
+ * in as props from the container. The three action buttons (Notes /
+ * Swap / Trash) match legacy line 73-89.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -29,7 +30,9 @@ export type SessionExerciseCardProps = {
     patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
   ) => void;
   onRemoveSet: (setId: string) => void;
+  onOpenNotes: () => void;
   onSubstitute: () => void;
+  onRemoveExercise: () => void;
   onTapExercise: () => void;
 };
 
@@ -73,18 +76,50 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           totalSets={props.exercise.sets.length}
         />
 
-        <TouchableOpacity
-          onPress={props.onSubstitute}
-          style={styles.menuButton}
-          testID="session-exercise-substitute"
-          accessibilityLabel="Substitute exercise"
-        >
-          <Ionicons
-            name="swap-horizontal"
-            size={20}
-            color={Colors.text.secondary}
-          />
-        </TouchableOpacity>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            onPress={props.onOpenNotes}
+            style={styles.menuButton}
+            testID="session-exercise-notes"
+            accessibilityLabel={
+              props.exercise.notes ? "Edit notes" : "Add notes"
+            }
+          >
+            <Ionicons
+              name="create-outline"
+              size={20}
+              color={
+                props.exercise.notes
+                  ? Colors.primary.DEFAULT
+                  : Colors.text.secondary
+              }
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={props.onSubstitute}
+            style={styles.menuButton}
+            testID="session-exercise-substitute"
+            accessibilityLabel="Substitute exercise"
+          >
+            <Ionicons
+              name="swap-horizontal-outline"
+              size={20}
+              color={Colors.text.secondary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={props.onRemoveExercise}
+            style={styles.menuButton}
+            testID="session-exercise-remove"
+            accessibilityLabel="Remove exercise"
+          >
+            <Ionicons
+              name="trash-outline"
+              size={20}
+              color={Colors.error.DEFAULT}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {showQuickFill && props.previous && (

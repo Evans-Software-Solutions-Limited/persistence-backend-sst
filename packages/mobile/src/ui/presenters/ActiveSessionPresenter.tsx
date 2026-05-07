@@ -68,7 +68,9 @@ export type ActiveSessionPresenterProps = {
     patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
   ) => void;
   onRemoveSet: (sessionExerciseId: string, setId: string) => void;
+  onOpenNotes: (sessionExerciseId: string) => void;
   onSubstitute: (sessionExerciseId: string) => void;
+  onRemoveExercise: (sessionExerciseId: string) => void;
   onTapExercise: (exerciseId: string) => void;
   onAddExercise: () => void;
   onDiscard: () => void;
@@ -134,7 +136,9 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   props.onUpdateSet(ex.id, setId, patch)
                 }
                 onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+                onOpenNotes={() => props.onOpenNotes(ex.id)}
                 onSubstitute={() => props.onSubstitute(ex.id)}
+                onRemoveExercise={() => props.onRemoveExercise(ex.id)}
                 onTapExercise={() => props.onTapExercise(ex.exerciseId)}
               />
             ))}

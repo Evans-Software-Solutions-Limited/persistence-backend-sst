@@ -256,6 +256,57 @@ export function substituteExercise(
 }
 
 /**
+ * Remove an exercise from the session by `sessionExerciseId`. If the
+ * removed row was in a superset and only one survivor remains in that
+ * group, ungroup the survivor (a "superset" of one is meaningless).
+ *
+ * Mirrors legacy `useActiveWorkout.removeExercise` (lines 1078-1112).
+ */
+export function removeExerciseFromSession(
+  session: WorkoutSession,
+  sessionExerciseId: string,
+): WorkoutSession {
+  const target = session.exercises.find((e) => e.id === sessionExerciseId);
+  if (!target) return session;
+
+  const remaining = session.exercises.filter(
+    (e) => e.id !== sessionExerciseId,
+  );
+
+  // If the removed row carried a supersetGroup AND only one peer
+  // survives, that peer is no longer part of a "set" — ungroup it.
+  const group = target.supersetGroup;
+  if (group != null) {
+    const peers = remaining.filter((e) => e.supersetGroup === group);
+    if (peers.length === 1) {
+      const ungrouped = remaining.map((e) =>
+        e.supersetGroup === group ? { ...e, supersetGroup: null } : e,
+      );
+      return { ...session, exercises: ungrouped };
+    }
+  }
+
+  return { ...session, exercises: remaining };
+}
+
+/**
+ * Update the `notes` field on a single session_exercise row. Returns
+ * a new session; original untouched.
+ */
+export function setExerciseNotes(
+  session: WorkoutSession,
+  sessionExerciseId: string,
+  notes: string | null,
+): WorkoutSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) =>
+      ex.id === sessionExerciseId ? { ...ex, notes } : ex,
+    ),
+  };
+}
+
+/**
  * Append a new exercise to the session at `max(sortOrder) + 1`. Used by
  * Quick Start ("+ Add exercise") and mid-session add. Returns a new
  * session.

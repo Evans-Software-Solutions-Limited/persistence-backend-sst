@@ -5,10 +5,10 @@
  * `ActiveWorkoutGlobalBanner` variant). Tap → re-enters the active
  * session screen.
  *
- * Mounted in `(app)/_layout.tsx` alongside `useSyncWorker` and
- * `ResumePromptContainer`. Visible whenever an in-progress session
- * exists in the local cache AND the user is NOT already on the
- * session screen — otherwise the banner would stack on top of itself.
+ * Mounted in `(app)/_layout.tsx` alongside `useSyncWorker`. Visible
+ * whenever an in-progress session exists in the local cache AND the
+ * user is NOT already on the session screen — otherwise the banner
+ * would stack on top of itself. Tap → return to the session.
  *
  * Spec: persistence-mobile/components/workouts/ActiveWorkoutBanner
  *       specs/05-active-session/requirements.md STORY-005
@@ -17,7 +17,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useSegments } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useAdapters } from "@/ui/hooks/useAdapters";

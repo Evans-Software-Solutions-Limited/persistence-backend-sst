@@ -6,13 +6,12 @@
  * into the storage port directly. Returns the session or null if no
  * in-progress row exists. No side-effects.
  *
- * The app-launch resume prompt (`useResumeSession` + `<ResumePrompt>`)
- * calls this on mount; if a row comes back the user is offered
- * Continue (route to `/(app)/session?sessionId=…`) or Discard (fires
- * `cancelSessionCommand`).
+ * Used by the regression suite to pin "kill mid-session → relaunch
+ * → state restored" semantics. The user-facing resume affordance is
+ * the global `ActiveSessionBanner` (legacy parity), not a launch-time
+ * prompt.
  *
  * Spec: specs/05-active-session/requirements.md STORY-008
- *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 9
  */
 
 import type { WorkoutSession } from "@/domain/models/session";

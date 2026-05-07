@@ -41,3 +41,13 @@ export {
   resumeSessionCommand,
   type ResumeSessionCommandDeps,
 } from "./resume-session.command";
+export {
+  removeExerciseCommand,
+  type RemoveExerciseCommandDeps,
+  type RemoveExerciseInput,
+} from "./remove-exercise.command";
+export {
+  setExerciseNotesCommand,
+  type SetExerciseNotesCommandDeps,
+  type SetExerciseNotesInput,
+} from "./set-exercise-notes.command";

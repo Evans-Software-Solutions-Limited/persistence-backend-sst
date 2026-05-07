@@ -38,7 +38,9 @@ const baseHandlers = {
   onCompleteSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
+  onOpenNotes: jest.fn(),
   onSubstitute: jest.fn(),
+  onRemoveExercise: jest.fn(),
   onTapExercise: jest.fn(),
 };
 

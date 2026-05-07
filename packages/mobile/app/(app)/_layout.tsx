@@ -1,6 +1,5 @@
 import { Stack } from "expo-router";
 import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
-import { ResumePromptContainer } from "../../src/ui/containers/ResumePromptContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
@@ -102,7 +101,6 @@ export default function AppLayout() {
         />
       </Stack>
       <ActiveSessionBanner />
-      <ResumePromptContainer />
     </ExerciseFiltersProvider>
   );
 }

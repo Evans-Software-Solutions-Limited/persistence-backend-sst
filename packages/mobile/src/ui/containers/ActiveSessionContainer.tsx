@@ -27,8 +27,11 @@ import {
   cancelSessionCommand,
   completeSetCommand,
   logSetCommand,
+  removeExerciseCommand,
+  setExerciseNotesCommand,
   startSessionCommand,
 } from "@/application/commands/session";
+import { ExerciseNotesPopover } from "@/ui/components/session/ExerciseNotesPopover";
 import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
@@ -256,6 +259,7 @@ export function ActiveSessionContainer() {
   );
 
   const [pickerMode, setPickerMode] = useState<ActiveSessionPickerMode>(null);
+  const [notesEditingId, setNotesEditingId] = useState<string | null>(null);
 
   const onSubstitute = useCallback((sessionExerciseId: string) => {
     setPickerMode({
@@ -263,6 +267,64 @@ export function ActiveSessionContainer() {
       oldSessionExerciseId: sessionExerciseId,
     });
   }, []);
+
+  // The source exercise's primary muscle groups drive the substitute
+  // picker's filter (Story-004 AC). Resolved via the cached exercise
+  // library; empty when the source isn't cached (e.g. a freshly
+  // substituted row) — picker falls back to unfiltered.
+  const substituteMuscleFilter = useMemo<readonly string[] | undefined>(() => {
+    if (pickerMode?.kind !== "substitute" || !session) return undefined;
+    const oldRow = session.exercises.find(
+      (ex) => ex.id === pickerMode.oldSessionExerciseId,
+    );
+    if (!oldRow) return undefined;
+    const cached = storage.getCachedExercise(oldRow.exerciseId);
+    return cached?.primaryMuscleGroups ?? undefined;
+  }, [pickerMode, session, storage]);
+
+  const onOpenNotes = useCallback((sessionExerciseId: string) => {
+    setNotesEditingId(sessionExerciseId);
+  }, []);
+
+  const onCloseNotes = useCallback(() => setNotesEditingId(null), []);
+
+  const onSaveNotes = useCallback(
+    (notes: string) => {
+      if (!userId || !notesEditingId) {
+        setNotesEditingId(null);
+        return;
+      }
+      setExerciseNotesCommand(
+        { storage, userId },
+        { sessionExerciseId: notesEditingId, notes },
+      );
+      rereadCache();
+      setNotesEditingId(null);
+    },
+    [userId, notesEditingId, storage, rereadCache],
+  );
+
+  const onRemoveExercise = useCallback(
+    (sessionExerciseId: string) => {
+      if (!userId) return;
+      Alert.alert(
+        "Remove exercise",
+        "Are you sure? Logged sets on this exercise will be lost.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: () => {
+              removeExerciseCommand({ storage, userId }, { sessionExerciseId });
+              rereadCache();
+            },
+          },
+        ],
+      );
+    },
+    [userId, storage, rereadCache],
+  );
 
   const onAddExercise = useCallback(() => {
     setPickerMode({ kind: "add" });
@@ -389,7 +451,9 @@ export function ActiveSessionContainer() {
         onCompleteSet={onCompleteSet}
         onUpdateSet={onUpdateSet}
         onRemoveSet={onRemoveSet}
+        onOpenNotes={onOpenNotes}
         onSubstitute={onSubstitute}
+        onRemoveExercise={onRemoveExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
         onDiscard={onDiscard}
@@ -402,6 +466,24 @@ export function ActiveSessionContainer() {
         onAddExercises={onPickerAddExercises}
         onAddSuperset={onPickerAddSuperset}
         existingExerciseIds={existingExerciseIds}
+        filterByPrimaryMuscleGroups={substituteMuscleFilter}
+      />
+
+      <ExerciseNotesPopover
+        visible={notesEditingId != null}
+        exerciseName={
+          (notesEditingId &&
+            session.exercises.find((ex) => ex.id === notesEditingId)
+              ?.exerciseName) ||
+          ""
+        }
+        initialNotes={
+          (notesEditingId &&
+            session.exercises.find((ex) => ex.id === notesEditingId)?.notes) ||
+          ""
+        }
+        onSave={onSaveNotes}
+        onCancel={onCloseNotes}
       />
     </>
   );

@@ -14,6 +14,8 @@ export {
   completeSet,
   substituteExercise,
   addExerciseToSession,
+  removeExerciseFromSession,
+  setExerciseNotes,
   calculateVolume,
   calculateSummary,
   detectPersonalRecords,

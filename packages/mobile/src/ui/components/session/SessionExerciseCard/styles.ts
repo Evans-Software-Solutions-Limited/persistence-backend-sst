@@ -44,6 +44,10 @@ export const styles = {
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
+  actionsRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+  },
   menuButton: {
     width: 36,
     height: 36,
