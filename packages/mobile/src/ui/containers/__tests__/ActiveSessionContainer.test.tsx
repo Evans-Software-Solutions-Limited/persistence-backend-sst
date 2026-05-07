@@ -478,8 +478,108 @@ describe("ActiveSessionContainer", () => {
       const cached = storage.getActiveSession("user-1");
       expect(cached?.exercises[0].sets[0].isCompleted).toBe(true);
     });
-    // Rest timer adapter received a schedule call (default 90s).
+    // Quick Start (no template) → falls back to the global default
+    // (90s) per Story-003 AC.
     expect(adapters.notifications.scheduleLocalNotification).toHaveBeenCalled();
+    const lastCall = (
+      adapters.notifications.scheduleLocalNotification as jest.Mock
+    ).mock.calls.at(-1);
+    expect(lastCall?.[0]?.triggerSeconds).toBe(90);
+  });
+
+  it("Mark Complete reads per-exercise restSeconds from the workout template (not the default)", async () => {
+    // Bugbot regression: a prior version flipped workoutId → null
+    // as soon as the session was staged, silently emptying
+    // detail.workout and forcing the rest-timer lookup to fall
+    // through to DEFAULT_REST_SECONDS for every exercise. This test
+    // proves the lookup actually finds the template's restSeconds.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const workout = buildWorkout({
+      id: "w-template",
+      exercises: [
+        {
+          id: "we-1",
+          exerciseId: "ex-bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          targetSets: 1,
+          targetRepsMin: 8,
+          targetRepsMax: 12,
+          targetDurationSeconds: null,
+          // Custom rest — 60s, NOT the 90s default.
+          restSeconds: 60,
+          notes: null,
+          exercise: {
+            id: "ex-bench",
+            name: "Bench Press",
+            category: "strength",
+            difficultyLevel: "intermediate",
+            videoUrl: null,
+            thumbnailUrl: null,
+          },
+        },
+      ],
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+    storage.cacheWorkoutDetail("user-1", workout);
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      // Critical: session carries workoutId so useWorkout stays
+      // anchored to the template after start lands.
+      workoutId: "w-template",
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: 80,
+              reps: 8,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const adapters = makeAdapters(api, storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("set-logger-action"));
+
+    await waitFor(() => {
+      expect(
+        adapters.notifications.scheduleLocalNotification,
+      ).toHaveBeenCalled();
+    });
+    const lastCall = (
+      adapters.notifications.scheduleLocalNotification as jest.Mock
+    ).mock.calls.at(-1);
+    // The template's 60s, NOT the 90s default.
+    expect(lastCall?.[0]?.triggerSeconds).toBe(60);
   });
 
   it("typing into a set's weight input persists onUpdateSet to the cache", async () => {

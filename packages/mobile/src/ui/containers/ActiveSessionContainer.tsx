@@ -71,8 +71,21 @@ export function ActiveSessionContainer() {
     }, [rereadCache]),
   );
 
-  // Workout-from-template loader for the start-from-template flow.
-  const workoutId = !session && requestedWorkoutId ? requestedWorkoutId : null;
+  // Workout-from-template loader. Resolution order:
+  //   1. `session.workoutId` once the session is staged — keeps the
+  //      template loaded for the lifetime of the session so per-set
+  //      lookups (rest seconds, etc.) stay sourced from the template.
+  //   2. `requestedWorkoutId` from the route param pre-start (the
+  //      session hasn't been seeded yet). Once the start flow runs
+  //      and the session lands, (1) takes over.
+  //   3. `null` for Quick Start / unparented Quick Start sessions —
+  //      no template, no rest-seconds source, callers fall back to
+  //      DEFAULT_REST_SECONDS.
+  // A previous version flipped workoutId → null as soon as `session`
+  // was truthy, which silently emptied `detail.workout` and made
+  // every onCompleteSet rest-timer lookup fall through to default,
+  // ignoring per-exercise template restSeconds.
+  const workoutId = session?.workoutId ?? requestedWorkoutId ?? null;
   const detail = useWorkout(workoutId);
   const startAttemptedRef = useRef(false);
 
