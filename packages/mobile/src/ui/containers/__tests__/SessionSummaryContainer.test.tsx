@@ -180,10 +180,23 @@ describe("SessionSummaryContainer", () => {
     expect(await findByTestId("summary-pr-ex-bench")).toBeTruthy();
   });
 
-  it("Save tap fires completeSessionCommand and dismisses the modal stack", async () => {
+  it("Continue tap clears the local row and dismisses the modal stack (the rating screen already fired completeSessionCommand)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
+    // Seed a finalized row — by the time the user lands on the
+    // summary screen, /session/rate has already flipped the row to
+    // status=completed and queued the bulk-record flush.
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: "wk-1",
+      name: "Push Day",
+      status: "completed",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: "2026-05-05T10:30:00.000Z",
+      notes: null,
+      exercises: [],
+    });
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(api, storage)}>
@@ -192,11 +205,10 @@ describe("SessionSummaryContainer", () => {
     );
 
     fireEvent.press(await findByTestId("summary-save-button"));
-    expect(storage.getPendingMutations()).toHaveLength(1);
-    const queued = storage.getPendingMutations()[0];
-    expect(queued.endpoint).toBe("/sessions/record");
-    const payload = JSON.parse(queued.payload);
-    expect(payload.status).toBe("completed");
+    // No NEW recordSession enqueue — the rating screen already did
+    // that; summary just retires the local row.
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getLatestSession("user-1")).toBeNull();
     expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
   });
 
@@ -220,10 +232,20 @@ describe("SessionSummaryContainer", () => {
     expect(queryByTestId("summary-discard-warning")).toBeNull();
   });
 
-  it("Close button calls router.back", async () => {
+  it("Close button clears the local row and dismisses the modal stack", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: "wk-1",
+      name: "Push Day",
+      status: "completed",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: "2026-05-05T10:30:00.000Z",
+      notes: null,
+      exercises: [],
+    });
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(api, storage)}>
@@ -232,7 +254,8 @@ describe("SessionSummaryContainer", () => {
     );
 
     fireEvent.press(await findByTestId("session-summary-close"));
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(storage.getLatestSession("user-1")).toBeNull();
+    expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
   });
 
   it("renders nothing when no active session exists (race guard)", () => {

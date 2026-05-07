@@ -166,8 +166,12 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
           onPress={props.onSave}
           testID="summary-save-button"
         >
-          <Text style={styles.primaryLabel}>Save workout</Text>
-          <Ionicons name="checkmark" size={18} color={Colors.text.primary} />
+          <Text style={styles.primaryLabel}>Continue</Text>
+          <Ionicons
+            name="arrow-forward"
+            size={18}
+            color={Colors.text.primary}
+          />
         </TouchableOpacity>
       </View>
     </View>

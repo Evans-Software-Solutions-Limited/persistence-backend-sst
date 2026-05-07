@@ -265,15 +265,17 @@ export class InMemoryStorageAdapter implements StoragePort {
     return cloneSession(session);
   }
 
+  getLatestSession(userId: string): WorkoutSession | null {
+    const session = this.activeSessions.get(userId);
+    return session ? cloneSession(session) : null;
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
   }
 
   clearActiveSession(userId: string): void {
-    const session = this.activeSessions.get(userId);
-    if (session && session.status === "in_progress") {
-      this.activeSessions.delete(userId);
-    }
+    this.activeSessions.delete(userId);
   }
 
   getSessionSets(

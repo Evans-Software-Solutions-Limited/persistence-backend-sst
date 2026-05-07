@@ -175,6 +175,17 @@ export interface StoragePort {
   getActiveSession(userId: string): WorkoutSession | null;
 
   /**
+   * Return the user's most recent session row regardless of status.
+   * Used by the post-rating Summary screen to render stats AFTER
+   * `completeSessionCommand` has flipped the row to `completed` (at
+   * which point `getActiveSession` returns null). Distinct from
+   * `getActiveSession` so the screens that genuinely need an
+   * in-progress row (banner, active screen, rating screen) keep
+   * their status filter.
+   */
+  getLatestSession(userId: string): WorkoutSession | null;
+
+  /**
    * Write-through the entire session as a full upsert. Replaces the
    * three nested tables atomically per EXECUTION_PLAN § 3.4 — the
    * storage layer never sees partial sortOrder updates. Idempotent.
@@ -182,8 +193,11 @@ export interface StoragePort {
   cacheActiveSession(userId: string, session: WorkoutSession): void;
 
   /**
-   * Delete the user's in-progress session and cascade the children
-   * (`session_exercises`, `exercise_sets`). No-op when no row exists.
+   * Delete the user's session row regardless of status — used after
+   * the Summary screen's Continue button to retire a flushed
+   * `completed` / `cancelled` row. The pre-flush in-progress
+   * surface only ever calls this implicitly via the worker's
+   * post-success swap path.
    */
   clearActiveSession(userId: string): void;
 

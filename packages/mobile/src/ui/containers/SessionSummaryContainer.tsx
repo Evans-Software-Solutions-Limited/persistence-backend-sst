@@ -1,33 +1,34 @@
 /**
- * SessionSummaryContainer — save-only summary screen for the
+ * SessionSummaryContainer — post-completion stats screen for the
  * `/(app)/session/summary` route. (M3, Story-006.)
  *
- * Reads the active session from SQLite, computes
- * `sessionService.calculateSummary` + `detectPersonalRecords` against
- * the cached `personal_records` slice (predictive PR detection per
- * design.md § hybrid). Save → `completeSessionCommand` → dismiss the
- * modal stack.
+ * Reads the most recent session row (regardless of status) via
+ * `storage.getLatestSession` — by the time the user lands here the
+ * `WorkoutRatingContainer` has already fired
+ * `completeSessionCommand`, so `getActiveSession` would return null.
+ * Computes `sessionService.calculateSummary` +
+ * `detectPersonalRecords` against the cached `personal_records`
+ * slice (predictive PR detection per design.md § hybrid).
+ *
+ * Continue → clears the local session row + collapses the modal stack
+ * back to whatever pushed the session.
  *
  * The Discard flow does NOT route through this screen — that's a
  * native `Alert.alert` on the active-session screen per legacy
  * (persistence-mobile/components/workouts/ActiveWorkoutModal.tsx:514).
- * PR / volume / completion stats only ever render after a successful
- * save.
  *
  * Spec: specs/05-active-session/requirements.md STORY-006
- *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 8
  */
 
 import { router } from "expo-router";
-import { useCallback, useMemo } from "react";
-import { completeSessionCommand } from "@/application/commands/session";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   calculateSummary,
   detectPersonalRecords,
 } from "@/domain/services/sessionService";
-import type { SessionSummary } from "@/domain/models/session";
-import { useActiveSession } from "@/ui/hooks/useActiveSession";
+import type { SessionSummary, WorkoutSession } from "@/domain/models/session";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { SessionSummaryPresenter } from "@/ui/presenters/SessionSummaryPresenter";
 
 const EMPTY_SUMMARY: SessionSummary = {
@@ -42,7 +43,21 @@ const EMPTY_SUMMARY: SessionSummary = {
 
 export function SessionSummaryContainer() {
   const { storage } = useAdapters();
-  const { session, userId } = useActiveSession();
+  const { session: authSession } = useAuth();
+  const userId = authSession?.userId ?? null;
+
+  // Snapshot the latest session as soon as auth resolves. We hold
+  // it in state so `clearActiveSession` (called from Continue) can
+  // wipe storage without our render going blank. Captured once per
+  // userId — re-arms only on a real userId transition.
+  const [snapshot, setSnapshot] = useState<WorkoutSession | null>(null);
+  const capturedForUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    if (capturedForUserIdRef.current === userId) return;
+    capturedForUserIdRef.current = userId;
+    setSnapshot(storage.getLatestSession(userId));
+  }, [userId, storage]);
 
   const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -53,40 +68,37 @@ export function SessionSummaryContainer() {
   // `personal_records` slice — populated by `getPersonalRecords` on
   // home-tab focus. Server reconciles on flush.
   const summary = useMemo<SessionSummary>(() => {
-    if (!session || !userId) return EMPTY_SUMMARY;
-    const base = calculateSummary(session);
+    if (!snapshot || !userId) return EMPTY_SUMMARY;
+    const base = calculateSummary(snapshot);
     const previousRecords = storage.getPersonalRecords(userId);
     const personalRecords = detectPersonalRecords(
-      session,
+      snapshot,
       previousRecords,
       { userId, now: new Date().toISOString() },
       generateId,
     );
     return { ...base, personalRecords };
-  }, [session, userId, storage, generateId]);
+  }, [snapshot, userId, storage, generateId]);
 
-  const onSave = useCallback(() => {
-    if (!userId) return;
-    completeSessionCommand({ storage, userId });
-    // Modal stack collapses to whatever pushed the session — typically
-    // the workouts tab.
+  const onContinue = useCallback(() => {
+    if (userId) storage.clearActiveSession(userId);
     router.dismissAll();
   }, [userId, storage]);
 
   const onClose = useCallback(() => {
-    router.back();
-  }, []);
+    if (userId) storage.clearActiveSession(userId);
+    router.dismissAll();
+  }, [userId, storage]);
 
-  if (!session) {
-    // Race: user navigated to /summary before the active session was
-    // staged. Bounce back rather than render an empty stat card grid.
+  if (!snapshot) {
+    // Race: user navigated to /summary before any session existed. Bounce.
     return null;
   }
 
   return (
     <SessionSummaryPresenter
       summary={summary}
-      onSave={onSave}
+      onSave={onContinue}
       onClose={onClose}
     />
   );

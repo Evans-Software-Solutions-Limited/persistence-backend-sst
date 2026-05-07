@@ -381,7 +381,12 @@ export function ActiveSessionContainer() {
   }, []);
 
   const onFinish = useCallback(() => {
-    router.push("/(app)/session/summary" as never);
+    // Tap Complete → rating screen captures 1-10 difficulty + notes
+    // → submit fires completeSessionCommand → replaces with summary.
+    // Matches legacy ActiveWorkoutModal flow:
+    //   handleCompleteWorkout → setCurrentView('rating')
+    //   handleRatingSubmit    → recordWorkout → setCurrentView('summary')
+    router.push("/(app)/session/rate" as never);
   }, []);
 
   const onDiscard = useCallback(() => {

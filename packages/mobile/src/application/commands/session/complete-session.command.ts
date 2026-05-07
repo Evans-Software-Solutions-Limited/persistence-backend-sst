@@ -32,8 +32,15 @@ export type CompleteSessionCommandDeps = {
 };
 
 export type CompleteSessionInput = {
-  /** Optional user-entered notes captured from the Summary screen. */
+  /** Optional user-entered workout notes (captured on the rating screen). */
   notes?: string | null;
+  /**
+   * Optional 1-10 difficulty rating captured on the rating screen.
+   * Maps to the bulk-record payload's `sessionRating` (and the
+   * server's `difficulty_ranking`). Null when the user skips or the
+   * session was cancelled.
+   */
+  rating?: number | null;
 };
 
 export type CompletedSessionResult = {
@@ -46,7 +53,12 @@ export function completeSessionCommand(
   deps: CompleteSessionCommandDeps,
   input: CompleteSessionInput = {},
 ): Result<CompletedSessionResult, SessionNotFoundError> {
-  return finalizeSessionCommand(deps, "completed", input.notes ?? null);
+  return finalizeSessionCommand(
+    deps,
+    "completed",
+    input.notes ?? null,
+    input.rating ?? null,
+  );
 }
 
 /**
@@ -62,6 +74,7 @@ export function finalizeSessionCommand(
   deps: CompleteSessionCommandDeps,
   status: "completed" | "cancelled",
   notes: string | null,
+  rating: number | null = null,
 ): Result<CompletedSessionResult, SessionNotFoundError> {
   const session = deps.storage.getActiveSession(deps.userId);
   if (!session) {
@@ -84,7 +97,11 @@ export function finalizeSessionCommand(
 
   // Build the bulk-record payload from the (now-finalized) session.
   // Server-assigned UUIDs replace the local-… ids on the worker's
-  // success path via `swapLocalSessionId` (commit 2).
+  // success path via `swapLocalSessionId` (commit 2). `sessionRating`
+  // and `difficultyRanking` both carry the 1-10 rating — the server
+  // accepts either; we send `sessionRating` as primary and
+  // `difficultyRanking` as a back-compat alias mirroring legacy
+  // `useActiveWorkout.recordWorkout` payload shape.
   const payload: RecordSessionInput = {
     workoutId: finalized.workoutId,
     name: finalized.name,
@@ -93,6 +110,8 @@ export function finalizeSessionCommand(
     status,
     totalDurationSeconds: summary.duration,
     userNotes: notes,
+    sessionRating: rating,
+    difficultyRanking: rating,
     exercises: finalized.exercises.map((ex) => ({
       exerciseId: ex.exerciseId,
       sortOrder: ex.sortOrder,

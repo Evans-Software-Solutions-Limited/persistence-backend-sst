@@ -499,8 +499,37 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getActiveSession("user-1")).toBeNull();
     });
 
+    it("clearActiveSession also drops a finalized (completed) row", () => {
+      // Summary's Continue button calls this AFTER the row has been
+      // flipped to status=completed; the row must clear regardless.
+      storage.cacheActiveSession("user-1", {
+        ...buildSession(),
+        status: "completed",
+        completedAt: "2026-05-05T11:00:00.000Z",
+      });
+      storage.clearActiveSession("user-1");
+      expect(storage.getLatestSession("user-1")).toBeNull();
+    });
+
     it("clearActiveSession is a no-op when no session exists", () => {
       expect(() => storage.clearActiveSession("user-1")).not.toThrow();
+    });
+
+    it("getLatestSession returns the row regardless of status (so the Summary screen can render after completion)", () => {
+      storage.cacheActiveSession("user-1", {
+        ...buildSession(),
+        status: "completed",
+        completedAt: "2026-05-05T11:00:00.000Z",
+      });
+      // getActiveSession (in-progress filter) returns null...
+      expect(storage.getActiveSession("user-1")).toBeNull();
+      // ...but getLatestSession finds it.
+      const loaded = storage.getLatestSession("user-1");
+      expect(loaded?.status).toBe("completed");
+    });
+
+    it("getLatestSession returns null when no row exists", () => {
+      expect(storage.getLatestSession("user-1")).toBeNull();
     });
 
     it("returned session is decoupled from internal state (deep clone)", () => {

@@ -92,6 +92,14 @@ export default function AppLayout() {
           }}
         />
         <Stack.Screen
+          name="session/rate"
+          options={{
+            title: "Rate workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
           name="session/summary"
           options={{
             title: "Session summary",

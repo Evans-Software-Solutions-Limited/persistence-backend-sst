@@ -279,7 +279,7 @@ describe("ActiveSessionContainer", () => {
     expect(mockRouterDismissAll).toHaveBeenCalled();
   });
 
-  it("Finish footer button routes to summary", async () => {
+  it("Finish footer button routes to /session/rate (rating screen comes before summary, legacy parity)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -299,7 +299,7 @@ describe("ActiveSessionContainer", () => {
     );
 
     fireEvent.press(await findByTestId("active-session-finish"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session/summary");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session/rate");
   });
 
   it("Header close button calls router.back", async () => {

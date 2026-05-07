@@ -572,11 +572,26 @@ export class SQLiteStorageAdapter implements StoragePort {
   // -- Active Session (M3) --
 
   getActiveSession(userId: string): WorkoutSession | null {
+    return this.loadSessionForUser(userId, true);
+  }
+
+  getLatestSession(userId: string): WorkoutSession | null {
+    return this.loadSessionForUser(userId, false);
+  }
+
+  private loadSessionForUser(
+    userId: string,
+    onlyInProgress: boolean,
+  ): WorkoutSession | null {
     const db = this.getDb();
+    const where = onlyInProgress
+      ? `WHERE user_id = ? AND status = 'in_progress'`
+      : `WHERE user_id = ?`;
     const sessionRows = db.getAllSync(
       `SELECT id, user_id, workout_id, name, status, started_at, completed_at, notes
        FROM active_sessions
-       WHERE user_id = ? AND status = 'in_progress'
+       ${where}
+       ORDER BY updated_at DESC
        LIMIT 1`,
       [userId],
     ) as ActiveSessionRow[];
@@ -730,10 +745,10 @@ export class SQLiteStorageAdapter implements StoragePort {
 
   clearActiveSession(userId: string): void {
     const db = this.getDb();
-    db.runSync(
-      `DELETE FROM active_sessions WHERE user_id = ? AND status = 'in_progress'`,
-      [userId],
-    );
+    // Drop the row regardless of status — Summary's Continue button
+    // retires a flushed `completed` / `cancelled` row, and the worker
+    // calls this after a successful bulk-record swap.
+    db.runSync(`DELETE FROM active_sessions WHERE user_id = ?`, [userId]);
   }
 
   getSessionSets(
