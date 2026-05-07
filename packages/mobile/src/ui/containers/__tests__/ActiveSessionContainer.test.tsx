@@ -8,6 +8,7 @@
 
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -151,6 +152,7 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 
 const mockRouterBack = jest.fn();
 const mockRouterPush = jest.fn();
+const mockRouterDismissAll = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => {
   // useFocusEffect's prod implementation registers with the React
@@ -165,6 +167,7 @@ jest.mock("expo-router", () => {
     router: {
       back: (...args: unknown[]) => mockRouterBack(...args),
       push: (...args: unknown[]) => mockRouterPush(...args),
+      dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
     },
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useFocusEffect: (cb: React.EffectCallback) => {
@@ -173,6 +176,7 @@ jest.mock("expo-router", () => {
     useRouter: () => ({
       push: (...args: unknown[]) => mockRouterPush(...args),
       back: (...args: unknown[]) => mockRouterBack(...args),
+      dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
     }),
   };
 });
@@ -230,7 +234,8 @@ describe("ActiveSessionContainer", () => {
     expect(await findByText("Quick Workout")).toBeTruthy();
   });
 
-  it("Discard footer button routes to summary with discard intent", async () => {
+  it("Discard footer button shows Alert.alert; confirming fires cancelSessionCommand and dismisses", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -250,10 +255,28 @@ describe("ActiveSessionContainer", () => {
     );
 
     fireEvent.press(await findByTestId("active-session-discard"));
-    fireEvent.press(await findByTestId("active-session-discard-confirm"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(app)/session/summary?intent=discard",
+
+    // Native Alert was opened with the legacy copy.
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Cancel Workout",
+      "Are you sure you want to discard this workout? All progress will be lost.",
+      expect.any(Array),
     );
+
+    // Simulate the user tapping Discard in the alert.
+    const buttons = (alertSpy.mock.calls.at(-1)?.[2] ?? []) as {
+      text: string;
+      style?: string;
+      onPress?: () => void;
+    }[];
+    const discardButton = buttons.find((b) => b.style === "destructive");
+    discardButton?.onPress?.();
+
+    // Bulk cancellation queued; modal stack collapsed.
+    const queue = storage.getPendingMutations();
+    expect(queue).toHaveLength(1);
+    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
+    expect(mockRouterDismissAll).toHaveBeenCalled();
   });
 
   it("Finish footer button routes to summary", async () => {
@@ -756,6 +779,24 @@ describe("ActiveSessionContainer", () => {
       expect(numbers).toEqual([1, 2, 3]);
       expect(new Set(numbers).size).toBe(3);
     });
+  });
+
+  it("Quick Start: no ?workoutId= and no cached session → fires startSessionCommand({}) and stages an empty session", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // No workoutId in route, no cached session.
+    mockUseLocalSearchParams.mockReturnValue({});
+
+    renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    await waitFor(() => {
+      expect(storage.getActiveSession("user-1")).not.toBeNull();
+    });
+    const cached = storage.getActiveSession("user-1");
+    expect(cached?.workoutId).toBeNull();
+    expect(cached?.exercises).toEqual([]);
   });
 
   it("renders the empty-state Add CTA when the session has no exercises", async () => {

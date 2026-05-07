@@ -13,6 +13,7 @@ import {
   substituteExerciseCommand,
 } from "@/application/commands/session";
 import type { Exercise } from "@/domain/models/exercise";
+import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
 
 export type LegacyPickerRow = {
@@ -35,6 +36,24 @@ export type ApplyPickerSelectionDeps = {
   /** Called once after the dispatch lands at least one command. */
   onAfter: () => void;
 };
+
+/**
+ * Resolve a legacy `(id, name)` picker row into the canonical V2
+ * `Exercise` model via the local exercise cache. Returns null on
+ * cache miss — callers (substitute / add command paths) silently
+ * skip unresolved rows. Pure dependency-injected; the container
+ * wires `storage` + `api` once and forwards this resolver to
+ * `applyPickerSelection`.
+ */
+export function resolveLegacyExercise(
+  storage: StoragePort,
+  api: ApiPort,
+  row: LegacyPickerRow,
+): Exercise | null {
+  const cached = storage.getCachedExercise(row.id);
+  if (!cached) return null;
+  return api.enrichExerciseLabels(cached);
+}
 
 /**
  * - Empty `rows` → no-op (caller resets pickerMode).

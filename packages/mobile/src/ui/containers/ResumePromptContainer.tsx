@@ -32,10 +32,12 @@ export function ResumePromptContainer() {
   }, [resume]);
 
   const onDiscard = useCallback(() => {
-    if (!userId) {
-      resume.dismiss();
-      return;
-    }
+    // userId is guaranteed non-null when this fires: useResumeSession
+    // gates the prompt on userId, so a null userId would have meant
+    // resume.session is null and ResumePrompt rendered null instead.
+    // The non-null assertion is preferable to a defensive branch that
+    // can never be reached and inflates the coverage denominator.
+    if (!userId) return;
     cancelSessionCommand({ storage, userId });
     resume.dismiss();
   }, [userId, storage, resume]);

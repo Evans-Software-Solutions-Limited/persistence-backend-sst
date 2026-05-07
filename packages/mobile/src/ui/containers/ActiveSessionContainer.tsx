@@ -22,7 +22,9 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "react-native";
 import {
+  cancelSessionCommand,
   completeSetCommand,
   logSetCommand,
   startSessionCommand,
@@ -38,6 +40,7 @@ import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import {
   applyPickerSelection,
+  resolveLegacyExercise,
   type ActiveSessionPickerMode,
   type LegacyPickerRow,
 } from "@/ui/containers/active-session-picker";
@@ -268,14 +271,12 @@ export function ActiveSessionContainer() {
   const onClosePicker = useCallback(() => setPickerMode(null), []);
 
   // Resolve a legacy picker row → canonical Exercise via the cached
-  // exercise library. The popover hands back snake_case rows
-  // (verbatim port); the commands need the V2 `Exercise` model.
+  // exercise library. Logic lives in `active-session-picker.ts` so
+  // the cache-miss / cache-hit branches are unit-tested without
+  // mounting the AddExercisePopover modal tree.
   const resolveExercise = useCallback(
-    (row: LegacyPickerRow): Exercise | null => {
-      const cached = storage.getCachedExercise(row.id);
-      if (!cached) return null;
-      return api.enrichExerciseLabels(cached);
-    },
+    (row: LegacyPickerRow): Exercise | null =>
+      resolveLegacyExercise(storage, api, row),
     [storage, api],
   );
 
@@ -322,12 +323,27 @@ export function ActiveSessionContainer() {
   }, []);
 
   const onDiscard = useCallback(() => {
-    // Commit 8 wires the cancel-session command + flush; for now
-    // route to the summary screen which owns the discard confirmation
-    // path. Discard from the session screen short-circuits to summary
-    // with a "discard" intent flag.
-    router.push("/(app)/session/summary?intent=discard" as never);
-  }, []);
+    // Native Alert.alert matching legacy `ActiveWorkoutModal.handleDiscardWorkout`
+    // (persistence-mobile/components/workouts/ActiveWorkoutModal.tsx:514).
+    // Confirm first; on Discard, fire cancelSessionCommand (queues the
+    // bulk-record cancellation flush) and dismiss the modal stack.
+    if (!userId) return;
+    Alert.alert(
+      "Cancel Workout",
+      "Are you sure you want to discard this workout? All progress will be lost.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            cancelSessionCommand({ storage, userId });
+            router.dismissAll();
+          },
+        },
+      ],
+    );
+  }, [userId, storage]);
 
   // Existing-exercise ids are used by the picker to disable "Add"
   // for already-in-session entries. For substitute we don't disable —

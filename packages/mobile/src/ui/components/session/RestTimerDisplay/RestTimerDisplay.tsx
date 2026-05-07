@@ -41,8 +41,12 @@ export function RestTimerDisplay(props: RestTimerDisplayProps) {
   if (!props.isActive) return null;
 
   // Falsy-zero safe — remainingSeconds CAN be 0 (timer just hit zero
-  // before the parent unmounted). M2 learning #8.
-  const seconds = props.remainingSeconds != null ? props.remainingSeconds : 0;
+  // before the parent unmounted). The prop is typed `number` so no
+  // null guard is needed; the value is rendered through `formatTime`
+  // which handles 0 correctly. M2 learning #8 still applies wherever
+  // the value flows into JSX `&&` short-circuits, but here it's a
+  // direct text render.
+  const seconds = props.remainingSeconds;
   const offset = CIRCUMFERENCE * (1 - props.progress);
 
   return (

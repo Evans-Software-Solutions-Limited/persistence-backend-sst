@@ -200,56 +200,24 @@ describe("SessionSummaryContainer", () => {
     expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
   });
 
-  it("Discard tap (save-intent screen) fires cancelSessionCommand", async () => {
+  it("save-only screen has no Discard button (legacy parity: discard is an Alert on the active screen)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
 
-    const { findByTestId } = renderWithTheme(
+    const { queryByTestId, findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(api, storage)}>
         <SessionSummaryContainer />
       </AdapterProvider>,
     );
 
-    fireEvent.press(await findByTestId("summary-discard-button"));
-    const queued = storage.getPendingMutations()[0];
-    const payload = JSON.parse(queued.payload);
-    expect(payload.status).toBe("cancelled");
-    expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
-  });
-
-  it("?intent=discard renders the discard-variant footer", async () => {
-    mockUseLocalSearchParams.mockReturnValue({ intent: "discard" });
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
-
-    const { findByTestId, queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    expect(await findByTestId("summary-keep-button")).toBeTruthy();
-    expect(await findByTestId("summary-confirm-discard-button")).toBeTruthy();
-    expect(queryByTestId("summary-save-button")).toBeNull();
-  });
-
-  it("Keep-logging on the discard variant routes back instead of cancelling", async () => {
-    mockUseLocalSearchParams.mockReturnValue({ intent: "discard" });
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    fireEvent.press(await findByTestId("summary-keep-button"));
-    expect(storage.getPendingMutations()).toHaveLength(0);
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(await findByTestId("summary-save-button")).toBeTruthy();
+    // No discard / keep-logging variants — the entire discard flow
+    // lives in the ActiveSession Alert.alert per legacy.
+    expect(queryByTestId("summary-discard-button")).toBeNull();
+    expect(queryByTestId("summary-keep-button")).toBeNull();
+    expect(queryByTestId("summary-confirm-discard-button")).toBeNull();
+    expect(queryByTestId("summary-discard-warning")).toBeNull();
   });
 
   it("Close button calls router.back", async () => {

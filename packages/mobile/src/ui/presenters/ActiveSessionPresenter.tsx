@@ -2,48 +2,33 @@
  * ActiveSessionPresenter — full-screen session UI. (M3, Stories
  * 002 + 005 + 007.)
  *
- * Layout:
- *   - SessionHeader at top (live duration + close).
- *   - Horizontal pageable FlatList of `SessionExerciseCard`s; one
- *     screen-wide page per non-substituted exercise. Tap-strip above
- *     the list lets the user jump to any exercise (Story-005 AC).
- *     Substituted rows render as a thin "Substituted" stub the user
- *     can scroll past — sets are preserved (Story-004 AC) but the row
- *     no longer takes a full-screen slot.
- *   - `RestTimerDisplay` overlays the bottom when active.
- *   - Footer with Discard + Finish CTAs.
- *
- * Discard tapping opens a confirmation `Popover` (M2 learning #9 —
- * Popover is fine for confirmations; pageSheet Modal is for multi-
- * step nav, used by the AddExercisePopover beneath).
- *
  * Ported 1:1 from `persistence-mobile/components/workouts/ActiveWorkoutScreen`
- * with the V2 Container/Presenter shape — all mutation handlers come
- * in as props from `ActiveSessionContainer`. /frontend-design polish
- * runs after the port lands, not during (project memory: port-then-revamp).
+ * — vertical `ScrollView` with all exercises stacked, header at top,
+ * "+ Add Exercise" link below the list, Discard / Complete buttons at
+ * the very bottom. Substituted exercises render in place with a
+ * "Substituted" badge so their sets stay visible (Story-004 AC).
+ *
+ * The Discard button delegates to the container, which fires a native
+ * `Alert.alert` ("Cancel Workout", "Are you sure...", Cancel + Discard)
+ * matching legacy `ActiveWorkoutModal.handleDiscardWorkout`. NO
+ * confirmation Popover, NO routed Summary screen for discard. The
+ * Summary screen is save-only.
+ *
+ * `RestTimerDisplay` overlays the bottom when active.
  *
  * Spec: specs/05-active-session/requirements.md STORY-002, STORY-005, STORY-007
- *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
+ *       persistence-mobile/components/workouts/ActiveWorkoutScreen
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useMemo } from "react";
 import {
-  Dimensions,
-  FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  type ViewToken,
 } from "react-native";
-import { Popover } from "@/ui/components/Popover";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
@@ -88,164 +73,125 @@ export type ActiveSessionPresenterProps = {
   onAddExercise: () => void;
   onDiscard: () => void;
   onFinish: () => void;
-  /** Optional override for tests that want a deterministic page width. */
-  pageWidth?: number;
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
-  const pageWidth = props.pageWidth ?? SCREEN_WIDTH;
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [discardVisible, setDiscardVisible] = useState(false);
-  const listRef = useRef<FlatList<SessionExercise>>(null);
-
-  // Active = non-substituted. Substituted rows still render so their
-  // sets remain visible per Story-004 AC, but they don't count toward
-  // the "Exercise N of M" indicator and don't get full-page slots.
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
     [props.exercises],
   );
-  const activeExercises = useMemo(
-    () => orderedExercises.filter((ex) => !ex.isSubstituted),
+  const activeExerciseCount = useMemo(
+    () => orderedExercises.filter((ex) => !ex.isSubstituted).length,
     [orderedExercises],
   );
-
-  // If the active list shrinks (substitution) below the current
-  // index, snap back to the new last page. Avoids an empty page after
-  // a swap on the trailing exercise.
-  useEffect(() => {
-    if (activeIndex >= activeExercises.length && activeExercises.length > 0) {
-      setActiveIndex(activeExercises.length - 1);
-    }
-  }, [activeExercises.length, activeIndex]);
-
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const first = viewableItems[0];
-      if (first && typeof first.index === "number") {
-        setActiveIndex(first.index);
-      }
-    },
-  ).current;
-
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 60,
-  }).current;
-
-  const jumpTo = useCallback(
-    (idx: number) => {
-      if (idx < 0 || idx >= activeExercises.length) return;
-      listRef.current?.scrollToIndex({ index: idx, animated: true });
-      setActiveIndex(idx);
-    },
-    [activeExercises.length],
-  );
-
-  const onConfirmDiscard = useCallback(() => {
-    setDiscardVisible(false);
-    props.onDiscard();
-  }, [props]);
-
-  const renderExercise = useCallback(
-    ({ item }: { item: SessionExercise }) => (
-      <View style={[styles.page, { width: pageWidth }]}>
-        <SessionExerciseCard
-          exercise={item}
-          previous={props.previousByExercise[item.id] ?? null}
-          onLogSet={() => props.onLogSet(item.id)}
-          onCompleteSet={(setId) => props.onCompleteSet(item.id, setId)}
-          onUpdateSet={(setId, patch) =>
-            props.onUpdateSet(item.id, setId, patch)
-          }
-          onRemoveSet={(setId) => props.onRemoveSet(item.id, setId)}
-          onSubstitute={() => props.onSubstitute(item.id)}
-          onTapExercise={() => props.onTapExercise(item.exerciseId)}
-        />
-      </View>
-    ),
-    [pageWidth, props],
-  );
-
-  const substitutedCount = orderedExercises.length - activeExercises.length;
 
   return (
     <View style={styles.container} testID="active-session-screen">
       <SessionHeader
         startedAt={props.startedAt}
         sessionName={props.sessionName}
-        exerciseIndex={activeExercises.length === 0 ? 0 : activeIndex + 1}
-        totalExercises={activeExercises.length}
+        // Vertical scroll — every active exercise is visible at once,
+        // so the legacy "Exercise N of M" caption no longer represents
+        // a current page. Pass the same value for index/total so the
+        // header line reads "<duration> · Exercise N of N" — i.e. just
+        // the count, no scroll-position implication.
+        exerciseIndex={activeExerciseCount}
+        totalExercises={activeExerciseCount}
         onClose={props.onClose}
       />
 
-      {activeExercises.length > 1 && (
-        <View style={styles.tabStrip} testID="exercise-tab-strip">
-          {activeExercises.map((ex, idx) => (
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {orderedExercises.length === 0 ? (
+          <View style={styles.emptyWrap} testID="active-session-empty">
+            <Text style={styles.emptyTitle}>No exercises yet</Text>
+            <Text style={styles.emptyBody}>
+              Add exercises from the library to start logging sets.
+            </Text>
             <TouchableOpacity
-              key={ex.id}
-              onPress={() => jumpTo(idx)}
-              style={[styles.tab, idx === activeIndex && styles.tabActive]}
-              testID={`exercise-tab-${idx}`}
-              accessibilityLabel={`Jump to ${ex.exerciseName}`}
+              onPress={props.onAddExercise}
+              style={styles.emptyAddButton}
+              testID="active-session-empty-add"
+              accessibilityLabel="Add exercise"
             >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  idx === activeIndex && styles.tabLabelActive,
-                ]}
-                numberOfLines={1}
-              >
-                {ex.exerciseName}
-              </Text>
+              <Ionicons name="add" size={18} color={Colors.text.primary} />
+              <Text style={styles.emptyAddLabel}>Add exercise</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      )}
+          </View>
+        ) : (
+          <View style={styles.exercisesContainer}>
+            {orderedExercises.map((ex) => (
+              <SessionExerciseCard
+                key={ex.id}
+                exercise={ex}
+                previous={props.previousByExercise[ex.id] ?? null}
+                onLogSet={() => props.onLogSet(ex.id)}
+                onCompleteSet={(setId) => props.onCompleteSet(ex.id, setId)}
+                onUpdateSet={(setId, patch) =>
+                  props.onUpdateSet(ex.id, setId, patch)
+                }
+                onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+                onSubstitute={() => props.onSubstitute(ex.id)}
+                onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+              />
+            ))}
+          </View>
+        )}
 
-      {activeExercises.length === 0 ? (
-        <View style={styles.emptyWrap} testID="active-session-empty">
-          <Text style={styles.emptyTitle}>No exercises yet</Text>
-          <Text style={styles.emptyBody}>
-            Add exercises from the library to start logging sets.
-          </Text>
-          <TouchableOpacity
-            onPress={props.onAddExercise}
-            style={styles.emptyAddButton}
-            testID="active-session-empty-add"
-            accessibilityLabel="Add exercise"
+        {orderedExercises.length > 0 && (
+          <View
+            style={styles.addExerciseSection}
+            testID="active-session-add-exercise-row"
           >
-            <Ionicons name="add" size={18} color={Colors.text.primary} />
-            <Text style={styles.emptyAddLabel}>Add exercise</Text>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              onPress={props.onAddExercise}
+              style={styles.addExerciseLink}
+              testID="active-session-add-exercise"
+              accessibilityLabel="Add exercise"
+            >
+              <Ionicons
+                name="add-circle-outline"
+                size={20}
+                color={Colors.primary.DEFAULT}
+              />
+              <Text style={styles.addExerciseText}>Add Exercise</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={styles.discardButton}
+            onPress={props.onDiscard}
+            testID="active-session-discard"
+            accessibilityLabel="Discard session"
+          >
+            <Ionicons
+              name="trash-outline"
+              size={20}
+              color={Colors.error.DEFAULT}
+            />
+            <Text style={styles.discardButtonText}>Discard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.completeButton}
+            onPress={props.onFinish}
+            testID="active-session-finish"
+            accessibilityLabel="Complete session"
+          >
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={20}
+              color={Colors.text.primary}
+            />
+            <Text style={styles.completeButtonText}>Complete</Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          ref={listRef}
-          data={activeExercises}
-          keyExtractor={(ex) => ex.id}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          renderItem={renderExercise}
-          getItemLayout={(_, index) => ({
-            length: pageWidth,
-            offset: pageWidth * index,
-            index,
-          })}
-          testID="exercise-pager"
-        />
-      )}
-
-      {substitutedCount > 0 && (
-        <Text style={styles.substitutedNote} testID="substituted-note">
-          {substitutedCount} substituted exercise
-          {substitutedCount === 1 ? "" : "s"} preserved in this session
-        </Text>
-      )}
+      </ScrollView>
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
@@ -256,114 +202,30 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         onExtend={props.restTimer.onExtend}
         onDismiss={props.restTimer.onDismiss}
       />
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.footerButton, styles.discardButton]}
-          onPress={() => setDiscardVisible(true)}
-          testID="active-session-discard"
-          accessibilityLabel="Discard session"
-        >
-          <Ionicons name="close" size={18} color={Colors.text.secondary} />
-          <Text style={styles.discardLabel}>Discard</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.footerButton, styles.finishButton]}
-          onPress={props.onFinish}
-          testID="active-session-finish"
-          accessibilityLabel="Finish session"
-        >
-          <Text style={styles.finishLabel}>Finish workout</Text>
-          <Ionicons
-            name="arrow-forward"
-            size={18}
-            color={Colors.text.primary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <Popover
-        visible={discardVisible}
-        onClose={() => setDiscardVisible(false)}
-        title="Discard this session?"
-        minHeight="30%"
-        maxHeight="40%"
-        content={
-          <Text style={styles.discardPrompt}>
-            Logged sets stay in your history but won&apos;t count toward
-            progress.
-          </Text>
-        }
-        footer={
-          <View style={styles.discardFooter}>
-            <TouchableOpacity
-              style={[styles.dialogButton, styles.dialogButtonGhost]}
-              onPress={() => setDiscardVisible(false)}
-              testID="active-session-discard-cancel"
-            >
-              <Text style={styles.dialogButtonGhostLabel}>Keep session</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dialogButton, styles.dialogButtonDanger]}
-              onPress={onConfirmDiscard}
-              testID="active-session-discard-confirm"
-            >
-              <Text style={styles.dialogButtonDangerLabel}>Discard</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
     </View>
   );
 }
 
+// Styles ported from legacy ActiveWorkoutScreen — same paddings,
+// borders, button geometry. Workouts-legacy theme keeps the colour
+// palette identical to the V1 app.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background.primary,
   },
-  tabStrip: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
+  scroll: { flex: 1 },
+  scrollContent: {
+    padding: Spacing.md,
   },
-  tab: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface.tertiary,
-    maxWidth: 140,
-  },
-  tabActive: {
-    backgroundColor: Colors.primary.DEFAULT,
-  },
-  tabLabel: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-  },
-  tabLabelActive: {
-    ...Typography.body2,
-    color: Colors.text.primary,
-    fontWeight: "600",
-  },
-  page: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.lg,
-  },
-  substitutedNote: {
-    ...Typography.caption,
-    color: Colors.text.tertiary,
-    textAlign: "center",
-    paddingVertical: Spacing.sm,
+  exercisesContainer: {
+    gap: Spacing.md,
   },
   emptyWrap: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xl,
   },
   emptyTitle: {
     ...Typography.h3,
@@ -391,70 +253,62 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontWeight: "600",
   },
-  footer: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.surface.border,
-    backgroundColor: Colors.surface.primary,
+  addExerciseSection: {
+    marginVertical: Spacing.lg,
   },
-  footerButton: {
+  divider: {
+    height: 1,
+    backgroundColor: Colors.surface.border,
+    marginBottom: Spacing.md,
+  },
+  addExerciseLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+  },
+  addExerciseText: {
+    ...Typography.body1,
+    color: Colors.primary.DEFAULT,
+    fontWeight: "600",
+  },
+  actionButtonsContainer: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    paddingBottom: Spacing.lg,
+  },
+  discardButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface.secondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.error.DEFAULT,
   },
-  discardButton: {
-    backgroundColor: Colors.surface.tertiary,
-  },
-  discardLabel: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-  },
-  finishButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    flex: 2,
-  },
-  finishLabel: {
+  discardButtonText: {
     ...Typography.body1,
-    color: Colors.text.primary,
+    color: Colors.error.DEFAULT,
     fontWeight: "600",
   },
-  discardPrompt: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-  },
-  discardFooter: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-  },
-  dialogButton: {
+  completeButton: {
     flex: 1,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.primary.DEFAULT,
+    borderRadius: 12,
   },
-  dialogButtonGhost: {
-    backgroundColor: Colors.surface.tertiary,
-  },
-  dialogButtonGhostLabel: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-  },
-  dialogButtonDanger: {
-    backgroundColor: Colors.error.DEFAULT,
-  },
-  dialogButtonDangerLabel: {
-    ...Typography.body2,
+  completeButtonText: {
+    ...Typography.body1,
     color: Colors.text.primary,
     fontWeight: "600",
   },

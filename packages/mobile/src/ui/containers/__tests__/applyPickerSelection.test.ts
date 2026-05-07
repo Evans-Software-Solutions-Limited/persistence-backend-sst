@@ -4,7 +4,11 @@
  * unresolved-row branches without rendering the picker tree.
  */
 
-import { applyPickerSelection } from "@/ui/containers/active-session-picker";
+import {
+  applyPickerSelection,
+  resolveLegacyExercise,
+} from "@/ui/containers/active-session-picker";
+import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { Exercise } from "@/domain/models/exercise";
 
@@ -192,5 +196,36 @@ describe("applyPickerSelection", () => {
     });
     expect(onAfter).not.toHaveBeenCalled();
     expect(storage.getActiveSession("user-1")?.exercises).toHaveLength(1);
+  });
+});
+
+describe("resolveLegacyExercise", () => {
+  it("returns null when the exercise is not in the cache", () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    expect(
+      resolveLegacyExercise(storage, api, { id: "missing", name: "Missing" }),
+    ).toBeNull();
+  });
+
+  it("returns the api-enriched exercise when the cache has it", () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    const cached = buildExercise({ id: "ex-bench", name: "Bench Press" });
+    storage.cacheExercises([cached]);
+    const enrichSpy = jest
+      .spyOn(api, "enrichExerciseLabels")
+      .mockImplementation((ex: Exercise) => ({
+        ...ex,
+        primaryMuscleGroupLabels: ["Chest"],
+      }));
+
+    const resolved = resolveLegacyExercise(storage, api, {
+      id: "ex-bench",
+      name: "Bench Press",
+    });
+    expect(resolved?.id).toBe("ex-bench");
+    expect(resolved?.primaryMuscleGroupLabels).toEqual(["Chest"]);
+    expect(enrichSpy).toHaveBeenCalledTimes(1);
   });
 });

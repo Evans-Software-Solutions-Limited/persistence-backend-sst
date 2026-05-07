@@ -49,7 +49,6 @@ export interface WorkoutsListPresenterProps {
   deletingWorkoutIds: Set<string>;
   onCreateWorkout: () => void;
   onBrowseExercises: () => void;
-  onQuickStart: () => void;
   onUpgrade: () => void;
   onSearchChange: (q: string) => void;
   onWorkoutPress: (w: WorkoutCardView) => void;
@@ -77,7 +76,6 @@ export function WorkoutsListPresenter({
   deletingWorkoutIds,
   onCreateWorkout,
   onBrowseExercises,
-  onQuickStart,
   onUpgrade,
   onSearchChange,
   onWorkoutPress,
@@ -87,13 +85,14 @@ export function WorkoutsListPresenter({
   onRetry,
   onRefresh,
 }: WorkoutsListPresenterProps) {
-  // Blocking error state when the cache is empty + refresh failed.
-  if (
-    error &&
-    filteredMyWorkouts.length === 0 &&
-    filteredExampleWorkouts.length === 0 &&
-    !isInitialLoading
-  ) {
+  // Blocking error state ONLY when the underlying cache is empty +
+  // refresh failed. We check unfiltered counts, not the search-
+  // filtered arrays — otherwise a user who's offline AND searching
+  // for a term with no matches would see a "Failed to load workouts"
+  // wall instead of their cached list with an empty search result.
+  // Cached-offline must always render the user's own data.
+  const cachedHasAnyWorkout = myAndAssignedCount > 0 || defaultCount > 0;
+  if (error && !cachedHasAnyWorkout && !isInitialLoading) {
     return (
       <ErrorState
         title="Failed to load workouts"
@@ -162,7 +161,6 @@ export function WorkoutsListPresenter({
           <QuickActions
             isAtLimit={isAtLimit}
             onCreateWorkout={onCreateWorkout}
-            onQuickStart={onQuickStart}
             onBrowseExercises={onBrowseExercises}
           />
         )}

@@ -43,14 +43,7 @@ const RECORD_TYPE_LABEL: Record<RecordType, string> = {
 
 export type SessionSummaryPresenterProps = {
   summary: SessionSummary;
-  /**
-   * Discard intent — when true, footer renders "Discard" / "Keep
-   * logging" instead of the default Save / Discard pair. Container
-   * routes both intents through the same screen.
-   */
-  intent: "save" | "discard";
   onSave: () => void;
-  onDiscard: () => void;
   onClose: () => void;
 };
 
@@ -74,8 +67,7 @@ const formatPRValue = (record: PersonalRecord): string => {
 };
 
 export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
-  const { summary, intent } = props;
-  const isSave = intent === "save";
+  const { summary } = props;
 
   return (
     <View style={styles.container} testID="session-summary-screen">
@@ -89,7 +81,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
           <Ionicons name="close" size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>
-          {isSave ? "Workout complete" : "Discard session?"}
+          Workout complete
         </Text>
         <View style={styles.spacer} />
       </View>
@@ -166,56 +158,17 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
             ))}
           </View>
         )}
-
-        {!isSave && (
-          <Text style={styles.discardWarning} testID="summary-discard-warning">
-            Logged sets stay in your history but won&apos;t count toward
-            progress.
-          </Text>
-        )}
       </ScrollView>
 
       <View style={styles.footer}>
-        {isSave ? (
-          <>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.secondaryButton]}
-              onPress={props.onDiscard}
-              testID="summary-discard-button"
-            >
-              <Text style={styles.secondaryLabel}>Discard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.primaryButton]}
-              onPress={props.onSave}
-              testID="summary-save-button"
-            >
-              <Text style={styles.primaryLabel}>Save workout</Text>
-              <Ionicons
-                name="checkmark"
-                size={18}
-                color={Colors.text.primary}
-              />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.secondaryButton]}
-              onPress={props.onSave}
-              testID="summary-keep-button"
-            >
-              <Text style={styles.secondaryLabel}>Keep logging</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.dangerButton]}
-              onPress={props.onDiscard}
-              testID="summary-confirm-discard-button"
-            >
-              <Text style={styles.primaryLabel}>Discard</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity
+          style={[styles.footerButton, styles.primaryButton]}
+          onPress={props.onSave}
+          testID="summary-save-button"
+        >
+          <Text style={styles.primaryLabel}>Save workout</Text>
+          <Ionicons name="checkmark" size={18} color={Colors.text.primary} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -310,12 +263,6 @@ const styles = StyleSheet.create({
     ...Typography.h4,
     color: Colors.warning.DEFAULT,
   },
-  discardWarning: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    textAlign: "center",
-    paddingVertical: Spacing.md,
-  },
   footer: {
     flexDirection: "row",
     paddingHorizontal: Spacing.md,
@@ -336,22 +283,10 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: Colors.primary.DEFAULT,
-    flex: 2,
   },
   primaryLabel: {
     ...Typography.body1,
     color: Colors.text.primary,
     fontWeight: "600",
-  },
-  secondaryButton: {
-    backgroundColor: Colors.surface.tertiary,
-  },
-  secondaryLabel: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-  },
-  dangerButton: {
-    backgroundColor: Colors.error.DEFAULT,
-    flex: 2,
   },
 });

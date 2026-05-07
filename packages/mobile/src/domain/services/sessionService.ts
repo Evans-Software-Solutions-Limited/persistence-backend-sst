@@ -196,6 +196,15 @@ export function completeSet(
  * `isSubstituted: true` (sets preserved per Story-004 AC); new row is
  * inserted at `oldSortOrder + 1` and downstream rows shift by +1.
  *
+ * The new row is seeded with the SAME number of empty sets the old
+ * row had, mirroring legacy `useActiveWorkout.swapExercise` (lines
+ * 967-972 / 1016-1021):
+ *
+ *   const clearedSets = Array.from({ length: exercise.targetSets }, …);
+ *
+ * Without this seeding the user has to re-add every set after a swap,
+ * which is the regression the user flagged.
+ *
  * Per EXECUTION_PLAN § 3.4: mutate the in-memory model only — the
  * storage layer sees the full session via `cacheActiveSession`, never
  * partial sortOrder updates.
@@ -210,8 +219,15 @@ export function substituteExercise(
   if (!oldRow) return session;
 
   const oldSortOrder = oldRow.sortOrder;
+  const newRowId = `local-${idFactory()}`;
+  // Preserve the old row's set count — same number of empty,
+  // unchecked rows so the user lands on the new exercise with their
+  // expected log slots already laid out.
+  const seededSets: ExerciseSet[] = oldRow.sets.map((_, idx) =>
+    emptySet(newRowId, idx + 1, idFactory),
+  );
   const newRow: SessionExercise = {
-    id: `local-${idFactory()}`,
+    id: newRowId,
     sessionId: session.id,
     exerciseId: newExercise.id,
     exerciseName: newExercise.name,
@@ -220,7 +236,7 @@ export function substituteExercise(
     isSubstituted: false,
     originalExerciseId: oldRow.exerciseId,
     notes: null,
-    sets: [],
+    sets: seededSets,
   };
 
   const exercises = session.exercises

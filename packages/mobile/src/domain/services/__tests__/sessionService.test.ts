@@ -334,10 +334,42 @@ describe("substituteExercise", () => {
     expect(updated.exercises[1].originalExerciseId).toBe(oldExerciseId);
     expect(updated.exercises[1].sortOrder).toBe(1);
     expect(updated.exercises[1].isSubstituted).toBe(false);
-    expect(updated.exercises[1].sets).toEqual([]);
+
+    // Legacy parity: new row seeds the SAME number of empty sets as
+    // the old row (was 3 from the workout template). Each set is
+    // unchecked, no values, contiguous setNumbers.
+    expect(updated.exercises[1].sets).toHaveLength(3);
+    for (let i = 0; i < 3; i++) {
+      const set = updated.exercises[1].sets[i];
+      expect(set.setNumber).toBe(i + 1);
+      expect(set.isCompleted).toBe(false);
+      expect(set.weightKg).toBeNull();
+      expect(set.reps).toBeNull();
+      expect(set.rpe).toBeNull();
+      expect(set.sessionExerciseId).toBe("local-id900");
+    }
 
     // Downstream row shifted from 1 → 2.
     expect(updated.exercises[2].sortOrder).toBe(2);
+  });
+
+  it("seeds zero sets when the substituted exercise had zero sets", () => {
+    // Quick Start session where the exercise was added with no sets
+    // → swap should produce a row with no sets, not crash.
+    const session = createEmptySession(ctx(), idFactory());
+    const seeded = addExerciseToSession(
+      session,
+      makeExercise({ id: "ex-bench" }),
+      idFactory(50),
+    );
+    const targetId = seeded.exercises[0].id;
+    const updated = substituteExercise(
+      seeded,
+      targetId,
+      makeExercise({ id: "ex-incline" }),
+      idFactory(900),
+    );
+    expect(updated.exercises[1].sets).toEqual([]);
   });
 
   it("returns the session unchanged when the target id is not found", () => {

@@ -45,10 +45,9 @@ const baseProps = {
   onAddExercise: jest.fn(),
   onDiscard: jest.fn(),
   onFinish: jest.fn(),
-  pageWidth: 390,
 };
 
-describe("ActiveSessionPresenter", () => {
+describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -63,7 +62,7 @@ describe("ActiveSessionPresenter", () => {
     expect(props.onAddExercise).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the tab strip with multiple exercises", () => {
+  it("stacks every exercise vertically (no pager / tab-strip)", () => {
     const props = {
       ...baseProps,
       exercises: [
@@ -74,33 +73,26 @@ describe("ActiveSessionPresenter", () => {
           exerciseName: "Row",
           sortOrder: 1,
         }),
+        buildExercise({
+          id: "se-3",
+          exerciseId: "ex-pull",
+          exerciseName: "Pulldown",
+          sortOrder: 2,
+        }),
       ],
     };
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    expect(getByTestId("exercise-tab-strip")).toBeTruthy();
-    expect(getByTestId("exercise-tab-0")).toBeTruthy();
-    expect(getByTestId("exercise-tab-1")).toBeTruthy();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(getByTestId("session-exercise-se-2")).toBeTruthy();
+    expect(getByTestId("session-exercise-se-3")).toBeTruthy();
+    // No pager controls.
+    expect(queryByTestId("exercise-pager")).toBeNull();
+    expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
-  it("tap-strip jumpTo bounds-checks: pressing a tab in range scrolls without crashing", () => {
-    const props = {
-      ...baseProps,
-      exercises: [
-        buildExercise({ id: "se-1" }),
-        buildExercise({ id: "se-2", sortOrder: 1 }),
-      ],
-    };
-    const { getByTestId } = renderWithTheme(
-      <ActiveSessionPresenter {...props} />,
-    );
-    fireEvent.press(getByTestId("exercise-tab-1"));
-    // Re-render is internal — assert the screen still mounts.
-    expect(getByTestId("active-session-screen")).toBeTruthy();
-  });
-
-  it("renders the substituted-rows note when at least one exercise is substituted", () => {
+  it("renders substituted exercises in place (sets stay visible)", () => {
     const props = {
       ...baseProps,
       exercises: [
@@ -113,41 +105,36 @@ describe("ActiveSessionPresenter", () => {
         }),
       ],
     };
-    const { getByTestId, getByText } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    expect(getByTestId("substituted-note")).toBeTruthy();
-    expect(getByText(/1 substituted exercise/)).toBeTruthy();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(getByTestId("session-exercise-se-2")).toBeTruthy();
   });
 
-  it("pluralises the substituted note when multiple are substituted", () => {
-    const props = {
-      ...baseProps,
-      exercises: [
-        buildExercise({ id: "se-1", isSubstituted: true }),
-        buildExercise({ id: "se-2", isSubstituted: true, sortOrder: 1 }),
-        buildExercise({
-          id: "se-3",
-          exerciseId: "ex-row",
-          exerciseName: "Row",
-          sortOrder: 2,
-        }),
-      ],
-    };
-    const { getByText } = renderWithTheme(
-      <ActiveSessionPresenter {...props} />,
+  it("renders the bottom Add Exercise link when at least one exercise exists", () => {
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...baseProps} />,
     );
-    expect(getByText(/2 substituted exercises/)).toBeTruthy();
+    expect(getByTestId("active-session-add-exercise-row")).toBeTruthy();
+    fireEvent.press(getByTestId("active-session-add-exercise"));
+    expect(baseProps.onAddExercise).toHaveBeenCalledTimes(1);
   });
 
-  it("Discard footer button opens the confirmation Popover and Cancel returns", () => {
-    const { getByTestId, queryByTestId } = renderWithTheme(
+  it("Discard footer button calls onDiscard directly (Alert.alert lives in the container)", () => {
+    const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...baseProps} />,
     );
     fireEvent.press(getByTestId("active-session-discard"));
-    fireEvent.press(getByTestId("active-session-discard-cancel"));
-    expect(baseProps.onDiscard).not.toHaveBeenCalled();
-    expect(queryByTestId("active-session-screen")).toBeTruthy();
+    expect(baseProps.onDiscard).toHaveBeenCalledTimes(1);
+  });
+
+  it("Finish footer button calls onFinish", () => {
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...baseProps} />,
+    );
+    fireEvent.press(getByTestId("active-session-finish"));
+    expect(baseProps.onFinish).toHaveBeenCalledTimes(1);
   });
 
   it("RestTimerDisplay renders when restTimer.isActive", () => {

@@ -1,28 +1,26 @@
 /**
- * SessionSummaryContainer — owns summary computation + Save/Discard
- * intent for the `/(app)/session/summary` route. (M3, Stories 006 + 007.)
+ * SessionSummaryContainer — save-only summary screen for the
+ * `/(app)/session/summary` route. (M3, Story-006.)
  *
  * Reads the active session from SQLite, computes
  * `sessionService.calculateSummary` + `detectPersonalRecords` against
  * the cached `personal_records` slice (predictive PR detection per
- * design.md § hybrid). On Save → `completeSessionCommand`; on Discard
- * → `cancelSessionCommand`. Both enqueue a single `recordSession`
- * intent (FRONTEND_BRIEF § Decision recap).
+ * design.md § hybrid). Save → `completeSessionCommand` → dismiss the
+ * modal stack.
  *
- * `?intent=discard` query param flips the screen into the
- * Discard-confirmation variant — that path is also reachable via the
- * session screen's footer Discard button.
+ * The Discard flow does NOT route through this screen — that's a
+ * native `Alert.alert` on the active-session screen per legacy
+ * (persistence-mobile/components/workouts/ActiveWorkoutModal.tsx:514).
+ * PR / volume / completion stats only ever render after a successful
+ * save.
  *
- * Spec: specs/05-active-session/requirements.md STORY-006, STORY-007
+ * Spec: specs/05-active-session/requirements.md STORY-006
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 8
  */
 
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import { useCallback, useMemo } from "react";
-import {
-  cancelSessionCommand,
-  completeSessionCommand,
-} from "@/application/commands/session";
+import { completeSessionCommand } from "@/application/commands/session";
 import {
   calculateSummary,
   detectPersonalRecords,
@@ -45,9 +43,6 @@ const EMPTY_SUMMARY: SessionSummary = {
 export function SessionSummaryContainer() {
   const { storage } = useAdapters();
   const { session, userId } = useActiveSession();
-  const params = useLocalSearchParams<{ intent?: string }>();
-  const intent: "save" | "discard" =
-    params.intent === "discard" ? "discard" : "save";
 
   const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -72,21 +67,9 @@ export function SessionSummaryContainer() {
 
   const onSave = useCallback(() => {
     if (!userId) return;
-    if (intent === "discard") {
-      // From the discard-variant footer, "Keep logging" returns to
-      // the session screen.
-      router.back();
-      return;
-    }
     completeSessionCommand({ storage, userId });
     // Modal stack collapses to whatever pushed the session — typically
     // the workouts tab.
-    router.dismissAll();
-  }, [intent, userId, storage]);
-
-  const onDiscard = useCallback(() => {
-    if (!userId) return;
-    cancelSessionCommand({ storage, userId });
     router.dismissAll();
   }, [userId, storage]);
 
@@ -103,9 +86,7 @@ export function SessionSummaryContainer() {
   return (
     <SessionSummaryPresenter
       summary={summary}
-      intent={intent}
       onSave={onSave}
-      onDiscard={onDiscard}
       onClose={onClose}
     />
   );

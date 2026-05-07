@@ -16,7 +16,6 @@ const baseSummary: SessionSummary = {
 
 const handlers = {
   onSave: jest.fn(),
-  onDiscard: jest.fn(),
   onClose: jest.fn(),
 };
 
@@ -25,7 +24,6 @@ describe("SessionSummaryPresenter", () => {
     const { getByText } = renderWithTheme(
       <SessionSummaryPresenter
         summary={{ ...baseSummary, duration: 25 * 60 }}
-        intent="save"
         {...handlers}
       />,
     );
@@ -36,7 +34,6 @@ describe("SessionSummaryPresenter", () => {
     const { getByText } = renderWithTheme(
       <SessionSummaryPresenter
         summary={{ ...baseSummary, duration: 3600 + 5 * 60 }}
-        intent="save"
         {...handlers}
       />,
     );
@@ -47,7 +44,6 @@ describe("SessionSummaryPresenter", () => {
     const { getByText } = renderWithTheme(
       <SessionSummaryPresenter
         summary={{ ...baseSummary, totalVolume: 2500 }}
-        intent="save"
         {...handlers}
       />,
     );
@@ -69,7 +65,6 @@ describe("SessionSummaryPresenter", () => {
     const { getByText } = renderWithTheme(
       <SessionSummaryPresenter
         summary={{ ...baseSummary, personalRecords: [pr] }}
-        intent="save"
         {...handlers}
       />,
     );
@@ -93,7 +88,6 @@ describe("SessionSummaryPresenter", () => {
     const { getByText, queryByText } = renderWithTheme(
       <SessionSummaryPresenter
         summary={{ ...baseSummary, personalRecords: [pr] }}
-        intent="save"
         {...handlers}
       />,
     );

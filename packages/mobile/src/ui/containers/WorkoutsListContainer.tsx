@@ -129,13 +129,11 @@ export function WorkoutsListContainer() {
     router.push("/(app)/(tabs)/exercises" as never);
   }, []);
 
-  // M3: Quick Start opens an empty active session — no template; user
-  // adds exercises on-the-fly via the picker. Routes through the
-  // /(app)/session modal which calls `startSessionCommand({})` when
-  // no `?workoutId=` is present (Story-009).
-  const onQuickStart = useCallback(() => {
-    router.push("/(app)/session" as never);
-  }, []);
+  // M3: Quick Start (Story-009) is intentionally NOT surfaced on the
+  // workouts page — legacy never had this CTA and we're keeping
+  // parity. The /(app)/session route still resolves an empty
+  // `?workoutId=` to a Quick Start session, so a future deep link or
+  // tab-header CTA can opt in without code changes here.
 
   const onUpgrade = useCallback(() => {
     router.push("/coming-soon?feature=subscription" as never);
@@ -223,7 +221,6 @@ export function WorkoutsListContainer() {
       deletingWorkoutIds={deletingWorkoutIds}
       onCreateWorkout={onCreateWorkout}
       onBrowseExercises={onBrowseExercises}
-      onQuickStart={onQuickStart}
       onUpgrade={onUpgrade}
       onSearchChange={onSearchChange}
       onWorkoutPress={onWorkoutPress}
