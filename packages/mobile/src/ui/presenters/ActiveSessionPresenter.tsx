@@ -32,6 +32,7 @@ import {
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
+import { SupersetGroupCard } from "@/ui/components/session/SupersetGroupCard";
 import {
   BorderRadius,
   Colors,
@@ -73,9 +74,58 @@ export type ActiveSessionPresenterProps = {
   onRemoveExercise: (sessionExerciseId: string) => void;
   onTapExercise: (exerciseId: string) => void;
   onAddExercise: () => void;
+  /**
+   * Add an empty set to every exercise in a superset group at the
+   * same setNumber. Container delegates to `addSupersetSetCommand`
+   * so paired logging stays in sync (Story-005 AC).
+   */
+  onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
   onDiscard: () => void;
   onFinish: () => void;
 };
+
+type DisplayItem =
+  | { kind: "exercise"; exercise: SessionExercise }
+  | {
+      kind: "superset";
+      supersetGroup: number;
+      exercises: SessionExercise[];
+    };
+
+/**
+ * Group consecutive exercises sharing the same `supersetGroup` into a
+ * single `superset` display item. Mirrors legacy `ActiveWorkoutScreen`
+ * lines 83-113. Substituted rows are excluded from the rendered list
+ * for now — they're still in the source array (sets preserved) but
+ * not surfaced. Each `supersetGroup` is rendered exactly once even if
+ * the group's exercises are interleaved with non-superset rows.
+ */
+function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
+  const sorted = [...exercises].sort((a, b) => a.sortOrder - b.sortOrder);
+  const usedGroups = new Set<number>();
+  const items: DisplayItem[] = [];
+  for (const ex of sorted) {
+    if (ex.isSubstituted) continue;
+    const group = ex.supersetGroup;
+    if (group != null) {
+      if (usedGroups.has(group)) continue;
+      const peers = sorted.filter(
+        (candidate) =>
+          candidate.supersetGroup === group && !candidate.isSubstituted,
+      );
+      usedGroups.add(group);
+      // A "superset" of one is rendered as a plain exercise card.
+      if (peers.length < 2) {
+        items.push({ kind: "exercise", exercise: ex });
+        continue;
+      }
+      items.push({ kind: "superset", supersetGroup: group, exercises: peers });
+      continue;
+    }
+    items.push({ kind: "exercise", exercise: ex });
+  }
+  return items;
+}
 
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const orderedExercises = useMemo(
@@ -85,6 +135,10 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const activeExerciseCount = useMemo(
     () => orderedExercises.filter((ex) => !ex.isSubstituted).length,
     [orderedExercises],
+  );
+  const displayItems = useMemo(
+    () => buildDisplayItems(props.exercises),
+    [props.exercises],
   );
 
   return (
@@ -125,23 +179,44 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
           </View>
         ) : (
           <View style={styles.exercisesContainer}>
-            {orderedExercises.map((ex) => (
-              <SessionExerciseCard
-                key={ex.id}
-                exercise={ex}
-                previous={props.previousByExercise[ex.id] ?? null}
-                onLogSet={() => props.onLogSet(ex.id)}
-                onCompleteSet={(setId) => props.onCompleteSet(ex.id, setId)}
-                onUpdateSet={(setId, patch) =>
-                  props.onUpdateSet(ex.id, setId, patch)
-                }
-                onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
-                onOpenNotes={() => props.onOpenNotes(ex.id)}
-                onSubstitute={() => props.onSubstitute(ex.id)}
-                onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-                onTapExercise={() => props.onTapExercise(ex.exerciseId)}
-              />
-            ))}
+            {displayItems.map((item) => {
+              if (item.kind === "exercise") {
+                const ex = item.exercise;
+                return (
+                  <SessionExerciseCard
+                    key={ex.id}
+                    exercise={ex}
+                    previous={props.previousByExercise[ex.id] ?? null}
+                    onLogSet={() => props.onLogSet(ex.id)}
+                    onCompleteSet={(setId) => props.onCompleteSet(ex.id, setId)}
+                    onUpdateSet={(setId, patch) =>
+                      props.onUpdateSet(ex.id, setId, patch)
+                    }
+                    onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+                    onOpenNotes={() => props.onOpenNotes(ex.id)}
+                    onSubstitute={() => props.onSubstitute(ex.id)}
+                    onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+                    onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+                  />
+                );
+              }
+              return (
+                <SupersetGroupCard
+                  key={`superset-${item.supersetGroup}`}
+                  supersetGroup={item.supersetGroup}
+                  exercises={item.exercises}
+                  previousByExercise={props.previousByExercise}
+                  onLogSupersetSet={props.onLogSupersetSet}
+                  onCompleteSet={props.onCompleteSet}
+                  onUpdateSet={props.onUpdateSet}
+                  onRemoveSet={props.onRemoveSet}
+                  onOpenNotes={props.onOpenNotes}
+                  onSubstitute={props.onSubstitute}
+                  onRemoveExercise={props.onRemoveExercise}
+                  onTapExercise={props.onTapExercise}
+                />
+              );
+            })}
           </View>
         )}
 

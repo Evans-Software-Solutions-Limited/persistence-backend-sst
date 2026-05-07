@@ -7,16 +7,17 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 const buildExercise = (
   overrides: Partial<SessionExercise> = {},
 ): SessionExercise => ({
-  id: overrides.id ?? "se-1",
+  id: "se-1",
   sessionId: "local-1",
-  exerciseId: overrides.exerciseId ?? "ex-bench",
-  exerciseName: overrides.exerciseName ?? "Bench Press",
-  sortOrder: overrides.sortOrder ?? 0,
+  exerciseId: "ex-bench",
+  exerciseName: "Bench Press",
+  sortOrder: 0,
   supersetGroup: null,
-  isSubstituted: overrides.isSubstituted ?? false,
+  isSubstituted: false,
   originalExerciseId: null,
   notes: null,
-  sets: overrides.sets ?? [],
+  sets: [],
+  ...overrides,
 });
 
 const baseRestTimer = {
@@ -44,6 +45,7 @@ const baseProps = {
   onSubstitute: jest.fn(),
   onRemoveExercise: jest.fn(),
   onTapExercise: jest.fn(),
+  onLogSupersetSet: jest.fn(),
   onAddExercise: jest.fn(),
   onDiscard: jest.fn(),
   onFinish: jest.fn(),
@@ -94,7 +96,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
-  it("renders substituted exercises in place (sets stay visible)", () => {
+  it("hides substituted exercises from the active screen (legacy parity — sets are preserved in storage for the bulk-record flush)", () => {
     const props = {
       ...baseProps,
       exercises: [
@@ -107,10 +109,10 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         }),
       ],
     };
-    const { getByTestId } = renderWithTheme(
+    const { queryByTestId, getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
     expect(getByTestId("session-exercise-se-2")).toBeTruthy();
   });
 
@@ -121,6 +123,88 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(getByTestId("active-session-add-exercise-row")).toBeTruthy();
     fireEvent.press(getByTestId("active-session-add-exercise"));
     expect(baseProps.onAddExercise).toHaveBeenCalledTimes(1);
+  });
+
+  it("groups exercises that share a supersetGroup into a single SupersetGroupCard (Story-005)", () => {
+    const props = {
+      ...baseProps,
+      exercises: [
+        buildExercise({
+          id: "se-1",
+          exerciseId: "ex-bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+        }),
+        buildExercise({
+          id: "se-2",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+        }),
+        buildExercise({
+          id: "se-3",
+          exerciseId: "ex-curl",
+          exerciseName: "Curl",
+          sortOrder: 2,
+        }),
+      ],
+    };
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+    // The grouped card renders ONCE with both peers inside.
+    expect(getByTestId("superset-group-1")).toBeTruthy();
+    // Solo exercise renders as its own card.
+    expect(getByTestId("session-exercise-se-3")).toBeTruthy();
+    // Each peer card still exists (rendered inside the group).
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(getByTestId("session-exercise-se-2")).toBeTruthy();
+    // No second copy of the superset group.
+    expect(queryByTestId("superset-group-2")).toBeNull();
+  });
+
+  it("Add paired set button on a SupersetGroupCard fires onLogSupersetSet with all peer ids", () => {
+    const props = {
+      ...baseProps,
+      exercises: [
+        buildExercise({
+          id: "se-1",
+          exerciseId: "ex-bench",
+          supersetGroup: 1,
+        }),
+        buildExercise({
+          id: "se-2",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+        }),
+      ],
+    };
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+    fireEvent.press(getByTestId("superset-1-add-set"));
+    expect(props.onLogSupersetSet).toHaveBeenCalledWith(["se-1", "se-2"]);
+  });
+
+  it("renders a 'superset' of one as a plain exercise card, not a grouped card", () => {
+    const props = {
+      ...baseProps,
+      exercises: [
+        buildExercise({
+          id: "se-1",
+          exerciseId: "ex-bench",
+          supersetGroup: 1,
+        }),
+      ],
+    };
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("superset-group-1")).toBeNull();
   });
 
   it("Discard footer button calls onDiscard directly (Alert.alert lives in the container)", () => {

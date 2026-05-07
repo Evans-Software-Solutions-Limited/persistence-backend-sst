@@ -7,6 +7,7 @@
 import {
   applyPickerSelection,
   resolveLegacyExercise,
+  resolveSubstituteMuscleFilter,
 } from "@/ui/containers/active-session-picker";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -227,5 +228,59 @@ describe("resolveLegacyExercise", () => {
     expect(resolved?.id).toBe("ex-bench");
     expect(resolved?.primaryMuscleGroupLabels).toEqual(["Chest"]);
     expect(enrichSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveSubstituteMuscleFilter", () => {
+  it("returns undefined when mode is null (no picker open)", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(resolveSubstituteMuscleFilter(null, [], storage)).toBeUndefined();
+  });
+
+  it("returns undefined for the add mode (no muscle filter on add)", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleFilter({ kind: "add" }, [], storage),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the source row isn't in the session", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleFilter(
+        { kind: "substitute", oldSessionExerciseId: "missing" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the source exercise isn't in the cached library", () => {
+    const storage = new InMemoryStorageAdapter();
+    // No cacheExercises call → cache miss.
+    expect(
+      resolveSubstituteMuscleFilter(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns the source exercise's primaryMuscleGroups when cached", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({
+        id: "ex-bench",
+        primaryMuscleGroups: ["chest", "shoulders"],
+      }),
+    ]);
+    expect(
+      resolveSubstituteMuscleFilter(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toEqual(["chest", "shoulders"]);
   });
 });

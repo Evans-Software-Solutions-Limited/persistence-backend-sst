@@ -11,13 +11,17 @@
 import {
   addExerciseToSession,
   addSetToExercise,
+  addSupersetSet,
   calculateSummary,
   calculateVolume,
   completeSet,
   createEmptySession,
   createSessionFromWorkout,
   detectPersonalRecords,
+  removeExerciseFromSession,
+  removeSupersetSet,
   renumberSets,
+  setExerciseNotes,
   substituteExercise,
 } from "../sessionService";
 import type { Exercise } from "@/domain/models/exercise";
@@ -745,6 +749,42 @@ describe("detectPersonalRecords", () => {
     ).toEqual([]);
   });
 
+  it("keeps the higher previous record when iteration sees a lower one second", () => {
+    // Exercises the `current != null && rec.value > current` is FALSE
+    // branch — i.e. previous1RmByExercise.get returns 200, the next
+    // record is 50, so we skip the set.
+    const session = sessionWithBench(120, 5);
+    const previous: PersonalRecord[] = [
+      {
+        id: "pr-high",
+        userId: "user-1",
+        exerciseId: "ex-bench",
+        exerciseName: "Bench Press",
+        recordType: "1rm",
+        value: 200,
+        achievedAt: "2026-04-01T00:00:00.000Z",
+        sessionId: "old-1",
+        setId: null,
+      },
+      {
+        id: "pr-low",
+        userId: "user-1",
+        exerciseId: "ex-bench",
+        exerciseName: "Bench Press",
+        recordType: "1rm",
+        value: 50,
+        achievedAt: "2026-03-01T00:00:00.000Z",
+        sessionId: "old-2",
+        setId: null,
+      },
+    ];
+    // 200 stays as the comparison floor, 120*1.something < 200 → no
+    // PR emitted.
+    expect(
+      detectPersonalRecords(session, previous, ctx(), idFactory(900)),
+    ).toEqual([]);
+  });
+
   it("ignores non-1rm record types in previous history (M3 only writes 1rm)", () => {
     const session = sessionWithBench(120, 5);
     const previous: PersonalRecord[] = [
@@ -764,5 +804,141 @@ describe("detectPersonalRecords", () => {
     expect(
       detectPersonalRecords(session, previous, ctx(), idFactory(900)),
     ).toHaveLength(1);
+  });
+});
+
+describe("removeExerciseFromSession", () => {
+  const seedSession = (
+    exercises: WorkoutSession["exercises"],
+  ): WorkoutSession =>
+    addExerciseToSession.bind(null) as unknown as WorkoutSession & never;
+  const mkSession = (
+    exercises: WorkoutSession["exercises"],
+  ): WorkoutSession => ({
+    ...createEmptySession(ctx(), idFactory()),
+    exercises,
+  });
+  const mkExercise = (
+    id: string,
+    supersetGroup: number | null = null,
+  ): WorkoutSession["exercises"][number] => ({
+    id,
+    sessionId: "local-1",
+    exerciseId: id,
+    exerciseName: id,
+    sortOrder: 0,
+    supersetGroup,
+    isSubstituted: false,
+    originalExerciseId: null,
+    notes: null,
+    sets: [],
+  });
+
+  void seedSession;
+
+  it("returns the same session when the id doesn't match", () => {
+    const session = mkSession([mkExercise("se-1")]);
+    expect(removeExerciseFromSession(session, "missing")).toBe(session);
+  });
+
+  it("drops the targeted exercise", () => {
+    const session = mkSession([mkExercise("se-1"), mkExercise("se-2")]);
+    const updated = removeExerciseFromSession(session, "se-1");
+    expect(updated.exercises.map((e) => e.id)).toEqual(["se-2"]);
+  });
+
+  it("ungroups the survivor when only one peer remains in the superset", () => {
+    const session = mkSession([mkExercise("se-1", 1), mkExercise("se-2", 1)]);
+    const updated = removeExerciseFromSession(session, "se-1");
+    expect(updated.exercises[0].supersetGroup).toBeNull();
+  });
+
+  it("keeps the supersetGroup intact when 2+ peers remain", () => {
+    const session = mkSession([
+      mkExercise("se-1", 1),
+      mkExercise("se-2", 1),
+      mkExercise("se-3", 1),
+    ]);
+    const updated = removeExerciseFromSession(session, "se-1");
+    expect(updated.exercises.map((e) => e.supersetGroup)).toEqual([1, 1]);
+  });
+});
+
+describe("setExerciseNotes", () => {
+  it("sets notes on the matching exercise", () => {
+    const session: WorkoutSession = {
+      ...createEmptySession(ctx(), idFactory()),
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex",
+          exerciseName: "ex",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    };
+    const updated = setExerciseNotes(session, "se-1", "go heavy");
+    expect(updated.exercises[0].notes).toBe("go heavy");
+  });
+
+  it("is a no-op when the id doesn't match", () => {
+    const session: WorkoutSession = {
+      ...createEmptySession(ctx(), idFactory()),
+      exercises: [],
+    };
+    const updated = setExerciseNotes(session, "missing", "go heavy");
+    expect(updated.exercises).toEqual([]);
+  });
+});
+
+describe("addSupersetSet", () => {
+  const mkSession = (
+    exercises: WorkoutSession["exercises"],
+  ): WorkoutSession => ({
+    ...createEmptySession(ctx(), idFactory()),
+    exercises,
+  });
+
+  it("returns the same session when sessionExerciseIds is empty", () => {
+    const session = mkSession([]);
+    expect(addSupersetSet(session, [], idFactory(900))).toBe(session);
+  });
+
+  it("returns the same session when no exercises match", () => {
+    const session = mkSession([
+      {
+        id: "se-1",
+        sessionId: "local-1",
+        exerciseId: "ex-1",
+        exerciseName: "ex-1",
+        sortOrder: 0,
+        supersetGroup: 1,
+        isSubstituted: false,
+        originalExerciseId: null,
+        notes: null,
+        sets: [],
+      },
+    ]);
+    expect(addSupersetSet(session, ["nope"], idFactory(900))).toBe(session);
+  });
+});
+
+describe("removeSupersetSet", () => {
+  const mkSession = (
+    exercises: WorkoutSession["exercises"],
+  ): WorkoutSession => ({
+    ...createEmptySession(ctx(), idFactory()),
+    exercises,
+  });
+
+  it("returns the same session when sessionExerciseIds is empty", () => {
+    const session = mkSession([]);
+    expect(removeSupersetSet(session, [], 1)).toBe(session);
   });
 });

@@ -799,6 +799,170 @@ describe("ActiveSessionContainer", () => {
     expect(cached?.exercises).toEqual([]);
   });
 
+  it("Notes button opens the popover; Save fires setExerciseNotesCommand", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-exercise-notes"));
+    fireEvent.changeText(
+      await findByTestId("exercise-notes-input"),
+      "elbows in",
+    );
+    fireEvent.press(await findByTestId("exercise-notes-save"));
+    await waitFor(() => {
+      expect(storage.getActiveSession("user-1")?.exercises[0].notes).toBe(
+        "elbows in",
+      );
+    });
+  });
+
+  it("Remove exercise button shows Alert.alert; confirming fires removeExerciseCommand", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-2",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findAllByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    const removeButtons = await findAllByTestId("session-exercise-remove");
+    fireEvent.press(removeButtons[0]);
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Remove exercise",
+      expect.any(String),
+      expect.any(Array),
+    );
+
+    const buttons = (alertSpy.mock.calls.at(-1)?.[2] ?? []) as {
+      text: string;
+      style?: string;
+      onPress?: () => void;
+    }[];
+    buttons.find((b) => b.style === "destructive")?.onPress?.();
+
+    await waitFor(() => {
+      expect(storage.getActiveSession("user-1")?.exercises).toHaveLength(1);
+    });
+  });
+
+  it("Add paired set on a superset card fires addSupersetSetCommand for all peer ids", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-1-add-set"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets).toHaveLength(1);
+      expect(cached?.exercises[1].sets).toHaveLength(1);
+    });
+  });
+
   it("renders the empty-state Add CTA when the session has no exercises", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

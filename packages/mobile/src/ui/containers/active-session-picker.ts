@@ -56,6 +56,32 @@ export function resolveLegacyExercise(
 }
 
 /**
+ * Resolve the substitute picker's muscle-group filter. When the user
+ * taps Substitute on a session row, we narrow the picker to exercises
+ * that share at least one primary muscle group with the original
+ * (Story-004 AC: "Opens exercise picker filtered by same muscle
+ * group"). Returns undefined when:
+ *   - the picker is not in substitute mode
+ *   - the source exercise's row isn't in the session anymore
+ *   - the source exercise isn't in the local cache (the picker then
+ *     falls back to the unfiltered library)
+ *
+ * Pure helper extracted from the container so the substitute /
+ * fallback / no-mode branches are unit-testable without rendering.
+ */
+export function resolveSubstituteMuscleFilter(
+  mode: ActiveSessionPickerMode,
+  exercises: readonly { id: string; exerciseId: string }[],
+  storage: StoragePort,
+): readonly string[] | undefined {
+  if (mode?.kind !== "substitute") return undefined;
+  const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
+  if (!oldRow) return undefined;
+  const cached = storage.getCachedExercise(oldRow.exerciseId);
+  return cached?.primaryMuscleGroups ?? undefined;
+}
+
+/**
  * - Empty `rows` → no-op (caller resets pickerMode).
  * - `substitute` mode → resolve the first row, fire
  *   `substituteExerciseCommand`, call `onAfter`.

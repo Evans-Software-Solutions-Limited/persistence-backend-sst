@@ -73,6 +73,71 @@ describe("SessionExerciseCard", () => {
     expect(queryByTestId("quickfill-suggestion")).toBeTruthy();
   });
 
+  it("Tapping QuickFillSuggestion fills the first empty set with previous weight + reps", () => {
+    const onUpdateSet = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SessionExerciseCard
+        exercise={buildExercise({
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        })}
+        previous={{ weightKg: 100, reps: 5 }}
+        {...baseHandlers}
+        onUpdateSet={onUpdateSet}
+      />,
+    );
+    fireEvent.press(getByTestId("quickfill-suggestion"));
+    expect(onUpdateSet).toHaveBeenCalledWith("set-1", {
+      weightKg: 100,
+      reps: 5,
+    });
+  });
+
+  it("Tapping the inner SetLogger's fill-previous button forwards weight + reps to onUpdateSet", () => {
+    const onUpdateSet = jest.fn();
+    const { getAllByTestId } = renderWithTheme(
+      <SessionExerciseCard
+        exercise={buildExercise({
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        })}
+        previous={{ weightKg: 90, reps: 7 }}
+        {...baseHandlers}
+        onUpdateSet={onUpdateSet}
+      />,
+    );
+    const fills = getAllByTestId("set-logger-fill-previous");
+    fireEvent.press(fills[0]);
+    expect(onUpdateSet).toHaveBeenCalledWith("set-1", {
+      weightKg: 90,
+      reps: 7,
+    });
+  });
+
   it("hides the QuickFillSuggestion when no empty sets exist", () => {
     const { queryByTestId } = renderWithTheme(
       <SessionExerciseCard

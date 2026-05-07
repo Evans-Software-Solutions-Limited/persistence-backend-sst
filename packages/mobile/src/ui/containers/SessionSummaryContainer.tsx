@@ -80,13 +80,19 @@ export function SessionSummaryContainer() {
     return { ...base, personalRecords };
   }, [snapshot, userId, storage, generateId]);
 
+  // userId is guaranteed non-null at the time of tap: snapshot is
+  // only populated when userId resolves (via the effect above), and
+  // we render null when snapshot is null. The guards exist to keep
+  // TS happy — they're not exercise-able branches.
   const onContinue = useCallback(() => {
-    if (userId) storage.clearActiveSession(userId);
+    if (!userId) return;
+    storage.clearActiveSession(userId);
     router.dismissAll();
   }, [userId, storage]);
 
   const onClose = useCallback(() => {
-    if (userId) storage.clearActiveSession(userId);
+    if (!userId) return;
+    storage.clearActiveSession(userId);
     router.dismissAll();
   }, [userId, storage]);
 

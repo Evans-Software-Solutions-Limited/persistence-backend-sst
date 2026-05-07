@@ -119,6 +119,23 @@ describe("logSetCommand", () => {
     expect(storage.getPendingMutations()).toEqual([]);
   });
 
+  it("forwards durationSeconds + distanceMeters into the new set when provided (cardio entries)", () => {
+    const session = seed();
+    const result = logSetCommand(
+      { storage, generateId, userId: "user-1" },
+      {
+        sessionExerciseId: session.exercises[0].id,
+        durationSeconds: 600,
+        distanceMeters: 1500,
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const newSet = result.value.exercises[0].sets.at(-1);
+    expect(newSet?.durationSeconds).toBe(600);
+    expect(newSet?.distanceMeters).toBe(1500);
+  });
+
   it("is a no-op when sessionExerciseId doesn't match (returns the session unchanged)", () => {
     seed();
     const result = logSetCommand(

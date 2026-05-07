@@ -70,6 +70,61 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ weightKg: 82.5 });
   });
 
+  it("ignores invalid weight input (no onChange when text doesn't parse to a number)", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        onChange={onChange}
+        onComplete={jest.fn()}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-weight"), "abc");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("ignores invalid reps input + RPE outside 1-10 range", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        onChange={onChange}
+        onComplete={jest.fn()}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-reps"), "abc");
+    fireEvent.changeText(getByTestId("set-logger-rpe"), "11");
+    fireEvent.changeText(getByTestId("set-logger-rpe"), "0");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("clears reps + RPE → null when their inputs are emptied", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet({ reps: 8, rpe: 7 })}
+        setNumber={1}
+        previous={null}
+        onChange={onChange}
+        onComplete={jest.fn()}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-reps"), "");
+    expect(onChange).toHaveBeenCalledWith({ reps: null });
+    fireEvent.changeText(getByTestId("set-logger-rpe"), "");
+    expect(onChange).toHaveBeenCalledWith({ rpe: null });
+  });
+
   it("dispatches { weightKg: null } when the weight input is cleared", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(

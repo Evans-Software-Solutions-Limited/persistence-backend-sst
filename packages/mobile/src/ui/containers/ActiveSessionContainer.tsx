@@ -24,6 +24,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import {
+  addSupersetSetCommand,
   cancelSessionCommand,
   completeSetCommand,
   logSetCommand,
@@ -44,6 +45,7 @@ import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover"
 import {
   applyPickerSelection,
   resolveLegacyExercise,
+  resolveSubstituteMuscleFilter,
   type ActiveSessionPickerMode,
   type LegacyPickerRow,
 } from "@/ui/containers/active-session-picker";
@@ -170,6 +172,18 @@ export function ActiveSessionContainer() {
     [userId, storage, generateId, rereadCache],
   );
 
+  const onLogSupersetSet = useCallback(
+    (sessionExerciseIds: readonly string[]) => {
+      if (!userId) return;
+      addSupersetSetCommand(
+        { storage, generateId, userId },
+        { sessionExerciseIds },
+      );
+      rereadCache();
+    },
+    [userId, storage, generateId, rereadCache],
+  );
+
   const onCompleteSet = useCallback(
     (sessionExerciseId: string, setId: string) => {
       if (!userId || !session) return;
@@ -269,18 +283,18 @@ export function ActiveSessionContainer() {
   }, []);
 
   // The source exercise's primary muscle groups drive the substitute
-  // picker's filter (Story-004 AC). Resolved via the cached exercise
-  // library; empty when the source isn't cached (e.g. a freshly
-  // substituted row) — picker falls back to unfiltered.
-  const substituteMuscleFilter = useMemo<readonly string[] | undefined>(() => {
-    if (pickerMode?.kind !== "substitute" || !session) return undefined;
-    const oldRow = session.exercises.find(
-      (ex) => ex.id === pickerMode.oldSessionExerciseId,
-    );
-    if (!oldRow) return undefined;
-    const cached = storage.getCachedExercise(oldRow.exerciseId);
-    return cached?.primaryMuscleGroups ?? undefined;
-  }, [pickerMode, session, storage]);
+  // picker's filter (Story-004 AC). Logic lives in
+  // `active-session-picker.ts` so the substitute / no-source / no-
+  // cache fallbacks are unit-testable without rendering.
+  const substituteMuscleFilter = useMemo<readonly string[] | undefined>(
+    () =>
+      resolveSubstituteMuscleFilter(
+        pickerMode,
+        session?.exercises ?? [],
+        storage,
+      ),
+    [pickerMode, session, storage],
+  );
 
   const onOpenNotes = useCallback((sessionExerciseId: string) => {
     setNotesEditingId(sessionExerciseId);
@@ -453,6 +467,7 @@ export function ActiveSessionContainer() {
         }}
         onClose={onClose}
         onLogSet={onLogSet}
+        onLogSupersetSet={onLogSupersetSet}
         onCompleteSet={onCompleteSet}
         onUpdateSet={onUpdateSet}
         onRemoveSet={onRemoveSet}

@@ -51,3 +51,11 @@ export {
   type SetExerciseNotesCommandDeps,
   type SetExerciseNotesInput,
 } from "./set-exercise-notes.command";
+export {
+  addSupersetSetCommand,
+  removeSupersetSetCommand,
+  type SupersetSetCommandDeps,
+  type RemoveSupersetSetCommandDeps,
+  type AddSupersetSetInput,
+  type RemoveSupersetSetInput,
+} from "./superset-sets.command";

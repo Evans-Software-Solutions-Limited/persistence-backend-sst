@@ -143,6 +143,78 @@ function nextSetNumberFor(sets: readonly ExerciseSet[]): number {
 }
 
 /**
+ * Add an empty set to EVERY exercise in a superset group, all at the
+ * same setNumber. Mirrors legacy
+ * `useActiveWorkout.addSupersetSet` (lines 488-499) — supersets are
+ * paired logging: exercise A and B always have the same number of
+ * sets, lined up by setNumber.
+ *
+ * Picks `max(setNumber across all peers) + 1` so re-adding after a
+ * removal doesn't collide with surviving rows. New rows are empty
+ * (null weight/reps/rpe, isCompleted=false), one per exercise in
+ * `sessionExerciseIds`.
+ *
+ * Pure; returns a new session. No-op (returns the same session) when
+ * no exercises match.
+ */
+export function addSupersetSet(
+  session: WorkoutSession,
+  sessionExerciseIds: readonly string[],
+  idFactory: IdFactory,
+): WorkoutSession {
+  if (sessionExerciseIds.length === 0) return session;
+  const idSet = new Set(sessionExerciseIds);
+  const targets = session.exercises.filter((ex) => idSet.has(ex.id));
+  if (targets.length === 0) return session;
+
+  let nextSetNumber = 0;
+  for (const ex of targets) {
+    nextSetNumber = Math.max(nextSetNumber, nextSetNumberFor(ex.sets));
+  }
+  if (nextSetNumber === 0) nextSetNumber = 1;
+
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) =>
+      idSet.has(ex.id)
+        ? {
+            ...ex,
+            sets: [...ex.sets, emptySet(ex.id, nextSetNumber, idFactory)],
+          }
+        : ex,
+    ),
+  };
+}
+
+/**
+ * Remove a specific setNumber from every exercise in a superset
+ * group, then renumber the survivors so 1..n stays contiguous (same
+ * gap-free invariant as `renumberSets`). Mirrors legacy
+ * `useActiveWorkout.removeSupersetSet` (lines 540-588).
+ *
+ * Pure; returns a new session. No-op when no exercises match.
+ */
+export function removeSupersetSet(
+  session: WorkoutSession,
+  sessionExerciseIds: readonly string[],
+  setNumber: number,
+): WorkoutSession {
+  if (sessionExerciseIds.length === 0) return session;
+  const idSet = new Set(sessionExerciseIds);
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) => {
+      if (!idSet.has(ex.id)) return ex;
+      const filtered = ex.sets.filter((s) => s.setNumber !== setNumber);
+      return {
+        ...ex,
+        sets: filtered.map((s, idx) => ({ ...s, setNumber: idx + 1 })),
+      };
+    }),
+  };
+}
+
+/**
  * Renumber an exercise's sets to a contiguous 1..n sequence preserving
  * array order. Used after a set is removed mid-session so the display
  * (which prints `idx + 1`) stays in sync with the persisted
@@ -269,9 +341,7 @@ export function removeExerciseFromSession(
   const target = session.exercises.find((e) => e.id === sessionExerciseId);
   if (!target) return session;
 
-  const remaining = session.exercises.filter(
-    (e) => e.id !== sessionExerciseId,
-  );
+  const remaining = session.exercises.filter((e) => e.id !== sessionExerciseId);
 
   // If the removed row carried a supersetGroup AND only one peer
   // survives, that peer is no longer part of a "set" — ungroup it.
