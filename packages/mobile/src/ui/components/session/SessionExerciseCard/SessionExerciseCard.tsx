@@ -158,24 +158,40 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       </View>
 
       <View>
-        {props.exercise.sets.map((set, idx) => (
-          <SetLogger
-            key={set.id}
-            set={set}
-            setNumber={idx + 1}
-            previous={idx === 0 ? props.previous : null}
-            onChange={(patch) => props.onUpdateSet(set.id, patch)}
-            onRemove={() => props.onRemoveSet(set.id)}
-            onFillPrevious={() => {
-              if (props.previous) {
-                props.onUpdateSet(set.id, {
-                  weightKg: props.previous.weightKg,
-                  reps: props.previous.reps,
-                });
-              }
-            }}
-          />
-        ))}
+        {props.exercise.sets.map((set, idx) => {
+          // Per-set "previous" hint:
+          //   - Set 1 (idx 0): cross-session previous (from props.previous,
+          //     wired later from a user-history API endpoint).
+          //   - Set 2+: the immediately preceding sibling set's data
+          //     when it has both weight + reps. Mirrors legacy "what did
+          //     I do last set" intent and lets the chip work in-session
+          //     without the cross-session source.
+          const sibling = idx > 0 ? props.exercise.sets[idx - 1] : null;
+          const previousForSet =
+            idx === 0
+              ? props.previous
+              : sibling && sibling.weightKg != null && sibling.reps != null
+                ? { weightKg: sibling.weightKg, reps: sibling.reps }
+                : null;
+          return (
+            <SetLogger
+              key={set.id}
+              set={set}
+              setNumber={idx + 1}
+              previous={previousForSet}
+              onChange={(patch) => props.onUpdateSet(set.id, patch)}
+              onRemove={() => props.onRemoveSet(set.id)}
+              onFillPrevious={() => {
+                if (previousForSet) {
+                  props.onUpdateSet(set.id, {
+                    weightKg: previousForSet.weightKg,
+                    reps: previousForSet.reps,
+                  });
+                }
+              }}
+            />
+          );
+        })}
 
         <View style={styles.buttonsContainer}>
           <TouchableOpacity

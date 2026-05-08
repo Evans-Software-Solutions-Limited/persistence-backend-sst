@@ -142,21 +142,18 @@ export function ActiveSessionContainer() {
   // is on. `userId` is guarded — useRestTimer can't run without one.
   const restTimer = useRestTimer({ userId: userId ?? "anonymous" });
 
-  // Quick-fill: in-session previous completed set (priority codified
-  // in EXECUTION_PLAN § 3.5).
+  // Quick-fill bias for set 1: cross-session previous (last-workout's
+  // matching set) when wired. NOT yet sourced — V2 has no equivalent
+  // of legacy `user_history.recent_sets` plumbed through. Tracked as a
+  // M3 follow-up; for now this map is null per exercise. SessionExercise-
+  // Card derives per-set "previous" from the immediately preceding
+  // sibling set's data so set 2+ shows useful chips even without the
+  // cross-session source.
   const previousByExercise = useMemo(() => {
     const map: Record<string, { weightKg: number; reps: number } | null> = {};
     if (!session) return map;
     for (const ex of session.exercises) {
-      const lastCompleted = [...ex.sets]
-        .reverse()
-        .find((s) => s.isCompleted && s.weightKg != null && s.reps != null);
-      map[ex.id] =
-        lastCompleted &&
-        lastCompleted.weightKg != null &&
-        lastCompleted.reps != null
-          ? { weightKg: lastCompleted.weightKg, reps: lastCompleted.reps }
-          : null;
+      map[ex.id] = null;
     }
     return map;
   }, [session]);

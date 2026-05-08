@@ -62,7 +62,12 @@ export function createSessionFromWorkout(
         supersetGroup: wx.supersetGroup,
         isSubstituted: false,
         originalExerciseId: null,
-        notes: wx.notes,
+        // Session notes start empty — `wx.notes` is the workout-template's
+        // per-exercise notes (coach guidance), NOT the user's session
+        // notes. Legacy `useActiveWorkout.initializeExercises` (lines
+        // 327-348) does NOT carry template notes through to the active
+        // exercise either. The user adds session notes via the popover.
+        notes: null,
         sets,
       };
     });
@@ -377,9 +382,16 @@ export function setExerciseNotes(
 }
 
 /**
+ * Default number of sets seeded when a user adds an exercise mid-session.
+ * Matches legacy `useActiveWorkout.addExerciseToWorkout` (line 1060) —
+ * the legacy app hardcodes targetSets=3 with three empty sets.
+ */
+const DEFAULT_ADDED_EXERCISE_SETS = 3;
+
+/**
  * Append a new exercise to the session at `max(sortOrder) + 1`. Used by
- * Quick Start ("+ Add exercise") and mid-session add. Returns a new
- * session.
+ * Quick Start ("+ Add exercise") and mid-session add. Seeds three empty
+ * sets to match legacy. Returns a new session.
  */
 export function addExerciseToSession(
   session: WorkoutSession,
@@ -387,8 +399,13 @@ export function addExerciseToSession(
   idFactory: IdFactory,
 ): WorkoutSession {
   const nextSortOrder = nextSortOrderFor(session.exercises);
+  const sessionExerciseId = `local-${idFactory()}`;
+  const sets: ExerciseSet[] = [];
+  for (let i = 0; i < DEFAULT_ADDED_EXERCISE_SETS; i++) {
+    sets.push(emptySet(sessionExerciseId, i + 1, idFactory));
+  }
   const newRow: SessionExercise = {
-    id: `local-${idFactory()}`,
+    id: sessionExerciseId,
     sessionId: session.id,
     exerciseId: exercise.id,
     exerciseName: exercise.name,
@@ -397,7 +414,7 @@ export function addExerciseToSession(
     isSubstituted: false,
     originalExerciseId: null,
     notes: null,
-    sets: [],
+    sets,
   };
   return { ...session, exercises: [...session.exercises, newRow] };
 }

@@ -128,11 +128,15 @@ describe("createSessionFromWorkout", () => {
     expect(ex1.sortOrder).toBe(0);
     expect(ex1.exerciseName).toBe("Bench Press");
 
-    // Second exercise: exercise field is null, falls back to id; preserves notes.
+    // Second exercise: exercise field is null, falls back to id.
+    // Session notes always start null — `wx.notes` (template / coach
+    // guidance) is NOT carried through to the active session per legacy
+    // `useActiveWorkout.initializeExercises`. The user adds session
+    // notes via the popover.
     expect(ex2.exerciseName).toBe("ex-row");
     expect(ex2.sets).toHaveLength(2);
     expect(ex2.supersetGroup).toBe(1);
-    expect(ex2.notes).toBe("wide grip");
+    expect(ex2.notes).toBeNull();
   });
 
   it("re-orders exercises by sortOrder before seeding", () => {
@@ -357,9 +361,11 @@ describe("substituteExercise", () => {
     expect(updated.exercises[2].sortOrder).toBe(2);
   });
 
-  it("seeds zero sets when the substituted exercise had zero sets", () => {
-    // Quick Start session where the exercise was added with no sets
-    // → swap should produce a row with no sets, not crash.
+  it("preserves the original exercise's set count on the substituted row", () => {
+    // Quick Start session where the exercise was added with the legacy
+    // default of three empty sets → swap should produce a row with the
+    // same set count (matches legacy `swapExercise` "Preserve the
+    // number of sets based on targetSets" behavior).
     const session = createEmptySession(ctx(), idFactory());
     const seeded = addExerciseToSession(
       session,
@@ -373,7 +379,9 @@ describe("substituteExercise", () => {
       makeExercise({ id: "ex-incline" }),
       idFactory(900),
     );
-    expect(updated.exercises[1].sets).toEqual([]);
+    expect(updated.exercises[1].sets).toHaveLength(
+      seeded.exercises[0].sets.length,
+    );
   });
 
   it("returns the session unchanged when the target id is not found", () => {
