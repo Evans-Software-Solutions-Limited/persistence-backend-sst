@@ -24,11 +24,15 @@ import {
   Typography,
 } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
+import type { SessionExerciseTemplate } from "@/ui/presenters/ActiveSessionPresenter";
+
+const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
 export type SupersetGroupCardProps = {
   supersetGroup: number;
   exercises: SessionExercise[];
   previousByExercise: Record<string, { weightKg: number; reps: number } | null>;
+  templateByExercise: Record<string, SessionExerciseTemplate>;
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
   onUpdateSet: (
     sessionExerciseId: string,
@@ -40,6 +44,7 @@ export type SupersetGroupCardProps = {
   onSubstitute: (sessionExerciseId: string) => void;
   onRemoveExercise: (sessionExerciseId: string) => void;
   onTapExercise: (exerciseId: string) => void;
+  onStartRest: (sessionExerciseId: string) => void;
 };
 
 export function SupersetGroupCard(props: SupersetGroupCardProps) {
@@ -66,24 +71,33 @@ export function SupersetGroupCard(props: SupersetGroupCardProps) {
       </View>
 
       <View style={styles.body}>
-        {props.exercises.map((ex) => (
-          <SessionExerciseCard
-            key={ex.id}
-            exercise={ex}
-            previous={props.previousByExercise[ex.id] ?? null}
-            // Tapping Add Set on a single card inside a superset
-            // adds row N to ALL peers at once — paired logging.
-            onLogSet={() => props.onLogSupersetSet(exerciseIds)}
-            onUpdateSet={(setId, patch) =>
-              props.onUpdateSet(ex.id, setId, patch)
-            }
-            onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
-            onOpenNotes={() => props.onOpenNotes(ex.id)}
-            onSubstitute={() => props.onSubstitute(ex.id)}
-            onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-            onTapExercise={() => props.onTapExercise(ex.exerciseId)}
-          />
-        ))}
+        {props.exercises.map((ex) => {
+          const template = props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+          return (
+            <SessionExerciseCard
+              key={ex.id}
+              exercise={ex}
+              previous={props.previousByExercise[ex.id] ?? null}
+              exerciseImageUrl={template.imageUrl}
+              targetSets={template.targetSets}
+              targetRepsMin={template.targetRepsMin}
+              targetRepsMax={template.targetRepsMax}
+              restSeconds={template.restSeconds}
+              // Tapping Add Set on a single card inside a superset
+              // adds row N to ALL peers at once — paired logging.
+              onLogSet={() => props.onLogSupersetSet(exerciseIds)}
+              onUpdateSet={(setId, patch) =>
+                props.onUpdateSet(ex.id, setId, patch)
+              }
+              onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+              onOpenNotes={() => props.onOpenNotes(ex.id)}
+              onSubstitute={() => props.onSubstitute(ex.id)}
+              onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+              onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+              onStartRest={() => props.onStartRest(ex.id)}
+            />
+          );
+        })}
       </View>
 
       <TouchableOpacity

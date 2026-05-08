@@ -447,11 +447,157 @@ describe("ActiveSessionContainer", () => {
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
 
-  // Mark-Complete UI was removed in 1A.1 (legacy port: no per-set complete
-  // affordance). Auto-firing the rest timer on set completion is removed in
-  // 1A.1 because the trigger has no caller. 1B will re-introduce a
-  // user-tap-driven onStartRest path with a re-asserted template-restSeconds
-  // lookup; the corresponding tests will land then.
+  // The Mark-Complete UI was removed in 1A.1 (legacy port: no per-set
+  // complete affordance) and the rest timer is now user-tap-triggered from
+  // a START NS REST button (1A.2). The two tests below assert the user-tap
+  // path against template + Quick-Start fallback, replacing the deleted
+  // auto-fire-on-completion tests.
+
+  it("tapping START NS REST fires the rest timer with the workout template's restSeconds", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const workout = buildWorkout({
+      id: "w-template",
+      exercises: [
+        {
+          id: "we-1",
+          exerciseId: "ex-bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          targetSets: 3,
+          targetRepsMin: 8,
+          targetRepsMax: 12,
+          targetDurationSeconds: null,
+          // Custom rest — 60s, NOT the 90s default.
+          restSeconds: 60,
+          notes: null,
+          exercise: {
+            id: "ex-bench",
+            name: "Bench Press",
+            category: "strength",
+            difficultyLevel: "intermediate",
+            videoUrl: null,
+            thumbnailUrl: null,
+          },
+        },
+      ],
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+    storage.cacheWorkoutDetail("user-1", workout);
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: "w-template",
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const adapters = makeAdapters(api, storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-exercise-start-rest"));
+
+    await waitFor(() => {
+      expect(
+        adapters.notifications.scheduleLocalNotification,
+      ).toHaveBeenCalled();
+    });
+    const lastCall = (
+      adapters.notifications.scheduleLocalNotification as jest.Mock
+    ).mock.calls.at(-1);
+    expect(lastCall?.[0]?.triggerSeconds).toBe(60);
+  });
+
+  it("tapping START NS REST falls back to the global default for Quick-Start sessions (no template)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const adapters = makeAdapters(api, storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-exercise-start-rest"));
+
+    await waitFor(() => {
+      expect(
+        adapters.notifications.scheduleLocalNotification,
+      ).toHaveBeenCalled();
+    });
+    const lastCall = (
+      adapters.notifications.scheduleLocalNotification as jest.Mock
+    ).mock.calls.at(-1);
+    expect(lastCall?.[0]?.triggerSeconds).toBe(90);
+  });
 
   it("typing into a set's weight input persists onUpdateSet to the cache", async () => {
     const api = new InMemoryApiAdapter();

@@ -48,6 +48,7 @@ import {
   type ActiveSessionPickerMode,
   type LegacyPickerRow,
 } from "@/ui/containers/active-session-picker";
+import { buildTemplateMap } from "@/ui/containers/active-session-template";
 
 // Default rest seconds when the workout template doesn't carry one.
 // FRONTEND_BRIEF "Out of scope" notes M6 ships the configurator; M3
@@ -159,6 +160,34 @@ export function ActiveSessionContainer() {
     }
     return map;
   }, [session]);
+
+  // Per-exercise template metadata threaded from the workout template.
+  // Drives the legacy "{N} sets × {min}-{max} reps" caption + thumbnail
+  // + START NS REST button label. Quick-Start sessions land outside the
+  // map and the presenter falls back to a default rest seconds.
+  const templateByExercise = useMemo(
+    () =>
+      buildTemplateMap({
+        sessionExercises: session?.exercises ?? [],
+        workout: detail.workout,
+        defaultRestSeconds: DEFAULT_REST_SECONDS,
+      }),
+    [session, detail.workout],
+  );
+
+  const onStartRest = useCallback(
+    (sessionExerciseId: string) => {
+      if (!session) return;
+      const exercise = session.exercises.find(
+        (ex) => ex.id === sessionExerciseId,
+      );
+      if (!exercise) return;
+      const template = templateByExercise[sessionExerciseId];
+      const restSeconds = template?.restSeconds ?? DEFAULT_REST_SECONDS;
+      restTimer.start(restSeconds, exercise.exerciseName);
+    },
+    [session, templateByExercise, restTimer],
+  );
 
   // -- Mutation wiring --------------------------------------------------
 
@@ -422,6 +451,7 @@ export function ActiveSessionContainer() {
         startedAt={session.startedAt}
         exercises={session.exercises}
         previousByExercise={previousByExercise}
+        templateByExercise={templateByExercise}
         restTimer={{
           isActive: restTimer.isActive,
           remainingSeconds: restTimer.remainingSeconds,
@@ -441,6 +471,7 @@ export function ActiveSessionContainer() {
         onRemoveExercise={onRemoveExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
+        onStartRest={onStartRest}
         onDiscard={onDiscard}
         onFinish={onFinish}
       />

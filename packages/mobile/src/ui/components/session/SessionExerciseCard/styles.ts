@@ -6,66 +6,105 @@ import {
 } from "@/ui/theme/workoutsLegacyTheme";
 
 export const styles = {
-  card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginVertical: Spacing.sm,
-  },
-  cardSubstituted: {
-    opacity: 0.7,
-  },
-  header: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
+  exerciseRow: {
+    borderRadius: BorderRadius.sm,
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
-  headerLeft: {
-    flex: 1,
+  exerciseHeader: {
     flexDirection: "row" as const,
-    alignItems: "center" as const,
     gap: Spacing.sm,
   },
-  title: {
-    ...Typography.h3,
-    color: Colors.text.primary,
-    flexShrink: 1,
-  },
-  substitutedBadge: {
-    backgroundColor: Colors.surface.tertiary,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-  },
-  substitutedText: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
-  },
-  actionsRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-  },
-  menuButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  addSetButton: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
+  exerciseImage: {
+    width: 50,
+    height: 50,
     borderRadius: BorderRadius.sm,
     backgroundColor: Colors.surface.secondary,
+  },
+  exerciseImagePlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surface.secondary,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  exerciseInfo: {
+    flex: 1,
+    gap: Spacing.xxs,
+    justifyContent: "center" as const,
+  },
+  exerciseTitleRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+  },
+  exerciseName: {
+    ...Typography.body2,
+    color: Colors.text.primary,
+  },
+  exerciseDescription: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+  },
+  exerciseActions: {
+    flexDirection: "row" as const,
+    gap: Spacing.xs,
+    marginLeft: Spacing.md,
+  },
+  actionButton: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  columnHeaders: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface.border,
     gap: Spacing.xs,
   },
-  addSetText: {
-    ...Typography.button,
+  columnHeader: {
+    ...Typography.caption,
+    color: Colors.text.secondary,
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
+  },
+  columnHeaderSet: {
+    flex: 1,
+    textAlign: "center" as const,
+  },
+  columnHeaderPrevious: {
+    flex: 2,
+    textAlign: "center" as const,
+  },
+  columnHeaderReps: {
+    width: 60,
+    textAlign: "center" as const,
+  },
+  columnHeaderKg: {
+    width: 60,
+    textAlign: "center" as const,
+  },
+  columnHeaderSpacer: {
+    flex: 1,
+  },
+  buttonsContainer: {
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    paddingHorizontal: Spacing.md,
+  },
+  footerButton: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  footerButtonText: {
+    ...Typography.caption,
     color: Colors.primary.DEFAULT,
   },
 };

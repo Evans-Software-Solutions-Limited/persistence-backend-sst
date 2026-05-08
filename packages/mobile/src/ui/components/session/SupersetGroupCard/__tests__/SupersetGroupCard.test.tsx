@@ -35,6 +35,16 @@ const baseProps = {
     string,
     { weightKg: number; reps: number } | null
   >,
+  templateByExercise: {} as Record<
+    string,
+    {
+      restSeconds: number;
+      targetSets?: number;
+      targetRepsMin?: number;
+      targetRepsMax?: number;
+      imageUrl?: string;
+    }
+  >,
   onLogSupersetSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
@@ -42,6 +52,7 @@ const baseProps = {
   onSubstitute: jest.fn(),
   onRemoveExercise: jest.fn(),
   onTapExercise: jest.fn(),
+  onStartRest: jest.fn(),
 };
 
 describe("SupersetGroupCard", () => {

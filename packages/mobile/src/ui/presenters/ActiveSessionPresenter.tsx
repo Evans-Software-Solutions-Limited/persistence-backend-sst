@@ -41,6 +41,21 @@ import {
 } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 
+/**
+ * Per-exercise template metadata threaded from the container's
+ * `useWorkout` lookup. `restSeconds` is required (defaults to a
+ * sensible global at the container if no template); the rest are
+ * optional and drive the legacy "{N} sets × {min}-{max} reps" caption
+ * + thumbnail when present.
+ */
+export type SessionExerciseTemplate = {
+  imageUrl?: string;
+  targetSets?: number;
+  targetRepsMin?: number;
+  targetRepsMax?: number;
+  restSeconds: number;
+};
+
 export type ActiveSessionPresenterProps = {
   sessionName: string;
   startedAt: string;
@@ -51,6 +66,12 @@ export type ActiveSessionPresenterProps = {
    * in EXECUTION_PLAN § 3.5: in-session → PR cache → nothing).
    */
   previousByExercise: Record<string, { weightKg: number; reps: number } | null>;
+  /**
+   * Map of `sessionExerciseId → template metadata`. Container builds it
+   * from `useWorkout`; missing entries fall back to a default
+   * `restSeconds` and skip the description caption.
+   */
+  templateByExercise: Record<string, SessionExerciseTemplate>;
   restTimer: {
     isActive: boolean;
     remainingSeconds: number;
@@ -79,9 +100,16 @@ export type ActiveSessionPresenterProps = {
    * so paired logging stays in sync (Story-005 AC).
    */
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
+  /**
+   * Start the rest timer for the given exercise (legacy `START NS REST`
+   * button). User-tap-driven — no auto-fire on set completion.
+   */
+  onStartRest: (sessionExerciseId: string) => void;
   onDiscard: () => void;
   onFinish: () => void;
 };
+
+const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
 type DisplayItem =
   | { kind: "exercise"; exercise: SessionExercise }
@@ -181,11 +209,18 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             {displayItems.map((item) => {
               if (item.kind === "exercise") {
                 const ex = item.exercise;
+                const template =
+                  props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
                 return (
                   <SessionExerciseCard
                     key={ex.id}
                     exercise={ex}
                     previous={props.previousByExercise[ex.id] ?? null}
+                    exerciseImageUrl={template.imageUrl}
+                    targetSets={template.targetSets}
+                    targetRepsMin={template.targetRepsMin}
+                    targetRepsMax={template.targetRepsMax}
+                    restSeconds={template.restSeconds}
                     onLogSet={() => props.onLogSet(ex.id)}
                     onUpdateSet={(setId, patch) =>
                       props.onUpdateSet(ex.id, setId, patch)
@@ -195,6 +230,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     onSubstitute={() => props.onSubstitute(ex.id)}
                     onRemoveExercise={() => props.onRemoveExercise(ex.id)}
                     onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+                    onStartRest={() => props.onStartRest(ex.id)}
                   />
                 );
               }
@@ -204,6 +240,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   supersetGroup={item.supersetGroup}
                   exercises={item.exercises}
                   previousByExercise={props.previousByExercise}
+                  templateByExercise={props.templateByExercise}
                   onLogSupersetSet={props.onLogSupersetSet}
                   onUpdateSet={props.onUpdateSet}
                   onRemoveSet={props.onRemoveSet}
@@ -211,6 +248,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   onSubstitute={props.onSubstitute}
                   onRemoveExercise={props.onRemoveExercise}
                   onTapExercise={props.onTapExercise}
+                  onStartRest={props.onStartRest}
                 />
               );
             })}

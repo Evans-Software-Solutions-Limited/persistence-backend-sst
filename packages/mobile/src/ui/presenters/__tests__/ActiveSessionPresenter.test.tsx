@@ -35,6 +35,7 @@ const baseProps = {
   startedAt: "2026-05-05T10:00:00.000Z",
   exercises: [buildExercise()],
   previousByExercise: {},
+  templateByExercise: {},
   restTimer: baseRestTimer,
   onClose: jest.fn(),
   onLogSet: jest.fn(),
@@ -46,6 +47,7 @@ const baseProps = {
   onTapExercise: jest.fn(),
   onLogSupersetSet: jest.fn(),
   onAddExercise: jest.fn(),
+  onStartRest: jest.fn(),
   onDiscard: jest.fn(),
   onFinish: jest.fn(),
 };
