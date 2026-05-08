@@ -19,23 +19,21 @@ const buildSet = (overrides: Partial<ExerciseSet> = {}): ExerciseSet => ({
 });
 
 describe("SetLogger", () => {
-  it("renders the set number, previous hint, and three editable inputs", () => {
+  it("renders the set number, previous hint, and reps + weight inputs", () => {
     const { getByText, getByTestId } = renderWithTheme(
       <SetLogger
         set={buildSet()}
         setNumber={1}
         previous={{ weightKg: 80, reps: 8 }}
         onChange={jest.fn()}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
     );
     expect(getByText("1")).toBeTruthy();
-    expect(getByText("80kg × 8")).toBeTruthy();
-    expect(getByTestId("set-logger-weight")).toBeTruthy();
+    expect(getByText("8 reps • 80 kg")).toBeTruthy();
     expect(getByTestId("set-logger-reps")).toBeTruthy();
-    expect(getByTestId("set-logger-rpe")).toBeTruthy();
+    expect(getByTestId("set-logger-weight")).toBeTruthy();
   });
 
   it("renders an em dash when no previous set is supplied", () => {
@@ -45,7 +43,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={jest.fn()}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
@@ -61,7 +58,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
@@ -70,7 +66,7 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ weightKg: 82.5 });
   });
 
-  it("ignores invalid weight input (no onChange when text doesn't parse to a number)", () => {
+  it("ignores invalid weight input (no onChange when text doesn't parse)", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <SetLogger
@@ -78,7 +74,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
@@ -87,7 +82,7 @@ describe("SetLogger", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("ignores invalid reps input + RPE outside 1-10 range", () => {
+  it("ignores invalid reps input", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <SetLogger
@@ -95,34 +90,28 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
     );
     fireEvent.changeText(getByTestId("set-logger-reps"), "abc");
-    fireEvent.changeText(getByTestId("set-logger-rpe"), "11");
-    fireEvent.changeText(getByTestId("set-logger-rpe"), "0");
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("clears reps + RPE → null when their inputs are emptied", () => {
+  it("clears reps → null when the input is emptied", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <SetLogger
-        set={buildSet({ reps: 8, rpe: 7 })}
+        set={buildSet({ reps: 8 })}
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
     );
     fireEvent.changeText(getByTestId("set-logger-reps"), "");
     expect(onChange).toHaveBeenCalledWith({ reps: null });
-    fireEvent.changeText(getByTestId("set-logger-rpe"), "");
-    expect(onChange).toHaveBeenCalledWith({ rpe: null });
   });
 
   it("dispatches { weightKg: null } when the weight input is cleared", () => {
@@ -133,7 +122,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
@@ -150,7 +138,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={null}
         onChange={onChange}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={jest.fn()}
       />,
@@ -159,71 +146,35 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ reps: 8 });
   });
 
-  it("ignores out-of-range RPE values", () => {
-    const onChange = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <SetLogger
-        set={buildSet()}
-        setNumber={1}
-        previous={null}
-        onChange={onChange}
-        onComplete={jest.fn()}
-        onRemove={jest.fn()}
-        onFillPrevious={jest.fn()}
-      />,
-    );
-    fireEvent.changeText(getByTestId("set-logger-rpe"), "12");
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("accepts an in-range RPE value", () => {
-    const onChange = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <SetLogger
-        set={buildSet()}
-        setNumber={1}
-        previous={null}
-        onChange={onChange}
-        onComplete={jest.fn()}
-        onRemove={jest.fn()}
-        onFillPrevious={jest.fn()}
-      />,
-    );
-    fireEvent.changeText(getByTestId("set-logger-rpe"), "8");
-    expect(onChange).toHaveBeenCalledWith({ rpe: 8 });
-  });
-
-  it("Mark Complete fires onComplete on uncompleted sets", () => {
-    const onComplete = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <SetLogger
-        set={buildSet()}
-        setNumber={1}
-        previous={null}
-        onChange={jest.fn()}
-        onComplete={onComplete}
-        onRemove={jest.fn()}
-        onFillPrevious={jest.fn()}
-      />,
-    );
-    fireEvent.press(getByTestId("set-logger-action"));
-    expect(onComplete).toHaveBeenCalled();
-  });
-
-  it("Trash icon fires onRemove on completed sets", () => {
+  it("trash icon always fires onRemove (no completion gating)", () => {
     const onRemove = jest.fn();
     const { getByTestId } = renderWithTheme(
       <SetLogger
-        set={buildSet({ isCompleted: true })}
+        set={buildSet()}
         setNumber={1}
         previous={null}
         onChange={jest.fn()}
-        onComplete={jest.fn()}
         onRemove={onRemove}
         onFillPrevious={jest.fn()}
       />,
     );
-    fireEvent.press(getByTestId("set-logger-action"));
+    fireEvent.press(getByTestId("set-logger-remove"));
+    expect(onRemove).toHaveBeenCalled();
+  });
+
+  it("trash icon also fires onRemove on a completed set", () => {
+    const onRemove = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet({ isCompleted: true, weightKg: 80, reps: 8 })}
+        setNumber={1}
+        previous={null}
+        onChange={jest.fn()}
+        onRemove={onRemove}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.press(getByTestId("set-logger-remove"));
     expect(onRemove).toHaveBeenCalled();
   });
 
@@ -235,7 +186,6 @@ describe("SetLogger", () => {
         setNumber={1}
         previous={{ weightKg: 80, reps: 8 }}
         onChange={jest.fn()}
-        onComplete={jest.fn()}
         onRemove={jest.fn()}
         onFillPrevious={onFillPrevious}
       />,

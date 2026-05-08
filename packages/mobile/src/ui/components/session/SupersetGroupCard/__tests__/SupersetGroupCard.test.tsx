@@ -36,7 +36,6 @@ const baseProps = {
     { weightKg: number; reps: number } | null
   >,
   onLogSupersetSet: jest.fn(),
-  onCompleteSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
   onOpenNotes: jest.fn(),

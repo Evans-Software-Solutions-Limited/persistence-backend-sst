@@ -24,7 +24,6 @@ export type SessionExerciseCardProps = {
   /** Last completed set on this exercise, in the active session. */
   previous: { weightKg: number; reps: number } | null;
   onLogSet: () => void;
-  onCompleteSet: (setId: string) => void;
   onUpdateSet: (
     setId: string,
     patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
@@ -147,7 +146,6 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           setNumber={idx + 1}
           previous={idx === 0 ? props.previous : null}
           onChange={(patch) => props.onUpdateSet(set.id, patch)}
-          onComplete={() => props.onCompleteSet(set.id)}
           onRemove={() => props.onRemoveSet(set.id)}
           onFillPrevious={() => {
             if (props.previous) {

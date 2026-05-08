@@ -447,163 +447,11 @@ describe("ActiveSessionContainer", () => {
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
 
-  it("Mark Complete on a set persists isCompleted + auto-starts the rest timer", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    storage.cacheActiveSession("user-1", {
-      id: "local-1",
-      userId: "user-1",
-      workoutId: null,
-      name: "Quick Workout",
-      status: "in_progress",
-      startedAt: "2026-05-05T10:00:00.000Z",
-      completedAt: null,
-      notes: null,
-      exercises: [
-        {
-          id: "se-1",
-          sessionId: "local-1",
-          exerciseId: "ex-bench",
-          exerciseName: "Bench Press",
-          sortOrder: 0,
-          supersetGroup: null,
-          isSubstituted: false,
-          originalExerciseId: null,
-          notes: null,
-          sets: [
-            {
-              id: "set-1",
-              sessionExerciseId: "se-1",
-              setNumber: 1,
-              weightKg: 80,
-              reps: 8,
-              rpe: null,
-              durationSeconds: null,
-              distanceMeters: null,
-              isCompleted: false,
-              completedAt: null,
-            },
-          ],
-        },
-      ],
-    });
-
-    const adapters = makeAdapters(api, storage);
-    const { findByTestId } = renderWithTheme(
-      withAdapters(adapters, <ActiveSessionContainer />),
-    );
-
-    // SetLogger renders one row → one action button per row. With a
-    // single set this resolves uniquely.
-    fireEvent.press(await findByTestId("set-logger-action"));
-
-    await waitFor(() => {
-      const cached = storage.getActiveSession("user-1");
-      expect(cached?.exercises[0].sets[0].isCompleted).toBe(true);
-    });
-    // Quick Start (no template) → falls back to the global default
-    // (90s) per Story-003 AC.
-    expect(adapters.notifications.scheduleLocalNotification).toHaveBeenCalled();
-    const lastCall = (
-      adapters.notifications.scheduleLocalNotification as jest.Mock
-    ).mock.calls.at(-1);
-    expect(lastCall?.[0]?.triggerSeconds).toBe(90);
-  });
-
-  it("Mark Complete reads per-exercise restSeconds from the workout template (not the default)", async () => {
-    // Bugbot regression: a prior version flipped workoutId → null
-    // as soon as the session was staged, silently emptying
-    // detail.workout and forcing the rest-timer lookup to fall
-    // through to DEFAULT_REST_SECONDS for every exercise. This test
-    // proves the lookup actually finds the template's restSeconds.
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    const workout = buildWorkout({
-      id: "w-template",
-      exercises: [
-        {
-          id: "we-1",
-          exerciseId: "ex-bench",
-          sortOrder: 0,
-          supersetGroup: null,
-          targetSets: 1,
-          targetRepsMin: 8,
-          targetRepsMax: 12,
-          targetDurationSeconds: null,
-          // Custom rest — 60s, NOT the 90s default.
-          restSeconds: 60,
-          notes: null,
-          exercise: {
-            id: "ex-bench",
-            name: "Bench Press",
-            category: "strength",
-            difficultyLevel: "intermediate",
-            videoUrl: null,
-            thumbnailUrl: null,
-          },
-        },
-      ],
-    });
-    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
-    storage.cacheWorkoutDetail("user-1", workout);
-    storage.cacheActiveSession("user-1", {
-      id: "local-1",
-      userId: "user-1",
-      // Critical: session carries workoutId so useWorkout stays
-      // anchored to the template after start lands.
-      workoutId: "w-template",
-      name: "Push Day",
-      status: "in_progress",
-      startedAt: "2026-05-05T10:00:00.000Z",
-      completedAt: null,
-      notes: null,
-      exercises: [
-        {
-          id: "se-1",
-          sessionId: "local-1",
-          exerciseId: "ex-bench",
-          exerciseName: "Bench Press",
-          sortOrder: 0,
-          supersetGroup: null,
-          isSubstituted: false,
-          originalExerciseId: null,
-          notes: null,
-          sets: [
-            {
-              id: "set-1",
-              sessionExerciseId: "se-1",
-              setNumber: 1,
-              weightKg: 80,
-              reps: 8,
-              rpe: null,
-              durationSeconds: null,
-              distanceMeters: null,
-              isCompleted: false,
-              completedAt: null,
-            },
-          ],
-        },
-      ],
-    });
-
-    const adapters = makeAdapters(api, storage);
-    const { findByTestId } = renderWithTheme(
-      withAdapters(adapters, <ActiveSessionContainer />),
-    );
-
-    fireEvent.press(await findByTestId("set-logger-action"));
-
-    await waitFor(() => {
-      expect(
-        adapters.notifications.scheduleLocalNotification,
-      ).toHaveBeenCalled();
-    });
-    const lastCall = (
-      adapters.notifications.scheduleLocalNotification as jest.Mock
-    ).mock.calls.at(-1);
-    // The template's 60s, NOT the 90s default.
-    expect(lastCall?.[0]?.triggerSeconds).toBe(60);
-  });
+  // Mark-Complete UI was removed in 1A.1 (legacy port: no per-set complete
+  // affordance). Auto-firing the rest timer on set completion is removed in
+  // 1A.1 because the trigger has no caller. 1B will re-introduce a
+  // user-tap-driven onStartRest path with a re-asserted template-restSeconds
+  // lookup; the corresponding tests will land then.
 
   it("typing into a set's weight input persists onUpdateSet to the cache", async () => {
     const api = new InMemoryApiAdapter();
@@ -659,7 +507,7 @@ describe("ActiveSessionContainer", () => {
     });
   });
 
-  it("removing a completed set strips it from the session cache", async () => {
+  it("removing a set strips it from the session cache (trash always visible per legacy)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -692,7 +540,6 @@ describe("ActiveSessionContainer", () => {
               rpe: null,
               durationSeconds: null,
               distanceMeters: null,
-              // Completed → action button becomes Remove (trash icon).
               isCompleted: true,
               completedAt: "2026-05-05T10:05:00.000Z",
             },
@@ -705,14 +552,14 @@ describe("ActiveSessionContainer", () => {
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
-    fireEvent.press(await findByTestId("set-logger-action"));
+    fireEvent.press(await findByTestId("set-logger-remove"));
     await waitFor(() => {
       const cached = storage.getActiveSession("user-1");
       expect(cached?.exercises[0].sets).toHaveLength(0);
     });
   });
 
-  it("removing a completed set renumbers survivors so a subsequent log-set has a unique setNumber", async () => {
+  it("removing a set renumbers survivors so a subsequent log-set has a unique setNumber", async () => {
     // Bugbot regression: pre-fix, [1,2,3] → remove 2 → [1,3] (length 2)
     // → log-set used `length+1=3`, producing a duplicate setNumber 3.
     // Post-fix: onRemoveSet calls renumberSets so survivors become
@@ -748,8 +595,6 @@ describe("ActiveSessionContainer", () => {
             rpe: null,
             durationSeconds: null,
             distanceMeters: null,
-            // Set 2 is completed so SetLogger's action button =
-            // Remove (the trash icon path in onRemoveSet).
             isCompleted: n === 2,
             completedAt: n === 2 ? "2026-05-05T10:05:00.000Z" : null,
           })),
@@ -761,8 +606,9 @@ describe("ActiveSessionContainer", () => {
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
-    // Three rows render; press the action on the middle (completed) one.
-    const actions = await findAllByTestId("set-logger-action");
+    // Three rows render; press the trash on the middle one (legacy port:
+    // trash is always visible regardless of isCompleted).
+    const actions = await findAllByTestId("set-logger-remove");
     fireEvent.press(actions[1]);
 
     await waitFor(() => {

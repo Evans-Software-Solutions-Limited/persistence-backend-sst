@@ -13,35 +13,34 @@ export const styles = {
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surface.border,
-  },
-  rowCompleted: {
-    backgroundColor: Colors.surface.secondary,
-    opacity: 0.85,
+    backgroundColor: "transparent" as const,
   },
   setNumber: {
-    width: 32,
+    flex: 1,
     ...Typography.body2,
     color: Colors.text.secondary,
     fontWeight: "600" as const,
     textAlign: "center" as const,
   },
   previousContainer: {
-    flex: 1,
+    flex: 2,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   previousText: {
     ...Typography.body2,
     color: Colors.primary.DEFAULT,
+    fontWeight: "600" as const,
+    textAlign: "center" as const,
   },
   previousDisabled: {
-    flex: 1,
     ...Typography.body2,
     color: Colors.text.tertiary,
+    flex: 2,
     textAlign: "center" as const,
   },
   input: {
-    backgroundColor: Colors.surface.tertiary,
+    backgroundColor: Colors.surface.secondary,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
@@ -53,18 +52,11 @@ export const styles = {
     width: 60,
   },
   repsInput: {
-    width: 50,
+    width: 60,
   },
-  rpeInput: {
-    width: 50,
-  },
-  actionButton: {
-    width: 40,
-    height: 40,
+  trashContainer: {
+    flex: 1,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-  },
-  actionButtonCompleted: {
-    opacity: 0.7,
   },
 };

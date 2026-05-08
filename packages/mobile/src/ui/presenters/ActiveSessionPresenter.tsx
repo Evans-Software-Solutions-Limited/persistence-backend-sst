@@ -62,7 +62,6 @@ export type ActiveSessionPresenterProps = {
   };
   onClose: () => void;
   onLogSet: (sessionExerciseId: string) => void;
-  onCompleteSet: (sessionExerciseId: string, setId: string) => void;
   onUpdateSet: (
     sessionExerciseId: string,
     setId: string,
@@ -188,7 +187,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     exercise={ex}
                     previous={props.previousByExercise[ex.id] ?? null}
                     onLogSet={() => props.onLogSet(ex.id)}
-                    onCompleteSet={(setId) => props.onCompleteSet(ex.id, setId)}
                     onUpdateSet={(setId, patch) =>
                       props.onUpdateSet(ex.id, setId, patch)
                     }
@@ -207,7 +205,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   exercises={item.exercises}
                   previousByExercise={props.previousByExercise}
                   onLogSupersetSet={props.onLogSupersetSet}
-                  onCompleteSet={props.onCompleteSet}
                   onUpdateSet={props.onUpdateSet}
                   onRemoveSet={props.onRemoveSet}
                   onOpenNotes={props.onOpenNotes}

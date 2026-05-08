@@ -38,7 +38,6 @@ const baseProps = {
   restTimer: baseRestTimer,
   onClose: jest.fn(),
   onLogSet: jest.fn(),
-  onCompleteSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
   onOpenNotes: jest.fn(),

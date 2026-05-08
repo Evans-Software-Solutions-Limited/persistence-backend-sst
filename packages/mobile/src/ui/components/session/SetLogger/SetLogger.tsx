@@ -1,19 +1,17 @@
 /**
- * SetLogger — single-set entry row. Weight + reps + RPE inputs +
- * Mark Complete (M3, Story-002).
+ * SetLogger — single-set entry row, 1:1 port of legacy
+ * `persistence-mobile/components/workouts/ActiveSetRow/ActiveSetRow.tsx`.
  *
- * Form state in snake_case at the component, camelCase at the
- * boundary (M2 learning #6) — mirrors the legacy
- * persistence-mobile/components/workouts/ActiveSetRow component
- * shape. Falsy-zero safe (M2 learning #8): every numeric value
- * (weight, reps, RPE) can validly be 0.
+ * Layout: SET # | Previous (tap-to-fill) | reps | kg | trash. Trash is
+ * always visible (legacy `:94-99`) — there is no Mark-Complete affordance
+ * in legacy and the V2 redesign that gated trash behind isCompleted is
+ * removed. RPE input is also removed; legacy has only reps + weight.
  *
- * Spec: specs/05-active-session/requirements.md STORY-002
- *       persistence-mobile/components/workouts/ActiveSetRow/ActiveSetRow.tsx (legacy port)
+ * Spec: persistence-mobile/components/workouts/ActiveSetRow/ActiveSetRow.tsx
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   Text,
@@ -31,37 +29,23 @@ export type SetLoggerProps = {
   setNumber: number;
   /** Weight + reps from the previous set on the same exercise (for quick-fill). */
   previous: { weightKg: number; reps: number } | null;
-  onChange: (
-    patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
-  ) => void;
-  onComplete: () => void;
+  onChange: (patch: Partial<Pick<ExerciseSet, "weightKg" | "reps">>) => void;
   onRemove: () => void;
   onFillPrevious: () => void;
 };
 
-const toInputString = (n: number | null): string => {
-  if (n == null) return "";
-  return Number.isInteger(n) ? n.toString() : n.toString();
-};
+const toInputString = (n: number | null): string =>
+  n == null ? "" : n.toString();
 
 export function SetLogger(props: SetLoggerProps) {
-  // Snake-case form state mirrors the legacy ActiveSetRow shape.
-  const [weight_kg, setWeightKg] = useState(toInputString(props.set.weightKg));
   const [reps, setReps] = useState(toInputString(props.set.reps));
-  const [rpe, setRpe] = useState(toInputString(props.set.rpe));
+  const [weight_kg, setWeightKg] = useState(toInputString(props.set.weightKg));
+  const weightInputRef = useRef<TextInput | null>(null);
 
   useEffect(() => {
-    setWeightKg(toInputString(props.set.weightKg));
     setReps(toInputString(props.set.reps));
-    setRpe(toInputString(props.set.rpe));
-  }, [props.set.weightKg, props.set.reps, props.set.rpe]);
-
-  const handleWeightChange = (text: string) => {
-    setWeightKg(text);
-    if (text === "") return props.onChange({ weightKg: null });
-    const n = Number.parseFloat(text);
-    if (!Number.isNaN(n)) props.onChange({ weightKg: n });
-  };
+    setWeightKg(toInputString(props.set.weightKg));
+  }, [props.set.reps, props.set.weightKg]);
 
   const handleRepsChange = (text: string) => {
     setReps(text);
@@ -70,20 +54,15 @@ export function SetLogger(props: SetLoggerProps) {
     if (!Number.isNaN(n)) props.onChange({ reps: n });
   };
 
-  const handleRpeChange = (text: string) => {
-    setRpe(text);
-    if (text === "") return props.onChange({ rpe: null });
-    const n = Number.parseInt(text, 10);
-    if (!Number.isNaN(n) && n >= 1 && n <= 10) {
-      props.onChange({ rpe: n });
-    }
+  const handleWeightChange = (text: string) => {
+    setWeightKg(text);
+    if (text === "") return props.onChange({ weightKg: null });
+    const n = Number.parseFloat(text);
+    if (!Number.isNaN(n)) props.onChange({ weightKg: n });
   };
 
   return (
-    <View
-      style={[styles.row, props.set.isCompleted && styles.rowCompleted]}
-      testID={`set-logger-${props.set.id}`}
-    >
+    <View style={styles.row} testID={`set-logger-${props.set.id}`}>
       <Text style={styles.setNumber}>{props.setNumber}</Text>
 
       {props.previous ? (
@@ -93,7 +72,7 @@ export function SetLogger(props: SetLoggerProps) {
           testID="set-logger-fill-previous"
         >
           <Text style={styles.previousText}>
-            {props.previous.weightKg}kg × {props.previous.reps}
+            {props.previous.reps} reps • {props.previous.weightKg} kg
           </Text>
         </TouchableOpacity>
       ) : (
@@ -101,62 +80,39 @@ export function SetLogger(props: SetLoggerProps) {
       )}
 
       <TextInput
-        style={[styles.input, styles.weightInput]}
-        value={weight_kg}
-        onChangeText={handleWeightChange}
-        keyboardType="decimal-pad"
-        placeholder="kg"
-        placeholderTextColor={Colors.text.tertiary}
-        editable={!props.set.isCompleted}
-        testID="set-logger-weight"
-      />
-
-      <TextInput
         style={[styles.input, styles.repsInput]}
         value={reps}
         onChangeText={handleRepsChange}
         keyboardType="number-pad"
-        placeholder="reps"
-        placeholderTextColor={Colors.text.tertiary}
-        editable={!props.set.isCompleted}
+        returnKeyType="next"
+        onSubmitEditing={() => weightInputRef.current?.focus()}
         testID="set-logger-reps"
       />
 
       <TextInput
-        style={[styles.input, styles.rpeInput]}
-        value={rpe}
-        onChangeText={handleRpeChange}
-        keyboardType="number-pad"
-        placeholder="RPE"
-        placeholderTextColor={Colors.text.tertiary}
-        editable={!props.set.isCompleted}
+        ref={weightInputRef}
+        style={[styles.input, styles.weightInput]}
+        value={weight_kg}
+        onChangeText={handleWeightChange}
+        keyboardType="decimal-pad"
+        returnKeyType="done"
         onSubmitEditing={Keyboard.dismiss}
-        testID="set-logger-rpe"
+        testID="set-logger-weight"
       />
 
-      <TouchableOpacity
-        onPress={props.set.isCompleted ? props.onRemove : props.onComplete}
-        style={[
-          styles.actionButton,
-          props.set.isCompleted && styles.actionButtonCompleted,
-        ]}
-        testID="set-logger-action"
-        accessibilityLabel={
-          props.set.isCompleted ? "Remove set" : "Mark set complete"
-        }
-      >
-        <Ionicons
-          name={
-            props.set.isCompleted ? "trash-outline" : "checkmark-circle-outline"
-          }
-          size={22}
-          color={
-            props.set.isCompleted
-              ? Colors.error.DEFAULT
-              : Colors.success.DEFAULT
-          }
-        />
-      </TouchableOpacity>
+      <View style={styles.trashContainer}>
+        <TouchableOpacity
+          onPress={props.onRemove}
+          testID="set-logger-remove"
+          accessibilityLabel="Remove set"
+        >
+          <Ionicons
+            name="trash-outline"
+            size={18}
+            color={Colors.error.DEFAULT}
+          />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

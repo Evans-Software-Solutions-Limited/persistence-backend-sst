@@ -26,7 +26,6 @@ import { Alert } from "react-native";
 import {
   addSupersetSetCommand,
   cancelSessionCommand,
-  completeSetCommand,
   logSetCommand,
   removeExerciseCommand,
   setExerciseNotesCommand,
@@ -91,8 +90,8 @@ export function ActiveSessionContainer() {
   //      DEFAULT_REST_SECONDS.
   // A previous version flipped workoutId → null as soon as `session`
   // was truthy, which silently emptied `detail.workout` and made
-  // every onCompleteSet rest-timer lookup fall through to default,
-  // ignoring per-exercise template restSeconds.
+  // every per-exercise restSeconds lookup fall through to default,
+  // ignoring the template value.
   const workoutId = session?.workoutId ?? requestedWorkoutId ?? null;
   const detail = useWorkout(workoutId);
   const startAttemptedRef = useRef(false);
@@ -182,39 +181,6 @@ export function ActiveSessionContainer() {
       rereadCache();
     },
     [userId, storage, generateId, rereadCache],
-  );
-
-  const onCompleteSet = useCallback(
-    (sessionExerciseId: string, setId: string) => {
-      if (!userId || !session) return;
-      // Short-circuit if the set was already completed: `completeSet`
-      // is a no-op in that case and returns the unchanged session
-      // (it returns `ok` either way), so the command can't tell us
-      // whether anything actually changed. Without this guard a
-      // double-tap or a stale prop would re-fire the rest timer +
-      // re-schedule the notification. SetLogger's action button
-      // already swaps to Remove when isCompleted is true, so this is
-      // mostly a belt-and-braces guard against stale-prop double-taps.
-      const exercise = session.exercises.find(
-        (ex) => ex.id === sessionExerciseId,
-      );
-      const targetSet = exercise?.sets.find((s) => s.id === setId);
-      if (targetSet?.isCompleted) return;
-
-      const result = completeSetCommand({ storage, userId }, { setId });
-      rereadCache();
-      if (!result.ok) return;
-      // Auto-start the rest timer per Story-003 AC. Use the workout
-      // template's restSeconds if known, otherwise the global default.
-      // Looked up by exerciseId on the original workout payload — the
-      // session itself doesn't carry restSeconds.
-      const restSeconds =
-        detail.workout?.exercises.find(
-          (we) => we.exerciseId === exercise?.exerciseId,
-        )?.restSeconds ?? DEFAULT_REST_SECONDS;
-      restTimer.start(restSeconds, exercise?.exerciseName);
-    },
-    [userId, session, storage, rereadCache, detail.workout, restTimer],
   );
 
   const onUpdateSet = useCallback(
@@ -468,7 +434,6 @@ export function ActiveSessionContainer() {
         onClose={onClose}
         onLogSet={onLogSet}
         onLogSupersetSet={onLogSupersetSet}
-        onCompleteSet={onCompleteSet}
         onUpdateSet={onUpdateSet}
         onRemoveSet={onRemoveSet}
         onOpenNotes={onOpenNotes}

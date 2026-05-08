@@ -35,7 +35,6 @@ const buildExercise = (
 
 const baseHandlers = {
   onLogSet: jest.fn(),
-  onCompleteSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
   onOpenNotes: jest.fn(),
@@ -234,46 +233,17 @@ describe("SessionExerciseCard", () => {
     });
   });
 
-  it("Mark-complete on a set fires onCompleteSet with the set id", () => {
-    const onCompleteSet = jest.fn();
+  it("Trash icon on any set fires onRemoveSet with the set id", () => {
+    const onRemoveSet = jest.fn();
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
         previous={null}
         {...baseHandlers}
-        onCompleteSet={onCompleteSet}
-      />,
-    );
-    fireEvent.press(getByTestId("set-logger-action"));
-    expect(onCompleteSet).toHaveBeenCalledWith("set-1");
-  });
-
-  it("Trash-icon on a completed set fires onRemoveSet with the set id", () => {
-    const onRemoveSet = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <SessionExerciseCard
-        exercise={buildExercise({
-          sets: [
-            {
-              id: "set-1",
-              sessionExerciseId: "se-1",
-              setNumber: 1,
-              weightKg: 80,
-              reps: 8,
-              rpe: null,
-              durationSeconds: null,
-              distanceMeters: null,
-              isCompleted: true,
-              completedAt: "ts",
-            },
-          ],
-        })}
-        previous={null}
-        {...baseHandlers}
         onRemoveSet={onRemoveSet}
       />,
     );
-    fireEvent.press(getByTestId("set-logger-action"));
+    fireEvent.press(getByTestId("set-logger-remove"));
     expect(onRemoveSet).toHaveBeenCalledWith("set-1");
   });
 

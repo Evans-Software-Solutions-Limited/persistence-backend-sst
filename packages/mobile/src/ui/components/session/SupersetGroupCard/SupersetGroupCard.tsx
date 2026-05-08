@@ -30,7 +30,6 @@ export type SupersetGroupCardProps = {
   exercises: SessionExercise[];
   previousByExercise: Record<string, { weightKg: number; reps: number } | null>;
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
-  onCompleteSet: (sessionExerciseId: string, setId: string) => void;
   onUpdateSet: (
     sessionExerciseId: string,
     setId: string,
@@ -75,7 +74,6 @@ export function SupersetGroupCard(props: SupersetGroupCardProps) {
             // Tapping Add Set on a single card inside a superset
             // adds row N to ALL peers at once — paired logging.
             onLogSet={() => props.onLogSupersetSet(exerciseIds)}
-            onCompleteSet={(setId) => props.onCompleteSet(ex.id, setId)}
             onUpdateSet={(setId, patch) =>
               props.onUpdateSet(ex.id, setId, patch)
             }
