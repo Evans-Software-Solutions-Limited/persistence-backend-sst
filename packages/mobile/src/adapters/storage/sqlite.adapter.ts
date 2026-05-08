@@ -896,11 +896,20 @@ export class SQLiteStorageAdapter implements StoragePort {
     if (localId === serverId) return;
     const db = this.getDb();
     db.withTransactionSync(() => {
+      // session_exercises.session_id has a FK to active_sessions(id) declared
+      // ON DELETE CASCADE but NOT ON UPDATE CASCADE. Updating the parent
+      // first (or the child first) with `PRAGMA foreign_keys = ON` would
+      // raise an immediate FK constraint violation because sibling rows
+      // still reference the old id during the partial-update window.
+      // `PRAGMA defer_foreign_keys = ON` defers FK validation to COMMIT,
+      // so both rewrites can land before the check fires. The pragma is
+      // transaction-scoped — it auto-resets to OFF on COMMIT/ROLLBACK and
+      // does not leak to other connections.
+      db.execSync("PRAGMA defer_foreign_keys = ON");
       db.runSync(`UPDATE active_sessions SET id = ? WHERE id = ?`, [
         serverId,
         localId,
       ]);
-      // FK ON UPDATE is not declared; rewrite child references explicitly.
       db.runSync(
         `UPDATE session_exercises SET session_id = ? WHERE session_id = ?`,
         [serverId, localId],
