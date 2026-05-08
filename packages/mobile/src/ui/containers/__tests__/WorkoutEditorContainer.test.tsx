@@ -424,7 +424,7 @@ describe("WorkoutEditorContainer", () => {
     storage.cacheWorkoutDetail("user-1", buildWorkout());
     jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
       const destructive = (
-        buttons as Array<{ style?: string; onPress?: () => void }> | undefined
+        buttons as { style?: string; onPress?: () => void }[] | undefined
       )?.find((b) => b.style === "destructive");
       destructive?.onPress?.();
     });

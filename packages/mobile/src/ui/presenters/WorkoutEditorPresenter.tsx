@@ -37,9 +37,9 @@ interface WorkoutEditorPresenterProps {
   readonly onSetVisibility: (value: WorkoutFormState["visibility"]) => void;
   readonly onAddExerciseTap: () => void;
   readonly onClosePicker: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddExercises: (exercises: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddSuperset: (exercises: any[]) => void;
   readonly onRemoveExercise: (exerciseId: string) => void;
   readonly onExerciseConfigChange: (
@@ -52,10 +52,10 @@ interface WorkoutEditorPresenterProps {
   readonly onGoBackFromError: () => void;
 }
 
-const VISIBILITY_OPTIONS: ReadonlyArray<{
+const VISIBILITY_OPTIONS: readonly {
   value: WorkoutFormState["visibility"];
   label: string;
-}> = [
+}[] = [
   { value: "private", label: "Private" },
   { value: "friends", label: "Friends" },
   { value: "public", label: "Public" },

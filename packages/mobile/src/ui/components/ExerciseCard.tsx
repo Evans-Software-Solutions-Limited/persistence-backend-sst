@@ -7,6 +7,10 @@ import {
   type ExerciseDifficulty,
 } from "@/domain/models/exercise";
 
+import { Column } from "./Column";
+import { Row } from "./Row";
+import { Text } from "./Text";
+
 /**
  * Build the labelled chip list for a muscle / equipment row.
  *
@@ -23,14 +27,14 @@ function labelledChips(
   ids: readonly string[],
   labels: readonly string[] | undefined,
   fallbackMap: Record<string, string>,
-): Array<{ key: string; label: string }> {
+): { key: string; label: string }[] {
   // Primary path: labels populated by `SSTApiAdapter.resolveUuidsToLabels`.
   // The adapter guarantees the `labels` array is parallel-indexed with
   // `ids` (unresolved UUIDs map to empty strings rather than being
   // dropped — see adapter docstring). Pair ids↔labels BEFORE filtering
   // empties so the correct React key stays attached to each chip.
   if (labels && labels.length > 0) {
-    const paired: Array<{ key: string; label: string }> = [];
+    const paired: { key: string; label: string }[] = [];
     const limit = Math.min(ids.length, labels.length);
     for (let i = 0; i < limit; i++) {
       const label = labels[i];
@@ -41,17 +45,13 @@ function labelledChips(
     return paired;
   }
   // Legacy path — ids holding enum keys from pre-M0 cached data.
-  const result: Array<{ key: string; label: string }> = [];
+  const result: { key: string; label: string }[] = [];
   for (const id of ids) {
     const label = fallbackMap[id];
     if (label) result.push({ key: id, label });
   }
   return result;
 }
-
-import { Column } from "./Column";
-import { Row } from "./Row";
-import { Text } from "./Text";
 
 /**
  * Tinted difficulty pill styling — the screen's signature element.
@@ -147,7 +147,7 @@ type ExerciseCardProps = {
  * item shape so muscle + equipment rows share one implementation.
  */
 function renderChipRow(
-  chips: Array<{ key: string; label: string }>,
+  chips: { key: string; label: string }[],
   max: number,
   overflowLabel: (remaining: number) => string,
   testIdPrefix?: string,

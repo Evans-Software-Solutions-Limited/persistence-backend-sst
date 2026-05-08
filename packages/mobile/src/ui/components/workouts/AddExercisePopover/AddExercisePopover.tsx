@@ -30,9 +30,9 @@ import { styles } from "./styles";
 interface AddExercisePopoverProps {
   readonly visible: boolean;
   readonly onClose: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddExercises: (exercises: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddSuperset: (exercises: any[]) => void;
   readonly existingExerciseIds?: string[];
   /**
@@ -53,7 +53,7 @@ interface AddExercisePopoverProps {
  * so the rendering subtree stays untouched. M11 polish revisits the
  * components themselves; the mapping deletes when they do.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function toLegacyExerciseRow(ex: Exercise): any {
   const muscleLabels = ex.primaryMuscleGroupLabels ?? [];
   const equipmentLabels = ex.equipmentLabels ?? [];
@@ -88,7 +88,7 @@ function AddExercisePopoverContainer({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
   const [currentView, setCurrentView] = useState<"list" | "details">("list");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cacheVersion, setCacheVersion] = useState(0);
@@ -244,7 +244,7 @@ interface AddExercisePopoverPresenterProps {
   readonly onAddSuperset: () => void;
   readonly searchQuery: string;
   readonly onSearchChange: (query: string) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly exercises: any[];
   readonly selectedExerciseIds: string[];
   readonly onToggleExercise: (id: string) => void;
@@ -252,7 +252,7 @@ interface AddExercisePopoverPresenterProps {
   readonly onBackToList: () => void;
   readonly onCreateExercise: () => void;
   readonly currentView: "list" | "details";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly selectedExercise: any;
   readonly isLoading: boolean;
   readonly existingExerciseIds: string[];

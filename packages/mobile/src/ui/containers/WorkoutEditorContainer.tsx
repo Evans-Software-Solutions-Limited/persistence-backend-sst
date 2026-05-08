@@ -65,25 +65,30 @@ export function WorkoutEditorContainer() {
     if (hydratedForRef.current === key) return;
     hydratedForRef.current = key;
     form.reset(toFormState(detail.workout));
+    // Depend on form.reset directly — `form` itself rebuilds every
+    // render but its method refs are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.workout, userId, workoutId, form.reset]);
 
   const onAddExerciseTap = useCallback(() => setPickerVisible(true), []);
   const onClosePicker = useCallback(() => setPickerVisible(false), []);
 
   const onAddExercises = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addExercises(exercises);
       setPickerVisible(false);
     },
+    // Method refs on `form` are stable; the `form` object rebuilds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addExercises],
   );
   const onAddSuperset = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addSuperset(exercises);
       setPickerVisible(false);
     },
+    // Same as onAddExercises — method ref is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addSuperset],
   );
 

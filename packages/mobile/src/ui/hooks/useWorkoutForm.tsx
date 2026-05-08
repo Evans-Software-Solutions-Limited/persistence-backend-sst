@@ -50,7 +50,7 @@ type Action =
   | { type: "setVisibility"; value: WorkoutFormState["visibility"] }
   | {
       type: "addExercises";
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       exercises: any[];
       asSuperset: boolean;
       generateId: () => string;
@@ -149,9 +149,9 @@ export type WorkoutFormHandle = {
   setDescription: (value: string) => void;
   setEstimatedDuration: (value: number) => void;
   setVisibility: (value: WorkoutFormState["visibility"]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   addExercises: (exercises: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   addSuperset: (exercises: any[]) => void;
   removeExercise: (exerciseId: string) => void;
   setExerciseField: (exerciseId: string, field: string, value: number) => void;
@@ -190,7 +190,6 @@ export function useWorkoutForm(
     [],
   );
   const addExercises = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) =>
       dispatch({
         type: "addExercises",
@@ -201,7 +200,6 @@ export function useWorkoutForm(
     [generateId],
   );
   const addSuperset = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) =>
       dispatch({
         type: "addExercises",

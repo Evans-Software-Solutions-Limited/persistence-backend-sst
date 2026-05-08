@@ -4,7 +4,11 @@ import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
 jest.mock("react-native-reanimated-carousel", () => {
+  // Jest mock factories are hoisted above ESM imports — require() is
+  // the only way to load modules inside them.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require("react-native");
   // Replace the real Carousel with a simple horizontal View that just
   // renders each item in turn — avoids pulling in reanimated's native

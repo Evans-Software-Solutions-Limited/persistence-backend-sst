@@ -17,7 +17,6 @@ import {
 } from "react-native";
 
 interface ExerciseDetailsModalProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly exercise: any; // Using any to match the original
 }
 
@@ -143,7 +142,7 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
               <Text style={styles.infoTitle}>Primary Muscles</Text>
               <Text style={styles.infoText}>
                 {exercise.primary_muscles
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
                   .map((muscle: any) => muscle.display_name || muscle.name)
                   .join(", ")}
               </Text>
@@ -157,7 +156,7 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
                 <Text style={styles.infoTitle}>Equipment</Text>
                 <Text style={styles.infoText}>
                   {exercise.equipment_required
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
                     .map((eq: any) => eq.name)
                     .join(", ")}
                 </Text>

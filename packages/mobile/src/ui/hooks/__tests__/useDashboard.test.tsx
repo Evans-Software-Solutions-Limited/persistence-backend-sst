@@ -410,7 +410,7 @@ describe("useDashboard", () => {
     // Stall every getDashboard call so user-1's is still in flight
     // when user-2 signs in. All stalls release at once at the end of
     // the test.
-    const releases: Array<() => void> = [];
+    const releases: (() => void)[] = [];
     const getDashboardSpy = jest
       .spyOn(api, "getDashboard")
       .mockImplementation(async () => {

@@ -856,12 +856,12 @@ export class SQLiteStorageAdapter implements StoragePort {
        FROM recent_sets
        WHERE user_id = ? AND exercise_id IN (${placeholders})`,
       [userId, ...exerciseIds],
-    ) as Array<{
+    ) as {
       exercise_id: string;
       set_number: number;
       weight_kg: number;
       reps: number;
-    }>;
+    }[];
     const map: Record<
       string,
       Record<number, { weightKg: number; reps: number }>

@@ -58,7 +58,6 @@ export function WorkoutSection({
           ) : isEmpty ? (
             <View style={styles.emptyContainer}>
               <Ionicons
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 name={emptyIcon as any}
                 size={48}
                 color={Colors.text.tertiary}

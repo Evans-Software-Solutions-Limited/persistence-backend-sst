@@ -29,7 +29,7 @@ import {
  */
 
 // Card-shaped object the verbatim WorkoutCard expects (legacy snake_case).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type WorkoutCardView = any;
 
 export interface WorkoutsListPresenterProps {

@@ -10,6 +10,14 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
+import type {
+  CachedWorkoutDetail,
+  CachedWorkoutsList,
+  Workout,
+  WorkoutListType,
+  WorkoutQuota,
+} from "@/domain/models/workout";
+import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -25,14 +33,6 @@ export type RecentSetEntry = {
   /** ISO timestamp from the originating session's completedAt. */
   recordedAt: string;
 };
-import type {
-  CachedWorkoutDetail,
-  CachedWorkoutsList,
-  Workout,
-  WorkoutListType,
-  WorkoutQuota,
-} from "@/domain/models/workout";
-import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
  * Port for local persistence (SQLite).

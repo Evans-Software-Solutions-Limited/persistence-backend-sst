@@ -259,7 +259,6 @@ describe("renumberSets", () => {
 
   it("leaves other exercises untouched", () => {
     const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
-    const otherExId = session.exercises[1].id;
     const before = session.exercises[1].sets.map((s) => s.setNumber);
     const updated = renumberSets(session, session.exercises[0].id);
     expect(updated.exercises[1].sets.map((s) => s.setNumber)).toEqual(before);

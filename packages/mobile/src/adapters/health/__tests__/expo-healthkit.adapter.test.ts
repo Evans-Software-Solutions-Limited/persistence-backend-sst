@@ -10,7 +10,7 @@ describe("ExpoHealthKitAdapter", () => {
         sumQuantity: { quantity: 4812 },
       })),
       queryStatisticsCollectionForQuantity: jest.fn(
-        async () => [] as ReadonlyArray<unknown>,
+        async () => [] as readonly unknown[],
       ),
       getMostRecentQuantitySample: jest.fn(async () => ({
         quantity: 74.5,

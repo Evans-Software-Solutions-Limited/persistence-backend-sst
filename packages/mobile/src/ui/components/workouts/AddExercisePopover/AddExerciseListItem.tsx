@@ -5,7 +5,6 @@ import { Image, Text, TouchableOpacity, View } from "react-native";
 import { styles } from "./styles";
 
 interface AddExerciseListItemProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly exercise: any; // Using any to match the original
   readonly isSelected: boolean;
   readonly onToggle: () => void;
@@ -21,7 +20,7 @@ export function AddExerciseListItem({
   isDisabled = false,
 }: AddExerciseListItemProps) {
   const primaryMuscles = exercise.primary_muscles
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     ?.map((muscle: any) => muscle.name)
     .join(", ");
 

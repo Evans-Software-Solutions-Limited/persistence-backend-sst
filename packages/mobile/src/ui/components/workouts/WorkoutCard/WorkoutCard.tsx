@@ -5,7 +5,6 @@ import { Text, TouchableOpacity, View } from "react-native";
 import { styles } from "./styles";
 
 interface WorkoutCardProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly workout: any; // Using any to match the original
   readonly onPress: () => void;
   readonly onStart: () => void;
@@ -108,7 +107,7 @@ export function WorkoutCard({
           <View style={styles.muscleTagsContainer}>
             {workout.targeted_muscles
               .slice(0, 3)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
               .map((muscle: any, index: number) => (
                 <View key={muscle.id || index} style={styles.muscleBadge}>
                   <Text style={styles.muscleBadgeText}>

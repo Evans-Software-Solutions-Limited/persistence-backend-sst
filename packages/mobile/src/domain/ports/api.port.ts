@@ -482,14 +482,14 @@ export type RecordSessionInput = {
   sessionRating?: number | null;
   overallRpe?: number | null;
   difficultyRanking?: number | null;
-  exercises: Array<{
+  exercises: {
     exerciseId: string;
     sortOrder: number;
     supersetGroup?: number | null;
     isSubstituted?: boolean;
     originalExerciseId?: string | null;
     notes?: string | null;
-    sets: Array<{
+    sets: {
       setNumber: number;
       reps?: number | null;
       weightKg?: string | number | null;
@@ -499,8 +499,8 @@ export type RecordSessionInput = {
       restAfterSeconds?: number | null;
       isCompleted?: boolean;
       completedAt?: string | null;
-    }>;
-  }>;
+    }[];
+  }[];
 };
 
 /**
@@ -510,11 +510,9 @@ export type RecordSessionInput = {
  * UUIDs to swap its local- prefixed ids in the SQLite mirror.
  */
 export type RecordedApiSession = ApiSession & {
-  exercises: Array<
-    ApiSessionExercise & {
-      sets: ApiExerciseSet[];
-    }
-  >;
+  exercises: (ApiSessionExercise & {
+    sets: ApiExerciseSet[];
+  })[];
 };
 
 export type CreateGoalInput = {
