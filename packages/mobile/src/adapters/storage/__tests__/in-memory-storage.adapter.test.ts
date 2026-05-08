@@ -186,6 +186,27 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getCachedExercises()).toHaveLength(0);
       expect(storage.getExerciseCacheAge()).toBeNull();
     });
+
+    it("clears the recent-sets cache (sign-out hygiene)", () => {
+      storage.upsertRecentSets("user-1", [
+        {
+          exerciseId: "ex-bench",
+          setNumber: 1,
+          weightKg: 80,
+          reps: 8,
+          recordedAt: "2026-05-05T10:00:00.000Z",
+        },
+      ]);
+      expect(storage.getRecentSetsByExercise("user-1", ["ex-bench"])).toEqual({
+        "ex-bench": { 1: { weightKg: 80, reps: 8 } },
+      });
+
+      storage.clearAll();
+
+      expect(storage.getRecentSetsByExercise("user-1", ["ex-bench"])).toEqual(
+        {},
+      );
+    });
   });
 
   describe("exercise cache", () => {

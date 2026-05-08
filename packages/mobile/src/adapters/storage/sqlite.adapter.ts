@@ -980,6 +980,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM session_exercises;
       DELETE FROM exercise_sets;
       DELETE FROM personal_records;
+      DELETE FROM recent_sets;
       DELETE FROM sync_metadata;
       DELETE FROM reference_lists;
       DELETE FROM cached_dashboard;

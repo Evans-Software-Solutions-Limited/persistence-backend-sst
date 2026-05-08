@@ -414,6 +414,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.workoutDetailCache.clear();
     this.activeSessions.clear();
     this.personalRecords.clear();
+    this.recentSets.clear();
     this.restTimers.clear();
     this.nextId = 1;
   }
