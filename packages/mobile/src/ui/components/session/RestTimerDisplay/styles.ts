@@ -7,56 +7,57 @@ import {
 
 export const styles = {
   container: {
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    alignItems: "center" as const,
-  },
-  ringWrap: {
-    width: 160,
-    height: 160,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  ringLabel: {
     position: "absolute" as const,
-    alignItems: "center" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.background.primary,
     justifyContent: "center" as const,
+    alignItems: "center" as const,
+    zIndex: 2000,
+    elevation: 20,
   },
-  timeText: {
+  content: {
+    alignItems: "center" as const,
+    width: "100%" as const,
+    paddingHorizontal: Spacing.xl,
+  },
+  timerContainer: {
+    alignItems: "center" as const,
+    marginBottom: Spacing.xl * 2,
+  },
+  timerText: {
     ...Typography.h1,
-    color: Colors.text.primary,
+    fontSize: 72,
+    fontWeight: "700" as const,
+    color: Colors.primary.DEFAULT,
+    marginVertical: Spacing.lg,
+    fontVariant: ["tabular-nums" as const],
   },
-  captionText: {
-    ...Typography.caption,
+  timerLabel: {
+    ...Typography.body1,
     color: Colors.text.secondary,
     textTransform: "uppercase" as const,
-    letterSpacing: 1.5,
+    letterSpacing: 1,
   },
-  controls: {
-    flexDirection: "row" as const,
-    marginTop: Spacing.lg,
-    gap: Spacing.sm,
+  buttonContainer: {
+    width: "100%" as const,
+    maxWidth: 300,
   },
-  controlButton: {
-    flexDirection: "row" as const,
+  stopButton: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface.secondary,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface.tertiary,
-    gap: Spacing.xs,
   },
-  controlButtonPrimary: {
-    backgroundColor: Colors.primary.DEFAULT,
-  },
-  controlText: {
-    ...Typography.button,
+  stopButtonText: {
+    ...Typography.body1,
     color: Colors.text.primary,
-  },
-  controlTextPrimary: {
-    ...Typography.button,
-    color: Colors.text.primary,
+    fontWeight: "600" as const,
   },
 };

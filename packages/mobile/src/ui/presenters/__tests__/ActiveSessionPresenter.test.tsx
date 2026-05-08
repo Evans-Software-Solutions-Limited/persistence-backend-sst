@@ -26,7 +26,6 @@ const baseRestTimer = {
   totalSeconds: 0,
   progress: 0,
   onSkip: jest.fn(),
-  onExtend: jest.fn(),
   onDismiss: jest.fn(),
 };
 

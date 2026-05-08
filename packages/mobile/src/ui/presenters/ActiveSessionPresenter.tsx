@@ -83,7 +83,6 @@ export type ActiveSessionPresenterProps = {
     totalSeconds: number;
     progress: number;
     onSkip: () => void;
-    onExtend: (seconds: number) => void;
     onDismiss: () => void;
   };
   onClose: () => void;
@@ -320,7 +319,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         totalSeconds={props.restTimer.totalSeconds}
         progress={props.restTimer.progress}
         onSkip={props.restTimer.onSkip}
-        onExtend={props.restTimer.onExtend}
         onDismiss={props.restTimer.onDismiss}
       />
     </View>

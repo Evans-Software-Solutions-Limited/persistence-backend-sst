@@ -10,7 +10,6 @@ describe("RestTimerDisplay", () => {
     totalSeconds: 90,
     progress: 0.27,
     onSkip: jest.fn(),
-    onExtend: jest.fn(),
     onDismiss: jest.fn(),
   };
 
@@ -25,40 +24,38 @@ describe("RestTimerDisplay", () => {
     expect(queryByTestId("rest-timer-display")).toBeNull();
   });
 
-  it("renders the formatted countdown + Skip / +30s / +60s controls", () => {
+  it("renders the formatted countdown + Stop Timer button (legacy port)", () => {
     const { getByTestId, getByText } = renderWithTheme(
       <RestTimerDisplay {...baseProps} />,
     );
     expect(getByTestId("rest-timer-display")).toBeTruthy();
-    expect(getByText("1:05")).toBeTruthy(); // 65s formatted
+    // 65s → 01:05 (legacy pads minutes too).
+    expect(getByText("01:05")).toBeTruthy();
+    expect(getByText("Rest Time")).toBeTruthy();
+    expect(getByText("Stop Timer")).toBeTruthy();
     expect(getByTestId("rest-timer-skip")).toBeTruthy();
-    expect(getByTestId("rest-timer-extend-30")).toBeTruthy();
-    expect(getByTestId("rest-timer-extend-60")).toBeTruthy();
   });
 
-  it("formats sub-minute durations with a leading zero second", () => {
+  it("formats sub-minute durations with a leading-zero minute", () => {
     const { getByText } = renderWithTheme(
       <RestTimerDisplay {...baseProps} remainingSeconds={5} />,
     );
-    expect(getByText("0:05")).toBeTruthy();
+    expect(getByText("00:05")).toBeTruthy();
   });
 
-  it("renders 0:00 when remainingSeconds hits zero (falsy-zero safe)", () => {
+  it("renders 00:00 when remainingSeconds hits zero (falsy-zero safe)", () => {
     const { getByText } = renderWithTheme(
       <RestTimerDisplay {...baseProps} remainingSeconds={0} />,
     );
-    expect(getByText("0:00")).toBeTruthy();
+    expect(getByText("00:00")).toBeTruthy();
   });
 
-  it("dispatches onExtend with 30 / 60 and onSkip on the right buttons", () => {
+  it("dispatches onSkip when Stop Timer is pressed", () => {
+    const onSkip = jest.fn();
     const { getByTestId } = renderWithTheme(
-      <RestTimerDisplay {...baseProps} />,
+      <RestTimerDisplay {...baseProps} onSkip={onSkip} />,
     );
-    fireEvent.press(getByTestId("rest-timer-extend-30"));
-    expect(baseProps.onExtend).toHaveBeenCalledWith(30);
-    fireEvent.press(getByTestId("rest-timer-extend-60"));
-    expect(baseProps.onExtend).toHaveBeenCalledWith(60);
     fireEvent.press(getByTestId("rest-timer-skip"));
-    expect(baseProps.onSkip).toHaveBeenCalled();
+    expect(onSkip).toHaveBeenCalled();
   });
 });

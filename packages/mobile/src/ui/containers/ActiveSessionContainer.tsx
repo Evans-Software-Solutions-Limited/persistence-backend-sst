@@ -458,7 +458,6 @@ export function ActiveSessionContainer() {
           totalSeconds: restTimer.totalSeconds,
           progress: restTimer.progress,
           onSkip: restTimer.skip,
-          onExtend: restTimer.extend,
           onDismiss: restTimer.dismiss,
         }}
         onClose={onClose}
