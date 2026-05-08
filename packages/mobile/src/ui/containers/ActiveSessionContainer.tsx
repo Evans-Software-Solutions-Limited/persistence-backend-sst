@@ -142,21 +142,24 @@ export function ActiveSessionContainer() {
   // is on. `userId` is guarded — useRestTimer can't run without one.
   const restTimer = useRestTimer({ userId: userId ?? "anonymous" });
 
-  // Quick-fill bias for set 1: cross-session previous (last-workout's
-  // matching set) when wired. NOT yet sourced — V2 has no equivalent
-  // of legacy `user_history.recent_sets` plumbed through. Tracked as a
-  // M3 follow-up; for now this map is null per exercise. SessionExercise-
-  // Card derives per-set "previous" from the immediately preceding
-  // sibling set's data so set 2+ shows useful chips even without the
-  // cross-session source.
-  const previousByExercise = useMemo(() => {
-    const map: Record<string, { weightKg: number; reps: number } | null> = {};
-    if (!session) return map;
+  // Cross-session "Previous" hint per (sessionExerciseId, setNumber),
+  // sourced from the local recent-sets cache (1A.4). Mirrors legacy
+  // `user_history.recent_sets`. Empty map for exercises the user has
+  // never logged before — SetLogger renders an em-dash in that case.
+  const previousSetsByExercise = useMemo(() => {
+    const map: Record<
+      string,
+      Record<number, { weightKg: number; reps: number }>
+    > = {};
+    if (!session || !userId) return map;
+    const exerciseIds = session.exercises.map((ex) => ex.exerciseId);
+    if (exerciseIds.length === 0) return map;
+    const recent = storage.getRecentSetsByExercise(userId, exerciseIds);
     for (const ex of session.exercises) {
-      map[ex.id] = null;
+      map[ex.id] = recent[ex.exerciseId] ?? {};
     }
     return map;
-  }, [session]);
+  }, [session, userId, storage]);
 
   // Per-exercise template metadata threaded from the workout template.
   // Drives the legacy "{N} sets × {min}-{max} reps" caption + thumbnail
@@ -447,7 +450,7 @@ export function ActiveSessionContainer() {
         sessionName={session.name}
         startedAt={session.startedAt}
         exercises={session.exercises}
-        previousByExercise={previousByExercise}
+        previousSetsByExercise={previousSetsByExercise}
         templateByExercise={templateByExercise}
         restTimer={{
           isActive: restTimer.isActive,

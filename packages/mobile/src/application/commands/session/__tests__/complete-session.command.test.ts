@@ -124,6 +124,44 @@ describe("completeSessionCommand", () => {
     const payload = JSON.parse(storage.getPendingMutations()[0].payload);
     expect(payload.userNotes).toBe("Felt strong");
   });
+
+  it("upserts logged sets into the recent-sets cache so next session's Previous chip surfaces", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    completeSessionCommand({ storage, userId: "user-1", now });
+    const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
+    expect(recent["ex-bench"]?.[1]).toEqual({ weightKg: 80, reps: 8 });
+  });
+
+  it("skips recent-sets upsert when a set is missing weight or reps", () => {
+    const session = buildSession();
+    session.exercises[0].sets.push({
+      id: "set-2",
+      sessionExerciseId: "se-1",
+      setNumber: 2,
+      weightKg: null,
+      reps: null,
+      rpe: null,
+      durationSeconds: null,
+      distanceMeters: null,
+      isCompleted: false,
+      completedAt: null,
+    });
+    storage.cacheActiveSession("user-1", session);
+    completeSessionCommand({ storage, userId: "user-1", now });
+    const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
+    expect(recent["ex-bench"]?.[1]).toEqual({ weightKg: 80, reps: 8 });
+    // Set 2 has null weight/reps — never lands in the cache.
+    expect(recent["ex-bench"]?.[2]).toBeUndefined();
+  });
+
+  it("excludes substituted exercises from the recent-sets upsert", () => {
+    const session = buildSession();
+    session.exercises[0].isSubstituted = true;
+    storage.cacheActiveSession("user-1", session);
+    completeSessionCommand({ storage, userId: "user-1", now });
+    const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
+    expect(recent["ex-bench"]).toBeUndefined();
+  });
 });
 
 describe("cancelSessionCommand", () => {
@@ -146,6 +184,13 @@ describe("cancelSessionCommand", () => {
     expect(payload.status).toBe("cancelled");
     expect(payload.exercises[0].sets).toHaveLength(1);
     expect(payload.exercises[0].sets[0].weightKg).toBe(80);
+  });
+
+  it("does NOT upsert recent-sets on cancellation (cancelled sessions aren't real workouts)", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    cancelSessionCommand({ storage, userId: "user-1", now });
+    const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
+    expect(recent["ex-bench"]).toBeUndefined();
   });
 
   it("returns SESSION_NOT_FOUND when no active session exists", () => {

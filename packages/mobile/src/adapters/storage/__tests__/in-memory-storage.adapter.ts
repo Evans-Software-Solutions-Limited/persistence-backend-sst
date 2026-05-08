@@ -23,6 +23,7 @@ import type {
   SyncQueueEntry,
   SyncStats,
   EnqueueMutationInput,
+  RecentSetEntry,
   RestTimerState,
 } from "@/domain/ports/storage.port";
 import type { SyncStatus } from "@/domain/ports/sync.types";
@@ -42,6 +43,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private activeSessions: Map<string, WorkoutSession> = new Map();
   private personalRecords: Map<string, PersonalRecord[]> = new Map();
+  private recentSets: Map<string, RecentSetEntry[]> = new Map();
   private restTimers: Map<string, RestTimerState> = new Map();
   private nextId = 1;
 
@@ -316,6 +318,42 @@ export class InMemoryStorageAdapter implements StoragePort {
       .slice()
       .sort((a, b) => (a.achievedAt < b.achievedAt ? 1 : -1))
       .map((r) => ({ ...r }));
+  }
+
+  getRecentSetsByExercise(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): Record<string, Record<number, { weightKg: number; reps: number }>> {
+    if (exerciseIds.length === 0) return {};
+    const all = this.recentSets.get(userId) ?? [];
+    const wanted = new Set(exerciseIds);
+    const map: Record<
+      string,
+      Record<number, { weightKg: number; reps: number }>
+    > = {};
+    for (const entry of all) {
+      if (!wanted.has(entry.exerciseId)) continue;
+      const exMap = map[entry.exerciseId] ?? (map[entry.exerciseId] = {});
+      exMap[entry.setNumber] = {
+        weightKg: entry.weightKg,
+        reps: entry.reps,
+      };
+    }
+    return map;
+  }
+
+  upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void {
+    if (sets.length === 0) return;
+    const existing = this.recentSets.get(userId) ?? [];
+    const byKey = new Map(
+      existing.map(
+        (entry) => [`${entry.exerciseId}::${entry.setNumber}`, entry] as const,
+      ),
+    );
+    for (const s of sets) {
+      byKey.set(`${s.exerciseId}::${s.setNumber}`, { ...s });
+    }
+    this.recentSets.set(userId, Array.from(byKey.values()));
   }
 
   getRestTimerState(userId: string): RestTimerState | null {

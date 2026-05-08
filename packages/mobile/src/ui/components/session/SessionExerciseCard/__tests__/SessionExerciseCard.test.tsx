@@ -53,7 +53,7 @@ describe("SessionExerciseCard", () => {
     const { getByText, getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
       />,
@@ -67,7 +67,7 @@ describe("SessionExerciseCard", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
       />,
@@ -82,7 +82,7 @@ describe("SessionExerciseCard", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         targetSets={3}
         targetRepsMin={8}
@@ -97,7 +97,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise({ notes: "Keep elbows tucked" })}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
       />,
@@ -113,7 +113,7 @@ describe("SessionExerciseCard", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         targetSets={4}
         targetRepsMin={6}
@@ -127,7 +127,7 @@ describe("SessionExerciseCard", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         targetSets={5}
         targetRepsMin={5}
@@ -142,7 +142,7 @@ describe("SessionExerciseCard", () => {
     const { queryByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={90}
         {...baseHandlers}
       />,
@@ -157,7 +157,7 @@ describe("SessionExerciseCard", () => {
     const { getByText, getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={75}
         {...baseHandlers}
         onStartRest={onStartRest}
@@ -173,7 +173,7 @@ describe("SessionExerciseCard", () => {
     const { getByText, getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onLogSet={onLogSet}
@@ -188,7 +188,7 @@ describe("SessionExerciseCard", () => {
     const { UNSAFE_getByType } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         exerciseImageUrl="https://example.com/bench.png"
         {...baseHandlers}
@@ -207,7 +207,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onSubstitute={onSubstitute}
@@ -222,7 +222,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onOpenNotes={onOpenNotes}
@@ -237,7 +237,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onRemoveExercise={onRemoveExercise}
@@ -252,7 +252,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onTapExercise={onTapExercise}
@@ -267,7 +267,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onRemoveSet={onRemoveSet}
@@ -282,7 +282,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={null}
+        previousSetsBySetNumber={{}}
         restSeconds={60}
         {...baseHandlers}
         onUpdateSet={onUpdateSet}
@@ -297,7 +297,7 @@ describe("SessionExerciseCard", () => {
     const { getByTestId } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
-        previous={{ weightKg: 70, reps: 10 }}
+        previousSetsBySetNumber={{ 1: { weightKg: 70, reps: 10 } }}
         restSeconds={60}
         {...baseHandlers}
         onUpdateSet={onUpdateSet}

@@ -10,6 +10,21 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
+
+/**
+ * One row in the recent-sets cache. Keyed by (userId, exerciseId,
+ * setNumber); last-write-wins on upsert. Carries the weight + reps the
+ * user logged on their most recent attempt at that set number for that
+ * exercise. Null weight or null reps are filtered out at upsert time.
+ */
+export type RecentSetEntry = {
+  exerciseId: string;
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  /** ISO timestamp from the originating session's completedAt. */
+  recordedAt: string;
+};
 import type {
   CachedWorkoutDetail,
   CachedWorkoutsList,
@@ -215,6 +230,34 @@ export interface StoragePort {
     sessionId: string,
     exerciseId: string,
   ): ExerciseSet[];
+
+  /**
+   * Read the user's most recent set values keyed by (exerciseId,
+   * setNumber) for the supplied exercises. Drives the legacy "Previous"
+   * hint chip on each SetLogger row, mirroring legacy
+   * `user_history.recent_sets`. Returns a nested map: outer key is
+   * exerciseId, inner key is setNumber. Missing entries indicate the
+   * user has never logged that exercise (or that set number) before.
+   *
+   * Out-of-band exerciseIds (not in the recent-sets cache) are simply
+   * omitted from the result; callers treat absence as "no previous".
+   */
+  getRecentSetsByExercise(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): Record<string, Record<number, { weightKg: number; reps: number }>>;
+
+  /**
+   * Upsert the just-completed session's logged sets into the recent-sets
+   * cache. Last-write-wins per (userId, exerciseId, setNumber) — a new
+   * session's set 1 replaces any prior recent-sets entry for that
+   * setNumber. Sets with null weight or null reps are skipped (no
+   * meaningful "previous" hint to surface). Called from
+   * `completeSessionCommand` immediately after the active-session row
+   * flips to `completed`, before the bulk-record flush — local cache is
+   * the source of truth for next-session "previous" hints.
+   */
+  upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void;
 
   /**
    * Upsert PR rows by `(userId, exerciseId, recordType)`. Latest write

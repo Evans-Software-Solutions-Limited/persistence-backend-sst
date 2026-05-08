@@ -34,7 +34,7 @@ const baseProps = {
   sessionName: "Push Day",
   startedAt: "2026-05-05T10:00:00.000Z",
   exercises: [buildExercise()],
-  previousByExercise: {},
+  previousSetsByExercise: {},
   templateByExercise: {},
   restTimer: baseRestTimer,
   onClose: jest.fn(),

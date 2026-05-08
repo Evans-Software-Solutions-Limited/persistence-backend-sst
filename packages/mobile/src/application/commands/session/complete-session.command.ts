@@ -20,7 +20,7 @@
 import { calculateSummary } from "@/domain/services/sessionService";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { RecordSessionInput } from "@/domain/ports/api.port";
-import type { StoragePort } from "@/domain/ports/storage.port";
+import type { RecentSetEntry, StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
 import type { SessionNotFoundError } from "./log-set.command";
 
@@ -136,6 +136,36 @@ export function finalizeSessionCommand(
   // matters: if the queue write throws, the SQLite row already
   // reflects the user's intent so a relaunch can re-enqueue.
   deps.storage.cacheActiveSession(deps.userId, finalized);
+
+  // Snapshot the just-completed session's logged sets into the
+  // recent-sets cache so the NEXT session's "Previous" hints surface
+  // immediately. Mirrors legacy `user_history.recent_sets` but is
+  // local-only — V2 has no equivalent server endpoint yet, and
+  // offline-first means we must populate the chip from the device's
+  // own history. Skipped for cancelled sessions: those aren't real
+  // workouts and shouldn't shadow the user's last actual attempt.
+  if (status === "completed") {
+    const recentSets: RecentSetEntry[] = [];
+    for (const ex of finalized.exercises) {
+      // Substituted rows are excluded — their sets belong to an
+      // exercise the user moved away from. The new (non-substituted)
+      // row carries the canonical attempt for that exerciseId.
+      if (ex.isSubstituted) continue;
+      for (const set of ex.sets) {
+        if (set.weightKg == null || set.reps == null) continue;
+        recentSets.push({
+          exerciseId: ex.exerciseId,
+          setNumber: set.setNumber,
+          weightKg: set.weightKg,
+          reps: set.reps,
+          recordedAt: completedAt,
+        });
+      }
+    }
+    if (recentSets.length > 0) {
+      deps.storage.upsertRecentSets(deps.userId, recentSets);
+    }
+  }
 
   deps.storage.enqueueMutation({
     entityType: "session",

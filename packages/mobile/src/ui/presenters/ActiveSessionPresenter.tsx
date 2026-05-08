@@ -61,11 +61,16 @@ export type ActiveSessionPresenterProps = {
   startedAt: string;
   exercises: SessionExercise[];
   /**
-   * Map of `sessionExerciseId → previous { weightKg, reps }`. Populated
-   * by the container from in-session completed sets (priority codified
-   * in EXECUTION_PLAN § 3.5: in-session → PR cache → nothing).
+   * Cross-session "Previous" hint per `(sessionExerciseId, setNumber)`,
+   * populated by the container from the local recent-sets cache. Mirrors
+   * legacy `user_history.recent_sets`. Empty inner map for exercises the
+   * user has never logged before — SetLogger renders an em-dash for
+   * unmatched setNumbers.
    */
-  previousByExercise: Record<string, { weightKg: number; reps: number } | null>;
+  previousSetsByExercise: Record<
+    string,
+    Record<number, { weightKg: number; reps: number }>
+  >;
   /**
    * Map of `sessionExerciseId → template metadata`. Container builds it
    * from `useWorkout`; missing entries fall back to a default
@@ -215,7 +220,9 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   <SessionExerciseCard
                     key={ex.id}
                     exercise={ex}
-                    previous={props.previousByExercise[ex.id] ?? null}
+                    previousSetsBySetNumber={
+                      props.previousSetsByExercise[ex.id] ?? {}
+                    }
                     exerciseImageUrl={template.imageUrl}
                     targetSets={template.targetSets}
                     targetRepsMin={template.targetRepsMin}
@@ -239,7 +246,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   key={`superset-${item.supersetGroup}`}
                   supersetGroup={item.supersetGroup}
                   exercises={item.exercises}
-                  previousByExercise={props.previousByExercise}
+                  previousSetsByExercise={props.previousSetsByExercise}
                   templateByExercise={props.templateByExercise}
                   onLogSupersetSet={props.onLogSupersetSet}
                   onUpdateSet={props.onUpdateSet}

@@ -31,7 +31,10 @@ const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 export type SupersetGroupCardProps = {
   supersetGroup: number;
   exercises: SessionExercise[];
-  previousByExercise: Record<string, { weightKg: number; reps: number } | null>;
+  previousSetsByExercise: Record<
+    string,
+    Record<number, { weightKg: number; reps: number }>
+  >;
   templateByExercise: Record<string, SessionExerciseTemplate>;
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
   onUpdateSet: (
@@ -77,7 +80,9 @@ export function SupersetGroupCard(props: SupersetGroupCardProps) {
             <SessionExerciseCard
               key={ex.id}
               exercise={ex}
-              previous={props.previousByExercise[ex.id] ?? null}
+              previousSetsBySetNumber={
+                props.previousSetsByExercise[ex.id] ?? {}
+              }
               exerciseImageUrl={template.imageUrl}
               targetSets={template.targetSets}
               targetRepsMin={template.targetRepsMin}

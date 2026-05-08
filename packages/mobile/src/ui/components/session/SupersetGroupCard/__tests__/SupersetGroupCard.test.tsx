@@ -31,9 +31,9 @@ const baseProps = {
       sortOrder: 1,
     }),
   ],
-  previousByExercise: {} as Record<
+  previousSetsByExercise: {} as Record<
     string,
-    { weightKg: number; reps: number } | null
+    Record<number, { weightKg: number; reps: number }>
   >,
   templateByExercise: {} as Record<
     string,

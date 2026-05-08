@@ -24,8 +24,13 @@ import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 
 export type SessionExerciseCardProps = {
   exercise: SessionExercise;
-  /** Last completed set on this exercise, in the active session. */
-  previous: { weightKg: number; reps: number } | null;
+  /**
+   * Cross-session "Previous" hints keyed by setNumber. Populated by the
+   * container from the local recent-sets cache. An entry exists only for
+   * setNumbers the user has logged before — missing setNumbers render
+   * an em-dash. Mirrors legacy `previousSets[]` from user history.
+   */
+  previousSetsBySetNumber: Record<number, { weightKg: number; reps: number }>;
   /** Optional thumbnail URL. A barbell-outline placeholder renders when missing. */
   exerciseImageUrl?: string;
   /**
@@ -159,20 +164,13 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
 
       <View>
         {props.exercise.sets.map((set, idx) => {
-          // Per-set "previous" hint:
-          //   - Set 1 (idx 0): cross-session previous (from props.previous,
-          //     wired later from a user-history API endpoint).
-          //   - Set 2+: the immediately preceding sibling set's data
-          //     when it has both weight + reps. Mirrors legacy "what did
-          //     I do last set" intent and lets the chip work in-session
-          //     without the cross-session source.
-          const sibling = idx > 0 ? props.exercise.sets[idx - 1] : null;
+          // Per-set "Previous" chip = the user's most recent value for
+          // this setNumber on this exercise (cross-session, sourced
+          // from the recent-sets cache). Mirrors legacy
+          // ActiveSetRow + previousSets[] keyed on setNumber. No
+          // sibling-set fallback — legacy doesn't do that either.
           const previousForSet =
-            idx === 0
-              ? props.previous
-              : sibling && sibling.weightKg != null && sibling.reps != null
-                ? { weightKg: sibling.weightKg, reps: sibling.reps }
-                : null;
+            props.previousSetsBySetNumber[set.setNumber] ?? null;
           return (
             <SetLogger
               key={set.id}

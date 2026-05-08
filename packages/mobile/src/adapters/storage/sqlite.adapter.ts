@@ -27,6 +27,7 @@ import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   EnqueueMutationInput,
+  RecentSetEntry,
   RestTimerState,
   SyncQueueEntry,
   SyncStats,
@@ -173,6 +174,23 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
       CREATE INDEX IF NOT EXISTS personal_records_user_exercise
         ON personal_records(user_id, exercise_id);
+
+      -- M3 (1A.4): cross-session "Previous" hint cache. Mirrors legacy
+      -- user_history.recent_sets — each row is the user's most recent
+      -- (weightKg, reps) for a given exercise + setNumber. Upserted
+      -- by completeSessionCommand on flip-to-completed. Read by the
+      -- active-session container to populate per-set Previous chips.
+      CREATE TABLE IF NOT EXISTS recent_sets (
+        user_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        set_number INTEGER NOT NULL,
+        weight_kg REAL NOT NULL,
+        reps INTEGER NOT NULL,
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, exercise_id, set_number)
+      );
+      CREATE INDEX IF NOT EXISTS idx_recent_sets_user_exercise
+        ON recent_sets (user_id, exercise_id);
 
       CREATE TABLE IF NOT EXISTS sync_metadata (
         entity_type TEXT PRIMARY KEY,
@@ -824,6 +842,54 @@ export class SQLiteStorageAdapter implements StoragePort {
           [userId],
         ) as PersonalRecordRow[]);
     return rows.map(toPersonalRecord);
+  }
+
+  getRecentSetsByExercise(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): Record<string, Record<number, { weightKg: number; reps: number }>> {
+    if (exerciseIds.length === 0) return {};
+    const db = this.getDb();
+    const placeholders = exerciseIds.map(() => "?").join(",");
+    const rows = db.getAllSync(
+      `SELECT exercise_id, set_number, weight_kg, reps
+       FROM recent_sets
+       WHERE user_id = ? AND exercise_id IN (${placeholders})`,
+      [userId, ...exerciseIds],
+    ) as Array<{
+      exercise_id: string;
+      set_number: number;
+      weight_kg: number;
+      reps: number;
+    }>;
+    const map: Record<
+      string,
+      Record<number, { weightKg: number; reps: number }>
+    > = {};
+    for (const row of rows) {
+      const exerciseMap = map[row.exercise_id] ?? (map[row.exercise_id] = {});
+      exerciseMap[row.set_number] = { weightKg: row.weight_kg, reps: row.reps };
+    }
+    return map;
+  }
+
+  upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void {
+    if (sets.length === 0) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      for (const s of sets) {
+        db.runSync(
+          `INSERT INTO recent_sets
+             (user_id, exercise_id, set_number, weight_kg, reps, recorded_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, exercise_id, set_number) DO UPDATE SET
+             weight_kg = excluded.weight_kg,
+             reps = excluded.reps,
+             recorded_at = excluded.recorded_at`,
+          [userId, s.exerciseId, s.setNumber, s.weightKg, s.reps, s.recordedAt],
+        );
+      }
+    });
   }
 
   swapLocalSessionId(localId: string, serverId: string): void {
