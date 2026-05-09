@@ -125,6 +125,85 @@ describe("completeSessionCommand", () => {
     expect(payload.userNotes).toBe("Felt strong");
   });
 
+  it("synthesizes isCompleted on logged sets so summary stats are non-zero post-1A.1", () => {
+    // Post-1A.1 the Mark-Complete UI is gone — sets enter finalize with
+    // isCompleted=false. calculateSummary, detectPersonalRecords, and
+    // the bulk-record payload all gate on isCompleted, so without
+    // synthesis at finalize time, every Summary screen reads zero.
+    const session = buildSession();
+    session.exercises[0].sets = [
+      {
+        id: "set-1",
+        sessionExerciseId: "se-1",
+        setNumber: 1,
+        weightKg: 80,
+        reps: 8,
+        rpe: null,
+        durationSeconds: null,
+        distanceMeters: null,
+        isCompleted: false,
+        completedAt: null,
+      },
+      {
+        id: "set-2",
+        sessionExerciseId: "se-1",
+        setNumber: 2,
+        weightKg: null,
+        reps: null,
+        rpe: null,
+        durationSeconds: null,
+        distanceMeters: null,
+        isCompleted: false,
+        completedAt: null,
+      },
+    ];
+    storage.cacheActiveSession("user-1", session);
+
+    completeSessionCommand({ storage, userId: "user-1", now });
+
+    // Cached session reflects the synthesis: set 1 completed, set 2
+    // (no data) untouched.
+    const cached = storage.getLatestSession("user-1");
+    expect(cached?.exercises[0].sets[0].isCompleted).toBe(true);
+    expect(cached?.exercises[0].sets[0].completedAt).toBe(
+      "2026-05-05T11:00:00.000Z",
+    );
+    expect(cached?.exercises[0].sets[1].isCompleted).toBe(false);
+
+    // Bulk-record payload also reflects the synthesis.
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    expect(payload.exercises[0].sets[0].isCompleted).toBe(true);
+    expect(payload.exercises[0].sets[1].isCompleted).toBe(false);
+  });
+
+  it("does NOT synthesize isCompleted on cancelled sessions", () => {
+    const session = buildSession();
+    session.exercises[0].sets[0].isCompleted = false;
+    session.exercises[0].sets[0].completedAt = null;
+    storage.cacheActiveSession("user-1", session);
+
+    cancelSessionCommand({ storage, userId: "user-1", now });
+
+    const cached = storage.getLatestSession("user-1");
+    expect(cached?.exercises[0].sets[0].isCompleted).toBe(false);
+  });
+
+  it("preserves an existing completedAt when synthesizing (already-completed sets are untouched)", () => {
+    const session = buildSession();
+    // Set 1 is already completed at an earlier timestamp — synthesis
+    // must not overwrite it.
+    session.exercises[0].sets[0].isCompleted = true;
+    session.exercises[0].sets[0].completedAt = "2026-05-05T10:30:00.000Z";
+    storage.cacheActiveSession("user-1", session);
+
+    completeSessionCommand({ storage, userId: "user-1", now });
+
+    const cached = storage.getLatestSession("user-1");
+    expect(cached?.exercises[0].sets[0].completedAt).toBe(
+      "2026-05-05T10:30:00.000Z",
+    );
+  });
+
   it("upserts logged sets into the recent-sets cache so next session's Previous chip surfaces", () => {
     storage.cacheActiveSession("user-1", buildSession());
     completeSessionCommand({ storage, userId: "user-1", now });

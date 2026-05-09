@@ -269,6 +269,37 @@ export function completeSet(
 }
 
 /**
+ * Mark every set with both `weightKg` and `reps` as completed,
+ * stamping `completedAt`. Mirrors legacy semantics: legacy has no
+ * per-set "Mark Complete" UI — any set with data is "logged" — but
+ * V2's calculateSummary / detectPersonalRecords / bulk-record
+ * payload all gate on `isCompleted`. Apply this transform at
+ * finalize-on-complete so the downstream gates see the user's
+ * actual logged sets. Substituted exercises are skipped (their sets
+ * belong to an exercise the user moved away from). Sets already
+ * `isCompleted` are untouched (preserves any prior `completedAt`).
+ */
+export function markLoggedSetsCompleted(
+  session: WorkoutSession,
+  completedAt: string,
+): WorkoutSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) => {
+      if (ex.isSubstituted) return ex;
+      return {
+        ...ex,
+        sets: ex.sets.map((set) =>
+          !set.isCompleted && set.weightKg != null && set.reps != null
+            ? { ...set, isCompleted: true, completedAt }
+            : set,
+        ),
+      };
+    }),
+  };
+}
+
+/**
  * Substitute an exercise mid-session. Old row stays in place with
  * `isSubstituted: true` (sets preserved per Story-004 AC); new row is
  * inserted at `oldSortOrder + 1` and downstream rows shift by +1.

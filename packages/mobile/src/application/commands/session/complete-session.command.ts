@@ -17,7 +17,10 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 8
  */
 
-import { calculateSummary } from "@/domain/services/sessionService";
+import {
+  calculateSummary,
+  markLoggedSetsCompleted,
+} from "@/domain/services/sessionService";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { RecordSessionInput } from "@/domain/ports/api.port";
 import type { RecentSetEntry, StoragePort } from "@/domain/ports/storage.port";
@@ -86,10 +89,27 @@ export function finalizeSessionCommand(
   }
 
   const completedAt = (deps.now?.() ?? new Date()).toISOString();
-  const summary = calculateSummary({ ...session, completedAt }, completedAt);
+
+  // Synthesize per-set completion at finalize time. Post-1A.1 the
+  // Mark-Complete UI is gone (legacy parity) — no UI path flips
+  // `set.isCompleted` true. But calculateSummary, detectPersonalRecords,
+  // and the bulk-record payload still gate on it. `markLoggedSets-
+  // Completed` flips it for every set with both `weightKg` and `reps`
+  // non-null, which is the legacy "set has data → it's logged" rule.
+  // Only applied on completion: cancelled sessions aren't real workouts
+  // and shouldn't have their sets count toward stats / PRs / server
+  // history.
+  const sessionWithCompletion =
+    status === "completed"
+      ? markLoggedSetsCompleted(session, completedAt)
+      : session;
+  const summary = calculateSummary(
+    { ...sessionWithCompletion, completedAt },
+    completedAt,
+  );
 
   const finalized: WorkoutSession = {
-    ...session,
+    ...sessionWithCompletion,
     status,
     completedAt,
     notes,
