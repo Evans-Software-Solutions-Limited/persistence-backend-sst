@@ -74,6 +74,30 @@ jest.mock("expo-notifications", () => ({
   cancelScheduledNotificationAsync: jest.fn(async () => undefined),
 }));
 
+// Mock @expo/vector-icons to a no-op View. The real Icon component
+// kicks off an async font-loader on mount that calls setState after
+// the font resolves; if the test finishes before that, the setState
+// fires after Jest tears down its environment and emits
+// "ReferenceError: You are trying to access a property or method of
+// the Jest environment after it has been torn down." Stubbing here
+// removes the async leak globally so any test that mounts an Icon
+// (sessions, banners, tab icons, etc.) is safe.
+jest.mock("@expo/vector-icons", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const Icon = (props: Record<string, unknown>) =>
+    React.createElement(View, { testID: props.testID });
+  return new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (prop === "__esModule") return true;
+        return Icon;
+      },
+    },
+  );
+});
+
 // Silence known-noisy warnings in tests unless debugging.
 // Other warnings (including React act() warnings) still surface.
 const SILENCED_WARNINGS = [
