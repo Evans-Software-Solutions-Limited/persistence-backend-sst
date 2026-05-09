@@ -59,7 +59,7 @@ export type ActiveSessionBannerProps = {
   sessionOverride?: WorkoutSession | null;
 };
 
-export function ActiveSessionBanner(props: ActiveSessionBannerProps = {}) {
+export function ActiveSessionBanner(props: ActiveSessionBannerProps) {
   const { storage } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
