@@ -2,9 +2,14 @@
  * ExerciseNotesPopover — per-exercise notes mid-session.
  *
  * Ported 1:1 from
- * `persistence-mobile/components/workouts/ExerciseNotesPopover`. Slide-
- * up modal with a single multiline TextInput. Save trims and persists
- * onto `SessionExercise.notes`; Cancel discards.
+ * `persistence-mobile/components/workouts/ExerciseNotesPopover`.
+ * Slide-up drawer on the active-session screen with a Cancel + Save
+ * footer (matches the legacy shape — earlier V2 dropped Cancel and
+ * left only the header X). Save trims and persists onto
+ * `SessionExercise.notes`; Cancel resets local state and discards.
+ *
+ * Drawer geometry mirrors legacy: `flex: 1`, `maxHeight: 80%`,
+ * `Colors.surface.primary` bg, `borderRadius: 20`.
  *
  * Spec: specs/05-active-session/requirements.md (extension to STORY-002:
  *       per-exercise notes match legacy parity).
@@ -22,15 +27,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { Colors, Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 
 export type ExerciseNotesPopoverProps = {
   visible: boolean;
@@ -82,7 +83,7 @@ export function ExerciseNotesPopover({
               <TouchableOpacity
                 onPress={handleCancel}
                 style={styles.closeButton}
-                testID="exercise-notes-cancel"
+                testID="exercise-notes-close"
               >
                 <Ionicons name="close" size={24} color={Colors.text.primary} />
               </TouchableOpacity>
@@ -97,28 +98,45 @@ export function ExerciseNotesPopover({
 
               <View style={styles.inputContainer}>
                 <TextInput
-                  style={styles.input}
+                  style={styles.notesInput}
                   value={notes}
                   onChangeText={setNotes}
-                  placeholder="Notes for this exercise..."
+                  placeholder="Add a note about this exercise..."
                   placeholderTextColor={Colors.text.tertiary}
                   multiline
+                  numberOfLines={8}
                   textAlignVertical="top"
                   autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
                   testID="exercise-notes-input"
                 />
               </View>
             </ScrollView>
 
-            <View style={styles.footer}>
-              <TouchableOpacity
-                onPress={handleSave}
-                style={styles.saveButton}
-                testID="exercise-notes-save"
-              >
-                <Text style={styles.saveLabel}>Save</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableWithoutFeedback
+              onPress={Keyboard.dismiss}
+              accessible={false}
+            >
+              <View style={styles.actionsContainer}>
+                <TouchableOpacity
+                  onPress={handleCancel}
+                  style={[styles.button, styles.cancelButton]}
+                  activeOpacity={0.7}
+                  testID="exercise-notes-cancel"
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSave}
+                  style={[styles.button, styles.saveButton]}
+                  activeOpacity={0.7}
+                  testID="exercise-notes-save"
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -126,10 +144,13 @@ export function ExerciseNotesPopover({
   );
 }
 
+// Geometry mirrors persistence-mobile/components/workouts/ExerciseNotesPopover
+// — flex 1 + maxHeight 80%, surface.primary bg, literal radius 20 (matches
+// legacy drawer; sits between BorderRadius.lg=16 and xl=24 in the token set).
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
   container: {
@@ -137,54 +158,73 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: Colors.background.primary,
-    borderTopLeftRadius: BorderRadius.lg,
-    borderTopRightRadius: BorderRadius.lg,
-    minHeight: "60%",
-    maxHeight: "85%",
+    backgroundColor: Colors.surface.primary,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+    maxHeight: "80%",
+    flex: 1,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    marginBottom: Spacing.md,
   },
   headerTitle: {
     ...Typography.h3,
     color: Colors.text.primary,
+    fontWeight: "600",
   },
   closeButton: { padding: Spacing.xs },
   scrollView: { flex: 1 },
-  scrollContent: { padding: Spacing.md, gap: Spacing.md },
+  scrollContent: { paddingBottom: Spacing.md },
   exerciseName: {
     ...Typography.body1,
     color: Colors.text.secondary,
+    marginBottom: Spacing.md,
   },
   inputContainer: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
-    minHeight: 160,
+    flex: 1,
+    marginBottom: Spacing.lg,
   },
-  input: {
+  notesInput: {
+    ...Typography.body2,
+    color: Colors.text.primary,
+    backgroundColor: Colors.surface.secondary,
+    borderRadius: 12,
+    padding: Spacing.md,
+    minHeight: 150,
+    maxHeight: 300,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
+  },
+  actionsContainer: {
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: Colors.surface.secondary,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
+  },
+  cancelButtonText: {
     ...Typography.body1,
     color: Colors.text.primary,
-    minHeight: 140,
-  },
-  footer: {
-    padding: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
+    fontWeight: "600",
   },
   saveButton: {
     backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
-    alignItems: "center",
   },
-  saveLabel: {
+  saveButtonText: {
     ...Typography.body1,
     color: Colors.text.primary,
     fontWeight: "600",
