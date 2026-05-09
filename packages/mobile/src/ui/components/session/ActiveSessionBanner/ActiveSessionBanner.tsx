@@ -1,22 +1,20 @@
 /**
- * ActiveSessionBanner — "session in progress" affordance ported 1:1
- * from `persistence-mobile/components/workouts/ActiveWorkoutBanner`.
+ * ActiveSessionBanner — single banner mounted once in `(app)/_layout.tsx`.
  *
- * Two variants split exactly the way legacy did:
+ * Visually faithful to legacy `persistence-mobile/components/workouts/
+ * ActiveWorkoutBanner` — same colors, content, and per-context dimensions
+ * (compact 56pt above the tab bar; ~72pt + bottom safe area on detail
+ * screens). Internally collapsed to one component to avoid the two-banner
+ * overlap legacy had during back-pop transitions: when both `global`
+ * (mounted in `(app)`) and `tabs` (mounted in `(tabs)`) were rendered,
+ * `useSegments()` lagged behind the gesture and both banners briefly
+ * co-existed mid-swipe.
  *
- *  - `global` (default): `position: absolute, bottom: 0`. Mounted
- *    once in `(app)/_layout.tsx`. Renders only when we're NOT inside
- *    `(tabs)` (the tabs variant takes over there) AND not in
- *    `(auth)` (legacy `isInAuthLayout` check). Slide-up entry.
- *
- *  - `tabs`: in-flow style, mounted inside `(app)/(tabs)/_layout.tsx`
- *    above the tab bar. Floats at `bottom: tabBarHeight` so the tab
- *    bar's own safe-area inset is preserved — no SafeAreaView on the
- *    banner itself. No entry animation: the banner's mount lifecycle
- *    matches the tabs layout's, so it's there from first render.
- *
- * Both variants hide while on the session screen itself (would stack
- * on top of the screen's footer buttons).
+ * Position is computed from `useSegments()` and animated between
+ * `bottom: 0` (detail screens) and `bottom: tabBarHeight` (tab screens)
+ * via a 180ms ease-out so the post-gesture settle feels intentional
+ * rather than a snap. Hidden entirely on the active-session modal and
+ * during `(auth)`.
  *
  * Spec: persistence-mobile/components/workouts/ActiveWorkoutBanner
  *       specs/05-active-session/requirements.md STORY-005
@@ -33,10 +31,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -55,12 +50,6 @@ const formatElapsed = (ms: number): string => {
 };
 
 export type ActiveSessionBannerProps = {
-  /**
-   * `global` (default): absolute-positioned at `bottom: 0`, mounted
-   * in `(app)/_layout.tsx` for non-tabs surfaces. `tabs`: floats
-   * just above the tab bar, mounted inside `(tabs)/_layout.tsx`.
-   */
-  variant?: "global" | "tabs";
   /** Test seam — fixed clock for jest. */
   clock?: () => number;
   /**
@@ -70,22 +59,17 @@ export type ActiveSessionBannerProps = {
   sessionOverride?: WorkoutSession | null;
 };
 
-/**
- * Reads the active session from SQLite on mount + on focus / route
- * changes. Uses `useSegments` to hide while on the session screen
- * itself (would stack with the screen's footer) and to keep the
- * `global` variant out of `(tabs)` and `(auth)` segments — the tabs
- * variant covers (tabs), and (auth) shouldn't surface a workout-in-
- * progress affordance on the sign-in flow.
- */
 export function ActiveSessionBanner(props: ActiveSessionBannerProps = {}) {
-  const variant = props.variant ?? "global";
   const { storage } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
   const insets = useSafeAreaInsets();
 
-  const segments = useSegments();
+  // `useSegments` is typed against the typed-routes tuple by default,
+  // which narrows literal `.includes()` checks to `never` for group
+  // segments like `(auth)`. Widen to plain `string[]` so the runtime
+  // checks below typecheck.
+  const segments = useSegments() as readonly string[];
   const isOnSessionScreen = useMemo(
     () =>
       // Expo Router segments include intermediate group names; check
@@ -103,16 +87,23 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps = {}) {
     [segments],
   );
 
-  // Re-read the cache on every segments change (cheap synchronous
-  // SQLite read) — covers the case where the user finishes a session
-  // and routes back to a tab; the banner needs to disappear without
-  // a separate notify channel.
-  const [session, setSession] = useState<WorkoutSession | null>(
-    props.sessionOverride ?? null,
-  );
+  // Tab-bar height mirrors `(tabs)/_layout.tsx` (60 + insets.bottom).
+  const tabBarHeight = 60 + insets.bottom;
+  const targetBottom = isInTabsLayout ? tabBarHeight : 0;
+
+  // Lazy initializer reads from SQLite synchronously on mount so the
+  // first render already has the right state — no useEffect lag where
+  // session=null until the next frame. Subsequent reads are handled
+  // by the segments-change effect below.
+  const [session, setSession] = useState<WorkoutSession | null>(() => {
+    if (props.sessionOverride !== undefined)
+      return props.sessionOverride ?? null;
+    if (!userId) return null;
+    return storage.getActiveSession(userId);
+  });
   useEffect(() => {
     if (props.sessionOverride !== undefined) {
-      setSession(props.sessionOverride);
+      setSession(props.sessionOverride ?? null);
       return;
     }
     if (!userId) {
@@ -136,105 +127,76 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.startedAt]);
 
-  const translateY = useRef(new Animated.Value(24)).current;
-  // Only the global variant slides in; the tabs variant is mounted
-  // inside the tabs layout and is there from first frame, so the
-  // animation is unwanted (and would also conflict with tab transitions).
+  // Animate `bottom` between 0 and tabBarHeight when segments change.
+  // Initialized to the current target so the first render is at the
+  // correct position with no entry animation. `useNativeDriver: false`
+  // because `bottom` is a layout prop — for a 180ms one-shot per
+  // navigation event the JS-thread cost is negligible.
+  const animatedBottom = useRef(new Animated.Value(targetBottom)).current;
   useEffect(() => {
-    if (!session || isOnSessionScreen) return;
-    if (variant !== "global") return;
-    Animated.timing(translateY, {
-      toValue: 0,
-      duration: 220,
+    Animated.timing(animatedBottom, {
+      toValue: targetBottom,
+      duration: 180,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
-  }, [session, isOnSessionScreen, variant, translateY]);
+  }, [targetBottom, animatedBottom]);
 
-  // Visibility gate. The tabs variant only mounts inside (tabs); it
-  // doesn't need an extra `isInTabsLayout` check. The global variant
-  // hides on (tabs) AND (auth) so it never overlaps the tabs banner
-  // and doesn't surface during sign-in.
-  if (!session || isOnSessionScreen) return null;
-  if (variant === "global" && (isInTabsLayout || isInAuthLayout)) return null;
+  if (!session || isOnSessionScreen || isInAuthLayout) return null;
 
   const onPress = () => {
     router.push(`/(app)/session?sessionId=${session.id}` as never);
   };
 
-  if (variant === "tabs") {
-    // Tab-bar height mirrors `(tabs)/_layout.tsx` (60 + insets.bottom).
-    // Floating just above it keeps the tab bar's hit-area intact.
-    const tabBarHeight = 60 + insets.bottom;
-    return (
-      <View style={[styles.tabsContainer, { bottom: tabBarHeight }]}>
-        <Pressable
-          onPress={onPress}
-          style={styles.tabsRow}
-          testID="active-session-banner"
-        >
-          <View style={styles.leftSection}>
-            <Ionicons name="stopwatch-outline" size={20} color="#fff" />
-            <Text style={styles.time}>{formatElapsed(elapsedMs)}</Text>
-          </View>
-          <View style={styles.centerSection}>
-            <Text
-              style={styles.title}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              testID="active-session-banner-title"
-            >
-              {session.name || "Active Workout"}
-            </Text>
-          </View>
-          <Ionicons name="chevron-up" size={18} color="#fff" />
-        </Pressable>
-      </View>
-    );
-  }
+  // Style switches between "compact" (in tabs, 56pt above the tab bar)
+  // and "tall" (detail screens, sits at bottom 0 with bottom safe area
+  // padding so the home indicator is clear). Both share the same chrome
+  // (bg, border, shadow) — only height + padding differ.
+  const isCompact = isInTabsLayout;
+  const containerStyle = isCompact
+    ? styles.containerCompact
+    : [styles.containerTall, { paddingBottom: insets.bottom + Spacing.md }];
 
   return (
     <Animated.View
-      style={[styles.globalContainer, { transform: [{ translateY }] }]}
+      style={[styles.container, containerStyle, { bottom: animatedBottom }]}
       pointerEvents="box-none"
     >
-      <SafeAreaView edges={["bottom"]} style={styles.globalSafeArea}>
-        <Pressable
-          onPress={onPress}
-          style={styles.row}
-          testID="active-session-banner"
-        >
-          <View style={styles.leftSection}>
-            <Ionicons name="stopwatch-outline" size={20} color="#fff" />
-            <Text style={styles.time}>{formatElapsed(elapsedMs)}</Text>
-          </View>
-          <View style={styles.centerSection}>
-            <Text
-              style={styles.title}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              testID="active-session-banner-title"
-            >
-              {session.name || "Active Workout"}
-            </Text>
-          </View>
-          <Ionicons name="chevron-up" size={18} color="#fff" />
-        </Pressable>
-      </SafeAreaView>
+      <Pressable
+        onPress={onPress}
+        style={isCompact ? styles.rowCompact : styles.rowTall}
+        testID="active-session-banner"
+      >
+        <View style={styles.leftSection}>
+          <Ionicons name="stopwatch-outline" size={20} color="#fff" />
+          <Text style={styles.time}>{formatElapsed(elapsedMs)}</Text>
+        </View>
+        <View style={styles.centerSection}>
+          <Text
+            style={styles.title}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            testID="active-session-banner-title"
+          >
+            {session.name || "Active Workout"}
+          </Text>
+        </View>
+        <Ionicons name="chevron-up" size={18} color="#fff" />
+      </Pressable>
     </Animated.View>
   );
 }
 
-// Geometry + colours match legacy ActiveWorkoutBanner. `globalContainer`
-// mirrors `globalContainer` (full-width, bottom: 0, slide-up); `tabsContainer`
-// mirrors `tabsBanner` (height 56, sits above the tab bar via dynamic
-// `bottom: tabBarHeight`).
+// Geometry + colours match legacy ActiveWorkoutBanner. `containerCompact`
+// mirrors the legacy `tabsBanner` (height 56, paddingVertical sm).
+// `containerTall` mirrors `globalContainer` + `globalSafeArea` collapsed
+// (minHeight 72, paddingTop md, with bottom safe-area padding applied
+// inline at render so it tracks the device insets).
 const styles = StyleSheet.create({
-  globalContainer: {
+  container: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 0,
     backgroundColor: colorPalette.primary800,
     borderTopWidth: 1,
     borderTopColor: colorPalette.primary700,
@@ -245,28 +207,15 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
-  globalSafeArea: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    minHeight: 72,
-    justifyContent: "flex-start",
-  },
-  tabsContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    backgroundColor: colorPalette.primary800,
-    borderTopWidth: 1,
-    borderTopColor: colorPalette.primary700,
+  containerCompact: {
     height: 56,
-    zIndex: 1000,
-    shadowColor: colorPalette.primary500,
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
   },
-  tabsRow: {
+  containerTall: {
+    minHeight: 72,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
+  rowCompact: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -274,7 +223,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     flex: 1,
   },
-  row: {
+  rowTall: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
