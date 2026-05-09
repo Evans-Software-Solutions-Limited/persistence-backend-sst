@@ -1,25 +1,28 @@
 /**
- * SessionHeader — top of the active-session screen. Live session
- * duration, exercise progress (e.g. 3/6), close action.
+ * SessionHeader — flush content-edge header on the active-session screen.
  *
- * Spec: specs/05-active-session/requirements.md STORY-005
+ * Ported 1:1 from `persistence-mobile/components/workouts/ActiveWorkoutScreen`
+ * (lines 117-123 + style block 336-360). Workout name on the left,
+ * stopwatch icon + live elapsed time on the right. No top-bar chrome,
+ * no border, no background — the active-session screen is presented
+ * as a modal (Expo Router stack `presentation: "modal"`) so dismissal
+ * lives in the modal swipe / hardware back, not a chevron-down button
+ * inside the header.
+ *
+ * Spec: persistence-mobile/components/workouts/ActiveWorkoutScreen
+ *       specs/05-active-session/requirements.md STORY-005
  */
-
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { Text, View } from "react-native";
 import { styles } from "./styles";
 import { Colors } from "@/ui/theme/workoutsLegacyTheme";
 
 export type SessionHeaderProps = {
   /** ISO timestamp the session started. Used to drive the live counter. */
   startedAt: string;
-  /** Display name. */
+  /** Display name shown on the left. */
   sessionName: string;
-  /** Current exercise position (1-based) and total non-substituted exercises. */
-  exerciseIndex: number;
-  totalExercises: number;
-  onClose: () => void;
   /** Override clock for tests. */
   clock?: () => number;
 };
@@ -52,24 +55,19 @@ export function SessionHeader(props: SessionHeaderProps) {
 
   return (
     <View style={styles.container} testID="session-header">
-      <TouchableOpacity
-        onPress={props.onClose}
-        style={styles.closeButton}
-        accessibilityLabel="Close session"
-        testID="session-header-close"
-      >
-        <Ionicons name="chevron-down" size={24} color={Colors.text.primary} />
-      </TouchableOpacity>
-      <View style={styles.center}>
-        <Text style={styles.name} numberOfLines={1}>
-          {props.sessionName}
-        </Text>
-        <Text style={styles.subtitle}>
-          {formatDuration(elapsed)} · Exercise {props.exerciseIndex} of{" "}
-          {props.totalExercises}
+      <Text style={styles.workoutName} numberOfLines={1}>
+        {props.sessionName}
+      </Text>
+      <View style={styles.timerSection}>
+        <Ionicons
+          name="stopwatch-outline"
+          size={32}
+          color={Colors.primary.DEFAULT}
+        />
+        <Text style={styles.timer} testID="session-header-elapsed">
+          {formatDuration(elapsed)}
         </Text>
       </View>
-      <View style={styles.spacer} />
     </View>
   );
 }

@@ -302,29 +302,6 @@ describe("ActiveSessionContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session/rate");
   });
 
-  it("Header close button calls router.back", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    storage.cacheActiveSession("user-1", {
-      id: "local-1",
-      userId: "user-1",
-      workoutId: null,
-      name: "Quick Workout",
-      status: "in_progress",
-      startedAt: "2026-05-05T10:00:00.000Z",
-      completedAt: null,
-      notes: null,
-      exercises: [],
-    });
-
-    const { findByTestId } = renderWithTheme(
-      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
-    );
-
-    fireEvent.press(await findByTestId("session-header-close"));
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
-  });
-
   it("logs a set on Add set tap (in-cache write)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
