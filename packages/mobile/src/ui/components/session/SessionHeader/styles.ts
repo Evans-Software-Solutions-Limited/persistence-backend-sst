@@ -14,7 +14,6 @@ export const styles = {
   workoutName: {
     ...Typography.h3,
     color: Colors.text.primary,
-    textAlign: "center" as const,
     flexShrink: 1,
   },
   timerSection: {
