@@ -22,7 +22,13 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { router, useSegments } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Animated,
   Easing,
@@ -137,6 +143,14 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps) {
   // hidden→visible transition; only run the timing animation for
   // visible→visible position changes (e.g. tabs → detail).
   //
+  // `useLayoutEffect` (not `useEffect`) so the snap runs *between*
+  // commit and paint — without that, the first frame after a
+  // hidden→visible transition paints the stale `animatedBottom` value
+  // and only corrects on the next frame. Same effect for the start of
+  // the timing animation: it kicks off in the same frame the user
+  // already sees, so visible→visible navigation feels immediately
+  // active rather than a frame behind.
+  //
   // `useNativeDriver: false` because `bottom` is a layout prop — for a
   // 180ms one-shot per navigation event the JS-thread cost is fine.
   // The cleanup stops the animation on unmount / before the next run;
@@ -147,7 +161,7 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps) {
   const isHidden = !session || isOnSessionScreen || isInAuthLayout;
   const animatedBottom = useRef(new Animated.Value(targetBottom)).current;
   const wasHiddenRef = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isHidden) {
       wasHiddenRef.current = true;
       return;
