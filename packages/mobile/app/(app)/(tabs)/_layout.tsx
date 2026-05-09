@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActiveSessionBanner } from "../../../src/ui/components/session/ActiveSessionBanner";
 import { colorPalette } from "../../../src/ui/theme";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -59,100 +60,103 @@ export default function TabsLayout() {
   const tabBarHeight = 60 + insets.bottom;
 
   return (
-    <Tabs
-      screenOptions={{
-        headerStyle: { backgroundColor: colorPalette.neutral1000 },
-        headerTintColor: colorPalette.neutral0,
-        headerTitleStyle: { fontWeight: "600" },
-        tabBarStyle: {
-          backgroundColor: colorPalette.neutral1000,
-          borderTopColor: "rgba(40, 40, 48, 0.4)",
-          borderTopWidth: 1,
-          height: tabBarHeight,
-          paddingTop: 6,
-          paddingBottom: insets.bottom > 0 ? 4 : 12,
-        },
-        tabBarActiveTintColor: colorPalette.primary500,
-        tabBarInactiveTintColor: colorPalette.neutral400,
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: "600",
-          letterSpacing: 0.3,
-          marginTop: 2,
-        },
-        sceneStyle: { backgroundColor: colorPalette.neutral1000 },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: (p) => (
-            <TabIcon {...p} focusedName="home" unfocusedName="home-outline" />
-          ),
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
+          headerStyle: { backgroundColor: colorPalette.neutral1000 },
+          headerTintColor: colorPalette.neutral0,
+          headerTitleStyle: { fontWeight: "600" },
+          tabBarStyle: {
+            backgroundColor: colorPalette.neutral1000,
+            borderTopColor: "rgba(40, 40, 48, 0.4)",
+            borderTopWidth: 1,
+            height: tabBarHeight,
+            paddingTop: 6,
+            paddingBottom: insets.bottom > 0 ? 4 : 12,
+          },
+          tabBarActiveTintColor: colorPalette.primary500,
+          tabBarInactiveTintColor: colorPalette.neutral400,
+          tabBarLabelStyle: {
+            fontSize: 10,
+            fontWeight: "600",
+            letterSpacing: 0.3,
+            marginTop: 2,
+          },
+          sceneStyle: { backgroundColor: colorPalette.neutral1000 },
         }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: "Progress",
-          tabBarIcon: (p) => (
-            <TabIcon
-              {...p}
-              focusedName="trending-up"
-              unfocusedName="trending-up-outline"
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="workouts"
-        options={{
-          title: "Workouts",
-          tabBarIcon: (p) => (
-            <TabIcon
-              {...p}
-              focusedName="barbell"
-              unfocusedName="barbell-outline"
-            />
-          ),
-        }}
-      />
-      {/*
-        `exercises` here refers to the flat `exercises.tsx` file in this
-        directory — the browse tab. Its detail / creator / filters sub-routes
-        live at `app/(app)/exercises/*` (sibling of this `(tabs)` group), NOT
-        under a nested `exercises/` directory here. That positioning makes
-        them push OVER the tab bar instead of rendering inside it. See
-        `app/(app)/_layout.tsx` for the full tree.
-      */}
-      <Tabs.Screen
-        name="exercises"
-        options={{
-          title: "Exercises",
-          headerShown: false,
-          tabBarIcon: (p) => (
-            <TabIcon
-              {...p}
-              focusedName="albums"
-              unfocusedName="albums-outline"
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: (p) => (
-            <TabIcon
-              {...p}
-              focusedName="person-circle"
-              unfocusedName="person-circle-outline"
-            />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: (p) => (
+              <TabIcon {...p} focusedName="home" unfocusedName="home-outline" />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="progress"
+          options={{
+            title: "Progress",
+            tabBarIcon: (p) => (
+              <TabIcon
+                {...p}
+                focusedName="trending-up"
+                unfocusedName="trending-up-outline"
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="workouts"
+          options={{
+            title: "Workouts",
+            tabBarIcon: (p) => (
+              <TabIcon
+                {...p}
+                focusedName="barbell"
+                unfocusedName="barbell-outline"
+              />
+            ),
+          }}
+        />
+        {/*
+          `exercises` here refers to the flat `exercises.tsx` file in this
+          directory — the browse tab. Its detail / creator / filters sub-routes
+          live at `app/(app)/exercises/*` (sibling of this `(tabs)` group), NOT
+          under a nested `exercises/` directory here. That positioning makes
+          them push OVER the tab bar instead of rendering inside it. See
+          `app/(app)/_layout.tsx` for the full tree.
+        */}
+        <Tabs.Screen
+          name="exercises"
+          options={{
+            title: "Exercises",
+            headerShown: false,
+            tabBarIcon: (p) => (
+              <TabIcon
+                {...p}
+                focusedName="albums"
+                unfocusedName="albums-outline"
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: (p) => (
+              <TabIcon
+                {...p}
+                focusedName="person-circle"
+                unfocusedName="person-circle-outline"
+              />
+            ),
+          }}
+        />
+      </Tabs>
+      <ActiveSessionBanner variant="tabs" />
+    </View>
   );
 }

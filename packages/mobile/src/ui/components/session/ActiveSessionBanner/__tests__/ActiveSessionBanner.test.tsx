@@ -70,7 +70,12 @@ const buildSession = (
 describe("ActiveSessionBanner", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSegments = ["(app)", "(tabs)", "workouts"];
+    // Default to a non-tabs surface inside (app). The global variant
+    // hides on (tabs) (the tabs variant takes over there) and on
+    // (auth), so tests that exercise the GLOBAL variant must start
+    // outside of those groups. Tests that need a different segment
+    // shape override mockSegments inline.
+    mockSegments = ["(app)", "exercises", "[id]"];
   });
 
   it("renders nothing when no in-progress session exists", async () => {
@@ -140,5 +145,57 @@ describe("ActiveSessionBanner", () => {
     );
     const titleEl = await findByTestId("active-session-banner-title");
     expect(titleEl.props.children).toBe("Active Workout");
+  });
+
+  it("global variant hides when inside (tabs) — the tabs variant takes over", async () => {
+    mockSegments = ["(app)", "(tabs)", "workouts"];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", buildSession());
+
+    const { queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner variant="global" />
+      </AdapterProvider>,
+    );
+    expect(queryByTestId("active-session-banner")).toBeNull();
+  });
+
+  it("global variant hides when inside (auth) — no in-progress affordance during sign-in", async () => {
+    mockSegments = ["(auth)", "sign-in"];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", buildSession());
+
+    const { queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner variant="global" />
+      </AdapterProvider>,
+    );
+    expect(queryByTestId("active-session-banner")).toBeNull();
+  });
+
+  it("tabs variant renders inside (tabs) — that's exactly where it's mounted", async () => {
+    mockSegments = ["(app)", "(tabs)", "workouts"];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", buildSession({ name: "Push Day" }));
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner variant="tabs" />
+      </AdapterProvider>,
+    );
+    expect(await findByTestId("active-session-banner")).toBeTruthy();
+  });
+
+  it("tabs variant still hides while on the session screen (avoids stacking)", async () => {
+    mockSegments = ["(app)", "session"];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", buildSession());
+
+    const { queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner variant="tabs" />
+      </AdapterProvider>,
+    );
+    expect(queryByTestId("active-session-banner")).toBeNull();
   });
 });
