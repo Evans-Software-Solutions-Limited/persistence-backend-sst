@@ -144,6 +144,14 @@ export function finalizeSessionCommand(
   // offline-first means we must populate the chip from the device's
   // own history. Skipped for cancelled sessions: those aren't real
   // workouts and shouldn't shadow the user's last actual attempt.
+  //
+  // The filter is "weight + reps both non-null", NOT "isCompleted ===
+  // true". Post-1A.1 the legacy port removed the per-set Mark-Complete
+  // UI (legacy has no such concept — any set with data is "logged"),
+  // so `set.isCompleted` is effectively dead — no UI or command path
+  // flips it. Filtering by it would empty the cache on every session.
+  // Both fields filled is the meaningful "user logged something
+  // intentional" signal that matches legacy `previousSets[]`.
   if (status === "completed") {
     const recentSets: RecentSetEntry[] = [];
     for (const ex of finalized.exercises) {

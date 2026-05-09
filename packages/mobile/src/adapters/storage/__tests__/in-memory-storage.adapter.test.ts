@@ -520,6 +520,28 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getActiveSession("user-1")).toBeNull();
     });
 
+    it("clearActiveSession also clears rest-timer state (SQLite parity)", () => {
+      // SQLite stores rest_timer_started_at + rest_timer_total_seconds as
+      // columns on active_sessions, so DELETE FROM active_sessions kills
+      // both atomically. The in-memory adapter uses a separate map, so
+      // the equivalent atomic-clear has to be wired explicitly.
+      // Without it, a second session for the same user would surface
+      // the prior session's stale timer.
+      storage.cacheActiveSession("user-1", buildSession());
+      storage.setRestTimerState("user-1", {
+        startedAt: "2026-05-05T10:10:00.000Z",
+        totalSeconds: 90,
+      });
+      expect(storage.getRestTimerState("user-1")).not.toBeNull();
+
+      storage.clearActiveSession("user-1");
+
+      // Start a new in-progress session for the same user. The prior
+      // timer entry would otherwise be surfaced to this new session.
+      storage.cacheActiveSession("user-1", buildSession({ id: "local-s2" }));
+      expect(storage.getRestTimerState("user-1")).toBeNull();
+    });
+
     it("clearActiveSession also drops a finalized (completed) row", () => {
       // Summary's Continue button calls this AFTER the row has been
       // flipped to status=completed; the row must clear regardless.

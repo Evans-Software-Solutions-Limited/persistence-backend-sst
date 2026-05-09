@@ -278,6 +278,13 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   clearActiveSession(userId: string): void {
     this.activeSessions.delete(userId);
+    // Parity with SQLite: the rest-timer state lives inline on the
+    // active_sessions row (rest_timer_started_at + rest_timer_total_seconds
+    // columns), so deleting the parent kills the timer atomically.
+    // The in-memory adapter uses a separate map; drop the entry here
+    // so a follow-up `cacheActiveSession` for the same user doesn't
+    // surface a stale timer from the prior session.
+    this.restTimers.delete(userId);
   }
 
   getSessionSets(
