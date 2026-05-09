@@ -210,7 +210,7 @@ describe("WorkoutCreatorContainer", () => {
     // Fire the destructive button immediately when Alert.alert is called.
     jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
       const destructive = (
-        buttons as Array<{ style?: string; onPress?: () => void }> | undefined
+        buttons as { style?: string; onPress?: () => void }[] | undefined
       )?.find((b) => b.style === "destructive");
       destructive?.onPress?.();
     });

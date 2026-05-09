@@ -2,6 +2,7 @@ import { createWorkoutCommand } from "../create-workout.command";
 import { updateWorkoutCommand } from "../update-workout.command";
 import { deleteWorkoutCommand } from "../delete-workout.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { DASHBOARD_FIXTURE } from "@/adapters/api/__tests__/fixtures/dashboard.fixture";
 import type { Workout } from "@/domain/models/workout";
 
 describe("createWorkoutCommand", () => {
@@ -234,10 +235,6 @@ describe("workout commands invalidate the dashboard cache", () => {
   // every workout mutation must drop the dashboard cache — otherwise
   // the home tab keeps showing the pre-mutation snapshot until the
   // dashboard's own 5-minute TTL elapses.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const {
-    DASHBOARD_FIXTURE,
-  } = require("@/adapters/api/__tests__/fixtures/dashboard.fixture");
   const buildDashboard = () => DASHBOARD_FIXTURE;
 
   it("createWorkoutCommand invalidates the dashboard cache", () => {

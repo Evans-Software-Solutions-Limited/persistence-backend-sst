@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
@@ -82,7 +83,32 @@ export default function AppLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="session/index"
+          options={{
+            title: "Active session",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="session/rate"
+          options={{
+            title: "Rate workout",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="session/summary"
+          options={{
+            title: "Session summary",
+            presentation: "modal",
+            headerShown: false,
+          }}
+        />
       </Stack>
+      <ActiveSessionBanner />
     </ExerciseFiltersProvider>
   );
 }

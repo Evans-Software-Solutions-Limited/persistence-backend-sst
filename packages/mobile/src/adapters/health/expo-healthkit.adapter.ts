@@ -46,11 +46,11 @@ type StatisticsCollectionQuery = (
   intervalComponents: { day?: number; hour?: number },
   options?: { filter?: { startDate: Date; endDate: Date } },
 ) => Promise<
-  ReadonlyArray<{
+  readonly {
     startDate?: Date | string | number;
     endDate?: Date | string | number;
     sumQuantity?: { quantity?: number };
-  }>
+  }[]
 >;
 
 type MostRecentQuery = (identifier: string) => Promise<

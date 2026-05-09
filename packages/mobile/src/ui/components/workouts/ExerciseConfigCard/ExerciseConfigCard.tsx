@@ -15,7 +15,6 @@ import {
 } from "react-native";
 
 interface ExerciseConfigCardProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly exercise: any; // Using any to match the original
   readonly index: number;
   readonly onRemove: () => void;
@@ -23,7 +22,7 @@ interface ExerciseConfigCardProps {
   readonly isSupersetStart?: boolean;
   readonly isSupersetEnd?: boolean;
   readonly supersetGroupNumber?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly supersetLeadExercise?: any;
 }
 

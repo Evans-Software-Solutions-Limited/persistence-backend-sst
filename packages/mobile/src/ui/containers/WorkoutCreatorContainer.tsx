@@ -51,7 +51,6 @@ export function WorkoutCreatorContainer() {
   const onClosePicker = useCallback(() => setPickerVisible(false), []);
 
   const onAddExercises = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addExercises(exercises);
       setPickerVisible(false);
@@ -59,14 +58,16 @@ export function WorkoutCreatorContainer() {
     // Depend on the specific method, not the whole form handle —
     // `form` rebuilds every render, but `form.addExercises` is stable
     // across renders once `generateId` is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addExercises],
   );
   const onAddSuperset = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (exercises: any[]) => {
       form.addSuperset(exercises);
       setPickerVisible(false);
     },
+    // Same pattern as onAddExercises — method ref is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addSuperset],
   );
 

@@ -8,10 +8,8 @@ import {
 } from "react";
 import type {
   CreatedByFilter,
-  EquipmentType,
   ExerciseDifficulty,
   ExerciseFilters,
-  MuscleGroup,
 } from "@/domain/models/exercise";
 import type { QuickFilterId } from "@/ui/components/ExerciseFilterBar";
 

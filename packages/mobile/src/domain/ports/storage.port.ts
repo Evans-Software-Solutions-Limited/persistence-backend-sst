@@ -3,11 +3,13 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
   CachedWorkoutsList,
@@ -16,6 +18,21 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
+
+/**
+ * One row in the recent-sets cache. Keyed by (userId, exerciseId,
+ * setNumber); last-write-wins on upsert. Carries the weight + reps the
+ * user logged on their most recent attempt at that set number for that
+ * exercise. Null weight or null reps are filtered out at upsert time.
+ */
+export type RecentSetEntry = {
+  exerciseId: string;
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  /** ISO timestamp from the originating session's completedAt. */
+  recordedAt: string;
+};
 
 /**
  * Port for local persistence (SQLite).
@@ -159,10 +176,148 @@ export interface StoragePort {
    */
   invalidateDashboard(userId: string): void;
 
+  // -- Active Session (M3) --
+  /**
+   * Read the user's in-progress session, joining the three normalized
+   * tables (`active_sessions` + `session_exercises` + `exercise_sets`)
+   * back into a single `WorkoutSession`. Returns null when no row
+   * exists. Single-active-session invariant — at most one row per
+   * user.
+   *
+   * Spec: specs/05-active-session/requirements.md STORY-001 / STORY-008
+   *       specs/milestones/M3-active-session/FRONTEND_BRIEF.md § StoragePort extensions
+   */
+  getActiveSession(userId: string): WorkoutSession | null;
+
+  /**
+   * Return the user's most recent session row regardless of status.
+   * Used by the post-rating Summary screen to render stats AFTER
+   * `completeSessionCommand` has flipped the row to `completed` (at
+   * which point `getActiveSession` returns null). Distinct from
+   * `getActiveSession` so the screens that genuinely need an
+   * in-progress row (banner, active screen, rating screen) keep
+   * their status filter.
+   */
+  getLatestSession(userId: string): WorkoutSession | null;
+
+  /**
+   * Write-through the entire session as a full upsert. Replaces the
+   * three nested tables atomically per EXECUTION_PLAN § 3.4 — the
+   * storage layer never sees partial sortOrder updates. Idempotent.
+   */
+  cacheActiveSession(userId: string, session: WorkoutSession): void;
+
+  /**
+   * Delete the user's session row regardless of status — used after
+   * the Summary screen's Continue button to retire a flushed
+   * `completed` / `cancelled` row. The pre-flush in-progress
+   * surface only ever calls this implicitly via the worker's
+   * post-success swap path.
+   */
+  clearActiveSession(userId: string): void;
+
+  /**
+   * Return `ExerciseSet` rows for `(sessionId, exerciseId)` scoped to
+   * the user. Used by `SetLogger` quick-fill suggestions when the
+   * personalRecords cache has nothing for the exercise (FRONTEND_BRIEF
+   * § Group D).
+   *
+   * Empty array when the session is not the user's active session,
+   * the exercise is absent, or no sets exist yet — never throws.
+   */
+  getSessionSets(
+    userId: string,
+    sessionId: string,
+    exerciseId: string,
+  ): ExerciseSet[];
+
+  /**
+   * Read the user's most recent set values keyed by (exerciseId,
+   * setNumber) for the supplied exercises. Drives the legacy "Previous"
+   * hint chip on each SetLogger row, mirroring legacy
+   * `user_history.recent_sets`. Returns a nested map: outer key is
+   * exerciseId, inner key is setNumber. Missing entries indicate the
+   * user has never logged that exercise (or that set number) before.
+   *
+   * Out-of-band exerciseIds (not in the recent-sets cache) are simply
+   * omitted from the result; callers treat absence as "no previous".
+   */
+  getRecentSetsByExercise(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): Record<string, Record<number, { weightKg: number; reps: number }>>;
+
+  /**
+   * Upsert the just-completed session's logged sets into the recent-sets
+   * cache. Last-write-wins per (userId, exerciseId, setNumber) — a new
+   * session's set 1 replaces any prior recent-sets entry for that
+   * setNumber. Sets with null weight or null reps are skipped (no
+   * meaningful "previous" hint to surface). Called from
+   * `completeSessionCommand` immediately after the active-session row
+   * flips to `completed`, before the bulk-record flush — local cache is
+   * the source of truth for next-session "previous" hints.
+   */
+  upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void;
+
+  /**
+   * Upsert PR rows by `(userId, exerciseId, recordType)`. Latest write
+   * wins — server-canonical reconciliation overwrites the predictive
+   * client write after the bulk-record flush returns.
+   */
+  cachePersonalRecords(userId: string, records: PersonalRecord[]): void;
+
+  /**
+   * Read the user's PR cache, optionally filtered by exerciseId. Feeds
+   * the Summary screen's predictive PR detector + SetLogger quick-fill.
+   */
+  getPersonalRecords(userId: string, exerciseId?: string): PersonalRecord[];
+
+  /**
+   * Rewrite `local-…`-prefixed ids on the four M3 tables once the
+   * bulk-record flush returns server-assigned ids. Called from the
+   * sync worker's reply path. No-op when neither the session nor any
+   * nested row matches `localId`.
+   *
+   * Spec: specs/milestones/M3-active-session/EXECUTION_PLAN.md § 4
+   */
+  swapLocalSessionId(localId: string, serverId: string): void;
+
+  /**
+   * Read the rest-timer state (started-at + total-seconds) for the
+   * user's active session. Stored inline on `active_sessions` per
+   * EXECUTION_PLAN § 3.1 — single-active-session invariant means a
+   * separate timers table is overhead. Null when no active session
+   * or when the timer is not running.
+   */
+  getRestTimerState(userId: string): RestTimerState | null;
+
+  /**
+   * Persist rest-timer start. Drift-tolerant: the hook reconciles
+   * `wall-clock - startedAt` on resume so the timer survives
+   * backgrounding without a wakeup tick.
+   */
+  setRestTimerState(userId: string, state: RestTimerState): void;
+
+  /**
+   * Clear the rest-timer state (Skip / Dismiss / Done). No-op when
+   * no active session.
+   */
+  clearRestTimerState(userId: string): void;
+
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */
   clearAll(): void;
 }
+
+/**
+ * Persisted rest-timer state. Lives on the `active_sessions` row
+ * (rest_timer_started_at + rest_timer_total_seconds columns).
+ */
+export type RestTimerState = {
+  /** ISO timestamp the timer started. */
+  startedAt: string;
+  totalSeconds: number;
+};
 
 export type EnqueueMutationInput = {
   entityType: string;

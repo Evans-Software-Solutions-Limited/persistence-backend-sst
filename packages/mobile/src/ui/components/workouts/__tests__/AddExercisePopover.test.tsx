@@ -153,7 +153,7 @@ describe("AddExercisePopover", () => {
 
     fireEvent.press(getByTestId("add-exercises-button"));
     expect(onAddExercises).toHaveBeenCalledTimes(1);
-    const arg = onAddExercises.mock.calls[0][0] as Array<{ id: string }>;
+    const arg = onAddExercises.mock.calls[0][0] as { id: string }[];
     // Bench remains in the emitted set despite being out of view.
     expect(arg.map((ex) => ex.id)).toEqual(["a"]);
   });
@@ -180,7 +180,7 @@ describe("AddExercisePopover", () => {
     fireEvent.press(getByText("Bench Press"));
     fireEvent.press(getByTestId("add-exercises-button"));
     expect(onAddExercises).toHaveBeenCalledTimes(1);
-    const arg = onAddExercises.mock.calls[0][0] as Array<{ id: string }>;
+    const arg = onAddExercises.mock.calls[0][0] as { id: string }[];
     expect(arg.map((ex) => ex.id)).toEqual(["a"]);
   });
 
@@ -212,7 +212,7 @@ describe("AddExercisePopover", () => {
     fireEvent.press(getByText("Squat"));
     fireEvent.press(getByTestId("add-superset-button"));
     expect(onAddSuperset).toHaveBeenCalledTimes(1);
-    const arg = onAddSuperset.mock.calls[0][0] as Array<{ id: string }>;
+    const arg = onAddSuperset.mock.calls[0][0] as { id: string }[];
     expect(arg.map((ex) => ex.id).sort()).toEqual(["a", "b"]);
   });
 

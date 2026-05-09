@@ -3,11 +3,13 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
   ReferenceList,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
   CachedWorkoutsList,
@@ -21,6 +23,8 @@ import type {
   SyncQueueEntry,
   SyncStats,
   EnqueueMutationInput,
+  RecentSetEntry,
+  RestTimerState,
 } from "@/domain/ports/storage.port";
 import type { SyncStatus } from "@/domain/ports/sync.types";
 
@@ -37,6 +41,10 @@ export class InMemoryStorageAdapter implements StoragePort {
   private dashboardCache: Map<string, CachedDashboard> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
+  private activeSessions: Map<string, WorkoutSession> = new Map();
+  private personalRecords: Map<string, PersonalRecord[]> = new Map();
+  private recentSets: Map<string, RecentSetEntry[]> = new Map();
+  private restTimers: Map<string, RestTimerState> = new Map();
   private nextId = 1;
 
   private workoutsListKey(userId: string, type: WorkoutListType): string {
@@ -251,6 +259,158 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  // -- Active Session (M3) --
+
+  getActiveSession(userId: string): WorkoutSession | null {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return null;
+    return cloneSession(session);
+  }
+
+  getLatestSession(userId: string): WorkoutSession | null {
+    const session = this.activeSessions.get(userId);
+    return session ? cloneSession(session) : null;
+  }
+
+  cacheActiveSession(userId: string, session: WorkoutSession): void {
+    this.activeSessions.set(userId, cloneSession(session));
+  }
+
+  clearActiveSession(userId: string): void {
+    this.activeSessions.delete(userId);
+    // Parity with SQLite: the rest-timer state lives inline on the
+    // active_sessions row (rest_timer_started_at + rest_timer_total_seconds
+    // columns), so deleting the parent kills the timer atomically.
+    // The in-memory adapter uses a separate map; drop the entry here
+    // so a follow-up `cacheActiveSession` for the same user doesn't
+    // surface a stale timer from the prior session.
+    this.restTimers.delete(userId);
+  }
+
+  getSessionSets(
+    userId: string,
+    sessionId: string,
+    exerciseId: string,
+  ): ExerciseSet[] {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.id !== sessionId) return [];
+    const matching = session.exercises.filter(
+      (ex) => ex.exerciseId === exerciseId,
+    );
+    const sets: ExerciseSet[] = [];
+    for (const ex of matching) {
+      for (const set of ex.sets) sets.push({ ...set });
+    }
+    return sets;
+  }
+
+  cachePersonalRecords(userId: string, records: PersonalRecord[]): void {
+    if (records.length === 0) return;
+    const existing = this.personalRecords.get(userId) ?? [];
+    const byKey = new Map(
+      existing.map((r) => [`${r.exerciseId}::${r.recordType}`, r] as const),
+    );
+    for (const rec of records) {
+      byKey.set(`${rec.exerciseId}::${rec.recordType}`, { ...rec });
+    }
+    this.personalRecords.set(userId, Array.from(byKey.values()));
+  }
+
+  getPersonalRecords(userId: string, exerciseId?: string): PersonalRecord[] {
+    const all = this.personalRecords.get(userId) ?? [];
+    const list = exerciseId
+      ? all.filter((r) => r.exerciseId === exerciseId)
+      : all;
+    return list
+      .slice()
+      .sort((a, b) => (a.achievedAt < b.achievedAt ? 1 : -1))
+      .map((r) => ({ ...r }));
+  }
+
+  getRecentSetsByExercise(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): Record<string, Record<number, { weightKg: number; reps: number }>> {
+    if (exerciseIds.length === 0) return {};
+    const all = this.recentSets.get(userId) ?? [];
+    const wanted = new Set(exerciseIds);
+    const map: Record<
+      string,
+      Record<number, { weightKg: number; reps: number }>
+    > = {};
+    for (const entry of all) {
+      if (!wanted.has(entry.exerciseId)) continue;
+      const exMap = map[entry.exerciseId] ?? (map[entry.exerciseId] = {});
+      exMap[entry.setNumber] = {
+        weightKg: entry.weightKg,
+        reps: entry.reps,
+      };
+    }
+    return map;
+  }
+
+  upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void {
+    if (sets.length === 0) return;
+    const existing = this.recentSets.get(userId) ?? [];
+    const byKey = new Map(
+      existing.map(
+        (entry) => [`${entry.exerciseId}::${entry.setNumber}`, entry] as const,
+      ),
+    );
+    for (const s of sets) {
+      byKey.set(`${s.exerciseId}::${s.setNumber}`, { ...s });
+    }
+    this.recentSets.set(userId, Array.from(byKey.values()));
+  }
+
+  getRestTimerState(userId: string): RestTimerState | null {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return null;
+    return this.restTimers.get(userId) ?? null;
+  }
+
+  setRestTimerState(userId: string, state: RestTimerState): void {
+    const session = this.activeSessions.get(userId);
+    if (!session || session.status !== "in_progress") return;
+    this.restTimers.set(userId, { ...state });
+  }
+
+  clearRestTimerState(userId: string): void {
+    this.restTimers.delete(userId);
+  }
+
+  swapLocalSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const [userId, session] of this.activeSessions) {
+      if (session.id !== localId) continue;
+      // Mirror the SQLite adapter (sqlite.adapter.ts § swapLocalSessionId):
+      // session_exercises.session_id is rewritten alongside the parent
+      // session.id. The in-memory representation nests exercises inside
+      // the session row, so rewrite each exercise.sessionId in the same
+      // pass — otherwise nested children carry the stale local id and
+      // tests using this adapter miss bugs where production code relies
+      // on `exercise.sessionId === session.id` post-flush.
+      this.activeSessions.set(userId, {
+        ...session,
+        id: serverId,
+        exercises: session.exercises.map((ex) =>
+          ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
+        ),
+      });
+    }
+    for (const [userId, records] of this.personalRecords) {
+      let changed = false;
+      const next = records.map((r) => {
+        if (r.sessionId === localId) {
+          changed = true;
+          return { ...r, sessionId: serverId };
+        }
+        return r;
+      });
+      if (changed) this.personalRecords.set(userId, next);
+    }
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
@@ -259,6 +419,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.dashboardCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
+    this.activeSessions.clear();
+    this.personalRecords.clear();
+    this.recentSets.clear();
+    this.restTimers.clear();
     this.nextId = 1;
   }
 
@@ -266,4 +430,14 @@ export class InMemoryStorageAdapter implements StoragePort {
     const entry = this.queue.find((e) => e.id === id);
     if (entry) entry.status = status;
   }
+}
+
+function cloneSession(session: WorkoutSession): WorkoutSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((ex) => ({
+      ...ex,
+      sets: ex.sets.map((set) => ({ ...set })),
+    })),
+  };
 }

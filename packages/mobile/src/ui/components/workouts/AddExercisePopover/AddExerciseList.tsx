@@ -5,7 +5,6 @@ import { AddExerciseListItem } from "./AddExerciseListItem";
 import { styles } from "./styles";
 
 interface AddExerciseListProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly exercises: any[]; // Using any to match the original
   readonly selectedExerciseIds: string[];
   readonly onToggleExercise: (id: string) => void;

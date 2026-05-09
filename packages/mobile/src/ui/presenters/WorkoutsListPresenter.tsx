@@ -29,7 +29,7 @@ import {
  */
 
 // Card-shaped object the verbatim WorkoutCard expects (legacy snake_case).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type WorkoutCardView = any;
 
 export interface WorkoutsListPresenterProps {
@@ -85,13 +85,14 @@ export function WorkoutsListPresenter({
   onRetry,
   onRefresh,
 }: WorkoutsListPresenterProps) {
-  // Blocking error state when the cache is empty + refresh failed.
-  if (
-    error &&
-    filteredMyWorkouts.length === 0 &&
-    filteredExampleWorkouts.length === 0 &&
-    !isInitialLoading
-  ) {
+  // Blocking error state ONLY when the underlying cache is empty +
+  // refresh failed. We check unfiltered counts, not the search-
+  // filtered arrays — otherwise a user who's offline AND searching
+  // for a term with no matches would see a "Failed to load workouts"
+  // wall instead of their cached list with an empty search result.
+  // Cached-offline must always render the user's own data.
+  const cachedHasAnyWorkout = myAndAssignedCount > 0 || defaultCount > 0;
+  if (error && !cachedHasAnyWorkout && !isInitialLoading) {
     return (
       <ErrorState
         title="Failed to load workouts"

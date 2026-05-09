@@ -35,9 +35,31 @@ export type PersonalRecord = {
   id: string;
   userId: string;
   exerciseId: string;
+  /**
+   * Display label captured at write-time so PRs render correctly even
+   * if the underlying exercise is renamed or deleted. Not on the wire
+   * (`ApiPersonalRecord` has no name) — the API adapter joins it from
+   * the exercise cache, the M3 client predictor reads it from the
+   * session row.
+   */
   exerciseName: string;
   recordType: RecordType;
   value: number;
   achievedAt: string;
-  sessionId: string;
+  /**
+   * Session that produced the PR. Null when the PR came from a legacy
+   * import or backend reconciliation where the source session isn't
+   * known to the client. Wire format (`ApiPersonalRecord`) does not
+   * carry a sessionId.
+   */
+  sessionId: string | null;
+  /**
+   * M3: id of the winning set inside the session. Null when the PR
+   * came from a legacy import or a piecemeal `personal_records` write
+   * that wasn't tied to a specific set. Wire-format-aligned with
+   * `ApiPersonalRecord.setId`.
+   *
+   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § PR-detection
+   */
+  setId: string | null;
 };

@@ -57,3 +57,11 @@ export {
   isWorkoutsListStale,
   isWorkoutDetailStale,
 } from "./workout";
+
+export {
+  type WorkoutSession,
+  type SessionExercise,
+  type ExerciseSet,
+  type SessionStatus,
+  type SessionSummary,
+} from "./session";

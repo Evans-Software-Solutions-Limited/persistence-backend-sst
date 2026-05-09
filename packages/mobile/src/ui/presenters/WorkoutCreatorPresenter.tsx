@@ -32,9 +32,9 @@ interface WorkoutCreatorPresenterProps {
   readonly onSetDescription: (value: string) => void;
   readonly onAddExerciseTap: () => void;
   readonly onClosePicker: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddExercises: (exercises: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   readonly onAddSuperset: (exercises: any[]) => void;
   readonly onRemoveExercise: (exerciseId: string) => void;
   readonly onExerciseConfigChange: (

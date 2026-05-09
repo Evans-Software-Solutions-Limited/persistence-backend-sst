@@ -129,6 +129,12 @@ export function WorkoutsListContainer() {
     router.push("/(app)/(tabs)/exercises" as never);
   }, []);
 
+  // M3: Quick Start (Story-009) is intentionally NOT surfaced on the
+  // workouts page — legacy never had this CTA and we're keeping
+  // parity. The /(app)/session route still resolves an empty
+  // `?workoutId=` to a Quick Start session, so a future deep link or
+  // tab-header CTA can opt in without code changes here.
+
   const onUpgrade = useCallback(() => {
     router.push("/coming-soon?feature=subscription" as never);
   }, []);
@@ -146,9 +152,10 @@ export function WorkoutsListContainer() {
   }, []);
 
   const onStartWorkout = useCallback((workoutId: string) => {
-    // TODO(M3): wire to /workouts/[id]/active.
-    void workoutId;
-    router.push("/coming-soon?feature=active-session" as never);
+    // M3 wired: starts a session from this template via the
+    // /(app)/session modal. Container resolves ?workoutId= →
+    // startSessionCommand({ workout }) (Story-001).
+    router.push(`/(app)/session?workoutId=${workoutId}` as never);
   }, []);
 
   const onDeleteWorkout = useCallback(
