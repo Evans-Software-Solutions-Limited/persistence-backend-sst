@@ -127,19 +127,36 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.startedAt]);
 
-  // Animate `bottom` between 0 and tabBarHeight when segments change.
-  // Initialized to the current target so the first render is at the
-  // correct position with no entry animation. `useNativeDriver: false`
-  // because `bottom` is a layout prop — for a 180ms one-shot per
-  // navigation event the JS-thread cost is negligible.
+  // Animate `bottom` between 0 and tabBarHeight when segments change
+  // *while the banner is visible*. While hidden (session screen / auth /
+  // no session), the animation must not run — otherwise `animatedBottom`
+  // tracks `targetBottom` to whatever the hidden segments imply (often
+  // 0), and on visibility-restore the banner re-appears at the stale
+  // value for one frame before sliding to the correct spot. Track the
+  // previous visibility in a ref and snap (no animation) on the
+  // hidden→visible transition; only run the timing animation for
+  // visible→visible position changes (e.g. tabs → detail).
   //
-  // The cleanup stops the animation on unmount / before the next
-  // run; without it, an in-flight JS-thread animation can outlive
-  // its host (test teardown, fast nav) and try to re-touch state
-  // after the surrounding environment is gone, which surfaces in
-  // jest as "ReferenceError: ... environment torn down".
+  // `useNativeDriver: false` because `bottom` is a layout prop — for a
+  // 180ms one-shot per navigation event the JS-thread cost is fine.
+  // The cleanup stops the animation on unmount / before the next run;
+  // without it an in-flight JS-thread animation can outlive its host
+  // (test teardown, fast nav) and re-touch state after the surrounding
+  // environment is gone — surfaces in jest as "ReferenceError: ...
+  // environment torn down".
+  const isHidden = !session || isOnSessionScreen || isInAuthLayout;
   const animatedBottom = useRef(new Animated.Value(targetBottom)).current;
+  const wasHiddenRef = useRef(false);
   useEffect(() => {
+    if (isHidden) {
+      wasHiddenRef.current = true;
+      return;
+    }
+    if (wasHiddenRef.current) {
+      wasHiddenRef.current = false;
+      animatedBottom.setValue(targetBottom);
+      return;
+    }
     const animation = Animated.timing(animatedBottom, {
       toValue: targetBottom,
       duration: 180,
@@ -148,9 +165,9 @@ export function ActiveSessionBanner(props: ActiveSessionBannerProps) {
     });
     animation.start();
     return () => animation.stop();
-  }, [targetBottom, animatedBottom]);
+  }, [isHidden, targetBottom, animatedBottom]);
 
-  if (!session || isOnSessionScreen || isInAuthLayout) return null;
+  if (isHidden) return null;
 
   const onPress = () => {
     router.push(`/(app)/session?sessionId=${session.id}` as never);

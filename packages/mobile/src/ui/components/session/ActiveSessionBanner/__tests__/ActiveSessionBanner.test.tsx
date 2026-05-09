@@ -250,6 +250,34 @@ describe("ActiveSessionBanner", () => {
     expect(getByTestId("active-session-banner")).toBeTruthy();
   });
 
+  it("re-shows at the correct position after transitioning hidden → visible (snap, no animation)", () => {
+    // Start hidden on the session screen (banner returns null).
+    mockSegments = ["(app)", "session"];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", buildSession({ name: "Push Day" }));
+
+    const { rerender, queryByTestId, getByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner />
+      </AdapterProvider>,
+    );
+    expect(queryByTestId("active-session-banner")).toBeNull();
+
+    // Minimise the modal — banner should re-appear at the right place
+    // immediately, not flash through a stale animated bottom.
+    mockSegments = ["(app)", "(tabs)", "workouts"];
+    rerender(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <ActiveSessionBanner />
+      </AdapterProvider>,
+    );
+
+    expect(getByTestId("active-session-banner")).toBeTruthy();
+    expect(getByTestId("active-session-banner-title").props.children).toBe(
+      "Push Day",
+    );
+  });
+
   it("sessionOverride={null} suppresses the banner even with a cached session in storage", () => {
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", buildSession());
