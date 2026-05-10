@@ -500,10 +500,19 @@ describe("ActiveSessionContainer", () => {
     });
 
     const adapters = makeAdapters(api, storage);
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, findByText } = renderWithTheme(
       withAdapters(adapters, <ActiveSessionContainer />),
     );
 
+    // Gate on the rest-seconds-bearing label rendering. The button text
+    // includes the template's restSeconds (e.g. "START 60S REST"); only
+    // after `useWorkout` commits the cached workout to state does the
+    // 60s label appear. Without this wait, the tap races the cache
+    // hydration on a slow runner — `templateByExercise` is empty for one
+    // render, the button reads "START 90S REST" (default fallback), and
+    // the tap schedules 90s instead of 60s. Locally fast enough to slip
+    // through; CI consistently lost the race.
+    await findByText("START 60S REST");
     fireEvent.press(await findByTestId("session-exercise-start-rest"));
 
     await waitFor(() => {
