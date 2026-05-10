@@ -1098,7 +1098,7 @@ describe("ActiveSessionContainer", () => {
     });
   });
 
-  it("Add Exercise to Superset button opens the picker in add-to-superset mode", async () => {
+  it("Add Exercise to Superset routes to the single-select AddExerciseToSupersetPopover (NOT the multi-select AddExercisePopover)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -1138,16 +1138,55 @@ describe("ActiveSessionContainer", () => {
       ],
     });
 
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, queryByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
     fireEvent.press(await findByTestId("superset-7-add-exercise"));
-    // Picker is portal-rendered Modal; assert the session screen
-    // remained mounted (container didn't crash) and the picker close
-    // button is reachable (the popover rendered).
+    // The session screen stays mounted, and the *superset* popover is
+    // the one that opened — not AddExercisePopover (whose close button
+    // uses `close-button`). Two-popover routing must not let both
+    // surface at once.
     expect(await findByTestId("active-session-screen")).toBeTruthy();
+    expect(await findByTestId("superset-picker-close")).toBeTruthy();
+    expect(queryByTestId("close-button")).toBeNull();
+  });
+
+  it("plain Add Exercise (non-superset) routes to AddExercisePopover, NOT the superset popover", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("active-session-add-exercise"));
     expect(await findByTestId("close-button")).toBeTruthy();
+    expect(queryByTestId("superset-picker-close")).toBeNull();
   });
 
   it("renders the empty-state Add CTA when the session has no exercises", async () => {

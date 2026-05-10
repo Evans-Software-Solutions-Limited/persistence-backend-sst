@@ -42,6 +42,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
+import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
 import {
   applyPickerSelection,
   resolveLegacyExercise,
@@ -538,13 +539,25 @@ export function ActiveSessionContainer() {
         onFinish={onFinish}
       />
 
+      {/* Picker routing — `add-to-superset` opens the single-select
+          AddExerciseToSupersetPopover (legacy `AddExerciseToSupersetView`
+          parity); every other mode (`add`, `substitute`) uses the
+          multi-select AddExercisePopover. Mounting only one at a time
+          keeps the Modal stack clean and avoids two pickers competing
+          for the same `pickerMode != null` visibility predicate. */}
       <AddExercisePopover
-        visible={pickerMode != null}
+        visible={pickerMode != null && pickerMode.kind !== "add-to-superset"}
         onClose={onClosePicker}
         onAddExercises={onPickerAddExercises}
         onAddSuperset={onPickerAddSuperset}
         existingExerciseIds={existingExerciseIds}
         filterByPrimaryMuscleGroups={substituteMuscleFilter}
+      />
+      <AddExerciseToSupersetPopover
+        visible={pickerMode?.kind === "add-to-superset"}
+        onClose={onClosePicker}
+        onAddExercise={onPickerAddExercises}
+        existingExerciseIds={existingExerciseIds}
       />
 
       <ExerciseNotesPopover
