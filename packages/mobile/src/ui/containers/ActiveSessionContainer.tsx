@@ -425,12 +425,32 @@ export function ActiveSessionContainer() {
     [userId, pickerMode, resolveExercise, storage, generateId, rereadCache],
   );
 
-  // Superset add not surfaced in the active-session flow — supersets
-  // come from the workout template; mid-session group changes are
-  // M11 polish per BRIEF.md "Out of scope".
+  // "Superset" CTA on the multi-select picker — group every picked row
+  // under a fresh supersetGroup number rather than treating them as
+  // independent plain adds. Routes through `applyPickerSelection` with
+  // an explicit `create-superset` mode so the dispatcher reads the
+  // session and allocates `max(existing supersetGroups) + 1` atomically
+  // with the addExerciseCommand calls that follow. Substitute mode
+  // doesn't surface this CTA (the popover's superset button is gated
+  // on hasAtLeastTwo selections), so we don't need a guard here.
   const onPickerAddSuperset = useCallback(
-    (rows: LegacyPickerRow[]) => onPickerAddExercises(rows),
-    [onPickerAddExercises],
+    (rows: LegacyPickerRow[]) => {
+      if (!userId) {
+        setPickerMode(null);
+        return;
+      }
+      applyPickerSelection({
+        rows,
+        mode: { kind: "create-superset" },
+        resolveExercise,
+        storage,
+        generateId,
+        userId,
+        onAfter: rereadCache,
+      });
+      setPickerMode(null);
+    },
+    [userId, resolveExercise, storage, generateId, rereadCache],
   );
 
   const onTapExercise = useCallback((exerciseId: string) => {

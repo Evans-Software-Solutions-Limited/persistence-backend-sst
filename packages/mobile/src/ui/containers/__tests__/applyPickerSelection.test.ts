@@ -228,6 +228,104 @@ describe("applyPickerSelection", () => {
     expect(onAfter).not.toHaveBeenCalled();
   });
 
+  it("create-superset mode: allocates a fresh supersetGroup and groups every resolved row under it", () => {
+    // Surfaces Brad's device bug: tapping "Superset" on the multi-
+    // select picker used to delegate to plain add (supersetGroup: null),
+    // so the picked rows landed as standalone exercises with no
+    // grouping. Now allocates a new group (max+1 of existing groups).
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-pre-existing",
+          exerciseName: "Pre-existing",
+          sortOrder: 0,
+          // Already-in-session row WITH a superset of 2 → the new
+          // group should be 3 (max+1), not collide with 2 and not
+          // reset to 1.
+          supersetGroup: 2,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+    const onAfter = jest.fn();
+    applyPickerSelection({
+      rows: [
+        { id: "ex-bench", name: "Bench" },
+        { id: "ex-row", name: "Row" },
+      ],
+      mode: { kind: "create-superset" },
+      resolveExercise: (row) => buildExercise({ id: row.id, name: row.name }),
+      storage,
+      generateId: () => "id-1",
+      userId: "user-1",
+      onAfter,
+    });
+    const cached = storage.getActiveSession("user-1");
+    const added = cached?.exercises.filter((ex) =>
+      ["ex-bench", "ex-row"].includes(ex.exerciseId),
+    );
+    expect(added).toHaveLength(2);
+    expect(added?.[0].supersetGroup).toBe(3);
+    expect(added?.[1].supersetGroup).toBe(3);
+    expect(onAfter).toHaveBeenCalledTimes(1);
+  });
+
+  it("create-superset mode: starts allocation at 1 when no existing supersetGroups", () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSession(storage); // se-1 has supersetGroup: null + exerciseId: ex-bench
+    applyPickerSelection({
+      // Use exerciseIds that don't collide with seedSession's `ex-bench`
+      // so the post-filter only picks up the newly-added rows.
+      rows: [
+        { id: "ex-incline", name: "Incline" },
+        { id: "ex-row", name: "Row" },
+      ],
+      mode: { kind: "create-superset" },
+      resolveExercise: (row) => buildExercise({ id: row.id, name: row.name }),
+      storage,
+      generateId: () => "id-1",
+      userId: "user-1",
+      onAfter: jest.fn(),
+    });
+    const cached = storage.getActiveSession("user-1");
+    const added = cached?.exercises.filter((ex) =>
+      ["ex-incline", "ex-row"].includes(ex.exerciseId),
+    );
+    expect(added).toHaveLength(2);
+    expect(added?.[0].supersetGroup).toBe(1);
+    expect(added?.[1].supersetGroup).toBe(1);
+  });
+
+  it("create-superset mode: skips onAfter when every row is unresolved", () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSession(storage);
+    const onAfter = jest.fn();
+    applyPickerSelection({
+      rows: [{ id: "missing", name: "Missing" }],
+      mode: { kind: "create-superset" },
+      resolveExercise: () => null,
+      storage,
+      generateId: () => "id-1",
+      userId: "user-1",
+      onAfter,
+    });
+    expect(onAfter).not.toHaveBeenCalled();
+  });
+
   it("null mode: no-op, no callback", () => {
     const storage = new InMemoryStorageAdapter();
     seedSession(storage);

@@ -1189,6 +1189,101 @@ describe("ActiveSessionContainer", () => {
     expect(queryByTestId("superset-picker-close")).toBeNull();
   });
 
+  it("multi-select picker's Superset CTA groups every picked row under a fresh supersetGroup (regression for the bug where it delegated to plain add)", async () => {
+    // Surfaces Brad's device complaint: tapping "Superset" on the
+    // multi-select picker used to add the rows with `supersetGroup:
+    // null`, so the new exercises landed as independent rows in the
+    // session — never grouped into a superset.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-warmup",
+          exerciseName: "Warmup",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+    // Seed two library exercises so the picker has rows to pick.
+    storage.cacheExercises([
+      {
+        id: "ex-bench",
+        name: "Bench Press",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: null,
+        isCustom: false,
+        createdBy: null,
+      },
+      {
+        id: "ex-row",
+        name: "Bent-Over Row",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: null,
+        isCustom: false,
+        createdBy: null,
+      },
+    ]);
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // Open the multi-select picker.
+    fireEvent.press(await findByTestId("active-session-add-exercise"));
+    // Select two rows.
+    fireEvent.press(await findByTestId("exercise-row-ex-bench"));
+    fireEvent.press(await findByTestId("exercise-row-ex-row"));
+    // Hit "Superset" (NOT "Add").
+    fireEvent.press(await findByTestId("add-superset-button"));
+
+    // Both picked rows should now exist on the session with a shared
+    // supersetGroup. With no pre-existing groups, the allocator starts
+    // at 1.
+    const cached = storage.getActiveSession("user-1");
+    const added = cached?.exercises.filter((ex) =>
+      ["ex-bench", "ex-row"].includes(ex.exerciseId),
+    );
+    expect(added).toHaveLength(2);
+    expect(added?.[0].supersetGroup).toBe(1);
+    expect(added?.[1].supersetGroup).toBe(1);
+  });
+
   it("renders the empty-state Add CTA when the session has no exercises", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
