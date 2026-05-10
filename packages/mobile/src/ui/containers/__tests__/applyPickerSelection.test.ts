@@ -182,6 +182,52 @@ describe("applyPickerSelection", () => {
     expect(onAfter).not.toHaveBeenCalled();
   });
 
+  it("add-to-superset mode: appends each resolved exercise into the target supersetGroup", () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSession(storage);
+    const onAfter = jest.fn();
+    applyPickerSelection({
+      rows: [
+        { id: "ex-row", name: "Row" },
+        { id: "ex-pull", name: "Pulldown" },
+      ],
+      mode: { kind: "add-to-superset", supersetGroup: 7 },
+      resolveExercise: (row) => buildExercise({ id: row.id, name: row.name }),
+      storage,
+      generateId: (() => {
+        let n = 0;
+        return () => `id-${++n}`;
+      })(),
+      userId: "user-1",
+      onAfter,
+    });
+    const cached = storage.getActiveSession("user-1");
+    const added = cached?.exercises.filter(
+      (ex) => ex.exerciseId === "ex-row" || ex.exerciseId === "ex-pull",
+    );
+    expect(added).toHaveLength(2);
+    expect(added?.every((ex) => ex.supersetGroup === 7)).toBe(true);
+    // Original (non-superset) row stays untouched.
+    expect(cached?.exercises[0].supersetGroup).toBeNull();
+    expect(onAfter).toHaveBeenCalledTimes(1);
+  });
+
+  it("add-to-superset mode: skips onAfter when every row is unresolved", () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSession(storage);
+    const onAfter = jest.fn();
+    applyPickerSelection({
+      rows: [{ id: "missing", name: "Missing" }],
+      mode: { kind: "add-to-superset", supersetGroup: 3 },
+      resolveExercise: () => null,
+      storage,
+      generateId: () => "id-1",
+      userId: "user-1",
+      onAfter,
+    });
+    expect(onAfter).not.toHaveBeenCalled();
+  });
+
   it("null mode: no-op, no callback", () => {
     const storage = new InMemoryStorageAdapter();
     seedSession(storage);
@@ -241,6 +287,17 @@ describe("resolveSubstituteMuscleFilter", () => {
     const storage = new InMemoryStorageAdapter();
     expect(
       resolveSubstituteMuscleFilter({ kind: "add" }, [], storage),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for the add-to-superset mode (no muscle filter)", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleFilter(
+        { kind: "add-to-superset", supersetGroup: 1 },
+        [],
+        storage,
+      ),
     ).toBeUndefined();
   });
 

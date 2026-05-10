@@ -24,6 +24,7 @@ export type LegacyPickerRow = {
 export type ActiveSessionPickerMode =
   | { kind: "substitute"; oldSessionExerciseId: string }
   | { kind: "add" }
+  | { kind: "add-to-superset"; supersetGroup: number }
   | null;
 
 export type ApplyPickerSelectionDeps = {
@@ -87,6 +88,9 @@ export function resolveSubstituteMuscleFilter(
  *   `substituteExerciseCommand`, call `onAfter`.
  * - `add` mode → resolve every row, fire `addExerciseCommand` per
  *   resolved exercise, call `onAfter` once at the end.
+ * - `add-to-superset` mode → resolve every row, fire `addExerciseCommand`
+ *   with the mode's `supersetGroup` so the new rows land directly in the
+ *   target superset (legacy "Add Exercise to Superset" flow).
  * - Unresolved rows (cache miss) silently skip.
  */
 export function applyPickerSelection(deps: ApplyPickerSelectionDeps): void {
@@ -106,12 +110,17 @@ export function applyPickerSelection(deps: ApplyPickerSelectionDeps): void {
     onAfter();
     return;
   }
-  if (mode?.kind === "add") {
+  if (mode?.kind === "add" || mode?.kind === "add-to-superset") {
+    const supersetGroup =
+      mode.kind === "add-to-superset" ? mode.supersetGroup : null;
     let added = 0;
     for (const row of rows) {
       const exercise = resolveExercise(row);
       if (!exercise) continue;
-      addExerciseCommand({ storage, generateId, userId }, { exercise });
+      addExerciseCommand(
+        { storage, generateId, userId },
+        { exercise, supersetGroup },
+      );
       added++;
     }
     if (added > 0) onAfter();
