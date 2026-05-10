@@ -6,7 +6,7 @@
 
 import {
   applyPickerSelection,
-  resolveLegacyExercise,
+  resolvePickerExercise,
   resolveSubstituteMuscleFilter,
 } from "@/ui/containers/active-session-picker";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -344,12 +344,12 @@ describe("applyPickerSelection", () => {
   });
 });
 
-describe("resolveLegacyExercise", () => {
+describe("resolvePickerExercise", () => {
   it("returns null when the exercise is not in the cache", () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     expect(
-      resolveLegacyExercise(storage, api, { id: "missing", name: "Missing" }),
+      resolvePickerExercise(storage, api, { id: "missing", name: "Missing" }),
     ).toBeNull();
   });
 
@@ -365,7 +365,7 @@ describe("resolveLegacyExercise", () => {
         primaryMuscleGroupLabels: ["Chest"],
       }));
 
-    const resolved = resolveLegacyExercise(storage, api, {
+    const resolved = resolvePickerExercise(storage, api, {
       id: "ex-bench",
       name: "Bench Press",
     });

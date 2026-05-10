@@ -4,7 +4,6 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
-import type { Exercise } from "@/domain/models/exercise";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, {
@@ -25,6 +24,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AddExerciseList } from "./AddExerciseList";
 import { ExerciseDetailsModal } from "./ExerciseDetailsModal";
+import { toPickerExerciseRow } from "./picker-row";
 import { styles } from "./styles";
 
 interface AddExercisePopoverProps {
@@ -43,34 +43,6 @@ interface AddExercisePopoverProps {
    * exercise being swapped out (Story-004 AC).
    */
   readonly filterByPrimaryMuscleGroups?: readonly string[];
-}
-
-/**
- * Maps V2 camelCase `Exercise` (label-enriched at the adapter boundary)
- * onto the snake_case shape the verbatim-ported popover/list/details
- * components expect. The shape mirrors the legacy `ExerciseRow` exactly
- * — same keys, same nested-object structure for muscles/equipment —
- * so the rendering subtree stays untouched. M11 polish revisits the
- * components themselves; the mapping deletes when they do.
- */
-
-function toLegacyExerciseRow(ex: Exercise): any {
-  const muscleLabels = ex.primaryMuscleGroupLabels ?? [];
-  const equipmentLabels = ex.equipmentLabels ?? [];
-  return {
-    id: ex.id,
-    name: ex.name,
-    description: ex.description,
-    instructions: ex.instructions,
-    thumbnail_url: ex.thumbnailUrl,
-    video_url: ex.videoUrl,
-    difficulty_level: ex.difficulty,
-    primary_muscles: muscleLabels.map((label) => ({
-      name: label,
-      display_name: label,
-    })),
-    equipment_required: equipmentLabels.map((label) => ({ name: label })),
-  };
 }
 
 // Container Component - Handles logic and state
@@ -125,11 +97,11 @@ function AddExercisePopoverContainer({
 
   // Full mapped list — used for selection lookups so a search filter
   // can't silently drop exercises the user already selected before
-  // typing. `filteredLegacy` is the search-filtered subset rendered
+  // typing. `filteredRows` is the search-filtered subset rendered
   // by the inner list; selection resolution and detail drill-in
-  // always go through `allLegacy`.
-  const allLegacy = useMemo(
-    () => muscleGroupFilteredExercises.map(toLegacyExerciseRow),
+  // always go through `allRows`.
+  const allRows = useMemo(
+    () => muscleGroupFilteredExercises.map(toPickerExerciseRow),
     [muscleGroupFilteredExercises],
   );
 
@@ -139,14 +111,14 @@ function AddExercisePopoverContainer({
   // "take ages" to show selection feedback.
   const PICKER_DISPLAY_LIMIT = 100;
 
-  const filteredLegacy = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matched =
       q.length === 0
-        ? allLegacy
-        : allLegacy.filter((ex) => ex.name.toLowerCase().includes(q));
+        ? allRows
+        : allRows.filter((ex) => ex.name.toLowerCase().includes(q));
     return matched.slice(0, PICKER_DISPLAY_LIMIT);
-  }, [allLegacy, searchQuery]);
+  }, [allRows, searchQuery]);
 
   // One-shot refresh when stale, mirroring ExerciseListContainer. The
   // initial visit warms the cache; subsequent opens reuse it.
@@ -174,7 +146,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleExerciseInfo = (exerciseId: string) => {
-    const exercise = allLegacy.find((ex) => ex.id === exerciseId);
+    const exercise = allRows.find((ex) => ex.id === exerciseId);
     if (exercise) {
       setSelectedExercise(exercise);
       setCurrentView("details");
@@ -199,7 +171,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleAddExercisesClick = () => {
-    const selectedExercises = allLegacy.filter((ex) =>
+    const selectedExercises = allRows.filter((ex) =>
       selectedExerciseIds.includes(ex.id),
     );
     onAddExercises(selectedExercises);
@@ -207,7 +179,7 @@ function AddExercisePopoverContainer({
   };
 
   const handleAddSupersetClick = () => {
-    const selectedExercises = allLegacy.filter((ex) =>
+    const selectedExercises = allRows.filter((ex) =>
       selectedExerciseIds.includes(ex.id),
     );
     onAddSuperset(selectedExercises);
@@ -222,7 +194,7 @@ function AddExercisePopoverContainer({
       onAddSuperset={handleAddSupersetClick}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
-      exercises={filteredLegacy}
+      exercises={filteredRows}
       selectedExerciseIds={selectedExerciseIds}
       onToggleExercise={toggleExerciseSelection}
       onExerciseInfo={handleExerciseInfo}

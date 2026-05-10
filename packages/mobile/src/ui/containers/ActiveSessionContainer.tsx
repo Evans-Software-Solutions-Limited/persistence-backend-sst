@@ -45,10 +45,10 @@ import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover"
 import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
 import {
   applyPickerSelection,
-  resolveLegacyExercise,
+  resolvePickerExercise,
   resolveSubstituteMuscleFilter,
   type ActiveSessionPickerMode,
-  type LegacyPickerRow,
+  type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
 import { buildTemplateMap } from "@/ui/containers/active-session-template";
 
@@ -400,13 +400,13 @@ export function ActiveSessionContainer() {
   // the cache-miss / cache-hit branches are unit-tested without
   // mounting the AddExercisePopover modal tree.
   const resolveExercise = useCallback(
-    (row: LegacyPickerRow): Exercise | null =>
-      resolveLegacyExercise(storage, api, row),
+    (row: PickerExerciseRow): Exercise | null =>
+      resolvePickerExercise(storage, api, row),
     [storage, api],
   );
 
   const onPickerAddExercises = useCallback(
-    (rows: LegacyPickerRow[]) => {
+    (rows: PickerExerciseRow[]) => {
       if (!userId) {
         setPickerMode(null);
         return;
@@ -434,7 +434,7 @@ export function ActiveSessionContainer() {
   // doesn't surface this CTA (the popover's superset button is gated
   // on hasAtLeastTwo selections), so we don't need a guard here.
   const onPickerAddSuperset = useCallback(
-    (rows: LegacyPickerRow[]) => {
+    (rows: PickerExerciseRow[]) => {
       if (!userId) {
         setPickerMode(null);
         return;

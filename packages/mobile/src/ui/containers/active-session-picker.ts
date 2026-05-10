@@ -16,7 +16,13 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
 
-export type LegacyPickerRow = {
+/**
+ * Lightweight row contract emitted by the picker UI components when
+ * the user taps Add / Add-to-Superset / Substitute. Just `(id, name)`
+ * — the dispatcher rehydrates the full `Exercise` via
+ * `resolvePickerExercise` against the local cache.
+ */
+export type PickerExerciseRow = {
   id: string;
   name: string;
 };
@@ -35,9 +41,9 @@ export type ActiveSessionPickerMode =
   | null;
 
 export type ApplyPickerSelectionDeps = {
-  rows: readonly LegacyPickerRow[];
+  rows: readonly PickerExerciseRow[];
   mode: ActiveSessionPickerMode;
-  resolveExercise: (row: LegacyPickerRow) => Exercise | null;
+  resolveExercise: (row: PickerExerciseRow) => Exercise | null;
   storage: StoragePort;
   generateId: () => string;
   userId: string;
@@ -46,17 +52,16 @@ export type ApplyPickerSelectionDeps = {
 };
 
 /**
- * Resolve a legacy `(id, name)` picker row into the canonical V2
- * `Exercise` model via the local exercise cache. Returns null on
- * cache miss — callers (substitute / add command paths) silently
- * skip unresolved rows. Pure dependency-injected; the container
- * wires `storage` + `api` once and forwards this resolver to
- * `applyPickerSelection`.
+ * Rehydrate a `(id, name)` picker row into the canonical V2 `Exercise`
+ * model via the local exercise cache. Returns null on cache miss —
+ * callers (substitute / add command paths) silently skip unresolved
+ * rows. Pure dependency-injected; the container wires `storage` +
+ * `api` once and forwards this resolver to `applyPickerSelection`.
  */
-export function resolveLegacyExercise(
+export function resolvePickerExercise(
   storage: StoragePort,
   api: ApiPort,
-  row: LegacyPickerRow,
+  row: PickerExerciseRow,
 ): Exercise | null {
   const cached = storage.getCachedExercise(row.id);
   if (!cached) return null;

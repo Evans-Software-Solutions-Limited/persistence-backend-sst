@@ -2,23 +2,20 @@
  * AddExerciseToSupersetPopover — the "Add Exercise to Superset" picker
  * for the active session.
  *
- * Ported from `persistence-mobile/components/workouts/
- * AddExerciseToSupersetView/AddExerciseToSupersetView.tsx`. Visually
- * matches V2's `AddExercisePopover` (pageSheet modal, back arrow,
- * sticky search, sticky footer) but with **single-select** state and a
- * **single** "Add" button — legacy's exact semantic for adding ONE
- * exercise into an existing superset group at a time.
+ * Single-select + one "Add" button — distinct from the multi-select
+ * `AddExercisePopover` (which serves fresh adds + creating a new
+ * superset). The two are intentionally separate components because
+ * they have different selection semantics and different footer
+ * surfaces; the container routes between them by `pickerMode.kind`.
+ * Reuses `AddExerciseList`, `ExerciseDetailsModal`, and the shared
+ * picker-row mapping from `../AddExercisePopover` so the row contract
+ * stays in one place.
  *
- * Why a separate component (not a flag on AddExercisePopover): the
- * legacy app has two distinct picker views with different selection
- * semantics + different button surfaces. Sharing one component with a
- * `selectionMode` prop muddles the responsibility — the multi-select
- * picker is for fresh adds + creating a NEW superset; this is for
- * appending to an EXISTING group. Container routes to one or the
- * other via `pickerMode.kind`.
- *
- * Spec: persistence-mobile/components/workouts/AddExerciseToSupersetView
- *       specs/05-active-session/requirements.md STORY-005
+ * Spec: specs/05-active-session/requirements.md STORY-005
+ *       Modelled on the persistence-mobile reference repo's
+ *       `AddExerciseToSupersetView` (single-select picker), used for
+ *       structural reference only — the V2 implementation here owns
+ *       the surface going forward.
  */
 
 import { Colors } from "@/ui/theme/workoutsLegacyTheme";
@@ -27,7 +24,6 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
-import type { Exercise } from "@/domain/models/exercise";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -41,6 +37,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AddExerciseList } from "../AddExercisePopover/AddExerciseList";
 import { ExerciseDetailsModal } from "../AddExercisePopover/ExerciseDetailsModal";
+import { toPickerExerciseRow } from "../AddExercisePopover/picker-row";
 import { styles } from "../AddExercisePopover/styles";
 
 export type AddExerciseToSupersetPopoverProps = {
@@ -61,25 +58,6 @@ export type AddExerciseToSupersetPopoverProps = {
    */
   readonly existingExerciseIds?: readonly string[];
 };
-
-function toLegacyExerciseRow(ex: Exercise): any {
-  const muscleLabels = ex.primaryMuscleGroupLabels ?? [];
-  const equipmentLabels = ex.equipmentLabels ?? [];
-  return {
-    id: ex.id,
-    name: ex.name,
-    description: ex.description,
-    instructions: ex.instructions,
-    thumbnail_url: ex.thumbnailUrl,
-    video_url: ex.videoUrl,
-    difficulty_level: ex.difficulty,
-    primary_muscles: muscleLabels.map((label) => ({
-      name: label,
-      display_name: label,
-    })),
-    equipment_required: equipmentLabels.map((label) => ({ name: label })),
-  };
-}
 
 function AddExerciseToSupersetPopoverContainer({
   visible,
@@ -110,8 +88,8 @@ function AddExerciseToSupersetPopoverContainer({
     [cacheRead.exercises, api],
   );
 
-  const allLegacy = useMemo(
-    () => enrichedExercises.map(toLegacyExerciseRow),
+  const allRows = useMemo(
+    () => enrichedExercises.map(toPickerExerciseRow),
     [enrichedExercises],
   );
 
@@ -119,14 +97,14 @@ function AddExerciseToSupersetPopoverContainer({
   // would otherwise render the full library uncondensed.
   const PICKER_DISPLAY_LIMIT = 100;
 
-  const filteredLegacy = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matched =
       q.length === 0
-        ? allLegacy
-        : allLegacy.filter((ex) => ex.name.toLowerCase().includes(q));
+        ? allRows
+        : allRows.filter((ex) => ex.name.toLowerCase().includes(q));
     return matched.slice(0, PICKER_DISPLAY_LIMIT);
-  }, [allLegacy, searchQuery]);
+  }, [allRows, searchQuery]);
 
   const hasTriggeredRefreshRef = useRef(false);
   useEffect(() => {
@@ -150,7 +128,7 @@ function AddExerciseToSupersetPopoverContainer({
   };
 
   const handleExerciseInfo = (exerciseId: string) => {
-    const exercise = allLegacy.find((ex) => ex.id === exerciseId);
+    const exercise = allRows.find((ex) => ex.id === exerciseId);
     if (exercise) {
       setSelectedExercise(exercise);
       setCurrentView("details");
@@ -172,7 +150,7 @@ function AddExerciseToSupersetPopoverContainer({
 
   const handleAddClick = () => {
     if (!selectedExerciseId) return;
-    const exercise = allLegacy.find((ex) => ex.id === selectedExerciseId);
+    const exercise = allRows.find((ex) => ex.id === selectedExerciseId);
     if (!exercise) return;
     // Wrap in an array so the container's `applyPickerSelection`
     // dispatcher (which iterates `rows`) handles this uniformly with
@@ -189,7 +167,7 @@ function AddExerciseToSupersetPopoverContainer({
       onAdd={handleAddClick}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
-      exercises={filteredLegacy}
+      exercises={filteredRows}
       selectedExerciseId={selectedExerciseId}
       onToggleExercise={toggleExerciseSelection}
       onExerciseInfo={handleExerciseInfo}

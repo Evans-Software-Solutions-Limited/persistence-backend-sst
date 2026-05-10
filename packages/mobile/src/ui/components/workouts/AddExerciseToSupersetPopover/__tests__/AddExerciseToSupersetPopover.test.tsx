@@ -235,9 +235,9 @@ describe("AddExerciseToSupersetPopover", () => {
     expect(queryByTestId("superset-picker-modal")).toBeNull();
   });
 
-  it("maps muscleGroup + equipment labels through toLegacyExerciseRow (legacy ExerciseRow shape)", async () => {
+  it("maps muscleGroup + equipment labels through toPickerExerciseRow into the picker's snake_case shape", async () => {
     // Hits the `muscleLabels.map(...)` + `equipmentLabels.map(...)`
-    // branches in toLegacyExerciseRow — without a populated exercise
+    // branches in toPickerExerciseRow — without a populated exercise
     // they're empty arrays and the .map() never runs.
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();

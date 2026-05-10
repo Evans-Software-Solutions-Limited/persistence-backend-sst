@@ -407,7 +407,11 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surface.border,
-    gap: Spacing.xs,
+    // Must match `ActiveSupersetExerciseRow.row.gap` (Spacing.sm) so
+    // the four flex columns line up under their headers — same flex
+    // ratios + same gap = identical column positions. Was `xs`,
+    // which subtly offset every header label.
+    gap: Spacing.sm,
   },
   columnHeader: {
     ...Typography.caption,
