@@ -932,6 +932,224 @@ describe("ActiveSessionContainer", () => {
     });
   });
 
+  it("Remove paired set on a superset row fires removeSupersetSetCommand for the setNumber", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-A1",
+              sessionExerciseId: "se-A",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+            {
+              id: "set-A2",
+              sessionExerciseId: "se-A",
+              setNumber: 2,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-B1",
+              sessionExerciseId: "se-B",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+            {
+              id: "set-B2",
+              sessionExerciseId: "se-B",
+              setNumber: 2,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-1-set-2-remove"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets).toHaveLength(1);
+      expect(cached?.exercises[1].sets).toHaveLength(1);
+    });
+  });
+
+  it("Notes button on a superset row opens the popover with title 'Superset Set N' and saves to every peer", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId, getByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-1-set-1-notes"));
+
+    // Title shows "Superset Set 1" — cosmetic per legacy.
+    expect(getByText("Superset Set 1")).toBeTruthy();
+
+    fireEvent.changeText(
+      await findByTestId("exercise-notes-input"),
+      "elbows in",
+    );
+    fireEvent.press(await findByTestId("exercise-notes-save"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      // Notes saved to BOTH peers (legacy stores per-superset-group).
+      expect(cached?.exercises[0].notes).toBe("elbows in");
+      expect(cached?.exercises[1].notes).toBe("elbows in");
+    });
+  });
+
+  it("Add Exercise to Superset button opens the picker in add-to-superset mode", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 7,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 7,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-7-add-exercise"));
+    // Picker is portal-rendered Modal; assert the session screen
+    // remained mounted (container didn't crash) and the picker close
+    // button is reachable (the popover rendered).
+    expect(await findByTestId("active-session-screen")).toBeTruthy();
+    expect(await findByTestId("close-button")).toBeTruthy();
+  });
+
   it("renders the empty-state Add CTA when the session has no exercises", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
