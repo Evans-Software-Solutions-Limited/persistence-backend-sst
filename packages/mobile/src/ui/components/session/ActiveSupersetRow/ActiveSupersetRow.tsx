@@ -371,6 +371,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: Spacing.xs,
     borderLeftWidth: 2,
+    // Without an explicit color, RN defaults to black — leaves a 2pt
+    // black segment at the top of the rail before `supersetContent`'s
+    // cyan border picks up below. Match `supersetContent.borderLeftColor`.
+    borderLeftColor: Colors.primary.DEFAULT,
   },
   supersetLineStart: {
     height: 2,
@@ -412,7 +416,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   columnHeaderExercise: { flex: 3 },
-  columnHeaderPrevious: { textAlign: "center" },
+  // `flex: 2.5` mirrors `columnPrevious` on `ActiveSupersetExerciseRow`
+  // — without it the "Previous" header collapsed to text-width while the
+  // data column claimed 2.5 flex units, throwing every header off by
+  // ~30% of the row width. The legacy row + header use the same flex
+  // ratios; this lines them up.
+  columnHeaderPrevious: { flex: 2.5, textAlign: "center" },
   columnHeaderReps: { flex: 1, textAlign: "center" },
   columnHeaderWeight: { flex: 1, textAlign: "center" },
 });
