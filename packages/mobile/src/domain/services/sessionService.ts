@@ -423,11 +423,17 @@ const DEFAULT_ADDED_EXERCISE_SETS = 3;
  * Append a new exercise to the session at `max(sortOrder) + 1`. Used by
  * Quick Start ("+ Add exercise") and mid-session add. Seeds three empty
  * sets to match legacy. Returns a new session.
+ *
+ * Pass `supersetGroup` to drop the new exercise straight into an
+ * existing superset (legacy "Add Exercise to Superset" flow). The sort
+ * order still pushes the new row to the end of the list — the
+ * presenter groups by `supersetGroup` regardless of position.
  */
 export function addExerciseToSession(
   session: WorkoutSession,
   exercise: Exercise,
   idFactory: IdFactory,
+  options: { supersetGroup?: number | null } = {},
 ): WorkoutSession {
   const nextSortOrder = nextSortOrderFor(session.exercises);
   const sessionExerciseId = `local-${idFactory()}`;
@@ -441,7 +447,7 @@ export function addExerciseToSession(
     exerciseId: exercise.id,
     exerciseName: exercise.name,
     sortOrder: nextSortOrder,
-    supersetGroup: null,
+    supersetGroup: options.supersetGroup ?? null,
     isSubstituted: false,
     originalExerciseId: null,
     notes: null,
