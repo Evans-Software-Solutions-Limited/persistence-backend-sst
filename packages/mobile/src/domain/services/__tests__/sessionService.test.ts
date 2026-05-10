@@ -157,6 +157,25 @@ describe("createSessionFromWorkout", () => {
     const session = createSessionFromWorkout(w, ctx(), idFactory());
     expect(session.exercises[0].sets).toHaveLength(0);
   });
+
+  it("falls back to exerciseId when wx.exercise is null (FK soft-cascade — library exercise was deleted)", () => {
+    // This fallback only fires when the underlying library exercise
+    // has been hard-deleted; optimistic workout-create + workout-update
+    // commands hydrate `wx.exercise` from the local exercise cache so
+    // a freshly-created workout starts a session with the readable
+    // name immediately.
+    const w = makeWorkout({
+      exercises: [
+        {
+          ...makeWorkout().exercises[0],
+          exerciseId: "ex-bench",
+          exercise: null,
+        },
+      ],
+    });
+    const session = createSessionFromWorkout(w, ctx(), idFactory());
+    expect(session.exercises[0].exerciseName).toBe("ex-bench");
+  });
 });
 
 describe("createEmptySession", () => {

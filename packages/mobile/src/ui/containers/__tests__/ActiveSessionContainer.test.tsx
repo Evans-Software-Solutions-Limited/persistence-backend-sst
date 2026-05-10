@@ -500,10 +500,19 @@ describe("ActiveSessionContainer", () => {
     });
 
     const adapters = makeAdapters(api, storage);
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, findByText } = renderWithTheme(
       withAdapters(adapters, <ActiveSessionContainer />),
     );
 
+    // Gate on the rest-seconds-bearing label rendering. The button text
+    // includes the template's restSeconds (e.g. "START 60S REST"); only
+    // after `useWorkout` commits the cached workout to state does the
+    // 60s label appear. Without this wait, the tap races the cache
+    // hydration on a slow runner — `templateByExercise` is empty for one
+    // render, the button reads "START 90S REST" (default fallback), and
+    // the tap schedules 90s instead of 60s. Locally fast enough to slip
+    // through; CI consistently lost the race.
+    await findByText("START 60S REST");
     fireEvent.press(await findByTestId("session-exercise-start-rest"));
 
     await waitFor(() => {
@@ -930,6 +939,358 @@ describe("ActiveSessionContainer", () => {
       expect(cached?.exercises[0].sets).toHaveLength(1);
       expect(cached?.exercises[1].sets).toHaveLength(1);
     });
+  });
+
+  it("Remove paired set on a superset row fires removeSupersetSetCommand for the setNumber", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-A1",
+              sessionExerciseId: "se-A",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+            {
+              id: "set-A2",
+              sessionExerciseId: "se-A",
+              setNumber: 2,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-B1",
+              sessionExerciseId: "se-B",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+            {
+              id: "set-B2",
+              sessionExerciseId: "se-B",
+              setNumber: 2,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-1-set-2-remove"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      expect(cached?.exercises[0].sets).toHaveLength(1);
+      expect(cached?.exercises[1].sets).toHaveLength(1);
+    });
+  });
+
+  it("Notes button on a superset row opens the popover with title 'Superset Set N' and saves to every peer", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 1,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId, getByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-1-set-1-notes"));
+
+    // Title shows "Superset Set 1" — cosmetic per legacy.
+    expect(getByText("Superset Set 1")).toBeTruthy();
+
+    fireEvent.changeText(
+      await findByTestId("exercise-notes-input"),
+      "elbows in",
+    );
+    fireEvent.press(await findByTestId("exercise-notes-save"));
+
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      // Notes saved to BOTH peers (legacy stores per-superset-group).
+      expect(cached?.exercises[0].notes).toBe("elbows in");
+      expect(cached?.exercises[1].notes).toBe("elbows in");
+    });
+  });
+
+  it("Add Exercise to Superset routes to the single-select AddExerciseToSupersetPopover (NOT the multi-select AddExercisePopover)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: 7,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+        {
+          id: "se-B",
+          sessionId: "local-1",
+          exerciseId: "ex-row",
+          exerciseName: "Row",
+          sortOrder: 1,
+          supersetGroup: 7,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("superset-7-add-exercise"));
+    // The session screen stays mounted, and the *superset* popover is
+    // the one that opened — not AddExercisePopover (whose close button
+    // uses `close-button`). Two-popover routing must not let both
+    // surface at once.
+    expect(await findByTestId("active-session-screen")).toBeTruthy();
+    expect(await findByTestId("superset-picker-close")).toBeTruthy();
+    expect(queryByTestId("close-button")).toBeNull();
+  });
+
+  it("plain Add Exercise (non-superset) routes to AddExercisePopover, NOT the superset popover", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-A",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("active-session-add-exercise"));
+    expect(await findByTestId("close-button")).toBeTruthy();
+    expect(queryByTestId("superset-picker-close")).toBeNull();
+  });
+
+  it("multi-select picker's Superset CTA groups every picked row under a fresh supersetGroup (regression for the bug where it delegated to plain add)", async () => {
+    // Surfaces Brad's device complaint: tapping "Superset" on the
+    // multi-select picker used to add the rows with `supersetGroup:
+    // null`, so the new exercises landed as independent rows in the
+    // session — never grouped into a superset.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-warmup",
+          exerciseName: "Warmup",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+    // Seed two library exercises so the picker has rows to pick.
+    storage.cacheExercises([
+      {
+        id: "ex-bench",
+        name: "Bench Press",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: null,
+        isCustom: false,
+        createdBy: null,
+      },
+      {
+        id: "ex-row",
+        name: "Bent-Over Row",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: null,
+        isCustom: false,
+        createdBy: null,
+      },
+    ]);
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // Open the multi-select picker.
+    fireEvent.press(await findByTestId("active-session-add-exercise"));
+    // Select two rows.
+    fireEvent.press(await findByTestId("exercise-row-ex-bench"));
+    fireEvent.press(await findByTestId("exercise-row-ex-row"));
+    // Hit "Superset" (NOT "Add").
+    fireEvent.press(await findByTestId("add-superset-button"));
+
+    // Both picked rows should now exist on the session with a shared
+    // supersetGroup. With no pre-existing groups, the allocator starts
+    // at 1.
+    const cached = storage.getActiveSession("user-1");
+    const added = cached?.exercises.filter((ex) =>
+      ["ex-bench", "ex-row"].includes(ex.exerciseId),
+    );
+    expect(added).toHaveLength(2);
+    expect(added?.[0].supersetGroup).toBe(1);
+    expect(added?.[1].supersetGroup).toBe(1);
   });
 
   it("renders the empty-state Add CTA when the session has no exercises", async () => {

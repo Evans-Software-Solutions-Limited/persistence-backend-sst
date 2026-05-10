@@ -26,6 +26,12 @@ export type AddExerciseCommandDeps = {
 
 export type AddExerciseInput = {
   exercise: Exercise;
+  /**
+   * When set, the new exercise is appended into this superset group
+   * (legacy "Add Exercise to Superset" flow). Omit / null for a plain
+   * mid-session add.
+   */
+  supersetGroup?: number | null;
 };
 
 export function addExerciseCommand(
@@ -45,6 +51,7 @@ export function addExerciseCommand(
     session,
     input.exercise,
     deps.generateId,
+    { supersetGroup: input.supersetGroup ?? null },
   );
 
   deps.storage.cacheActiveSession(deps.userId, updated);

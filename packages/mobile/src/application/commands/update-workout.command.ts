@@ -68,20 +68,36 @@ export function updateWorkoutCommand(
       ? input.description?.trim() || null
       : cached.workout.description;
 
+  // Hydrate `exercise` from the local exercise library cache — same
+  // reasoning as create-workout.command. Without this, a session
+  // started right after an edit renders the exercise UUID in the name
+  // column.
   const exercises: WorkoutExercise[] = input.exercises
-    ? input.exercises.map((ex, idx) => ({
-        id: `local-${deps.generateId()}-${idx}`,
-        exerciseId: ex.exerciseId,
-        sortOrder: ex.sortOrder,
-        supersetGroup: ex.supersetGroup ?? null,
-        targetSets: ex.targetSets ?? null,
-        targetRepsMin: ex.targetRepsMin ?? 1,
-        targetRepsMax: ex.targetRepsMax ?? 1,
-        targetDurationSeconds: ex.targetDurationSeconds ?? null,
-        restSeconds: ex.restSeconds ?? 90,
-        notes: ex.notes ?? null,
-        exercise: null,
-      }))
+    ? input.exercises.map((ex, idx) => {
+        const cachedExercise = deps.storage.getCachedExercise(ex.exerciseId);
+        return {
+          id: `local-${deps.generateId()}-${idx}`,
+          exerciseId: ex.exerciseId,
+          sortOrder: ex.sortOrder,
+          supersetGroup: ex.supersetGroup ?? null,
+          targetSets: ex.targetSets ?? null,
+          targetRepsMin: ex.targetRepsMin ?? 1,
+          targetRepsMax: ex.targetRepsMax ?? 1,
+          targetDurationSeconds: ex.targetDurationSeconds ?? null,
+          restSeconds: ex.restSeconds ?? 90,
+          notes: ex.notes ?? null,
+          exercise: cachedExercise
+            ? {
+                id: cachedExercise.id,
+                name: cachedExercise.name,
+                category: cachedExercise.category,
+                difficultyLevel: cachedExercise.difficulty,
+                videoUrl: cachedExercise.videoUrl,
+                thumbnailUrl: cachedExercise.thumbnailUrl,
+              }
+            : null,
+        };
+      })
     : cached.workout.exercises;
 
   const updated: Workout = {

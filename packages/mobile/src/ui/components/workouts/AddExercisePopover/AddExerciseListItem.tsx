@@ -34,6 +34,7 @@ export function AddExerciseListItem({
       onPress={isDisabled ? undefined : onToggle}
       disabled={isDisabled}
       activeOpacity={0.95}
+      testID={`exercise-row-${exercise.id}`}
     >
       {/* Exercise Image */}
       <View style={styles.exerciseImageContainer}>

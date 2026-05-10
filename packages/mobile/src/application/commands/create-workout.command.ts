@@ -52,19 +52,38 @@ export function createWorkoutCommand(
   const nowDate = (deps.now?.() ?? new Date()).toISOString();
   const workoutId = `local-${deps.generateId()}`;
 
-  const exercises: WorkoutExercise[] = sanitized.exercises.map((ex, idx) => ({
-    id: `local-${deps.generateId()}-${idx}`,
-    exerciseId: ex.exerciseId,
-    sortOrder: ex.sortOrder,
-    supersetGroup: ex.supersetGroup ?? null,
-    targetSets: ex.targetSets ?? null,
-    targetRepsMin: ex.targetRepsMin ?? 1,
-    targetRepsMax: ex.targetRepsMax ?? 1,
-    targetDurationSeconds: ex.targetDurationSeconds ?? null,
-    restSeconds: ex.restSeconds ?? 90,
-    notes: ex.notes ?? null,
-    exercise: null,
-  }));
+  // Hydrate `exercise` from the local exercise library cache. The
+  // backend response (when sync flushes) returns the join-populated
+  // shape; we mirror that here so downstream consumers (the session
+  // start flow in particular) see `wx.exercise.name` immediately,
+  // not after the next workout-detail refresh. Without this, a session
+  // started right after create renders the exercise UUID in the name
+  // column.
+  const exercises: WorkoutExercise[] = sanitized.exercises.map((ex, idx) => {
+    const cached = deps.storage.getCachedExercise(ex.exerciseId);
+    return {
+      id: `local-${deps.generateId()}-${idx}`,
+      exerciseId: ex.exerciseId,
+      sortOrder: ex.sortOrder,
+      supersetGroup: ex.supersetGroup ?? null,
+      targetSets: ex.targetSets ?? null,
+      targetRepsMin: ex.targetRepsMin ?? 1,
+      targetRepsMax: ex.targetRepsMax ?? 1,
+      targetDurationSeconds: ex.targetDurationSeconds ?? null,
+      restSeconds: ex.restSeconds ?? 90,
+      notes: ex.notes ?? null,
+      exercise: cached
+        ? {
+            id: cached.id,
+            name: cached.name,
+            category: cached.category,
+            difficultyLevel: cached.difficulty,
+            videoUrl: cached.videoUrl,
+            thumbnailUrl: cached.thumbnailUrl,
+          }
+        : null,
+    };
+  });
 
   const workout: Workout = {
     id: workoutId,

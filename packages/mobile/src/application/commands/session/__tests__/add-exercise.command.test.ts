@@ -114,4 +114,30 @@ describe("addExerciseCommand", () => {
     );
     expect(storage.getPendingMutations()).toEqual([]);
   });
+
+  it("drops the new exercise into the given supersetGroup when provided", () => {
+    startSessionCommand(
+      { storage, generateId, userId: "user-1", now },
+      { workout: buildWorkout() },
+    );
+    const result = addExerciseCommand(
+      { storage, generateId, userId: "user-1" },
+      { exercise: buildExercise(), supersetGroup: 2 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const added = result.value.exercises[result.value.exercises.length - 1];
+    expect(added.supersetGroup).toBe(2);
+  });
+
+  it("falls back to supersetGroup=null on the plain add path", () => {
+    startSessionCommand({ storage, generateId, userId: "user-1", now });
+    const result = addExerciseCommand(
+      { storage, generateId, userId: "user-1" },
+      { exercise: buildExercise() },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.exercises[0].supersetGroup).toBeNull();
+  });
 });

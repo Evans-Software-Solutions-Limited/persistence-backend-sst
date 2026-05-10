@@ -58,6 +58,59 @@ describe("createWorkoutCommand", () => {
     expect(pending[0].method).toBe("POST");
   });
 
+  it("hydrates `wx.exercise` from the local exercise cache so a session started right after create renders the real name (not the exerciseId UUID)", () => {
+    // Before this hydration, freshly-created workouts cached
+    // `exercise: null` on every WorkoutExercise; the session-start
+    // flow's `wx.exercise?.name ?? wx.exerciseId` fallback then wrote
+    // the UUID into the SessionExercise.exerciseName. Surfaced on
+    // device as "id in the name column" on superset peers
+    // immediately after creating + starting the workout.
+    storage.cacheExercises([
+      {
+        id: "ex-bench",
+        name: "Bench Press",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: "thumb.png",
+        isCustom: false,
+        createdBy: null,
+      },
+    ]);
+    const result = createWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      { name: "Push", exercises: [{ exerciseId: "ex-bench", sortOrder: 0 }] },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const wx = result.value.exercises[0];
+    expect(wx.exercise).not.toBeNull();
+    expect(wx.exercise?.id).toBe("ex-bench");
+    expect(wx.exercise?.name).toBe("Bench Press");
+    expect(wx.exercise?.thumbnailUrl).toBe("thumb.png");
+  });
+
+  it("leaves `wx.exercise` null when the exercise isn't in the local cache (defensive fallback for invalid ids)", () => {
+    const result = createWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      {
+        name: "Push",
+        exercises: [{ exerciseId: "ex-not-in-cache", sortOrder: 0 }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.exercises[0].exercise).toBeNull();
+  });
+
   it("prepends the new workout to existing mine list", () => {
     const existing: Workout = {
       id: "wo-existing",
@@ -140,6 +193,39 @@ describe("updateWorkoutCommand", () => {
       { name: "X" },
     );
     expect(result.ok).toBe(false);
+  });
+
+  it("hydrates `wx.exercise` from the exercise cache on the replacement exercises array (same root-cause fix as create)", () => {
+    storage.cacheExercises([
+      {
+        id: "ex-row",
+        name: "Bent-Over Row",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        equipment: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+        equipmentLabels: [],
+        videoUrl: null,
+        thumbnailUrl: null,
+        isCustom: false,
+        createdBy: null,
+      },
+    ]);
+    const result = updateWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      "w-1",
+      { exercises: [{ exerciseId: "ex-row", sortOrder: 0 }] },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const wx = result.value.exercises[0];
+    expect(wx.exercise?.id).toBe("ex-row");
+    expect(wx.exercise?.name).toBe("Bent-Over Row");
   });
 
   it("merges metadata into cached workout and enqueues PATCH", () => {

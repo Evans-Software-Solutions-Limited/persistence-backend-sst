@@ -28,6 +28,7 @@ import {
   cancelSessionCommand,
   logSetCommand,
   removeExerciseCommand,
+  removeSupersetSetCommand,
   setExerciseNotesCommand,
   startSessionCommand,
 } from "@/application/commands/session";
@@ -41,12 +42,13 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
+import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
 import {
   applyPickerSelection,
-  resolveLegacyExercise,
+  resolvePickerExercise,
   resolveSubstituteMuscleFilter,
   type ActiveSessionPickerMode,
-  type LegacyPickerRow,
+  type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
 import { buildTemplateMap } from "@/ui/containers/active-session-template";
 
@@ -212,6 +214,18 @@ export function ActiveSessionContainer() {
     [userId, storage, generateId, rereadCache],
   );
 
+  const onRemoveSupersetSet = useCallback(
+    (sessionExerciseIds: readonly string[], setNumber: number) => {
+      if (!userId) return;
+      removeSupersetSetCommand(
+        { storage, userId },
+        { sessionExerciseIds, setNumber },
+      );
+      rereadCache();
+    },
+    [userId, storage, rereadCache],
+  );
+
   const onUpdateSet = useCallback(
     (
       sessionExerciseId: string,
@@ -268,7 +282,25 @@ export function ActiveSessionContainer() {
   );
 
   const [pickerMode, setPickerMode] = useState<ActiveSessionPickerMode>(null);
-  const [notesEditingId, setNotesEditingId] = useState<string | null>(null);
+
+  // The notes popover serves two flavours:
+  //   - { kind: "exercise" } — single exercise's notes (legacy
+  //     "Exercise Notes" title, writes to that one row).
+  //   - { kind: "superset" } — opened from a SET N row inside an
+  //     ActiveSupersetRow. Title is "Superset Set N"; the saved note
+  //     is written to every peer in the group (legacy parity — per-set
+  //     notes are cosmetic, the storage is shared per superset).
+  // Lifted to the container so a single ExerciseNotesPopover instance
+  // serves both flavours and there's no second popover competing in
+  // the modal stack.
+  type NotesTarget =
+    | { kind: "exercise"; sessionExerciseId: string }
+    | {
+        kind: "superset";
+        sessionExerciseIds: readonly string[];
+        setNumber: number;
+      };
+  const [notesTarget, setNotesTarget] = useState<NotesTarget | null>(null);
 
   const onSubstitute = useCallback((sessionExerciseId: string) => {
     setPickerMode({
@@ -292,25 +324,43 @@ export function ActiveSessionContainer() {
   );
 
   const onOpenNotes = useCallback((sessionExerciseId: string) => {
-    setNotesEditingId(sessionExerciseId);
+    setNotesTarget({ kind: "exercise", sessionExerciseId });
   }, []);
 
-  const onCloseNotes = useCallback(() => setNotesEditingId(null), []);
+  const onOpenSupersetNotes = useCallback(
+    (sessionExerciseIds: readonly string[], setNumber: number) => {
+      setNotesTarget({ kind: "superset", sessionExerciseIds, setNumber });
+    },
+    [],
+  );
+
+  const onCloseNotes = useCallback(() => setNotesTarget(null), []);
 
   const onSaveNotes = useCallback(
     (notes: string) => {
-      if (!userId || !notesEditingId) {
-        setNotesEditingId(null);
+      if (!userId || !notesTarget) {
+        setNotesTarget(null);
         return;
       }
-      setExerciseNotesCommand(
-        { storage, userId },
-        { sessionExerciseId: notesEditingId, notes },
-      );
+      if (notesTarget.kind === "exercise") {
+        setExerciseNotesCommand(
+          { storage, userId },
+          { sessionExerciseId: notesTarget.sessionExerciseId, notes },
+        );
+      } else {
+        // Superset: write the note to every peer (legacy shares notes
+        // across the group; the popover title is just cosmetic).
+        for (const id of notesTarget.sessionExerciseIds) {
+          setExerciseNotesCommand(
+            { storage, userId },
+            { sessionExerciseId: id, notes },
+          );
+        }
+      }
       rereadCache();
-      setNotesEditingId(null);
+      setNotesTarget(null);
     },
-    [userId, notesEditingId, storage, rereadCache],
+    [userId, notesTarget, storage, rereadCache],
   );
 
   const onRemoveExercise = useCallback(
@@ -339,6 +389,10 @@ export function ActiveSessionContainer() {
     setPickerMode({ kind: "add" });
   }, []);
 
+  const onAddExerciseToSuperset = useCallback((supersetGroup: number) => {
+    setPickerMode({ kind: "add-to-superset", supersetGroup });
+  }, []);
+
   const onClosePicker = useCallback(() => setPickerMode(null), []);
 
   // Resolve a legacy picker row → canonical Exercise via the cached
@@ -346,13 +400,13 @@ export function ActiveSessionContainer() {
   // the cache-miss / cache-hit branches are unit-tested without
   // mounting the AddExercisePopover modal tree.
   const resolveExercise = useCallback(
-    (row: LegacyPickerRow): Exercise | null =>
-      resolveLegacyExercise(storage, api, row),
+    (row: PickerExerciseRow): Exercise | null =>
+      resolvePickerExercise(storage, api, row),
     [storage, api],
   );
 
   const onPickerAddExercises = useCallback(
-    (rows: LegacyPickerRow[]) => {
+    (rows: PickerExerciseRow[]) => {
       if (!userId) {
         setPickerMode(null);
         return;
@@ -371,12 +425,32 @@ export function ActiveSessionContainer() {
     [userId, pickerMode, resolveExercise, storage, generateId, rereadCache],
   );
 
-  // Superset add not surfaced in the active-session flow — supersets
-  // come from the workout template; mid-session group changes are
-  // M11 polish per BRIEF.md "Out of scope".
+  // "Superset" CTA on the multi-select picker — group every picked row
+  // under a fresh supersetGroup number rather than treating them as
+  // independent plain adds. Routes through `applyPickerSelection` with
+  // an explicit `create-superset` mode so the dispatcher reads the
+  // session and allocates `max(existing supersetGroups) + 1` atomically
+  // with the addExerciseCommand calls that follow. Substitute mode
+  // doesn't surface this CTA (the popover's superset button is gated
+  // on hasAtLeastTwo selections), so we don't need a guard here.
   const onPickerAddSuperset = useCallback(
-    (rows: LegacyPickerRow[]) => onPickerAddExercises(rows),
-    [onPickerAddExercises],
+    (rows: PickerExerciseRow[]) => {
+      if (!userId) {
+        setPickerMode(null);
+        return;
+      }
+      applyPickerSelection({
+        rows,
+        mode: { kind: "create-superset" },
+        resolveExercise,
+        storage,
+        generateId,
+        userId,
+        onAfter: rereadCache,
+      });
+      setPickerMode(null);
+    },
+    [userId, resolveExercise, storage, generateId, rereadCache],
   );
 
   const onTapExercise = useCallback((exerciseId: string) => {
@@ -419,10 +493,22 @@ export function ActiveSessionContainer() {
 
   // Existing-exercise ids are used by the picker to disable "Add"
   // for already-in-session entries. For substitute we don't disable —
-  // user might pick a different variant of the same exercise.
+  // user might pick a different variant of the same exercise. For
+  // add-to-superset we narrow to peers ALREADY in the target group
+  // so the user can still add the same exercise that lives elsewhere
+  // in the session (e.g. a non-superset row of "Bench" doesn't block
+  // adding "Bench" into a superset).
   const existingExerciseIds = useMemo(() => {
     if (!session) return [];
     if (pickerMode?.kind === "substitute") return [];
+    if (pickerMode?.kind === "add-to-superset") {
+      return session.exercises
+        .filter(
+          (ex) =>
+            !ex.isSubstituted && ex.supersetGroup === pickerMode.supersetGroup,
+        )
+        .map((ex) => ex.exerciseId);
+    }
     return session.exercises
       .filter((ex) => !ex.isSubstituted)
       .map((ex) => ex.exerciseId);
@@ -458,39 +544,65 @@ export function ActiveSessionContainer() {
         }}
         onLogSet={onLogSet}
         onLogSupersetSet={onLogSupersetSet}
+        onRemoveSupersetSet={onRemoveSupersetSet}
         onUpdateSet={onUpdateSet}
         onRemoveSet={onRemoveSet}
         onOpenNotes={onOpenNotes}
+        onOpenSupersetNotes={onOpenSupersetNotes}
         onSubstitute={onSubstitute}
         onRemoveExercise={onRemoveExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
+        onAddExerciseToSuperset={onAddExerciseToSuperset}
         onStartRest={onStartRest}
         onDiscard={onDiscard}
         onFinish={onFinish}
       />
 
+      {/* Picker routing — `add-to-superset` opens the single-select
+          AddExerciseToSupersetPopover (legacy `AddExerciseToSupersetView`
+          parity); every other mode (`add`, `substitute`) uses the
+          multi-select AddExercisePopover. Mounting only one at a time
+          keeps the Modal stack clean and avoids two pickers competing
+          for the same `pickerMode != null` visibility predicate. */}
       <AddExercisePopover
-        visible={pickerMode != null}
+        visible={pickerMode != null && pickerMode.kind !== "add-to-superset"}
         onClose={onClosePicker}
         onAddExercises={onPickerAddExercises}
         onAddSuperset={onPickerAddSuperset}
         existingExerciseIds={existingExerciseIds}
         filterByPrimaryMuscleGroups={substituteMuscleFilter}
       />
+      <AddExerciseToSupersetPopover
+        visible={pickerMode?.kind === "add-to-superset"}
+        onClose={onClosePicker}
+        onAddExercise={onPickerAddExercises}
+        existingExerciseIds={existingExerciseIds}
+      />
 
       <ExerciseNotesPopover
-        visible={notesEditingId != null}
+        visible={notesTarget != null}
         exerciseName={
-          (notesEditingId &&
-            session.exercises.find((ex) => ex.id === notesEditingId)
-              ?.exerciseName) ||
-          ""
+          notesTarget == null
+            ? ""
+            : notesTarget.kind === "exercise"
+              ? (session.exercises.find(
+                  (ex) => ex.id === notesTarget.sessionExerciseId,
+                )?.exerciseName ?? "")
+              : `Superset Set ${notesTarget.setNumber}`
         }
         initialNotes={
-          (notesEditingId &&
-            session.exercises.find((ex) => ex.id === notesEditingId)?.notes) ||
-          ""
+          notesTarget == null
+            ? ""
+            : notesTarget.kind === "exercise"
+              ? (session.exercises.find(
+                  (ex) => ex.id === notesTarget.sessionExerciseId,
+                )?.notes ?? "")
+              : (notesTarget.sessionExerciseIds
+                  .map(
+                    (id) => session.exercises.find((ex) => ex.id === id)?.notes,
+                  )
+                  .find((n) => n != null && n.trim().length > 0) ?? "")
         }
         onSave={onSaveNotes}
         onCancel={onCloseNotes}

@@ -40,11 +40,14 @@ const baseProps = {
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
   onOpenNotes: jest.fn(),
+  onOpenSupersetNotes: jest.fn(),
   onSubstitute: jest.fn(),
   onRemoveExercise: jest.fn(),
   onTapExercise: jest.fn(),
   onLogSupersetSet: jest.fn(),
+  onRemoveSupersetSet: jest.fn(),
   onAddExercise: jest.fn(),
+  onAddExerciseToSuperset: jest.fn(),
   onStartRest: jest.fn(),
   onDiscard: jest.fn(),
   onFinish: jest.fn(),
@@ -124,7 +127,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(baseProps.onAddExercise).toHaveBeenCalledTimes(1);
   });
 
-  it("groups exercises that share a supersetGroup into a single SupersetGroupCard (Story-005)", () => {
+  it("groups exercises that share a supersetGroup into a single ActiveSupersetRow (Story-005)", () => {
     const props = {
       ...baseProps,
       exercises: [
@@ -152,18 +155,23 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    // The grouped card renders ONCE with both peers inside.
+    // The grouped row renders ONCE with both peers interleaved per
+    // setNumber (1 set seeded by default → setNumber=1 mini-row per peer).
     expect(getByTestId("superset-group-1")).toBeTruthy();
-    // Solo exercise renders as its own card.
+    // Solo exercise renders as its own SessionExerciseCard.
     expect(getByTestId("session-exercise-se-3")).toBeTruthy();
-    // Each peer card still exists (rendered inside the group).
-    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
-    expect(getByTestId("session-exercise-se-2")).toBeTruthy();
+    // Each peer renders as an ActiveSupersetExerciseRow inside the
+    // group (NOT as a full SessionExerciseCard — that was the
+    // SupersetGroupCard layout we replaced).
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+    expect(queryByTestId("session-exercise-se-2")).toBeNull();
+    expect(getByTestId("superset-row-se-1-1")).toBeTruthy();
+    expect(getByTestId("superset-row-se-2-1")).toBeTruthy();
     // No second copy of the superset group.
     expect(queryByTestId("superset-group-2")).toBeNull();
   });
 
-  it("Add paired set button on a SupersetGroupCard fires onLogSupersetSet with all peer ids", () => {
+  it("Add paired set button on an ActiveSupersetRow fires onLogSupersetSet with all peer ids", () => {
     const props = {
       ...baseProps,
       exercises: [

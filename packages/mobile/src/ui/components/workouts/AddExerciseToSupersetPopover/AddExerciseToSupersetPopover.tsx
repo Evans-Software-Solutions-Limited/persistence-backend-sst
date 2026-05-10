@@ -1,3 +1,23 @@
+/**
+ * AddExerciseToSupersetPopover — the "Add Exercise to Superset" picker
+ * for the active session.
+ *
+ * Single-select + one "Add" button — distinct from the multi-select
+ * `AddExercisePopover` (which serves fresh adds + creating a new
+ * superset). The two are intentionally separate components because
+ * they have different selection semantics and different footer
+ * surfaces; the container routes between them by `pickerMode.kind`.
+ * Reuses `AddExerciseList`, `ExerciseDetailsModal`, and the shared
+ * picker-row mapping from `../AddExercisePopover` so the row contract
+ * stays in one place.
+ *
+ * Spec: specs/05-active-session/requirements.md STORY-005
+ *       Modelled on the persistence-mobile reference repo's
+ *       `AddExerciseToSupersetView` (single-select picker), used for
+ *       structural reference only — the V2 implementation here owns
+ *       the surface going forward.
+ */
+
 import { Colors } from "@/ui/theme/workoutsLegacyTheme";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
@@ -5,14 +25,7 @@ import {
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -22,52 +35,49 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AddExerciseList } from "./AddExerciseList";
-import { ExerciseDetailsModal } from "./ExerciseDetailsModal";
-import { toPickerExerciseRow } from "./picker-row";
-import { styles } from "./styles";
+import { AddExerciseList } from "../AddExercisePopover/AddExerciseList";
+import { ExerciseDetailsModal } from "../AddExercisePopover/ExerciseDetailsModal";
+import { toPickerExerciseRow } from "../AddExercisePopover/picker-row";
+import { styles } from "../AddExercisePopover/styles";
 
-interface AddExercisePopoverProps {
+export type AddExerciseToSupersetPopoverProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
-
-  readonly onAddExercises: (exercises: any[]) => void;
-
-  readonly onAddSuperset: (exercises: any[]) => void;
-  readonly existingExerciseIds?: string[];
   /**
-   * When set, restricts the exercise list to entries whose
-   * `primaryMuscleGroups` overlap with at least one of the supplied
-   * UUIDs. Used by the substitute flow on the active-session screen
-   * to surface alternatives that target the same muscle group as the
-   * exercise being swapped out (Story-004 AC).
+   * Fires with the single picked exercise wrapped in an array so the
+   * dispatcher (`applyPickerSelection`) can reuse its `rows` loop —
+   * matches `AddExercisePopover.onAddExercises` shape and keeps the
+   * picker-routing wiring uniform across modes.
    */
-  readonly filterByPrimaryMuscleGroups?: readonly string[];
-}
+  readonly onAddExercise: (rows: any[]) => void;
+  /**
+   * Exercise ids already in the target superset group. Forwarded to
+   * `AddExerciseList` so peers already in the group render disabled —
+   * the user can still add a duplicate of a non-superset row, but
+   * can't re-add a peer already in the group.
+   */
+  readonly existingExerciseIds?: readonly string[];
+};
 
-// Container Component - Handles logic and state
-function AddExercisePopoverContainer({
+function AddExerciseToSupersetPopoverContainer({
   visible,
   onClose,
-  onAddExercises,
-  onAddSuperset,
+  onAddExercise,
   existingExerciseIds = [],
-  filterByPrimaryMuscleGroups,
-}: AddExercisePopoverProps) {
-  const router = useRouter();
+}: AddExerciseToSupersetPopoverProps) {
   const { api, storage } = useAdapters();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
+  // Single-select: one id or null. Tapping the same id again
+  // deselects (legacy AddExerciseToSupersetView lines 37-40).
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
+    null,
+  );
   const [currentView, setCurrentView] = useState<"list" | "details">("list");
-
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cacheVersion, setCacheVersion] = useState(0);
 
-  // Cache-first read of M0's exercise library. Filtering is local to
-  // the picker — cheap substring match — to keep the popover responsive
-  // without a refetch per keystroke.
   const cacheRead = useMemo(() => {
     void cacheVersion;
     return getExercisesQuery(storage);
@@ -78,37 +88,13 @@ function AddExercisePopoverContainer({
     [cacheRead.exercises, api],
   );
 
-  // Substitute flow: narrow to exercises whose primary muscle groups
-  // overlap with the source exercise (Story-004 AC: "Opens exercise
-  // picker filtered by same muscle group"). Empty / undefined filter
-  // leaves the list untouched.
-  const muscleGroupFilteredExercises = useMemo(() => {
-    if (
-      !filterByPrimaryMuscleGroups ||
-      filterByPrimaryMuscleGroups.length === 0
-    ) {
-      return enrichedExercises;
-    }
-    const set = new Set(filterByPrimaryMuscleGroups);
-    return enrichedExercises.filter((ex) =>
-      (ex.primaryMuscleGroups ?? []).some((g) => set.has(g)),
-    );
-  }, [enrichedExercises, filterByPrimaryMuscleGroups]);
-
-  // Full mapped list — used for selection lookups so a search filter
-  // can't silently drop exercises the user already selected before
-  // typing. `filteredRows` is the search-filtered subset rendered
-  // by the inner list; selection resolution and detail drill-in
-  // always go through `allRows`.
   const allRows = useMemo(
-    () => muscleGroupFilteredExercises.map(toPickerExerciseRow),
-    [muscleGroupFilteredExercises],
+    () => enrichedExercises.map(toPickerExerciseRow),
+    [enrichedExercises],
   );
 
-  // Cap to 100 rendered rows — matches the legacy `useGetExercises({
-  // limit: 100 })` ceiling and prevents the picker from rendering
-  // 2k+ non-virtualised rows on a wide library, which made the modal
-  // "take ages" to show selection feedback.
+  // Same 100-row display ceiling as AddExercisePopover — the picker
+  // would otherwise render the full library uncondensed.
   const PICKER_DISPLAY_LIMIT = 100;
 
   const filteredRows = useMemo(() => {
@@ -120,8 +106,6 @@ function AddExercisePopoverContainer({
     return matched.slice(0, PICKER_DISPLAY_LIMIT);
   }, [allRows, searchQuery]);
 
-  // One-shot refresh when stale, mirroring ExerciseListContainer. The
-  // initial visit warms the cache; subsequent opens reuse it.
   const hasTriggeredRefreshRef = useRef(false);
   useEffect(() => {
     if (!visible) return;
@@ -137,12 +121,10 @@ function AddExercisePopoverContainer({
 
   const showLoader = isRefreshing && enrichedExercises.length === 0;
 
+  // Single-select toggle: tapping a different exercise replaces the
+  // selection; tapping the currently-selected one clears it.
   const toggleExerciseSelection = (exerciseId: string) => {
-    setSelectedExerciseIds((prev) =>
-      prev.includes(exerciseId)
-        ? prev.filter((id) => id !== exerciseId)
-        : [...prev, exerciseId],
-    );
+    setSelectedExerciseId((prev) => (prev === exerciseId ? null : exerciseId));
   };
 
   const handleExerciseInfo = (exerciseId: string) => {
@@ -158,104 +140,87 @@ function AddExercisePopoverContainer({
     setSelectedExercise(null);
   };
 
-  const handleCreateExercise = useCallback(() => {
-    router.push("/coming-soon?feature=exercise-creator" as never);
-  }, [router]);
-
   const handleClose = () => {
     setSearchQuery("");
-    setSelectedExerciseIds([]);
+    setSelectedExerciseId(null);
     setCurrentView("list");
     setSelectedExercise(null);
     onClose();
   };
 
-  const handleAddExercisesClick = () => {
-    const selectedExercises = allRows.filter((ex) =>
-      selectedExerciseIds.includes(ex.id),
-    );
-    onAddExercises(selectedExercises);
-    setSelectedExerciseIds([]);
-  };
-
-  const handleAddSupersetClick = () => {
-    const selectedExercises = allRows.filter((ex) =>
-      selectedExerciseIds.includes(ex.id),
-    );
-    onAddSuperset(selectedExercises);
-    setSelectedExerciseIds([]);
+  const handleAddClick = () => {
+    if (!selectedExerciseId) return;
+    const exercise = allRows.find((ex) => ex.id === selectedExerciseId);
+    if (!exercise) return;
+    // Wrap in an array so the container's `applyPickerSelection`
+    // dispatcher (which iterates `rows`) handles this uniformly with
+    // the multi-select Add flow. Single-element loop = single
+    // addExerciseCommand call with the mode's supersetGroup.
+    onAddExercise([exercise]);
+    setSelectedExerciseId(null);
   };
 
   return (
-    <AddExercisePopoverPresenter
+    <AddExerciseToSupersetPopoverPresenter
       visible={visible}
       onClose={handleClose}
-      onAddExercises={handleAddExercisesClick}
-      onAddSuperset={handleAddSupersetClick}
+      onAdd={handleAddClick}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
       exercises={filteredRows}
-      selectedExerciseIds={selectedExerciseIds}
+      selectedExerciseId={selectedExerciseId}
       onToggleExercise={toggleExerciseSelection}
       onExerciseInfo={handleExerciseInfo}
       onBackToList={handleBackToList}
-      onCreateExercise={handleCreateExercise}
       currentView={currentView}
       selectedExercise={selectedExercise}
       isLoading={showLoader}
-      existingExerciseIds={existingExerciseIds}
+      existingExerciseIds={[...existingExerciseIds]}
     />
   );
 }
 
-// Presenter Component - Handles UI rendering
-interface AddExercisePopoverPresenterProps {
+type AddExerciseToSupersetPopoverPresenterProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
-  readonly onAddExercises: () => void;
-  readonly onAddSuperset: () => void;
+  readonly onAdd: () => void;
   readonly searchQuery: string;
-  readonly onSearchChange: (query: string) => void;
-
+  readonly onSearchChange: (q: string) => void;
   readonly exercises: any[];
-  readonly selectedExerciseIds: string[];
+  readonly selectedExerciseId: string | null;
   readonly onToggleExercise: (id: string) => void;
   readonly onExerciseInfo: (id: string) => void;
   readonly onBackToList: () => void;
-  readonly onCreateExercise: () => void;
   readonly currentView: "list" | "details";
-
   readonly selectedExercise: any;
   readonly isLoading: boolean;
   readonly existingExerciseIds: string[];
-}
+};
 
-function AddExercisePopoverPresenter({
+function AddExerciseToSupersetPopoverPresenter({
   visible,
   onClose,
-  onAddExercises,
-  onAddSuperset,
+  onAdd,
   searchQuery,
   onSearchChange,
   exercises,
-  selectedExerciseIds,
+  selectedExerciseId,
   onToggleExercise,
   onExerciseInfo,
   onBackToList,
-  onCreateExercise,
   currentView,
   selectedExercise,
   isLoading,
   existingExerciseIds,
-}: AddExercisePopoverPresenterProps) {
-  const hasAtLeastOne = selectedExerciseIds.length >= 1;
-  const hasAtLeastTwo = selectedExerciseIds.length >= 2;
+}: AddExerciseToSupersetPopoverPresenterProps) {
+  const hasSelection = selectedExerciseId !== null;
+  // AddExerciseList accepts an `selectedExerciseIds: string[]` array;
+  // adapt the single-select shape inline.
+  const selectedExerciseIds = useMemo(
+    () => (selectedExerciseId ? [selectedExerciseId] : []),
+    [selectedExerciseId],
+  );
 
-  // Full-screen slide-up modal — matches the create-workout modal's
-  // presentation (stack-modal, slide animation) so the picker feels
-  // like a navigational push within the modal flow rather than a
-  // disconnected overlay. Header gets a back arrow (returns to the
-  // creator/editor) instead of an X close.
   if (currentView === "details" && selectedExercise) {
     return (
       <Modal
@@ -269,7 +234,7 @@ function AddExercisePopoverPresenter({
             <TouchableOpacity
               onPress={onBackToList}
               style={styles.backButton}
-              testID="details-back-button"
+              testID="superset-picker-details-back"
             >
               <Ionicons
                 name="arrow-back"
@@ -294,30 +259,23 @@ function AddExercisePopoverPresenter({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
+      testID="superset-picker-modal"
     >
       <SafeAreaView style={styles.modalSafeArea} edges={["top"]}>
-        {/* Sticky header — back arrow on the left (returns to the
-            workout creator / editor), title centered, Create CTA on
-            the right. */}
         <View style={styles.modalHeader}>
           <TouchableOpacity
             onPress={onClose}
             style={styles.backButton}
-            testID="close-button"
+            testID="superset-picker-close"
           >
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add Exercises</Text>
-          <TouchableOpacity
-            onPress={onCreateExercise}
-            style={styles.createButton}
-            testID="create-exercise-button"
-          >
-            <Text style={styles.createButtonText}>Create</Text>
-          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Add to Superset</Text>
+          {/* No "Create" CTA in this flow — adding to a superset is a
+              quick action; the user creates new exercises elsewhere. */}
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* Sticky search bar */}
         <View style={styles.searchWrapper}>
           <View style={styles.searchContainer}>
             <Ionicons
@@ -334,12 +292,13 @@ function AddExercisePopoverPresenter({
               onChangeText={onSearchChange}
               autoCapitalize="none"
               autoCorrect={false}
+              testID="superset-picker-search"
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity
                 onPress={() => onSearchChange("")}
                 style={styles.clearButton}
-                testID="clear-search-button"
+                testID="superset-picker-clear-search"
               >
                 <Ionicons
                   name="close-circle"
@@ -351,8 +310,6 @@ function AddExercisePopoverPresenter({
           </View>
         </View>
 
-        {/* Scrollable list — fills the remaining vertical space
-            between the sticky search bar and the sticky footer. */}
         <ScrollView
           style={styles.modalScroll}
           showsVerticalScrollIndicator={false}
@@ -367,42 +324,25 @@ function AddExercisePopoverPresenter({
           />
         </ScrollView>
 
-        {/* Sticky footer — Add + Superset CTAs */}
+        {/* Single Add button — disabled until exactly one row is
+            selected. Legacy AddExerciseToSupersetView line 132-138. */}
         <View style={styles.modalFooter}>
           <TouchableOpacity
             style={[
               styles.footerButton,
-              !hasAtLeastOne && styles.footerButtonDisabled,
+              !hasSelection && styles.footerButtonDisabled,
             ]}
-            onPress={onAddExercises}
-            disabled={!hasAtLeastOne}
-            testID="add-exercises-button"
+            onPress={onAdd}
+            disabled={!hasSelection}
+            testID="superset-picker-add"
           >
             <Text
               style={[
                 styles.footerButtonText,
-                !hasAtLeastOne && styles.footerButtonTextDisabled,
+                !hasSelection && styles.footerButtonTextDisabled,
               ]}
             >
               Add
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.footerButton,
-              !hasAtLeastTwo && styles.footerButtonDisabled,
-            ]}
-            onPress={onAddSuperset}
-            disabled={!hasAtLeastTwo}
-            testID="add-superset-button"
-          >
-            <Text
-              style={[
-                styles.footerButtonText,
-                !hasAtLeastTwo && styles.footerButtonTextDisabled,
-              ]}
-            >
-              Superset
             </Text>
           </TouchableOpacity>
         </View>
@@ -411,4 +351,5 @@ function AddExercisePopoverPresenter({
   );
 }
 
-export const AddExercisePopover = AddExercisePopoverContainer;
+export const AddExerciseToSupersetPopover =
+  AddExerciseToSupersetPopoverContainer;

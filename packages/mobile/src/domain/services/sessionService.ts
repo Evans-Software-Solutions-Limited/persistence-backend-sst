@@ -34,8 +34,12 @@ export type SessionContext = {
  * `targetSets` empty rows per exercise so the SetLogger renders "set 1
  * of N" immediately on session-start (smoke test § A.1).
  *
- * `exercise` may be null on a `WorkoutExercise` (FK soft-cascade); fall
- * back to the exerciseId so the row still renders.
+ * `exercise` may be null on a `WorkoutExercise` (FK soft-cascade — the
+ * library exercise was deleted but the workout row survived); fall
+ * back to the exerciseId in that case so the row still renders.
+ * Optimistic workout-create + workout-update commands hydrate
+ * `wx.exercise` from the local exercise cache, so this fallback only
+ * fires on genuinely-deleted library entries.
  */
 export function createSessionFromWorkout(
   workout: Workout,
@@ -423,11 +427,17 @@ const DEFAULT_ADDED_EXERCISE_SETS = 3;
  * Append a new exercise to the session at `max(sortOrder) + 1`. Used by
  * Quick Start ("+ Add exercise") and mid-session add. Seeds three empty
  * sets to match legacy. Returns a new session.
+ *
+ * Pass `supersetGroup` to drop the new exercise straight into an
+ * existing superset (legacy "Add Exercise to Superset" flow). The sort
+ * order still pushes the new row to the end of the list — the
+ * presenter groups by `supersetGroup` regardless of position.
  */
 export function addExerciseToSession(
   session: WorkoutSession,
   exercise: Exercise,
   idFactory: IdFactory,
+  options: { supersetGroup?: number | null } = {},
 ): WorkoutSession {
   const nextSortOrder = nextSortOrderFor(session.exercises);
   const sessionExerciseId = `local-${idFactory()}`;
@@ -441,7 +451,7 @@ export function addExerciseToSession(
     exerciseId: exercise.id,
     exerciseName: exercise.name,
     sortOrder: nextSortOrder,
-    supersetGroup: null,
+    supersetGroup: options.supersetGroup ?? null,
     isSubstituted: false,
     originalExerciseId: null,
     notes: null,

@@ -16,7 +16,13 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
 
-export type LegacyPickerRow = {
+/**
+ * Lightweight row contract emitted by the picker UI components when
+ * the user taps Add / Add-to-Superset / Substitute. Just `(id, name)`
+ * — the dispatcher rehydrates the full `Exercise` via
+ * `resolvePickerExercise` against the local cache.
+ */
+export type PickerExerciseRow = {
   id: string;
   name: string;
 };
@@ -24,12 +30,20 @@ export type LegacyPickerRow = {
 export type ActiveSessionPickerMode =
   | { kind: "substitute"; oldSessionExerciseId: string }
   | { kind: "add" }
+  | { kind: "add-to-superset"; supersetGroup: number }
+  /**
+   * "Superset" button on the multi-select picker — take the picked
+   * rows and add them all as a NEW superset (one fresh group number
+   * shared across every row). Distinct from `add-to-superset` which
+   * appends to an EXISTING group.
+   */
+  | { kind: "create-superset" }
   | null;
 
 export type ApplyPickerSelectionDeps = {
-  rows: readonly LegacyPickerRow[];
+  rows: readonly PickerExerciseRow[];
   mode: ActiveSessionPickerMode;
-  resolveExercise: (row: LegacyPickerRow) => Exercise | null;
+  resolveExercise: (row: PickerExerciseRow) => Exercise | null;
   storage: StoragePort;
   generateId: () => string;
   userId: string;
@@ -38,17 +52,16 @@ export type ApplyPickerSelectionDeps = {
 };
 
 /**
- * Resolve a legacy `(id, name)` picker row into the canonical V2
- * `Exercise` model via the local exercise cache. Returns null on
- * cache miss — callers (substitute / add command paths) silently
- * skip unresolved rows. Pure dependency-injected; the container
- * wires `storage` + `api` once and forwards this resolver to
- * `applyPickerSelection`.
+ * Rehydrate a `(id, name)` picker row into the canonical V2 `Exercise`
+ * model via the local exercise cache. Returns null on cache miss —
+ * callers (substitute / add command paths) silently skip unresolved
+ * rows. Pure dependency-injected; the container wires `storage` +
+ * `api` once and forwards this resolver to `applyPickerSelection`.
  */
-export function resolveLegacyExercise(
+export function resolvePickerExercise(
   storage: StoragePort,
   api: ApiPort,
-  row: LegacyPickerRow,
+  row: PickerExerciseRow,
 ): Exercise | null {
   const cached = storage.getCachedExercise(row.id);
   if (!cached) return null;
@@ -86,7 +99,16 @@ export function resolveSubstituteMuscleFilter(
  * - `substitute` mode → resolve the first row, fire
  *   `substituteExerciseCommand`, call `onAfter`.
  * - `add` mode → resolve every row, fire `addExerciseCommand` per
- *   resolved exercise, call `onAfter` once at the end.
+ *   resolved exercise (supersetGroup=null), call `onAfter` once at the
+ *   end.
+ * - `add-to-superset` mode → resolve every row, fire `addExerciseCommand`
+ *   with the mode's `supersetGroup` so the new rows land directly in the
+ *   target superset (legacy "Add Exercise to Superset" flow).
+ * - `create-superset` mode → allocate a fresh superset group from the
+ *   active session (max existing group + 1, or 1 if none), then fire
+ *   `addExerciseCommand` for every row with that shared group. Hits
+ *   the legacy multi-select picker's "Superset" CTA — distinct from
+ *   plain `add` (no group) and `add-to-superset` (existing group).
  * - Unresolved rows (cache miss) silently skip.
  */
 export function applyPickerSelection(deps: ApplyPickerSelectionDeps): void {
@@ -106,14 +128,49 @@ export function applyPickerSelection(deps: ApplyPickerSelectionDeps): void {
     onAfter();
     return;
   }
-  if (mode?.kind === "add") {
+  if (
+    mode?.kind === "add" ||
+    mode?.kind === "add-to-superset" ||
+    mode?.kind === "create-superset"
+  ) {
+    const supersetGroup = resolveDispatchSupersetGroup(mode, storage, userId);
     let added = 0;
     for (const row of rows) {
       const exercise = resolveExercise(row);
       if (!exercise) continue;
-      addExerciseCommand({ storage, generateId, userId }, { exercise });
+      addExerciseCommand(
+        { storage, generateId, userId },
+        { exercise, supersetGroup },
+      );
       added++;
     }
     if (added > 0) onAfter();
   }
+}
+
+/**
+ * Pick the supersetGroup for the dispatch loop.
+ *
+ * - `add` → null (plain row, no group)
+ * - `add-to-superset` → the mode's existing group
+ * - `create-superset` → next available group (max+1 of every non-null
+ *   supersetGroup on the live session's exercises, or 1 if none).
+ *   Reads from storage at dispatch time so the group allocation is
+ *   atomic with the writes that follow.
+ */
+function resolveDispatchSupersetGroup(
+  mode:
+    | { kind: "add" }
+    | { kind: "add-to-superset"; supersetGroup: number }
+    | { kind: "create-superset" },
+  storage: StoragePort,
+  userId: string,
+): number | null {
+  if (mode.kind === "add") return null;
+  if (mode.kind === "add-to-superset") return mode.supersetGroup;
+  const session = storage.getActiveSession(userId);
+  const usedGroups = (session?.exercises ?? [])
+    .map((ex) => ex.supersetGroup)
+    .filter((g): g is number => g != null);
+  return usedGroups.length > 0 ? Math.max(...usedGroups) + 1 : 1;
 }

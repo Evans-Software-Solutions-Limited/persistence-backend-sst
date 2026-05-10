@@ -30,10 +30,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
-import { SupersetGroupCard } from "@/ui/components/session/SupersetGroupCard";
 import {
   BorderRadius,
   Colors,
@@ -104,6 +104,30 @@ export type ActiveSessionPresenterProps = {
    * so paired logging stays in sync (Story-005 AC).
    */
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
+  /**
+   * Drop the Nth set from every peer in a superset group. Container
+   * delegates to `removeSupersetSetCommand` (renumbers survivors so
+   * the bulk-record flush stays a contiguous 1..n).
+   */
+  onRemoveSupersetSet: (
+    sessionExerciseIds: readonly string[],
+    setNumber: number,
+  ) => void;
+  /**
+   * Open the container-owned notes popover keyed to a set inside a
+   * superset group. Title shows "Superset Set N"; the saved note is
+   * written to every peer (legacy parity — per-set notes are
+   * cosmetic, the storage is shared per superset).
+   */
+  onOpenSupersetNotes: (
+    sessionExerciseIds: readonly string[],
+    setNumber: number,
+  ) => void;
+  /**
+   * Open the picker filtered for adding another exercise into the
+   * given superset group (legacy "Add Exercise to Superset" link).
+   */
+  onAddExerciseToSuperset: (supersetGroup: number) => void;
   /**
    * Start the rest timer for the given exercise (legacy `START NS REST`
    * button). User-tap-driven — no auto-fire on set completion.
@@ -224,7 +248,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                 );
               }
               return (
-                <SupersetGroupCard
+                <ActiveSupersetRow
                   key={`superset-${item.supersetGroup}`}
                   supersetGroup={item.supersetGroup}
                   exercises={item.exercises}
@@ -232,12 +256,12 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   templateByExercise={props.templateByExercise}
                   onLogSupersetSet={props.onLogSupersetSet}
                   onUpdateSet={props.onUpdateSet}
-                  onRemoveSet={props.onRemoveSet}
-                  onOpenNotes={props.onOpenNotes}
+                  onRemoveSupersetSet={props.onRemoveSupersetSet}
+                  onStartRest={props.onStartRest}
                   onSubstitute={props.onSubstitute}
                   onRemoveExercise={props.onRemoveExercise}
-                  onTapExercise={props.onTapExercise}
-                  onStartRest={props.onStartRest}
+                  onOpenSupersetNotes={props.onOpenSupersetNotes}
+                  onAddExerciseToSuperset={props.onAddExerciseToSuperset}
                 />
               );
             })}
