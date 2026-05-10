@@ -158,10 +158,12 @@ describe("createSessionFromWorkout", () => {
     expect(session.exercises[0].sets).toHaveLength(0);
   });
 
-  it("uses the resolver to fill exerciseName when wx.exercise is null (cache hit)", () => {
-    // Surface the bug observed on superset peers: backend join can ship
-    // null `wx.exercise`, and without the resolver the pure-service
-    // fallback writes the UUID into `exerciseName`.
+  it("falls back to exerciseId when wx.exercise is null (FK soft-cascade — library exercise was deleted)", () => {
+    // This fallback only fires when the underlying library exercise
+    // has been hard-deleted; optimistic workout-create + workout-update
+    // commands hydrate `wx.exercise` from the local exercise cache so
+    // a freshly-created workout starts a session with the readable
+    // name immediately.
     const w = makeWorkout({
       exercises: [
         {
@@ -171,45 +173,8 @@ describe("createSessionFromWorkout", () => {
         },
       ],
     });
-    const resolver = (id: string) => (id === "ex-bench" ? "Bench Press" : null);
-    const session = createSessionFromWorkout(w, ctx(), idFactory(), resolver);
-    expect(session.exercises[0].exerciseName).toBe("Bench Press");
-  });
-
-  it("falls back to exerciseId when both wx.exercise.name AND the resolver are missing (cache miss)", () => {
-    const w = makeWorkout({
-      exercises: [
-        {
-          ...makeWorkout().exercises[0],
-          exerciseId: "ex-bench",
-          exercise: null,
-        },
-      ],
-    });
-    const resolver = () => null;
-    const session = createSessionFromWorkout(w, ctx(), idFactory(), resolver);
+    const session = createSessionFromWorkout(w, ctx(), idFactory());
     expect(session.exercises[0].exerciseName).toBe("ex-bench");
-  });
-
-  it("prefers wx.exercise.name over the resolver when both are available", () => {
-    // The resolver is a fallback, not an override — if the joined
-    // exercise object already carries a name, that's the source of
-    // truth.
-    const w = makeWorkout({
-      exercises: [
-        {
-          ...makeWorkout().exercises[0],
-          exerciseId: "ex-bench",
-          exercise: {
-            ...makeWorkout().exercises[0].exercise!,
-            name: "From join",
-          },
-        },
-      ],
-    });
-    const resolver = () => "From cache";
-    const session = createSessionFromWorkout(w, ctx(), idFactory(), resolver);
-    expect(session.exercises[0].exerciseName).toBe("From join");
   });
 });
 
