@@ -62,8 +62,22 @@ export function startSessionCommand(
     now: (deps.now?.() ?? new Date()).toISOString(),
   };
 
+  // Cache-backed resolver for workout-template exercise names. The
+  // backend join occasionally drops `wx.exercise` for some rows (we've
+  // seen it specifically on superset members), and without this the
+  // SessionExercise.exerciseName falls through to the UUID in the
+  // pure-service fallback. Reads from the local exercise cache via
+  // StoragePort.getCachedExercise — same data the picker uses.
+  const resolveExerciseName = (exerciseId: string): string | null =>
+    deps.storage.getCachedExercise(exerciseId)?.name ?? null;
+
   const session = input.workout
-    ? createSessionFromWorkout(input.workout, ctx, deps.generateId)
+    ? createSessionFromWorkout(
+        input.workout,
+        ctx,
+        deps.generateId,
+        resolveExerciseName,
+      )
     : createEmptySession(ctx, deps.generateId);
 
   deps.storage.cacheActiveSession(deps.userId, session);

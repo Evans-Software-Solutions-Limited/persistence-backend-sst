@@ -34,13 +34,19 @@ export type SessionContext = {
  * `targetSets` empty rows per exercise so the SetLogger renders "set 1
  * of N" immediately on session-start (smoke test § A.1).
  *
- * `exercise` may be null on a `WorkoutExercise` (FK soft-cascade); fall
- * back to the exerciseId so the row still renders.
+ * `exercise` may be null on a `WorkoutExercise` (FK soft-cascade) or
+ * sometimes ships null on superset entries where the backend join
+ * skipped hydration. Caller passes an optional `resolveExerciseName`
+ * resolver — typically `(id) => storage.getCachedExercise(id)?.name ??
+ * null` — so the session falls back to the cached library name before
+ * giving up and showing the UUID. Without the resolver the original
+ * fallback applies (legacy behaviour).
  */
 export function createSessionFromWorkout(
   workout: Workout,
   ctx: SessionContext,
   idFactory: IdFactory,
+  resolveExerciseName?: (exerciseId: string) => string | null,
 ): WorkoutSession {
   const sessionId = `local-${idFactory()}`;
   const exercises: SessionExercise[] = workout.exercises
@@ -53,11 +59,15 @@ export function createSessionFromWorkout(
       for (let i = 0; i < targetSets; i++) {
         sets.push(emptySet(sessionExerciseId, i + 1, idFactory));
       }
+      const resolvedName =
+        wx.exercise?.name ??
+        resolveExerciseName?.(wx.exerciseId) ??
+        wx.exerciseId;
       return {
         id: sessionExerciseId,
         sessionId,
         exerciseId: wx.exerciseId,
-        exerciseName: wx.exercise?.name ?? wx.exerciseId,
+        exerciseName: resolvedName,
         sortOrder: idx,
         supersetGroup: wx.supersetGroup,
         isSubstituted: false,
