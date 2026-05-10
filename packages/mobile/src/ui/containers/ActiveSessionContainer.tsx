@@ -385,10 +385,6 @@ export function ActiveSessionContainer() {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
 
-  const onClose = useCallback(() => {
-    router.back();
-  }, []);
-
   const onFinish = useCallback(() => {
     // Tap Complete → rating screen captures 1-10 difficulty + notes
     // → submit fires completeSessionCommand → replaces with summary.
@@ -460,7 +456,6 @@ export function ActiveSessionContainer() {
           onSkip: restTimer.skip,
           onDismiss: restTimer.dismiss,
         }}
-        onClose={onClose}
         onLogSet={onLogSet}
         onLogSupersetSet={onLogSupersetSet}
         onUpdateSet={onUpdateSet}

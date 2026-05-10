@@ -57,7 +57,7 @@ describe("ExerciseNotesPopover", () => {
     expect(getByTestId("exercise-notes-input").props.value).toBe("");
   });
 
-  it("Cancel resets local state and forwards onCancel", () => {
+  it("footer Cancel button resets local state and forwards onCancel", () => {
     const onCancel = jest.fn();
     const onSave = jest.fn();
     const { getByTestId } = renderWithTheme(
@@ -72,5 +72,23 @@ describe("ExerciseNotesPopover", () => {
     fireEvent.press(getByTestId("exercise-notes-cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("header close X also forwards onCancel (alternate dismiss path)", () => {
+    const onCancel = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseNotesPopover {...baseProps} onCancel={onCancel} />,
+    );
+    fireEvent.press(getByTestId("exercise-notes-close"));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the legacy placeholder copy", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseNotesPopover {...baseProps} />,
+    );
+    expect(getByTestId("exercise-notes-input").props.placeholder).toBe(
+      "Add a note about this exercise...",
+    );
   });
 });

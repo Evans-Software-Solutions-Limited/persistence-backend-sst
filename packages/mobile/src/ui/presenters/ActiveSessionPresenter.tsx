@@ -3,10 +3,11 @@
  * 002 + 005 + 007.)
  *
  * Ported 1:1 from `persistence-mobile/components/workouts/ActiveWorkoutScreen`
- * — vertical `ScrollView` with all exercises stacked, header at top,
- * "+ Add Exercise" link below the list, Discard / Complete buttons at
- * the very bottom. Substituted exercises render in place with a
- * "Substituted" badge so their sets stay visible (Story-004 AC).
+ * — vertical `ScrollView` with all exercises stacked, flush header at
+ * top (no top-bar chrome), "+ Add Exercise" link below the list,
+ * Discard / Complete buttons at the very bottom. Substituted exercises
+ * render in place — sets stay visible and the source list mirrors what
+ * gets flushed in the bulk-record payload (Story-004 AC).
  *
  * The Discard button delegates to the container, which fires a native
  * `Alert.alert` ("Cancel Workout", "Are you sure...", Cancel + Discard)
@@ -85,7 +86,6 @@ export type ActiveSessionPresenterProps = {
     onSkip: () => void;
     onDismiss: () => void;
   };
-  onClose: () => void;
   onLogSet: (sessionExerciseId: string) => void;
   onUpdateSet: (
     sessionExerciseId: string,
@@ -126,23 +126,19 @@ type DisplayItem =
 /**
  * Group consecutive exercises sharing the same `supersetGroup` into a
  * single `superset` display item. Mirrors legacy `ActiveWorkoutScreen`
- * lines 83-113. Substituted rows are excluded from the rendered list
- * for now — they're still in the source array (sets preserved) but
- * not surfaced. Each `supersetGroup` is rendered exactly once even if
- * the group's exercises are interleaved with non-superset rows.
+ * lines 83-113. Each `supersetGroup` is rendered exactly once even
+ * if the group's exercises are interleaved with non-superset rows.
  */
 function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
   const sorted = [...exercises].sort((a, b) => a.sortOrder - b.sortOrder);
   const usedGroups = new Set<number>();
   const items: DisplayItem[] = [];
   for (const ex of sorted) {
-    if (ex.isSubstituted) continue;
     const group = ex.supersetGroup;
     if (group != null) {
       if (usedGroups.has(group)) continue;
       const peers = sorted.filter(
-        (candidate) =>
-          candidate.supersetGroup === group && !candidate.isSubstituted,
+        (candidate) => candidate.supersetGroup === group,
       );
       usedGroups.add(group);
       // A "superset" of one is rendered as a plain exercise card.
@@ -163,10 +159,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
     [props.exercises],
   );
-  const activeExerciseCount = useMemo(
-    () => orderedExercises.filter((ex) => !ex.isSubstituted).length,
-    [orderedExercises],
-  );
   const displayItems = useMemo(
     () => buildDisplayItems(props.exercises),
     [props.exercises],
@@ -174,24 +166,15 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
 
   return (
     <View style={styles.container} testID="active-session-screen">
-      <SessionHeader
-        startedAt={props.startedAt}
-        sessionName={props.sessionName}
-        // Vertical scroll — every active exercise is visible at once,
-        // so the legacy "Exercise N of M" caption no longer represents
-        // a current page. Pass the same value for index/total so the
-        // header line reads "<duration> · Exercise N of N" — i.e. just
-        // the count, no scroll-position implication.
-        exerciseIndex={activeExerciseCount}
-        totalExercises={activeExerciseCount}
-        onClose={props.onClose}
-      />
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <SessionHeader
+          startedAt={props.startedAt}
+          sessionName={props.sessionName}
+        />
         {orderedExercises.length === 0 ? (
           <View style={styles.emptyWrap} testID="active-session-empty">
             <Text style={styles.emptyTitle}>No exercises yet</Text>

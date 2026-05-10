@@ -36,7 +36,6 @@ const baseProps = {
   previousSetsByExercise: {},
   templateByExercise: {},
   restTimer: baseRestTimer,
-  onClose: jest.fn(),
   onLogSet: jest.fn(),
   onUpdateSet: jest.fn(),
   onRemoveSet: jest.fn(),
@@ -96,7 +95,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
-  it("hides substituted exercises from the active screen (legacy parity — sets are preserved in storage for the bulk-record flush)", () => {
+  it("renders substituted exercises in place alongside their replacement (legacy parity — both rows visible, sets preserved for bulk-record flush)", () => {
     const props = {
       ...baseProps,
       exercises: [
@@ -109,10 +108,10 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         }),
       ],
     };
-    const { queryByTestId, getByTestId } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
     expect(getByTestId("session-exercise-se-2")).toBeTruthy();
   });
 
