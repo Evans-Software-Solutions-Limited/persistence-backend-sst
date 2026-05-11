@@ -81,6 +81,29 @@ export function SemiCircleSlider({
       // Normalize angle to [π, 2π) range (matching our valueToAngle function)
       let normalizedAngle = angleRad;
       // Wrap angles less than π (shouldn't happen for top semicircle, but handle gracefully)
+      // -----------------------------------------------------------
+      // LATENT BUG (bugbot, low severity): for inputs in [0, π/2],
+      // these two while loops cancel out — `0 + 2π = 2π` → `2π - 2π
+      // = 0` → falls through the `Math.max(π, …)` clamp below and
+      // maps to `minValue` instead of the intended `maxValue` (3
+      // o'clock semantically = max).
+      //
+      // Currently unreachable in production: `angleToValue` is only
+      // called via `runOnJS(handleAngleChange)` from
+      // `SemiCircleSliderGesture`, and `normalizeAngle` there
+      // (SemiCircleSliderGesture.tsx:32-68) pre-clamps any 3-o'clock
+      // area angle (`normalized === 0 || normalized < π/2`) to
+      // `2π - EPSILON` before it reaches here. Bottom-half angles
+      // (`[π/2, π)`) return -1 from the gesture helper and are
+      // dropped by the caller.
+      //
+      // Left as-is for 1:1 fidelity with the legacy
+      // `persistence-mobile/components/workouts/SemiCircleSlider/SemiCircleSlider.tsx`
+      // implementation. If anyone refactors the gesture-side
+      // `normalizeAngle` to drop the 3-o'clock-wrap step, this
+      // function needs an order-swap (fold into `[0, 2π)` first,
+      // then promote `< π` to `2π - ε`) to compensate.
+      // -----------------------------------------------------------
       while (normalizedAngle < Math.PI) normalizedAngle += 2 * Math.PI;
       // Wrap angles >= 2π back to near 2π
       while (normalizedAngle >= 2 * Math.PI) normalizedAngle -= 2 * Math.PI;
