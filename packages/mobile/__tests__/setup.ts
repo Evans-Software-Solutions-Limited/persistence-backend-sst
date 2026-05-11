@@ -69,6 +69,11 @@ jest.mock("react-native-gesture-handler", () => {
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) =>
       React.createElement(View, null, children),
+    // Root wrapper used at `app/_layout.tsx` — passthrough so test
+    // trees that mount the layout don't have to thread provider
+    // boilerplate.
+    GestureHandlerRootView: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(View, null, children),
   };
 });
 
