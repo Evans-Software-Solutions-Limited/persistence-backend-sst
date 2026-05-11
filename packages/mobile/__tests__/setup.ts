@@ -10,9 +10,20 @@ jest.mock("react-native-reanimated", () => {
       View,
       createAnimatedComponent: (component: unknown) => component,
     },
-    useSharedValue: (init: number) => ({ value: init }),
+    useSharedValue: (init: unknown) => ({ value: init }),
     useAnimatedStyle: (fn: () => unknown) => fn(),
     useAnimatedProps: (fn: () => unknown) => fn(),
+    // SemiCircleSlider port (Phase 3a) calls these — stub them as
+    // pass-through so the component can mount in tests. The actual
+    // animation behaviour isn't asserted (it's gesture-driven on
+    // device); the slider's pure math lives in Constants.ts and is
+    // unit-tested separately.
+    useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+    withSpring: (val: unknown) => val,
+    runOnJS:
+      <Args extends unknown[], R>(fn: (...args: Args) => R) =>
+      (...args: Args) =>
+        fn(...args),
     withTiming: (val: number) => val,
     withDelay: (_delay: number, val: number) => val,
     withRepeat: (val: number) => val,
@@ -28,6 +39,89 @@ jest.mock("react-native-reanimated", () => {
     },
     FadeIn: {
       duration: () => ({ duration: () => ({}) }),
+    },
+  };
+});
+
+// Mock react-native-gesture-handler — SemiCircleSlider's gesture
+// overlay (Phase 3a) imports `Gesture.Pan() / .Tap() / .Race()` and
+// `<GestureDetector>`. We render the wrapped child as a plain View
+// so the SemiCircleSlider mounts in tests; gesture behaviour isn't
+// asserted (it's pixel-driven on device).
+jest.mock("react-native-gesture-handler", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const noop = () => undefined;
+  const builder = () => {
+    const fn = () => builder();
+    fn.onStart = builder;
+    fn.onUpdate = builder;
+    fn.onEnd = builder;
+    fn.maxDuration = builder;
+    return fn;
+  };
+  return {
+    __esModule: true,
+    Gesture: {
+      Pan: builder,
+      Tap: builder,
+      Race: noop,
+    },
+    GestureDetector: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(View, null, children),
+    // Root wrapper used at `app/_layout.tsx` — passthrough so test
+    // trees that mount the layout don't have to thread provider
+    // boilerplate.
+    GestureHandlerRootView: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(View, null, children),
+  };
+});
+
+// Mock SemiCircleSlider — the WorkoutRatingPresenter consumes it as
+// the rating control. Tests interact with the presenter via the
+// per-value `workout-rating-{n}` testIDs the legacy segmented buttons
+// exposed; the real slider is gesture-driven and effectively
+// untestable in Jest. The mock renders one TouchableOpacity per
+// integer in [minValue, maxValue] that fires `onValueChange(n)` so
+// the existing test assertions keep working.
+//
+// SemiCircleSlider's own implementation is exercised by the pure
+// `Constants.ts` math tests, not via this mock.
+jest.mock("@/ui/components/workouts/SemiCircleSlider", () => {
+  const { TouchableOpacity, View } = require("react-native");
+  const React = require("react");
+  return {
+    __esModule: true,
+    SemiCircleSlider: ({
+      minValue,
+      maxValue,
+      value,
+      onValueChange,
+      renderLabel,
+    }: {
+      minValue: number;
+      maxValue: number;
+      value: number;
+      onValueChange: (n: number) => void;
+      renderLabel?: (val: number) => React.ReactNode;
+    }) => {
+      const buttons = [];
+      for (let n = minValue; n <= maxValue; n++) {
+        buttons.push(
+          React.createElement(TouchableOpacity, {
+            key: n,
+            testID: `workout-rating-${n}`,
+            onPress: () => onValueChange(n),
+            accessibilityLabel: `Rate ${n} out of ${maxValue}`,
+          }),
+        );
+      }
+      return React.createElement(
+        View,
+        { testID: "workout-rating-slider" },
+        ...buttons,
+        renderLabel ? renderLabel(value) : null,
+      );
     },
   };
 });

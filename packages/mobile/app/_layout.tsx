@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
@@ -31,11 +32,20 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  // `GestureHandlerRootView` is required by react-native-gesture-handler
+  // for any descendant `<GestureDetector>` to recognise touches. Phase 3a
+  // added the SemiCircleSlider (rating screen) which uses GestureDetector;
+  // without this wrap the slider throws at mount on a real device. Mirrors
+  // the legacy `persistence-mobile/app/_layout.tsx` setup (the wrap sits at
+  // the root above every other provider so all descendants — modals, tabs,
+  // slot — share the same gesture root).
   return (
-    <ErrorBoundary>
-      <AppProviders>
-        <AuthGate />
-      </AppProviders>
-    </ErrorBoundary>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <AppProviders>
+          <AuthGate />
+        </AppProviders>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }

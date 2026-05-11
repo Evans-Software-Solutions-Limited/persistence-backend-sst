@@ -43,6 +43,11 @@ export const Colors = {
     DEFAULT: colorPalette.success,
     dark: colorPalette.successDark,
   },
+  info: {
+    light: colorPalette.infoLight,
+    DEFAULT: colorPalette.info,
+    dark: colorPalette.infoDark,
+  },
   warning: {
     light: colorPalette.warningLight,
     DEFAULT: colorPalette.warning,

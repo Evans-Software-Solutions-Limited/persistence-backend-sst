@@ -8,12 +8,12 @@
  * Typography` schema the legacy files imported, backed by V2 token
  * values via `homeLegacyTheme`. Same pattern that M1 used for Home.
  *
- * Audit: the only Colors fields legacy workouts components depend on
- * (Colors.primary / .background / .surface / .text / .success /
- * .warning / .error) are all present in `homeLegacyTheme`. Colors.info
- * is only referenced from the M3 Active-Session screens which this PR
- * does not port — when those land, extend this module rather than
- * editing the home shim.
+ * Audit: every Colors field legacy workouts components depend on
+ * (Colors.primary / .background / .surface / .text / .success / .info
+ * / .warning / .error) is present in `homeLegacyTheme`. The `.info`
+ * branch was added when the M3 Active-Session WorkoutRatingPresenter
+ * landed (difficulty band 3-4); add new branches to the home shim
+ * rather than diverging here.
  *
  * Do not use outside `ui/components/workouts/*`,
  * `ui/containers/Workout*Container.tsx`, or
