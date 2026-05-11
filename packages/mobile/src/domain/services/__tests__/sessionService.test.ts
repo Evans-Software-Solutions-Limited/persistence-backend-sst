@@ -339,7 +339,13 @@ describe("completeSet", () => {
 });
 
 describe("substituteExercise", () => {
-  it("marks the old row substituted, inserts a new row at oldSortOrder+1, shifts downstream", () => {
+  it("replaces the row in place — same id, same sortOrder, no new row", () => {
+    // Legacy parity (useActiveWorkout.swapExercise lines 964-980): the
+    // existing row's id / sortOrder / supersetGroup / notes are
+    // preserved; only the exercise pointer + name swap, and sets are
+    // cleared to empties. The previous "lingering substituted row +
+    // new row at oldSortOrder+1" semantic produced a "the swap doesn't
+    // swap, it just adds the other one" bug on device — fixed here.
     const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
     const oldId = session.exercises[0].id;
     const oldExerciseId = session.exercises[0].exerciseId;
@@ -349,57 +355,122 @@ describe("substituteExercise", () => {
       makeExercise({ id: "ex-incline", name: "Incline Press" }),
       idFactory(900),
     );
-    expect(updated.exercises).toHaveLength(3);
-    expect(updated.exercises[0].id).toBe(oldId);
-    expect(updated.exercises[0].isSubstituted).toBe(true);
-    expect(updated.exercises[0].sets).toHaveLength(3); // sets preserved
-    expect(updated.exercises[0].sortOrder).toBe(0);
 
-    expect(updated.exercises[1].id).toBe("local-id900");
-    expect(updated.exercises[1].exerciseName).toBe("Incline Press");
-    expect(updated.exercises[1].originalExerciseId).toBe(oldExerciseId);
+    // No new row inserted; downstream rows untouched.
+    expect(updated.exercises).toHaveLength(2);
     expect(updated.exercises[1].sortOrder).toBe(1);
-    expect(updated.exercises[1].isSubstituted).toBe(false);
 
-    // Legacy parity: new row seeds the SAME number of empty sets as
-    // the old row (was 3 from the workout template). Each set is
-    // unchecked, no values, contiguous setNumbers.
-    expect(updated.exercises[1].sets).toHaveLength(3);
+    // Source row mutated in place: same id, same sortOrder, exercise
+    // pointer + name swapped, isSubstituted stays false (the row is
+    // the active exercise now), originalExerciseId stamped.
+    const swapped = updated.exercises[0];
+    expect(swapped.id).toBe(oldId);
+    expect(swapped.sortOrder).toBe(0);
+    expect(swapped.exerciseId).toBe("ex-incline");
+    expect(swapped.exerciseName).toBe("Incline Press");
+    expect(swapped.isSubstituted).toBe(false);
+    expect(swapped.originalExerciseId).toBe(oldExerciseId);
+  });
+
+  it("clears sets to empties matching the original count (legacy 'Clear all set data when swapping')", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const oldId = session.exercises[0].id;
+    const updated = substituteExercise(
+      session,
+      oldId,
+      makeExercise({ id: "ex-incline" }),
+      idFactory(900),
+    );
+    const swapped = updated.exercises[0];
+    expect(swapped.sets).toHaveLength(3); // matches the workout template's 3 sets
     for (let i = 0; i < 3; i++) {
-      const set = updated.exercises[1].sets[i];
+      const set = swapped.sets[i];
       expect(set.setNumber).toBe(i + 1);
       expect(set.isCompleted).toBe(false);
       expect(set.weightKg).toBeNull();
       expect(set.reps).toBeNull();
       expect(set.rpe).toBeNull();
-      expect(set.sessionExerciseId).toBe("local-id900");
+      expect(set.sessionExerciseId).toBe(oldId);
     }
-
-    // Downstream row shifted from 1 → 2.
-    expect(updated.exercises[2].sortOrder).toBe(2);
   });
 
-  it("preserves the original exercise's set count on the substituted row", () => {
-    // Quick Start session where the exercise was added with the legacy
-    // default of three empty sets → swap should produce a row with the
-    // same set count (matches legacy `swapExercise` "Preserve the
-    // number of sets based on targetSets" behavior).
-    const session = createEmptySession(ctx(), idFactory());
-    const seeded = addExerciseToSession(
-      session,
-      makeExercise({ id: "ex-bench" }),
-      idFactory(50),
-    );
-    const targetId = seeded.exercises[0].id;
+  it("preserves the supersetGroup of the swapped row", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    // Second exercise has supersetGroup=1.
+    const targetId = session.exercises[1].id;
     const updated = substituteExercise(
-      seeded,
+      session,
       targetId,
+      makeExercise({ id: "ex-cable" }),
+      idFactory(900),
+    );
+    const swapped = updated.exercises.find((e) => e.id === targetId);
+    expect(swapped?.supersetGroup).toBe(1);
+    expect(swapped?.exerciseId).toBe("ex-cable");
+  });
+
+  it("preserves the FIRST originalExerciseId across a chain of swaps (A→B→C still records A)", () => {
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const oldId = session.exercises[0].id;
+    const aToB = substituteExercise(
+      session,
+      oldId,
       makeExercise({ id: "ex-incline" }),
       idFactory(900),
     );
-    expect(updated.exercises[1].sets).toHaveLength(
-      seeded.exercises[0].sets.length,
+    const bToC = substituteExercise(
+      aToB,
+      oldId,
+      makeExercise({ id: "ex-decline" }),
+      idFactory(950),
     );
+    expect(bToC.exercises[0].exerciseId).toBe("ex-decline");
+    expect(bToC.exercises[0].originalExerciseId).toBe("ex-bench");
+  });
+
+  it("does NOT block swapping to an exerciseId that only matches a stale substituted row (matches addExerciseToSession's guard)", () => {
+    // Bugbot regression: substituteExercise's duplicate guard used to
+    // catch substituted rows too, which made the swap silently no-op
+    // when the picker UI (which filters substituted rows out of
+    // `existingExerciseIds`) showed the target as available. Now both
+    // guards skip substituted rows the same way.
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    // Mark row 1 (ex-row) as substituted to simulate pre-2026-05
+    // SQLite carryover. Try to swap row 0 → ex-row. Should succeed.
+    const withStale: WorkoutSession = {
+      ...session,
+      exercises: session.exercises.map((ex, i) =>
+        i === 1 ? { ...ex, isSubstituted: true } : ex,
+      ),
+    };
+    const oldId = withStale.exercises[0].id;
+    const updated = substituteExercise(
+      withStale,
+      oldId,
+      makeExercise({ id: "ex-row" }),
+      idFactory(900),
+    );
+    // Source row mutated in place to ex-row; the stale substituted row
+    // sits untouched alongside it.
+    expect(updated.exercises[0].exerciseId).toBe("ex-row");
+    expect(updated.exercises[0].id).toBe(oldId);
+    expect(updated.exercises[1].isSubstituted).toBe(true);
+  });
+
+  it("is a no-op when the new exercise is already in the session as a different row (legacy duplicate-guard)", () => {
+    // Source row 0 = ex-bench, row 1 = ex-row. Try to swap row 0 → ex-row.
+    // Should silently return the unchanged session (legacy lines
+    // 949-954). Picker UI also disables this row, but the service
+    // defends against cache-reread races.
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const oldId = session.exercises[0].id;
+    const updated = substituteExercise(
+      session,
+      oldId,
+      makeExercise({ id: "ex-row" }),
+      idFactory(900),
+    );
+    expect(updated).toBe(session);
   });
 
   it("returns the session unchanged when the target id is not found", () => {
@@ -411,20 +482,6 @@ describe("substituteExercise", () => {
       idFactory(),
     );
     expect(updated).toBe(session);
-  });
-
-  it("preserves the supersetGroup of the substituted row", () => {
-    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
-    // Second exercise has supersetGroup=1.
-    const targetId = session.exercises[1].id;
-    const updated = substituteExercise(
-      session,
-      targetId,
-      makeExercise({ id: "ex-cable" }),
-      idFactory(900),
-    );
-    const newRow = updated.exercises.find((e) => e.id === "local-id900");
-    expect(newRow?.supersetGroup).toBe(1);
   });
 });
 
@@ -446,6 +503,42 @@ describe("addExerciseToSession", () => {
     const empty = createEmptySession(ctx(), idFactory());
     const updated = addExerciseToSession(empty, makeExercise(), idFactory(900));
     expect(updated.exercises[0].sortOrder).toBe(0);
+  });
+
+  it("is a no-op when the exercise already lives in the session as an active row (legacy duplicate-guard)", () => {
+    // Picker UI disables already-in-session exercises (Brad's rule
+    // after the in-place swap fix landed: no duplicates anywhere).
+    // The service guards the same invariant so cache-reread races
+    // and non-UI callers can't silently insert a duplicate row.
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    const updated = addExerciseToSession(
+      session,
+      makeExercise({ id: "ex-bench" }),
+      idFactory(900),
+    );
+    expect(updated).toBe(session);
+    expect(updated.exercises).toHaveLength(2);
+  });
+
+  it("allows adding an exercise whose id only matches a substituted (stale) row", () => {
+    // Substituted rows are pre-2026-05 carryover from the old swap
+    // semantic; they shouldn't block re-adding the original exercise.
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    // Manually mark row 0 as substituted to simulate cached SQLite
+    // state from before the in-place rewrite landed.
+    const withStale: WorkoutSession = {
+      ...session,
+      exercises: session.exercises.map((ex, i) =>
+        i === 0 ? { ...ex, isSubstituted: true } : ex,
+      ),
+    };
+    const updated = addExerciseToSession(
+      withStale,
+      makeExercise({ id: "ex-bench" }),
+      idFactory(900),
+    );
+    expect(updated.exercises).toHaveLength(3);
+    expect(updated.exercises[2].exerciseId).toBe("ex-bench");
   });
 });
 
@@ -539,18 +632,21 @@ describe("calculateSummary", () => {
     expect(summary.personalRecords).toEqual([]);
   });
 
-  it("excludes substituted rows from totals", () => {
+  it("excludes substituted rows from totals (legacy stale-row carryover)", () => {
+    // Post-in-place-swap, `substituteExercise` no longer produces
+    // `isSubstituted: true` rows — the row is mutated in place instead.
+    // This invariant defends pre-2026-05 cached SQLite sessions that
+    // may still surface a stale substituted row at finalize.
     const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
-    const targetId = session.exercises[0].id;
-    const swapped = substituteExercise(
-      session,
-      targetId,
-      makeExercise({ id: "ex-incline" }),
-      idFactory(900),
-    );
-    const summary = calculateSummary(swapped, "2026-05-05T10:30:00.000Z");
-    // 3 exercises in the array, 1 substituted → totalExercises=2.
-    expect(summary.totalExercises).toBe(2);
+    const withStale: WorkoutSession = {
+      ...session,
+      exercises: session.exercises.map((ex, i) =>
+        i === 0 ? { ...ex, isSubstituted: true } : ex,
+      ),
+    };
+    const summary = calculateSummary(withStale, "2026-05-05T10:30:00.000Z");
+    // 2 exercises in the array, 1 substituted → totalExercises=1.
+    expect(summary.totalExercises).toBe(1);
   });
 
   it("falls back to 0 duration when timestamps are unparsable", () => {

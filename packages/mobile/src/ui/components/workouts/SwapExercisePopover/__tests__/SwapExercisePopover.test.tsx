@@ -7,13 +7,14 @@ import type { Exercise } from "@/domain/models/exercise";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import { AddExerciseToSupersetPopover } from "../AddExerciseToSupersetPopover";
+import { SwapExercisePopover } from "../SwapExercisePopover";
 import { renderWithTheme } from "../../../../../../__tests__/test-utils";
 
+const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: { push: jest.fn(), back: jest.fn() },
-  useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
+  useRouter: () => ({ push: mockRouterPush, back: jest.fn() }),
 }));
 
 const buildExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
@@ -75,105 +76,106 @@ function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
   storage.cacheExercises(exercises);
 }
 
-describe("AddExerciseToSupersetPopover", () => {
+describe("SwapExercisePopover", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRouterPush.mockClear();
   });
 
-  it("renders the modal with the legacy single-select title + back arrow + Add button", async () => {
+  it("renders the modal with the legacy chrome — title + close + Create + Swap", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [buildExercise()]);
 
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, findByText } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
-    expect(await findByTestId("superset-picker-modal")).toBeTruthy();
-    expect(await findByTestId("superset-picker-close")).toBeTruthy();
-    expect(await findByTestId("superset-picker-add")).toBeTruthy();
-    expect(await findByTestId("superset-picker-search")).toBeTruthy();
+    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
+    expect(await findByTestId("swap-picker-close")).toBeTruthy();
+    expect(await findByTestId("swap-picker-create")).toBeTruthy();
+    expect(await findByTestId("swap-picker-swap")).toBeTruthy();
+    expect(await findByTestId("swap-picker-search")).toBeTruthy();
+    // Title is the literal legacy SwapExercisePopover string.
+    expect(await findByText("Swap Exercise")).toBeTruthy();
   });
 
-  it("Add button is disabled until exactly one row is selected (legacy single-select semantic)", async () => {
+  it("Swap button is disabled until exactly one row is selected (single-select semantic)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [
       buildExercise({ id: "ex-1", name: "Bench Press" }),
       buildExercise({ id: "ex-2", name: "Row" }),
     ]);
-    const onAddExercise = jest.fn();
+    const onSwap = jest.fn();
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={onAddExercise}
+          onSwap={onSwap}
         />
       </AdapterProvider>,
     );
-    // Add tap with no selection → disabled, no callback fires.
-    fireEvent.press(await findByTestId("superset-picker-add"));
-    expect(onAddExercise).not.toHaveBeenCalled();
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).not.toHaveBeenCalled();
   });
 
-  it("Add fires onAddExercise with EXACTLY ONE row (single-element array — matches dispatcher's `rows` loop shape)", async () => {
+  it("Swap fires onSwap with EXACTLY ONE row (single-element array — matches dispatcher's `rows` loop shape)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [
       buildExercise({ id: "ex-1", name: "Bench Press" }),
       buildExercise({ id: "ex-2", name: "Row" }),
     ]);
-    const onAddExercise = jest.fn();
+    const onSwap = jest.fn();
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={onAddExercise}
+          onSwap={onSwap}
         />
       </AdapterProvider>,
     );
-    // Selection rows are rendered by AddExerciseList — testID is
-    // `exercise-row-<id>` per the legacy list contract.
     fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("superset-picker-add"));
-    expect(onAddExercise).toHaveBeenCalledTimes(1);
-    const rows = onAddExercise.mock.calls[0][0];
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).toHaveBeenCalledTimes(1);
+    const rows = onSwap.mock.calls[0][0];
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("ex-1");
     expect(rows[0].name).toBe("Bench Press");
   });
 
-  it("tapping a different row replaces the selection (single-select semantic, not additive)", async () => {
+  it("tapping a different row replaces the selection (single-select, not additive)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [
       buildExercise({ id: "ex-1", name: "Bench Press" }),
       buildExercise({ id: "ex-2", name: "Row" }),
     ]);
-    const onAddExercise = jest.fn();
+    const onSwap = jest.fn();
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={onAddExercise}
+          onSwap={onSwap}
         />
       </AdapterProvider>,
     );
     fireEvent.press(await findByTestId("exercise-row-ex-1"));
     fireEvent.press(await findByTestId("exercise-row-ex-2"));
-    fireEvent.press(await findByTestId("superset-picker-add"));
-    const rows = onAddExercise.mock.calls[0][0];
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    const rows = onSwap.mock.calls[0][0];
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("ex-2");
   });
@@ -182,26 +184,26 @@ describe("AddExerciseToSupersetPopover", () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-    const onAddExercise = jest.fn();
+    const onSwap = jest.fn();
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={onAddExercise}
+          onSwap={onSwap}
         />
       </AdapterProvider>,
     );
     fireEvent.press(await findByTestId("exercise-row-ex-1"));
     fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("superset-picker-add"));
-    expect(onAddExercise).not.toHaveBeenCalled();
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).not.toHaveBeenCalled();
   });
 
-  it("resets search + selection after a successful Add (next open starts fresh — bugbot regression)", async () => {
+  it("resets search + selection after a successful Swap (next open starts fresh — bugbot regression)", async () => {
     // The component stays mounted when `visible` flips to false (parent
-    // sets pickerMode=null), so without resetting on the add-success
+    // sets pickerMode=null), so without resetting on the swap-success
     // path the user's previous search query persists into the next
     // open and silently filters out exercises they expect to see.
     const storage = new InMemoryStorageAdapter();
@@ -212,29 +214,32 @@ describe("AddExerciseToSupersetPopover", () => {
     ]);
     const Wrapper = ({ visible }: { visible: boolean }) => (
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={visible}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>
     );
     const { findByTestId, rerender } = renderWithTheme(
       <Wrapper visible={true} />,
     );
-    const search = await findByTestId("superset-picker-search");
+    // Type a search query, pick a row, fire Swap.
+    const search = await findByTestId("swap-picker-search");
     fireEvent.changeText(search, "bench");
     fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("superset-picker-add"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
 
+    // Parent flips visibility off, then back on (a new pickerMode).
     rerender(<Wrapper visible={false} />);
     rerender(<Wrapper visible={true} />);
 
-    const searchAfter = await findByTestId("superset-picker-search");
+    // Search field should be empty on re-open, NOT carrying "bench".
+    const searchAfter = await findByTestId("swap-picker-search");
     expect(searchAfter.props.value).toBe("");
   });
 
-  it("close button calls onClose and resets internal selection (next open starts empty)", async () => {
+  it("close button calls onClose and resets internal selection", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
@@ -242,14 +247,14 @@ describe("AddExerciseToSupersetPopover", () => {
 
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={onClose}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
-    fireEvent.press(await findByTestId("superset-picker-close"));
+    fireEvent.press(await findByTestId("swap-picker-close"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -260,75 +265,169 @@ describe("AddExerciseToSupersetPopover", () => {
 
     const { queryByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={false}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
-    expect(queryByTestId("superset-picker-modal")).toBeNull();
+    expect(queryByTestId("swap-picker-modal")).toBeNull();
   });
 
-  it("maps muscleGroup + equipment labels through toPickerExerciseRow into the picker's snake_case shape", async () => {
-    // Hits the `muscleLabels.map(...)` + `equipmentLabels.map(...)`
-    // branches in toPickerExerciseRow — without a populated exercise
-    // they're empty arrays and the .map() never runs.
+  it("Create button routes to the coming-soon stub (legacy parity — Create CTA isn't a swap action)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+        />
+      </AdapterProvider>,
+    );
+    fireEvent.press(await findByTestId("swap-picker-create"));
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/coming-soon?feature=exercise-creator",
+    );
+  });
+
+  it("disables every exercise in `existingExerciseIds` (Brad's no-duplicates rule — covers the source row + all other in-session rows)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "ex-source", name: "Bench Press" }),
+      buildExercise({ id: "ex-already-in", name: "Row" }),
+      buildExercise({ id: "ex-free", name: "Pulldown" }),
+    ]);
+    const onSwap = jest.fn();
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={onSwap}
+          // Container passes ALL non-substituted in-session exercise
+          // IDs (the source IS in the session, so it's covered).
+          existingExerciseIds={["ex-source", "ex-already-in"]}
+        />
+      </AdapterProvider>,
+    );
+    // Both disabled rows are no-ops on press.
+    fireEvent.press(await findByTestId("exercise-row-ex-source"));
+    fireEvent.press(await findByTestId("exercise-row-ex-already-in"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).not.toHaveBeenCalled();
+    // The free row is interactive.
+    fireEvent.press(await findByTestId("exercise-row-ex-free"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).toHaveBeenCalledTimes(1);
+    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-free");
+  });
+
+  it("renders the muscle-filter chip when filterMuscleGroupLabels is non-empty (Story-004 visible-filter chrome)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+
+    const { findByTestId, findByText } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+          filterMuscleGroupLabels={["Chest", "Triceps"]}
+        />
+      </AdapterProvider>,
+    );
+    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
+    expect(await findByTestId("swap-picker-muscle-filter")).toBeTruthy();
+    // The labels are rendered as a comma-separated emphasised span
+    // inside the chip — assert via findByText so we don't have to
+    // serialise the React-Native props tree (which has circular
+    // Provider refs).
+    expect(await findByText("Chest, Triceps")).toBeTruthy();
+  });
+
+  it("hides the muscle-filter chip when filterMuscleGroupLabels is empty (no chrome unless filtered)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+          filterMuscleGroupLabels={[]}
+        />
+      </AdapterProvider>,
+    );
+    await findByTestId("swap-picker-modal");
+    expect(queryByTestId("swap-picker-muscle-filter")).toBeNull();
+  });
+
+  it("filterByPrimaryMuscleGroups narrows the list to entries whose primaryMuscleGroups overlap (Story-004 AC)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [
       buildExercise({
-        id: "ex-1",
+        id: "ex-bench",
         name: "Bench Press",
-        primaryMuscleGroupLabels: ["Chest", "Triceps"],
-        equipmentLabels: ["Barbell"],
+        primaryMuscleGroups: ["chest"],
+      }),
+      buildExercise({
+        id: "ex-row",
+        name: "Row",
+        primaryMuscleGroups: ["back"],
+      }),
+      buildExercise({
+        id: "ex-incline",
+        name: "Incline Press",
+        primaryMuscleGroups: ["chest", "shoulders"],
       }),
     ]);
-    const onAddExercise = jest.fn();
-    const { findByTestId } = renderWithTheme(
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={onAddExercise}
+          onSwap={jest.fn()}
+          filterByPrimaryMuscleGroups={["chest"]}
         />
       </AdapterProvider>,
     );
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("superset-picker-add"));
-    const row = onAddExercise.mock.calls[0][0][0];
-    // Legacy snake_case shape — primary_muscles is a list of
-    // `{ name, display_name }` records; equipment_required is
-    // `{ name }`.
-    expect(row.primary_muscles).toEqual([
-      { name: "Chest", display_name: "Chest" },
-      { name: "Triceps", display_name: "Triceps" },
-    ]);
-    expect(row.equipment_required).toEqual([{ name: "Barbell" }]);
+    // Chest-overlapping rows survive…
+    expect(await findByTestId("exercise-row-ex-bench")).toBeTruthy();
+    expect(await findByTestId("exercise-row-ex-incline")).toBeTruthy();
+    // …back-only row is filtered out.
+    expect(queryByTestId("exercise-row-ex-row")).toBeNull();
   });
 
   it("info icon drills into the details view; back button returns to the list", async () => {
-    // Hits handleExerciseInfo's `if (exercise)` branch + the
-    // details-view render path + handleBackToList.
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
     fireEvent.press(await findByTestId("exercise-info-button-ex-1"));
-    // Details modal rendered — back button is the only chrome.
-    const backButton = await findByTestId("superset-picker-details-back");
+    const backButton = await findByTestId("swap-picker-details-back");
     expect(backButton).toBeTruthy();
     fireEvent.press(backButton);
-    // Returned to the list — search bar is reachable again.
-    expect(await findByTestId("superset-picker-search")).toBeTruthy();
+    expect(await findByTestId("swap-picker-search")).toBeTruthy();
   });
 
   it("clear-search button empties the query field", async () => {
@@ -337,24 +436,21 @@ describe("AddExerciseToSupersetPopover", () => {
     seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
-    const search = await findByTestId("superset-picker-search");
+    const search = await findByTestId("swap-picker-search");
     fireEvent.changeText(search, "bench");
     expect(search.props.value).toBe("bench");
-    fireEvent.press(await findByTestId("superset-picker-clear-search"));
+    fireEvent.press(await findByTestId("swap-picker-clear-search"));
     expect(search.props.value).toBe("");
   });
 
   it("respects the 100-row display ceiling when the library is larger", async () => {
-    // Hits the `slice(0, PICKER_DISPLAY_LIMIT)` branch — without > 100
-    // exercises, the slice is a no-op and the boundary is never
-    // exercised.
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     const many = Array.from({ length: 105 }, (_, i) =>
@@ -363,14 +459,13 @@ describe("AddExerciseToSupersetPopover", () => {
     seedCache(storage, many);
     const { findByTestId, queryByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <AddExerciseToSupersetPopover
+        <SwapExercisePopover
           visible={true}
           onClose={jest.fn()}
-          onAddExercise={jest.fn()}
+          onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
-    // First 100 are reachable; index 100+ is not (sliced away).
     expect(await findByTestId("exercise-row-ex-0")).toBeTruthy();
     expect(await findByTestId("exercise-row-ex-99")).toBeTruthy();
     expect(queryByTestId("exercise-row-ex-100")).toBeNull();

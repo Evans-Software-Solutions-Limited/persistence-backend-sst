@@ -1,34 +1,52 @@
 /**
- * AddExerciseToSupersetPopover — the "Add Exercise to Superset" picker
- * for the active session.
+ * SwapExercisePopover — the dedicated single-select picker for the
+ * Substitute flow on the active-session screen.
  *
- * Single-select + one "Add" button — distinct from the multi-select
- * `AddExercisePopover` (which serves fresh adds + creating a new
- * superset). The two are intentionally separate components because
- * they have different selection semantics and different footer
- * surfaces; the container routes between them by `pickerMode.kind`.
+ * Distinct from AddExerciseToSupersetPopover (also single-select) in
+ * three ways:
+ *   1. Footer CTA reads "Swap" instead of "Add" — matches legacy
+ *      `SwapExercisePopover` semantic that the user is replacing
+ *      one row, not appending one.
+ *   2. Header carries a Create CTA on the right (legacy parity); the
+ *      Add-to-Superset picker drops it because supersets are a quick
+ *      action and exercise creation lives elsewhere in the legacy
+ *      flow.
+ *   3. Renders a visible muscle-group filter chip below the search
+ *      bar so the user can see WHY the list is narrowed (Story-004 AC
+ *      "Opens exercise picker filtered by same muscle group"). Legacy
+ *      hides this — its `useGetExercises({ similar_to })` boost is
+ *      backend-side and invisible. V2 has no `similar_to` API so we
+ *      surface the filter explicitly here, which is also better UX.
+ *
  * Reuses `AddExerciseList`, `ExerciseDetailsModal`, and the shared
- * picker-row mapping from `../AddExercisePopover` so the row contract
- * stays in one place.
+ * `toPickerExerciseRow` mapper from `../AddExercisePopover` so the
+ * row contract stays in one place.
  *
- * Spec: specs/05-active-session/requirements.md STORY-005
- *       Modelled on the persistence-mobile reference repo's
- *       `AddExerciseToSupersetView` (single-select picker), used for
- *       structural reference only — the V2 implementation here owns
- *       the surface going forward.
+ * Spec: specs/05-active-session/requirements.md STORY-004
+ *       Modelled on persistence-mobile/components/workouts/SwapExercisePopover.tsx
+ *       (single-select swap picker), used for structural reference
+ *       only — V2 owns this surface going forward.
  */
 
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { Colors, Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Modal,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -40,36 +58,55 @@ import { ExerciseDetailsModal } from "../AddExercisePopover/ExerciseDetailsModal
 import { toPickerExerciseRow } from "../AddExercisePopover/picker-row";
 import { styles } from "../AddExercisePopover/styles";
 
-export type AddExerciseToSupersetPopoverProps = {
+export type SwapExercisePopoverProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
   /**
-   * Fires with the single picked exercise wrapped in an array so the
-   * dispatcher (`applyPickerSelection`) can reuse its `rows` loop —
-   * matches `AddExercisePopover.onAddExercises` shape and keeps the
-   * picker-routing wiring uniform across modes.
+   * Fires with the picked exercise wrapped in a single-element array
+   * so the dispatcher (`applyPickerSelection`) can reuse its `rows`
+   * loop — matches `AddExercisePopover.onAddExercises` shape and
+   * keeps the picker-routing wiring uniform across modes.
    */
-  readonly onAddExercise: (rows: any[]) => void;
+  readonly onSwap: (rows: any[]) => void;
   /**
-   * Exercise ids already in the target superset group. Forwarded to
-   * `AddExerciseList` so peers already in the group render disabled —
-   * the user can still add a duplicate of a non-superset row, but
-   * can't re-add a peer already in the group.
+   * Exercise UUIDs already in the active session — disabled in the
+   * list so the user can't pick a duplicate (legacy parity:
+   * `useActiveWorkout.swapExercise` lines 949-954). The source row
+   * being swapped out is part of this set, which also covers the
+   * "can't no-op swap to itself" case.
    */
   readonly existingExerciseIds?: readonly string[];
+  /**
+   * Primary muscle-group UUIDs of the source exercise. Narrows the
+   * picker to entries whose `primaryMuscleGroups` overlap with at
+   * least one of these — same logic AddExercisePopover used for the
+   * substitute flow before it was lifted out (Story-004 AC).
+   */
+  readonly filterByPrimaryMuscleGroups?: readonly string[];
+  /**
+   * Display labels for `filterByPrimaryMuscleGroups` (already resolved
+   * via the cached source exercise's `primaryMuscleGroupLabels`). When
+   * supplied and non-empty, drives the visible muscle-filter chip
+   * shown below the search bar so the user knows WHY the list is
+   * narrowed.
+   */
+  readonly filterMuscleGroupLabels?: readonly string[];
 };
 
-function AddExerciseToSupersetPopoverContainer({
+function SwapExercisePopoverContainer({
   visible,
   onClose,
-  onAddExercise,
+  onSwap,
   existingExerciseIds = [],
-}: AddExerciseToSupersetPopoverProps) {
+  filterByPrimaryMuscleGroups,
+  filterMuscleGroupLabels,
+}: SwapExercisePopoverProps) {
+  const router = useRouter();
   const { api, storage } = useAdapters();
 
   const [searchQuery, setSearchQuery] = useState("");
   // Single-select: one id or null. Tapping the same id again
-  // deselects (legacy AddExerciseToSupersetView lines 37-40).
+  // deselects (legacy SwapExercisePopover lines 47-50).
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
@@ -88,13 +125,27 @@ function AddExerciseToSupersetPopoverContainer({
     [cacheRead.exercises, api],
   );
 
+  // Apply the muscle-group filter (substitute flow) before mapping to
+  // picker rows. Empty / undefined filter leaves the list untouched.
+  const muscleGroupFilteredExercises = useMemo(() => {
+    if (
+      !filterByPrimaryMuscleGroups ||
+      filterByPrimaryMuscleGroups.length === 0
+    ) {
+      return enrichedExercises;
+    }
+    const set = new Set(filterByPrimaryMuscleGroups);
+    return enrichedExercises.filter((ex) =>
+      (ex.primaryMuscleGroups ?? []).some((g) => set.has(g)),
+    );
+  }, [enrichedExercises, filterByPrimaryMuscleGroups]);
+
   const allRows = useMemo(
-    () => enrichedExercises.map(toPickerExerciseRow),
-    [enrichedExercises],
+    () => muscleGroupFilteredExercises.map(toPickerExerciseRow),
+    [muscleGroupFilteredExercises],
   );
 
-  // Same 100-row display ceiling as AddExercisePopover — the picker
-  // would otherwise render the full library uncondensed.
+  // Same 100-row display ceiling as AddExercisePopover.
   const PICKER_DISPLAY_LIMIT = 100;
 
   const filteredRows = useMemo(() => {
@@ -121,8 +172,6 @@ function AddExerciseToSupersetPopoverContainer({
 
   const showLoader = isRefreshing && enrichedExercises.length === 0;
 
-  // Single-select toggle: tapping a different exercise replaces the
-  // selection; tapping the currently-selected one clears it.
   const toggleExerciseSelection = (exerciseId: string) => {
     setSelectedExerciseId((prev) => (prev === exerciseId ? null : exerciseId));
   };
@@ -140,13 +189,18 @@ function AddExerciseToSupersetPopoverContainer({
     setSelectedExercise(null);
   };
 
+  const handleCreateExercise = useCallback(() => {
+    router.push("/coming-soon?feature=exercise-creator" as never);
+  }, [router]);
+
   // Reset every piece of internal state — search, selection, and the
   // details drill-in — so the next time the popover opens it starts
   // fresh. The component stays mounted when `visible` flips to false
   // (the parent just sets pickerMode=null), so without this reset the
   // user's previous search query / details view would persist into
-  // the next open. Called from BOTH handleClose AND handleAddClick
-  // for parity.
+  // the next open. Called from BOTH handleClose AND handleSwapClick
+  // for parity (the swap-success path used to only clear selection,
+  // leaving stale chrome behind).
   const resetInternalState = () => {
     setSearchQuery("");
     setSelectedExerciseId(null);
@@ -159,23 +213,23 @@ function AddExerciseToSupersetPopoverContainer({
     onClose();
   };
 
-  const handleAddClick = () => {
+  const handleSwapClick = () => {
     if (!selectedExerciseId) return;
     const exercise = allRows.find((ex) => ex.id === selectedExerciseId);
     if (!exercise) return;
     // Wrap in an array so the container's `applyPickerSelection`
     // dispatcher (which iterates `rows`) handles this uniformly with
-    // the multi-select Add flow. Single-element loop = single
-    // addExerciseCommand call with the mode's supersetGroup.
-    onAddExercise([exercise]);
+    // every other picker mode.
+    onSwap([exercise]);
     resetInternalState();
   };
 
   return (
-    <AddExerciseToSupersetPopoverPresenter
+    <SwapExercisePopoverPresenter
       visible={visible}
       onClose={handleClose}
-      onAdd={handleAddClick}
+      onSwap={handleSwapClick}
+      onCreateExercise={handleCreateExercise}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
       exercises={filteredRows}
@@ -187,14 +241,16 @@ function AddExerciseToSupersetPopoverContainer({
       selectedExercise={selectedExercise}
       isLoading={showLoader}
       existingExerciseIds={[...existingExerciseIds]}
+      filterMuscleGroupLabels={filterMuscleGroupLabels ?? []}
     />
   );
 }
 
-type AddExerciseToSupersetPopoverPresenterProps = {
+type SwapExercisePopoverPresenterProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
-  readonly onAdd: () => void;
+  readonly onSwap: () => void;
+  readonly onCreateExercise: () => void;
   readonly searchQuery: string;
   readonly onSearchChange: (q: string) => void;
   readonly exercises: any[];
@@ -206,12 +262,14 @@ type AddExerciseToSupersetPopoverPresenterProps = {
   readonly selectedExercise: any;
   readonly isLoading: boolean;
   readonly existingExerciseIds: string[];
+  readonly filterMuscleGroupLabels: readonly string[];
 };
 
-function AddExerciseToSupersetPopoverPresenter({
+function SwapExercisePopoverPresenter({
   visible,
   onClose,
-  onAdd,
+  onSwap,
+  onCreateExercise,
   searchQuery,
   onSearchChange,
   exercises,
@@ -223,14 +281,14 @@ function AddExerciseToSupersetPopoverPresenter({
   selectedExercise,
   isLoading,
   existingExerciseIds,
-}: AddExerciseToSupersetPopoverPresenterProps) {
+  filterMuscleGroupLabels,
+}: SwapExercisePopoverPresenterProps) {
   const hasSelection = selectedExerciseId !== null;
-  // AddExerciseList accepts an `selectedExerciseIds: string[]` array;
-  // adapt the single-select shape inline.
   const selectedExerciseIds = useMemo(
     () => (selectedExerciseId ? [selectedExerciseId] : []),
     [selectedExerciseId],
   );
+  const hasMuscleFilter = filterMuscleGroupLabels.length > 0;
 
   if (currentView === "details" && selectedExercise) {
     return (
@@ -245,7 +303,7 @@ function AddExerciseToSupersetPopoverPresenter({
             <TouchableOpacity
               onPress={onBackToList}
               style={styles.backButton}
-              testID="superset-picker-details-back"
+              testID="swap-picker-details-back"
             >
               <Ionicons
                 name="arrow-back"
@@ -270,21 +328,25 @@ function AddExerciseToSupersetPopoverPresenter({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
-      testID="superset-picker-modal"
+      testID="swap-picker-modal"
     >
       <SafeAreaView style={styles.modalSafeArea} edges={["top"]}>
         <View style={styles.modalHeader}>
           <TouchableOpacity
             onPress={onClose}
             style={styles.backButton}
-            testID="superset-picker-close"
+            testID="swap-picker-close"
           >
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add to Superset</Text>
-          {/* No "Create" CTA in this flow — adding to a superset is a
-              quick action; the user creates new exercises elsewhere. */}
-          <View style={styles.headerSpacer} />
+          <Text style={styles.modalTitle}>Swap Exercise</Text>
+          <TouchableOpacity
+            onPress={onCreateExercise}
+            style={styles.createButton}
+            testID="swap-picker-create"
+          >
+            <Text style={styles.createButtonText}>Create</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.searchWrapper}>
@@ -303,13 +365,13 @@ function AddExerciseToSupersetPopoverPresenter({
               onChangeText={onSearchChange}
               autoCapitalize="none"
               autoCorrect={false}
-              testID="superset-picker-search"
+              testID="swap-picker-search"
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity
                 onPress={() => onSearchChange("")}
                 style={styles.clearButton}
-                testID="superset-picker-clear-search"
+                testID="swap-picker-clear-search"
               >
                 <Ionicons
                   name="close-circle"
@@ -320,6 +382,30 @@ function AddExerciseToSupersetPopoverPresenter({
             )}
           </View>
         </View>
+
+        {hasMuscleFilter && (
+          <View
+            style={muscleFilterStyles.chipWrapper}
+            testID="swap-picker-muscle-filter"
+          >
+            <Ionicons
+              name="filter"
+              size={14}
+              color={Colors.text.secondary}
+              style={muscleFilterStyles.chipIcon}
+            />
+            <Text
+              style={muscleFilterStyles.chipText}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Filtered by{" "}
+              <Text style={muscleFilterStyles.chipTextEmphasis}>
+                {filterMuscleGroupLabels.join(", ")}
+              </Text>
+            </Text>
+          </View>
+        )}
 
         <ScrollView
           style={styles.modalScroll}
@@ -335,17 +421,17 @@ function AddExerciseToSupersetPopoverPresenter({
           />
         </ScrollView>
 
-        {/* Single Add button — disabled until exactly one row is
-            selected. Legacy AddExerciseToSupersetView line 132-138. */}
+        {/* Single Swap button — disabled until exactly one row is
+            selected. Legacy SwapExercisePopover lines 237-244. */}
         <View style={styles.modalFooter}>
           <TouchableOpacity
             style={[
               styles.footerButton,
               !hasSelection && styles.footerButtonDisabled,
             ]}
-            onPress={onAdd}
+            onPress={onSwap}
             disabled={!hasSelection}
-            testID="superset-picker-add"
+            testID="swap-picker-swap"
           >
             <Text
               style={[
@@ -353,7 +439,7 @@ function AddExerciseToSupersetPopoverPresenter({
                 !hasSelection && styles.footerButtonTextDisabled,
               ]}
             >
-              Add
+              Swap
             </Text>
           </TouchableOpacity>
         </View>
@@ -362,5 +448,28 @@ function AddExerciseToSupersetPopoverPresenter({
   );
 }
 
-export const AddExerciseToSupersetPopover =
-  AddExerciseToSupersetPopoverContainer;
+// Local styles for the muscle-filter chip — sits immediately below the
+// search bar, above the list. Light-touch: pill-style, secondary
+// surface, with the muscle-group labels emphasised in primary text.
+const muscleFilterStyles = StyleSheet.create({
+  chipWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  chipIcon: {
+    marginRight: Spacing.xs,
+  },
+  chipText: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+    flex: 1,
+  },
+  chipTextEmphasis: {
+    color: Colors.text.primary,
+    fontWeight: "600",
+  },
+});
+
+export const SwapExercisePopover = SwapExercisePopoverContainer;

@@ -377,12 +377,30 @@ describe("ActiveSessionContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/ex-bench");
   });
 
-  it("substitute opens the picker and arms it with no existing-id filter", async () => {
+  it("substitute opens the SwapExercisePopover (not the multi-select picker) and end-to-end fires substituteExerciseCommand", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
+    // Source exercise carries primaryMuscleGroups so the picker's
+    // muscle-group filter narrows the library down to overlapping
+    // entries (Story-004 AC). "ex-incline" overlaps; "ex-row" does
+    // not and should be filtered out of the visible list.
     storage.cacheExercises([
-      buildExercise({ id: "ex-bench", name: "Bench Press" }),
-      buildExercise({ id: "ex-incline", name: "Incline Press" }),
+      buildExercise({
+        id: "ex-bench",
+        name: "Bench Press",
+        primaryMuscleGroups: ["chest"],
+        primaryMuscleGroupLabels: ["Chest"],
+      }),
+      buildExercise({
+        id: "ex-incline",
+        name: "Incline Press",
+        primaryMuscleGroups: ["chest", "shoulders"],
+      }),
+      buildExercise({
+        id: "ex-row",
+        name: "Row",
+        primaryMuscleGroups: ["back"],
+      }),
     ]);
     storage.cacheActiveSession("user-1", {
       id: "local-1",
@@ -412,16 +430,40 @@ describe("ActiveSessionContainer", () => {
       .spyOn(api, "enrichExerciseLabels")
       .mockImplementation((ex: Exercise) => ex);
 
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, queryByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
-    // The substitute button is rendered by SessionExerciseCard; tapping
-    // it puts the container into substitute mode and opens the picker.
     fireEvent.press(await findByTestId("session-exercise-substitute"));
-    // Picker is wired but uses portal-rendered Modal — assert the
-    // session screen still mounts and the container didn't crash.
-    expect(await findByTestId("active-session-screen")).toBeTruthy();
+    // SwapExercisePopover is the substitute-mode picker (legacy
+    // SwapExercisePopover parity); the multi-select AddExercisePopover
+    // is suppressed for this mode.
+    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
+    // Muscle-filter chip is visible — labels resolved from the source
+    // exercise's primaryMuscleGroupLabels via resolveSubstituteMuscleLabels.
+    expect(await findByTestId("swap-picker-muscle-filter")).toBeTruthy();
+    // back-only row is filtered out by the muscle-group narrow.
+    expect(queryByTestId("exercise-row-ex-row")).toBeNull();
+    // Source row stays in the list but is disabled — pressing it is
+    // a no-op (Brad's no-duplicates rule: source IS in
+    // existingExerciseIds, covered alongside every other in-session
+    // row).
+    expect(await findByTestId("exercise-row-ex-bench")).toBeTruthy();
+
+    // Pick a valid replacement and fire Swap → substituteExerciseCommand
+    // mutates the source row in place: same id + sortOrder, new
+    // exerciseId, sets cleared, originalExerciseId stamped. No new
+    // row inserted.
+    fireEvent.press(await findByTestId("exercise-row-ex-incline"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+
+    const cached = storage.getActiveSession("user-1");
+    expect(cached?.exercises).toHaveLength(1);
+    const swapped = cached?.exercises[0];
+    expect(swapped?.id).toBe("se-1");
+    expect(swapped?.exerciseId).toBe("ex-incline");
+    expect(swapped?.isSubstituted).toBe(false);
+    expect(swapped?.originalExerciseId).toBe("ex-bench");
   });
 
   // The Mark-Complete UI was removed in 1A.1 (legacy port: no per-set
