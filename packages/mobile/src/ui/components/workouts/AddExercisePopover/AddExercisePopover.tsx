@@ -35,14 +35,6 @@ interface AddExercisePopoverProps {
 
   readonly onAddSuperset: (exercises: any[]) => void;
   readonly existingExerciseIds?: string[];
-  /**
-   * When set, restricts the exercise list to entries whose
-   * `primaryMuscleGroups` overlap with at least one of the supplied
-   * UUIDs. Used by the substitute flow on the active-session screen
-   * to surface alternatives that target the same muscle group as the
-   * exercise being swapped out (Story-004 AC).
-   */
-  readonly filterByPrimaryMuscleGroups?: readonly string[];
 }
 
 // Container Component - Handles logic and state
@@ -52,7 +44,6 @@ function AddExercisePopoverContainer({
   onAddExercises,
   onAddSuperset,
   existingExerciseIds = [],
-  filterByPrimaryMuscleGroups,
 }: AddExercisePopoverProps) {
   const router = useRouter();
   const { api, storage } = useAdapters();
@@ -78,31 +69,14 @@ function AddExercisePopoverContainer({
     [cacheRead.exercises, api],
   );
 
-  // Substitute flow: narrow to exercises whose primary muscle groups
-  // overlap with the source exercise (Story-004 AC: "Opens exercise
-  // picker filtered by same muscle group"). Empty / undefined filter
-  // leaves the list untouched.
-  const muscleGroupFilteredExercises = useMemo(() => {
-    if (
-      !filterByPrimaryMuscleGroups ||
-      filterByPrimaryMuscleGroups.length === 0
-    ) {
-      return enrichedExercises;
-    }
-    const set = new Set(filterByPrimaryMuscleGroups);
-    return enrichedExercises.filter((ex) =>
-      (ex.primaryMuscleGroups ?? []).some((g) => set.has(g)),
-    );
-  }, [enrichedExercises, filterByPrimaryMuscleGroups]);
-
   // Full mapped list — used for selection lookups so a search filter
   // can't silently drop exercises the user already selected before
   // typing. `filteredRows` is the search-filtered subset rendered
   // by the inner list; selection resolution and detail drill-in
   // always go through `allRows`.
   const allRows = useMemo(
-    () => muscleGroupFilteredExercises.map(toPickerExerciseRow),
-    [muscleGroupFilteredExercises],
+    () => enrichedExercises.map(toPickerExerciseRow),
+    [enrichedExercises],
   );
 
   // Cap to 100 rendered rows — matches the legacy `useGetExercises({

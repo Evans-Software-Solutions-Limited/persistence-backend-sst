@@ -8,6 +8,8 @@ import {
   applyPickerSelection,
   resolvePickerExercise,
   resolveSubstituteMuscleFilter,
+  resolveSubstituteMuscleLabels,
+  resolveSubstituteSourceExerciseId,
 } from "@/ui/containers/active-session-picker";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -437,5 +439,105 @@ describe("resolveSubstituteMuscleFilter", () => {
         storage,
       ),
     ).toEqual(["chest", "shoulders"]);
+  });
+});
+
+describe("resolveSubstituteMuscleLabels", () => {
+  it("returns undefined when mode is null (no chip)", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(resolveSubstituteMuscleLabels(null, [], storage)).toBeUndefined();
+  });
+
+  it("returns undefined for non-substitute modes", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleLabels({ kind: "add" }, [], storage),
+    ).toBeUndefined();
+    expect(
+      resolveSubstituteMuscleLabels(
+        { kind: "add-to-superset", supersetGroup: 2 },
+        [],
+        storage,
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveSubstituteMuscleLabels({ kind: "create-superset" }, [], storage),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the source row isn't in the session", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleLabels(
+        { kind: "substitute", oldSessionExerciseId: "missing" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined on cache miss (chip simply doesn't render)", () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(
+      resolveSubstituteMuscleLabels(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns the source exercise's primaryMuscleGroupLabels when cached", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({
+        id: "ex-bench",
+        primaryMuscleGroupLabels: ["Chest", "Triceps"],
+      }),
+    ]);
+    expect(
+      resolveSubstituteMuscleLabels(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+        storage,
+      ),
+    ).toEqual(["Chest", "Triceps"]);
+  });
+});
+
+describe("resolveSubstituteSourceExerciseId", () => {
+  it("returns null when mode is null", () => {
+    expect(resolveSubstituteSourceExerciseId(null, [])).toBeNull();
+  });
+
+  it("returns null for non-substitute modes", () => {
+    expect(resolveSubstituteSourceExerciseId({ kind: "add" }, [])).toBeNull();
+    expect(
+      resolveSubstituteSourceExerciseId(
+        { kind: "add-to-superset", supersetGroup: 1 },
+        [],
+      ),
+    ).toBeNull();
+    expect(
+      resolveSubstituteSourceExerciseId({ kind: "create-superset" }, []),
+    ).toBeNull();
+  });
+
+  it("returns null when the source row isn't in the session anymore", () => {
+    expect(
+      resolveSubstituteSourceExerciseId(
+        { kind: "substitute", oldSessionExerciseId: "missing" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+      ),
+    ).toBeNull();
+  });
+
+  it("returns the source row's exerciseId when present", () => {
+    expect(
+      resolveSubstituteSourceExerciseId(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "ex-bench" }],
+      ),
+    ).toBe("ex-bench");
   });
 });

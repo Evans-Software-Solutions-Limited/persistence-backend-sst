@@ -43,10 +43,13 @@ import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
+import { SwapExercisePopover } from "@/ui/components/workouts/SwapExercisePopover";
 import {
   applyPickerSelection,
   resolvePickerExercise,
   resolveSubstituteMuscleFilter,
+  resolveSubstituteMuscleLabels,
+  resolveSubstituteSourceExerciseId,
   type ActiveSessionPickerMode,
   type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
@@ -323,6 +326,29 @@ export function ActiveSessionContainer() {
     [pickerMode, session, storage],
   );
 
+  // Display labels for the muscle filter — surfaced as a chip in the
+  // SwapExercisePopover chrome so the user sees WHY the list is
+  // narrowed. Resolved separately from the UUID filter so the chip
+  // can render even when the UUID set is non-empty but unlabeled.
+  const substituteMuscleLabels = useMemo<readonly string[] | undefined>(
+    () =>
+      resolveSubstituteMuscleLabels(
+        pickerMode,
+        session?.exercises ?? [],
+        storage,
+      ),
+    [pickerMode, session, storage],
+  );
+
+  // Source exercise UUID for the substitute picker — used to disable
+  // that row in the list so the user can't no-op-swap to itself
+  // (legacy SwapExercisePopover line 175).
+  const substituteSourceExerciseId = useMemo<string | null>(
+    () =>
+      resolveSubstituteSourceExerciseId(pickerMode, session?.exercises ?? []),
+    [pickerMode, session],
+  );
+
   const onOpenNotes = useCallback((sessionExerciseId: string) => {
     setNotesTarget({ kind: "exercise", sessionExerciseId });
   }, []);
@@ -491,16 +517,19 @@ export function ActiveSessionContainer() {
     );
   }, [userId, storage]);
 
-  // Existing-exercise ids are used by the picker to disable "Add"
-  // for already-in-session entries. For substitute we don't disable —
-  // user might pick a different variant of the same exercise. For
-  // add-to-superset we narrow to peers ALREADY in the target group
-  // so the user can still add the same exercise that lives elsewhere
-  // in the session (e.g. a non-superset row of "Bench" doesn't block
-  // adding "Bench" into a superset).
+  // Existing-exercise ids are used by the AddExercisePopover (and
+  // AddExerciseToSupersetPopover) to disable "Add" for already-in-
+  // session entries. The SwapExercisePopover doesn't consume this —
+  // it derives its own `existingExerciseIds` from the source-exercise
+  // UUID alone (legacy parity: only the row being swapped out is
+  // disabled, not other in-session rows, so the user can pick a
+  // variant of an already-present exercise).
+  // For add-to-superset we narrow to peers ALREADY in the target
+  // group so the user can still add the same exercise that lives
+  // elsewhere in the session (e.g. a non-superset row of "Bench"
+  // doesn't block adding "Bench" into a superset).
   const existingExerciseIds = useMemo(() => {
     if (!session) return [];
-    if (pickerMode?.kind === "substitute") return [];
     if (pickerMode?.kind === "add-to-superset") {
       return session.exercises
         .filter(
@@ -559,25 +588,39 @@ export function ActiveSessionContainer() {
         onFinish={onFinish}
       />
 
-      {/* Picker routing — `add-to-superset` opens the single-select
-          AddExerciseToSupersetPopover (legacy `AddExerciseToSupersetView`
-          parity); every other mode (`add`, `substitute`) uses the
-          multi-select AddExercisePopover. Mounting only one at a time
-          keeps the Modal stack clean and avoids two pickers competing
-          for the same `pickerMode != null` visibility predicate. */}
+      {/* Picker routing — three single-purpose popovers, mounted by
+          mode so the Modal stack only ever has one active:
+            - `substitute` → SwapExercisePopover (single-select +
+              "Swap" footer + muscle-filter chrome). Legacy parity
+              with persistence-mobile/components/workouts/SwapExercisePopover.
+            - `add-to-superset` → AddExerciseToSupersetPopover
+              (single-select + "Add" footer, no Create CTA).
+            - `add` / `create-superset` → AddExercisePopover (multi-
+              select + Add/Superset footer). */}
       <AddExercisePopover
-        visible={pickerMode != null && pickerMode.kind !== "add-to-superset"}
+        visible={
+          pickerMode != null &&
+          pickerMode.kind !== "add-to-superset" &&
+          pickerMode.kind !== "substitute"
+        }
         onClose={onClosePicker}
         onAddExercises={onPickerAddExercises}
         onAddSuperset={onPickerAddSuperset}
         existingExerciseIds={existingExerciseIds}
-        filterByPrimaryMuscleGroups={substituteMuscleFilter}
       />
       <AddExerciseToSupersetPopover
         visible={pickerMode?.kind === "add-to-superset"}
         onClose={onClosePicker}
         onAddExercise={onPickerAddExercises}
         existingExerciseIds={existingExerciseIds}
+      />
+      <SwapExercisePopover
+        visible={pickerMode?.kind === "substitute"}
+        onClose={onClosePicker}
+        onSwap={onPickerAddExercises}
+        currentExerciseId={substituteSourceExerciseId}
+        filterByPrimaryMuscleGroups={substituteMuscleFilter}
+        filterMuscleGroupLabels={substituteMuscleLabels}
       />
 
       <ExerciseNotesPopover

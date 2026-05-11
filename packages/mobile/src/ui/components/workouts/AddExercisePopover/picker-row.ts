@@ -22,7 +22,6 @@ import type { Exercise } from "@/domain/models/exercise";
  * components' loose typing — a future polish can tighten them in
  * lockstep.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toPickerExerciseRow(ex: Exercise): any {
   const muscleLabels = ex.primaryMuscleGroupLabels ?? [];
   const equipmentLabels = ex.equipmentLabels ?? [];

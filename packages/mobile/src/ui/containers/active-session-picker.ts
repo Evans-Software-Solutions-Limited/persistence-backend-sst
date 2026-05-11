@@ -95,6 +95,44 @@ export function resolveSubstituteMuscleFilter(
 }
 
 /**
+ * Display labels matching `resolveSubstituteMuscleFilter` — drives the
+ * SwapExercisePopover's visible muscle-filter chip ("Filtered by
+ * Chest, Triceps") so the user sees WHY the list is narrowed.
+ *
+ * Returns undefined for non-substitute modes, missing source rows, or
+ * cache misses; the chip just doesn't render in those cases.
+ */
+export function resolveSubstituteMuscleLabels(
+  mode: ActiveSessionPickerMode,
+  exercises: readonly { id: string; exerciseId: string }[],
+  storage: StoragePort,
+): readonly string[] | undefined {
+  if (mode?.kind !== "substitute") return undefined;
+  const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
+  if (!oldRow) return undefined;
+  const cached = storage.getCachedExercise(oldRow.exerciseId);
+  return cached?.primaryMuscleGroupLabels ?? undefined;
+}
+
+/**
+ * Source-exercise UUID for the substitute picker — passed as
+ * `currentExerciseId` to disable that row in the list so the user
+ * can't no-op-swap to the same exercise (legacy parity).
+ *
+ * Returns null for non-substitute modes or when the session no longer
+ * contains the source row (the picker simply doesn't disable any row
+ * in that case).
+ */
+export function resolveSubstituteSourceExerciseId(
+  mode: ActiveSessionPickerMode,
+  exercises: readonly { id: string; exerciseId: string }[],
+): string | null {
+  if (mode?.kind !== "substitute") return null;
+  const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
+  return oldRow?.exerciseId ?? null;
+}
+
+/**
  * - Empty `rows` → no-op (caller resets pickerMode).
  * - `substitute` mode → resolve the first row, fire
  *   `substituteExerciseCommand`, call `onAfter`.
