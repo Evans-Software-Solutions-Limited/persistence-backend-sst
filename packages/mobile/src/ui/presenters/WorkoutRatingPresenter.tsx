@@ -1,11 +1,16 @@
 /**
  * WorkoutRatingPresenter — post-Complete rating + workout-notes
- * capture screen, ported from
- * `persistence-mobile/components/workouts/WorkoutRatingScreen` with a
- * V2 simplification: legacy used a bespoke 250-LOC SemiCircleSlider
- * for the 1-10 scale; we render a horizontal row of 10 segmented
- * buttons. Same data model (`difficultyRanking: 1-10`), same notes
- * field, same difficulty-tinted accent colour.
+ * capture screen.
+ *
+ * Ported 1:1 from
+ * `persistence-mobile/components/workouts/WorkoutRatingScreen/WorkoutRatingScreen.tsx`:
+ *   - SemiCircleSlider drives the 1-10 difficulty scale (legacy uses
+ *     a bespoke 250-LOC top-semicircle SVG slider; ported verbatim
+ *     into `@/ui/components/workouts/SemiCircleSlider`).
+ *   - "← Back" text-only back button (legacy parity — V2 had a
+ *     chevron + "Back" before this phase).
+ *   - Difficulty band 3-4 uses `Colors.info.DEFAULT` (V2 was
+ *     incorrectly using `Colors.primary.DEFAULT` before).
  *
  * Tap Submit → container fires `completeSessionCommand({ rating,
  * notes })` → routes to `/(app)/session/summary`.
@@ -14,7 +19,6 @@
  *       "Confirmation to save session"
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
   Keyboard,
@@ -33,6 +37,7 @@ import {
   Spacing,
   Typography,
 } from "@/ui/theme/workoutsLegacyTheme";
+import { SemiCircleSlider } from "@/ui/components/workouts/SemiCircleSlider";
 
 const MIN_RATING = 1;
 const MAX_RATING = 10;
@@ -47,7 +52,12 @@ const getDifficultyMessage = (rating: number): string => {
 
 const getDifficultyColor = (rating: number): string => {
   if (rating <= 2) return Colors.success.DEFAULT;
-  if (rating <= 4) return Colors.primary.DEFAULT;
+  // Band 3-4 is `info` (cyan), not the brand `primary` — matches
+  // legacy `WorkoutRatingScreen.getDifficultyColor`. The previous V2
+  // value collapsed band 3-4 onto the brand colour, which made every
+  // "Easy" rating bleed into the app's chrome accent and washed the
+  // difficulty scale out.
+  if (rating <= 4) return Colors.info.DEFAULT;
   if (rating <= 6) return Colors.warning.DEFAULT;
   if (rating <= 8) return Colors.warning.dark;
   return Colors.error.DEFAULT;
@@ -73,6 +83,9 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
 
   return (
     <View style={styles.container} testID="workout-rating-screen">
+      {/* "← Back" text-only back button (legacy parity — the chevron-
+          icon variant V2 shipped before this phase didn't match the
+          rest of the legacy back-button language). */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={props.onBack}
@@ -80,8 +93,7 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
           accessibilityLabel="Back to active session"
           testID="workout-rating-back"
         >
-          <Ionicons name="chevron-back" size={24} color={Colors.text.primary} />
-          <Text style={styles.backLabel}>Back</Text>
+          <Text style={styles.backLabel}>← Back</Text>
         </TouchableOpacity>
       </View>
 
@@ -101,50 +113,40 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
           <Text style={styles.question}>How difficult was that?</Text>
 
           <View
-            style={styles.ratingRow}
+            style={styles.sliderContainer}
             onStartShouldSetResponder={() => {
               Keyboard.dismiss();
               return false;
             }}
           >
-            {Array.from({ length: MAX_RATING }, (_, i) => i + 1).map((n) => {
-              const selected = n === rating;
-              return (
-                <TouchableOpacity
-                  key={n}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setRating(n);
-                  }}
-                  style={[
-                    styles.ratingButton,
-                    selected && {
-                      backgroundColor: accent,
-                      borderColor: accent,
-                    },
-                  ]}
-                  testID={`workout-rating-${n}`}
-                  accessibilityLabel={`Rate ${n} out of ${MAX_RATING}`}
-                >
-                  <Text
-                    style={[
-                      styles.ratingButtonText,
-                      selected && styles.ratingButtonTextSelected,
-                    ]}
-                  >
-                    {n}
+            <SemiCircleSlider
+              minValue={MIN_RATING}
+              maxValue={MAX_RATING}
+              value={rating}
+              onValueChange={(value) => {
+                Keyboard.dismiss();
+                setRating(value);
+              }}
+              activeColor={accent}
+              renderLabel={(val) => (
+                <View style={styles.ratingDisplay}>
+                  <Text style={[styles.ratingValue, { color: accent }]}>
+                    {val}
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
+                  <Text style={styles.ratingMax}>/ {MAX_RATING}</Text>
+                </View>
+              )}
+            />
           </View>
 
-          <Text
-            style={[styles.difficultyMessage, { color: accent }]}
-            testID="workout-rating-message"
-          >
-            {message}
-          </Text>
+          <View style={styles.difficultyContainer}>
+            <Text
+              style={[styles.difficultyMessage, { color: accent }]}
+              testID="workout-rating-message"
+            >
+              {message}
+            </Text>
+          </View>
 
           <View style={styles.notesContainer}>
             <Text style={styles.notesLabel}>Workout Notes (Optional)</Text>
@@ -193,14 +195,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   backButton: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingVertical: Spacing.xs,
-    gap: Spacing.xs,
   },
   backLabel: {
     ...Typography.body1,
-    color: Colors.text.primary,
+    color: Colors.text.secondary,
   },
   content: {
     width: "100%",
@@ -226,30 +225,38 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: Spacing.lg,
   },
-  ratingRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-  },
-  ratingButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.surface.border,
-    backgroundColor: Colors.surface.secondary,
+  sliderContainer: {
+    width: "100%",
     alignItems: "center",
-    justifyContent: "center",
+    marginVertical: Spacing.lg,
   },
-  ratingButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
-    fontWeight: "600",
+  ratingDisplay: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    overflow: "visible",
+    paddingVertical: 4,
   },
-  ratingButtonTextSelected: {
-    color: Colors.text.primary,
+  ratingValue: {
+    ...Typography.h1,
+    fontSize: 48,
+    fontWeight: "700",
+    includeFontPadding: false,
+    textAlignVertical: "center",
+    lineHeight: 56,
+    overflow: "visible",
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  ratingMax: {
+    ...Typography.h3,
+    color: Colors.text.secondary,
+    marginLeft: Spacing.xs,
+  },
+  difficultyContainer: {
+    // Negative top margin pulls the difficulty caption tight against
+    // the slider's label overlay (legacy parity — line 206 of
+    // WorkoutRatingScreen).
+    marginTop: -20,
   },
   difficultyMessage: {
     ...Typography.h3,
