@@ -115,24 +115,6 @@ export function resolveSubstituteMuscleLabels(
 }
 
 /**
- * Source-exercise UUID for the substitute picker — passed as
- * `currentExerciseId` to disable that row in the list so the user
- * can't no-op-swap to the same exercise (legacy parity).
- *
- * Returns null for non-substitute modes or when the session no longer
- * contains the source row (the picker simply doesn't disable any row
- * in that case).
- */
-export function resolveSubstituteSourceExerciseId(
-  mode: ActiveSessionPickerMode,
-  exercises: readonly { id: string; exerciseId: string }[],
-): string | null {
-  if (mode?.kind !== "substitute") return null;
-  const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
-  return oldRow?.exerciseId ?? null;
-}
-
-/**
  * - Empty `rows` → no-op (caller resets pickerMode).
  * - `substitute` mode → resolve the first row, fire
  *   `substituteExerciseCommand`, call `onAfter`.

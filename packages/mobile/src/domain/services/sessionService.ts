@@ -304,22 +304,33 @@ export function markLoggedSetsCompleted(
 }
 
 /**
- * Substitute an exercise mid-session. Old row stays in place with
- * `isSubstituted: true` (sets preserved per Story-004 AC); new row is
- * inserted at `oldSortOrder + 1` and downstream rows shift by +1.
+ * Substitute an exercise mid-session, in place.
  *
- * The new row is seeded with the SAME number of empty sets the old
- * row had, mirroring legacy `useActiveWorkout.swapExercise` (lines
- * 967-972 / 1016-1021):
+ * Mirrors legacy `useActiveWorkout.swapExercise` (lines 928-992):
+ * the existing row keeps its `id` / `sortOrder` / `supersetGroup` /
+ * `notes`; only the exercise pointer + name swap. Sets are CLEARED
+ * to empties matching the original set count (legacy "Clear all set
+ * data when swapping" + "Preserve the number of sets based on
+ * targetSets"). No new row is inserted — the row count stays the
+ * same and downstream sortOrders are untouched.
  *
- *   const clearedSets = Array.from({ length: exercise.targetSets }, …);
+ * The previous behaviour kept the old row visible with
+ * `isSubstituted: true` and inserted the replacement next to it,
+ * which the user perceived on device as "the swap doesn't swap, it
+ * just adds the other one." This matches that bug report and the
+ * legacy implementation (which never had the lingering-row concept).
  *
- * Without this seeding the user has to re-add every set after a swap,
- * which is the regression the user flagged.
+ * Guard: if `newExercise.id` already lives on a different row in the
+ * session, the swap is a no-op (legacy lines 949-954). The pickers
+ * disable that row in the UI, but defending here keeps the invariant
+ * honest under cache-reread races.
  *
- * Per EXECUTION_PLAN § 3.4: mutate the in-memory model only — the
- * storage layer sees the full session via `cacheActiveSession`, never
- * partial sortOrder updates.
+ * `originalExerciseId` records the FIRST source across a chain of
+ * swaps (A→B→C → still records A) so the server payload can show the
+ * user's original plan vs. final attempt. `isSubstituted` stays false
+ * — the row is the active exercise now, not a stale placeholder. The
+ * flag is reserved for the API wire format and any future server
+ * hook that wants it.
  */
 export function substituteExercise(
   session: WorkoutSession,
@@ -330,39 +341,26 @@ export function substituteExercise(
   const oldRow = session.exercises.find((e) => e.id === oldSessionExerciseId);
   if (!oldRow) return session;
 
-  const oldSortOrder = oldRow.sortOrder;
-  const newRowId = `local-${idFactory()}`;
-  // Preserve the old row's set count — same number of empty,
-  // unchecked rows so the user lands on the new exercise with their
-  // expected log slots already laid out.
-  const seededSets: ExerciseSet[] = oldRow.sets.map((_, idx) =>
-    emptySet(newRowId, idx + 1, idFactory),
+  const duplicate = session.exercises.find(
+    (e) => e.id !== oldSessionExerciseId && e.exerciseId === newExercise.id,
   );
-  const newRow: SessionExercise = {
-    id: newRowId,
-    sessionId: session.id,
-    exerciseId: newExercise.id,
-    exerciseName: newExercise.name,
-    sortOrder: oldSortOrder + 1,
-    supersetGroup: oldRow.supersetGroup,
-    isSubstituted: false,
-    originalExerciseId: oldRow.exerciseId,
-    notes: null,
-    sets: seededSets,
-  };
+  if (duplicate) return session;
 
-  const exercises = session.exercises
-    .map((ex) => {
-      if (ex.id === oldSessionExerciseId) {
-        return { ...ex, isSubstituted: true };
-      }
-      if (ex.sortOrder > oldSortOrder) {
-        return { ...ex, sortOrder: ex.sortOrder + 1 };
-      }
-      return ex;
-    })
-    .concat(newRow)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const seededSets: ExerciseSet[] = oldRow.sets.map((_, idx) =>
+    emptySet(oldRow.id, idx + 1, idFactory),
+  );
+
+  const exercises = session.exercises.map((ex) => {
+    if (ex.id !== oldSessionExerciseId) return ex;
+    return {
+      ...ex,
+      exerciseId: newExercise.id,
+      exerciseName: newExercise.name,
+      originalExerciseId: ex.originalExerciseId ?? ex.exerciseId,
+      isSubstituted: false,
+      sets: seededSets,
+    };
+  });
 
   return { ...session, exercises };
 }
@@ -439,6 +437,18 @@ export function addExerciseToSession(
   idFactory: IdFactory,
   options: { supersetGroup?: number | null } = {},
 ): WorkoutSession {
+  // Legacy duplicate-guard (mirrors useActiveWorkout.swapExercise
+  // lines 949-954): silently no-op if the exercise already lives in
+  // the session as an active row. Picker UI also disables already-in-
+  // session rows; this is the belt-and-braces invariant for cache-
+  // reread races and any non-UI caller (tests, future imports).
+  // Substituted rows don't block — they're stale placeholders from
+  // pre-2026-05 sessions that may still surface from SQLite.
+  const dupe = session.exercises.find(
+    (ex) => !ex.isSubstituted && ex.exerciseId === exercise.id,
+  );
+  if (dupe) return session;
+
   const nextSortOrder = nextSortOrderFor(session.exercises);
   const sessionExerciseId = `local-${idFactory()}`;
   const sets: ExerciseSet[] = [];

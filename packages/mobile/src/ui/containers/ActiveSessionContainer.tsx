@@ -49,7 +49,6 @@ import {
   resolvePickerExercise,
   resolveSubstituteMuscleFilter,
   resolveSubstituteMuscleLabels,
-  resolveSubstituteSourceExerciseId,
   type ActiveSessionPickerMode,
   type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
@@ -340,15 +339,6 @@ export function ActiveSessionContainer() {
     [pickerMode, session, storage],
   );
 
-  // Source exercise UUID for the substitute picker — used to disable
-  // that row in the list so the user can't no-op-swap to itself
-  // (legacy SwapExercisePopover line 175).
-  const substituteSourceExerciseId = useMemo<string | null>(
-    () =>
-      resolveSubstituteSourceExerciseId(pickerMode, session?.exercises ?? []),
-    [pickerMode, session],
-  );
-
   const onOpenNotes = useCallback((sessionExerciseId: string) => {
     setNotesTarget({ kind: "exercise", sessionExerciseId });
   }, []);
@@ -517,31 +507,23 @@ export function ActiveSessionContainer() {
     );
   }, [userId, storage]);
 
-  // Existing-exercise ids are used by the AddExercisePopover (and
-  // AddExerciseToSupersetPopover) to disable "Add" for already-in-
-  // session entries. The SwapExercisePopover doesn't consume this —
-  // it derives its own `existingExerciseIds` from the source-exercise
-  // UUID alone (legacy parity: only the row being swapped out is
-  // disabled, not other in-session rows, so the user can pick a
-  // variant of an already-present exercise).
-  // For add-to-superset we narrow to peers ALREADY in the target
-  // group so the user can still add the same exercise that lives
-  // elsewhere in the session (e.g. a non-superset row of "Bench"
-  // doesn't block adding "Bench" into a superset).
+  // Existing-exercise ids gate every picker (Add, Add-to-Superset,
+  // Swap) — Brad's rule after the in-place swap fix landed: no
+  // duplicates anywhere in the active session. The picker disables
+  // these rows in the list so the user can't pick them; the
+  // duplicate-guard inside `addExerciseToSession` /
+  // `substituteExercise` defends the same invariant under cache-
+  // reread races.
+  // Substituted rows (legacy stale-row carryover from pre-2026-05
+  // sessions) are skipped — they no longer represent an active
+  // exercise and the user might legitimately want to re-add what
+  // they swapped away from.
   const existingExerciseIds = useMemo(() => {
     if (!session) return [];
-    if (pickerMode?.kind === "add-to-superset") {
-      return session.exercises
-        .filter(
-          (ex) =>
-            !ex.isSubstituted && ex.supersetGroup === pickerMode.supersetGroup,
-        )
-        .map((ex) => ex.exerciseId);
-    }
     return session.exercises
       .filter((ex) => !ex.isSubstituted)
       .map((ex) => ex.exerciseId);
-  }, [session, pickerMode]);
+  }, [session]);
 
   // Loading / error gates --------------------------------------------------
 
@@ -618,7 +600,7 @@ export function ActiveSessionContainer() {
         visible={pickerMode?.kind === "substitute"}
         onClose={onClosePicker}
         onSwap={onPickerAddExercises}
-        currentExerciseId={substituteSourceExerciseId}
+        existingExerciseIds={existingExerciseIds}
         filterByPrimaryMuscleGroups={substituteMuscleFilter}
         filterMuscleGroupLabels={substituteMuscleLabels}
       />

@@ -80,7 +80,7 @@ describe("substituteExerciseCommand", () => {
     nextId = 0;
   });
 
-  it("marks the old row substituted, inserts new at oldSortOrder+1, shifts downstream", () => {
+  it("replaces the row in place — row count + downstream sortOrders unchanged (post-2026-05 in-place swap)", () => {
     const session = seed();
     const oldId = session.exercises[0].id;
 
@@ -91,17 +91,47 @@ describe("substituteExerciseCommand", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.exercises).toHaveLength(3);
-    expect(result.value.exercises[0].id).toBe(oldId);
-    expect(result.value.exercises[0].isSubstituted).toBe(true);
-    expect(result.value.exercises[0].sets).toHaveLength(3); // sets preserved
-    expect(result.value.exercises[1].exerciseName).toBe("Incline Bench Press");
-    expect(result.value.exercises[1].originalExerciseId).toBe("ex-bench");
-    expect(result.value.exercises[2].sortOrder).toBe(2);
+    // No new row inserted; row count + downstream sortOrders untouched.
+    expect(result.value.exercises).toHaveLength(2);
+    expect(result.value.exercises[1].sortOrder).toBe(1);
+
+    // Source row mutated in place: same id, exercise pointer + name
+    // swapped, sets cleared, originalExerciseId stamped.
+    const swapped = result.value.exercises[0];
+    expect(swapped.id).toBe(oldId);
+    expect(swapped.sortOrder).toBe(0);
+    expect(swapped.exerciseId).toBe("ex-incline");
+    expect(swapped.exerciseName).toBe("Incline Bench Press");
+    expect(swapped.isSubstituted).toBe(false);
+    expect(swapped.originalExerciseId).toBe("ex-bench");
+    expect(swapped.sets).toHaveLength(3);
+    for (const set of swapped.sets) {
+      expect(set.weightKg).toBeNull();
+      expect(set.reps).toBeNull();
+    }
 
     // Persisted to storage.
     const reloaded = storage.getActiveSession("user-1");
-    expect(reloaded?.exercises).toHaveLength(3);
+    expect(reloaded?.exercises).toHaveLength(2);
+    expect(reloaded?.exercises[0].exerciseId).toBe("ex-incline");
+  });
+
+  it("is a no-op when the new exercise already lives in the session as a different row", () => {
+    // Source row 0 = ex-bench, row 1 = ex-row. Try to swap row 0 →
+    // ex-row. Should silently return the unchanged session.
+    const session = seed();
+    const oldId = session.exercises[0].id;
+    const result = substituteExerciseCommand(
+      { storage, generateId, userId: "user-1" },
+      {
+        oldSessionExerciseId: oldId,
+        newExercise: buildExercise({ id: "ex-row", name: "Barbell Row" }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.exercises[0].exerciseId).toBe("ex-bench");
+    expect(result.value.exercises).toHaveLength(2);
   });
 
   it("returns SESSION_NOT_FOUND when no session exists", () => {

@@ -9,7 +9,6 @@ import {
   resolvePickerExercise,
   resolveSubstituteMuscleFilter,
   resolveSubstituteMuscleLabels,
-  resolveSubstituteSourceExerciseId,
 } from "@/ui/containers/active-session-picker";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -79,7 +78,7 @@ describe("applyPickerSelection", () => {
     expect(onAfter).not.toHaveBeenCalled();
   });
 
-  it("substitute mode: resolves first row, fires substitute command, calls onAfter", () => {
+  it("substitute mode: resolves first row, fires substitute command in-place, calls onAfter", () => {
     const storage = new InMemoryStorageAdapter();
     seedSession(storage);
     const onAfter = jest.fn();
@@ -93,11 +92,14 @@ describe("applyPickerSelection", () => {
       onAfter,
     });
     const cached = storage.getActiveSession("user-1");
-    // Old row marked substituted, new row inserted.
-    expect(cached?.exercises[0].isSubstituted).toBe(true);
-    expect(cached?.exercises.some((ex) => ex.exerciseId === "ex-incline")).toBe(
-      true,
-    );
+    // In-place swap (post-2026-05): row count unchanged, source row's
+    // exerciseId mutated, originalExerciseId stamped, isSubstituted
+    // stays false.
+    expect(cached?.exercises).toHaveLength(1);
+    expect(cached?.exercises[0].id).toBe("se-1");
+    expect(cached?.exercises[0].exerciseId).toBe("ex-incline");
+    expect(cached?.exercises[0].isSubstituted).toBe(false);
+    expect(cached?.exercises[0].originalExerciseId).toBe("ex-bench");
     expect(onAfter).toHaveBeenCalledTimes(1);
   });
 
@@ -502,42 +504,5 @@ describe("resolveSubstituteMuscleLabels", () => {
         storage,
       ),
     ).toEqual(["Chest", "Triceps"]);
-  });
-});
-
-describe("resolveSubstituteSourceExerciseId", () => {
-  it("returns null when mode is null", () => {
-    expect(resolveSubstituteSourceExerciseId(null, [])).toBeNull();
-  });
-
-  it("returns null for non-substitute modes", () => {
-    expect(resolveSubstituteSourceExerciseId({ kind: "add" }, [])).toBeNull();
-    expect(
-      resolveSubstituteSourceExerciseId(
-        { kind: "add-to-superset", supersetGroup: 1 },
-        [],
-      ),
-    ).toBeNull();
-    expect(
-      resolveSubstituteSourceExerciseId({ kind: "create-superset" }, []),
-    ).toBeNull();
-  });
-
-  it("returns null when the source row isn't in the session anymore", () => {
-    expect(
-      resolveSubstituteSourceExerciseId(
-        { kind: "substitute", oldSessionExerciseId: "missing" },
-        [{ id: "se-1", exerciseId: "ex-bench" }],
-      ),
-    ).toBeNull();
-  });
-
-  it("returns the source row's exerciseId when present", () => {
-    expect(
-      resolveSubstituteSourceExerciseId(
-        { kind: "substitute", oldSessionExerciseId: "se-1" },
-        [{ id: "se-1", exerciseId: "ex-bench" }],
-      ),
-    ).toBe("ex-bench");
   });
 });

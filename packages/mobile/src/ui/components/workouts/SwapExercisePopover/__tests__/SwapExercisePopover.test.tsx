@@ -257,12 +257,13 @@ describe("SwapExercisePopover", () => {
     );
   });
 
-  it("disables the source exercise (currentExerciseId) so the user can't no-op-swap to itself", async () => {
+  it("disables every exercise in `existingExerciseIds` (Brad's no-duplicates rule — covers the source row + all other in-session rows)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [
       buildExercise({ id: "ex-source", name: "Bench Press" }),
-      buildExercise({ id: "ex-other", name: "Row" }),
+      buildExercise({ id: "ex-already-in", name: "Row" }),
+      buildExercise({ id: "ex-free", name: "Pulldown" }),
     ]);
     const onSwap = jest.fn();
 
@@ -272,21 +273,22 @@ describe("SwapExercisePopover", () => {
           visible={true}
           onClose={jest.fn()}
           onSwap={onSwap}
-          currentExerciseId="ex-source"
+          // Container passes ALL non-substituted in-session exercise
+          // IDs (the source IS in the session, so it's covered).
+          existingExerciseIds={["ex-source", "ex-already-in"]}
         />
       </AdapterProvider>,
     );
-    // Tapping the source row should NOT toggle selection — the row is
-    // disabled, so the touchable is a no-op. Following Swap remains
-    // disabled-and-no-op too.
+    // Both disabled rows are no-ops on press.
     fireEvent.press(await findByTestId("exercise-row-ex-source"));
+    fireEvent.press(await findByTestId("exercise-row-ex-already-in"));
     fireEvent.press(await findByTestId("swap-picker-swap"));
     expect(onSwap).not.toHaveBeenCalled();
-    // The other (non-source) row stays interactive.
-    fireEvent.press(await findByTestId("exercise-row-ex-other"));
+    // The free row is interactive.
+    fireEvent.press(await findByTestId("exercise-row-ex-free"));
     fireEvent.press(await findByTestId("swap-picker-swap"));
     expect(onSwap).toHaveBeenCalledTimes(1);
-    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-other");
+    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-free");
   });
 
   it("renders the muscle-filter chip when filterMuscleGroupLabels is non-empty (Story-004 visible-filter chrome)", async () => {

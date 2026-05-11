@@ -69,11 +69,13 @@ export type SwapExercisePopoverProps = {
    */
   readonly onSwap: (rows: any[]) => void;
   /**
-   * Exercise UUID being swapped out. Disables that row in the list so
-   * the user can't no-op-swap the source exercise to itself (legacy
-   * SwapExercisePopover line 175).
+   * Exercise UUIDs already in the active session — disabled in the
+   * list so the user can't pick a duplicate (legacy parity:
+   * `useActiveWorkout.swapExercise` lines 949-954). The source row
+   * being swapped out is part of this set, which also covers the
+   * "can't no-op swap to itself" case.
    */
-  readonly currentExerciseId?: string | null;
+  readonly existingExerciseIds?: readonly string[];
   /**
    * Primary muscle-group UUIDs of the source exercise. Narrows the
    * picker to entries whose `primaryMuscleGroups` overlap with at
@@ -95,7 +97,7 @@ function SwapExercisePopoverContainer({
   visible,
   onClose,
   onSwap,
-  currentExerciseId = null,
+  existingExerciseIds = [],
   filterByPrimaryMuscleGroups,
   filterMuscleGroupLabels,
 }: SwapExercisePopoverProps) {
@@ -210,14 +212,6 @@ function SwapExercisePopoverContainer({
     setSelectedExerciseId(null);
   };
 
-  // Disable only the source exercise (legacy parity). The container
-  // intentionally returns [] for substitute-flow `existingExerciseIds`
-  // so the user can pick variants of in-session exercises.
-  const existingExerciseIds = useMemo(
-    () => (currentExerciseId ? [currentExerciseId] : []),
-    [currentExerciseId],
-  );
-
   return (
     <SwapExercisePopoverPresenter
       visible={visible}
@@ -234,7 +228,7 @@ function SwapExercisePopoverContainer({
       currentView={currentView}
       selectedExercise={selectedExercise}
       isLoading={showLoader}
-      existingExerciseIds={existingExerciseIds}
+      existingExerciseIds={[...existingExerciseIds]}
       filterMuscleGroupLabels={filterMuscleGroupLabels ?? []}
     />
   );

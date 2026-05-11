@@ -445,19 +445,25 @@ describe("ActiveSessionContainer", () => {
     // back-only row is filtered out by the muscle-group narrow.
     expect(queryByTestId("exercise-row-ex-row")).toBeNull();
     // Source row stays in the list but is disabled — pressing it is
-    // a no-op.
+    // a no-op (Brad's no-duplicates rule: source IS in
+    // existingExerciseIds, covered alongside every other in-session
+    // row).
     expect(await findByTestId("exercise-row-ex-bench")).toBeTruthy();
 
     // Pick a valid replacement and fire Swap → substituteExerciseCommand
-    // marks the source row substituted and inserts the new row.
+    // mutates the source row in place: same id + sortOrder, new
+    // exerciseId, sets cleared, originalExerciseId stamped. No new
+    // row inserted.
     fireEvent.press(await findByTestId("exercise-row-ex-incline"));
     fireEvent.press(await findByTestId("swap-picker-swap"));
 
     const cached = storage.getActiveSession("user-1");
-    expect(cached?.exercises[0].isSubstituted).toBe(true);
-    expect(cached?.exercises.some((ex) => ex.exerciseId === "ex-incline")).toBe(
-      true,
-    );
+    expect(cached?.exercises).toHaveLength(1);
+    const swapped = cached?.exercises[0];
+    expect(swapped?.id).toBe("se-1");
+    expect(swapped?.exerciseId).toBe("ex-incline");
+    expect(swapped?.isSubstituted).toBe(false);
+    expect(swapped?.originalExerciseId).toBe("ex-bench");
   });
 
   // The Mark-Complete UI was removed in 1A.1 (legacy port: no per-set
