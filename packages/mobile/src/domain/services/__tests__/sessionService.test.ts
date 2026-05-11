@@ -428,6 +428,35 @@ describe("substituteExercise", () => {
     expect(bToC.exercises[0].originalExerciseId).toBe("ex-bench");
   });
 
+  it("does NOT block swapping to an exerciseId that only matches a stale substituted row (matches addExerciseToSession's guard)", () => {
+    // Bugbot regression: substituteExercise's duplicate guard used to
+    // catch substituted rows too, which made the swap silently no-op
+    // when the picker UI (which filters substituted rows out of
+    // `existingExerciseIds`) showed the target as available. Now both
+    // guards skip substituted rows the same way.
+    const session = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
+    // Mark row 1 (ex-row) as substituted to simulate pre-2026-05
+    // SQLite carryover. Try to swap row 0 → ex-row. Should succeed.
+    const withStale: WorkoutSession = {
+      ...session,
+      exercises: session.exercises.map((ex, i) =>
+        i === 1 ? { ...ex, isSubstituted: true } : ex,
+      ),
+    };
+    const oldId = withStale.exercises[0].id;
+    const updated = substituteExercise(
+      withStale,
+      oldId,
+      makeExercise({ id: "ex-row" }),
+      idFactory(900),
+    );
+    // Source row mutated in place to ex-row; the stale substituted row
+    // sits untouched alongside it.
+    expect(updated.exercises[0].exerciseId).toBe("ex-row");
+    expect(updated.exercises[0].id).toBe(oldId);
+    expect(updated.exercises[1].isSubstituted).toBe(true);
+  });
+
   it("is a no-op when the new exercise is already in the session as a different row (legacy duplicate-guard)", () => {
     // Source row 0 = ex-bench, row 1 = ex-row. Try to swap row 0 → ex-row.
     // Should silently return the unchanged session (legacy lines

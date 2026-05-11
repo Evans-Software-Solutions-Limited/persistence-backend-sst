@@ -193,11 +193,23 @@ function SwapExercisePopoverContainer({
     router.push("/coming-soon?feature=exercise-creator" as never);
   }, [router]);
 
-  const handleClose = () => {
+  // Reset every piece of internal state — search, selection, and the
+  // details drill-in — so the next time the popover opens it starts
+  // fresh. The component stays mounted when `visible` flips to false
+  // (the parent just sets pickerMode=null), so without this reset the
+  // user's previous search query / details view would persist into
+  // the next open. Called from BOTH handleClose AND handleSwapClick
+  // for parity (the swap-success path used to only clear selection,
+  // leaving stale chrome behind).
+  const resetInternalState = () => {
     setSearchQuery("");
     setSelectedExerciseId(null);
     setCurrentView("list");
     setSelectedExercise(null);
+  };
+
+  const handleClose = () => {
+    resetInternalState();
     onClose();
   };
 
@@ -209,7 +221,7 @@ function SwapExercisePopoverContainer({
     // dispatcher (which iterates `rows`) handles this uniformly with
     // every other picker mode.
     onSwap([exercise]);
-    setSelectedExerciseId(null);
+    resetInternalState();
   };
 
   return (

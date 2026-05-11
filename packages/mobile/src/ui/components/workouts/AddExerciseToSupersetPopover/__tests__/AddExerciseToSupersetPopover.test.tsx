@@ -199,6 +199,41 @@ describe("AddExerciseToSupersetPopover", () => {
     expect(onAddExercise).not.toHaveBeenCalled();
   });
 
+  it("resets search + selection after a successful Add (next open starts fresh — bugbot regression)", async () => {
+    // The component stays mounted when `visible` flips to false (parent
+    // sets pickerMode=null), so without resetting on the add-success
+    // path the user's previous search query persists into the next
+    // open and silently filters out exercises they expect to see.
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "ex-1", name: "Bench Press" }),
+      buildExercise({ id: "ex-2", name: "Row" }),
+    ]);
+    const Wrapper = ({ visible }: { visible: boolean }) => (
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <AddExerciseToSupersetPopover
+          visible={visible}
+          onClose={jest.fn()}
+          onAddExercise={jest.fn()}
+        />
+      </AdapterProvider>
+    );
+    const { findByTestId, rerender } = renderWithTheme(
+      <Wrapper visible={true} />,
+    );
+    const search = await findByTestId("superset-picker-search");
+    fireEvent.changeText(search, "bench");
+    fireEvent.press(await findByTestId("exercise-row-ex-1"));
+    fireEvent.press(await findByTestId("superset-picker-add"));
+
+    rerender(<Wrapper visible={false} />);
+    rerender(<Wrapper visible={true} />);
+
+    const searchAfter = await findByTestId("superset-picker-search");
+    expect(searchAfter.props.value).toBe("");
+  });
+
   it("close button calls onClose and resets internal selection (next open starts empty)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();

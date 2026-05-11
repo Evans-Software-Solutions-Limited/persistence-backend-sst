@@ -201,6 +201,44 @@ describe("SwapExercisePopover", () => {
     expect(onSwap).not.toHaveBeenCalled();
   });
 
+  it("resets search + selection after a successful Swap (next open starts fresh — bugbot regression)", async () => {
+    // The component stays mounted when `visible` flips to false (parent
+    // sets pickerMode=null), so without resetting on the swap-success
+    // path the user's previous search query persists into the next
+    // open and silently filters out exercises they expect to see.
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "ex-1", name: "Bench Press" }),
+      buildExercise({ id: "ex-2", name: "Row" }),
+    ]);
+    const Wrapper = ({ visible }: { visible: boolean }) => (
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={visible}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+        />
+      </AdapterProvider>
+    );
+    const { findByTestId, rerender } = renderWithTheme(
+      <Wrapper visible={true} />,
+    );
+    // Type a search query, pick a row, fire Swap.
+    const search = await findByTestId("swap-picker-search");
+    fireEvent.changeText(search, "bench");
+    fireEvent.press(await findByTestId("exercise-row-ex-1"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+
+    // Parent flips visibility off, then back on (a new pickerMode).
+    rerender(<Wrapper visible={false} />);
+    rerender(<Wrapper visible={true} />);
+
+    // Search field should be empty on re-open, NOT carrying "bench".
+    const searchAfter = await findByTestId("swap-picker-search");
+    expect(searchAfter.props.value).toBe("");
+  });
+
   it("close button calls onClose and resets internal selection", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();

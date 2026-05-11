@@ -140,11 +140,22 @@ function AddExerciseToSupersetPopoverContainer({
     setSelectedExercise(null);
   };
 
-  const handleClose = () => {
+  // Reset every piece of internal state — search, selection, and the
+  // details drill-in — so the next time the popover opens it starts
+  // fresh. The component stays mounted when `visible` flips to false
+  // (the parent just sets pickerMode=null), so without this reset the
+  // user's previous search query / details view would persist into
+  // the next open. Called from BOTH handleClose AND handleAddClick
+  // for parity.
+  const resetInternalState = () => {
     setSearchQuery("");
     setSelectedExerciseId(null);
     setCurrentView("list");
     setSelectedExercise(null);
+  };
+
+  const handleClose = () => {
+    resetInternalState();
     onClose();
   };
 
@@ -157,7 +168,7 @@ function AddExerciseToSupersetPopoverContainer({
     // the multi-select Add flow. Single-element loop = single
     // addExerciseCommand call with the mode's supersetGroup.
     onAddExercise([exercise]);
-    setSelectedExerciseId(null);
+    resetInternalState();
   };
 
   return (

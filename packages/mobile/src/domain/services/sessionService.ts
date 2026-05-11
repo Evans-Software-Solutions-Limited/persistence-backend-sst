@@ -341,8 +341,17 @@ export function substituteExercise(
   const oldRow = session.exercises.find((e) => e.id === oldSessionExerciseId);
   if (!oldRow) return session;
 
+  // Same shape as the addExerciseToSession guard: substituted rows are
+  // skipped. They're stale carryover from pre-2026-05 sessions where
+  // the old "lingering substituted row" semantic was in effect, and
+  // the picker UI's `existingExerciseIds` already filters them out —
+  // catching them here would make a swap silently no-op when the user
+  // can clearly see the target row in the list.
   const duplicate = session.exercises.find(
-    (e) => e.id !== oldSessionExerciseId && e.exerciseId === newExercise.id,
+    (e) =>
+      e.id !== oldSessionExerciseId &&
+      !e.isSubstituted &&
+      e.exerciseId === newExercise.id,
   );
   if (duplicate) return session;
 
