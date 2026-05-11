@@ -481,8 +481,28 @@ export function ActiveSessionContainer() {
     // Matches legacy ActiveWorkoutModal flow:
     //   handleCompleteWorkout → setCurrentView('rating')
     //   handleRatingSubmit    → recordWorkout → setCurrentView('summary')
+    //
+    // Legacy parity gate: `ActiveWorkoutModal.handleCompleteWorkout`
+    // (persistence-mobile lines 535-557) refuses to advance to the
+    // rating screen if no set has both weight and reps logged. Same
+    // "set has data → set is logged" predicate the bulk-record
+    // payload uses to filter non-empty sets at finalize time. Without
+    // this gate the user can tap Complete on an empty session, Submit
+    // on rating, and record a 0-set workout to the server.
+    if (!session) return;
+    const hasLoggedSet = session.exercises.some((ex) =>
+      ex.sets.some((s) => s.weightKg != null && s.reps != null),
+    );
+    if (!hasLoggedSet) {
+      Alert.alert(
+        "Add a set first",
+        "Log weight + reps on at least one set before completing the workout.",
+        [{ text: "OK", style: "default" }],
+      );
+      return;
+    }
     router.push("/(app)/session/rate" as never);
-  }, []);
+  }, [session]);
 
   const onDiscard = useCallback(() => {
     // Native Alert.alert matching legacy `ActiveWorkoutModal.handleDiscardWorkout`

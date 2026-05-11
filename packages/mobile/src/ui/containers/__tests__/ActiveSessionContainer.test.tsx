@@ -279,7 +279,7 @@ describe("ActiveSessionContainer", () => {
     expect(mockRouterDismissAll).toHaveBeenCalled();
   });
 
-  it("Finish footer button routes to /session/rate (rating screen comes before summary, legacy parity)", async () => {
+  it("Finish footer button routes to /session/rate when at least one set has weight + reps logged", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -291,7 +291,35 @@ describe("ActiveSessionContainer", () => {
       startedAt: "2026-05-05T10:00:00.000Z",
       completedAt: null,
       notes: null,
-      exercises: [],
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          // One logged set with both weight + reps satisfies the
+          // "has-data" predicate — the gate passes and routes through.
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: 80,
+              reps: 8,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
     });
 
     const { findByTestId } = renderWithTheme(
@@ -300,6 +328,69 @@ describe("ActiveSessionContainer", () => {
 
     fireEvent.press(await findByTestId("active-session-finish"));
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session/rate");
+  });
+
+  it("Finish footer is gated when no set has weight + reps logged: shows Alert + does NOT route", async () => {
+    // Mirrors legacy `ActiveWorkoutModal.handleCompleteWorkout`
+    // (persistence-mobile lines 535-557): "Please complete at least
+    // one exercise with sets before finishing the workout." V2 had
+    // been blindly routing to /rate, allowing a 0-set workout to
+    // reach the server flush. Bug Brad caught on device review.
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          // Empty-set rows seeded by addExerciseToSession (weight +
+          // reps both null) do NOT count as logged data.
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("active-session-finish"));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Add a set first",
+      "Log weight + reps on at least one set before completing the workout.",
+      expect.any(Array),
+    );
+    expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
   it("logs a set on Add set tap (in-cache write)", async () => {
