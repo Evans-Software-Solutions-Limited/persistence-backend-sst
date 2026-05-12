@@ -1,0 +1,33 @@
+name: Claude PR Review
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  review:
+    if: >-
+      (github.event.issue.pull_request != null || github.event.pull_request != null) &&
+      (
+        contains(github.event.comment.body, '@inspector-brad') ||
+        contains(github.event.comment.body, '/inspector-brad')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
+          fetch-depth: 0
+
+      - uses: YOUR_GH_USERNAME/inspector-brad@v1
+        with:
+          oauth-token:  ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
