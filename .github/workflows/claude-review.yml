@@ -41,6 +41,7 @@ jobs:
         with:
           oauth-token:  ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-id:   ${{ github.event.comment.id }}
           # Optional overrides:
           # model: claude-opus-4-7
           # effort: high
