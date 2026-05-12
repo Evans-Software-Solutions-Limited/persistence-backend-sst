@@ -168,9 +168,13 @@ describe("PersonalRecordsRepository", () => {
           .fn()
           // 1st select: load completed sets joined through session_exercises + workout_sessions
           .mockReturnValueOnce(makeDoubleJoinSelectChain(fx.completedSets))
-          // 2nd select: canonical PRs for the touched exercises
+          // 2nd select: existing personal_records for prior-value capture
+          // (first-occurrence vs improvement partition). Empty → all
+          // candidates are first occurrences for this test fixture.
+          .mockReturnValueOnce(makeWhereSelectChain([]))
+          // 3rd select: canonical PRs for the touched exercises
           .mockReturnValueOnce(makeWhereSelectChain(fx.canonicalPRs))
-          // 3rd select: subquery for userSessionExerciseIdsScope (used as a
+          // 4th select: subquery for userSessionExerciseIdsScope (used as a
           // value inside inArray; Drizzle never awaits it host-side, but
           // the .from(...).innerJoin(...).where(...) chain is invoked).
           .mockReturnValueOnce(makeSingleJoinSubquery()),
@@ -260,6 +264,9 @@ describe("PersonalRecordsRepository", () => {
               },
             ]),
           )
+          // No existingPRs SELECT here — bestPerKey ends up empty
+          // because every candidate was filtered out, so the pre-
+          // SELECT for prior values is skipped entirely.
           .mockReturnValueOnce(makeWhereSelectChain([]))
           .mockReturnValueOnce(makeSingleJoinSubquery()),
         insert: vi.fn().mockReturnValue(makeUpsertChain()),
@@ -270,7 +277,7 @@ describe("PersonalRecordsRepository", () => {
       const { PersonalRecordsRepository } =
         await import("../personalRecordsRepository");
       const repo = new PersonalRecordsRepository();
-      await repo.recordPRsForSession("u1", "session-bw");
+      const result = await repo.recordPRsForSession("u1", "session-bw");
 
       // No upsert — every candidate skipped via the `continue` branches.
       expect(mockDb.insert).not.toHaveBeenCalled();
@@ -278,6 +285,187 @@ describe("PersonalRecordsRepository", () => {
       // even though no set qualified for the upsert) — that's correct
       // behaviour: re-syncing flags is cheap and idempotent.
       expect(mockDb.update).toHaveBeenCalled();
+      // No PRs surfaced — every candidate was filtered before
+      // partition.
+      expect(result).toEqual([]);
+    });
+
+    it("returns an empty list (no exerciseName lookup) when every candidate is first-occurrence — Brad's first-workout rule", async () => {
+      // One valid set, no prior `personal_records` rows. All 3
+      // candidate types (1rm / max_weight / max_volume) hit the
+      // first-occurrence branch: they INSERT into personal_records
+      // (so future sessions have a baseline) but DO NOT surface in
+      // the returned PR list. Result: `detected` is empty, the
+      // exerciseName lookup short-circuits, demote/promote still
+      // re-sync flags.
+      const completedSets = [
+        {
+          setId: "set-first-ever",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 8,
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          // No prior records — empty list. Triggers the first-occurrence
+          // branch on every candidate.
+          .mockReturnValueOnce(makeWhereSelectChain([]))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([{ setId: "set-first-ever" }]),
+          )
+          .mockReturnValueOnce(makeSingleJoinSubquery()),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.recordPRsForSession("u1", "session-first");
+
+      expect(result).toEqual([]);
+      // 3 upserts fired (one per candidate type) — the personal_records
+      // table is still populated for future sessions to compare against.
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+      // The exerciseName lookup is skipped — `select` only fires for
+      // the four steps above (completedSets, existingPRs, canonicalPRs,
+      // userSessionExerciseIdsScope). No 5th call.
+      expect(mockDb.select).toHaveBeenCalledTimes(4);
+    });
+
+    it("returns PRs with previousValue for each computed record type that beat its prior (1rm + max_weight + max_volume)", async () => {
+      // One set that beats prior values on ALL three record types.
+      // Prior bench PRs: 1rm=110, max_weight=90, max_volume=400.
+      // New set: 100 kg × 8 reps → 1rm ≈ 126.67, max_weight=100,
+      // max_volume=800. All three improve → all three surface.
+      const completedSets = [
+        {
+          setId: "set-improvement",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 8,
+        },
+      ];
+      const priorRecords = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "1rm",
+          value: "110.00",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "90.00",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_volume",
+          value: "400.00",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain(priorRecords))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([{ setId: "set-improvement" }]),
+          )
+          .mockReturnValueOnce(makeSingleJoinSubquery())
+          // 5th select: exerciseName denormalisation lookup
+          .mockReturnValueOnce(
+            makeWhereSelectChain([
+              { id: "exercise-bench", name: "Bench Press" },
+            ]),
+          ),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.recordPRsForSession("u1", "session-improve");
+
+      expect(result).toHaveLength(3);
+      // 1rm: Epley = 100 × (1 + 8/30) = 126.666...
+      const rm = result.find((r) => r.recordType === "1rm");
+      expect(rm?.previousValue).toBe(110);
+      expect(rm?.newValue).toBeCloseTo(126.667, 2);
+      expect(rm?.exerciseName).toBe("Bench Press");
+      // max_weight: 100 kg
+      const mw = result.find((r) => r.recordType === "max_weight");
+      expect(mw?.previousValue).toBe(90);
+      expect(mw?.newValue).toBe(100);
+      expect(mw?.exerciseName).toBe("Bench Press");
+      // max_volume: 100 × 8 = 800
+      const mv = result.find((r) => r.recordType === "max_volume");
+      expect(mv?.previousValue).toBe(400);
+      expect(mv?.newValue).toBe(800);
+      expect(mv?.exerciseName).toBe("Bench Press");
+    });
+
+    it("skips an individual record-type PR when the prior value isn't beaten (per-type partition, not all-or-nothing)", async () => {
+      // 100 kg × 8 reps. Prior 1rm=200 (way above Epley 126.67 → not
+      // beaten → no PR), prior max_weight=50 (beaten by 100 → PR),
+      // prior max_volume=900 (above 800 → not beaten → no PR).
+      // Exactly ONE PR surfaces: max_weight.
+      const completedSets = [
+        {
+          setId: "set-mixed",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 8,
+        },
+      ];
+      const priorRecords = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "1rm",
+          value: "200.00",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "50.00",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_volume",
+          value: "900.00",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain(priorRecords))
+          .mockReturnValueOnce(makeWhereSelectChain([{ setId: "set-mixed" }]))
+          .mockReturnValueOnce(makeSingleJoinSubquery())
+          .mockReturnValueOnce(
+            makeWhereSelectChain([
+              { id: "exercise-bench", name: "Bench Press" },
+            ]),
+          ),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.recordPRsForSession("u1", "session-mixed");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.recordType).toBe("max_weight");
+      expect(result[0]?.previousValue).toBe(50);
+      expect(result[0]?.newValue).toBe(100);
     });
   });
 });
