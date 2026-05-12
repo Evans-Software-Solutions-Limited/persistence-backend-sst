@@ -291,9 +291,28 @@ export class PersonalRecordsRepository {
     // list as we go. The upsert is race-safe via the unique index +
     // value-comparison WHERE; the response inclusion logic is purely
     // in-memory and uses `priorByKey` captured at step 3.
+    //
+    // **Precision discipline** (Inspector Brad finding): the DB stores
+    // the value at 2-decimal precision (`numeric(10,2)`), the prior
+    // is parsed from that 2dp string, but the raw candidate is a full
+    // JS float. Without normalising, a JS float like 133.33333... and
+    // a stored prior of 133.33 would disagree:
+    //   - JS:  133.333... > 133.33 → true   → phantom PR pushed
+    //   - PG:  excluded.value (133.33) < personal_records.value
+    //          (133.33) → false → upsert no-ops
+    // The Summary screen would then show a confusing "133.33 → 133.33"
+    // PR card and the response setId wouldn't match what
+    // `personal_records.setId` actually holds. Hits any reps where
+    // reps/30 has a fractional .333… family (1, 4, 7, 10, 13, …) and
+    // any float-multiplication artefact in max_volume (e.g. 99.99 ×
+    // 10 = 999.9000000000001). Fix: round-trip through the same
+    // `toFixed(2) → parseFloat` pipeline the DB sees, so JS and PG
+    // agree byte-for-byte on whether a candidate is a real improvement.
     const detected: Array<Omit<DetectedPersonalRecord, "exerciseName">> = [];
     for (const [k, candidate] of bestPerKey) {
       const valueStr = candidate.value.toFixed(2);
+      const candidateValueAtStoredPrecision = parseFloat(valueStr);
+
       await db
         .insert(personalRecords)
         .values({
@@ -319,11 +338,14 @@ export class PersonalRecordsRepository {
         });
 
       const prior = priorByKey.get(k);
-      if (prior != null && candidate.value > prior) {
+      if (prior != null && candidateValueAtStoredPrecision > prior) {
         detected.push({
           exerciseId: candidate.exerciseId,
           recordType: candidate.recordType,
-          newValue: candidate.value,
+          // Use the rounded value for the response too so the mobile
+          // client renders the same number the DB actually persisted —
+          // no "PR! 133.33 → 133.33333..." mismatch.
+          newValue: candidateValueAtStoredPrecision,
           previousValue: prior,
           setId: candidate.setId,
         });

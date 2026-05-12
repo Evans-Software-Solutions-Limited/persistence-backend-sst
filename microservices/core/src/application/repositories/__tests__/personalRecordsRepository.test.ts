@@ -410,6 +410,130 @@ describe("PersonalRecordsRepository", () => {
       expect(mv?.exerciseName).toBe("Bench Press");
     });
 
+    it("does NOT surface a phantom PR when an identical workout re-runs (float-vs-2dp precision parity — Inspector Brad regression)", async () => {
+      // Exactly the bug Inspector Brad flagged on PR #61.
+      // Session 1 logged 100 kg × 10 reps → Epley 1RM = 100 × (1 +
+      // 10/30) = 133.33333333333334. The DB stored that as "133.33"
+      // (numeric(10,2)). Session 2 runs the same lift again.
+      //
+      // Pre-fix: the JS partition compared the full float
+      //   candidate.value (133.33333…) > prior parseFloat("133.33")
+      //   (133.33) → true → phantom PR pushed
+      // while the DB's `WHERE personal_records.value <
+      // excluded.value` saw 133.33 < 133.33 → false → no-op upsert.
+      // The Summary screen would show "PR! 133.33 → 133.33" for an
+      // identical workout, and the response's setId wouldn't match
+      // what `personal_records.setId` actually holds.
+      //
+      // Fix: round-trip `candidate.value` through `toFixed(2) →
+      // parseFloat` so the JS comparison uses the same precision the
+      // DB stores — both sides see 133.33 == 133.33 → no PR
+      // surfaces. Also hits reps = 1/4/7/10/13/16/19/22/25/28 (the
+      // .333… reps/30 family) and any max_volume value with float-
+      // multiplication artefacts (e.g. 99.99 × 10 = 999.9000000000001).
+      const completedSets = [
+        {
+          setId: "set-session-2",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 10,
+        },
+      ];
+      // Prior `personal_records` row from session 1 — stored at 2dp.
+      const priorRecords = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "1rm",
+          value: "133.33",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "100.00",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_volume",
+          value: "1000.00",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain(priorRecords))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([{ setId: "set-session-1" }]),
+          )
+          .mockReturnValueOnce(makeSingleJoinSubquery()),
+        // No 5th select: detected is empty → exerciseName lookup
+        // short-circuits.
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.recordPRsForSession("u1", "session-2");
+
+      // No phantom PRs.
+      expect(result).toEqual([]);
+      // No exerciseName lookup — the early-return saved a round trip.
+      expect(mockDb.select).toHaveBeenCalledTimes(4);
+    });
+
+    it("rounds newValue to 2dp in the response so the rendered number matches what the DB persisted", async () => {
+      // 100 kg × 11 reps = 136.66666… → "136.67" stored. Prior was
+      // 130.00 (genuine improvement). The response's newValue MUST be
+      // the 2dp-rounded 136.67, not the raw float 136.66666…, so
+      // mobile renders the same number the server actually has.
+      const completedSets = [
+        {
+          setId: "set-real-pr",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 11,
+        },
+      ];
+      const priorRecords = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "1rm",
+          value: "130.00",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain(priorRecords))
+          .mockReturnValueOnce(makeWhereSelectChain([{ setId: "set-real-pr" }]))
+          .mockReturnValueOnce(makeSingleJoinSubquery())
+          .mockReturnValueOnce(
+            makeWhereSelectChain([
+              { id: "exercise-bench", name: "Bench Press" },
+            ]),
+          ),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.recordPRsForSession("u1", "session-real");
+
+      expect(result).toHaveLength(1);
+      const rm = result[0];
+      expect(rm?.recordType).toBe("1rm");
+      expect(rm?.previousValue).toBe(130);
+      // Exactly 136.67, NOT 136.66666666666666.
+      expect(rm?.newValue).toBe(136.67);
+    });
+
     it("skips an individual record-type PR when the prior value isn't beaten (per-type partition, not all-or-nothing)", async () => {
       // 100 kg × 8 reps. Prior 1rm=200 (way above Epley 126.67 → not
       // beaten → no PR), prior max_weight=50 (beaten by 100 → PR),
