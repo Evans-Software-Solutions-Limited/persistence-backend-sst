@@ -64,6 +64,11 @@ export const recordTypeEnum = pgEnum("record_type", [
   "10rm",
   "max_reps",
   "max_weight",
+  // Highest weight × reps in a single set, per exercise. Surfaced
+  // alongside `1rm` + `max_weight` on the session-summary screen
+  // (PR detection broadened in supabase/migrations/
+  // 20260512090238_m3_record_type_max_volume.sql).
+  "max_volume",
   "best_time",
   "longest_distance",
 ]);

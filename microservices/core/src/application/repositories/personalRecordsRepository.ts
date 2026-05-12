@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   exerciseSets,
+  exercises,
   personalRecords,
   recordTypeEnum,
   sessionExercises,
@@ -31,6 +32,39 @@ export type DbOrTx = Omit<ReturnType<typeof getDb>, "$client" | "transaction">;
  * internals to construct enum literals.
  */
 export type RecordType = (typeof recordTypeEnum.enumValues)[number];
+
+/**
+ * Personal-record entry surfaced to the client after a bulk `recordSession`
+ * lands. Only includes PRs the user actually beat — first-occurrence
+ * "best so far" rows are still upserted to `personal_records` (so future
+ * sessions have a baseline) but are NOT surfaced here, mirroring Brad's
+ * "no PRs come back if it's the first workout logged" rule.
+ *
+ * `exerciseName` is denormalised at response-build time so the mobile
+ * Summary screen can render a PR card without a follow-up exercises
+ * lookup. Matches legacy `RecordWorkoutResponse.personal_records[].exercise_name`.
+ */
+export interface DetectedPersonalRecord {
+  exerciseId: string;
+  exerciseName: string;
+  recordType: RecordType;
+  newValue: number;
+  previousValue: number;
+  setId: string;
+}
+
+/**
+ * Record types V2 actively computes per session-complete.
+ *
+ * Legacy `record_type` enum carries eight values; M3 surfaces three on
+ * the Summary screen — Epley-derived 1RM, the heaviest single weight
+ * lifted regardless of reps, and the highest weight × reps in a single
+ * set. The other five enum values (`3rm` / `5rm` / `10rm` / `max_reps` /
+ * `best_time` / `longest_distance`) are reserved for future detection
+ * passes; M3 keeps the detection surface focused so users aren't
+ * overwhelmed with PR cards.
+ */
+const COMPUTED_RECORD_TYPES = ["1rm", "max_weight", "max_volume"] as const;
 
 export interface ListPersonalRecordsFilters {
   /** Restrict to PRs for a specific exercise. */
@@ -88,27 +122,44 @@ export class PersonalRecordsRepository {
   /**
    * Server-side personal-record detection on session-complete.
    *
-   * Loads every completed set in `sessionId` (joined through
+   * For every completed set in `sessionId` (joined through
    * session_exercises and workout_sessions to enforce userId scope),
-   * computes an Epley-derived 1RM (`weightKg × (1 + reps / 30)`) per
-   * set, and upserts into `personal_records` keyed by
-   * `(user_id, exercise_id, record_type)`. The Postgres unique index
-   * `personal_records_user_exercise_type_idx` (schema.ts:467) is what
-   * makes the upsert idempotent on replay; the conflict clause's
-   * WHERE filter only updates when the candidate value strictly beats
-   * the existing one, so re-running this against a session that's
-   * already had its PRs recorded is a no-op.
+   * computes three candidate record types — Epley-derived `1rm`,
+   * `max_weight` (heaviest single weight regardless of reps), and
+   * `max_volume` (highest weight × reps in a single set) — picks the
+   * best set per `(exerciseId, recordType)` tuple, and upserts the
+   * winners into `personal_records` keyed by `(user_id, exercise_id,
+   * record_type)`.
+   *
+   * The Postgres unique index `personal_records_user_exercise_type_idx`
+   * (`packages/db/src/schema.ts:470`) is what makes the upsert
+   * idempotent on replay; the conflict clause's WHERE filter only
+   * updates when the candidate value strictly beats the existing one,
+   * so re-running this against a session that's already had its PRs
+   * recorded is a no-op.
+   *
+   * **User-facing PR rule** (Brad's call after the device review of
+   * Phase 3a): "if it's the first workout logged (no previous values)
+   * then no PRs need to come back." A pre-upsert SELECT captures the
+   * existing `personal_records.value` per touched `(exerciseId,
+   * recordType)` tuple. The method returns ONLY the candidates that
+   * (a) had a prior row in `personal_records` AND (b) beat that
+   * prior — surfaced to the client with `previousValue` for the
+   * "before → after" arrow on the Summary screen.
+   *
+   * First-occurrence candidates still INSERT a row into
+   * `personal_records` (so future sessions have a baseline to beat) —
+   * they're just not in the returned list. The set's
+   * `is_personal_record` flag DOES still flip true for first
+   * occurrences (the flag tracks "current canonical best holder," not
+   * "user-facing PR" — and the mobile Summary screen reads the
+   * returned list, not the flag).
    *
    * After the upsert pass, queries the table for the canonical PR
-   * setIds belonging to this session and flips
-   * `exercise_sets.is_personal_record = true` on each. Sets that won
-   * temporarily but were beaten later in the same session don't get
-   * the flag — only the final PR-holder.
-   *
-   * Scope: M3 records the `1rm` type only. The recordTypeEnum doesn't
-   * have a `volume` value yet; mobile clients compute volume PRs
-   * client-side on the Summary screen for offline UX, and a follow-up
-   * additive enum migration could persist them server-side later.
+   * setIds belonging to this session's exercises and flips
+   * `exercise_sets.is_personal_record = true` on the winners (and false
+   * on superseded sets from earlier sessions). Same shape as before
+   * the broadening — only the per-candidate logic above changed.
    *
    * Atomicity: the upsert pass + flag flip are NOT wrapped in a single
    * transaction. The whole operation is idempotent (unique index +
@@ -122,7 +173,7 @@ export class PersonalRecordsRepository {
     userId: string,
     sessionId: string,
     tx?: DbOrTx,
-  ): Promise<void> {
+  ): Promise<DetectedPersonalRecord[]> {
     // Use the caller-provided transaction handle when present (e.g.
     // SessionRepository.recordSession runs the bulk-record flow inside
     // db.transaction(...) and passes `tx` here so PR detection lands
@@ -154,26 +205,122 @@ export class PersonalRecordsRepository {
         ),
       );
 
+    if (completedSets.length === 0) return [];
+
+    // ── Step 1: enumerate per-set candidates across the 3 record types.
+    // Bodyweight exercises (no weight) and timed-only exercises don't
+    // fit the Epley / weight-based model; we just don't record PRs for
+    // those — M4's measurement / progress surface can use other
+    // signals.
+    type Candidate = {
+      exerciseId: string;
+      recordType: RecordType;
+      value: number;
+      setId: string;
+    };
+    const candidates: Candidate[] = [];
     for (const set of completedSets) {
-      // Skip sets without enough data to compute a 1RM. Bodyweight
-      // exercises (no weight) and timed-only exercises don't fit the
-      // Epley model; we just don't record PRs for those — M4's
-      // measurement / progress surface can use other signals.
       if (set.weightKg == null || set.reps == null || set.reps <= 0) continue;
       const weight = parseFloat(set.weightKg);
       if (!Number.isFinite(weight) || weight <= 0) continue;
 
-      const epley1rm = weight * (1 + set.reps / 30);
-      const epley1rmStr = epley1rm.toFixed(2);
+      candidates.push({
+        exerciseId: set.exerciseId,
+        recordType: "1rm",
+        value: weight * (1 + set.reps / 30),
+        setId: set.setId,
+      });
+      candidates.push({
+        exerciseId: set.exerciseId,
+        recordType: "max_weight",
+        value: weight,
+        setId: set.setId,
+      });
+      candidates.push({
+        exerciseId: set.exerciseId,
+        recordType: "max_volume",
+        value: weight * set.reps,
+        setId: set.setId,
+      });
+    }
+
+    // ── Step 2: collapse to one winner per (exerciseId, recordType).
+    type Key = string;
+    const keyOf = (c: { exerciseId: string; recordType: RecordType }) =>
+      `${c.exerciseId}|${c.recordType}`;
+    const bestPerKey = new Map<Key, Candidate>();
+    for (const c of candidates) {
+      const k = keyOf(c);
+      const existing = bestPerKey.get(k);
+      if (!existing || c.value > existing.value) bestPerKey.set(k, c);
+    }
+
+    const touchedExerciseIds = [
+      ...new Set(completedSets.map((s) => s.exerciseId)),
+    ];
+
+    // ── Step 3: pre-SELECT existing `personal_records` rows for the
+    // touched exercises × computed record types. The map keyed by
+    // `${exerciseId}|${recordType}` is the in-memory baseline used to
+    // decide (a) whether a candidate is first-occurrence (no prior →
+    // skip from the response) vs improvement (prior exists, was
+    // beaten → include with previousValue), and (b) the actual prior
+    // value carried back to the client.
+    const priorByKey = new Map<Key, number>();
+    if (bestPerKey.size > 0) {
+      const existingPRs = await db
+        .select({
+          exerciseId: personalRecords.exerciseId,
+          recordType: personalRecords.recordType,
+          value: personalRecords.value,
+        })
+        .from(personalRecords)
+        .where(
+          and(
+            eq(personalRecords.userId, userId),
+            inArray(personalRecords.exerciseId, touchedExerciseIds),
+            inArray(personalRecords.recordType, [...COMPUTED_RECORD_TYPES]),
+          ),
+        );
+      for (const rec of existingPRs) {
+        priorByKey.set(keyOf(rec), parseFloat(rec.value));
+      }
+    }
+
+    // ── Step 4: upsert each winning candidate, building the response
+    // list as we go. The upsert is race-safe via the unique index +
+    // value-comparison WHERE; the response inclusion logic is purely
+    // in-memory and uses `priorByKey` captured at step 3.
+    //
+    // **Precision discipline** (Inspector Brad finding): the DB stores
+    // the value at 2-decimal precision (`numeric(10,2)`), the prior
+    // is parsed from that 2dp string, but the raw candidate is a full
+    // JS float. Without normalising, a JS float like 133.33333... and
+    // a stored prior of 133.33 would disagree:
+    //   - JS:  133.333... > 133.33 → true   → phantom PR pushed
+    //   - PG:  excluded.value (133.33) < personal_records.value
+    //          (133.33) → false → upsert no-ops
+    // The Summary screen would then show a confusing "133.33 → 133.33"
+    // PR card and the response setId wouldn't match what
+    // `personal_records.setId` actually holds. Hits any reps where
+    // reps/30 has a fractional .333… family (1, 4, 7, 10, 13, …) and
+    // any float-multiplication artefact in max_volume (e.g. 99.99 ×
+    // 10 = 999.9000000000001). Fix: round-trip through the same
+    // `toFixed(2) → parseFloat` pipeline the DB sees, so JS and PG
+    // agree byte-for-byte on whether a candidate is a real improvement.
+    const detected: Array<Omit<DetectedPersonalRecord, "exerciseName">> = [];
+    for (const [k, candidate] of bestPerKey) {
+      const valueStr = candidate.value.toFixed(2);
+      const candidateValueAtStoredPrecision = parseFloat(valueStr);
 
       await db
         .insert(personalRecords)
         .values({
           userId,
-          exerciseId: set.exerciseId,
-          recordType: "1rm",
-          value: epley1rmStr,
-          setId: set.setId,
+          exerciseId: candidate.exerciseId,
+          recordType: candidate.recordType,
+          value: valueStr,
+          setId: candidate.setId,
           achievedAt: new Date(),
         })
         .onConflictDoUpdate({
@@ -189,9 +336,21 @@ export class PersonalRecordsRepository {
           },
           where: sql`${personalRecords.value} < excluded.value`,
         });
-    }
 
-    if (completedSets.length === 0) return;
+      const prior = priorByKey.get(k);
+      if (prior != null && candidateValueAtStoredPrecision > prior) {
+        detected.push({
+          exerciseId: candidate.exerciseId,
+          recordType: candidate.recordType,
+          // Use the rounded value for the response too so the mobile
+          // client renders the same number the DB actually persisted —
+          // no "PR! 133.33 → 133.33333..." mismatch.
+          newValue: candidateValueAtStoredPrecision,
+          previousValue: prior,
+          setId: candidate.setId,
+        });
+      }
+    }
 
     // Re-sync the `is_personal_record` flag on `exercise_sets` to
     // match the canonical state in `personal_records`. Two-step
@@ -204,14 +363,10 @@ export class PersonalRecordsRepository {
     //      retain a stale `is_personal_record = true` indefinitely.
     //   2. Promote: set the flag on the current canonical PR setIds.
     //
-    // Scope is bounded to the exercises this session touched. A
-    // user's other exercises (and other users' data) are never
-    // queried or modified — the WHERE clause threads userId via the
-    // session_exercises ⨝ workout_sessions join.
-    const touchedExerciseIds = [
-      ...new Set(completedSets.map((s) => s.exerciseId)),
-    ];
-
+    // Scope is bounded to the exercises this session touched (already
+    // computed at step 2 above) — a user's other exercises (and other
+    // users' data) are never queried or modified. The WHERE clause
+    // threads userId via the session_exercises ⨝ workout_sessions join.
     const canonicalPRs = await db
       .select({ setId: personalRecords.setId })
       .from(personalRecords)
@@ -268,5 +423,25 @@ export class PersonalRecordsRepository {
         .set({ isPersonalRecord: true })
         .where(inArray(exerciseSets.id, canonicalSetIds));
     }
+
+    // ── Step 5: denormalise exerciseName onto each surfaced PR so the
+    // mobile client can render a PR card without a follow-up join.
+    // Mirrors legacy `RecordWorkoutResponse.personal_records[].exercise_name`
+    // (persistence-mobile/lib/supabase/queries/workoutMutations.ts:815-817).
+    // Skips the round-trip entirely when nothing was surfaced (the
+    // common path for first-occurrence-only sessions under Brad's rule).
+    if (detected.length === 0) return [];
+
+    const detectedExerciseIds = [...new Set(detected.map((d) => d.exerciseId))];
+    const nameRows = await db
+      .select({ id: exercises.id, name: exercises.name })
+      .from(exercises)
+      .where(inArray(exercises.id, detectedExerciseIds));
+    const nameById = new Map(nameRows.map((r) => [r.id, r.name]));
+
+    return detected.map((d) => ({
+      ...d,
+      exerciseName: nameById.get(d.exerciseId) ?? "Unknown",
+    }));
   }
 }

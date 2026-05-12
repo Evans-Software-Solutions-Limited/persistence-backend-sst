@@ -712,11 +712,14 @@ describe("SessionRepository", () => {
      * 4's SELECTs are the canonical source of truth, so we wire the
      * SELECT chain to return the post-PR-detection rows.
      */
-    function makeRecordSessionTx(refreshed: {
-      session: any;
-      exercises: any[];
-      sets: any[];
-    }) {
+    function makeRecordSessionTx(
+      refreshed: {
+        session: any;
+        exercises: any[];
+        sets: any[];
+      },
+      options: { totalWorkoutsCompleted?: number } = {},
+    ) {
       const tx = {
         insert: vi.fn().mockImplementation(() => {
           const chain: any = {
@@ -741,8 +744,9 @@ describe("SessionRepository", () => {
           };
           return chain;
         }),
-        // Three select calls in step 4: refreshedSession, exercises,
-        // sets. Drive them off a queue.
+        // Four select calls in steps 4 + 5: refreshedSession,
+        // exercises, sets, then the COUNT(*) for
+        // totalWorkoutsCompleted. Drive them off a queue.
         select: vi
           .fn()
           .mockReturnValueOnce({
@@ -764,6 +768,17 @@ describe("SessionRepository", () => {
               where: vi.fn().mockReturnValue({
                 orderBy: vi.fn().mockResolvedValue(refreshed.sets),
               }),
+            }),
+          })
+          // Step 5 — COUNT(*) for totalWorkoutsCompleted. Chain shape
+          // is `.select(...).from(...).where(...)` (no orderBy/limit).
+          .mockReturnValueOnce({
+            from: vi.fn().mockReturnValue({
+              where: vi
+                .fn()
+                .mockResolvedValue([
+                  { count: options.totalWorkoutsCompleted ?? 0 },
+                ]),
             }),
           }),
       };
@@ -838,7 +853,9 @@ describe("SessionRepository", () => {
         ],
       };
 
-      const tx = makeRecordSessionTx(refreshed);
+      const tx = makeRecordSessionTx(refreshed, {
+        totalWorkoutsCompleted: 7,
+      });
       const mockDb = {
         transaction: vi
           .fn()
@@ -846,7 +863,20 @@ describe("SessionRepository", () => {
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const runPRDetection = vi.fn().mockResolvedValue(undefined);
+      // runPRDetection now returns the list of surfaced PRs. The test
+      // pipes through a fixture — the repo just splices it into the
+      // response.
+      const detectedPRs = [
+        {
+          exerciseId: "ex-1",
+          exerciseName: "Bench Press",
+          recordType: "1rm" as const,
+          newValue: 126.67,
+          previousValue: 110,
+          setId: "set1",
+        },
+      ];
+      const runPRDetection = vi.fn().mockResolvedValue(detectedPRs);
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -858,6 +888,74 @@ describe("SessionRepository", () => {
       // table holds — id, weight, etc. — pulled via the re-fetch, not
       // the insert snapshot.
       expect(result.exercises[0]?.sets[0]?.id).toBe("set1");
+      // New augmented fields:
+      expect(result.personalRecords).toEqual(detectedPRs);
+      expect(result.totalWorkoutsCompleted).toBe(7);
+    });
+
+    it("totalWorkoutsCompleted reflects the COUNT(*) result; an empty PR list passes through cleanly (first-session)", async () => {
+      // First-session path: every candidate was first-occurrence so
+      // runPRDetection returns an empty list. The repo must NOT
+      // synthesise PRs — Brad's rule is "no PRs on the first workout."
+      // totalWorkoutsCompleted is 1 (just this session).
+      const refreshed = {
+        session: {
+          id: "s2",
+          userId: "u1",
+          workoutId: null,
+          name: "First Workout",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se2",
+            sessionId: "s2",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set2",
+            sessionExerciseId: "se2",
+            setNumber: 1,
+            reps: 8,
+            weightKg: "100.00",
+            isCompleted: true,
+            isPersonalRecord: true, // canonical-best holder
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      const tx = makeRecordSessionTx(refreshed, {
+        totalWorkoutsCompleted: 1,
+      });
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      // First-occurrence: detection ran but surfaced no PRs.
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.recordSession("u1", payload, runPRDetection);
+
+      expect(result.personalRecords).toEqual([]);
+      expect(result.totalWorkoutsCompleted).toBe(1);
     });
 
     it("skips PR detection when status is cancelled (legacy recordWorkout parity)", async () => {
@@ -900,7 +998,11 @@ describe("SessionRepository", () => {
         ],
       };
 
-      const tx = makeRecordSessionTx(refreshed);
+      // Cancelled session also has 0 contribution to the
+      // totalWorkoutsCompleted count (the WHERE filter excludes it).
+      const tx = makeRecordSessionTx(refreshed, {
+        totalWorkoutsCompleted: 4,
+      });
       const mockDb = {
         transaction: vi
           .fn()
@@ -908,7 +1010,7 @@ describe("SessionRepository", () => {
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const runPRDetection = vi.fn().mockResolvedValue(undefined);
+      const runPRDetection = vi.fn().mockResolvedValue([]);
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -920,6 +1022,12 @@ describe("SessionRepository", () => {
 
       expect(runPRDetection).not.toHaveBeenCalled();
       expect(result.exercises[0]?.sets[0]?.isPersonalRecord).toBe(false);
+      // Cancelled session still gets the augmented fields — PRs are
+      // empty (detection didn't run), totalWorkoutsCompleted carries
+      // the user's cumulative completed count (which doesn't include
+      // this cancelled one because the WHERE filters on status).
+      expect(result.personalRecords).toEqual([]);
+      expect(result.totalWorkoutsCompleted).toBe(4);
     });
   });
 });

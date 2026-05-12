@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   workoutSessions,
   sessionExercises,
@@ -11,7 +11,10 @@ import {
   type NewExerciseSet,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import type { DbOrTx } from "./personalRecordsRepository";
+import type {
+  DbOrTx,
+  DetectedPersonalRecord,
+} from "./personalRecordsRepository";
 
 export interface SessionWithExercises extends WorkoutSession {
   exercises: SessionExercise[];
@@ -63,6 +66,25 @@ export interface RecordedSession extends WorkoutSession {
       sets: ExerciseSet[];
     }
   >;
+  /**
+   * Personal records the user beat in this session — each entry carries
+   * `previousValue` for the legacy "before → after" arrow on the Summary
+   * screen. First-occurrence records are NOT included (Brad's "no PRs
+   * on the user's first workout" rule); they still upsert into the
+   * `personal_records` table server-side so future sessions have a
+   * baseline. Mirrors legacy
+   * `RecordWorkoutResponse.personal_records[]` shape.
+   */
+  personalRecords: DetectedPersonalRecord[];
+  /**
+   * Total completed workouts for this user after the just-recorded
+   * session lands. Computed inside the same transaction as the insert
+   * via `SELECT COUNT(*) WHERE status='completed'`, so a completed
+   * session is counted; a cancelled one is not. Drives the legacy 3-stat
+   * strip's "Workouts Completed" tile + the subtitle copy
+   * ("You've completed N total workouts. Keep the momentum going!").
+   */
+  totalWorkoutsCompleted: number;
 }
 
 export class SessionRepository {
@@ -196,7 +218,7 @@ export class SessionRepository {
       userId: string,
       sessionId: string,
       tx: DbOrTx,
-    ) => Promise<void>,
+    ) => Promise<DetectedPersonalRecord[]>,
   ): Promise<RecordedSession> {
     const db = getDb();
 
@@ -272,9 +294,17 @@ export class SessionRepository {
       //    sessions per `recordWorkout` legacy parity (a discarded
       //    workout shouldn't generate PRs). The detection pass upserts
       //    `personal_records` and flips `is_personal_record` on the
-      //    canonical PR sets via the DEMOTE/PROMOTE flag re-sync.
+      //    canonical PR sets via the DEMOTE/PROMOTE flag re-sync, AND
+      //    returns the list of surfaced PRs (first-occurrence rows are
+      //    written but excluded — Brad's "no PRs on the first workout"
+      //    rule).
+      let personalRecordsForResponse: DetectedPersonalRecord[] = [];
       if (session.status === "completed") {
-        await runPRDetection(userId, session.id, tx);
+        personalRecordsForResponse = await runPRDetection(
+          userId,
+          session.id,
+          tx,
+        );
       }
 
       // 4. Re-fetch the full nested session inside the same tx so the
@@ -314,12 +344,33 @@ export class SessionRepository {
         else setsByExerciseId.set(s.sessionExerciseId, [s]);
       }
 
+      // 5. Cumulative completed-workout count for this user, computed
+      //    inside the same transaction so the COUNT(*) sees the row we
+      //    just inserted (when `status='completed'`). Drives the legacy
+      //    Summary screen's "Workouts Completed" stat + the subtitle
+      //    "You've completed N total workouts. Keep the momentum going!"
+      //    Cancelled sessions count themselves out — the WHERE filters
+      //    on `status='completed'`. Matches legacy
+      //    `workoutMutations.ts:928` exactly.
+      const [totalsRow] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(workoutSessions)
+        .where(
+          and(
+            eq(workoutSessions.userId, userId),
+            eq(workoutSessions.status, "completed"),
+          ),
+        );
+      const totalWorkoutsCompleted = totalsRow?.count ?? 0;
+
       return {
         ...refreshedSession,
         exercises: refreshedExercises.map((e) => ({
           ...e,
           sets: setsByExerciseId.get(e.id) ?? [],
         })),
+        personalRecords: personalRecordsForResponse,
+        totalWorkoutsCompleted,
       };
     });
   }

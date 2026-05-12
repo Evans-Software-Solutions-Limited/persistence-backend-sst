@@ -95,8 +95,15 @@ describe("sessionsRecordHandler", () => {
           ],
         },
       ],
+      // Augmented fields surfaced to the mobile Summary screen — the
+      // handler is a thin pass-through, so these flow into `data:
+      // recorded` unchanged.
+      personalRecords: [],
+      totalWorkoutsCompleted: 0,
     });
-    prMocks.recordPRsForSession.mockResolvedValue(undefined);
+    // `recordPRsForSession` now returns the list of surfaced PRs; the
+    // handler wires it through as a thin closure into recordSession.
+    prMocks.recordPRsForSession.mockResolvedValue([]);
   });
 
   it("requires authentication", async () => {

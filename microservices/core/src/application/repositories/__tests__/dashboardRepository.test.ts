@@ -15,6 +15,7 @@ import {
   pickPROfTheWeek,
   rankPersonalRecord,
   type PersonalRecordRow,
+  type RecordType,
   type SubscriptionRow,
 } from "../dashboardRepository";
 
@@ -100,7 +101,16 @@ describe("DashboardRepository pure helpers", () => {
       expect(rankPersonalRecord("10rm")).toBeGreaterThan(
         rankPersonalRecord("max_weight"),
       );
+      // max_volume slots between max_weight and max_reps (Inspector
+      // Brad regression: the hand-rolled `RecordType` union didn't
+      // include max_volume, so its rank was `undefined` → NaN
+      // comparator → undefined-behaviour sort. Schema-derived
+      // RecordType + exhaustive Record<…, number> forces this to be
+      // handled).
       expect(rankPersonalRecord("max_weight")).toBeGreaterThan(
+        rankPersonalRecord("max_volume"),
+      );
+      expect(rankPersonalRecord("max_volume")).toBeGreaterThan(
         rankPersonalRecord("max_reps"),
       );
       expect(rankPersonalRecord("max_reps")).toBeGreaterThan(
@@ -109,6 +119,32 @@ describe("DashboardRepository pure helpers", () => {
       expect(rankPersonalRecord("best_time")).toBeGreaterThan(
         rankPersonalRecord("longest_distance"),
       );
+    });
+
+    it("returns a finite number for every schema-derived RecordType (no NaN ranks)", () => {
+      // Direct guard against the Inspector Brad PR #61 finding: if
+      // ANY enum value falls through to `undefined`,
+      // pickPROfTheWeek's comparator would return NaN and produce
+      // undefined-behaviour ordering. Iterating every enum value
+      // catches a future migration that adds a new value without
+      // ranking it (compile time would catch it first via
+      // Record<RecordType, number>, but this is the runtime safety
+      // net).
+      const allTypes: RecordType[] = [
+        "1rm",
+        "3rm",
+        "5rm",
+        "10rm",
+        "max_reps",
+        "max_weight",
+        "max_volume",
+        "best_time",
+        "longest_distance",
+      ];
+      for (const t of allTypes) {
+        const rank = rankPersonalRecord(t);
+        expect(Number.isFinite(rank)).toBe(true);
+      }
     });
   });
 
@@ -177,6 +213,52 @@ describe("DashboardRepository pure helpers", () => {
 
       expect(pickPROfTheWeek([pr2, pr1])?.id).toBe("pr-a");
       expect(pickPROfTheWeek([pr1, pr2])?.id).toBe("pr-a");
+    });
+
+    it("ranks max_volume below max_weight + above max_reps on same-day ties (Inspector Brad PR #61 regression)", () => {
+      // Direct repro of the NaN-comparator bug: pre-fix, the
+      // dashboard's hand-rolled `RecordType` union didn't include
+      // `max_volume`, so `RECORD_TYPE_RANK["max_volume"]` returned
+      // undefined. `pickPROfTheWeek`'s comparator subtracted
+      // `undefined - <number>` → NaN, which made Array.prototype.sort
+      // ordering undefined-behaviour. After the fix, `max_volume`
+      // ranks between max_weight and max_reps and the tie-break is
+      // deterministic regardless of input order.
+      const when = new Date("2026-04-22T12:00:00Z");
+      const maxWeight: PersonalRecordRow = {
+        id: "pr-mw",
+        exerciseId: "ex-1",
+        recordType: "max_weight",
+        value: 120,
+        achievedAt: when,
+      };
+      const maxVolume: PersonalRecordRow = {
+        id: "pr-mv",
+        exerciseId: "ex-1",
+        recordType: "max_volume",
+        value: 1000,
+        achievedAt: when,
+      };
+      const maxReps: PersonalRecordRow = {
+        id: "pr-mr",
+        exerciseId: "ex-1",
+        recordType: "max_reps",
+        value: 15,
+        achievedAt: when,
+      };
+
+      // max_weight beats max_volume beats max_reps; input order
+      // shouldn't matter.
+      expect(pickPROfTheWeek([maxReps, maxVolume, maxWeight])?.id).toBe(
+        "pr-mw",
+      );
+      expect(pickPROfTheWeek([maxWeight, maxReps, maxVolume])?.id).toBe(
+        "pr-mw",
+      );
+      // Drop max_weight to check the middle position deterministically
+      // (this is what NaN sorts would mangle).
+      expect(pickPROfTheWeek([maxReps, maxVolume])?.id).toBe("pr-mv");
+      expect(pickPROfTheWeek([maxVolume, maxReps])?.id).toBe("pr-mv");
     });
 
     it("tolerates string timestamps and null fallbacks", () => {
@@ -949,10 +1031,20 @@ describe("DashboardRepository sub-query composition", () => {
 
     it("emits per-record-type units", async () => {
       const cases: Array<{
-        type: "1rm" | "max_reps" | "best_time" | "longest_distance";
+        type: RecordType;
         unit: string;
       }> = [
         { type: "1rm", unit: "kg" },
+        { type: "3rm", unit: "kg" },
+        { type: "5rm", unit: "kg" },
+        { type: "10rm", unit: "kg" },
+        { type: "max_weight", unit: "kg" },
+        // Inspector Brad PR #61 regression: pre-fix, `max_volume`
+        // fell through to `default: return ""` because the hand-rolled
+        // `RecordType` union didn't include it. The PR-of-the-week
+        // card would render a unit-less value. Now `kg` (volume in
+        // strength training is conventionally a kg total).
+        { type: "max_volume", unit: "kg" },
         { type: "max_reps", unit: "reps" },
         { type: "best_time", unit: "s" },
         { type: "longest_distance", unit: "m" },
