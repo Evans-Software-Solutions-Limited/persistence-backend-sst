@@ -25,9 +25,9 @@ jobs:
       # React with 👀 on the trigger comment so you can see it's working.
       - name: Acknowledge with reaction
         env:
-          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
-          COMMENT_ID:  ${{ github.event.comment.id }}
-          REPO:        ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          REPO: ${{ github.repository }}
         run: |
           gh api -X POST             "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions"             -H "Accept: application/vnd.github+json"             -f content="eyes"
 
@@ -39,7 +39,7 @@ jobs:
       - id: review
         uses: BradleyEvans96/inspector-brad@v1
         with:
-          oauth-token:  ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Optional overrides:
           # model: claude-opus-4-7
@@ -52,9 +52,9 @@ jobs:
       - name: Report failure on PR
         if: failure()
         env:
-          GH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
-          REPO:       ${{ github.repository }}
-          PR_NUMBER:  ${{ github.event.issue.number || github.event.pull_request.number }}
-          RUN_URL:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body "🚨 **Inspector Brad failed to review this PR.** [View logs](${RUN_URL})"
