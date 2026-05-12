@@ -5,6 +5,7 @@ import {
   goalTypes,
   personalRecords,
   profiles,
+  recordTypeEnum,
   subscriptionTiers,
   userGoals,
   userSubscriptions,
@@ -17,15 +18,17 @@ import { SYSTEM_USER_ID } from "./exerciseRepository";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type RecordType =
-  | "1rm"
-  | "3rm"
-  | "5rm"
-  | "10rm"
-  | "max_reps"
-  | "max_weight"
-  | "best_time"
-  | "longest_distance";
+/**
+ * Derived from the Postgres `record_type` enum at
+ * `packages/db/src/schema.ts:60`. Anchoring this to the schema means
+ * a future additive enum migration (e.g. `max_volume`, landed
+ * alongside the broadened PR detection in PR #61) breaks the
+ * exhaustive `Record<RecordType, number>` / switch coverage below at
+ * compile time — instead of silently widening the cast at
+ * `mapPersonalRecord` and producing `NaN` ranks for unhandled values
+ * (Inspector Brad finding on PR #61).
+ */
+export type RecordType = (typeof recordTypeEnum.enumValues)[number];
 
 export type SubscriptionStatus =
   | "active"
@@ -194,12 +197,25 @@ export function normaliseSubscriptionStatus(
   }
 }
 
+// Rank for the `prOfTheWeek` tie-break. Higher = more impactful;
+// `pickPROfTheWeek` prefers higher-rank rows when same-day PRs collide.
+//
+// `max_volume` (introduced alongside the broadened PR detection in PR
+// #61) slots between `max_weight` and `max_reps` — heavier weight ×
+// reps is a balanced strength metric, more impactful than pure rep
+// count but less iconic than max_weight. Every value below it shifted
+// down by 1; relative ordering of pre-existing pairs is preserved.
+//
+// `Record<RecordType, number>` makes this exhaustive against the
+// schema-derived `RecordType`, so the next enum addition will fail
+// typecheck here until a rank is chosen.
 const RECORD_TYPE_RANK: Record<RecordType, number> = {
-  "1rm": 8,
-  "3rm": 7,
-  "5rm": 6,
-  "10rm": 5,
-  max_weight: 4,
+  "1rm": 9,
+  "3rm": 8,
+  "5rm": 7,
+  "10rm": 6,
+  max_weight: 5,
+  max_volume: 4,
   max_reps: 3,
   best_time: 2,
   longest_distance: 1,
@@ -776,6 +792,12 @@ function mapTrainerRoleToAssignedByType(
 /**
  * Human-readable unit for each record type, used in the `prOfTheWeek` card.
  * Keep in sync with the mobile presenter's unit pill.
+ *
+ * Exhaustive against the schema-derived `RecordType` — no `default`
+ * branch. If a future migration adds a new enum value (or — as with
+ * `max_volume` on PR #61 — broadens detection to cover one), TS will
+ * flag this switch at compile time instead of silently returning an
+ * empty string and rendering a unit-less PR card.
  */
 function unitForRecordType(recordType: RecordType): string {
   switch (recordType) {
@@ -784,6 +806,11 @@ function unitForRecordType(recordType: RecordType): string {
     case "5rm":
     case "10rm":
     case "max_weight":
+    case "max_volume":
+      // `max_volume` carries `kg` rather than e.g. `kg·reps` because
+      // reps are dimensionless — volume in strength training is
+      // conventionally reported as a kg total. Matches the mobile
+      // presenter's pill.
       return "kg";
     case "max_reps":
       return "reps";
@@ -791,7 +818,5 @@ function unitForRecordType(recordType: RecordType): string {
       return "s";
     case "longest_distance":
       return "m";
-    default:
-      return "";
   }
 }
