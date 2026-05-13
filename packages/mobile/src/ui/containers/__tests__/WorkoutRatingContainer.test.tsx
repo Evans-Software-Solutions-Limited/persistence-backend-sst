@@ -53,6 +53,16 @@ jest.mock("expo-router", () => ({
   },
 }));
 
+// Submit triggers an inline `processSyncQueue` drain (the
+// `useSyncWorker` hook only fires on mount + AppState→active, so
+// without this kick the bulk-record POST sits in the queue forever
+// while the user is on the Summary screen — bug Brad caught on
+// device review of PR #62). Stub global fetch so the drain has
+// deterministic behaviour: we mock a successful /sessions/record
+// response so the entry transitions to "completed" cleanly.
+const mockFetch = jest.fn();
+(globalThis as Record<string, unknown>).fetch = mockFetch;
+
 const seed = (storage: InMemoryStorageAdapter) => {
   storage.cacheActiveSession("user-1", {
     id: "local-1",
@@ -96,6 +106,20 @@ const seed = (storage: InMemoryStorageAdapter) => {
 describe("WorkoutRatingContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetch.mockReset();
+    // Default to a successful /sessions/record response so the
+    // inline drain marks the queue entry completed. Individual tests
+    // that need different behaviour override this.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: "server-1",
+          personalRecords: [],
+          totalWorkoutsCompleted: 1,
+        },
+      }),
+    });
   });
 
   it("renders the rating screen when an in-progress session exists", async () => {
@@ -128,12 +152,19 @@ describe("WorkoutRatingContainer", () => {
     );
     fireEvent.press(await findByTestId("workout-rating-submit"));
 
+    // Inline drain fires after Submit; assert the POST went out with
+    // the right payload. (Pre-fix, this would have asserted the
+    // queue entry shape via `getPendingMutations`; post-fix, the
+    // drain consumes the entry and the POST itself is the
+    // observable signal.)
     await waitFor(() => {
-      expect(storage.getPendingMutations()).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/sessions/record"),
+        expect.objectContaining({ method: "POST" }),
+      );
     });
-    const queued = storage.getPendingMutations()[0];
-    expect(queued.endpoint).toBe("/sessions/record");
-    const payload = JSON.parse(queued.payload);
+    const [, init] = mockFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
     expect(payload.status).toBe("completed");
     expect(payload.sessionRating).toBe(7);
     expect(payload.difficultyRanking).toBe(7);
@@ -157,11 +188,86 @@ describe("WorkoutRatingContainer", () => {
     fireEvent.press(await findByTestId("workout-rating-submit"));
 
     await waitFor(() => {
-      expect(storage.getPendingMutations()).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/sessions/record"),
+        expect.objectContaining({ method: "POST" }),
+      );
     });
-    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    const [, init] = mockFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
     expect(payload.sessionRating).toBe(3);
     expect(payload.userNotes).toBeNull();
+  });
+
+  it("Submit kicks off an inline sync drain so /sessions/record lands before the Summary screen polls (Brad on-device regression)", async () => {
+    // Brad caught this on PR #62 device review: the Workouts Completed
+    // tile + subtitle count stayed on the em-dash placeholder
+    // because `useSyncWorker` only fires on mount / AppState → active.
+    // After Submit, the bulk-record POST was queued but never sent
+    // until the user backgrounded + foregrounded the app. Fix: kick
+    // an inline drain right after `completeSessionCommand` so the
+    // Summary container's 500ms cache poll catches the augmented
+    // response within one tick.
+    const storage = new InMemoryStorageAdapter();
+    seed(storage);
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <WorkoutRatingContainer />
+      </AdapterProvider>,
+    );
+
+    fireEvent.press(await findByTestId("workout-rating-5"));
+    fireEvent.press(await findByTestId("workout-rating-submit"));
+
+    // Pre-fix this would have failed: fetch was NEVER called from
+    // the rating screen — only on the next AppState-active event.
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/record"),
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    // End-to-end signal: after the drain completes, the cache slot
+    // carries the server response so the Summary screen can render
+    // the real `totalWorkoutsCompleted` value instead of em-dash.
+    await waitFor(() => {
+      expect(storage.getRecordResponse("user-1")).not.toBeNull();
+    });
+    expect(storage.getRecordResponse("user-1")?.totalWorkoutsCompleted).toBe(1);
+  });
+
+  it("Submit doesn't block on the drain — router.replace fires even if the network is unreachable", async () => {
+    // Offline-first invariant: tapping Submit must navigate
+    // immediately. If the network is down or the server is
+    // unreachable, the queue entry stays pending and the Summary
+    // screen falls back to local prediction — but the user is NOT
+    // held on a spinner.
+    const storage = new InMemoryStorageAdapter();
+    seed(storage);
+    mockFetch.mockRejectedValue(new Error("network down"));
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <WorkoutRatingContainer />
+      </AdapterProvider>,
+    );
+
+    fireEvent.press(await findByTestId("workout-rating-5"));
+    fireEvent.press(await findByTestId("workout-rating-submit"));
+
+    // Routing must happen even though the fetch failed.
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary");
+    });
+    // Entry stays in pendingMutations for the next drain attempt.
+    expect(
+      storage
+        .getPendingMutations()
+        .some((e) => e.endpoint === "/sessions/record"),
+    ).toBe(true);
   });
 
   it("Back button calls router.back", async () => {

@@ -10,14 +10,16 @@
 
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { getApiBaseUrl } from "@/adapters/api";
 import { completeSessionCommand } from "@/application/commands/session";
+import { processSyncQueue } from "@/application/commands/sync.command";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { WorkoutRatingPresenter } from "@/ui/presenters/WorkoutRatingPresenter";
 
 export function WorkoutRatingContainer() {
-  const { storage } = useAdapters();
+  const { storage, auth } = useAdapters();
   const { session: authSession } = useAuth();
   const { session, userId } = useActiveSession();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,11 +49,29 @@ export function WorkoutRatingContainer() {
         router.replace("/(app)/session/summary" as never);
         return;
       }
+      // Kick off an inline sync drain BEFORE routing — the user just
+      // tapped Submit, which is the canonical "save my workout now"
+      // signal, but `useSyncWorker` only fires on mount + AppState →
+      // active. Without this push, the bulk-record POST sits in the
+      // queue forever (until the user backgrounds + foregrounds the
+      // app or relaunches), and the Summary screen's `cacheRecordResponse`
+      // poll falls through to the local-prediction em-dash + dropped
+      // count.
+      //
+      // Fire-and-forget: the Summary container's existing 500ms poll
+      // catches the cache write whenever it lands. Errors here are
+      // already logged + the per-entry retry path inside
+      // processSyncQueue handles transient failures. Awaiting the
+      // drain would defeat V2's offline-first invariant (Submit must
+      // not block on the network).
+      void processSyncQueue(storage, auth, getApiBaseUrl()).catch((err) => {
+        console.warn("[WorkoutRatingContainer] post-submit drain failed:", err);
+      });
       // Replace (not push) so the back stack doesn't accumulate
       // /rate → /summary indefinitely if the user re-finishes.
       router.replace("/(app)/session/summary" as never);
     },
-    [userId, isSubmitting, storage],
+    [userId, isSubmitting, storage, auth],
   );
 
   const onBack = useCallback(() => {
