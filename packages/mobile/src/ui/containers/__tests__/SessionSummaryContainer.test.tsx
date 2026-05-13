@@ -136,7 +136,7 @@ describe("SessionSummaryContainer", () => {
     jest.restoreAllMocks();
   });
 
-  it("renders summary stats from the active session", async () => {
+  it("renders the legacy 3-stat strip (Workouts Completed / Records Hit / Total Volume)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
@@ -147,12 +147,12 @@ describe("SessionSummaryContainer", () => {
       </AdapterProvider>,
     );
 
-    expect(await findByTestId("summary-stat-duration")).toBeTruthy();
-    expect(await findByTestId("summary-stat-volume")).toBeTruthy();
-    expect(await findByTestId("summary-stat-exercises")).toBeTruthy();
+    expect(await findByTestId("summary-stat-workouts-completed")).toBeTruthy();
+    expect(await findByTestId("summary-stat-records-hit")).toBeTruthy();
+    expect(await findByTestId("summary-stat-total-volume")).toBeTruthy();
   });
 
-  it("predicts a PR when the session beats the cached previous best", async () => {
+  it("predicts a PR locally when the session beats the cached previous best (pre-server, no previousValue arrow)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
@@ -170,14 +170,68 @@ describe("SessionSummaryContainer", () => {
       },
     ]);
 
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, queryByText } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(api, storage)}>
         <SessionSummaryContainer />
       </AdapterProvider>,
     );
 
+    // Local prediction surfaces the section + card.
     expect(await findByTestId("summary-pr-section")).toBeTruthy();
-    expect(await findByTestId("summary-pr-ex-bench")).toBeTruthy();
+    expect(await findByTestId("summary-pr-ex-bench-1rm")).toBeTruthy();
+    // Local prediction has previousValue=null → no arrow rendered.
+    expect(queryByText("→")).toBeNull();
+  });
+
+  it("swaps to the server PR shape (with previousValue + arrow) once the sync worker writes the cache slot", async () => {
+    // The cache-and-subscribe contract end-to-end: container mounts
+    // with local prediction (no arrow), poll picks up the cached
+    // server response, re-renders with the legacy before→after arrow
+    // and the real totalWorkoutsCompleted in both the subtitle + the
+    // stat tile.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+
+    const { findByTestId, queryByText, findByText } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <SessionSummaryContainer />
+      </AdapterProvider>,
+    );
+
+    // Pre-server: em-dash on the Workouts Completed tile, no arrow on
+    // PR rows. Wait for the mount + first poll tick to settle.
+    expect(await findByTestId("session-summary-screen")).toBeTruthy();
+    expect(queryByText("→")).toBeNull();
+
+    // Sync worker fires (simulated): cache slot written with the
+    // augmented response.
+    storage.cacheRecordResponse("user-1", {
+      localSessionId: "local-1",
+      personalRecords: [
+        {
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          recordType: "1rm",
+          newValue: 137.4,
+          previousValue: 120,
+          setId: "set-1",
+        },
+      ],
+      totalWorkoutsCompleted: 12,
+      cachedAt: "2026-05-05T10:30:01.000Z",
+    });
+
+    // Poll picks up the cache slot — subtitle gets the count, tile
+    // gets 12, PR card now shows the arrow.
+    expect(
+      await findByText(
+        "You've completed 12 total workouts. Keep the momentum going!",
+      ),
+    ).toBeTruthy();
+    expect(await findByText("→")).toBeTruthy();
+    expect(await findByText("120.0 kg")).toBeTruthy();
+    expect(await findByText("137.4 kg")).toBeTruthy();
   });
 
   it("Continue tap clears the local row and dismisses the modal stack (the rating screen already fired completeSessionCommand)", async () => {

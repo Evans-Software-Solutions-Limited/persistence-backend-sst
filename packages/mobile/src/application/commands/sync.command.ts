@@ -1,10 +1,32 @@
 import type { AuthPort } from "@/domain/ports/auth.port";
-import type { StoragePort } from "@/domain/ports/storage.port";
+import type {
+  RecordResponseSummary,
+  RecordResponseSummaryPR,
+  StoragePort,
+} from "@/domain/ports/storage.port";
 
 export type SyncResult = {
   processed: number;
   succeeded: number;
   failed: number;
+};
+
+/**
+ * Server response shape returned by `POST /sessions/record` —
+ * `data: {…session, personalRecords, totalWorkoutsCompleted}`. Only
+ * the augmented fields (Phase 3b) are read here; the rest of the
+ * payload is the canonical session re-fetch which the swap path
+ * already consumes elsewhere.
+ *
+ * Spec: microservices/core/src/application/repositories/sessionRepository.ts
+ *       (RecordedSession + DetectedPersonalRecord).
+ */
+type RecordSessionApiResponse = {
+  data: {
+    id: string;
+    personalRecords: RecordResponseSummaryPR[];
+    totalWorkoutsCompleted: number;
+  };
 };
 
 /**
@@ -54,6 +76,49 @@ export async function processSyncQueue(
       if (!response.ok) {
         const body = await response.text();
         throw new Error(`HTTP ${response.status}: ${body}`);
+      }
+
+      // M3 Phase 3b: capture the `/sessions/record` augmented response
+      // so the Summary screen can swap its local prediction for
+      // server-truth (PRs with previousValue + totalWorkoutsCompleted).
+      // Single-active-session invariant means the cache is keyed by
+      // userId; cleared by `clearActiveSession` when the user taps
+      // Continue. Other endpoints are unaffected — their bodies are
+      // still discarded.
+      //
+      // Any parse failure is non-fatal: the mutation already succeeded
+      // server-side, the Summary screen falls back to its local
+      // prediction, and the queue entry still marks completed.
+      // Logging + best-effort capture matches the brief's "trust but
+      // verify" pattern for offline-first sync paths.
+      if (
+        entry.entityType === "session" &&
+        entry.endpoint === "/sessions/record"
+      ) {
+        try {
+          const body = (await response.json()) as RecordSessionApiResponse;
+          const session = await auth.getSession();
+          if (session.ok && session.value && body.data) {
+            const summary: RecordResponseSummary = {
+              localSessionId: entry.entityId ?? body.data.id,
+              personalRecords: body.data.personalRecords ?? [],
+              totalWorkoutsCompleted: body.data.totalWorkoutsCompleted ?? 0,
+              cachedAt: new Date().toISOString(),
+            };
+            storage.cacheRecordResponse(session.value.userId, summary);
+          }
+        } catch (err) {
+          // Body wasn't valid JSON, response.json() rejected, or
+          // auth.getSession() rejected. Either way: the POST succeeded
+          // (we passed `response.ok` above) so the queue entry should
+          // still mark completed and the Summary screen falls back to
+          // its local prediction. Swallow with a log so debugging is
+          // possible without breaking the sync flow.
+          console.warn(
+            "[sync] /sessions/record succeeded but response capture failed; Summary will use local prediction:",
+            err,
+          );
+        }
       }
 
       storage.markMutationCompleted(entry.id);

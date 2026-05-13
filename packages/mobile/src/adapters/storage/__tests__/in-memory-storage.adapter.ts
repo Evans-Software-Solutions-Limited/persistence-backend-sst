@@ -24,6 +24,7 @@ import type {
   SyncStats,
   EnqueueMutationInput,
   RecentSetEntry,
+  RecordResponseSummary,
   RestTimerState,
 } from "@/domain/ports/storage.port";
 import type { SyncStatus } from "@/domain/ports/sync.types";
@@ -42,6 +43,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private activeSessions: Map<string, WorkoutSession> = new Map();
+  private recordResponses: Map<string, RecordResponseSummary> = new Map();
   private personalRecords: Map<string, PersonalRecord[]> = new Map();
   private recentSets: Map<string, RecentSetEntry[]> = new Map();
   private restTimers: Map<string, RestTimerState> = new Map();
@@ -285,6 +287,28 @@ export class InMemoryStorageAdapter implements StoragePort {
     // so a follow-up `cacheActiveSession` for the same user doesn't
     // surface a stale timer from the prior session.
     this.restTimers.delete(userId);
+    // Same lifecycle for the cached server-response (M3 Phase 3b) —
+    // clearing the active session also retires whatever bulk-record
+    // response was cached for that session, so a fresh session starts
+    // with no stale PRs / totalWorkoutsCompleted on the Summary screen.
+    this.recordResponses.delete(userId);
+  }
+
+  cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
+    // Deep-clone so tests can mutate the returned object without
+    // poisoning the cache. Matches the cloneSession pattern used for
+    // active_sessions above.
+    this.recordResponses.set(userId, JSON.parse(JSON.stringify(response)));
+  }
+
+  getRecordResponse(userId: string): RecordResponseSummary | null {
+    const cached = this.recordResponses.get(userId);
+    if (!cached) return null;
+    return JSON.parse(JSON.stringify(cached)) as RecordResponseSummary;
+  }
+
+  clearRecordResponse(userId: string): void {
+    this.recordResponses.delete(userId);
   }
 
   getSessionSets(

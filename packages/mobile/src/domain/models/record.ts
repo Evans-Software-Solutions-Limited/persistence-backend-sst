@@ -24,6 +24,11 @@ export const RECORD_TYPES = [
   "5rm",
   "10rm",
   "max_weight",
+  // M3 Phase 3b: highest weight × reps in a single set, per exercise.
+  // Added alongside the broadened server-side PR detection in PR #61
+  // (`supabase/migrations/20260512090238_m3_record_type_max_volume.sql`).
+  // Keep aligned with the Postgres `record_type` enum.
+  "max_volume",
   "max_reps",
   "best_time",
   "longest_distance",

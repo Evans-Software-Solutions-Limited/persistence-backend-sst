@@ -172,4 +172,112 @@ describe("processSyncQueue", () => {
     expect(getTokenSpy).toHaveBeenCalledTimes(2);
     getTokenSpy.mockRestore();
   });
+
+  it("captures POST /sessions/record response into the record-response cache slot (M3 Phase 3b cache-and-subscribe)", async () => {
+    // Sign in so auth.getSession() returns a userId; the cache slot
+    // is keyed by userId (single-active-session invariant).
+    await auth.signInWithEmail("user-1@example.com", "password");
+    const session = await auth.getSession();
+    if (!session.ok || !session.value) throw new Error("seed failed");
+    const userId = session.value.userId;
+
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-1",
+      operation: "create",
+      payload: { status: "completed" },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: "server-1",
+          personalRecords: [
+            {
+              exerciseId: "ex-bench",
+              exerciseName: "Bench Press",
+              recordType: "1rm",
+              newValue: 137.4,
+              previousValue: 120,
+              setId: "set-1",
+            },
+          ],
+          totalWorkoutsCompleted: 12,
+        },
+      }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+
+    // Cache slot populated with the augmented response.
+    const cached = storage.getRecordResponse(userId);
+    expect(cached).not.toBeNull();
+    expect(cached?.localSessionId).toBe("local-1");
+    expect(cached?.totalWorkoutsCompleted).toBe(12);
+    expect(cached?.personalRecords).toHaveLength(1);
+    expect(cached?.personalRecords[0]?.previousValue).toBe(120);
+    expect(cached?.personalRecords[0]?.newValue).toBe(137.4);
+  });
+
+  it("does NOT touch the record-response cache for unrelated endpoints (workouts, sets, etc.)", async () => {
+    await auth.signInWithEmail("user-1@example.com", "password");
+    const session = await auth.getSession();
+    const userId = session.ok && session.value ? session.value.userId : "";
+
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w-1",
+      operation: "create",
+      payload: { name: "Push Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "w-1" } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getRecordResponse(userId)).toBeNull();
+  });
+
+  it("swallows a malformed /sessions/record response body without failing the queue entry", async () => {
+    // The mutation already succeeded server-side (response.ok was
+    // true); we just couldn't parse the body. Don't fail the queue
+    // entry — the Summary screen falls back to local prediction.
+    const warnSpy = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    await auth.signInWithEmail("user-1@example.com", "password");
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-1",
+      operation: "create",
+      payload: { status: "completed" },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error("invalid JSON");
+      },
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    // Queue entry still marked completed — server accepted the POST.
+    expect(result).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[sync] /sessions/record"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
 });
