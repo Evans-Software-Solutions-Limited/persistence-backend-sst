@@ -276,6 +276,17 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
+    // Inspector Brad PR #62 (high severity, belt-and-braces): drop a
+    // stale record-response cache slot if it belongs to a DIFFERENT
+    // session id (prior session's payload would otherwise leak into
+    // the new Summary screen via FIFO sync drains). Mid-session
+    // updates (same session.id) don't touch the slot. Container-side
+    // `localSessionId` guard is the primary fix; this is parity with
+    // the SQLite adapter's same defensive clear.
+    const cached = this.recordResponses.get(userId);
+    if (cached && cached.localSessionId !== session.id) {
+      this.recordResponses.delete(userId);
+    }
   }
 
   clearActiveSession(userId: string): void {

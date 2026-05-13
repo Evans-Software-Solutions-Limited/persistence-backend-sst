@@ -83,19 +83,31 @@ export function SessionSummaryContainer() {
   // worker writes asynchronously from a separate effect; no global
   // event bus today. Stops once `serverData != null`, so the
   // steady-state cost is one mount-time read.
+  //
+  // Inspector Brad PR #62 regression: gate the cache hit on
+  // `localSessionId === snapshot.id`. The cache is keyed by userId
+  // (single-active-session invariant), so when the sync worker
+  // drains a FIFO queue containing a prior session's POST followed
+  // by the current session's POST, the cache slot transiently
+  // carries the prior session's data. Without the id check, the
+  // poll fires between the two writes, captures the prior session's
+  // payload, sets `serverData`, stops polling — and Session B
+  // permanently renders Session A's PRs + count.
   const [serverData, setServerData] = useState<RecordResponseSummary | null>(
     null,
   );
   useEffect(() => {
-    if (!userId || serverData != null) return;
+    if (!userId || !snapshot || serverData != null) return;
     const tick = () => {
       const cached = storage.getRecordResponse(userId);
-      if (cached) setServerData(cached);
+      if (cached && cached.localSessionId === snapshot.id) {
+        setServerData(cached);
+      }
     };
     tick();
     const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [userId, serverData, storage]);
+  }, [userId, snapshot, serverData, storage]);
 
   const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

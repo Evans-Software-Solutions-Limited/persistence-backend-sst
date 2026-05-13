@@ -416,12 +416,25 @@ export type RecordResponseSummary = {
   /**
    * The local-prefixed session id whose POST produced this cache
    * entry. Single-active-session invariant means this is always the
-   * user's current session at write time, but stamping it makes
-   * debugging + test fixtures more legible.
+   * user's current session at write time. Used by the
+   * `SessionSummaryContainer` poll to reject stale cache slots from
+   * a prior session that haven't been cleared yet (Inspector Brad
+   * PR #62 regression).
    */
   localSessionId: string;
   personalRecords: ReadonlyArray<RecordResponseSummaryPR>;
-  totalWorkoutsCompleted: number;
+  /**
+   * The user's cumulative completed-workout count after this session
+   * lands, sourced from the server response. `null` when the server
+   * response either didn't carry the field or carried it as null —
+   * the Summary screen then falls back to its em-dash + dropped-count
+   * subtitle, exactly as it does pre-server. Distinguished from a
+   * literal `0` so a deploy skew or partial backend rollback can't
+   * cause the presenter to render "You've completed 0 total workouts"
+   * immediately after the user has finished a workout (Inspector Brad
+   * PR #62 medium-severity).
+   */
+  totalWorkoutsCompleted: number | null;
   /** ISO timestamp the response was cached at. */
   cachedAt: string;
 };

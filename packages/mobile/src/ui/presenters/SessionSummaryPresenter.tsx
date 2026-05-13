@@ -93,11 +93,29 @@ const formatPRValue = (
   record: SummaryPersonalRecord,
   value: number,
 ): string => {
-  // 1RM-family + max_weight + max_volume all carry kg. max_reps is a
-  // dimensionless count. The other types aren't surfaced in M3 (server
-  // PR detection only computes 1rm/max_weight/max_volume).
-  if (record.recordType === "max_reps") return `${value.toFixed(0)} reps`;
-  return `${value.toFixed(1)} kg`;
+  // Whitelist-style switch — every RecordType handled explicitly.
+  // Inspector Brad PR #62 (low severity) caught the previous
+  // "everything-else → kg" fallthrough: if the backend ever emits
+  // best_time or longest_distance (it doesn't today, but the
+  // RecordType enum allows them), the card would render
+  // "45.0 kg" for a 45-second time PR. Exhaustive switch + no
+  // default branch means TS will flag this site at compile time if
+  // a new record type lands without a chosen formatter.
+  switch (record.recordType) {
+    case "1rm":
+    case "3rm":
+    case "5rm":
+    case "10rm":
+    case "max_weight":
+    case "max_volume":
+      return `${value.toFixed(1)} kg`;
+    case "max_reps":
+      return `${value.toFixed(0)} reps`;
+    case "best_time":
+      return `${value.toFixed(1)} s`;
+    case "longest_distance":
+      return `${value.toFixed(1)} m`;
+  }
 };
 
 const formatVolume = (volume: number): string => {

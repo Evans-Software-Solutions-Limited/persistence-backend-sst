@@ -191,6 +191,51 @@ describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
     expect(queryByText("18 kg")).toBeNull();
   });
 
+  it("best_time + longest_distance PRs render with seconds + metres units (Inspector Brad PR #62 regression — no kg fallthrough)", () => {
+    // Pre-fix, `formatPRValue` had an "everything-else → kg" branch,
+    // so a 45-second time PR rendered as "45.0 kg". Whitelist-style
+    // switch with no default fixes that. Server PR detection
+    // doesn't emit these record types today, but the type union
+    // accepts them and a future enum migration could unblock the
+    // server side — the presenter is now honest regardless.
+    const timePR: SummaryPersonalRecord = {
+      exerciseId: "ex-sprint",
+      exerciseName: "100m Sprint",
+      recordType: "best_time",
+      newValue: 12.4,
+      previousValue: 14.1,
+    };
+    const distancePR: SummaryPersonalRecord = {
+      exerciseId: "ex-run",
+      exerciseName: "Run",
+      recordType: "longest_distance",
+      newValue: 5200,
+      previousValue: 4800,
+    };
+    const { getByText, queryByText, rerender } = renderWithTheme(
+      <SessionSummaryPresenter
+        {...baseProps}
+        recordsHit={1}
+        personalRecords={[timePR]}
+      />,
+    );
+    expect(getByText("12.4 s")).toBeTruthy();
+    expect(getByText("14.1 s")).toBeTruthy();
+    expect(queryByText("12.4 kg")).toBeNull();
+    expect(queryByText("14.1 kg")).toBeNull();
+
+    rerender(
+      <SessionSummaryPresenter
+        {...baseProps}
+        recordsHit={1}
+        personalRecords={[distancePR]}
+      />,
+    );
+    expect(getByText("5200.0 m")).toBeTruthy();
+    expect(getByText("4800.0 m")).toBeTruthy();
+    expect(queryByText("5200.0 kg")).toBeNull();
+  });
+
   it("hides the PR section entirely when personalRecords is empty", () => {
     const { queryByTestId } = renderWithTheme(
       <SessionSummaryPresenter {...baseProps} recordsHit={0} />,

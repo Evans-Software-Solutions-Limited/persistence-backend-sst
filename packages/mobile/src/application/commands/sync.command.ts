@@ -25,7 +25,12 @@ type RecordSessionApiResponse = {
   data: {
     id: string;
     personalRecords: RecordResponseSummaryPR[];
-    totalWorkoutsCompleted: number;
+    // Nullable on the wire even though the backend always emits it
+    // today — if a deploy skew or partial rollback drops the field,
+    // we want to fall through to the em-dash fallback rather than
+    // fabricate a "0 total workouts" stat tile after the user just
+    // completed a workout (Inspector Brad PR #62 medium-severity).
+    totalWorkoutsCompleted?: number | null;
   };
 };
 
@@ -102,7 +107,13 @@ export async function processSyncQueue(
             const summary: RecordResponseSummary = {
               localSessionId: entry.entityId ?? body.data.id,
               personalRecords: body.data.personalRecords ?? [],
-              totalWorkoutsCompleted: body.data.totalWorkoutsCompleted ?? 0,
+              // `??` to `null`, NOT `0` — preserves the
+              // "didn't get a real count" → em-dash fallback when the
+              // field is missing/null on the wire. Cache slot stays
+              // honest so the Summary screen can distinguish "server
+              // said zero" (impossible — the session that just
+              // finished IS a workout) from "server didn't tell us".
+              totalWorkoutsCompleted: body.data.totalWorkoutsCompleted ?? null,
               cachedAt: new Date().toISOString(),
             };
             storage.cacheRecordResponse(session.value.userId, summary);

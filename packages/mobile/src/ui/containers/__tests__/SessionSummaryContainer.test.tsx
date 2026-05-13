@@ -183,6 +183,111 @@ describe("SessionSummaryContainer", () => {
     expect(queryByText("→")).toBeNull();
   });
 
+  it("ignores a cached server response whose localSessionId doesn't match the current snapshot (Inspector Brad PR #62 regression)", async () => {
+    // The high-severity stale-cache leak: sync worker FIFO drain
+    // can transiently write a prior session's response into the
+    // slot before the current session's response overwrites it. If
+    // the container poll fires in that window without the id guard,
+    // the current Summary screen permanently renders the prior
+    // session's PRs + totalWorkoutsCompleted.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage); // Active session id = "local-1"
+
+    // Cache slot pre-populated with a DIFFERENT session's response —
+    // simulates the transient FIFO-drain window where session A's
+    // response landed before session B's.
+    storage.cacheRecordResponse("user-1", {
+      localSessionId: "local-PRIOR-SESSION",
+      personalRecords: [
+        {
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          recordType: "1rm",
+          newValue: 999,
+          previousValue: 800,
+          setId: "set-prior",
+        },
+      ],
+      totalWorkoutsCompleted: 99,
+      cachedAt: "2026-05-12T00:00:00.000Z",
+    });
+
+    const { findByTestId, queryByText } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <SessionSummaryContainer />
+      </AdapterProvider>,
+    );
+
+    await findByTestId("session-summary-screen");
+    // The prior session's payload must NOT surface. No arrow (id
+    // guard rejected the cache hit), no "99 total workouts" in the
+    // subtitle, no "999.0 kg" PR.
+    expect(queryByText("→")).toBeNull();
+    expect(queryByText("999.0 kg")).toBeNull();
+    expect(
+      queryByText(
+        "You've completed 99 total workouts. Keep the momentum going!",
+      ),
+    ).toBeNull();
+  });
+
+  it("clears the record-response cache on cacheActiveSession when starting a NEW session (belt-and-braces)", () => {
+    // Companion to the container-side id guard: even if the guard
+    // were bypassed somehow, the storage layer ensures the slot
+    // can't carry stale data across a session boundary.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+
+    // Cache slot has Session A's response.
+    storage.cacheRecordResponse("user-1", {
+      localSessionId: "local-A",
+      personalRecords: [],
+      totalWorkoutsCompleted: 5,
+      cachedAt: "2026-05-12T00:00:00.000Z",
+    });
+    expect(storage.getRecordResponse("user-1")).not.toBeNull();
+
+    // User starts Session B — cacheActiveSession should detect the
+    // session-boundary and clear A's stale response.
+    storage.cacheActiveSession("user-1", {
+      id: "local-B",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-12T01:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+    expect(storage.getRecordResponse("user-1")).toBeNull();
+
+    // Mid-session update of the SAME session id (B → B) must NOT
+    // clear the cache — that would clobber the response right when
+    // the sync worker has written it.
+    storage.cacheRecordResponse("user-1", {
+      localSessionId: "local-B",
+      personalRecords: [],
+      totalWorkoutsCompleted: 6,
+      cachedAt: "2026-05-12T01:00:01.000Z",
+    });
+    storage.cacheActiveSession("user-1", {
+      id: "local-B",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-12T01:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+    expect(storage.getRecordResponse("user-1")?.localSessionId).toBe("local-B");
+    // Reset the InMemory adapter spec separately — `api` unused here.
+    void api;
+  });
+
   it("swaps to the server PR shape (with previousValue + arrow) once the sync worker writes the cache slot", async () => {
     // The cache-and-subscribe contract end-to-end: container mounts
     // with local prediction (no arrow), poll picks up the cached

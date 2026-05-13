@@ -699,6 +699,20 @@ export class SQLiteStorageAdapter implements StoragePort {
         db.runSync(`DELETE FROM active_sessions WHERE id = ?`, [row.id]);
       }
 
+      // Inspector Brad PR #62 (high severity, belt-and-braces): if the
+      // record-response cache slot carries a DIFFERENT session id
+      // than the one being cached now, this is a session boundary
+      // and the prior session's payload is stale. The container's
+      // `localSessionId` guard is the primary fix, but clearing here
+      // too means the cache slot can never carry stale data across a
+      // session boundary regardless of poll timing. Mid-session
+      // updates (same session.id) never touch the slot.
+      db.runSync(
+        `DELETE FROM record_responses
+         WHERE user_id = ? AND payload NOT LIKE ?`,
+        [userId, `%"localSessionId":"${session.id}"%`],
+      );
+
       db.runSync(
         `INSERT INTO active_sessions
            (id, user_id, workout_id, name, status, started_at, completed_at,

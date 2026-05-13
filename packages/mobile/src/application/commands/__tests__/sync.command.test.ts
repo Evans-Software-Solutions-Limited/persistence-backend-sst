@@ -223,6 +223,72 @@ describe("processSyncQueue", () => {
     expect(cached?.personalRecords[0]?.newValue).toBe(137.4);
   });
 
+  it("caches totalWorkoutsCompleted=null (not 0) when the server response omits or nulls the field (Inspector Brad PR #62 regression)", async () => {
+    // The medium-severity "fabricated zero" bug: pre-fix, `?? 0`
+    // landed a literal 0 in the cache when the field was missing.
+    // The Summary screen would then render "You've completed 0
+    // total workouts" immediately after the user finished a
+    // workout. Post-fix, missing/null fields stay null in the cache
+    // so the presenter falls back to the em-dash + "Keep the
+    // momentum going!" subtitle, exactly as it does pre-server.
+    await auth.signInWithEmail("user-1@example.com", "password");
+    const session = await auth.getSession();
+    if (!session.ok || !session.value) throw new Error("seed failed");
+    const userId = session.value.userId;
+
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-1",
+      operation: "create",
+      payload: {},
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+
+    // Response body OMITS totalWorkoutsCompleted entirely — simulates
+    // a deploy skew where the backend hasn't rolled out the field
+    // yet, or a partial response-shape regression.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: "server-1",
+          personalRecords: [],
+          // totalWorkoutsCompleted intentionally absent.
+        },
+      }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(
+      storage.getRecordResponse(userId)?.totalWorkoutsCompleted,
+    ).toBeNull();
+
+    // Same expectation when the field is present but null.
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-2",
+      operation: "create",
+      payload: {},
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: "server-2",
+          personalRecords: [],
+          totalWorkoutsCompleted: null,
+        },
+      }),
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(
+      storage.getRecordResponse(userId)?.totalWorkoutsCompleted,
+    ).toBeNull();
+  });
+
   it("does NOT touch the record-response cache for unrelated endpoints (workouts, sets, etc.)", async () => {
     await auth.signInWithEmail("user-1@example.com", "password");
     const session = await auth.getSession();
