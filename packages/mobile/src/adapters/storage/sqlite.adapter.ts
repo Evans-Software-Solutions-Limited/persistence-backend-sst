@@ -28,6 +28,7 @@ import type {
   StoragePort,
   EnqueueMutationInput,
   RecentSetEntry,
+  RecordResponseSummary,
   RestTimerState,
   SyncQueueEntry,
   SyncStats,
@@ -217,6 +218,19 @@ export class SQLiteStorageAdapter implements StoragePort {
         synced_at TEXT NOT NULL
       );
 
+      -- M3 Phase 3b: cached server response from POST /sessions/record.
+      -- Drives the Summary screen's switch from local prediction
+      -- (calculateSummary + detectPersonalRecords) to server-truth
+      -- (PRs with previousValue + totalWorkoutsCompleted) once the
+      -- sync worker drains the queue. Single row per user
+      -- (single-active-session invariant); cleared by clearActiveSession.
+      -- Payload is the full JSON-serialised RecordResponseSummary.
+      CREATE TABLE IF NOT EXISTS record_responses (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        cached_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
     `);
@@ -251,12 +265,24 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows.map(mapRow);
   }
 
-  markMutationInFlight(id: number): void {
+  markMutationInFlight(id: number): boolean {
     const db = this.getDb();
-    db.runSync(
-      `UPDATE sync_queue SET status = 'in_flight', updated_at = datetime('now') WHERE id = ?`,
+    // Row-conditional claim: only flip to in_flight when the entry
+    // is still `pending` or `failed`. Returns whether THIS caller
+    // claimed it. SQLite's `runSync` returns `{ changes }` — we
+    // treat changes>0 as "this caller owns it". Stops two
+    // concurrent drains (e.g. useSyncWorker mid-flush + the inline
+    // post-Submit drain in WorkoutRatingContainer) from both
+    // marking the same entry in-flight and firing duplicate POSTs.
+    // See storage.port.ts:50-67 for the full Inspector Brad PR #62
+    // context.
+    const result = db.runSync(
+      `UPDATE sync_queue
+       SET status = 'in_flight', updated_at = datetime('now')
+       WHERE id = ? AND status IN ('pending', 'failed')`,
       [id],
     );
+    return result.changes > 0;
   }
 
   markMutationCompleted(id: number): void {
@@ -685,6 +711,20 @@ export class SQLiteStorageAdapter implements StoragePort {
         db.runSync(`DELETE FROM active_sessions WHERE id = ?`, [row.id]);
       }
 
+      // Inspector Brad PR #62 (high severity, belt-and-braces): if the
+      // record-response cache slot carries a DIFFERENT session id
+      // than the one being cached now, this is a session boundary
+      // and the prior session's payload is stale. The container's
+      // `localSessionId` guard is the primary fix, but clearing here
+      // too means the cache slot can never carry stale data across a
+      // session boundary regardless of poll timing. Mid-session
+      // updates (same session.id) never touch the slot.
+      db.runSync(
+        `DELETE FROM record_responses
+         WHERE user_id = ? AND payload NOT LIKE ?`,
+        [userId, `%"localSessionId":"${session.id}"%`],
+      );
+
       db.runSync(
         `INSERT INTO active_sessions
            (id, user_id, workout_id, name, status, started_at, completed_at,
@@ -765,8 +805,41 @@ export class SQLiteStorageAdapter implements StoragePort {
     const db = this.getDb();
     // Drop the row regardless of status — Summary's Continue button
     // retires a flushed `completed` / `cancelled` row, and the worker
-    // calls this after a successful bulk-record swap.
+    // calls this after a successful bulk-record swap. Also drop the
+    // cached record-response so a fresh session doesn't render stale
+    // PR/totalWorkoutsCompleted data from the previous one.
     db.runSync(`DELETE FROM active_sessions WHERE user_id = ?`, [userId]);
+    db.runSync(`DELETE FROM record_responses WHERE user_id = ?`, [userId]);
+  }
+
+  cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
+    const db = this.getDb();
+    db.runSync(
+      `INSERT INTO record_responses (user_id, payload, cached_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         payload = excluded.payload,
+         cached_at = excluded.cached_at`,
+      [userId, JSON.stringify(response), response.cachedAt],
+    );
+  }
+
+  getRecordResponse(userId: string): RecordResponseSummary | null {
+    const db = this.getDb();
+    const row = db.getFirstSync(
+      `SELECT payload FROM record_responses WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string } | null;
+    if (!row) return null;
+    // Trust the round-trip — the writer is `cacheRecordResponse` and
+    // payload is its own JSON.stringify output; storage is local to
+    // the device so there's no external corruption vector.
+    return JSON.parse(row.payload) as RecordResponseSummary;
+  }
+
+  clearRecordResponse(userId: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM record_responses WHERE user_id = ?`, [userId]);
   }
 
   getSessionSets(

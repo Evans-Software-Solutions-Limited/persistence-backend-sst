@@ -3,7 +3,7 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
-import type { PersonalRecord } from "@/domain/models/record";
+import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ReferenceEntry,
   ReferenceList,
@@ -47,7 +47,24 @@ export interface StoragePort {
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;
   getPendingMutations(): SyncQueueEntry[];
-  markMutationInFlight(id: number): void;
+  /**
+   * Atomically claim a queue entry: flips status to `in_flight` ONLY
+   * when the row is currently `pending` or `failed`. Returns `true`
+   * if the caller now owns the entry (proceed with the fetch),
+   * `false` if another drain has already claimed it (skip silently).
+   *
+   * This is the storage-layer guard against concurrent drains
+   * processing the same entry — Inspector Brad PR #62 found this
+   * race after the inline post-Submit drain landed: `useSyncWorker`
+   * has its own `flushingRef` but the inline call from
+   * `WorkoutRatingContainer.onSubmit` doesn't see that ref. With an
+   * unconditional UPDATE, both drains could mark the same entry
+   * in-flight + fire duplicate POSTs (and `recordSession` has no
+   * idempotency key, so the server would create two session rows).
+   * Conditional UPDATE + affected-rows check prevents that at the
+   * SQL level, no matter how many concurrent callers exist.
+   */
+  markMutationInFlight(id: number): boolean;
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
   getSyncStats(): SyncStats;
@@ -260,6 +277,47 @@ export interface StoragePort {
   upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void;
 
   /**
+   * Persist the server's augmented `/sessions/record` response — the
+   * PR-of-the-session list (with `previousValue` for the "before →
+   * after" arrow) and `totalWorkoutsCompleted` count — so the Summary
+   * screen can swap its local prediction for server-truth once the
+   * sync worker drains the queue. Single row per user (single-active-
+   * session invariant); last-write-wins. Cleared by
+   * `clearActiveSession` so a fresh session never reads stale data
+   * from the previous one.
+   *
+   * Lifecycle (the "α cache-and-subscribe" design):
+   *   1. completeSessionCommand → cacheActiveSession + enqueueMutation
+   *      → router.replace("/(app)/session/summary")
+   *   2. Summary screen mounts → reads getLatestSession + local
+   *      `detectPersonalRecords` → renders local prediction
+   *   3. useSyncWorker drains the queue → POST /sessions/record →
+   *      parses response → cacheRecordResponse(userId, ...)
+   *   4. Summary container's poll detects the new cache slot → re-
+   *      renders with server data (real previousValue / total count)
+   *   5. User taps Continue → clearActiveSession (also clears this
+   *      cache) → modal stack collapses
+   */
+  cacheRecordResponse(userId: string, response: RecordResponseSummary): void;
+
+  /**
+   * Read the cached `/sessions/record` server response for this user.
+   * Returns null until the sync worker drains the bulk-record POST
+   * (or if the user is offline). The Summary screen polls this slot
+   * on focus + an interval so the cards re-render in place when the
+   * server response lands.
+   */
+  getRecordResponse(userId: string): RecordResponseSummary | null;
+
+  /**
+   * Drop the cached record-response. Called by `clearActiveSession`
+   * implicitly so the two lifecycles stay aligned, and available as a
+   * standalone for tests that want to assert the cache is empty after
+   * a clear.
+   */
+  clearRecordResponse(userId: string): void;
+
+  /**
    * Upsert PR rows by `(userId, exerciseId, recordType)`. Latest write
    * wins — server-canonical reconciliation overwrites the predictive
    * client write after the bulk-record flush returns.
@@ -347,4 +405,53 @@ export type SyncStats = {
   pending: number;
   failed: number;
   inFlight: number;
+};
+
+/**
+ * Per-PR entry inside the cached `/sessions/record` response. Mirrors
+ * the backend's `DetectedPersonalRecord` shape 1:1 (every field that
+ * lands on the wire). `previousValue` is always non-null for surfaced
+ * PRs — first-occurrence records are filtered server-side per Brad's
+ * "no PRs on the first workout" rule, so the client never has to
+ * branch on the absence.
+ *
+ * Spec: microservices/core/src/application/repositories/personalRecordsRepository.ts
+ *       (DetectedPersonalRecord). Numbers arrive 2dp-rounded — the
+ *       server does the toFixed(2) → parseFloat round-trip so the
+ *       client renders the same value the DB persisted.
+ */
+export type RecordResponseSummaryPR = {
+  exerciseId: string;
+  exerciseName: string;
+  recordType: RecordType;
+  newValue: number;
+  previousValue: number;
+  setId: string;
+};
+
+export type RecordResponseSummary = {
+  /**
+   * The local-prefixed session id whose POST produced this cache
+   * entry. Single-active-session invariant means this is always the
+   * user's current session at write time. Used by the
+   * `SessionSummaryContainer` poll to reject stale cache slots from
+   * a prior session that haven't been cleared yet (Inspector Brad
+   * PR #62 regression).
+   */
+  localSessionId: string;
+  personalRecords: ReadonlyArray<RecordResponseSummaryPR>;
+  /**
+   * The user's cumulative completed-workout count after this session
+   * lands, sourced from the server response. `null` when the server
+   * response either didn't carry the field or carried it as null —
+   * the Summary screen then falls back to its em-dash + dropped-count
+   * subtitle, exactly as it does pre-server. Distinguished from a
+   * literal `0` so a deploy skew or partial backend rollback can't
+   * cause the presenter to render "You've completed 0 total workouts"
+   * immediately after the user has finished a workout (Inspector Brad
+   * PR #62 medium-severity).
+   */
+  totalWorkoutsCompleted: number | null;
+  /** ISO timestamp the response was cached at. */
+  cachedAt: string;
 };

@@ -141,6 +141,50 @@ describe("InMemoryStorageAdapter", () => {
       const stats = storage.getSyncStats();
       expect(stats.pending).toBe(0);
     });
+
+    it("markMutationInFlight is row-conditional: returns true only on the first claim, false on re-claim (Inspector Brad PR #62 race fix)", () => {
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w1",
+        operation: "create",
+        payload: {},
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+
+      // First claim wins.
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+      // Second concurrent caller racing for the same id gets `false`
+      // — this is the guard that stops two drains POSTing the same
+      // entry twice.
+      expect(storage.markMutationInFlight(entry.id)).toBe(false);
+      // Even after the first owner marks it completed, the entry
+      // can't be re-claimed (only pending/failed are claimable).
+      storage.markMutationCompleted(entry.id);
+      expect(storage.markMutationInFlight(entry.id)).toBe(false);
+    });
+
+    it("a failed entry is re-claimable on the next drain (retry path stays open)", () => {
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w1",
+        operation: "create",
+        payload: {},
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+      storage.markMutationFailed(entry.id, "boom");
+      // Failed → next drain can claim it again.
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+    });
+
+    it("returns false for a non-existent id (defensive)", () => {
+      expect(storage.markMutationInFlight(99999)).toBe(false);
+    });
   });
 
   describe("sync metadata", () => {
@@ -806,6 +850,83 @@ describe("InMemoryStorageAdapter", () => {
       seedActive();
       storage.swapLocalSessionId("local-zzz", "server-zzz");
       expect(storage.getActiveSession("user-1")?.id).toBe("local-abc");
+    });
+  });
+
+  describe("record response cache (M3 Phase 3b)", () => {
+    const sample = {
+      localSessionId: "local-1",
+      personalRecords: [
+        {
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          recordType: "1rm" as const,
+          newValue: 137.4,
+          previousValue: 120,
+          setId: "set-1",
+        },
+      ],
+      totalWorkoutsCompleted: 12,
+      cachedAt: "2026-05-12T10:30:00.000Z",
+    };
+
+    it("returns null before any response is cached", () => {
+      expect(storage.getRecordResponse("user-1")).toBeNull();
+    });
+
+    it("upserts (last-write-wins) on cacheRecordResponse + reads back via getRecordResponse", () => {
+      storage.cacheRecordResponse("user-1", sample);
+      const cached = storage.getRecordResponse("user-1");
+      expect(cached).toEqual(sample);
+
+      // Overwrite with a different totalWorkoutsCompleted.
+      storage.cacheRecordResponse("user-1", {
+        ...sample,
+        totalWorkoutsCompleted: 13,
+      });
+      expect(storage.getRecordResponse("user-1")?.totalWorkoutsCompleted).toBe(
+        13,
+      );
+    });
+
+    it("clones on read so callers can't mutate the cache by reference", () => {
+      storage.cacheRecordResponse("user-1", sample);
+      const a = storage.getRecordResponse("user-1");
+      const b = storage.getRecordResponse("user-1");
+      expect(a).not.toBe(b);
+      expect(a).toEqual(b);
+    });
+
+    it("clearRecordResponse drops the slot for the user", () => {
+      storage.cacheRecordResponse("user-1", sample);
+      storage.clearRecordResponse("user-1");
+      expect(storage.getRecordResponse("user-1")).toBeNull();
+    });
+
+    it("clearActiveSession also clears the record-response cache (lifecycle parity with SQLite)", () => {
+      storage.cacheActiveSession("user-1", {
+        id: "local-1",
+        userId: "user-1",
+        workoutId: null,
+        name: "Quick Workout",
+        status: "completed",
+        startedAt: "2026-05-12T10:00:00.000Z",
+        completedAt: "2026-05-12T10:30:00.000Z",
+        notes: null,
+        exercises: [],
+      });
+      storage.cacheRecordResponse("user-1", sample);
+
+      storage.clearActiveSession("user-1");
+
+      expect(storage.getActiveSession("user-1")).toBeNull();
+      expect(storage.getRecordResponse("user-1")).toBeNull();
+    });
+
+    it("scopes per-user — user A's cache doesn't leak to user B", () => {
+      storage.cacheRecordResponse("user-A", sample);
+      expect(storage.getRecordResponse("user-A")).not.toBeNull();
+      expect(storage.getRecordResponse("user-B")).toBeNull();
     });
   });
 });

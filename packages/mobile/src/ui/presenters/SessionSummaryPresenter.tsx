@@ -1,15 +1,35 @@
 /**
- * SessionSummaryPresenter — final review screen on Finish/Discard.
- * (M3, Stories 006 + 007.)
+ * SessionSummaryPresenter — final review screen on Finish (Stories
+ * 006 + 007).
  *
- * Ported from `persistence-mobile/components/workouts/WorkoutSummaryScreen`
- * with the V2 Container/Presenter shape — all calculations come in
- * as `summary` from `sessionService.calculateSummary` +
- * `detectPersonalRecords`. Save / Discard intent is driven by the
- * container.
+ * Ported 1:1 from
+ * `persistence-mobile/components/workouts/WorkoutSummaryScreen/WorkoutSummaryScreen.tsx`
+ * (M3 Phase 3b legacy parity, decided between Brad and me on PR #61):
+ *
+ *   - Title: "Workout Complete!" (capital + exclamation)
+ *   - Subtitle: "You've completed N total workouts. Keep the momentum
+ *     going!" — N is null pre-server; pluralisation handled inline
+ *     ("workout" / "workouts")
+ *   - X close button right-aligned at the top of the scroll (no
+ *     top-bar with title + spacer)
+ *   - 3-stat strip: Workouts Completed / Records Hit / Total Volume
+ *     (Brad's pick — the third tile was "Achievements" in legacy but
+ *     the achievement infrastructure was never wired; total volume is
+ *     a meaningful session-scoped stat that fills the slot honestly)
+ *   - "Personal Records Hit! 🏆" section header
+ *   - PR card body: `previous → new` with strikethrough on previous
+ *     when `previousValue != null`; fallback to just `new value` when
+ *     local prediction (pre-server) hasn't seen a prior baseline.
+ *     Matches legacy line 83-91.
+ *   - Continue button (no "View Achievements" gate — the achievements
+ *     infrastructure isn't built and Brad confirmed legacy never
+ *     wired it either).
+ *
+ * Data shape comes pre-merged from `SessionSummaryContainer` — server
+ * data wins for PRs + totalWorkoutsCompleted, local fills duration /
+ * totalVolume. The presenter just renders.
  *
  * Spec: specs/05-active-session/requirements.md STORY-006, STORY-007
- *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 8
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -27,31 +47,75 @@ import {
   Spacing,
   Typography,
 } from "@/ui/theme/workoutsLegacyTheme";
-import type { PersonalRecord, RecordType } from "@/domain/models/record";
-import type { SessionSummary } from "@/domain/models/session";
+import type { SummaryPersonalRecord } from "@/ui/containers/SessionSummaryContainer";
 
-const RECORD_TYPE_LABEL: Record<RecordType, string> = {
+const RECORD_TYPE_LABEL: Record<SummaryPersonalRecord["recordType"], string> = {
   "1rm": "1 Rep Max",
   "3rm": "3 Rep Max",
   "5rm": "5 Rep Max",
   "10rm": "10 Rep Max",
   max_weight: "Max Weight",
+  // Added alongside the broadened server-side PR detection in PR #61.
+  // The legacy app never had a `max_volume` enum value; "Max Volume"
+  // is the chosen mobile label for it.
+  max_volume: "Max Volume",
   max_reps: "Max Reps",
   best_time: "Best Time",
   longest_distance: "Longest Distance",
 };
 
 export type SessionSummaryPresenterProps = {
-  summary: SessionSummary;
+  /**
+   * Total weight × reps lifted in the just-completed session. Sourced
+   * locally from `calculateSummary`; doesn't require the server
+   * response.
+   */
+  totalVolume: number;
+  /**
+   * Number of canonical PRs surfaced. Equal to `personalRecords.length` —
+   * passed separately so the stat tile + the section's empty-state
+   * branch don't both have to compute it.
+   */
+  recordsHit: number;
+  /**
+   * The user's cumulative completed-workout count after this session
+   * lands. `null` while the bulk-record POST is still pending — the
+   * stat tile shows an em-dash and the subtitle copy drops the
+   * count entirely until the server response arrives.
+   */
+  totalWorkoutsCompleted: number | null;
+  personalRecords: SummaryPersonalRecord[];
   onSave: () => void;
   onClose: () => void;
 };
 
-const formatDuration = (seconds: number): string => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+const formatPRValue = (
+  record: SummaryPersonalRecord,
+  value: number,
+): string => {
+  // Whitelist-style switch — every RecordType handled explicitly.
+  // Inspector Brad PR #62 (low severity) caught the previous
+  // "everything-else → kg" fallthrough: if the backend ever emits
+  // best_time or longest_distance (it doesn't today, but the
+  // RecordType enum allows them), the card would render
+  // "45.0 kg" for a 45-second time PR. Exhaustive switch + no
+  // default branch means TS will flag this site at compile time if
+  // a new record type lands without a chosen formatter.
+  switch (record.recordType) {
+    case "1rm":
+    case "3rm":
+    case "5rm":
+    case "10rm":
+    case "max_weight":
+    case "max_volume":
+      return `${value.toFixed(1)} kg`;
+    case "max_reps":
+      return `${value.toFixed(0)} reps`;
+    case "best_time":
+      return `${value.toFixed(1)} s`;
+    case "longest_distance":
+      return `${value.toFixed(1)} m`;
+  }
 };
 
 const formatVolume = (volume: number): string => {
@@ -60,88 +124,94 @@ const formatVolume = (volume: number): string => {
   return `${Math.round(volume)} kg`;
 };
 
-const formatPRValue = (record: PersonalRecord): string => {
-  // Epley 1RM is unitless kg. Round to 1dp for display.
-  if (record.recordType === "1rm") return `${record.value.toFixed(1)} kg`;
-  return record.value.toFixed(1);
-};
-
 export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
-  const { summary } = props;
+  const {
+    totalVolume,
+    recordsHit,
+    totalWorkoutsCompleted,
+    personalRecords,
+    onSave,
+    onClose,
+  } = props;
 
   return (
     <View style={styles.container} testID="session-summary-screen">
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={props.onClose}
-          style={styles.closeButton}
-          accessibilityLabel="Close summary"
-          testID="session-summary-close"
-        >
-          <Ionicons name="close" size={24} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>
-          Workout complete
-        </Text>
-        <View style={styles.spacer} />
-      </View>
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         testID="session-summary-scroll"
       >
-        <View style={styles.statsRow}>
-          <View style={styles.statCard} testID="summary-stat-duration">
-            <Ionicons name="time" size={24} color={Colors.primary.DEFAULT} />
-            <Text style={styles.statValue}>
-              {formatDuration(summary.duration)}
-            </Text>
-            <Text style={styles.statLabel}>Duration</Text>
-          </View>
-          <View style={styles.statCard} testID="summary-stat-volume">
-            <Ionicons name="barbell" size={24} color={Colors.warning.DEFAULT} />
-            <Text style={styles.statValue}>
-              {formatVolume(summary.totalVolume)}
-            </Text>
-            <Text style={styles.statLabel}>Total volume</Text>
-          </View>
+        {/* Right-aligned close — no top-bar / centred title / spacer.
+            Matches legacy WorkoutSummaryScreen.tsx:40-44. */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.headerCloseButton}
+            hitSlop={8}
+            accessibilityLabel="Close summary"
+            testID="session-summary-close"
+          >
+            <Ionicons name="close" size={24} color={Colors.text.secondary} />
+          </TouchableOpacity>
         </View>
 
+        <Text style={styles.title}>Workout Complete!</Text>
+        <Text style={styles.subtitle}>
+          {totalWorkoutsCompleted == null
+            ? "Keep the momentum going!"
+            : `You've completed ${totalWorkoutsCompleted} total ${
+                totalWorkoutsCompleted === 1 ? "workout" : "workouts"
+              }. Keep the momentum going!`}
+        </Text>
+
+        {/* 3-stat strip — same flex-row of cards as legacy, third
+            tile carries Total Volume (Brad's pick replacing legacy's
+            Achievements column since that infrastructure was never
+            wired). */}
         <View style={styles.statsRow}>
-          <View style={styles.statCard} testID="summary-stat-exercises">
+          <View
+            style={styles.statCard}
+            testID="summary-stat-workouts-completed"
+          >
             <Ionicons
               name="checkmark-circle"
-              size={24}
+              size={28}
               color={Colors.success.DEFAULT}
             />
             <Text style={styles.statValue}>
-              {summary.exercisesCompleted} / {summary.totalExercises}
+              {totalWorkoutsCompleted == null ? "—" : totalWorkoutsCompleted}
             </Text>
-            <Text style={styles.statLabel}>Exercises</Text>
+            <Text style={styles.statLabel}>Workouts Completed</Text>
           </View>
-          <View style={styles.statCard} testID="summary-stat-sets">
-            <Ionicons name="repeat" size={24} color={Colors.success.DEFAULT} />
-            <Text style={styles.statValue}>
-              {summary.setsCompleted} / {summary.totalSets}
-            </Text>
-            <Text style={styles.statLabel}>Sets</Text>
+          <View style={styles.statCard} testID="summary-stat-records-hit">
+            <Ionicons
+              name="trending-up"
+              size={28}
+              color={Colors.warning.DEFAULT}
+            />
+            <Text style={styles.statValue}>{recordsHit}</Text>
+            <Text style={styles.statLabel}>Records Hit</Text>
+          </View>
+          <View style={styles.statCard} testID="summary-stat-total-volume">
+            <Ionicons name="barbell" size={28} color={Colors.info.DEFAULT} />
+            <Text style={styles.statValue}>{formatVolume(totalVolume)}</Text>
+            <Text style={styles.statLabel}>Total Volume</Text>
           </View>
         </View>
 
-        {summary.personalRecords.length > 0 && (
+        {personalRecords.length > 0 && (
           <View style={styles.section} testID="summary-pr-section">
-            <Text style={styles.sectionTitle}>Personal records</Text>
-            {summary.personalRecords.map((pr) => (
+            <Text style={styles.sectionTitle}>Personal Records Hit! 🏆</Text>
+            {personalRecords.map((pr, index) => (
               <View
-                key={pr.id}
+                key={`${pr.exerciseId}-${pr.recordType}-${index}`}
                 style={styles.prCard}
-                testID={`summary-pr-${pr.exerciseId}`}
+                testID={`summary-pr-${pr.exerciseId}-${pr.recordType}`}
               >
                 <View style={styles.prHeader}>
                   <Ionicons
                     name="medal"
-                    size={20}
+                    size={24}
                     color={Colors.warning.DEFAULT}
                   />
                   <Text style={styles.prExerciseName} numberOfLines={1}>
@@ -152,28 +222,44 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
                   <Text style={styles.prType}>
                     {RECORD_TYPE_LABEL[pr.recordType]}
                   </Text>
-                  <Text style={styles.prValue}>{formatPRValue(pr)}</Text>
+                  <View style={styles.prValues}>
+                    {pr.previousValue != null ? (
+                      <>
+                        <Text style={styles.prPreviousValue}>
+                          {formatPRValue(pr, pr.previousValue)}
+                        </Text>
+                        <Text style={styles.prArrow}>→</Text>
+                        <Text style={styles.prNewValue}>
+                          {formatPRValue(pr, pr.newValue)}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.prNewValue}>
+                        {formatPRValue(pr, pr.newValue)}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               </View>
             ))}
           </View>
         )}
-      </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.footerButton, styles.primaryButton]}
-          onPress={props.onSave}
-          testID="summary-save-button"
-        >
-          <Text style={styles.primaryLabel}>Continue</Text>
-          <Ionicons
-            name="arrow-forward"
-            size={18}
-            color={Colors.text.primary}
-          />
-        </TouchableOpacity>
-      </View>
+        <View style={styles.continueButtonContainer}>
+          <TouchableOpacity
+            style={styles.continueButton}
+            onPress={onSave}
+            testID="summary-save-button"
+          >
+            <Text style={styles.continueButtonText}>Continue</Text>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Colors.text.primary}
+            />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -183,70 +269,70 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background.primary,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-    backgroundColor: Colors.surface.primary,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  spacer: { width: 36 },
-  title: {
-    ...Typography.h3,
-    flex: 1,
-    textAlign: "center",
-  },
   scroll: { flex: 1 },
   scrollContent: {
-    padding: Spacing.md,
-    gap: Spacing.md,
+    padding: Spacing.lg,
+    gap: Spacing.lg,
+  },
+  header: {
+    alignItems: "flex-end",
+  },
+  headerCloseButton: {
+    padding: Spacing.xs,
+  },
+  title: {
+    ...Typography.h2,
+    color: Colors.text.primary,
+    textAlign: "center",
+    fontWeight: "700",
+  },
+  subtitle: {
+    ...Typography.body1,
+    color: Colors.text.secondary,
+    textAlign: "center",
   },
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.md,
   },
   statCard: {
     flex: 1,
-    backgroundColor: Colors.surface.secondary,
+    minWidth: 120,
+    backgroundColor: Colors.surface.primary,
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    padding: Spacing.lg,
     alignItems: "center",
     gap: Spacing.xs,
   },
   statValue: {
     ...Typography.h2,
     color: Colors.text.primary,
+    fontWeight: "700",
   },
   statLabel: {
-    ...Typography.caption,
+    ...Typography.body2,
     color: Colors.text.secondary,
+    textAlign: "center",
   },
   section: {
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
   sectionTitle: {
-    ...Typography.h4,
+    ...Typography.h3,
     color: Colors.text.primary,
+    fontWeight: "600",
   },
   prCard: {
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: Colors.surface.primary,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
   prHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
   prExerciseName: {
     ...Typography.body1,
@@ -258,37 +344,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginLeft: 32,
   },
   prType: {
     ...Typography.body2,
     color: Colors.text.secondary,
   },
-  prValue: {
-    ...Typography.h4,
-    color: Colors.warning.DEFAULT,
-  },
-  footer: {
+  prValues: {
     flexDirection: "row",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    alignItems: "center",
     gap: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.surface.border,
-    backgroundColor: Colors.surface.primary,
   },
-  footerButton: {
-    flex: 1,
+  prNewValue: {
+    ...Typography.body1,
+    color: Colors.warning.DEFAULT,
+    fontWeight: "600",
+  },
+  prArrow: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+  },
+  prPreviousValue: {
+    ...Typography.body2,
+    color: Colors.text.tertiary,
+    textDecorationLine: "line-through",
+  },
+  continueButtonContainer: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  continueButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
-  },
-  primaryButton: {
     backgroundColor: Colors.primary.DEFAULT,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
   },
-  primaryLabel: {
+  continueButtonText: {
     ...Typography.body1,
     color: Colors.text.primary,
     fontWeight: "600",
