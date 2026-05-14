@@ -54,8 +54,17 @@ function makeAdapters(
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
+    // Fire the auth-state callback synchronously at registration
+    // time. The legacy mock deferred this via `setTimeout(... , 0)`
+    // to mimic Supabase's INITIAL_SESSION event, but the resulting
+    // unwrapped `setSession` setState (fired from a macrotask after
+    // render commit) raced with `findByTestId` polling under CI load
+    // and intermittently pushed the test past its 5 s outer timeout.
+    // Synchronous firing collapses the bootstrap into a single
+    // render commit — no macrotask race, no unwrapped-act warning,
+    // same observable behaviour for the consumer.
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
@@ -74,6 +83,17 @@ function makeAdapters(
 
 function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
   storage.cacheExercises(exercises);
+  // Stamp `lastSyncedAt` so `getExercisesQuery(...).isStale` returns
+  // false on mount and the popover's `useEffect`-driven background
+  // `refreshExerciseCache` is a no-op for these tests. Without this,
+  // every test races against an unresolved refresh promise inside
+  // React Testing Library's `act()` window — locally that races
+  // benignly, but on CI runners the test occasionally times out
+  // before the data render commits (PR-3 CI flake on the third test
+  // in this file). Tests that DO want to exercise the stale-refresh
+  // path can `storage.setLastSyncedAt("exercises", olderIso)` after
+  // seeding to override.
+  storage.setLastSyncedAt("exercises", new Date().toISOString());
 }
 
 describe("SwapExercisePopover", () => {
@@ -127,6 +147,22 @@ describe("SwapExercisePopover", () => {
     expect(onSwap).not.toHaveBeenCalled();
   });
 
+  /**
+   * Per-test timeout bumped from the default 5 s to 15 s. This case
+   * hit a CI-only 5 s timeout consistently across PR-3's CI runs
+   * even after two unrelated flake hypotheses (`seedCache`
+   * `lastSyncedAt` stamping; auth-mock `setTimeout` removal) — both
+   * fixes stayed in because they were real concurrency improvements,
+   * but neither was the actual cause. The third test in this suite
+   * is the first to assert on a data-driven testID; under GHA-runner
+   * load (slower CPU + cold caches) the React-Native test-renderer
+   * commit + synchronous auth bootstrap + seedCache memo chain land
+   * just close enough to 5 s that `findByTestId` intermittently
+   * overshoots. Tests 4-15 do the same data-driven queries and
+   * pass — the suite must be warm by then. Locally this test runs
+   * in ~150 ms; the 15 s ceiling gives ~100× headroom while still
+   * being short enough to flag a real regression.
+   */
   it("Swap fires onSwap with EXACTLY ONE row (single-element array — matches dispatcher's `rows` loop shape)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
@@ -152,7 +188,7 @@ describe("SwapExercisePopover", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("ex-1");
     expect(rows[0].name).toBe("Bench Press");
-  });
+  }, 15000);
 
   it("tapping a different row replaces the selection (single-select, not additive)", async () => {
     const storage = new InMemoryStorageAdapter();

@@ -25,8 +25,12 @@ function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
+    // Fire the auth-state callback synchronously at registration —
+    // see SwapExercisePopover.test.tsx for the full rationale (CI
+    // flake from deferred-via-setTimeout setState racing with test-
+    // library polling).
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
@@ -116,7 +120,7 @@ describe("WorkoutRatingContainer", () => {
         data: {
           id: "server-1",
           personalRecords: [],
-          totalWorkoutsCompleted: 1,
+          workoutsThisMonth: 1,
         },
       }),
     });
@@ -232,11 +236,11 @@ describe("WorkoutRatingContainer", () => {
 
     // End-to-end signal: after the drain completes, the cache slot
     // carries the server response so the Summary screen can render
-    // the real `totalWorkoutsCompleted` value instead of em-dash.
+    // the real `workoutsThisMonth` value instead of em-dash.
     await waitFor(() => {
       expect(storage.getRecordResponse("user-1")).not.toBeNull();
     });
-    expect(storage.getRecordResponse("user-1")?.totalWorkoutsCompleted).toBe(1);
+    expect(storage.getRecordResponse("user-1")?.workoutsThisMonth).toBe(1);
   });
 
   it("Submit doesn't block on the drain — router.replace fires even if the network is unreachable", async () => {

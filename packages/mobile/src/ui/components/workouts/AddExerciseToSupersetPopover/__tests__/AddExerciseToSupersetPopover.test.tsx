@@ -53,8 +53,17 @@ function makeAdapters(
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
+    // Fire the auth-state callback synchronously at registration
+    // time. The legacy mock deferred this via `setTimeout(... , 0)`
+    // to mimic Supabase's INITIAL_SESSION event, but the resulting
+    // unwrapped `setSession` setState (fired from a macrotask after
+    // render commit) raced with `findByTestId` polling under CI load
+    // and intermittently pushed the test past its 5 s outer timeout.
+    // Synchronous firing collapses the bootstrap into a single
+    // render commit — no macrotask race, no unwrapped-act warning,
+    // same observable behaviour for the consumer.
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
@@ -73,6 +82,15 @@ function makeAdapters(
 
 function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
   storage.cacheExercises(exercises);
+  // Stamp `lastSyncedAt` so `getExercisesQuery(...).isStale` returns
+  // false on mount and the popover's `useEffect`-driven background
+  // `refreshExerciseCache` is a no-op for these tests. Mirrors the
+  // matching helper in SwapExercisePopover.test.tsx — same flake
+  // class, same fix. Without this, every test races against an
+  // unresolved refresh promise inside React Testing Library's
+  // `act()` window; locally that races benignly, but CI runners can
+  // occasionally time out before the data render commits.
+  storage.setLastSyncedAt("exercises", new Date().toISOString());
 }
 
 describe("AddExerciseToSupersetPopover", () => {

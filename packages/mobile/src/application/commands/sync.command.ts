@@ -13,10 +13,10 @@ export type SyncResult = {
 
 /**
  * Server response shape returned by `POST /sessions/record` —
- * `data: {…session, personalRecords, totalWorkoutsCompleted}`. Only
- * the augmented fields (Phase 3b) are read here; the rest of the
- * payload is the canonical session re-fetch which the swap path
- * already consumes elsewhere.
+ * `data: {…session, personalRecords, workoutsThisMonth}`. Only the
+ * augmented fields (Phase 3b) are read here; the rest of the payload
+ * is the canonical session re-fetch which the swap path already
+ * consumes elsewhere.
  *
  * Spec: microservices/core/src/application/repositories/sessionRepository.ts
  *       (RecordedSession + DetectedPersonalRecord).
@@ -28,9 +28,10 @@ type RecordSessionApiResponse = {
     // Nullable on the wire even though the backend always emits it
     // today — if a deploy skew or partial rollback drops the field,
     // we want to fall through to the em-dash fallback rather than
-    // fabricate a "0 total workouts" stat tile after the user just
-    // completed a workout (Inspector Brad PR #62 medium-severity).
-    totalWorkoutsCompleted?: number | null;
+    // fabricate a "0 workouts this month" stat tile after the user
+    // just completed a workout (Inspector Brad PR #62 medium-
+    // severity).
+    workoutsThisMonth?: number | null;
   };
 };
 
@@ -95,7 +96,7 @@ export async function processSyncQueue(
 
       // M3 Phase 3b: capture the `/sessions/record` augmented response
       // so the Summary screen can swap its local prediction for
-      // server-truth (PRs with previousValue + totalWorkoutsCompleted).
+      // server-truth (PRs with previousValue + workoutsThisMonth).
       // Single-active-session invariant means the cache is keyed by
       // userId; cleared by `clearActiveSession` when the user taps
       // Continue. Other endpoints are unaffected — their bodies are
@@ -123,7 +124,7 @@ export async function processSyncQueue(
               // honest so the Summary screen can distinguish "server
               // said zero" (impossible — the session that just
               // finished IS a workout) from "server didn't tell us".
-              totalWorkoutsCompleted: body.data.totalWorkoutsCompleted ?? null,
+              workoutsThisMonth: body.data.workoutsThisMonth ?? null,
               cachedAt: new Date().toISOString(),
             };
             storage.cacheRecordResponse(session.value.userId, summary);

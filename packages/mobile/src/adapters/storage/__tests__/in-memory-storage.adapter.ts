@@ -310,7 +310,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     // Same lifecycle for the cached server-response (M3 Phase 3b) —
     // clearing the active session also retires whatever bulk-record
     // response was cached for that session, so a fresh session starts
-    // with no stale PRs / totalWorkoutsCompleted on the Summary screen.
+    // with no stale PRs / workoutsThisMonth on the Summary screen.
     this.recordResponses.delete(userId);
   }
 

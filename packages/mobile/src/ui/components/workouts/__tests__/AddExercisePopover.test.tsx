@@ -66,6 +66,23 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
   return <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>;
 }
 
+/**
+ * Test fixture: seed the exercise cache AND stamp `lastSyncedAt` to
+ * now. Stamping the timestamp is critical because the popover's
+ * mount-time `useEffect` reads `getExercisesQuery(...).isStale` and
+ * fires `refreshExerciseCache` whenever the cache lacks a sync
+ * stamp. That background promise races with React Testing Library's
+ * `act()` window — locally the race resolves benignly, but on CI
+ * runners the test can occasionally time out before the data render
+ * commits (PR-3 CI flake on the sibling SwapExercisePopover suite).
+ * Mirrors the matching helper in SwapExercisePopover.test.tsx +
+ * AddExerciseToSupersetPopover.test.tsx — same flake class, same fix.
+ */
+function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
+  storage.cacheExercises(exercises);
+  storage.setLastSyncedAt("exercises", new Date().toISOString());
+}
+
 const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -84,7 +101,7 @@ describe("AddExercisePopover", () => {
   it("renders the cached exercises with names", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press" }),
       buildExercise({ id: "b", name: "Squat" }),
     ]);
@@ -106,7 +123,7 @@ describe("AddExercisePopover", () => {
   it("filters by search query (case-insensitive)", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press" }),
       buildExercise({ id: "b", name: "Squat" }),
     ]);
@@ -129,7 +146,7 @@ describe("AddExercisePopover", () => {
   it("preserves selections that get filtered out by an active search", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press" }),
       buildExercise({ id: "b", name: "Squat" }),
     ]);
@@ -161,7 +178,7 @@ describe("AddExercisePopover", () => {
   it("toggles selection and emits onAddExercises with the selected rows", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press" }),
       buildExercise({ id: "b", name: "Squat" }),
     ]);
@@ -187,7 +204,7 @@ describe("AddExercisePopover", () => {
   it("disables the Superset CTA until ≥2 selected, then emits", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press" }),
       buildExercise({ id: "b", name: "Squat" }),
     ]);
@@ -219,7 +236,7 @@ describe("AddExercisePopover", () => {
   it("opens the details drilldown on info press", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
+    seedCache(storage, [
       buildExercise({ id: "a", name: "Bench Press", description: "Chest." }),
     ]);
     const { getByText, getByTestId } = renderWithTheme(
@@ -241,7 +258,7 @@ describe("AddExercisePopover", () => {
   it("routes the Create CTA to /coming-soon?feature=exercise-creator", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([buildExercise()]);
+    seedCache(storage, [buildExercise()]);
     const { getByTestId } = renderWithTheme(
       withAdapters(
         makeAdapters(api, storage),
@@ -262,7 +279,7 @@ describe("AddExercisePopover", () => {
   it("invokes onClose and resets selection state when closed", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([buildExercise({ id: "a", name: "Bench Press" })]);
+    seedCache(storage, [buildExercise({ id: "a", name: "Bench Press" })]);
     const onClose = jest.fn();
     const { getByText, getByTestId, rerender } = renderWithTheme(
       withAdapters(
@@ -296,7 +313,7 @@ describe("AddExercisePopover", () => {
   it("renders nothing when visible=false", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([buildExercise()]);
+    seedCache(storage, [buildExercise()]);
     const { queryByText } = renderWithTheme(
       withAdapters(
         makeAdapters(api, storage),

@@ -77,14 +77,21 @@ export interface RecordedSession extends WorkoutSession {
    */
   personalRecords: DetectedPersonalRecord[];
   /**
-   * Total completed workouts for this user after the just-recorded
-   * session lands. Computed inside the same transaction as the insert
-   * via `SELECT COUNT(*) WHERE status='completed'`, so a completed
-   * session is counted; a cancelled one is not. Drives the legacy 3-stat
-   * strip's "Workouts Completed" tile + the subtitle copy
-   * ("You've completed N total workouts. Keep the momentum going!").
+   * Number of completed workouts this user has finished THIS CALENDAR
+   * MONTH (including the just-recorded session when its status is
+   * `completed`). Computed inside the same transaction as the insert
+   * via `SELECT COUNT(*) WHERE status='completed' AND completed_at >=
+   * date_trunc('month', now())`, so a completed session is counted; a
+   * cancelled one is not, and sessions from prior months fall out of
+   * scope. Drives the legacy 3-stat strip's "Workouts this month" tile
+   * + the subtitle copy ("You've completed N workouts this month. Keep
+   * the momentum going!"). Renamed from the original
+   * `totalWorkoutsCompleted` (which counted ALL-time completed
+   * workouts) after the device review of Phase 3b — Brad wanted the
+   * tile to surface a value that actually changes session-to-session
+   * for established users.
    */
-  totalWorkoutsCompleted: number;
+  workoutsThisMonth: number;
 }
 
 export class SessionRepository {
@@ -224,6 +231,31 @@ export class SessionRepository {
 
     return db.transaction(async (tx) => {
       // 1. Insert the session root.
+      //
+      // `completedAt` is coalesced to "now" when status === 'completed'
+      // and the client didn't supply one. The wire schema permits
+      // `{ status: "completed", completedAt: null }` (the `t.Optional`
+      // on the handler) and the column is nullable in Postgres, so
+      // without this coalesce a completed session can land with
+      // `completed_at = NULL` — which then silently drops out of the
+      // current-month COUNT below (NULL >= date_trunc(...) → NULL →
+      // excluded), and the response's `workoutsThisMonth` undercounts
+      // the very session we just inserted. The mobile client today
+      // always sends completedAt, so users won't hit this in practice;
+      // the coalesce protects future integrations / backfills /
+      // direct-API callers from a surprising failure mode and keeps
+      // the docstring claim "including the just-recorded session when
+      // its status is completed" literally true. For cancelled
+      // sessions completedAt stays null — they're discarded workouts,
+      // not finished ones.
+      const completedAtFromPayload = payload.completedAt
+        ? new Date(payload.completedAt)
+        : null;
+      const completedAt =
+        payload.status === "completed"
+          ? (completedAtFromPayload ?? new Date())
+          : completedAtFromPayload;
+
       const [session] = await tx
         .insert(workoutSessions)
         .values({
@@ -232,9 +264,7 @@ export class SessionRepository {
           name: payload.name ?? null,
           status: payload.status,
           startedAt: new Date(payload.startedAt),
-          completedAt: payload.completedAt
-            ? new Date(payload.completedAt)
-            : null,
+          completedAt,
           totalDurationSeconds: payload.totalDurationSeconds ?? null,
           userNotes: payload.userNotes ?? null,
           sessionRating: payload.sessionRating ?? null,
@@ -344,14 +374,49 @@ export class SessionRepository {
         else setsByExerciseId.set(s.sessionExerciseId, [s]);
       }
 
-      // 5. Cumulative completed-workout count for this user, computed
-      //    inside the same transaction so the COUNT(*) sees the row we
-      //    just inserted (when `status='completed'`). Drives the legacy
-      //    Summary screen's "Workouts Completed" stat + the subtitle
-      //    "You've completed N total workouts. Keep the momentum going!"
-      //    Cancelled sessions count themselves out — the WHERE filters
-      //    on `status='completed'`. Matches legacy
-      //    `workoutMutations.ts:928` exactly.
+      // 5. Current-calendar-month completed-workout count for this
+      //    user, computed inside the same transaction so the COUNT(*)
+      //    sees the row we just inserted (when `status='completed'`).
+      //    Drives the legacy Summary screen's "Workouts this month"
+      //    stat + the subtitle "You've completed N workouts this
+      //    month. Keep the momentum going!"
+      //
+      //    Scoping rationale (Brad's call after the Phase 3b device
+      //    review): cumulative all-time count drifts upward
+      //    indefinitely and stops surfacing meaningful momentum after
+      //    the first few months. Scoping to the current month gives
+      //    established users a number that actually resets and grows
+      //    each session.
+      //
+      //    Filter:
+      //      * `status = 'completed'`              — same as before;
+      //                                              cancelled sessions
+      //                                              count themselves
+      //                                              out.
+      //      * `COALESCE(completed_at, created_at) >=
+      //        date_trunc('month', now())`         — month-start in the
+      //                                              database's
+      //                                              timezone. `COALESCE`
+      //                                              with `created_at`
+      //                                              catches any legacy
+      //                                              rows whose
+      //                                              `completed_at` is
+      //                                              NULL (those existed
+      //                                              under the pre-PR-3
+      //                                              all-time count
+      //                                              filter and would
+      //                                              otherwise silently
+      //                                              fall out of scope
+      //                                              now). Fresh writes
+      //                                              from this repo
+      //                                              always carry a non-
+      //                                              null completed_at
+      //                                              when status =
+      //                                              'completed' (see
+      //                                              insert above).
+      //                                              Matches dashboardRepository's
+      //                                              `workoutsThisMonth`
+      //                                              bucketing.
       const [totalsRow] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(workoutSessions)
@@ -359,9 +424,10 @@ export class SessionRepository {
           and(
             eq(workoutSessions.userId, userId),
             eq(workoutSessions.status, "completed"),
+            sql`COALESCE(${workoutSessions.completedAt}, ${workoutSessions.createdAt}) >= date_trunc('month', now())`,
           ),
         );
-      const totalWorkoutsCompleted = totalsRow?.count ?? 0;
+      const workoutsThisMonth = totalsRow?.count ?? 0;
 
       return {
         ...refreshedSession,
@@ -370,7 +436,7 @@ export class SessionRepository {
           sets: setsByExerciseId.get(e.id) ?? [],
         })),
         personalRecords: personalRecordsForResponse,
-        totalWorkoutsCompleted,
+        workoutsThisMonth,
       };
     });
   }

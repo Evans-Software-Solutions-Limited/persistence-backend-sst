@@ -47,8 +47,17 @@ function makeAdapters(
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
+    // Fire the auth-state callback synchronously at registration
+    // time. The legacy mock deferred this via `setTimeout(... , 0)`
+    // to mimic Supabase's INITIAL_SESSION event, but the resulting
+    // unwrapped `setSession` setState (fired from a macrotask) raced
+    // with `waitFor` polling under CI load and intermittently caused
+    // `refresh()` to fire before `userId` had settled — the cached
+    // call signature returned undefined instead of the post-refresh
+    // workout list. Synchronous firing collapses the bootstrap into
+    // a single render commit and removes the race.
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
@@ -136,22 +145,34 @@ describe("useWorkouts", () => {
       wrapper: wrap(adapters),
     });
 
-    // Wait for the auth-bootstrap setTimeout to fire so the userId is set
-    // and the hook has run at least once with a valid session.
-    await waitFor(() => {
-      // After auth bootstrap, refresh() returns a Promise rather than undefined
-      const r = result.current.refresh();
-      expect(r).toBeDefined();
-      return r;
-    });
+    // Wait for the auth bootstrap to fire so `userId` is set and the
+    // hook is past its early-return path (refresh() is a no-op until
+    // a session is available). Bumped from the default 1 s to 5 s
+    // because GHA-runner load occasionally pushes the synchronous
+    // auth bootstrap + initial render commit past the 1 s budget —
+    // PR-3 CI flake.
+    await waitFor(
+      () => {
+        const r = result.current.refresh();
+        expect(r).toBeDefined();
+        return r;
+      },
+      { timeout: 5000 },
+    );
 
     await act(async () => {
       await result.current.refresh();
     });
 
-    await waitFor(() => {
-      expect(result.current.mine.workouts[0]?.name).toBe("API");
-    });
+    // Same rationale on the data-arrival assertion — give the
+    // post-refresh re-render a generous budget so a slow CI tick
+    // can't intermittently fail the test before state lands.
+    await waitFor(
+      () => {
+        expect(result.current.mine.workouts[0]?.name).toBe("API");
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("dedupes concurrent refresh() calls onto a single in-flight promise per user", async () => {

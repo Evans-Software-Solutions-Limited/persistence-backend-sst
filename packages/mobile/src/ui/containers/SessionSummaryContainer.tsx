@@ -17,10 +17,10 @@
  *   2. Poll the `record_responses` cache slot every 500ms until the
  *      sync worker drains `POST /sessions/record` and writes the
  *      augmented response (PRs with `previousValue` + the
- *      `totalWorkoutsCompleted` count). When it lands, the merged
- *      summary swaps the local PR list for the server-canonical one
- *      and the "Workouts Completed" tile + subtitle copy go from
- *      placeholder to real number. Poll stops once captured.
+ *      `workoutsThisMonth` count). When it lands, the merged summary
+ *      swaps the local PR list for the server-canonical one and the
+ *      "Workouts this month" tile + subtitle copy go from placeholder
+ *      to real number. Poll stops once captured.
  *
  * The Discard flow does NOT route through this screen — that's a
  * native `Alert.alert` on the active-session screen per legacy
@@ -132,7 +132,7 @@ export function SessionSummaryContainer() {
 
   // Merge local + server into the presenter's display shape. Server
   // wins for `personalRecords` (carries `previousValue` for the
-  // before→after arrow) + `totalWorkoutsCompleted`; local fills the
+  // before→after arrow) + `workoutsThisMonth`; local fills the
   // duration / totalVolume which the server doesn't surface (they're
   // session-scoped, computable client-side).
   const displayPersonalRecords = useMemo<SummaryPersonalRecord[]>(() => {
@@ -147,7 +147,7 @@ export function SessionSummaryContainer() {
     return localSummary.personalRecords.map(fromLocalPR);
   }, [serverData, localSummary]);
 
-  const totalWorkoutsCompleted = serverData?.totalWorkoutsCompleted ?? null;
+  const workoutsThisMonth = serverData?.workoutsThisMonth ?? null;
   const recordsHit = displayPersonalRecords.length;
 
   const onContinue = useCallback(() => {
@@ -172,7 +172,7 @@ export function SessionSummaryContainer() {
       totalVolume={localSummary.totalVolume}
       personalRecords={displayPersonalRecords}
       recordsHit={recordsHit}
-      totalWorkoutsCompleted={totalWorkoutsCompleted}
+      workoutsThisMonth={workoutsThisMonth}
       onSave={onContinue}
       onClose={onClose}
     />

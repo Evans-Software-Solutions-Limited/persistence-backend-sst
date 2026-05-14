@@ -26,7 +26,7 @@
  *     wired it either).
  *
  * Data shape comes pre-merged from `SessionSummaryContainer` — server
- * data wins for PRs + totalWorkoutsCompleted, local fills duration /
+ * data wins for PRs + workoutsThisMonth, local fills duration /
  * totalVolume. The presenter just renders.
  *
  * Spec: specs/05-active-session/requirements.md STORY-006, STORY-007
@@ -78,12 +78,14 @@ export type SessionSummaryPresenterProps = {
    */
   recordsHit: number;
   /**
-   * The user's cumulative completed-workout count after this session
-   * lands. `null` while the bulk-record POST is still pending — the
-   * stat tile shows an em-dash and the subtitle copy drops the
-   * count entirely until the server response arrives.
+   * The user's completed-workout count for the current calendar
+   * month (including the just-recorded session). `null` while the
+   * bulk-record POST is still pending — the stat tile shows an em-
+   * dash and the subtitle copy drops the count entirely until the
+   * server response arrives. Renamed from `totalWorkoutsCompleted`
+   * (all-time count) after the device review of Phase 3b.
    */
-  totalWorkoutsCompleted: number | null;
+  workoutsThisMonth: number | null;
   personalRecords: SummaryPersonalRecord[];
   onSave: () => void;
   onClose: () => void;
@@ -128,7 +130,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
   const {
     totalVolume,
     recordsHit,
-    totalWorkoutsCompleted,
+    workoutsThisMonth,
     personalRecords,
     onSave,
     onClose,
@@ -157,11 +159,11 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
 
         <Text style={styles.title}>Workout Complete!</Text>
         <Text style={styles.subtitle}>
-          {totalWorkoutsCompleted == null
+          {workoutsThisMonth == null
             ? "Keep the momentum going!"
-            : `You've completed ${totalWorkoutsCompleted} total ${
-                totalWorkoutsCompleted === 1 ? "workout" : "workouts"
-              }. Keep the momentum going!`}
+            : `You've completed ${workoutsThisMonth} ${
+                workoutsThisMonth === 1 ? "workout" : "workouts"
+              } this month. Keep the momentum going!`}
         </Text>
 
         {/* 3-stat strip — same flex-row of cards as legacy, third
@@ -171,7 +173,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
         <View style={styles.statsRow}>
           <View
             style={styles.statCard}
-            testID="summary-stat-workouts-completed"
+            testID="summary-stat-workouts-this-month"
           >
             <Ionicons
               name="checkmark-circle"
@@ -179,9 +181,9 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
               color={Colors.success.DEFAULT}
             />
             <Text style={styles.statValue}>
-              {totalWorkoutsCompleted == null ? "—" : totalWorkoutsCompleted}
+              {workoutsThisMonth == null ? "—" : workoutsThisMonth}
             </Text>
-            <Text style={styles.statLabel}>Workouts Completed</Text>
+            <Text style={styles.statLabel}>Workouts this month</Text>
           </View>
           <View style={styles.statCard} testID="summary-stat-records-hit">
             <Ionicons

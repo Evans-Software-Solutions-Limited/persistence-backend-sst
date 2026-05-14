@@ -718,7 +718,17 @@ describe("SessionRepository", () => {
         exercises: any[];
         sets: any[];
       },
-      options: { totalWorkoutsCompleted?: number } = {},
+      options: {
+        workoutsThisMonth?: number;
+        /**
+         * Captures the COUNT(*) chain's `.where(...)` argument so a
+         * caller can introspect the filter (e.g. that a
+         * `date_trunc('month', now())` SQL fragment is present).
+         * Drizzle's `and(...)` returns a `SQL` object whose
+         * stringified form contains the fragments we care about.
+         */
+        captureCountWhere?: (arg: unknown) => void;
+      } = {},
     ) {
       const tx = {
         insert: vi.fn().mockImplementation(() => {
@@ -746,7 +756,7 @@ describe("SessionRepository", () => {
         }),
         // Four select calls in steps 4 + 5: refreshedSession,
         // exercises, sets, then the COUNT(*) for
-        // totalWorkoutsCompleted. Drive them off a queue.
+        // workoutsThisMonth. Drive them off a queue.
         select: vi
           .fn()
           .mockReturnValueOnce({
@@ -770,15 +780,16 @@ describe("SessionRepository", () => {
               }),
             }),
           })
-          // Step 5 — COUNT(*) for totalWorkoutsCompleted. Chain shape
+          // Step 5 — COUNT(*) for workoutsThisMonth. Chain shape
           // is `.select(...).from(...).where(...)` (no orderBy/limit).
           .mockReturnValueOnce({
             from: vi.fn().mockReturnValue({
-              where: vi
-                .fn()
-                .mockResolvedValue([
-                  { count: options.totalWorkoutsCompleted ?? 0 },
-                ]),
+              where: vi.fn().mockImplementation((arg: unknown) => {
+                options.captureCountWhere?.(arg);
+                return Promise.resolve([
+                  { count: options.workoutsThisMonth ?? 0 },
+                ]);
+              }),
             }),
           }),
       };
@@ -854,7 +865,7 @@ describe("SessionRepository", () => {
       };
 
       const tx = makeRecordSessionTx(refreshed, {
-        totalWorkoutsCompleted: 7,
+        workoutsThisMonth: 7,
       });
       const mockDb = {
         transaction: vi
@@ -890,14 +901,14 @@ describe("SessionRepository", () => {
       expect(result.exercises[0]?.sets[0]?.id).toBe("set1");
       // New augmented fields:
       expect(result.personalRecords).toEqual(detectedPRs);
-      expect(result.totalWorkoutsCompleted).toBe(7);
+      expect(result.workoutsThisMonth).toBe(7);
     });
 
-    it("totalWorkoutsCompleted reflects the COUNT(*) result; an empty PR list passes through cleanly (first-session)", async () => {
+    it("workoutsThisMonth reflects the COUNT(*) result; an empty PR list passes through cleanly (first-session)", async () => {
       // First-session path: every candidate was first-occurrence so
       // runPRDetection returns an empty list. The repo must NOT
       // synthesise PRs — Brad's rule is "no PRs on the first workout."
-      // totalWorkoutsCompleted is 1 (just this session).
+      // workoutsThisMonth is 1 (just this session).
       const refreshed = {
         session: {
           id: "s2",
@@ -938,7 +949,7 @@ describe("SessionRepository", () => {
       };
 
       const tx = makeRecordSessionTx(refreshed, {
-        totalWorkoutsCompleted: 1,
+        workoutsThisMonth: 1,
       });
       const mockDb = {
         transaction: vi
@@ -955,7 +966,7 @@ describe("SessionRepository", () => {
       const result = await repo.recordSession("u1", payload, runPRDetection);
 
       expect(result.personalRecords).toEqual([]);
-      expect(result.totalWorkoutsCompleted).toBe(1);
+      expect(result.workoutsThisMonth).toBe(1);
     });
 
     it("skips PR detection when status is cancelled (legacy recordWorkout parity)", async () => {
@@ -999,9 +1010,9 @@ describe("SessionRepository", () => {
       };
 
       // Cancelled session also has 0 contribution to the
-      // totalWorkoutsCompleted count (the WHERE filter excludes it).
+      // workoutsThisMonth count (the WHERE filter excludes it).
       const tx = makeRecordSessionTx(refreshed, {
-        totalWorkoutsCompleted: 4,
+        workoutsThisMonth: 4,
       });
       const mockDb = {
         transaction: vi
@@ -1023,11 +1034,289 @@ describe("SessionRepository", () => {
       expect(runPRDetection).not.toHaveBeenCalled();
       expect(result.exercises[0]?.sets[0]?.isPersonalRecord).toBe(false);
       // Cancelled session still gets the augmented fields — PRs are
-      // empty (detection didn't run), totalWorkoutsCompleted carries
-      // the user's cumulative completed count (which doesn't include
+      // empty (detection didn't run), workoutsThisMonth carries the
+      // user's current-month completed count (which doesn't include
       // this cancelled one because the WHERE filters on status).
       expect(result.personalRecords).toEqual([]);
-      expect(result.totalWorkoutsCompleted).toBe(4);
+      expect(result.workoutsThisMonth).toBe(4);
+    });
+
+    it("scopes the workoutsThisMonth COUNT(*) to status='completed' AND COALESCE(completed_at, created_at) >= date_trunc('month', now())", async () => {
+      // Regression guard: this is what makes the tile actually
+      // surface a number that resets monthly. If someone reverts the
+      // WHERE to the cumulative-all-time form, this test fails. We
+      // can't validate the SQL at execution time without a real DB,
+      // so we introspect the SQL object Drizzle hands to `.where()` —
+      // stringified, it contains the `date_trunc('month', now())`
+      // fragment from the inline `sql\`…\`` template.
+      const refreshed = {
+        session: {
+          id: "s-scope",
+          userId: "u1",
+          workoutId: null,
+          name: "Scope check",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-scope",
+            sessionId: "s-scope",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set-scope",
+            sessionExerciseId: "se-scope",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isCompleted: true,
+            isPersonalRecord: false,
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      let capturedWhere: unknown = null;
+      const tx = makeRecordSessionTx(refreshed, {
+        workoutsThisMonth: 2,
+        captureCountWhere: (arg) => {
+          capturedWhere = arg;
+        },
+      });
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      await repo.recordSession("u1", payload, runPRDetection);
+
+      // The SQL object Drizzle composes wraps the inline `sql\`…\``
+      // fragment as a string chunk inside its `queryChunks` array.
+      // PgTable / PgColumn references are circular (table → column →
+      // table), so JSON.stringify trips; walk manually with a cycle
+      // guard, collecting every primitive string we encounter.
+      function collectStrings(value: unknown, seen = new WeakSet()): string[] {
+        if (value == null) return [];
+        if (typeof value === "string") return [value];
+        if (typeof value !== "object") return [];
+        if (seen.has(value as object)) return [];
+        seen.add(value as object);
+        const out: string[] = [];
+        if (Array.isArray(value)) {
+          for (const v of value) out.push(...collectStrings(v, seen));
+        } else {
+          for (const v of Object.values(value as Record<string, unknown>)) {
+            out.push(...collectStrings(v, seen));
+          }
+        }
+        return out;
+      }
+      const fragments = collectStrings(capturedWhere);
+      expect(
+        fragments.some((s) => s.includes("date_trunc('month', now())")),
+      ).toBe(true);
+      // `COALESCE(completed_at, created_at)` is what catches legacy
+      // rows with NULL completed_at AND keeps the just-inserted
+      // session in scope when a caller posts `{ status: "completed",
+      // completedAt: null }` (the wire-schema permits it). If
+      // someone later reverts to a plain `completed_at >= …` the
+      // fragment audit fails.
+      expect(fragments.some((s) => s.includes("COALESCE"))).toBe(true);
+    });
+
+    it("coalesces completedAt to now() when status='completed' but the payload omits it (contract guard)", async () => {
+      // Wire schema allows `{ status: "completed", completedAt:
+      // null }` (handler's body validation marks completedAt as
+      // Optional). Without the repo-level coalesce, the inserted
+      // row carries completed_at=NULL — which the new
+      // workoutsThisMonth WHERE (filtering on completed_at) would
+      // silently drop from the count. The COALESCE(completed_at,
+      // created_at) fallback inside the WHERE keeps such rows in
+      // scope as a belt-and-braces guard for legacy data, but
+      // fresh writes from this repo should never produce that
+      // NULL in the first place — assert the insert path
+      // substitutes now() so the row's completed_at is set.
+      const refreshed = {
+        session: {
+          id: "s-coalesce",
+          userId: "u1",
+          workoutId: null,
+          name: "Test",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(), // post-coalesce DB state
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-coalesce",
+            sessionId: "s-coalesce",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set-coalesce",
+            sessionExerciseId: "se-coalesce",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isCompleted: true,
+            isPersonalRecord: false,
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      // Capture the values passed to the workoutSessions insert.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
+      // Override insert to intercept the values object on the first
+      // insert call (the workoutSessions root insert).
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      // Payload: completed status, but completedAt omitted (the wire
+      // schema permits this).
+      const payloadWithoutCompletedAt = {
+        ...payload,
+        status: "completed" as const,
+        completedAt: null,
+      };
+
+      const before = Date.now();
+      await repo.recordSession("u1", payloadWithoutCompletedAt, runPRDetection);
+      const after = Date.now();
+
+      // Repo substituted now() — the inserted completedAt must be a
+      // Date within the test execution window.
+      expect(capturedValues?.completedAt).toBeInstanceOf(Date);
+      const insertedAt = (capturedValues?.completedAt as Date).getTime();
+      expect(insertedAt).toBeGreaterThanOrEqual(before);
+      expect(insertedAt).toBeLessThanOrEqual(after);
+    });
+
+    it("preserves completedAt=null when status='cancelled' (cancelled sessions are not finished workouts)", async () => {
+      // The coalesce only fires for `status='completed'`. A
+      // cancelled session legitimately has no completed_at — it's a
+      // discarded workout, not a finished one — and the column
+      // should stay NULL.
+      const refreshed = {
+        session: {
+          id: "s-cancelled",
+          userId: "u1",
+          workoutId: null,
+          name: "Discarded",
+          status: "cancelled",
+          startedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-c",
+            sessionId: "s-cancelled",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 0 });
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession(
+        "u1",
+        { ...payload, status: "cancelled", completedAt: null },
+        runPRDetection,
+      );
+
+      expect(capturedValues?.completedAt).toBeNull();
     });
   });
 });

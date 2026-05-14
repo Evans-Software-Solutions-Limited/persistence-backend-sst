@@ -38,8 +38,13 @@ function makeAdapters(
     getSession: jest.fn(async () => ok(session)),
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
       listeners.push(cb);
-      // fire immediately so the useAuth bootstrap resolves fast
-      setTimeout(() => cb(session), 0);
+      // Fire the auth-state callback synchronously at registration
+      // time. The legacy mock deferred via `setTimeout(... , 0)` to
+      // mimic Supabase's INITIAL_SESSION event, but the resulting
+      // unwrapped `setSession` setState (fired from a macrotask)
+      // raced with test-library polling under CI load. Synchronous
+      // firing collapses the bootstrap into a single render commit.
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
