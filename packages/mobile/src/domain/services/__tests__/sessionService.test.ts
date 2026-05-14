@@ -704,50 +704,153 @@ describe("detectPersonalRecords", () => {
     return stamped;
   };
 
-  it("emits a 1rm record when the session beats the previous best", () => {
-    const session = sessionWithBench(120, 5);
-    const previous: PersonalRecord[] = [
-      {
-        id: "pr-1",
+  /**
+   * Seed priors covering all six computed record types for the bench
+   * exercise. Tests that want a "first-occurrence" baseline pass `[]`
+   * instead; tests that want to assert beating-a-prior pass the
+   * relevant subset.
+   */
+  const priorsForBench = (overrides: {
+    "1rm"?: number;
+    "3rm"?: number;
+    "5rm"?: number;
+    "10rm"?: number;
+    max_weight?: number;
+    max_volume?: number;
+  }): PersonalRecord[] => {
+    const out: PersonalRecord[] = [];
+    for (const [recordType, value] of Object.entries(overrides)) {
+      if (value === undefined) continue;
+      out.push({
+        id: `pr-${recordType}`,
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
-        value: 100,
+        recordType: recordType as PersonalRecord["recordType"],
+        value,
         achievedAt: "2026-04-01T00:00:00.000Z",
         sessionId: "old",
         setId: null,
-      },
-    ];
+      });
+    }
+    return out;
+  };
+
+  it("emits 5rm + max_weight + max_volume PRs when a 5-rep set beats every prior", () => {
+    // 120 kg × 5 reps. Priors: 5rm=100, max_weight=100, max_volume=400.
+    // Candidates: 5rm=120, max_weight=120, max_volume=600. All beat.
+    const session = sessionWithBench(120, 5);
+    const previous = priorsForBench({
+      "5rm": 100,
+      max_weight: 100,
+      max_volume: 400,
+    });
     const records = detectPersonalRecords(
       session,
       previous,
       ctx(),
       idFactory(900),
     );
-    expect(records).toHaveLength(1);
-    expect(records[0].id).toBe("local-id900");
-    expect(records[0].exerciseId).toBe("ex-bench");
-    expect(records[0].recordType).toBe("1rm");
-    expect(records[0].setId).not.toBeNull();
-    expect(records[0].value).toBeCloseTo(120 * (1 + 5 / 30));
+    expect(records).toHaveLength(3);
+    const byType = new Map(records.map((r) => [r.recordType, r]));
+    expect(byType.get("5rm")?.value).toBe(120);
+    expect(byType.get("max_weight")?.value).toBe(120);
+    expect(byType.get("max_volume")?.value).toBe(600);
+    // Local-prefixed id, exercise + setId carried through.
+    expect(byType.get("5rm")?.id).toMatch(/^local-/);
+    expect(byType.get("max_weight")?.setId).not.toBeNull();
   });
 
-  it("emits no record when the session does not beat the previous best", () => {
+  it("emits 1rm + max_weight + max_volume for a 1-rep set", () => {
+    const session = sessionWithBench(150, 1);
+    const previous = priorsForBench({
+      "1rm": 140,
+      max_weight: 140,
+      max_volume: 100,
+    });
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
+    expect(records).toHaveLength(3);
+    expect(records.map((r) => r.recordType).sort()).toEqual(
+      ["1rm", "max_volume", "max_weight"].sort(),
+    );
+  });
+
+  it("emits 10rm + max_weight + max_volume for a 10-rep set, but NOT 1rm (Epley parity guard)", () => {
+    // 100 kg × 10 reps. Pre-PR-3 code would Epley this to a "1rm" of
+    // 133.33 and surface a card titled "1 Rep Max: 133.3 kg" — the
+    // exact UX bug PR-3 exists to fix. Post-PR-3 the local predictor
+    // emits a 10rm card (value = 100) instead, matching what the
+    // server will compute when the bulk-record POST lands.
+    const session = sessionWithBench(100, 10);
+    const previous = priorsForBench({
+      "10rm": 90,
+      max_weight: 90,
+      max_volume: 900,
+    });
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
+    expect(records).toHaveLength(3);
+    const types = records.map((r) => r.recordType);
+    expect(types).toContain("10rm");
+    expect(types).toContain("max_weight");
+    expect(types).toContain("max_volume");
+    expect(types).not.toContain("1rm");
+  });
+
+  it("emits ONLY max_weight + max_volume for a 7-rep set (no Xrm — exact-rep ladder)", () => {
+    // 100 kg × 7 reps. 7 isn't on the legacy 1/3/5/10 ladder. No Xrm
+    // candidate emitted — the user lifted 100 kg for 7 reps, calling
+    // it any kind of rep-max would be the same bug we just fixed.
+    const session = sessionWithBench(100, 7);
+    const previous = priorsForBench({
+      max_weight: 90,
+      max_volume: 600,
+    });
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
+    expect(records).toHaveLength(2);
+    const types = records.map((r) => r.recordType);
+    expect(types).toContain("max_weight");
+    expect(types).toContain("max_volume");
+    expect(types).not.toContain("1rm");
+    expect(types).not.toContain("3rm");
+    expect(types).not.toContain("5rm");
+    expect(types).not.toContain("10rm");
+  });
+
+  it("emits NO PRs on the first workout for an exercise (no priors → skip-first-occurrence)", () => {
+    // Brad's rule: a baseline workout shouldn't surface a card titled
+    // "PR!" — there's no "previously" to beat. The server-side
+    // `recordPRsForSession` mirrors this; if local emits anything
+    // here, the Summary screen flashes a phantom PR card that
+    // disappears as soon as the server response lands.
+    const session = sessionWithBench(100, 5);
+    const records = detectPersonalRecords(session, [], ctx(), idFactory(900));
+    expect(records).toEqual([]);
+  });
+
+  it("emits no record when no candidate beats any prior", () => {
+    // 80 kg × 5 reps vs prior 5rm=200, max_weight=200, max_volume=1000.
+    // Every candidate undershoots its floor.
     const session = sessionWithBench(80, 5);
-    const previous: PersonalRecord[] = [
-      {
-        id: "pr-1",
-        userId: "user-1",
-        exerciseId: "ex-bench",
-        exerciseName: "Bench Press",
-        recordType: "1rm",
-        value: 200,
-        achievedAt: "2026-04-01T00:00:00.000Z",
-        sessionId: "old",
-        setId: null,
-      },
-    ];
+    const previous = priorsForBench({
+      "5rm": 200,
+      max_weight: 200,
+      max_volume: 1000,
+    });
     const records = detectPersonalRecords(
       session,
       previous,
@@ -757,11 +860,45 @@ describe("detectPersonalRecords", () => {
     expect(records).toEqual([]);
   });
 
-  it("treats an unseen exercise as a fresh PR (previous best = 0)", () => {
+  it("per-type partition: only the record types that improve surface, not all-or-nothing", () => {
+    // 100 kg × 5 reps. Priors: 5rm=200 (NOT beaten by 100), max_weight=50
+    // (beaten by 100), max_volume=900 (NOT beaten by 500). Exactly
+    // ONE PR surfaces: max_weight.
     const session = sessionWithBench(100, 5);
-    const records = detectPersonalRecords(session, [], ctx(), idFactory(900));
+    const previous = priorsForBench({
+      "5rm": 200,
+      max_weight: 50,
+      max_volume: 900,
+    });
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
     expect(records).toHaveLength(1);
-    expect(records[0].exerciseId).toBe("ex-bench");
+    expect(records[0].recordType).toBe("max_weight");
+    expect(records[0].value).toBe(100);
+  });
+
+  it("normalises value to 2dp precision so the local prediction matches the server's stored value", () => {
+    // 99.99 kg × 10 reps. Without `toFixed(2) → parseFloat`,
+    // max_volume's raw JS multiplication yields 999.9000000000001
+    // and the Summary screen renders "999.9000000000001 kg" for ~500
+    // ms before the server response swaps in "999.9 kg". The
+    // backend's recordPRsForSession applies the same round-trip;
+    // both sides agree to 999.9 byte-for-byte.
+    const session = sessionWithBench(99.99, 10);
+    const previous = priorsForBench({ max_volume: 900 });
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0].recordType).toBe("max_volume");
+    expect(records[0].value).toBe(999.9);
   });
 
   it("ignores incomplete sets and zero-weight / zero-rep entries", () => {
@@ -817,7 +954,11 @@ describe("detectPersonalRecords", () => {
     expect(records).toEqual([]);
   });
 
-  it("picks the heaviest 1RM per exercise across multiple completed sets", () => {
+  it("picks the heaviest weight per exercise across multiple completed sets (best per record type)", () => {
+    // Two completed sets at 100 kg × 5 and 150 kg × 5. Priors:
+    // 5rm=120, max_weight=120, max_volume=600. Best candidates per
+    // type: 5rm=150 (from set 2), max_weight=150, max_volume=750.
+    // All three beat their priors → 3 PRs surface.
     const s = createSessionFromWorkout(makeWorkout(), ctx(), idFactory());
     const stamped: WorkoutSession = {
       ...s,
@@ -836,19 +977,31 @@ describe("detectPersonalRecords", () => {
           : ex,
       ),
     };
-    const [pr] = detectPersonalRecords(stamped, [], ctx(), idFactory(900));
-    expect(pr.value).toBeCloseTo(150 * (1 + 5 / 30));
+    const records = detectPersonalRecords(
+      stamped,
+      priorsForBench({ "5rm": 120, max_weight: 120, max_volume: 600 }),
+      ctx(),
+      idFactory(900),
+    );
+    const byType = new Map(records.map((r) => [r.recordType, r]));
+    expect(byType.get("5rm")?.value).toBe(150);
+    expect(byType.get("max_weight")?.value).toBe(150);
+    expect(byType.get("max_volume")?.value).toBe(750);
   });
 
-  it("uses the highest 1rm across history rows for the same exercise as the comparison floor", () => {
-    const session = sessionWithBench(120, 5);
+  it("uses the highest prior per (exercise, recordType) as the comparison floor when history has multiple rows", () => {
+    // Two cached 5rm rows for the same exercise: 50 and 999. The
+    // predictor must pick 999 as the floor — otherwise a 60 kg set
+    // would falsely surface as a 5rm PR. With the new ladder applies
+    // per-type, so we seed 5rm history specifically.
+    const session = sessionWithBench(60, 5);
     const previous: PersonalRecord[] = [
       {
         id: "pr-old",
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
+        recordType: "5rm",
         value: 50,
         achievedAt: "2026-03-01T00:00:00.000Z",
         sessionId: "old-1",
@@ -859,22 +1012,29 @@ describe("detectPersonalRecords", () => {
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
+        recordType: "5rm",
         value: 999,
         achievedAt: "2026-04-01T00:00:00.000Z",
         sessionId: "old-2",
         setId: null,
       },
     ];
-    expect(
-      detectPersonalRecords(session, previous, ctx(), idFactory(900)),
-    ).toEqual([]);
+    const records = detectPersonalRecords(
+      session,
+      previous,
+      ctx(),
+      idFactory(900),
+    );
+    // No 5rm PR (60 < 999). No max_weight / max_volume PR either
+    // (skip-first-occurrence — no priors for those types).
+    expect(records).toEqual([]);
   });
 
-  it("keeps the higher previous record when iteration sees a lower one second", () => {
-    // Exercises the `current != null && rec.value > current` is FALSE
-    // branch — i.e. previous1RmByExercise.get returns 200, the next
-    // record is 50, so we skip the set.
+  it("keeps the higher prior when iteration encounters a lower one second", () => {
+    // Order-independence guard: pre-PR-3 the predictor's
+    // `current != null && rec.value > current` branch could be
+    // tricked by record order; assert the same comparison works on
+    // both forward and reverse orderings.
     const session = sessionWithBench(120, 5);
     const previous: PersonalRecord[] = [
       {
@@ -882,7 +1042,7 @@ describe("detectPersonalRecords", () => {
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
+        recordType: "5rm",
         value: 200,
         achievedAt: "2026-04-01T00:00:00.000Z",
         sessionId: "old-1",
@@ -893,39 +1053,46 @@ describe("detectPersonalRecords", () => {
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
+        recordType: "5rm",
         value: 50,
         achievedAt: "2026-03-01T00:00:00.000Z",
         sessionId: "old-2",
         setId: null,
       },
     ];
-    // 200 stays as the comparison floor, 120*1.something < 200 → no
-    // PR emitted.
+    // 200 stays as the 5rm floor; 120 < 200 → no 5rm PR. No
+    // max_weight / max_volume priors → first-occurrence skip.
     expect(
       detectPersonalRecords(session, previous, ctx(), idFactory(900)),
     ).toEqual([]);
   });
 
-  it("ignores non-1rm record types in previous history (M3 only writes 1rm)", () => {
+  it("ignores non-computed record types in prior history (e.g. `max_reps`, `best_time`)", () => {
+    // The six computed types are 1rm/3rm/5rm/10rm/max_weight/
+    // max_volume. Other valid `RecordType` values (max_reps, best_time,
+    // longest_distance) should be ignored entirely on the prior side
+    // — they don't share a key with any candidate, so they neither
+    // satisfy nor block the first-occurrence skip. A 5-rep set vs a
+    // `max_reps` prior should behave exactly as if priors were empty.
     const session = sessionWithBench(120, 5);
     const previous: PersonalRecord[] = [
       {
-        id: "pr-vol",
+        id: "pr-reps",
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "max_weight",
+        recordType: "max_reps",
         value: 999,
         achievedAt: "2026-04-01T00:00:00.000Z",
         sessionId: "old",
         setId: null,
       },
     ];
-    // Previous comparison floor is 0 (no 1rm history), so this counts as new.
+    // No relevant priors → first-occurrence skip for every candidate
+    // type → no PRs surface. Same outcome as `previousRecords=[]`.
     expect(
       detectPersonalRecords(session, previous, ctx(), idFactory(900)),
-    ).toHaveLength(1);
+    ).toEqual([]);
   });
 });
 

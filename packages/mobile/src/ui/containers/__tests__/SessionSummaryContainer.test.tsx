@@ -157,6 +157,13 @@ describe("SessionSummaryContainer", () => {
   });
 
   it("predicts a PR locally when the session beats the cached previous best (pre-server, no previousValue arrow)", async () => {
+    // seedActive uses 120 kg × 5 reps. Post-PR-3 the predictor only
+    // emits a `Xrm` candidate when reps matches the legacy ladder
+    // EXACTLY (1/3/5/10), and only surfaces a PR when a prior exists
+    // (skip-first-occurrence). So we seed a 5rm prior, expect a 5rm
+    // PR to render. A 1rm prior would no longer surface anything
+    // here — the previous test's 1rm assertion was relying on the
+    // Epley path the PR is removing.
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
@@ -166,7 +173,7 @@ describe("SessionSummaryContainer", () => {
         userId: "user-1",
         exerciseId: "ex-bench",
         exerciseName: "Bench Press",
-        recordType: "1rm",
+        recordType: "5rm",
         value: 100,
         achievedAt: "2026-04-01T00:00:00.000Z",
         sessionId: "old",
@@ -182,7 +189,7 @@ describe("SessionSummaryContainer", () => {
 
     // Local prediction surfaces the section + card.
     expect(await findByTestId("summary-pr-section")).toBeTruthy();
-    expect(await findByTestId("summary-pr-ex-bench-1rm")).toBeTruthy();
+    expect(await findByTestId("summary-pr-ex-bench-5rm")).toBeTruthy();
     // Local prediction has previousValue=null → no arrow rendered.
     expect(queryByText("→")).toBeNull();
   });

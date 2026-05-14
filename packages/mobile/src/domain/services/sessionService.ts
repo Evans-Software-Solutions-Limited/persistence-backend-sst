@@ -11,7 +11,7 @@
  */
 
 import type { Exercise } from "@/domain/models/exercise";
-import type { PersonalRecord } from "@/domain/models/record";
+import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ExerciseSet,
   SessionExercise,
@@ -545,21 +545,80 @@ export function calculateSummary(
 }
 
 /**
+ * Record types the client-side predictor emits — mirrors the backend's
+ * `recordPRsForSession` exactly so the Summary screen's local prediction
+ * agrees with the server response that lands ~500 ms later. Every
+ * weighted set contributes `max_weight` + `max_volume`; the `Xrm`
+ * ladder only fires on exact rep counts (1 / 3 / 5 / 10). 7-rep sets
+ * produce NO `Xrm` PR — surfacing an Epley-derived 1RM on the
+ * achievements screen was the bug PR-3 exists to fix on the server,
+ * and the local predictor has to honour the same rule or it flashes
+ * the very PR card the user is here to stop seeing.
+ *
+ * Order matches `RECORD_TYPES` in the domain model.
+ */
+const COMPUTED_RECORD_TYPES = [
+  "1rm",
+  "3rm",
+  "5rm",
+  "10rm",
+  "max_weight",
+  "max_volume",
+] as const;
+
+/**
+ * Maps an EXACT rep count to its `Xrm` record type, or null when the
+ * count doesn't sit on the legacy ladder. Mirrors backend
+ * `personalRecordsRepository.ts#repMaxTypeForReps`.
+ */
+function repMaxTypeForReps(reps: number): RecordType | null {
+  switch (reps) {
+    case 1:
+      return "1rm";
+    case 3:
+      return "3rm";
+    case 5:
+      return "5rm";
+    case 10:
+      return "10rm";
+    default:
+      return null;
+  }
+}
+
+/**
  * Predict client-side personal records for the Summary screen.
  *
- * M3 detects `1rm` only — matches the backend (BACKEND_BRIEF § 3 says
- * server writes `1rm` only). Volume / max-weight / max-reps PRs are
- * M4-future. Epley formula: `weightKg × (1 + reps / 30)`. Only completed
- * sets with both `weightKg > 0` and `reps > 0` qualify.
+ * Mirrors the backend's `recordPRsForSession` exactly: every weighted
+ * completed set contributes `max_weight` (value = weight) +
+ * `max_volume` (value = weight × reps) candidates, plus a `1rm` /
+ * `3rm` / `5rm` / `10rm` candidate ONLY when reps matches that rung
+ * EXACTLY. Picks the best candidate per `(exerciseId, recordType)`
+ * tuple, then emits a PR ONLY when a prior exists in
+ * `previousRecords` AND the candidate beats it (skip-first-occurrence
+ * — Brad's "no PRs on the first workout" rule).
  *
- * Compares the session's best-1RM-per-exercise against the
- * `previousRecords` slice (cached by `storage.getPersonalRecords`); a
- * new record is emitted only when the session beats the previous best
- * for that exercise. Server reconciles canonically on flush; this is
- * the predictive cut for the offline Summary screen.
+ * The two-axis correctness criterion ties this function to the
+ * backend rewrite (PR-3): if either side diverges, the Summary
+ * screen renders one PR shape immediately on mount (from this
+ * function's output), then ~500 ms later swaps to a different shape
+ * once the bulk-record POST lands and `SessionSummaryContainer`
+ * picks up the cached server response. Off-by-one in record types,
+ * different reps→type mapping, or different precision rounding all
+ * produce a visible flash of the wrong card. Both sides emit the
+ * same 6 types with the same exact-rep filter and the same
+ * `toFixed(2) → parseFloat` normalisation; both apply the same skip-
+ * first-occurrence partition.
+ *
+ * Bodyweight (no weight) and timed-only sets are filtered out — they
+ * don't fit this weight-based ladder. Substituted exercise rows are
+ * also skipped (the original row already produced the contribution
+ * before the substitution).
  *
  * Spec: specs/05-active-session/design.md § Personal-record detection: hybrid
  *       specs/milestones/M3-active-session/BACKEND_BRIEF.md § PR-detection
+ *       microservices/core/src/application/repositories/personalRecordsRepository.ts
+ *       (server-side counterpart — keep in lockstep)
  */
 export function detectPersonalRecords(
   session: WorkoutSession,
@@ -567,52 +626,99 @@ export function detectPersonalRecords(
   ctx: SessionContext,
   idFactory: IdFactory,
 ): PersonalRecord[] {
-  const previous1RmByExercise = new Map<string, number>();
+  // Build prior map keyed by `${exerciseId}|${recordType}` — used as
+  // both the first-occurrence gate and the comparison floor. Bound
+  // to the six computed types so unrelated record types in cache
+  // history (e.g. `max_reps`) don't pollute the lookup.
+  const computedTypeSet = new Set<RecordType>(COMPUTED_RECORD_TYPES);
+  const priorByKey = new Map<string, number>();
   for (const rec of previousRecords) {
-    if (rec.recordType !== "1rm") continue;
-    const current = previous1RmByExercise.get(rec.exerciseId);
+    if (!computedTypeSet.has(rec.recordType)) continue;
+    const k = `${rec.exerciseId}|${rec.recordType}`;
+    const current = priorByKey.get(k);
     if (current == null || rec.value > current) {
-      previous1RmByExercise.set(rec.exerciseId, rec.value);
+      priorByKey.set(k, rec.value);
     }
   }
 
-  type Best = { value: number; setId: string };
-  const bestByExercise = new Map<
-    string,
-    { exerciseName: string; best: Best }
-  >();
-
+  // Enumerate per-set candidates across the qualifying record types.
+  type Candidate = {
+    exerciseId: string;
+    exerciseName: string;
+    recordType: RecordType;
+    value: number;
+    setId: string;
+  };
+  const candidates: Candidate[] = [];
   for (const ex of session.exercises) {
     if (ex.isSubstituted) continue;
     for (const set of ex.sets) {
       if (!set.isCompleted) continue;
       if (set.weightKg == null || set.weightKg <= 0) continue;
       if (set.reps == null || set.reps <= 0) continue;
-      const oneRm = set.weightKg * (1 + set.reps / 30);
-      const existing = bestByExercise.get(ex.exerciseId);
-      if (!existing || oneRm > existing.best.value) {
-        bestByExercise.set(ex.exerciseId, {
+      const weight = set.weightKg;
+      const reps = set.reps;
+
+      candidates.push({
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.exerciseName,
+        recordType: "max_weight",
+        value: weight,
+        setId: set.id,
+      });
+      candidates.push({
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.exerciseName,
+        recordType: "max_volume",
+        value: weight * reps,
+        setId: set.id,
+      });
+      const repMaxType = repMaxTypeForReps(reps);
+      if (repMaxType !== null) {
+        candidates.push({
+          exerciseId: ex.exerciseId,
           exerciseName: ex.exerciseName,
-          best: { value: oneRm, setId: set.id },
+          recordType: repMaxType,
+          value: weight,
+          setId: set.id,
         });
       }
     }
   }
 
+  // Collapse to one winner per (exerciseId, recordType).
+  const bestPerKey = new Map<string, Candidate>();
+  for (const c of candidates) {
+    const k = `${c.exerciseId}|${c.recordType}`;
+    const existing = bestPerKey.get(k);
+    if (!existing || c.value > existing.value) {
+      bestPerKey.set(k, c);
+    }
+  }
+
+  // Emit PRs that beat their priors. Skip first-occurrence (no prior
+  // → no surfaced PR). Apply the same `toFixed(2) → parseFloat`
+  // round-trip the server uses so the local prediction's `value`
+  // agrees byte-for-byte with what the server will compute — without
+  // it, `max_volume` float artefacts (e.g. 99.99 × 10 =
+  // 999.9000000000001) would render a slightly-different number on
+  // the local prediction vs the server-truth swap.
   const records: PersonalRecord[] = [];
-  for (const [exerciseId, { exerciseName, best }] of bestByExercise) {
-    const prior = previous1RmByExercise.get(exerciseId) ?? 0;
-    if (best.value > prior) {
+  for (const [k, candidate] of bestPerKey) {
+    const prior = priorByKey.get(k);
+    if (prior == null) continue;
+    const valueAt2dp = parseFloat(candidate.value.toFixed(2));
+    if (valueAt2dp > prior) {
       records.push({
         id: `local-${idFactory()}`,
         userId: ctx.userId,
-        exerciseId,
-        exerciseName,
-        recordType: "1rm",
-        value: best.value,
+        exerciseId: candidate.exerciseId,
+        exerciseName: candidate.exerciseName,
+        recordType: candidate.recordType,
+        value: valueAt2dp,
         achievedAt: ctx.now,
         sessionId: session.id,
-        setId: best.setId,
+        setId: candidate.setId,
       });
     }
   }

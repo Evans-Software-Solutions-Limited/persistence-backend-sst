@@ -1041,7 +1041,7 @@ describe("SessionRepository", () => {
       expect(result.workoutsThisMonth).toBe(4);
     });
 
-    it("scopes the workoutsThisMonth COUNT(*) to status='completed' AND completed_at >= date_trunc('month', now())", async () => {
+    it("scopes the workoutsThisMonth COUNT(*) to status='completed' AND COALESCE(completed_at, created_at) >= date_trunc('month', now())", async () => {
       // Regression guard: this is what makes the tile actually
       // surface a number that resets monthly. If someone reverts the
       // WHERE to the cumulative-all-time form, this test fails. We
@@ -1133,6 +1133,190 @@ describe("SessionRepository", () => {
       expect(
         fragments.some((s) => s.includes("date_trunc('month', now())")),
       ).toBe(true);
+      // `COALESCE(completed_at, created_at)` is what catches legacy
+      // rows with NULL completed_at AND keeps the just-inserted
+      // session in scope when a caller posts `{ status: "completed",
+      // completedAt: null }` (the wire-schema permits it). If
+      // someone later reverts to a plain `completed_at >= …` the
+      // fragment audit fails.
+      expect(fragments.some((s) => s.includes("COALESCE"))).toBe(true);
+    });
+
+    it("coalesces completedAt to now() when status='completed' but the payload omits it (contract guard)", async () => {
+      // Wire schema allows `{ status: "completed", completedAt:
+      // null }` (handler's body validation marks completedAt as
+      // Optional). Without the repo-level coalesce, the inserted
+      // row carries completed_at=NULL — which the new
+      // workoutsThisMonth WHERE (filtering on completed_at) would
+      // silently drop from the count. The COALESCE(completed_at,
+      // created_at) fallback inside the WHERE keeps such rows in
+      // scope as a belt-and-braces guard for legacy data, but
+      // fresh writes from this repo should never produce that
+      // NULL in the first place — assert the insert path
+      // substitutes now() so the row's completed_at is set.
+      const refreshed = {
+        session: {
+          id: "s-coalesce",
+          userId: "u1",
+          workoutId: null,
+          name: "Test",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(), // post-coalesce DB state
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-coalesce",
+            sessionId: "s-coalesce",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set-coalesce",
+            sessionExerciseId: "se-coalesce",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isCompleted: true,
+            isPersonalRecord: false,
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      // Capture the values passed to the workoutSessions insert.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
+      // Override insert to intercept the values object on the first
+      // insert call (the workoutSessions root insert).
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      // Payload: completed status, but completedAt omitted (the wire
+      // schema permits this).
+      const payloadWithoutCompletedAt = {
+        ...payload,
+        status: "completed" as const,
+        completedAt: null,
+      };
+
+      const before = Date.now();
+      await repo.recordSession("u1", payloadWithoutCompletedAt, runPRDetection);
+      const after = Date.now();
+
+      // Repo substituted now() — the inserted completedAt must be a
+      // Date within the test execution window.
+      expect(capturedValues?.completedAt).toBeInstanceOf(Date);
+      const insertedAt = (capturedValues?.completedAt as Date).getTime();
+      expect(insertedAt).toBeGreaterThanOrEqual(before);
+      expect(insertedAt).toBeLessThanOrEqual(after);
+    });
+
+    it("preserves completedAt=null when status='cancelled' (cancelled sessions are not finished workouts)", async () => {
+      // The coalesce only fires for `status='completed'`. A
+      // cancelled session legitimately has no completed_at — it's a
+      // discarded workout, not a finished one — and the column
+      // should stay NULL.
+      const refreshed = {
+        session: {
+          id: "s-cancelled",
+          userId: "u1",
+          workoutId: null,
+          name: "Discarded",
+          status: "cancelled",
+          startedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-c",
+            sessionId: "s-cancelled",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 0 });
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession(
+        "u1",
+        { ...payload, status: "cancelled", completedAt: null },
+        runPRDetection,
+      );
+
+      expect(capturedValues?.completedAt).toBeNull();
     });
   });
 });

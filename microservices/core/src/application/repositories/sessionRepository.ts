@@ -231,6 +231,31 @@ export class SessionRepository {
 
     return db.transaction(async (tx) => {
       // 1. Insert the session root.
+      //
+      // `completedAt` is coalesced to "now" when status === 'completed'
+      // and the client didn't supply one. The wire schema permits
+      // `{ status: "completed", completedAt: null }` (the `t.Optional`
+      // on the handler) and the column is nullable in Postgres, so
+      // without this coalesce a completed session can land with
+      // `completed_at = NULL` — which then silently drops out of the
+      // current-month COUNT below (NULL >= date_trunc(...) → NULL →
+      // excluded), and the response's `workoutsThisMonth` undercounts
+      // the very session we just inserted. The mobile client today
+      // always sends completedAt, so users won't hit this in practice;
+      // the coalesce protects future integrations / backfills /
+      // direct-API callers from a surprising failure mode and keeps
+      // the docstring claim "including the just-recorded session when
+      // its status is completed" literally true. For cancelled
+      // sessions completedAt stays null — they're discarded workouts,
+      // not finished ones.
+      const completedAtFromPayload = payload.completedAt
+        ? new Date(payload.completedAt)
+        : null;
+      const completedAt =
+        payload.status === "completed"
+          ? (completedAtFromPayload ?? new Date())
+          : completedAtFromPayload;
+
       const [session] = await tx
         .insert(workoutSessions)
         .values({
@@ -239,9 +264,7 @@ export class SessionRepository {
           name: payload.name ?? null,
           status: payload.status,
           startedAt: new Date(payload.startedAt),
-          completedAt: payload.completedAt
-            ? new Date(payload.completedAt)
-            : null,
+          completedAt,
           totalDurationSeconds: payload.totalDurationSeconds ?? null,
           userNotes: payload.userNotes ?? null,
           sessionRating: payload.sessionRating ?? null,
@@ -370,21 +393,30 @@ export class SessionRepository {
       //                                              cancelled sessions
       //                                              count themselves
       //                                              out.
-      //      * `completed_at >=
+      //      * `COALESCE(completed_at, created_at) >=
       //        date_trunc('month', now())`         — month-start in the
       //                                              database's
-      //                                              timezone. Matches
-      //                                              dashboardRepository's
+      //                                              timezone. `COALESCE`
+      //                                              with `created_at`
+      //                                              catches any legacy
+      //                                              rows whose
+      //                                              `completed_at` is
+      //                                              NULL (those existed
+      //                                              under the pre-PR-3
+      //                                              all-time count
+      //                                              filter and would
+      //                                              otherwise silently
+      //                                              fall out of scope
+      //                                              now). Fresh writes
+      //                                              from this repo
+      //                                              always carry a non-
+      //                                              null completed_at
+      //                                              when status =
+      //                                              'completed' (see
+      //                                              insert above).
+      //                                              Matches dashboardRepository's
       //                                              `workoutsThisMonth`
-      //                                              bucketing (which
-      //                                              uses UTC month-keys
-      //                                              host-side); a brief
-      //                                              cross-DST or cross-
-      //                                              timezone disagreement
-      //                                              is acceptable because
-      //                                              the user only ever
-      //                                              sees one of the two
-      //                                              numbers at a time.
+      //                                              bucketing.
       const [totalsRow] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(workoutSessions)
@@ -392,7 +424,7 @@ export class SessionRepository {
           and(
             eq(workoutSessions.userId, userId),
             eq(workoutSessions.status, "completed"),
-            sql`${workoutSessions.completedAt} >= date_trunc('month', now())`,
+            sql`COALESCE(${workoutSessions.completedAt}, ${workoutSessions.createdAt}) >= date_trunc('month', now())`,
           ),
         );
       const workoutsThisMonth = totalsRow?.count ?? 0;

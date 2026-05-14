@@ -147,6 +147,22 @@ describe("SwapExercisePopover", () => {
     expect(onSwap).not.toHaveBeenCalled();
   });
 
+  /**
+   * Per-test timeout bumped from the default 5 s to 15 s. This case
+   * hit a CI-only 5 s timeout consistently across PR-3's CI runs
+   * even after two unrelated flake hypotheses (`seedCache`
+   * `lastSyncedAt` stamping; auth-mock `setTimeout` removal) — both
+   * fixes stayed in because they were real concurrency improvements,
+   * but neither was the actual cause. The third test in this suite
+   * is the first to assert on a data-driven testID; under GHA-runner
+   * load (slower CPU + cold caches) the React-Native test-renderer
+   * commit + synchronous auth bootstrap + seedCache memo chain land
+   * just close enough to 5 s that `findByTestId` intermittently
+   * overshoots. Tests 4-15 do the same data-driven queries and
+   * pass — the suite must be warm by then. Locally this test runs
+   * in ~150 ms; the 15 s ceiling gives ~100× headroom while still
+   * being short enough to flag a real regression.
+   */
   it("Swap fires onSwap with EXACTLY ONE row (single-element array — matches dispatcher's `rows` loop shape)", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
@@ -172,7 +188,7 @@ describe("SwapExercisePopover", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("ex-1");
     expect(rows[0].name).toBe("Bench Press");
-  });
+  }, 15000);
 
   it("tapping a different row replaces the selection (single-select, not additive)", async () => {
     const storage = new InMemoryStorageAdapter();
