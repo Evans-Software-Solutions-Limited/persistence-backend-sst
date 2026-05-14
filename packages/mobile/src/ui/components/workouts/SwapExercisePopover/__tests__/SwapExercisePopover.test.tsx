@@ -74,6 +74,17 @@ function makeAdapters(
 
 function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
   storage.cacheExercises(exercises);
+  // Stamp `lastSyncedAt` so `getExercisesQuery(...).isStale` returns
+  // false on mount and the popover's `useEffect`-driven background
+  // `refreshExerciseCache` is a no-op for these tests. Without this,
+  // every test races against an unresolved refresh promise inside
+  // React Testing Library's `act()` window — locally that races
+  // benignly, but on CI runners the test occasionally times out
+  // before the data render commits (PR-3 CI flake on the third test
+  // in this file). Tests that DO want to exercise the stale-refresh
+  // path can `storage.setLastSyncedAt("exercises", olderIso)` after
+  // seeding to override.
+  storage.setLastSyncedAt("exercises", new Date().toISOString());
 }
 
 describe("SwapExercisePopover", () => {
