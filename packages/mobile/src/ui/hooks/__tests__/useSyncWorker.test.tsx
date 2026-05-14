@@ -25,8 +25,12 @@ function makeAdapters(
 ): Adapters {
   const wrappedAuth = {
     ...auth,
+    // Fire the auth-state callback synchronously at registration —
+    // see SwapExercisePopover.test.tsx for the full rationale (CI
+    // flake from deferred-via-setTimeout setState racing with test-
+    // library polling).
     onAuthStateChange: (cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     },
     getSession: jest.fn(async () => ok(session)),

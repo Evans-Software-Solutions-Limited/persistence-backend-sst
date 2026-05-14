@@ -47,8 +47,17 @@ function makeAdapters(
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
+    // Fire the auth-state callback synchronously at registration
+    // time. The legacy mock deferred this via `setTimeout(... , 0)`
+    // to mimic Supabase's INITIAL_SESSION event, but the resulting
+    // unwrapped `setSession` setState (fired from a macrotask) raced
+    // with `waitFor` polling under CI load and intermittently caused
+    // `refresh()` to fire before `userId` had settled — the cached
+    // call signature returned undefined instead of the post-refresh
+    // workout list. Synchronous firing collapses the bootstrap into
+    // a single render commit and removes the race.
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
-      setTimeout(() => cb(session), 0);
+      cb(session);
       return () => {};
     }),
     resetPassword: jest.fn(),
