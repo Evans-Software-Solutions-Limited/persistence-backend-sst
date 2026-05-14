@@ -4,6 +4,7 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
+import { tokenizeSearch } from "@/domain/services/exercise.service";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, {
@@ -85,12 +86,20 @@ function AddExercisePopoverContainer({
   // "take ages" to show selection feedback.
   const PICKER_DISPLAY_LIMIT = 100;
 
+  // AND-match all tokens against the row name. Tokenising at this layer
+  // gives the picker the same out-of-order + partial-word behaviour as
+  // the main list — "press bench" finds "Bench Press" — without a
+  // server round-trip on every keystroke (the picker stays cache-only
+  // by design; see PICKER_DISPLAY_LIMIT comment below).
   const filteredRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const tokens = tokenizeSearch(searchQuery);
     const matched =
-      q.length === 0
+      tokens.length === 0
         ? allRows
-        : allRows.filter((ex) => ex.name.toLowerCase().includes(q));
+        : allRows.filter((ex) => {
+            const name = ex.name.toLowerCase();
+            return tokens.every((t) => name.includes(t));
+          });
     return matched.slice(0, PICKER_DISPLAY_LIMIT);
   }, [allRows, searchQuery]);
 

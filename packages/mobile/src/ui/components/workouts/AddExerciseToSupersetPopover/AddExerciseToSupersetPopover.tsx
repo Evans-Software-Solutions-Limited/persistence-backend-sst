@@ -24,6 +24,7 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
+import { tokenizeSearch } from "@/domain/services/exercise.service";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -97,12 +98,17 @@ function AddExerciseToSupersetPopoverContainer({
   // would otherwise render the full library uncondensed.
   const PICKER_DISPLAY_LIMIT = 100;
 
+  // AND-match all tokens against the row name — same shape as
+  // AddExercisePopover so "press bench" finds "Bench Press".
   const filteredRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const tokens = tokenizeSearch(searchQuery);
     const matched =
-      q.length === 0
+      tokens.length === 0
         ? allRows
-        : allRows.filter((ex) => ex.name.toLowerCase().includes(q));
+        : allRows.filter((ex) => {
+            const name = ex.name.toLowerCase();
+            return tokens.every((t) => name.includes(t));
+          });
     return matched.slice(0, PICKER_DISPLAY_LIMIT);
   }, [allRows, searchQuery]);
 

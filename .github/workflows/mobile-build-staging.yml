@@ -3,12 +3,17 @@ name: Mobile Build (Staging → TestFlight)
 # Mirrors the backend release flow — push to main fires a TestFlight build
 # (release-please's "chore: release" PR is the gate to production via the
 # release-published trigger on mobile-build-production.yml).
+#
+# Auto push-to-main trigger is temporarily disabled to conserve EAS build
+# minutes while iterating on backend-only changes. Re-enable by uncommenting
+# the `push:` block below once the build budget allows. Manual runs via
+# workflow_dispatch are unaffected.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "packages/mobile/**"
-      - ".github/workflows/mobile-build-staging.yml"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "packages/mobile/**"
+  #     - ".github/workflows/mobile-build-staging.yml"
   workflow_dispatch:
     inputs:
       platform:

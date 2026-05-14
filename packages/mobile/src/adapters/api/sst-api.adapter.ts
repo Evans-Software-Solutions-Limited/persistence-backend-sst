@@ -425,6 +425,33 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
+  async searchExercises(
+    q: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
+    const params: Record<string, string> = { q };
+    if (offset != null) params.offset = String(offset);
+    if (limit != null) params.limit = String(limit);
+    const result = await this.requestEnvelope<ApiExercisesPage>(
+      "/exercises/search",
+      { params },
+    );
+    if (!result.ok) return result;
+    const data = result.value.data
+      .map(mapApiExerciseToDomain)
+      .map((ex) => this.enrichExerciseLabels(ex));
+    const meta = result.value.meta;
+    const effectiveOffset = meta?.offset ?? offset ?? 0;
+    const hasMore =
+      meta != null ? effectiveOffset + data.length < meta.total : false;
+    return ok({
+      data,
+      cursor: null,
+      hasMore,
+    });
+  }
+
   async getReferenceList(
     kind: ReferenceListKind,
   ): Promise<Result<ReferenceEntry[], ApiError>> {

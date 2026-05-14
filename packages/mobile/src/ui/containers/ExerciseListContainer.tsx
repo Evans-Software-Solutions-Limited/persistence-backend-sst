@@ -6,6 +6,7 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
+import type { Exercise } from "@/domain/models/exercise";
 import { filterExercises } from "@/domain/services/exercise.service";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -14,6 +15,28 @@ import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
 import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
 
 const SEARCH_DEBOUNCE_MS = 300;
+/**
+ * Threshold for kicking off a server-side ranked search. Below this we
+ * stick with the local cache + filterExercises path — single-char prefix
+ * queries return almost the entire catalogue and aren't worth a round
+ * trip. Matches the backend's `MIN_SEARCH_LENGTH`.
+ */
+const SERVER_SEARCH_MIN_LENGTH = 2;
+/**
+ * Page size for the server search call. The picker caps at 100; matching
+ * here keeps the contract consistent and prevents a 1k-row payload from
+ * the server outranking what the UI can render.
+ */
+const SERVER_SEARCH_LIMIT = 100;
+
+type ServerSearchState = {
+  /** The exact trimmed query this state corresponds to. */
+  q: string;
+  results: Exercise[];
+  isFetching: boolean;
+  /** Non-null when the network call failed → caller falls back to cache. */
+  error: string | null;
+};
 
 export function ExerciseListContainer() {
   const { api, storage } = useAdapters();
@@ -82,13 +105,89 @@ export function ExerciseListContainer() {
     return getExercisesQuery(storage);
   }, [storage, cacheVersion]);
 
-  // In-memory filter: cheap. Runs on each filter change (search debounce,
-  // quick filter toggle, filter modal apply). Uses the same
-  // `filterExercises` service the storage adapter would have used,
-  // just applied to the already-parsed cache slice above.
+  // -- Server-side ranked search (FTS + trigram) -------------------------
+  //
+  // When the debounced search term hits 2+ chars we fire the backend
+  // `/exercises/search` endpoint. The ranked results replace the local
+  // filter for the search axis. The local cache + filterExercises path
+  // is preserved for: short queries, the empty-search state, and as a
+  // graceful fallback when the network call errors (offline-ish
+  // semantics without an explicit NetInfo dependency).
+  const [serverSearch, setServerSearch] = useState<ServerSearchState | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const q = debouncedSearch.trim();
+    if (q.length < SERVER_SEARCH_MIN_LENGTH) {
+      setServerSearch(null);
+      return;
+    }
+    let cancelled = false;
+    setServerSearch((prev) => ({
+      q,
+      // Keep prior results visible during a refetch so the list doesn't
+      // flicker to empty between keystrokes.
+      results: prev?.results ?? [],
+      isFetching: true,
+      error: null,
+    }));
+    void api.searchExercises(q, 0, SERVER_SEARCH_LIMIT).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setServerSearch({
+          q,
+          results: result.value.data,
+          isFetching: false,
+          error: null,
+        });
+      } else {
+        setServerSearch({
+          q,
+          results: [],
+          isFetching: false,
+          error: result.error.message,
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSearch, api]);
+
+  /**
+   * The server's ranked results are the source of truth iff:
+   *  - we have a serverSearch state for the *current* debounced query
+   *    (avoids stale results outliving a query change)
+   *  - the call didn't error (otherwise fall through to cache + local)
+   *
+   * When the server is the source, we apply `filtersWithoutSearch` over
+   * its results — the server already filtered + ranked by the search
+   * axis. When the cache is the source, we apply the full `filters`
+   * (including the local search term) so the offline / pre-server-
+   * response state still gets a meaningful filter.
+   */
+  const useServerResults =
+    serverSearch != null &&
+    serverSearch.q === debouncedSearch.trim() &&
+    serverSearch.error == null &&
+    !serverSearch.isFetching;
+
   const filtered = useMemo(() => {
+    if (useServerResults && serverSearch != null) {
+      // Filter axes other than search are applied client-side against
+      // the server's ranked page. Order is preserved by filterExercises
+      // when no `search` axis is present (no relevance re-rank).
+      return filterExercises(serverSearch.results, filtersWithoutSearch);
+    }
     return filterExercises(cacheRead.exercises, filters);
-  }, [cacheRead.exercises, filters]);
+  }, [
+    useServerResults,
+    serverSearch,
+    filtersWithoutSearch,
+    cacheRead.exercises,
+    filters,
+  ]);
 
   // Label enrichment: re-stamp `primaryMuscleGroupLabels` /
   // `secondaryMuscleGroupLabels` / `equipmentLabels` using the adapter's

@@ -14,26 +14,75 @@ import {
 import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 
 /**
+ * Tokenise a free-text search term into lowercase alphanumeric tokens.
+ * Reserved punctuation and tsquery-style operators are stripped (cheap
+ * allowlist) so the result is safe to AND-match against an exercise's
+ * name + description without surprises.
+ *
+ *   "press bench"        → ["press", "bench"]
+ *   "  Bench   Press  "  → ["bench", "press"]
+ *   ""                   → []
+ *   "bench-press"        → ["bench", "press"]
+ *
+ * Exported for tests. Mirrors the backend's `toPrefixTsQuery` tokeniser
+ * (microservices/core/.../exerciseRepository.ts) so server and offline
+ * matching agree on what a "token" is.
+ */
+export function tokenizeSearch(term: string): string[] {
+  return term
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
  * Score an exercise against a search term for relevance ranking.
- * Both the exercise name/description and the term are compared
- * case-insensitively. The term is trimmed; an empty or whitespace-only
- * term always scores 0 (there is no meaningful "match" for no input).
+ *
+ * Tokenises the term into lowercased alphanumeric tokens and AND-matches
+ * every token against the exercise's name (and description as a tier-1
+ * fallback). Out-of-order, partial-word, and multi-token searches all
+ * work — "press bench" finds "Bench Press", "benc" finds "Bench Press".
  *
  * Scoring tiers (higher = more relevant):
- *   4 — exact name match (case-insensitive)
- *   3 — name starts with the search term
- *   2 — name contains the search term
- *   1 — description contains the search term
- *   0 — no match (or empty term)
+ *   4 — exact name match (case-insensitive, raw term equals raw name)
+ *   3 — every token is a prefix of a name token (start-of-word match)
+ *   2 — every token appears anywhere inside the name (substring AND-match)
+ *   1 — every token appears in name+description combined (description fallback)
+ *   0 — at least one token doesn't match anywhere
  */
 export function scoreExercise(exercise: Exercise, term: string): number {
   const termLower = term.toLowerCase().trim();
   if (termLower.length === 0) return 0;
   const nameLower = exercise.name.toLowerCase();
   if (nameLower === termLower) return 4;
-  if (nameLower.startsWith(termLower)) return 3;
-  if (nameLower.includes(termLower)) return 2;
-  if (exercise.description?.toLowerCase().includes(termLower)) return 1;
+
+  const tokens = tokenizeSearch(term);
+  if (tokens.length === 0) return 0;
+
+  // Tier 3: every token starts one of the name's whitespace-separated
+  // word tokens. "press bench" → name word-tokens ["bench", "press"]
+  // → both query tokens are prefixes of name word-tokens → score 3.
+  const nameWords = nameLower.split(/\s+/).filter(Boolean);
+  const allStartWord = tokens.every((t) =>
+    nameWords.some((w) => w.startsWith(t)),
+  );
+  if (allStartWord) return 3;
+
+  // Tier 2: every token appears as a substring of the name (in any
+  // order, possibly mid-word). "benc" → name "bench press" → contains
+  // "benc" → score 2.
+  const allInName = tokens.every((t) => nameLower.includes(t));
+  if (allInName) return 2;
+
+  // Tier 1: every token appears in name + description combined. Final
+  // fallback before "no match".
+  const desc = exercise.description?.toLowerCase() ?? "";
+  const combined = `${nameLower} ${desc}`;
+  const allInCombined = tokens.every((t) => combined.includes(t));
+  if (allInCombined) return 1;
+
   return 0;
 }
 

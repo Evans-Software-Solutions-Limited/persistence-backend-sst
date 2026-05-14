@@ -164,6 +164,27 @@ export interface ApiPort {
     offset?: number,
     limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
+  /**
+   * Full-text + trigram search via the backend `/exercises/search`
+   * endpoint. Returns ranked results ordered by combined `ts_rank` +
+   * `word_similarity` score, scoped to the caller's visible exercise
+   * set (system + own customs + connected-PT customs; system-only when
+   * unauthenticated).
+   *
+   * `q` must be at least 2 chars after trim — the backend returns 400
+   * otherwise. Callers should guard before calling.
+   *
+   * Returns labels-enriched Exercise entries (same shape as
+   * `getExercises`). The adapter applies `enrichExerciseLabels` so
+   * containers can render chips without re-stamping.
+   *
+   * Spec: specs/03-exercise-library/POSTGRES_FTS_INVESTIGATION.md.
+   */
+  searchExercises(
+    q: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
   createExercise(
     data: CreateExerciseInput,

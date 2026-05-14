@@ -33,6 +33,45 @@ import { getDb } from "@persistence/db/client";
 export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
+ * Minimum length of a search term we'll send to Postgres. Below this
+ * the handler returns 400 — `:*` prefix queries on a single char return
+ * almost the whole catalogue.
+ */
+export const MIN_SEARCH_LENGTH = 2;
+
+/**
+ * Transform a free-text user query into a `to_tsquery`-safe string
+ * with `:*` prefix matching on every token, AND-joined.
+ *
+ *   "press bench"        → "press:* & bench:*"
+ *   "  bench   press  "  → "bench:* & press:*"
+ *   "bench-press"        → "bench:* & press:*"
+ *   "OR; DROP TABLE--"   → "or:* & drop:* & table:*"
+ *
+ * Returns `null` when nothing usable remains after stripping (caller
+ * should bypass the FTS branch and fall through to the trigram fallback,
+ * or 400 if used as the primary path).
+ *
+ * Approach is an allowlist: keep only Unicode letters, digits, and
+ * whitespace; everything else collapses to a space. An allowlist is
+ * safer than denylisting tsquery operators because non-operator
+ * punctuation like `;` `,` `.` would otherwise become part of the
+ * lexeme (e.g. `or;:*`), parse fine but match nothing — a silent dead
+ * token. The allowlist also keeps the regex tiny and the surface
+ * audit-able.
+ */
+export function toPrefixTsQuery(q: string): string | null {
+  const tokens = q
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return null;
+  return tokens.map((t) => `${t}:*`).join(" & ");
+}
+
+/**
  * Shape returned by the muscle-groups reference-list endpoint.
  * Mirrors the actual Supabase columns — do not add fields that
  * aren't in the live table.
@@ -346,6 +385,67 @@ export class ExerciseRepository {
       .where(and(...conditions));
 
     return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Full-text search across the exercise catalogue, scoped to the same
+   * visibility predicate `list()` applies. Order:
+   *
+   *   1. Combined relevance: `ts_rank * 2 + word_similarity`. ts_rank is
+   *      weighted higher because for clean matches (criteria 1, 2, 4, 6 in
+   *      the FTS investigation) we want lexeme-driven ordering; trigram is
+   *      the typo-tolerant tie-breaker / fallback.
+   *   2. Name ASC for deterministic tie-breaking on equal scores — without
+   *      this, two equally-relevant rows can swap order across runs.
+   *
+   * The match predicate is `(FTS @@) OR (name %>)`. The trigram operator
+   * `%>` is `word_similarity > pg_trgm.word_similarity_threshold` (default
+   * 0.6) — that's the right granularity for "find this exercise by its
+   * misspelt name". If tokenisation yields no usable token (the input is
+   * pure punctuation), we drop the FTS branch and rely on trigram only.
+   *
+   * Both branches go through `sql` template parameterisation, so user
+   * input never reaches Postgres unparameterised. The tokenizer strips
+   * tsquery reserved characters before parameterisation so `to_tsquery`
+   * cannot raise a syntax error from user input.
+   *
+   * Spec: specs/03-exercise-library/POSTGRES_FTS_INVESTIGATION.md.
+   */
+  async search(
+    q: string,
+    userId: string | null = null,
+    limit = 20,
+    offset = 0,
+  ): Promise<{ rows: Exercise[]; total: number }> {
+    const db = getDb();
+    const tsq = toPrefixTsQuery(q);
+
+    const matchCondition = tsq
+      ? sql`(search_vector @@ to_tsquery('english', ${tsq}) OR ${exercises.name} %> ${q})`
+      : sql`${exercises.name} %> ${q}`;
+
+    const visibility = this.buildVisibilityCondition(userId);
+    const where = and(visibility, matchCondition) as SQL;
+
+    const primaryOrder = tsq
+      ? sql`(ts_rank(search_vector, to_tsquery('english', ${tsq})) * 2 + word_similarity(${q}, ${exercises.name})) DESC`
+      : sql`word_similarity(${q}, ${exercises.name}) DESC`;
+
+    const [rows, totalResult] = await Promise.all([
+      db
+        .select()
+        .from(exercises)
+        .where(where)
+        .orderBy(primaryOrder, sql`${exercises.name} ASC`)
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(exercises)
+        .where(where),
+    ]);
+
+    return { rows, total: totalResult[0]?.total ?? 0 };
   }
 
   /**

@@ -1,8 +1,12 @@
 name: Mobile Build (Production → App Store)
 
+# The release-published auto-trigger is temporarily disabled to conserve EAS
+# build minutes while iterating on backend-only changes. Re-enable by
+# uncommenting the `release:` block below once the build budget allows.
+# Manual runs via workflow_dispatch are unaffected.
 on:
-  release:
-    types: [published]
+  # release:
+  #   types: [published]
   workflow_dispatch:
     inputs:
       platform:
