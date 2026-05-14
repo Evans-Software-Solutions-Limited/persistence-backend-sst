@@ -277,4 +277,146 @@ describe("useRestTimer", () => {
     });
     expect(result.current.totalSeconds).toBe(60);
   });
+
+  it("start() prompts for permission when status is `not_determined`, then schedules on grant", async () => {
+    // Reproduces the M3 Phase 3b staging bug: on a fresh install
+    // status is `not_determined`. Pre-fix, the hook scheduled
+    // straight away and the OS silently dropped the schedule. Post-
+    // fix, the hook calls `requestPermissions` first; the user sees
+    // the system permission prompt, grants, then the schedule
+    // proceeds against `granted` status.
+    let getStatusCalls = 0;
+    notifications.getPermissionStatus = jest.fn().mockImplementation(() => {
+      getStatusCalls += 1;
+      // First read: status before prompt. Second read: status after
+      // prompt resolved (granted).
+      return Promise.resolve(
+        getStatusCalls === 1 ? "not_determined" : "granted",
+      );
+    });
+    const requestSpy = jest
+      .spyOn(notifications, "requestPermissions")
+      .mockResolvedValue(ok("granted"));
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(90);
+    });
+    // Two `await`s in the granted path; four in the `not_determined →
+    // request → re-check → schedule` path. Flush generously.
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(notifications.scheduleArgs).toHaveLength(1);
+    expect(notifications.scheduleArgs[0].triggerSeconds).toBe(90);
+  });
+
+  it("start() skips scheduling when permission status is `denied` (no silent no-op)", async () => {
+    // Pre-fix, the hook called `scheduleLocalNotification`
+    // regardless of permission; on iOS the OS silently dropped the
+    // notification and the user never saw a banner. Post-fix, the
+    // hook reads the status, sees `denied`, falls back to the in-
+    // app countdown only.
+    notifications.getPermissionStatus = jest.fn().mockResolvedValue("denied");
+    const requestSpy = jest.spyOn(notifications, "requestPermissions");
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+
+    // No re-prompt when status is already denied (the prompt would
+    // be a no-op on iOS without going through Settings first).
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(notifications.scheduleArgs).toHaveLength(0);
+    // Timer still runs in-app — the screen's RestTimerDisplay
+    // doesn't need notification permission to tick down.
+    expect(result.current.isActive).toBe(true);
+    expect(result.current.remainingSeconds).toBe(60);
+  });
+
+  it("start() skips scheduling when the user denies the permission prompt", async () => {
+    // `not_determined` → prompt → `denied`. The re-check after the
+    // prompt sees the new status and bails out of the schedule.
+    let getStatusCalls = 0;
+    notifications.getPermissionStatus = jest.fn().mockImplementation(() => {
+      getStatusCalls += 1;
+      return Promise.resolve(
+        getStatusCalls === 1 ? "not_determined" : "denied",
+      );
+    });
+    jest
+      .spyOn(notifications, "requestPermissions")
+      .mockResolvedValue(ok("denied"));
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(45);
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(notifications.scheduleArgs).toHaveLength(0);
+    expect(result.current.isActive).toBe(true);
+  });
+
+  it("extend() does NOT prompt for permission again (start already handled it)", async () => {
+    // First `start` would have requested permission if needed; by
+    // the time the user taps Extend, the status is settled. Extend
+    // just reads the status — re-prompting from extend would be
+    // pushy (user is mid-set, doesn't want a system modal).
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+    const requestSpy = jest.spyOn(notifications, "requestPermissions");
+
+    act(() => {
+      result.current.extend(30);
+    });
+    await flushMicrotasks();
+
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(notifications.scheduleArgs.length).toBeGreaterThan(1);
+  });
+
+  it("extend() skips scheduling when permission isn't granted at extend time", async () => {
+    // Race-edge: user starts timer (granted), then revokes
+    // permission via Settings while the app is backgrounded, then
+    // foregrounds and taps Extend. extend() must not silently
+    // schedule a notification the OS will drop.
+    notifications.getPermissionStatus = jest
+      .fn()
+      // start() sees granted, first schedule fires.
+      .mockResolvedValueOnce("granted")
+      // extend() sees denied — skip the schedule.
+      .mockResolvedValueOnce("denied");
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+    const scheduleCountAfterStart = notifications.scheduleArgs.length;
+
+    act(() => {
+      result.current.extend(30);
+    });
+    await flushMicrotasks();
+
+    // No new schedule fired — extend bailed on the denied status.
+    expect(notifications.scheduleArgs.length).toBe(scheduleCountAfterStart);
+  });
 });

@@ -189,14 +189,41 @@ export function useRestTimerWith(
           : "Next set ready",
         triggerSeconds: seconds,
       };
-      void notifications
-        .scheduleLocalNotification(payload)
-        .then((id) => {
+
+      // Permission safety net. The first-authenticated-mount prompt
+      // in `useNotificationPermissions` covers the common path, but
+      // a user can still land here in the `not_determined` state if
+      // they (a) skipped past the home screen via a deep link,
+      // (b) signed out and back in with a stale AsyncStorage flag,
+      // or (c) revoked permission in Settings then re-installed
+      // without clearing app data. Re-checking here means the
+      // earliest possible moment a user actually needs the
+      // permission triggers the prompt; if they already granted /
+      // denied, this is a no-op. Denied → fall through to in-app
+      // countdown only (the catch below already covers schedule
+      // failures, but we don't want to schedule at all when status
+      // is denied — silently scheduling is what made the bug
+      // invisible on staging before).
+      void (async () => {
+        try {
+          const status = await notifications.getPermissionStatus();
+          if (status === "not_determined") {
+            await notifications.requestPermissions();
+          }
+          const finalStatus =
+            status === "not_determined"
+              ? await notifications.getPermissionStatus()
+              : status;
+          if (finalStatus !== "granted") return;
+          const id = await notifications.scheduleLocalNotification(payload);
           notificationIdRef.current = id || null;
-        })
-        // Permission denied or scheduling failed — fall back to the
-        // in-app countdown only.
-        .catch(() => undefined);
+        } catch {
+          // Adapter throw or platform-level scheduling failure —
+          // fall back to the in-app countdown only. The screen's
+          // `RestTimerDisplay` keeps running on its own setInterval
+          // tick regardless of notification state.
+        }
+      })();
     },
     [cancelNotification, clock, notifications, storage, userId],
   );
@@ -215,20 +242,28 @@ export function useRestTimerWith(
       setTotalSeconds(newTotal);
       setRemainingSeconds((prev) => prev + extra);
 
-      // Reschedule notification for the new remaining duration.
+      // Reschedule notification for the new remaining duration. Skip
+      // outright when permission isn't granted — `start` would have
+      // already handled the prompt if status was `not_determined`,
+      // so here we only need a status read (no re-prompt) to avoid
+      // a silent no-op schedule.
       const startedAtMs = Date.parse(persisted.startedAt);
       const newRemaining = computeRemaining(startedAtMs, newTotal, clock());
       if (newRemaining > 0) {
-        void notifications
-          .scheduleLocalNotification({
-            title: NOTIFICATION_TITLE,
-            body: "Next set ready",
-            triggerSeconds: newRemaining,
-          })
-          .then((id) => {
+        void (async () => {
+          try {
+            const status = await notifications.getPermissionStatus();
+            if (status !== "granted") return;
+            const id = await notifications.scheduleLocalNotification({
+              title: NOTIFICATION_TITLE,
+              body: "Next set ready",
+              triggerSeconds: newRemaining,
+            });
             notificationIdRef.current = id || null;
-          })
-          .catch(() => undefined);
+          } catch {
+            // Adapter throw — in-app countdown still ticks.
+          }
+        })();
       }
     },
     [cancelNotification, clock, notifications, storage, userId],

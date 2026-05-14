@@ -1,9 +1,36 @@
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
+
+/**
+ * Foreground-display behaviour for local notifications fired by the
+ * app (e.g. the rest timer's "Rest complete" alert). Without an
+ * explicit handler, expo-notifications defaults to NOT showing
+ * banners when the app is in the foreground — which is exactly when
+ * the user is most likely to be staring at the screen waiting for
+ * the timer to fire. Setting the handler at module load (above the
+ * default export) is the legacy pattern from
+ * persistence-mobile/app/_layout.tsx:25-53 and matches Expo's
+ * documented setup.
+ *
+ * The handler still respects `Notifications.requestPermissionsAsync`
+ * — if the user denied permission, the OS suppresses the banner
+ * regardless of what we return here. The rest-timer's in-app
+ * countdown remains visible as the fallback.
+ */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 function AuthGate() {
   const { session, isLoading } = useAuth();
@@ -32,6 +59,24 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  // Android 8+ requires an explicit notification channel for any
+  // notification to render — without one, `scheduleNotificationAsync`
+  // silently no-ops. Idempotent: calling `setNotificationChannelAsync`
+  // with the same id on subsequent launches just updates the channel,
+  // it doesn't error. Fire-and-forget inside an effect (rather than
+  // at module load) so we don't fight the JS-thread cold-start.
+  // Mirrors legacy `useRegisterPushNotifications.ts:30-37` minus the
+  // push-token side (push tokens are an M7 feature).
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    void Notifications.setNotificationChannelAsync("default", {
+      name: "Default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#0C111A",
+    });
+  }, []);
+
   // `GestureHandlerRootView` is required by react-native-gesture-handler
   // for any descendant `<GestureDetector>` to recognise touches. Phase 3a
   // added the SemiCircleSlider (rating screen) which uses GestureDetector;
