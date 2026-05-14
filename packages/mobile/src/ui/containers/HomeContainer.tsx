@@ -11,7 +11,6 @@ import {
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useHealthData } from "@/ui/hooks/useHealthData";
-import { useNotificationPermissions } from "@/ui/hooks/useNotificationPermissions";
 import { useStableMockHistory } from "@/ui/hooks/useStableMockHistory";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
@@ -63,18 +62,6 @@ export function HomeContainer() {
   const { session } = useAuth();
   const dashboard = useDashboard();
   const health = useHealthData();
-
-  // Prompt for local-notification permission on first authenticated
-  // home-screen render. Once-per-install — the hook reads its own
-  // AsyncStorage flag and no-ops on subsequent launches. Brad's M3
-  // Phase 3b staging review caught that no permission prompt ever
-  // appeared because nothing in V2 called `requestPermissionsAsync`;
-  // the rest-timer's `scheduleNotificationAsync` then silently
-  // no-opped for the entire app lifetime. Mirrors legacy
-  // `persistence-mobile/app/(tabs)/home.tsx:28-71` placement —
-  // earliest authenticated render is the right surface (avoids
-  // pre-asking on the sign-in screen, which would feel pushy).
-  useNotificationPermissions(session !== null);
 
   // Memo #1: cachedPayload slice the view-model derives from.
   const cachedPayload = useMemo(() => dashboard.payload, [dashboard.payload]);

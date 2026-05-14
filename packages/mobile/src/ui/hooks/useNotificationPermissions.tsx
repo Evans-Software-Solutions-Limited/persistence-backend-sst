@@ -1,17 +1,19 @@
 /**
- * Prompt the OS for local-notification permission on first
- * authenticated app launch, then never again.
+ * Prompt the OS for local-notification permission as soon as the
+ * app loads, then never again. Mounted from `app/_layout.tsx` via
+ * `NotificationPermissionsBootstrap` so it fires regardless of
+ * whether the user is signed in.
  *
  * Brad's note from the M3 Phase 3b staging review: the rest-timer
  * "ding" never fires on installed builds because nothing in V2 ever
  * called `requestPermissionsAsync()`. iOS only surfaces the system
  * permission prompt when an app explicitly asks; in its absence,
  * `scheduleNotificationAsync` silently no-ops for the entire app
- * lifetime. Calling it once on first authenticated home-screen
- * mount mirrors the legacy app's pattern
- * (`persistence-mobile/app/(tabs)/home.tsx:28-71`) and is the
- * minimum UX bar — Brad expected to see "Allow notifications?" on
- * install but the codepath simply didn't exist.
+ * lifetime. Brad's follow-up after the first fix landed the prompt
+ * post-auth: "The notification permissions should be requested by
+ * the user on load of the application." Calling the hook from the
+ * root layout (NotificationPermissionsBootstrap sibling of
+ * AuthGate) lands the prompt before any screen renders.
  *
  * Once-per-install semantics. The AsyncStorage flag mirrors legacy's
  * `NOTIFICATION_PERMISSION_KEY`: if the user has already been
@@ -19,12 +21,13 @@
  * future Settings screen can offer a "request again" path that
  * clears this flag — out of scope here.
  *
- * Why a hook and not a side-effect inside `_layout.tsx`: the
- * permission prompt needs the user to be signed in (so we're not
- * pre-asking on the sign-in screen, which would feel pushy) AND
- * needs to read the current OS permission state, which is async.
- * A hook called from `HomeContainer` lands the prompt at the
- * earliest authenticated render, which is what legacy does.
+ * Why a hook (and not a module-load side effect): we need an active
+ * `useAdapters` reference for the abstraction-friendly
+ * `notifications.requestPermissions()` call, and we need a React
+ * lifecycle to attach a cleanup. The `enabled` parameter is kept
+ * for two reasons: (a) Settings can someday pass `false` to disable
+ * the auto-prompt, (b) tests can opt out without rendering a full
+ * provider tree.
  *
  * Why not in the StoragePort: this is a single boolean flag with
  * a one-shot lifetime per device install. Adding a port surface
@@ -33,6 +36,7 @@
  *
  * Spec: specs/05-active-session/requirements.md STORY-003
  *       Brad's M3 Phase 3b staging review (2026-05-14)
+ *       Brad's PR #64 review follow-up — prompt-on-app-load
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";

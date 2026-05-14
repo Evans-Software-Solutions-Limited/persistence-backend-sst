@@ -6,6 +6,7 @@ import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
+import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 
 /**
  * Foreground-display behaviour for local notifications fired by the
@@ -31,6 +32,29 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
+
+/**
+ * Mounts inside `AppProviders` and fires the local-notification
+ * permission prompt as soon as the JS bundle is ready — regardless
+ * of auth state. Brad's call: "The notification permissions should
+ * be requested by the user on load of the application." Earliest-
+ * possible-prompt feels native on iOS (every well-known app does it
+ * at launch) and avoids the staging-build behaviour where the user
+ * never sees the prompt at all unless they happen to navigate to
+ * the home screen.
+ *
+ * The hook owns idempotency: an AsyncStorage flag + in-memory ref
+ * mean the OS prompt only fires the very first launch of a fresh
+ * install. Subsequent launches read the flag and no-op.
+ *
+ * Sibling to `AuthGate` rather than baked into it because
+ * notifications and auth are independent concerns — keep the
+ * coupling visible at the layout level.
+ */
+function NotificationPermissionsBootstrap() {
+  useNotificationPermissions(true);
+  return null;
+}
 
 function AuthGate() {
   const { session, isLoading } = useAuth();
@@ -88,6 +112,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
         <AppProviders>
+          <NotificationPermissionsBootstrap />
           <AuthGate />
         </AppProviders>
       </ErrorBoundary>

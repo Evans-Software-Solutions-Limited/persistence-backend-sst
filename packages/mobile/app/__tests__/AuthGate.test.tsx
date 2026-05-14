@@ -33,6 +33,17 @@ jest.mock("../../src/ui/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// Mock useNotificationPermissions — the real hook calls useAdapters,
+// which throws without an AdapterProvider in scope. Since AppProviders
+// is mocked to a pass-through above, there's no provider to feed it.
+// Replace with a `jest.fn()` so we can both assert the bootstrap
+// component invokes it AND avoid the provider plumbing.
+const mockUseNotificationPermissions = jest.fn<void, [boolean]>();
+jest.mock("../../src/ui/hooks/useNotificationPermissions", () => ({
+  useNotificationPermissions: (enabled: boolean) =>
+    mockUseNotificationPermissions(enabled),
+}));
+
 // eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -213,5 +224,46 @@ describe("Notification setup at module load", () => {
     (Notifications.setNotificationChannelAsync as jest.Mock).mockClear();
     render(<RootLayout />);
     expect(Notifications.setNotificationChannelAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("NotificationPermissionsBootstrap (prompt-on-app-load)", () => {
+  it("invokes `useNotificationPermissions(true)` on mount, regardless of auth state", () => {
+    // Brad's call: "The notification permissions should be requested
+    // by the user on load of the application." This bootstrap sits
+    // inside `AppProviders` as a sibling of `AuthGate` and fires the
+    // prompt before any screen renders — including before sign-in
+    // completes. The hook owns idempotency (AsyncStorage flag), so
+    // mounting it pre-auth doesn't risk repeat prompts.
+    mockUseNotificationPermissions.mockClear();
+    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    expect(mockUseNotificationPermissions).toHaveBeenCalledWith(true);
+  });
+
+  it("invokes the hook even when the user is already signed in (subsequent launches)", () => {
+    // Returning users hit this path: hook fires, AsyncStorage flag
+    // is "true", hook short-circuits internally. No prompt actually
+    // shown to the user — the call still happens though, so we
+    // assert the wiring is in place.
+    mockUseNotificationPermissions.mockClear();
+    mockUseAuth.mockReturnValue({
+      session: {
+        accessToken: "t",
+        refreshToken: "r",
+        userId: "u",
+        email: "e",
+        expiresAt: 0,
+      },
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)"]);
+
+    render(<RootLayout />);
+
+    expect(mockUseNotificationPermissions).toHaveBeenCalledWith(true);
   });
 });
