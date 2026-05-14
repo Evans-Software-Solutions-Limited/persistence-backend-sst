@@ -14,10 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  LocalNotification,
-  NotificationsPort,
-} from "@/domain/ports/notifications.port";
+import type { NotificationsPort } from "@/domain/ports/notifications.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { useAdapters } from "./useAdapters";
 
@@ -105,6 +102,16 @@ export function useRestTimerWith(
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notificationIdRef = useRef<string | null>(null);
+  // Monotonically-incrementing generation counter — bumped by every
+  // `start`, `extend`, and `skip`. An in-flight schedule IIFE
+  // captures the value at invocation and re-checks after each await;
+  // a mismatch means the user moved on (skipped, restarted with a
+  // different duration, extended) while the platform notification
+  // call was still in flight. The IIFE then either bails out before
+  // scheduling, or cancels the just-scheduled id so the OS doesn't
+  // fire a banner for a timer the user already dismissed. Closes the
+  // race Brad flagged on the first notifications PR.
+  const pendingScheduleGenRef = useRef(0);
 
   const stopInterval = useCallback(() => {
     if (intervalRef.current) {
@@ -177,26 +184,73 @@ export function useRestTimerWith(
     (seconds: number, exerciseName?: string) => {
       if (seconds <= 0) return;
       cancelNotification();
-      const startedAt = new Date(clock()).toISOString();
-      storage.setRestTimerState(userId, { startedAt, totalSeconds: seconds });
+      const startedAtIso = new Date(clock()).toISOString();
+      storage.setRestTimerState(userId, {
+        startedAt: startedAtIso,
+        totalSeconds: seconds,
+      });
       setTotalSeconds(seconds);
       setRemainingSeconds(seconds);
 
-      const payload: LocalNotification = {
-        title: NOTIFICATION_TITLE,
-        body: exerciseName
-          ? `${exerciseName} — next set ready`
-          : "Next set ready",
-        triggerSeconds: seconds,
-      };
-      void notifications
-        .scheduleLocalNotification(payload)
-        .then((id) => {
+      // Bump the generation BEFORE the IIFE so any prior in-flight
+      // schedule (from a quick double-tap on Start, or a previous
+      // exercise's timer that's still resolving its
+      // `scheduleLocalNotification` call) sees a stale value when
+      // its post-await gen check runs, and bails out cleanly.
+      const gen = ++pendingScheduleGenRef.current;
+
+      // Permission is requested ONCE at app load in
+      // `NotificationPermissionsBootstrap`; the in-flight code here
+      // only reads status and skips silently when not granted. We
+      // never prompt mid-flow — Brad's call, mirroring how
+      // every other production app handles this.
+      void (async () => {
+        try {
+          const status = await notifications.getPermissionStatus();
+          // After the status await, the user may have skipped /
+          // restarted. Compare gen — if it doesn't match, the IIFE
+          // is for a timer that no longer exists.
+          if (gen !== pendingScheduleGenRef.current) return;
+          if (status !== "granted") return;
+
+          // Recompute the trigger from wall-clock so the OS banner
+          // fires at the same instant the in-app countdown reaches
+          // zero. If we passed the original `seconds` here, the OS
+          // would schedule `now + seconds` — but `now` is offset
+          // from `startedAt` by however long the
+          // `getPermissionStatus` call took (≪1 ms typically, but
+          // an arbitrary amount on a slow device). The drift was
+          // Brad's first review finding; without this recompute, a
+          // 60 s rest timer with a 10 s status call would ding 10 s
+          // after the in-app countdown hit zero.
+          const startedAtMs = Date.parse(startedAtIso);
+          const remaining = computeRemaining(startedAtMs, seconds, clock());
+          if (remaining <= 0) return;
+
+          const id = await notifications.scheduleLocalNotification({
+            title: NOTIFICATION_TITLE,
+            body: exerciseName
+              ? `${exerciseName} — next set ready`
+              : "Next set ready",
+            triggerSeconds: remaining,
+          });
+
+          // Race-edge: between the schedule await suspending and
+          // resolving, the user may have skipped. Re-check gen; if
+          // stale, immediately cancel the id the OS just gave us so
+          // the banner doesn't fire for a dismissed timer.
+          if (gen !== pendingScheduleGenRef.current) {
+            if (id) void notifications.cancelLocalNotification(id);
+            return;
+          }
           notificationIdRef.current = id || null;
-        })
-        // Permission denied or scheduling failed — fall back to the
-        // in-app countdown only.
-        .catch(() => undefined);
+        } catch {
+          // Adapter throw or platform-level scheduling failure —
+          // fall back to the in-app countdown only. The screen's
+          // `RestTimerDisplay` keeps running on its own setInterval
+          // tick regardless of notification state.
+        }
+      })();
     },
     [cancelNotification, clock, notifications, storage, userId],
   );
@@ -215,26 +269,62 @@ export function useRestTimerWith(
       setTotalSeconds(newTotal);
       setRemainingSeconds((prev) => prev + extra);
 
-      // Reschedule notification for the new remaining duration.
+      // Reschedule for the new remaining duration. Same race-guard
+      // pattern as `start` — bump gen so any in-flight prior IIFE
+      // bails, then recheck gen + recompute trigger from wall-clock
+      // after the status await.
+      const gen = ++pendingScheduleGenRef.current;
       const startedAtMs = Date.parse(persisted.startedAt);
-      const newRemaining = computeRemaining(startedAtMs, newTotal, clock());
-      if (newRemaining > 0) {
-        void notifications
-          .scheduleLocalNotification({
+      const initialRemaining = computeRemaining(startedAtMs, newTotal, clock());
+      if (initialRemaining <= 0) return;
+
+      void (async () => {
+        try {
+          const status = await notifications.getPermissionStatus();
+          if (gen !== pendingScheduleGenRef.current) return;
+          if (status !== "granted") return;
+
+          // Re-read persisted state + recompute trigger from wall-
+          // clock so the OS banner fires at the same instant the
+          // in-app countdown reaches zero (cf. `start` for the
+          // drift rationale).
+          const refreshed = storage.getRestTimerState(userId);
+          if (!refreshed) return;
+          const refreshedStartedAtMs = Date.parse(refreshed.startedAt);
+          const remaining = computeRemaining(
+            refreshedStartedAtMs,
+            refreshed.totalSeconds,
+            clock(),
+          );
+          if (remaining <= 0) return;
+
+          const id = await notifications.scheduleLocalNotification({
             title: NOTIFICATION_TITLE,
             body: "Next set ready",
-            triggerSeconds: newRemaining,
-          })
-          .then((id) => {
-            notificationIdRef.current = id || null;
-          })
-          .catch(() => undefined);
-      }
+            triggerSeconds: remaining,
+          });
+          if (gen !== pendingScheduleGenRef.current) {
+            if (id) void notifications.cancelLocalNotification(id);
+            return;
+          }
+          notificationIdRef.current = id || null;
+        } catch {
+          // Adapter throw — in-app countdown still ticks.
+        }
+      })();
     },
     [cancelNotification, clock, notifications, storage, userId],
   );
 
   const skip = useCallback(() => {
+    // Bump gen so any IIFE from a prior `start` / `extend` whose
+    // platform notification call is still in flight bails out on
+    // its next post-await gen check (or cancels the id it just
+    // received if it already scheduled). Without this, a user who
+    // hits Skip during the brief window before
+    // `scheduleLocalNotification` resolves would still get the
+    // banner moments later for a timer they dismissed.
+    pendingScheduleGenRef.current++;
     cancelNotification();
     storage.clearRestTimerState(userId);
     setTotalSeconds(0);

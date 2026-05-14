@@ -161,11 +161,47 @@ jest.mock("expo-linking", () => ({
 // Mock expo-notifications (M3 — native bindings unavailable in Jest).
 // The ExpoNotificationsAdapter is a thin wrapper; integration is verified
 // on staging EAS builds before merge per FRONTEND_BRIEF § Group C.
+// `setNotificationHandler` and `setNotificationChannelAsync` were added
+// in the post-M3 staging-bugfix PR — both are called at app boot
+// (root layout) and must exist on the mock or the layout test suite
+// throws during module-load.
 jest.mock("expo-notifications", () => ({
   requestPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
   getPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
   scheduleNotificationAsync: jest.fn(async () => "stub-notif-id"),
   cancelScheduledNotificationAsync: jest.fn(async () => undefined),
+  setNotificationHandler: jest.fn(),
+  setNotificationChannelAsync: jest.fn(async () => undefined),
+  AndroidImportance: {
+    MAX: 5,
+    HIGH: 4,
+    DEFAULT: 3,
+    LOW: 2,
+    MIN: 1,
+    NONE: 0,
+    UNSPECIFIED: -1000,
+  },
+}));
+
+// Mock @react-native-async-storage/async-storage — the native module
+// isn't linked in the Jest environment, so importing it directly
+// throws `[@RNC/AsyncStorage]: NativeModule: AsyncStorage is null`.
+// Required by `useNotificationPermissions` (and any future hook that
+// reads / writes the install-scoped permission flag). Per-test
+// overrides via `jest.mock(...)` at the top of a test file still
+// take precedence over this global.
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+    clear: jest.fn(async () => undefined),
+    getAllKeys: jest.fn(async () => []),
+    multiGet: jest.fn(async () => []),
+    multiSet: jest.fn(async () => undefined),
+    multiRemove: jest.fn(async () => undefined),
+  },
 }));
 
 // Mock @expo/vector-icons to a no-op View. The real Icon component

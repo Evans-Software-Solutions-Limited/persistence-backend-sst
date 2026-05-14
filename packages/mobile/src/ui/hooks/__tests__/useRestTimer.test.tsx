@@ -277,4 +277,213 @@ describe("useRestTimer", () => {
     });
     expect(result.current.totalSeconds).toBe(60);
   });
+
+  it("start() never calls requestPermissions — permission is asked once at app load only (no mid-flow prompts)", async () => {
+    // Brad's call: "We should not request notification permissions
+    // halfway through flows." The hook reads the OS status and
+    // schedules only when it's already `granted`; the prompt itself
+    // is owned by `NotificationPermissionsBootstrap` at app load.
+    // This test covers both `not_determined` and `denied` start
+    // states to assert the hook silently falls back to in-app
+    // countdown in either case.
+    const requestSpy = jest.spyOn(notifications, "requestPermissions");
+
+    for (const status of ["not_determined", "denied"] as const) {
+      notifications.getPermissionStatus = jest.fn().mockResolvedValue(status);
+      const { result, unmount } = renderHook(() =>
+        useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+      );
+      act(() => {
+        result.current.start(60);
+      });
+      await flushMicrotasks();
+      // Timer still ticks in-app regardless of status.
+      expect(result.current.isActive).toBe(true);
+      unmount();
+      storage.clearRestTimerState("user-1");
+    }
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(notifications.scheduleArgs).toHaveLength(0);
+  });
+
+  it("start() recomputes triggerSeconds from startedAt so the OS banner fires when the in-app countdown reaches zero (drift fix)", async () => {
+    // Bug Brad flagged: the original code passed the literal
+    // `seconds` arg to scheduleLocalNotification, but the schedule
+    // call happens AFTER an `await getPermissionStatus()`. If the
+    // status read takes 10 s (slow device, debugger pause, etc.),
+    // the OS would schedule `now + 60` while the in-app countdown
+    // has been ticking from `startedAt` — the banner ends up 10 s
+    // late. Recomputing the trigger from `startedAt` keeps both
+    // clocks aligned.
+    let resolveStatus: ((s: "granted") => void) | null = null;
+    notifications.getPermissionStatus = jest.fn().mockImplementation(
+      () =>
+        new Promise<"granted">((r) => {
+          resolveStatus = r;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+
+    // T=0: user starts a 60 s rest.
+    act(() => {
+      result.current.start(60);
+    });
+    // T=10: clock advances while the permission-status call is
+    // still pending (simulates a slow / blocked status read).
+    nowMs += 10_000;
+
+    // Now resolve the status — the IIFE will compute its
+    // triggerSeconds *after* this resolves.
+    if (resolveStatus) (resolveStatus as (s: "granted") => void)("granted");
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(notifications.scheduleArgs).toHaveLength(1);
+    // 60 s rest, 10 s burned waiting on the status read → 50 s
+    // remaining when the OS banner gets scheduled. Pre-fix this
+    // would have been 60 s, i.e. the banner would fire 10 s after
+    // the in-app countdown reached zero.
+    expect(notifications.scheduleArgs[0].triggerSeconds).toBe(50);
+  });
+
+  it("skip() called mid-schedule cancels the just-scheduled notification (race guard)", async () => {
+    // The user taps Skip while the platform's
+    // `scheduleLocalNotification` is still in flight. Pre-fix, the
+    // skip ran `cancelNotification` with `notificationIdRef.current
+    // === null` (the IIFE hadn't returned the id yet) so nothing
+    // got cancelled; moments later the OS would fire a banner for
+    // the dismissed timer. Post-fix, the generation token tells the
+    // IIFE its work is no longer wanted — it cancels the id the OS
+    // hands back instead of stashing it.
+    let resolveSchedule: ((id: string) => void) | null = null;
+    notifications.scheduleLocalNotification = jest.fn().mockImplementation(
+      () =>
+        new Promise<string>((r) => {
+          resolveSchedule = r;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    // Drain the status microtask so we're now suspended on the
+    // schedule call.
+    await flushMicrotasks();
+
+    // User skips mid-flight.
+    act(() => {
+      result.current.skip();
+    });
+    expect(result.current.isActive).toBe(false);
+
+    // Schedule promise resolves AFTER skip — the IIFE's post-await
+    // gen check should detect the mismatch and cancel the id.
+    if (resolveSchedule) (resolveSchedule as (id: string) => void)("late-id-1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(notifications.cancelledIds).toContain("late-id-1");
+  });
+
+  it("start() called twice in rapid succession cancels the first scheduled notification (no leak)", async () => {
+    // Re-entrant start: user starts a 60 s rest, then immediately
+    // starts again with 120 s (e.g. picked the wrong exercise's
+    // rest preset). Both IIFEs race; without the generation guard,
+    // both schedules land in the OS queue but only the second's
+    // id is stored in `notificationIdRef`. Skip would then only
+    // cancel the second — the first leaks and fires for a timer
+    // that no longer exists.
+    let firstResolve: ((id: string) => void) | null = null;
+    let secondResolve: ((id: string) => void) | null = null;
+    let callCount = 0;
+    notifications.scheduleLocalNotification = jest.fn().mockImplementation(
+      () =>
+        new Promise<string>((r) => {
+          callCount += 1;
+          if (callCount === 1) firstResolve = r;
+          else secondResolve = r;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+    // Restart with a different duration before the first schedule
+    // resolves.
+    act(() => {
+      result.current.start(120);
+    });
+    await flushMicrotasks();
+
+    // First IIFE's schedule resolves with an id the user doesn't
+    // want — the post-await gen check must cancel it.
+    if (firstResolve) (firstResolve as (id: string) => void)("first-id");
+    await flushMicrotasks();
+    // Second IIFE's schedule resolves cleanly.
+    if (secondResolve) (secondResolve as (id: string) => void)("second-id");
+    await flushMicrotasks();
+
+    expect(notifications.cancelledIds).toContain("first-id");
+    expect(notifications.cancelledIds).not.toContain("second-id");
+  });
+
+  it("extend() does NOT prompt for permission (no mid-flow prompts)", async () => {
+    // Same rationale as start(): permission is owned by app-load.
+    // Extend just reads status — never prompts.
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+    const requestSpy = jest.spyOn(notifications, "requestPermissions");
+
+    act(() => {
+      result.current.extend(30);
+    });
+    await flushMicrotasks();
+
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(notifications.scheduleArgs.length).toBeGreaterThan(1);
+  });
+
+  it("extend() skips scheduling when permission isn't granted at extend time", async () => {
+    // Race-edge: user starts timer (granted), then revokes
+    // permission via Settings while the app is backgrounded, then
+    // foregrounds and taps Extend. extend() must not silently
+    // schedule a notification the OS will drop.
+    notifications.getPermissionStatus = jest
+      .fn()
+      // start() sees granted, first schedule fires.
+      .mockResolvedValueOnce("granted")
+      // extend() sees denied — skip the schedule.
+      .mockResolvedValueOnce("denied");
+    const { result } = renderHook(() =>
+      useRestTimerWith({ storage, notifications, userId: "user-1", clock }),
+    );
+    act(() => {
+      result.current.start(60);
+    });
+    await flushMicrotasks();
+    const scheduleCountAfterStart = notifications.scheduleArgs.length;
+
+    act(() => {
+      result.current.extend(30);
+    });
+    await flushMicrotasks();
+
+    // No new schedule fired — extend bailed on the denied status.
+    expect(notifications.scheduleArgs.length).toBe(scheduleCountAfterStart);
+  });
 });

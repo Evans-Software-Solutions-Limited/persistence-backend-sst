@@ -1,9 +1,60 @@
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
+import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+
+/**
+ * Foreground-display behaviour for local notifications fired by the
+ * app (e.g. the rest timer's "Rest complete" alert). Without an
+ * explicit handler, expo-notifications defaults to NOT showing
+ * banners when the app is in the foreground — which is exactly when
+ * the user is most likely to be staring at the screen waiting for
+ * the timer to fire. Setting the handler at module load (above the
+ * default export) is the legacy pattern from
+ * persistence-mobile/app/_layout.tsx:25-53 and matches Expo's
+ * documented setup.
+ *
+ * The handler still respects `Notifications.requestPermissionsAsync`
+ * — if the user denied permission, the OS suppresses the banner
+ * regardless of what we return here. The rest-timer's in-app
+ * countdown remains visible as the fallback.
+ */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+/**
+ * Mounts inside `AppProviders` and fires the local-notification
+ * permission prompt as soon as the JS bundle is ready — regardless
+ * of auth state. Brad's call: "The notification permissions should
+ * be requested by the user on load of the application." Earliest-
+ * possible-prompt feels native on iOS (every well-known app does it
+ * at launch) and avoids the staging-build behaviour where the user
+ * never sees the prompt at all unless they happen to navigate to
+ * the home screen.
+ *
+ * The hook owns idempotency: an AsyncStorage flag + in-memory ref
+ * mean the OS prompt only fires the very first launch of a fresh
+ * install. Subsequent launches read the flag and no-op.
+ *
+ * Sibling to `AuthGate` rather than baked into it because
+ * notifications and auth are independent concerns — keep the
+ * coupling visible at the layout level.
+ */
+function NotificationPermissionsBootstrap() {
+  useNotificationPermissions(true);
+  return null;
+}
 
 function AuthGate() {
   const { session, isLoading } = useAuth();
@@ -32,6 +83,24 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  // Android 8+ requires an explicit notification channel for any
+  // notification to render — without one, `scheduleNotificationAsync`
+  // silently no-ops. Idempotent: calling `setNotificationChannelAsync`
+  // with the same id on subsequent launches just updates the channel,
+  // it doesn't error. Fire-and-forget inside an effect (rather than
+  // at module load) so we don't fight the JS-thread cold-start.
+  // Mirrors legacy `useRegisterPushNotifications.ts:30-37` minus the
+  // push-token side (push tokens are an M7 feature).
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    void Notifications.setNotificationChannelAsync("default", {
+      name: "Default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#0C111A",
+    });
+  }, []);
+
   // `GestureHandlerRootView` is required by react-native-gesture-handler
   // for any descendant `<GestureDetector>` to recognise touches. Phase 3a
   // added the SemiCircleSlider (rating screen) which uses GestureDetector;
@@ -43,6 +112,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
         <AppProviders>
+          <NotificationPermissionsBootstrap />
           <AuthGate />
         </AppProviders>
       </ErrorBoundary>
