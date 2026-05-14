@@ -346,4 +346,74 @@ describe("processSyncQueue", () => {
     );
     warnSpy.mockRestore();
   });
+
+  it("skips entries another concurrent drain has already claimed (Inspector Brad PR #62 race fix)", async () => {
+    // Two drains race for the same queue. Drain A claims and is
+    // mid-fetch when Drain B picks up the same entries from its
+    // own `getPendingMutations()` snapshot. With the row-conditional
+    // `markMutationInFlight`, Drain B's claim returns false, the
+    // entry is skipped, and the POST fires exactly once. Pre-fix,
+    // the unconditional UPDATE let both drains process the same
+    // entry → duplicate POSTs → duplicate session rows server-side
+    // (`recordSession` has no idempotency key).
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w-1",
+      operation: "create",
+      payload: { name: "Push Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    // Simulate Drain A having already claimed the entry — we just
+    // flip its status manually rather than racing two real drains
+    // (deterministic + faster).
+    const entries = storage.getPendingMutations();
+    expect(entries).toHaveLength(1);
+    const claimed = storage.markMutationInFlight(entries[0].id);
+    expect(claimed).toBe(true);
+    // Second claim of the SAME entry must return false — this is
+    // what stops Drain B from re-firing the POST.
+    expect(storage.markMutationInFlight(entries[0].id)).toBe(false);
+
+    // Drain B runs now and must NOT fire a fetch for the
+    // already-claimed entry.
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(mockFetch).not.toHaveBeenCalled();
+    // Drain B's processed count reflects entries IT owned — 0
+    // here, since Drain A owns the only entry.
+    expect(result).toEqual({ processed: 0, succeeded: 0, failed: 0 });
+  });
+
+  it("a claimed-then-failed entry can be re-claimed on the next drain (retry path stays open)", async () => {
+    // The conditional claim allows `pending` OR `failed` — so a
+    // first drain that fails the fetch leaves the entry in a
+    // re-claimable state for the next drain. Without `failed` in
+    // the WHERE clause, retries would be silently stuck in_flight
+    // forever.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w-1",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => "Internal Server Error",
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const first = await processSyncQueue(storage, auth, "https://api.test");
+    expect(first).toEqual({ processed: 1, succeeded: 0, failed: 1 });
+
+    // Entry is now `failed` — second drain must pick it up again.
+    const second = await processSyncQueue(storage, auth, "https://api.test");
+    expect(second).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });

@@ -265,12 +265,24 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows.map(mapRow);
   }
 
-  markMutationInFlight(id: number): void {
+  markMutationInFlight(id: number): boolean {
     const db = this.getDb();
-    db.runSync(
-      `UPDATE sync_queue SET status = 'in_flight', updated_at = datetime('now') WHERE id = ?`,
+    // Row-conditional claim: only flip to in_flight when the entry
+    // is still `pending` or `failed`. Returns whether THIS caller
+    // claimed it. SQLite's `runSync` returns `{ changes }` — we
+    // treat changes>0 as "this caller owns it". Stops two
+    // concurrent drains (e.g. useSyncWorker mid-flush + the inline
+    // post-Submit drain in WorkoutRatingContainer) from both
+    // marking the same entry in-flight and firing duplicate POSTs.
+    // See storage.port.ts:50-67 for the full Inspector Brad PR #62
+    // context.
+    const result = db.runSync(
+      `UPDATE sync_queue
+       SET status = 'in_flight', updated_at = datetime('now')
+       WHERE id = ? AND status IN ('pending', 'failed')`,
       [id],
     );
+    return result.changes > 0;
   }
 
   markMutationCompleted(id: number): void {

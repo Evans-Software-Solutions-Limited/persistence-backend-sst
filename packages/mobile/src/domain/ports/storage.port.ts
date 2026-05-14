@@ -47,7 +47,24 @@ export interface StoragePort {
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;
   getPendingMutations(): SyncQueueEntry[];
-  markMutationInFlight(id: number): void;
+  /**
+   * Atomically claim a queue entry: flips status to `in_flight` ONLY
+   * when the row is currently `pending` or `failed`. Returns `true`
+   * if the caller now owns the entry (proceed with the fetch),
+   * `false` if another drain has already claimed it (skip silently).
+   *
+   * This is the storage-layer guard against concurrent drains
+   * processing the same entry — Inspector Brad PR #62 found this
+   * race after the inline post-Submit drain landed: `useSyncWorker`
+   * has its own `flushingRef` but the inline call from
+   * `WorkoutRatingContainer.onSubmit` doesn't see that ref. With an
+   * unconditional UPDATE, both drains could mark the same entry
+   * in-flight + fire duplicate POSTs (and `recordSession` has no
+   * idempotency key, so the server would create two session rows).
+   * Conditional UPDATE + affected-rows check prevents that at the
+   * SQL level, no matter how many concurrent callers exist.
+   */
+  markMutationInFlight(id: number): boolean;
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
   getSyncStats(): SyncStats;

@@ -59,7 +59,17 @@ export async function processSyncQueue(
   let failed = 0;
 
   for (const entry of entries) {
-    storage.markMutationInFlight(entry.id);
+    // Atomic claim — `markMutationInFlight` is row-conditional at the
+    // storage layer (only flips status when currently
+    // pending/failed). Returns false when another concurrent drain
+    // already claimed this entry, in which case we silently skip it.
+    // This is the guard against duplicate POSTs when two drains
+    // race for the same queue (e.g. `useSyncWorker`'s on-mount /
+    // AppState→active flush running concurrently with the inline
+    // post-Submit drain in `WorkoutRatingContainer`). Inspector
+    // Brad PR #62 race fix.
+    const claimed = storage.markMutationInFlight(entry.id);
+    if (!claimed) continue;
 
     try {
       // Fetch token per-entry to handle expiry mid-queue
@@ -144,5 +154,10 @@ export async function processSyncQueue(
   // Clean up old completed entries
   storage.pruneCompletedMutations();
 
-  return { processed: entries.length, succeeded, failed };
+  // `processed` counts entries this drain actually OWNED — skipped
+  // entries (claimed by a concurrent drain via the conditional
+  // `markMutationInFlight`) are NOT included, since they belong to
+  // the other drain's `processed` count. This keeps the invariant
+  // `processed === succeeded + failed`.
+  return { processed: succeeded + failed, succeeded, failed };
 }

@@ -141,6 +141,50 @@ describe("InMemoryStorageAdapter", () => {
       const stats = storage.getSyncStats();
       expect(stats.pending).toBe(0);
     });
+
+    it("markMutationInFlight is row-conditional: returns true only on the first claim, false on re-claim (Inspector Brad PR #62 race fix)", () => {
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w1",
+        operation: "create",
+        payload: {},
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+
+      // First claim wins.
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+      // Second concurrent caller racing for the same id gets `false`
+      // — this is the guard that stops two drains POSTing the same
+      // entry twice.
+      expect(storage.markMutationInFlight(entry.id)).toBe(false);
+      // Even after the first owner marks it completed, the entry
+      // can't be re-claimed (only pending/failed are claimable).
+      storage.markMutationCompleted(entry.id);
+      expect(storage.markMutationInFlight(entry.id)).toBe(false);
+    });
+
+    it("a failed entry is re-claimable on the next drain (retry path stays open)", () => {
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w1",
+        operation: "create",
+        payload: {},
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+      storage.markMutationFailed(entry.id, "boom");
+      // Failed → next drain can claim it again.
+      expect(storage.markMutationInFlight(entry.id)).toBe(true);
+    });
+
+    it("returns false for a non-existent id (defensive)", () => {
+      expect(storage.markMutationInFlight(99999)).toBe(false);
+    });
   });
 
   describe("sync metadata", () => {

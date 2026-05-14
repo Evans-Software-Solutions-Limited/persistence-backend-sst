@@ -86,8 +86,17 @@ export class InMemoryStorageAdapter implements StoragePort {
     );
   }
 
-  markMutationInFlight(id: number): void {
-    this.updateStatus(id, "in_flight");
+  markMutationInFlight(id: number): boolean {
+    // Mirror the SQLite adapter's row-conditional claim: returns
+    // `true` only when the entry was actually flipped from
+    // pending/failed → in_flight. A second concurrent caller racing
+    // for the same id gets `false` and skips. Inspector Brad PR #62
+    // race fix; see storage.port.ts:50-67 for the full context.
+    const entry = this.queue.find((e) => e.id === id);
+    if (!entry) return false;
+    if (entry.status !== "pending" && entry.status !== "failed") return false;
+    entry.status = "in_flight";
+    return true;
   }
 
   markMutationCompleted(id: number): void {
