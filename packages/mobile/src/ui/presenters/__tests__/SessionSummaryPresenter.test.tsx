@@ -3,9 +3,9 @@
  *
  * The presenter consumes a pre-merged display shape from
  * `SessionSummaryContainer` (server data wins for `personalRecords`
- * + `totalWorkoutsCompleted`; local fills `totalVolume`). These tests
+ * + `workoutsThisMonth`; local fills `totalVolume`). These tests
  * exercise the rendering layer directly with both
- * "pre-server-response" (`totalWorkoutsCompleted: null`, PRs without
+ * "pre-server-response" (`workoutsThisMonth: null`, PRs without
  * `previousValue`) and "post-server-response" (real count, PRs with
  * `previousValue`) prop shapes.
  */
@@ -23,7 +23,7 @@ const handlers = {
 const baseProps = {
   totalVolume: 0,
   recordsHit: 0,
-  totalWorkoutsCompleted: null as number | null,
+  workoutsThisMonth: null as number | null,
   personalRecords: [] as SummaryPersonalRecord[],
   ...handlers,
 };
@@ -42,38 +42,38 @@ describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
     expect(getByTestId("session-summary-close")).toBeTruthy();
   });
 
-  it("subtitle shows N total workouts and pluralises correctly post-server", () => {
+  it("subtitle shows N workouts this month and pluralises correctly post-server", () => {
     const { getByText, rerender } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} totalWorkoutsCompleted={1} />,
+      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={1} />,
     );
     expect(
-      getByText("You've completed 1 total workout. Keep the momentum going!"),
+      getByText(
+        "You've completed 1 workout this month. Keep the momentum going!",
+      ),
     ).toBeTruthy();
 
-    rerender(
-      <SessionSummaryPresenter {...baseProps} totalWorkoutsCompleted={7} />,
-    );
+    rerender(<SessionSummaryPresenter {...baseProps} workoutsThisMonth={7} />);
     expect(
-      getByText("You've completed 7 total workouts. Keep the momentum going!"),
+      getByText(
+        "You've completed 7 workouts this month. Keep the momentum going!",
+      ),
     ).toBeTruthy();
   });
 
-  it("subtitle falls back to 'Keep the momentum going!' pre-server (totalWorkoutsCompleted=null)", () => {
+  it("subtitle falls back to 'Keep the momentum going!' pre-server (workoutsThisMonth=null)", () => {
     const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} totalWorkoutsCompleted={null} />,
+      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={null} />,
     );
     expect(getByText("Keep the momentum going!")).toBeTruthy();
   });
 
-  it("Workouts Completed tile shows an em-dash pre-server, the real count post-server", () => {
+  it("Workouts this month tile shows an em-dash pre-server, the real count post-server", () => {
     const { getByText, rerender, queryByText } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} totalWorkoutsCompleted={null} />,
+      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={null} />,
     );
     expect(getByText("—")).toBeTruthy();
 
-    rerender(
-      <SessionSummaryPresenter {...baseProps} totalWorkoutsCompleted={12} />,
-    );
+    rerender(<SessionSummaryPresenter {...baseProps} workoutsThisMonth={12} />);
     // Em-dash is replaced; "12" appears as the tile's value.
     expect(queryByText("—")).toBeNull();
     expect(getByText("12")).toBeTruthy();

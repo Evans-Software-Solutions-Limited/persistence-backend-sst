@@ -147,7 +147,7 @@ describe("SessionSummaryContainer", () => {
       </AdapterProvider>,
     );
 
-    expect(await findByTestId("summary-stat-workouts-completed")).toBeTruthy();
+    expect(await findByTestId("summary-stat-workouts-this-month")).toBeTruthy();
     expect(await findByTestId("summary-stat-records-hit")).toBeTruthy();
     expect(await findByTestId("summary-stat-total-volume")).toBeTruthy();
   });
@@ -189,7 +189,7 @@ describe("SessionSummaryContainer", () => {
     // slot before the current session's response overwrites it. If
     // the container poll fires in that window without the id guard,
     // the current Summary screen permanently renders the prior
-    // session's PRs + totalWorkoutsCompleted.
+    // session's PRs + workoutsThisMonth.
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage); // Active session id = "local-1"
@@ -209,7 +209,7 @@ describe("SessionSummaryContainer", () => {
           setId: "set-prior",
         },
       ],
-      totalWorkoutsCompleted: 99,
+      workoutsThisMonth: 99,
       cachedAt: "2026-05-12T00:00:00.000Z",
     });
 
@@ -227,7 +227,7 @@ describe("SessionSummaryContainer", () => {
     expect(queryByText("999.0 kg")).toBeNull();
     expect(
       queryByText(
-        "You've completed 99 total workouts. Keep the momentum going!",
+        "You've completed 99 workouts this month. Keep the momentum going!",
       ),
     ).toBeNull();
   });
@@ -243,7 +243,7 @@ describe("SessionSummaryContainer", () => {
     storage.cacheRecordResponse("user-1", {
       localSessionId: "local-A",
       personalRecords: [],
-      totalWorkoutsCompleted: 5,
+      workoutsThisMonth: 5,
       cachedAt: "2026-05-12T00:00:00.000Z",
     });
     expect(storage.getRecordResponse("user-1")).not.toBeNull();
@@ -269,7 +269,7 @@ describe("SessionSummaryContainer", () => {
     storage.cacheRecordResponse("user-1", {
       localSessionId: "local-B",
       personalRecords: [],
-      totalWorkoutsCompleted: 6,
+      workoutsThisMonth: 6,
       cachedAt: "2026-05-12T01:00:01.000Z",
     });
     storage.cacheActiveSession("user-1", {
@@ -292,7 +292,7 @@ describe("SessionSummaryContainer", () => {
     // The cache-and-subscribe contract end-to-end: container mounts
     // with local prediction (no arrow), poll picks up the cached
     // server response, re-renders with the legacy before→after arrow
-    // and the real totalWorkoutsCompleted in both the subtitle + the
+    // and the real workoutsThisMonth in both the subtitle + the
     // stat tile.
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
@@ -304,8 +304,8 @@ describe("SessionSummaryContainer", () => {
       </AdapterProvider>,
     );
 
-    // Pre-server: em-dash on the Workouts Completed tile, no arrow on
-    // PR rows. Wait for the mount + first poll tick to settle.
+    // Pre-server: em-dash on the Workouts this month tile, no arrow
+    // on PR rows. Wait for the mount + first poll tick to settle.
     expect(await findByTestId("session-summary-screen")).toBeTruthy();
     expect(queryByText("→")).toBeNull();
 
@@ -323,7 +323,7 @@ describe("SessionSummaryContainer", () => {
           setId: "set-1",
         },
       ],
-      totalWorkoutsCompleted: 12,
+      workoutsThisMonth: 12,
       cachedAt: "2026-05-05T10:30:01.000Z",
     });
 
@@ -331,7 +331,7 @@ describe("SessionSummaryContainer", () => {
     // gets 12, PR card now shows the arrow.
     expect(
       await findByText(
-        "You've completed 12 total workouts. Keep the momentum going!",
+        "You've completed 12 workouts this month. Keep the momentum going!",
       ),
     ).toBeTruthy();
     expect(await findByText("→")).toBeTruthy();

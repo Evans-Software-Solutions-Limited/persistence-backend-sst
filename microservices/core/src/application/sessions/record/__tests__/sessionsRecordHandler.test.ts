@@ -99,7 +99,7 @@ describe("sessionsRecordHandler", () => {
       // handler is a thin pass-through, so these flow into `data:
       // recorded` unchanged.
       personalRecords: [],
-      totalWorkoutsCompleted: 0,
+      workoutsThisMonth: 0,
     });
     // `recordPRsForSession` now returns the list of surfaced PRs; the
     // handler wires it through as a thin closure into recordSession.

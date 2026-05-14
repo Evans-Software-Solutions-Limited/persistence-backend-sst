@@ -56,15 +56,62 @@ export interface DetectedPersonalRecord {
 /**
  * Record types V2 actively computes per session-complete.
  *
- * Legacy `record_type` enum carries eight values; M3 surfaces three on
- * the Summary screen — Epley-derived 1RM, the heaviest single weight
- * lifted regardless of reps, and the highest weight × reps in a single
- * set. The other five enum values (`3rm` / `5rm` / `10rm` / `max_reps` /
- * `best_time` / `longest_distance`) are reserved for future detection
- * passes; M3 keeps the detection surface focused so users aren't
- * overwhelmed with PR cards.
+ * Mirrors legacy `check_and_update_pr`
+ * (persistence-backend/supabase/migrations/002_functions_and_triggers.sql:228)
+ * — for each completed set with weight + reps, we always emit
+ * `max_weight` and `max_volume` candidates, and emit a `1rm` / `3rm`
+ * / `5rm` / `10rm` candidate ONLY when reps matches that ladder rung
+ * EXACTLY. A 7-rep, 8-rep, or 12-rep set produces no rep-max PR
+ * (Brad's call after the device review of Phase 3a — Epley-derived
+ * 1RMs were misleading: "1 Rep Max: 73.3 kg" displayed for a 55 kg ×
+ * 10-rep set is wrong, the user did not lift 73.3 kg).
+ *
+ * `max_volume` is a V2 addition (legacy didn't compute it); Brad
+ * confirmed it should ship in this PR alongside the legacy ladder so
+ * the Summary screen has a meaningful "you worked harder this session"
+ * card even when no weight-PR was set.
+ *
+ * Epley 1RM estimation is intentionally NOT in this list — it's
+ * reserved for a future per-exercise-page "estimated 1RM" metric, NOT
+ * the achievements / PR screen, where exact-rep parity matters.
+ *
+ * The two enum values not listed here (`max_reps`, `best_time`,
+ * `longest_distance`) are reserved for future detection passes (e.g.
+ * cardio surfaces). Adding one to `recordTypeEnum` without adding it
+ * here is fine — the partition logic is `Record<RecordType, …>`-typed
+ * via `RecordType` so adding a new enum value lights up exhaustive-
+ * check errors at compile time wherever per-type branches exist.
  */
-const COMPUTED_RECORD_TYPES = ["1rm", "max_weight", "max_volume"] as const;
+const COMPUTED_RECORD_TYPES = [
+  "1rm",
+  "3rm",
+  "5rm",
+  "10rm",
+  "max_weight",
+  "max_volume",
+] as const;
+
+/**
+ * Maps an EXACT rep count to the corresponding `Xrm` record type, or
+ * `null` for any rep count that doesn't sit on the ladder. Mirrors
+ * legacy `check_and_update_pr`'s IF/ELSIF chain
+ * (002_functions_and_triggers.sql:268-278) — note the equality
+ * checks, not range checks: 7-rep sets get no PR.
+ */
+function repMaxTypeForReps(reps: number): RecordType | null {
+  switch (reps) {
+    case 1:
+      return "1rm";
+    case 3:
+      return "3rm";
+    case 5:
+      return "5rm";
+    case 10:
+      return "10rm";
+    default:
+      return null;
+  }
+}
 
 export interface ListPersonalRecordsFilters {
   /** Restrict to PRs for a specific exercise. */
@@ -124,12 +171,25 @@ export class PersonalRecordsRepository {
    *
    * For every completed set in `sessionId` (joined through
    * session_exercises and workout_sessions to enforce userId scope),
-   * computes three candidate record types — Epley-derived `1rm`,
-   * `max_weight` (heaviest single weight regardless of reps), and
-   * `max_volume` (highest weight × reps in a single set) — picks the
-   * best set per `(exerciseId, recordType)` tuple, and upserts the
-   * winners into `personal_records` keyed by `(user_id, exercise_id,
-   * record_type)`.
+   * emits a candidate per record type the set qualifies for:
+   *
+   *   - `max_weight`  always (value = weight)
+   *   - `max_volume`  always (value = weight × reps)
+   *   - `1rm`         only when reps === 1 EXACTLY (value = weight)
+   *   - `3rm`         only when reps === 3 EXACTLY (value = weight)
+   *   - `5rm`         only when reps === 5 EXACTLY (value = weight)
+   *   - `10rm`        only when reps === 10 EXACTLY (value = weight)
+   *
+   * Mirrors legacy `check_and_update_pr` exactly on the rep-max ladder
+   * (002_functions_and_triggers.sql:268-278); `max_volume` is a V2
+   * addition Brad explicitly green-lit. **Epley-derived 1RM estimation
+   * is intentionally NOT computed here** — a 55 kg × 10-rep set is not
+   * a 73.3 kg one-rep max, and surfacing it as such on the achievements
+   * screen was the bug this PR exists to fix.
+   *
+   * Picks the best set per `(exerciseId, recordType)` tuple, and
+   * upserts the winners into `personal_records` keyed by `(user_id,
+   * exercise_id, record_type)`.
    *
    * The Postgres unique index `personal_records_user_exercise_type_idx`
    * (`packages/db/src/schema.ts:470`) is what makes the upsert
@@ -207,11 +267,12 @@ export class PersonalRecordsRepository {
 
     if (completedSets.length === 0) return [];
 
-    // ── Step 1: enumerate per-set candidates across the 3 record types.
+    // ── Step 1: enumerate per-set candidates across the record types
+    // the set qualifies for. `max_weight` + `max_volume` always apply;
+    // `Xrm` only when reps matches the legacy ladder rung EXACTLY.
     // Bodyweight exercises (no weight) and timed-only exercises don't
-    // fit the Epley / weight-based model; we just don't record PRs for
-    // those — M4's measurement / progress surface can use other
-    // signals.
+    // fit this weight-based model; we just don't record PRs for those —
+    // M4's measurement / progress surface can use other signals.
     type Candidate = {
       exerciseId: string;
       recordType: RecordType;
@@ -226,12 +287,6 @@ export class PersonalRecordsRepository {
 
       candidates.push({
         exerciseId: set.exerciseId,
-        recordType: "1rm",
-        value: weight * (1 + set.reps / 30),
-        setId: set.setId,
-      });
-      candidates.push({
-        exerciseId: set.exerciseId,
         recordType: "max_weight",
         value: weight,
         setId: set.setId,
@@ -242,6 +297,16 @@ export class PersonalRecordsRepository {
         value: weight * set.reps,
         setId: set.setId,
       });
+
+      const repMaxType = repMaxTypeForReps(set.reps);
+      if (repMaxType !== null) {
+        candidates.push({
+          exerciseId: set.exerciseId,
+          recordType: repMaxType,
+          value: weight,
+          setId: set.setId,
+        });
+      }
     }
 
     // ── Step 2: collapse to one winner per (exerciseId, recordType).

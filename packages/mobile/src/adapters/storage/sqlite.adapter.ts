@@ -221,7 +221,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- M3 Phase 3b: cached server response from POST /sessions/record.
       -- Drives the Summary screen's switch from local prediction
       -- (calculateSummary + detectPersonalRecords) to server-truth
-      -- (PRs with previousValue + totalWorkoutsCompleted) once the
+      -- (PRs with previousValue + workoutsThisMonth) once the
       -- sync worker drains the queue. Single row per user
       -- (single-active-session invariant); cleared by clearActiveSession.
       -- Payload is the full JSON-serialised RecordResponseSummary.
@@ -807,7 +807,7 @@ export class SQLiteStorageAdapter implements StoragePort {
     // retires a flushed `completed` / `cancelled` row, and the worker
     // calls this after a successful bulk-record swap. Also drop the
     // cached record-response so a fresh session doesn't render stale
-    // PR/totalWorkoutsCompleted data from the previous one.
+    // PR/workoutsThisMonth data from the previous one.
     db.runSync(`DELETE FROM active_sessions WHERE user_id = ?`, [userId]);
     db.runSync(`DELETE FROM record_responses WHERE user_id = ?`, [userId]);
   }

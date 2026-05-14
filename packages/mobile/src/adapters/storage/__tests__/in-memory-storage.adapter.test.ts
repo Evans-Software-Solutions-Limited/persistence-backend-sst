@@ -866,7 +866,7 @@ describe("InMemoryStorageAdapter", () => {
           setId: "set-1",
         },
       ],
-      totalWorkoutsCompleted: 12,
+      workoutsThisMonth: 12,
       cachedAt: "2026-05-12T10:30:00.000Z",
     };
 
@@ -879,14 +879,12 @@ describe("InMemoryStorageAdapter", () => {
       const cached = storage.getRecordResponse("user-1");
       expect(cached).toEqual(sample);
 
-      // Overwrite with a different totalWorkoutsCompleted.
+      // Overwrite with a different workoutsThisMonth.
       storage.cacheRecordResponse("user-1", {
         ...sample,
-        totalWorkoutsCompleted: 13,
+        workoutsThisMonth: 13,
       });
-      expect(storage.getRecordResponse("user-1")?.totalWorkoutsCompleted).toBe(
-        13,
-      );
+      expect(storage.getRecordResponse("user-1")?.workoutsThisMonth).toBe(13);
     });
 
     it("clones on read so callers can't mutate the cache by reference", () => {

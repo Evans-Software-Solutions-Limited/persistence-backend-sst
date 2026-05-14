@@ -205,7 +205,7 @@ describe("processSyncQueue", () => {
               setId: "set-1",
             },
           ],
-          totalWorkoutsCompleted: 12,
+          workoutsThisMonth: 12,
         },
       }),
     });
@@ -217,17 +217,17 @@ describe("processSyncQueue", () => {
     const cached = storage.getRecordResponse(userId);
     expect(cached).not.toBeNull();
     expect(cached?.localSessionId).toBe("local-1");
-    expect(cached?.totalWorkoutsCompleted).toBe(12);
+    expect(cached?.workoutsThisMonth).toBe(12);
     expect(cached?.personalRecords).toHaveLength(1);
     expect(cached?.personalRecords[0]?.previousValue).toBe(120);
     expect(cached?.personalRecords[0]?.newValue).toBe(137.4);
   });
 
-  it("caches totalWorkoutsCompleted=null (not 0) when the server response omits or nulls the field (Inspector Brad PR #62 regression)", async () => {
+  it("caches workoutsThisMonth=null (not 0) when the server response omits or nulls the field (Inspector Brad PR #62 regression)", async () => {
     // The medium-severity "fabricated zero" bug: pre-fix, `?? 0`
     // landed a literal 0 in the cache when the field was missing.
     // The Summary screen would then render "You've completed 0
-    // total workouts" immediately after the user finished a
+    // workouts this month" immediately after the user finished a
     // workout. Post-fix, missing/null fields stay null in the cache
     // so the presenter falls back to the em-dash + "Keep the
     // momentum going!" subtitle, exactly as it does pre-server.
@@ -245,7 +245,7 @@ describe("processSyncQueue", () => {
       method: "POST",
     });
 
-    // Response body OMITS totalWorkoutsCompleted entirely — simulates
+    // Response body OMITS workoutsThisMonth entirely — simulates
     // a deploy skew where the backend hasn't rolled out the field
     // yet, or a partial response-shape regression.
     mockFetch.mockResolvedValueOnce({
@@ -254,15 +254,13 @@ describe("processSyncQueue", () => {
         data: {
           id: "server-1",
           personalRecords: [],
-          // totalWorkoutsCompleted intentionally absent.
+          // workoutsThisMonth intentionally absent.
         },
       }),
     });
 
     await processSyncQueue(storage, auth, "https://api.test");
-    expect(
-      storage.getRecordResponse(userId)?.totalWorkoutsCompleted,
-    ).toBeNull();
+    expect(storage.getRecordResponse(userId)?.workoutsThisMonth).toBeNull();
 
     // Same expectation when the field is present but null.
     storage.enqueueMutation({
@@ -279,14 +277,12 @@ describe("processSyncQueue", () => {
         data: {
           id: "server-2",
           personalRecords: [],
-          totalWorkoutsCompleted: null,
+          workoutsThisMonth: null,
         },
       }),
     });
     await processSyncQueue(storage, auth, "https://api.test");
-    expect(
-      storage.getRecordResponse(userId)?.totalWorkoutsCompleted,
-    ).toBeNull();
+    expect(storage.getRecordResponse(userId)?.workoutsThisMonth).toBeNull();
   });
 
   it("does NOT touch the record-response cache for unrelated endpoints (workouts, sets, etc.)", async () => {

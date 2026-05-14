@@ -235,7 +235,7 @@ describe("PersonalRecordsRepository", () => {
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
 
-    it("skips sets without weight or reps when computing Epley 1RM", async () => {
+    it("skips sets without weight or reps when computing PR candidates", async () => {
       const mockDb = {
         select: vi
           .fn()
@@ -291,11 +291,13 @@ describe("PersonalRecordsRepository", () => {
     });
 
     it("returns an empty list (no exerciseName lookup) when every candidate is first-occurrence — Brad's first-workout rule", async () => {
-      // One valid set, no prior `personal_records` rows. All 3
-      // candidate types (1rm / max_weight / max_volume) hit the
-      // first-occurrence branch: they INSERT into personal_records
-      // (so future sessions have a baseline) but DO NOT surface in
-      // the returned PR list. Result: `detected` is empty, the
+      // One valid 8-rep set, no prior `personal_records` rows. With
+      // the legacy exact-rep ladder, reps=8 does NOT sit on a rung
+      // (1/3/5/10), so only `max_weight` + `max_volume` candidates
+      // are emitted — 2 candidates total. Both hit the first-
+      // occurrence branch: they INSERT into personal_records (so
+      // future sessions have a baseline) but DO NOT surface in the
+      // returned PR list. Result: `detected` is empty, the
       // exerciseName lookup short-circuits, demote/promote still
       // re-sync flags.
       const completedSets = [
@@ -328,33 +330,36 @@ describe("PersonalRecordsRepository", () => {
       const result = await repo.recordPRsForSession("u1", "session-first");
 
       expect(result).toEqual([]);
-      // 3 upserts fired (one per candidate type) — the personal_records
-      // table is still populated for future sessions to compare against.
-      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+      // 2 upserts fired (max_weight + max_volume — no Xrm at reps=8)
+      // — the personal_records table is still populated for future
+      // sessions to compare against.
+      expect(mockDb.insert).toHaveBeenCalledTimes(2);
       // The exerciseName lookup is skipped — `select` only fires for
       // the four steps above (completedSets, existingPRs, canonicalPRs,
       // userSessionExerciseIdsScope). No 5th call.
       expect(mockDb.select).toHaveBeenCalledTimes(4);
     });
 
-    it("returns PRs with previousValue for each computed record type that beat its prior (1rm + max_weight + max_volume)", async () => {
-      // One set that beats prior values on ALL three record types.
-      // Prior bench PRs: 1rm=110, max_weight=90, max_volume=400.
-      // New set: 100 kg × 8 reps → 1rm ≈ 126.67, max_weight=100,
-      // max_volume=800. All three improve → all three surface.
+    it("returns PRs with previousValue for each computed record type that beat its prior (10rm + max_weight + max_volume)", async () => {
+      // One 10-rep set that beats prior values on ALL three record
+      // types the new ladder emits for reps=10: max_weight,
+      // max_volume, and 10rm. Prior bench PRs: 10rm=90,
+      // max_weight=90, max_volume=400. New set: 100 kg × 10 reps →
+      // max_weight=100, max_volume=1000, 10rm=100. All three
+      // improve → all three surface.
       const completedSets = [
         {
           setId: "set-improvement",
           exerciseId: "exercise-bench",
           weightKg: "100.00",
-          reps: 8,
+          reps: 10,
         },
       ];
       const priorRecords = [
         {
           exerciseId: "exercise-bench",
-          recordType: "1rm",
-          value: "110.00",
+          recordType: "10rm",
+          value: "90.00",
         },
         {
           exerciseId: "exercise-bench",
@@ -393,68 +398,68 @@ describe("PersonalRecordsRepository", () => {
       const result = await repo.recordPRsForSession("u1", "session-improve");
 
       expect(result).toHaveLength(3);
-      // 1rm: Epley = 100 × (1 + 8/30) = 126.666...
-      const rm = result.find((r) => r.recordType === "1rm");
-      expect(rm?.previousValue).toBe(110);
-      expect(rm?.newValue).toBeCloseTo(126.667, 2);
+      // 10rm: 100 kg lifted for exactly 10 reps.
+      const rm = result.find((r) => r.recordType === "10rm");
+      expect(rm?.previousValue).toBe(90);
+      expect(rm?.newValue).toBe(100);
       expect(rm?.exerciseName).toBe("Bench Press");
       // max_weight: 100 kg
       const mw = result.find((r) => r.recordType === "max_weight");
       expect(mw?.previousValue).toBe(90);
       expect(mw?.newValue).toBe(100);
       expect(mw?.exerciseName).toBe("Bench Press");
-      // max_volume: 100 × 8 = 800
+      // max_volume: 100 × 10 = 1000
       const mv = result.find((r) => r.recordType === "max_volume");
       expect(mv?.previousValue).toBe(400);
-      expect(mv?.newValue).toBe(800);
+      expect(mv?.newValue).toBe(1000);
       expect(mv?.exerciseName).toBe("Bench Press");
     });
 
     it("does NOT surface a phantom PR when an identical workout re-runs (float-vs-2dp precision parity — Inspector Brad regression)", async () => {
-      // Exactly the bug Inspector Brad flagged on PR #61.
-      // Session 1 logged 100 kg × 10 reps → Epley 1RM = 100 × (1 +
-      // 10/30) = 133.33333333333334. The DB stored that as "133.33"
-      // (numeric(10,2)). Session 2 runs the same lift again.
+      // Inspector Brad PR #61 regression. With the Epley path dropped,
+      // the only remaining float-arithmetic risk is `max_volume`'s
+      // `weight × reps` multiplication — e.g. 99.99 × 10 evaluates to
+      // 999.9000000000001 in JS but is stored as "999.90" in
+      // `personal_records.value` (numeric(10,2)).
       //
       // Pre-fix: the JS partition compared the full float
-      //   candidate.value (133.33333…) > prior parseFloat("133.33")
-      //   (133.33) → true → phantom PR pushed
+      //   candidate.value (999.9000000000001) > prior parseFloat("999.90")
+      //   (999.9) → true → phantom PR pushed
       // while the DB's `WHERE personal_records.value <
-      // excluded.value` saw 133.33 < 133.33 → false → no-op upsert.
-      // The Summary screen would show "PR! 133.33 → 133.33" for an
+      // excluded.value` saw 999.90 < 999.90 → false → no-op upsert.
+      // The Summary screen would show "PR! 999.90 → 999.90" for an
       // identical workout, and the response's setId wouldn't match
       // what `personal_records.setId` actually holds.
       //
       // Fix: round-trip `candidate.value` through `toFixed(2) →
       // parseFloat` so the JS comparison uses the same precision the
-      // DB stores — both sides see 133.33 == 133.33 → no PR
-      // surfaces. Also hits reps = 1/4/7/10/13/16/19/22/25/28 (the
-      // .333… reps/30 family) and any max_volume value with float-
-      // multiplication artefacts (e.g. 99.99 × 10 = 999.9000000000001).
+      // DB stores — both sides see 999.90 == 999.90 → no PR surfaces.
       const completedSets = [
         {
           setId: "set-session-2",
           exerciseId: "exercise-bench",
-          weightKg: "100.00",
+          weightKg: "99.99",
           reps: 10,
         },
       ];
-      // Prior `personal_records` row from session 1 — stored at 2dp.
+      // Prior `personal_records` rows from session 1 — stored at 2dp.
+      // 10rm is included so the rep-max candidate also matches its
+      // prior and doesn't surface as a first-occurrence skip.
       const priorRecords = [
         {
           exerciseId: "exercise-bench",
-          recordType: "1rm",
-          value: "133.33",
+          recordType: "10rm",
+          value: "99.99",
         },
         {
           exerciseId: "exercise-bench",
           recordType: "max_weight",
-          value: "100.00",
+          value: "99.99",
         },
         {
           exerciseId: "exercise-bench",
           recordType: "max_volume",
-          value: "1000.00",
+          value: "999.90",
         },
       ];
       const mockDb = {
@@ -485,23 +490,30 @@ describe("PersonalRecordsRepository", () => {
     });
 
     it("rounds newValue to 2dp in the response so the rendered number matches what the DB persisted", async () => {
-      // 100 kg × 11 reps = 136.66666… → "136.67" stored. Prior was
-      // 130.00 (genuine improvement). The response's newValue MUST be
-      // the 2dp-rounded 136.67, not the raw float 136.66666…, so
-      // mobile renders the same number the server actually has.
+      // 99.99 kg × 10 reps. The only PR candidate that's susceptible
+      // to JS float-arithmetic drift is `max_volume`: 99.99 × 10
+      // evaluates to 999.9000000000001 in JS, but is stored as
+      // "999.90" in `personal_records.value` (numeric(10,2)). The
+      // response's newValue MUST be the 2dp-rounded 999.9, not the
+      // raw float, so mobile renders the same number the server
+      // actually has. Prior was 900.00 (genuine improvement), so the
+      // candidate surfaces.
       const completedSets = [
         {
           setId: "set-real-pr",
           exerciseId: "exercise-bench",
-          weightKg: "100.00",
-          reps: 11,
+          weightKg: "99.99",
+          reps: 10,
         },
       ];
+      // Only seed a prior for max_volume so it's the single surfaced
+      // PR. max_weight and 10rm have no priors → first-occurrence
+      // skip → not in `result`.
       const priorRecords = [
         {
           exerciseId: "exercise-bench",
-          recordType: "1rm",
-          value: "130.00",
+          recordType: "max_volume",
+          value: "900.00",
         },
       ];
       const mockDb = {
@@ -527,30 +539,31 @@ describe("PersonalRecordsRepository", () => {
       const result = await repo.recordPRsForSession("u1", "session-real");
 
       expect(result).toHaveLength(1);
-      const rm = result[0];
-      expect(rm?.recordType).toBe("1rm");
-      expect(rm?.previousValue).toBe(130);
-      // Exactly 136.67, NOT 136.66666666666666.
-      expect(rm?.newValue).toBe(136.67);
+      const mv = result[0];
+      expect(mv?.recordType).toBe("max_volume");
+      expect(mv?.previousValue).toBe(900);
+      // Exactly 999.9, NOT 999.9000000000001.
+      expect(mv?.newValue).toBe(999.9);
     });
 
     it("skips an individual record-type PR when the prior value isn't beaten (per-type partition, not all-or-nothing)", async () => {
-      // 100 kg × 8 reps. Prior 1rm=200 (way above Epley 126.67 → not
-      // beaten → no PR), prior max_weight=50 (beaten by 100 → PR),
-      // prior max_volume=900 (above 800 → not beaten → no PR).
-      // Exactly ONE PR surfaces: max_weight.
+      // 100 kg × 10 reps emits 3 candidates: 10rm, max_weight,
+      // max_volume. Priors: 10rm=200 (above 100 → not beaten → no
+      // PR), max_weight=50 (beaten by 100 → PR), max_volume=1500
+      // (above 1000 → not beaten → no PR). Exactly ONE PR
+      // surfaces: max_weight.
       const completedSets = [
         {
           setId: "set-mixed",
           exerciseId: "exercise-bench",
           weightKg: "100.00",
-          reps: 8,
+          reps: 10,
         },
       ];
       const priorRecords = [
         {
           exerciseId: "exercise-bench",
-          recordType: "1rm",
+          recordType: "10rm",
           value: "200.00",
         },
         {
@@ -561,7 +574,7 @@ describe("PersonalRecordsRepository", () => {
         {
           exerciseId: "exercise-bench",
           recordType: "max_volume",
-          value: "900.00",
+          value: "1500.00",
         },
       ];
       const mockDb = {
@@ -590,6 +603,106 @@ describe("PersonalRecordsRepository", () => {
       expect(result[0]?.recordType).toBe("max_weight");
       expect(result[0]?.previousValue).toBe(50);
       expect(result[0]?.newValue).toBe(100);
+    });
+
+    /**
+     * Helper for the exact-rep-ladder candidate-enumeration tests
+     * below. Asserts how many candidate upserts fire for a single
+     * completed set at `reps`. The first-occurrence branch is taken
+     * for every candidate (no priors seeded), so the upsert count IS
+     * the candidate count — a tight proxy for "the candidate
+     * enumeration emitted exactly N record-type rows for this set".
+     */
+    function makeLadderHarness(reps: number) {
+      const completedSets = [
+        {
+          setId: "set-rep-test",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps,
+        },
+      ];
+      return {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain([]))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([{ setId: "set-rep-test" }]),
+          )
+          .mockReturnValueOnce(makeSingleJoinSubquery()),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+    }
+
+    it("emits 1rm + max_weight + max_volume candidates for a 1-rep set", async () => {
+      const mockDb = makeLadderHarness(1);
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.recordPRsForSession("u1", "session-1rep");
+
+      // Three candidates: max_weight + max_volume always, plus 1rm
+      // (exact rep match).
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+    });
+
+    it("emits 3rm + max_weight + max_volume candidates for a 3-rep set", async () => {
+      const mockDb = makeLadderHarness(3);
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.recordPRsForSession("u1", "session-3rep");
+
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+    });
+
+    it("emits 5rm + max_weight + max_volume candidates for a 5-rep set", async () => {
+      const mockDb = makeLadderHarness(5);
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.recordPRsForSession("u1", "session-5rep");
+
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+    });
+
+    it("emits 10rm + max_weight + max_volume candidates for a 10-rep set (NO 1rm)", async () => {
+      const mockDb = makeLadderHarness(10);
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.recordPRsForSession("u1", "session-10rep");
+
+      // Three candidates total. Critically, NOT four: a 10-rep set
+      // does NOT also produce a 1rm Epley estimate (that bug is what
+      // this PR exists to fix). Asserting on the count alone catches
+      // an accidental Epley re-introduction.
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+    });
+
+    it("emits ONLY max_weight + max_volume for a 7-rep set (no Xrm — exact-rep match required)", async () => {
+      const mockDb = makeLadderHarness(7);
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.recordPRsForSession("u1", "session-7rep");
+
+      // Two candidates: max_weight + max_volume. No rep-max
+      // candidate — 7 doesn't sit on the legacy 1/3/5/10 ladder, and
+      // unlike Epley we don't approximate from off-ladder reps.
+      expect(mockDb.insert).toHaveBeenCalledTimes(2);
     });
   });
 });

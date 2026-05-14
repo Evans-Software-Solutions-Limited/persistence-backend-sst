@@ -77,14 +77,21 @@ export interface RecordedSession extends WorkoutSession {
    */
   personalRecords: DetectedPersonalRecord[];
   /**
-   * Total completed workouts for this user after the just-recorded
-   * session lands. Computed inside the same transaction as the insert
-   * via `SELECT COUNT(*) WHERE status='completed'`, so a completed
-   * session is counted; a cancelled one is not. Drives the legacy 3-stat
-   * strip's "Workouts Completed" tile + the subtitle copy
-   * ("You've completed N total workouts. Keep the momentum going!").
+   * Number of completed workouts this user has finished THIS CALENDAR
+   * MONTH (including the just-recorded session when its status is
+   * `completed`). Computed inside the same transaction as the insert
+   * via `SELECT COUNT(*) WHERE status='completed' AND completed_at >=
+   * date_trunc('month', now())`, so a completed session is counted; a
+   * cancelled one is not, and sessions from prior months fall out of
+   * scope. Drives the legacy 3-stat strip's "Workouts this month" tile
+   * + the subtitle copy ("You've completed N workouts this month. Keep
+   * the momentum going!"). Renamed from the original
+   * `totalWorkoutsCompleted` (which counted ALL-time completed
+   * workouts) after the device review of Phase 3b — Brad wanted the
+   * tile to surface a value that actually changes session-to-session
+   * for established users.
    */
-  totalWorkoutsCompleted: number;
+  workoutsThisMonth: number;
 }
 
 export class SessionRepository {
@@ -344,14 +351,40 @@ export class SessionRepository {
         else setsByExerciseId.set(s.sessionExerciseId, [s]);
       }
 
-      // 5. Cumulative completed-workout count for this user, computed
-      //    inside the same transaction so the COUNT(*) sees the row we
-      //    just inserted (when `status='completed'`). Drives the legacy
-      //    Summary screen's "Workouts Completed" stat + the subtitle
-      //    "You've completed N total workouts. Keep the momentum going!"
-      //    Cancelled sessions count themselves out — the WHERE filters
-      //    on `status='completed'`. Matches legacy
-      //    `workoutMutations.ts:928` exactly.
+      // 5. Current-calendar-month completed-workout count for this
+      //    user, computed inside the same transaction so the COUNT(*)
+      //    sees the row we just inserted (when `status='completed'`).
+      //    Drives the legacy Summary screen's "Workouts this month"
+      //    stat + the subtitle "You've completed N workouts this
+      //    month. Keep the momentum going!"
+      //
+      //    Scoping rationale (Brad's call after the Phase 3b device
+      //    review): cumulative all-time count drifts upward
+      //    indefinitely and stops surfacing meaningful momentum after
+      //    the first few months. Scoping to the current month gives
+      //    established users a number that actually resets and grows
+      //    each session.
+      //
+      //    Filter:
+      //      * `status = 'completed'`              — same as before;
+      //                                              cancelled sessions
+      //                                              count themselves
+      //                                              out.
+      //      * `completed_at >=
+      //        date_trunc('month', now())`         — month-start in the
+      //                                              database's
+      //                                              timezone. Matches
+      //                                              dashboardRepository's
+      //                                              `workoutsThisMonth`
+      //                                              bucketing (which
+      //                                              uses UTC month-keys
+      //                                              host-side); a brief
+      //                                              cross-DST or cross-
+      //                                              timezone disagreement
+      //                                              is acceptable because
+      //                                              the user only ever
+      //                                              sees one of the two
+      //                                              numbers at a time.
       const [totalsRow] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(workoutSessions)
@@ -359,9 +392,10 @@ export class SessionRepository {
           and(
             eq(workoutSessions.userId, userId),
             eq(workoutSessions.status, "completed"),
+            sql`${workoutSessions.completedAt} >= date_trunc('month', now())`,
           ),
         );
-      const totalWorkoutsCompleted = totalsRow?.count ?? 0;
+      const workoutsThisMonth = totalsRow?.count ?? 0;
 
       return {
         ...refreshedSession,
@@ -370,7 +404,7 @@ export class SessionRepository {
           sets: setsByExerciseId.get(e.id) ?? [],
         })),
         personalRecords: personalRecordsForResponse,
-        totalWorkoutsCompleted,
+        workoutsThisMonth,
       };
     });
   }

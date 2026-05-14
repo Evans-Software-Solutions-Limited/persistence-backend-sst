@@ -279,7 +279,7 @@ export interface StoragePort {
   /**
    * Persist the server's augmented `/sessions/record` response — the
    * PR-of-the-session list (with `previousValue` for the "before →
-   * after" arrow) and `totalWorkoutsCompleted` count — so the Summary
+   * after" arrow) and `workoutsThisMonth` count — so the Summary
    * screen can swap its local prediction for server-truth once the
    * sync worker drains the queue. Single row per user (single-active-
    * session invariant); last-write-wins. Cleared by
@@ -439,19 +439,26 @@ export type RecordResponseSummary = {
    * PR #62 regression).
    */
   localSessionId: string;
-  personalRecords: ReadonlyArray<RecordResponseSummaryPR>;
+  personalRecords: readonly RecordResponseSummaryPR[];
   /**
-   * The user's cumulative completed-workout count after this session
-   * lands, sourced from the server response. `null` when the server
-   * response either didn't carry the field or carried it as null —
-   * the Summary screen then falls back to its em-dash + dropped-count
-   * subtitle, exactly as it does pre-server. Distinguished from a
-   * literal `0` so a deploy skew or partial backend rollback can't
-   * cause the presenter to render "You've completed 0 total workouts"
-   * immediately after the user has finished a workout (Inspector Brad
-   * PR #62 medium-severity).
+   * The user's completed-workout count for the current calendar month
+   * (including the just-recorded session when its status is
+   * `completed`), sourced from the server response. `null` when the
+   * server response either didn't carry the field or carried it as
+   * null — the Summary screen then falls back to its em-dash +
+   * dropped-count subtitle, exactly as it does pre-server.
+   * Distinguished from a literal `0` so a deploy skew or partial
+   * backend rollback can't cause the presenter to render "You've
+   * completed 0 workouts this month" immediately after the user has
+   * finished a workout (Inspector Brad PR #62 medium-severity).
+   *
+   * Renamed from `totalWorkoutsCompleted` in PR #62's follow-up —
+   * Brad's call after the Phase 3b device review was that an all-time
+   * count drifts upward forever and stops being meaningful; the tile
+   * now resets at every calendar-month boundary so established users
+   * get a number that actually moves session-to-session.
    */
-  totalWorkoutsCompleted: number | null;
+  workoutsThisMonth: number | null;
   /** ISO timestamp the response was cached at. */
   cachedAt: string;
 };
