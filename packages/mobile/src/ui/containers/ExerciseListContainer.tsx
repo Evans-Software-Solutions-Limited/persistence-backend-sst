@@ -124,14 +124,13 @@ export function ExerciseListContainer() {
       return;
     }
     let cancelled = false;
-    setServerSearch((prev) => ({
-      q,
-      // Keep prior results visible during a refetch so the list doesn't
-      // flicker to empty between keystrokes.
-      results: prev?.results ?? [],
-      isFetching: true,
-      error: null,
-    }));
+    // While the network call is in-flight, useServerResults flips false
+    // (see the `!isFetching` gate below) and the filtered memo falls
+    // through to the cache + tokenised filterExercises path. That's the
+    // intentional bridge — prior server results are NOT carried over,
+    // because showing results from a previous query during a new query
+    // is a worse UX than showing current-query local-cache matches.
+    setServerSearch({ q, results: [], isFetching: true, error: null });
     void api.searchExercises(q, 0, SERVER_SEARCH_LIMIT).then((result) => {
       if (cancelled) return;
       if (result.ok) {
@@ -159,13 +158,20 @@ export function ExerciseListContainer() {
    * The server's ranked results are the source of truth iff:
    *  - we have a serverSearch state for the *current* debounced query
    *    (avoids stale results outliving a query change)
-   *  - the call didn't error (otherwise fall through to cache + local)
+   *  - the call has settled (not in-flight)
+   *  - the call didn't error
+   *
+   * Any other condition (short query, in-flight, errored, never fired)
+   * falls through to `filterExercises(cacheRead.exercises, filters)` —
+   * the tokenised local matcher still gives meaningful results for the
+   * current query, which is preferable to showing stale results from
+   * the previous query while the network call runs.
    *
    * When the server is the source, we apply `filtersWithoutSearch` over
    * its results — the server already filtered + ranked by the search
    * axis. When the cache is the source, we apply the full `filters`
-   * (including the local search term) so the offline / pre-server-
-   * response state still gets a meaningful filter.
+   * (including the local search term) so the bridge state still gets a
+   * meaningful filter.
    */
   const useServerResults =
     serverSearch != null &&
