@@ -174,6 +174,13 @@ export interface ApiPort {
    * `q` must be at least 2 chars after trim — the backend returns 400
    * otherwise. Callers should guard before calling.
    *
+   * `filters` (category / equipment / muscles / difficulty / createdBy)
+   * AND-combine with the FTS predicate server-side, so ranking happens
+   * within the filtered set. Without this, a search-plus-category-filter
+   * combo silently drops matches ranked at position 101+. The `search`
+   * field on `filters` is ignored — the explicit `q` argument is
+   * authoritative.
+   *
    * Returns labels-enriched Exercise entries (same shape as
    * `getExercises`). The adapter applies `enrichExerciseLabels` so
    * containers can render chips without re-stamping.
@@ -182,6 +189,7 @@ export interface ApiPort {
    */
   searchExercises(
     q: string,
+    filters?: ExerciseFilters,
     offset?: number,
     limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;

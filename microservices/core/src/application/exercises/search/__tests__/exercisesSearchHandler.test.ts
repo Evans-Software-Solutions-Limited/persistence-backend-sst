@@ -105,6 +105,13 @@ describe("ExercisesSearchHandler", () => {
     expect(body.data.meta).toEqual({ total: 42, offset: 10, limit: 5 });
     expect(exerciseRepositoryMocks.search).toHaveBeenCalledWith(
       "bench",
+      expect.objectContaining({
+        category: [],
+        difficultyLevel: [],
+        targetedMusclesAny: [],
+        equipmentAny: [],
+        createdByFilter: [],
+      }),
       null,
       5,
       10,
@@ -117,7 +124,7 @@ describe("ExercisesSearchHandler", () => {
     await exercisesSearchHandler.handle(
       new Request("http://localhost/exercises/search?q=bench&limit=999999"),
     );
-    const [, , clampedLimit] = exerciseRepositoryMocks.search.mock.calls[0];
+    const [, , , clampedLimit] = exerciseRepositoryMocks.search.mock.calls[0];
     expect(clampedLimit).toBe(100);
   });
 
@@ -127,7 +134,7 @@ describe("ExercisesSearchHandler", () => {
     await exercisesSearchHandler.handle(
       new Request("http://localhost/exercises/search?q=bench&offset=-50"),
     );
-    const [, , , offset] = exerciseRepositoryMocks.search.mock.calls[0];
+    const [, , , , offset] = exerciseRepositoryMocks.search.mock.calls[0];
     expect(offset).toBe(0);
   });
 
@@ -137,7 +144,7 @@ describe("ExercisesSearchHandler", () => {
     await exercisesSearchHandler.handle(
       new Request("http://localhost/exercises/search?q=bench"),
     );
-    const [, userId] = exerciseRepositoryMocks.search.mock.calls[0];
+    const [, , userId] = exerciseRepositoryMocks.search.mock.calls[0];
     expect(userId).toBeNull();
   });
 
@@ -149,8 +156,50 @@ describe("ExercisesSearchHandler", () => {
         headers: { authorization: "Bearer fake" },
       }),
     );
-    const [, userId] = exerciseRepositoryMocks.search.mock.calls[0];
+    const [, , userId] = exerciseRepositoryMocks.search.mock.calls[0];
     expect(userId).toBe("user-1");
+  });
+
+  it("forwards category + difficulty + muscles + equipment + created_by filters", async () => {
+    const { exercisesSearchHandler } =
+      await import("../exercisesSearchHandler");
+    const muscleUuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    const equipUuid = "c1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    await exercisesSearchHandler.handle(
+      new Request(
+        `http://localhost/exercises/search?q=press&category=cardio&difficulty_level=beginner&targeted_muscles_any=${muscleUuid}&equipment_any=${equipUuid}&created_by=system`,
+      ),
+    );
+    const [, filters] = exerciseRepositoryMocks.search.mock.calls[0];
+    expect(filters).toEqual({
+      category: ["cardio"],
+      difficultyLevel: ["beginner"],
+      targetedMusclesAny: [muscleUuid],
+      equipmentAny: [equipUuid],
+      createdByFilter: ["system"],
+    });
+  });
+
+  it("rejects unknown created_by enum value with 400", async () => {
+    const { exercisesSearchHandler } =
+      await import("../exercisesSearchHandler");
+    const response = await exercisesSearchHandler.handle(
+      new Request(
+        "http://localhost/exercises/search?q=press&created_by=intruder",
+      ),
+    );
+    expect(response.status).toBe(400);
+    expect(exerciseRepositoryMocks.search).not.toHaveBeenCalled();
+  });
+
+  it("rejects auth-required created_by value (mine/pt/physio) without auth header", async () => {
+    const { exercisesSearchHandler } =
+      await import("../exercisesSearchHandler");
+    const response = await exercisesSearchHandler.handle(
+      new Request("http://localhost/exercises/search?q=press&created_by=mine"),
+    );
+    expect(response.status).toBe(400);
+    expect(exerciseRepositoryMocks.search).not.toHaveBeenCalled();
   });
 
   it("trims surrounding whitespace from q before length check + repo call", async () => {

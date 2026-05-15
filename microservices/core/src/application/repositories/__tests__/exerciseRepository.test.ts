@@ -807,7 +807,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    const result = await repo.search("press bench", null, 20, 0);
+    const result = await repo.search("press bench", {}, null, 20, 0);
 
     expect(result.rows).toEqual([mockExercises[0]]);
     expect(result.total).toBe(1);
@@ -818,7 +818,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    await repo.search("press bench", null);
+    await repo.search("press bench", {}, null);
 
     // orderBy is called with the combined-rank expression (sql template)
     // — we can't easily introspect the SQL fragment without executing
@@ -833,7 +833,7 @@ describe("ExerciseRepository.search", () => {
 
     const repo = new ExerciseRepository();
     // All chars stripped → tokenizer returns null → trigram-only branch.
-    await repo.search("&|!:*", null);
+    await repo.search("&|!:*", {}, null);
 
     expect(mockDb._orderBy).toHaveBeenCalledTimes(1);
   });
@@ -843,7 +843,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    await repo.search("bench", null);
+    await repo.search("bench", {}, null);
 
     // Unauth: no PT subquery select fires (isNull branch short-circuits).
     // Two calls: one for the row-page select, one for the count select.
@@ -855,7 +855,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    await repo.search("bench", "user-1");
+    await repo.search("bench", {}, "user-1");
 
     // Authed: row-page select + count select + PT subquery select(s).
     // buildVisibilityCondition is called once per `where` build; both
@@ -869,7 +869,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    await repo.search("bench", null, 50, 100);
+    await repo.search("bench", {}, null, 50, 100);
 
     // The chain's `.limit()` and `.offset()` are reached via the
     // orderBy → limit → offset path; verify both were called.
@@ -883,11 +883,41 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    await repo.search("bench", null);
+    await repo.search("bench", {}, null);
 
     const limitMock = (mockDb._orderBy as any).mock.results[0].value.limit;
     expect(limitMock).toHaveBeenCalledWith(20);
     expect(limitMock.mock.results[0].value.offset).toHaveBeenCalledWith(0);
+  });
+
+  it("applies category + equipment + muscle + difficulty + created_by filter axes alongside FTS", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+    const { inArray, and } = await import("drizzle-orm");
+    (inArray as any).mockClear();
+    (and as any).mockClear();
+
+    const repo = new ExerciseRepository();
+    await repo.search(
+      "press",
+      {
+        category: ["cardio"],
+        difficultyLevel: ["beginner"],
+        targetedMusclesAny: ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+        equipmentAny: ["c1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+        createdByFilter: ["system"],
+      },
+      "user-1",
+    );
+
+    // Each enum-array filter axis goes through `inArray`. Visibility +
+    // createdBy=system also call inArray (via the PT subquery / sentinel
+    // OR-clause), so the exact count is implementation-dependent — we
+    // just verify the filter-axis predicates were emitted (>= 2 calls
+    // covers category + difficulty at minimum).
+    expect((inArray as any).mock.calls.length).toBeGreaterThanOrEqual(2);
+    // And: every condition (visibility + filters + FTS) AND-combined.
+    expect(and).toHaveBeenCalled();
   });
 
   it("returns total=0 when count query yields no rows (defensive)", async () => {
@@ -912,7 +942,7 @@ describe("ExerciseRepository.search", () => {
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
-    const result = await repo.search("bench", null);
+    const result = await repo.search("bench", {}, null);
     expect(result.total).toBe(0);
     expect(result.rows).toEqual([]);
   });

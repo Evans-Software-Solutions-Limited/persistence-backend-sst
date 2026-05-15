@@ -268,13 +268,16 @@ export class ExerciseRepository {
   }
 
   /**
-   * Build the AND-combined WHERE clause for both `list()` and `count()`.
+   * Build the non-search filter conditions shared between `list()`,
+   * `count()`, and `search()`: visibility, created_by, difficulty,
+   * category, muscle, and equipment.
    *
-   * Extracted so pagination's `total` count and the page slice run against
-   * the exact same predicate — if these ever drift, `hasMore` can flip
-   * true while the next page returns zero rows (and vice versa).
+   * Search uses this *plus* its own FTS / trigram predicate; the list
+   * endpoint adds an `ilike` substring predicate on top. Centralising the
+   * non-search axes here means a filter-axis bug fix in one place lands
+   * for every endpoint that lists / searches exercises.
    */
-  private buildListFilterConditions(
+  private buildNonSearchFilterConditions(
     filters: ListExercisesFilters,
     userId: string | null,
   ): SQL[] {
@@ -318,6 +321,22 @@ export class ExerciseRepository {
         sql`${exercises.equipmentRequired} && ${filters.equipmentAny}::uuid[]`,
       );
     }
+
+    return conditions;
+  }
+
+  /**
+   * Build the AND-combined WHERE clause for both `list()` and `count()`.
+   *
+   * Extracted so pagination's `total` count and the page slice run against
+   * the exact same predicate — if these ever drift, `hasMore` can flip
+   * true while the next page returns zero rows (and vice versa).
+   */
+  private buildListFilterConditions(
+    filters: ListExercisesFilters,
+    userId: string | null,
+  ): SQL[] {
+    const conditions = this.buildNonSearchFilterConditions(filters, userId);
 
     const searchText = filters.q ?? filters.search;
     if (searchText) {
@@ -389,7 +408,7 @@ export class ExerciseRepository {
 
   /**
    * Full-text search across the exercise catalogue, scoped to the same
-   * visibility predicate `list()` applies. Order:
+   * visibility + filter predicate `list()` applies. Order:
    *
    *   1. Combined relevance: `ts_rank * 2 + word_similarity`. ts_rank is
    *      weighted higher because for clean matches (criteria 1, 2, 4, 6 in
@@ -404,6 +423,15 @@ export class ExerciseRepository {
    * misspelt name". If tokenisation yields no usable token (the input is
    * pure punctuation), we drop the FTS branch and rely on trigram only.
    *
+   * Filter axes (category / equipment / muscles / difficulty / created_by)
+   * are AND-combined with the FTS predicate, so ranking happens *within*
+   * the filtered set. Without this, `q + category=cardio` could return
+   * top-100 ranked rows across the whole catalogue and then narrow client-
+   * side to whatever cardio rows happened to rank within the first 100,
+   * silently dropping any cardio match ranked at position 101+. The
+   * `q` field on `filters` is ignored — the explicit `q` parameter is
+   * authoritative.
+   *
    * Both branches go through `sql` template parameterisation, so user
    * input never reaches Postgres unparameterised. The tokenizer strips
    * tsquery reserved characters before parameterisation so `to_tsquery`
@@ -413,6 +441,10 @@ export class ExerciseRepository {
    */
   async search(
     q: string,
+    filters: Omit<
+      ListExercisesFilters,
+      "q" | "search" | "limit" | "offset"
+    > = {},
     userId: string | null = null,
     limit = 20,
     offset = 0,
@@ -424,8 +456,11 @@ export class ExerciseRepository {
       ? sql`(search_vector @@ to_tsquery('english', ${tsq}) OR ${exercises.name} %> ${q})`
       : sql`${exercises.name} %> ${q}`;
 
-    const visibility = this.buildVisibilityCondition(userId);
-    const where = and(visibility, matchCondition) as SQL;
+    const filterConditions = this.buildNonSearchFilterConditions(
+      filters,
+      userId,
+    );
+    const where = and(...filterConditions, matchCondition) as SQL;
 
     const primaryOrder = tsq
       ? sql`(ts_rank(search_vector, to_tsquery('english', ${tsq})) * 2 + word_similarity(${q}, ${exercises.name})) DESC`

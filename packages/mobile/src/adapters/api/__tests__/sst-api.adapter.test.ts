@@ -248,7 +248,7 @@ describe("SSTApiAdapter.searchExercises", () => {
     });
 
     const adapter = new SSTApiAdapter();
-    const result = await adapter.searchExercises("press", 20, 10);
+    const result = await adapter.searchExercises("press", undefined, 20, 10);
     expect(result.ok).toBe(true);
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("q=press");
@@ -257,6 +257,35 @@ describe("SSTApiAdapter.searchExercises", () => {
     if (!result.ok) return;
     // total=50, offset=20 + 0 returned < 50 → hasMore=true
     expect(result.value.hasMore).toBe(true);
+  });
+
+  it("forwards category / equipment / muscles / difficulty / created_by filter axes", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: { data: [], meta: { total: 0, offset: 0, limit: 20 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    await adapter.searchExercises("press", {
+      category: "cardio",
+      difficulties: ["beginner"],
+      muscleGroups: ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+      equipment: ["c1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+      createdBy: "system",
+    });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("q=press");
+    expect(url).toContain("category=cardio");
+    expect(url).toContain("difficulty_level=beginner");
+    expect(url).toContain(
+      "targeted_muscles_any=a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    );
+    expect(url).toContain("equipment_any=c1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    expect(url).toContain("created_by=system");
   });
 
   it("propagates HTTP 400 (q too short) as api error", async () => {

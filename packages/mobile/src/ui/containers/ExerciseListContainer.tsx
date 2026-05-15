@@ -131,28 +131,38 @@ export function ExerciseListContainer() {
     // because showing results from a previous query during a new query
     // is a worse UX than showing current-query local-cache matches.
     setServerSearch({ q, results: [], isFetching: true, error: null });
-    void api.searchExercises(q, 0, SERVER_SEARCH_LIMIT).then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        setServerSearch({
-          q,
-          results: result.value.data,
-          isFetching: false,
-          error: null,
-        });
-      } else {
-        setServerSearch({
-          q,
-          results: [],
-          isFetching: false,
-          error: result.error.message,
-        });
-      }
-    });
+    // `filtersWithoutSearch` is forwarded so ranking happens within the
+    // user's filter selection, not across the whole catalogue then
+    // narrowed client-side (which silently drops matches ranked past
+    // SERVER_SEARCH_LIMIT). `filtersWithoutSearch` is memoised in
+    // useExerciseFilters, so adding it to the dep list does NOT cause
+    // the effect to re-fire on every keystroke — only on filter pill /
+    // modal changes — and the cleanup cancels any in-flight request
+    // when filters change mid-fetch.
+    void api
+      .searchExercises(q, filtersWithoutSearch, 0, SERVER_SEARCH_LIMIT)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.ok) {
+          setServerSearch({
+            q,
+            results: result.value.data,
+            isFetching: false,
+            error: null,
+          });
+        } else {
+          setServerSearch({
+            q,
+            results: [],
+            isFetching: false,
+            error: result.error.message,
+          });
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, api]);
+  }, [debouncedSearch, filtersWithoutSearch, api]);
 
   /**
    * The server's ranked results are the source of truth iff:
@@ -167,11 +177,12 @@ export function ExerciseListContainer() {
    * current query, which is preferable to showing stale results from
    * the previous query while the network call runs.
    *
-   * When the server is the source, we apply `filtersWithoutSearch` over
-   * its results — the server already filtered + ranked by the search
-   * axis. When the cache is the source, we apply the full `filters`
-   * (including the local search term) so the bridge state still gets a
-   * meaningful filter.
+   * When the server is the source, the results are already filtered and
+   * ranked by every axis the user selected. We still pass them through
+   * `filterExercises(.., filtersWithoutSearch)` as a defensive client
+   * filter — cost is negligible (≤ SERVER_SEARCH_LIMIT rows) and it
+   * catches any future server/client filter-axis inconsistency without a
+   * wire-shape change.
    */
   const useServerResults =
     serverSearch != null &&
@@ -181,9 +192,6 @@ export function ExerciseListContainer() {
 
   const filtered = useMemo(() => {
     if (useServerResults && serverSearch != null) {
-      // Filter axes other than search are applied client-side against
-      // the server's ranked page. Order is preserved by filterExercises
-      // when no `search` axis is present (no relevance re-rank).
       return filterExercises(serverSearch.results, filtersWithoutSearch);
     }
     return filterExercises(cacheRead.exercises, filters);

@@ -402,14 +402,18 @@ export class InMemoryApiAdapter implements ApiPort {
 
   async searchExercises(
     q: string,
+    filters?: ExerciseFilters,
     _offset?: number,
     _limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
     // Use the same domain-service filter to keep test fixtures simple —
     // the in-memory adapter doesn't model FTS ranking, so it falls back
-    // to filterExercises with the search term. Real ranking is exercised
-    // by the SSTApiAdapter against the live backend.
-    const filtered = filterExercises(this.exercises, { search: q });
+    // to filterExercises with the search term + all other axes. Real
+    // ranking is exercised by the SSTApiAdapter against the live backend.
+    const filtered = filterExercises(this.exercises, {
+      ...(filters ?? {}),
+      search: q,
+    });
     const page: PaginatedResult<Exercise> = {
       data: filtered,
       cursor: null,

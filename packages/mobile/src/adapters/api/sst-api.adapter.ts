@@ -427,12 +427,21 @@ export class SSTApiAdapter implements ApiPort {
 
   async searchExercises(
     q: string,
+    filters?: ExerciseFilters,
     offset?: number,
     limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>> {
-    const params: Record<string, string> = { q };
-    if (offset != null) params.offset = String(offset);
-    if (limit != null) params.limit = String(limit);
+    // Reuse the list endpoint's param builder so search inherits the same
+    // wire shape for category / equipment / muscles / difficulty /
+    // created_by — the search endpoint accepts the same names. The
+    // builder's `search` → `q` mapping is overwritten below because the
+    // explicit `q` argument is authoritative for search.
+    const baseParams =
+      this.buildExerciseQueryParams(filters, offset, limit) ?? {};
+    const params: Record<string, string | number | string[] | undefined> = {
+      ...baseParams,
+      q,
+    };
     const result = await this.requestEnvelope<ApiExercisesPage>(
       "/exercises/search",
       { params },
