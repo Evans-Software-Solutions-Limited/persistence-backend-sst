@@ -927,4 +927,89 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getRecordResponse("user-B")).toBeNull();
     });
   });
+
+  describe("profile-page cache (M6)", () => {
+    const sampleProfilePage = {
+      profile: {
+        id: "user-1",
+        fullName: "Brad",
+        email: "b@e.com",
+        username: null,
+        avatarUrl: null,
+        role: "user" as const,
+        fitnessLevel: null,
+        heightCm: null,
+        weightKg: null,
+        preferredUnits: "metric" as const,
+        isProfilePublic: false,
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      subscription: {
+        tierName: null,
+        tierDisplayName: null,
+        status: null,
+        isFreeTier: true,
+        isTrainerTier: false,
+        expiresAt: null,
+        cancelledAt: null,
+        workoutLimit: null,
+        isUnlimited: false,
+      },
+      stats: { workoutsCompleted: 0 },
+      recentAchievements: [],
+      activeTrainers: [],
+      pendingTrainerRequests: [],
+    };
+
+    it("round-trips a payload", () => {
+      storage.cacheProfilePage("user-1", sampleProfilePage);
+      const row = storage.getCachedProfilePage("user-1");
+      expect(row).not.toBeNull();
+      expect(row?.payload).toEqual(sampleProfilePage);
+      expect(row?.userId).toBe("user-1");
+      expect(typeof row?.syncedAt).toBe("string");
+    });
+
+    it("returns null when no row exists", () => {
+      expect(storage.getCachedProfilePage("ghost")).toBeNull();
+      expect(storage.getProfilePageAge("ghost")).toBeNull();
+    });
+
+    it("exposes the syncedAt timestamp via getProfilePageAge", () => {
+      storage.cacheProfilePage("user-1", sampleProfilePage);
+      const age = storage.getProfilePageAge("user-1");
+      expect(age).not.toBeNull();
+      expect(Date.parse(age!)).not.toBeNaN();
+    });
+
+    it("upserts on conflict (last write wins)", () => {
+      storage.cacheProfilePage("user-1", sampleProfilePage);
+      const second = {
+        ...sampleProfilePage,
+        stats: { workoutsCompleted: 99 },
+      };
+      storage.cacheProfilePage("user-1", second);
+      expect(
+        storage.getCachedProfilePage("user-1")?.payload.stats.workoutsCompleted,
+      ).toBe(99);
+    });
+
+    it("invalidateProfilePage drops the row", () => {
+      storage.cacheProfilePage("user-1", sampleProfilePage);
+      storage.invalidateProfilePage("user-1");
+      expect(storage.getCachedProfilePage("user-1")).toBeNull();
+    });
+
+    it("scopes per-user — user A's cache doesn't leak to user B", () => {
+      storage.cacheProfilePage("user-A", sampleProfilePage);
+      expect(storage.getCachedProfilePage("user-A")).not.toBeNull();
+      expect(storage.getCachedProfilePage("user-B")).toBeNull();
+    });
+
+    it("clearAll wipes the profile-page cache (sign-out hygiene)", () => {
+      storage.cacheProfilePage("user-1", sampleProfilePage);
+      storage.clearAll();
+      expect(storage.getCachedProfilePage("user-1")).toBeNull();
+    });
+  });
 });

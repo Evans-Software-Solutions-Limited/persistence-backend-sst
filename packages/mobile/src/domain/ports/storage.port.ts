@@ -3,6 +3,10 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  CachedProfilePage,
+  ProfilePageData,
+} from "@/domain/models/profilePage";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -192,6 +196,33 @@ export interface StoragePort {
    * fresh fetch instead of showing the pre-mutation snapshot.
    */
   invalidateDashboard(userId: string): void;
+
+  // -- Profile-Page Cache (M6) --
+  /**
+   * Read the cached `/profile/page` payload for a user, or null if
+   * none. One row per user — same shape as `cached_dashboard`.
+   *
+   * Spec: specs/milestones/M6-profile/BACKEND_BRIEF.md § Local-DB caching
+   */
+  getCachedProfilePage(userId: string): CachedProfilePage | null;
+  /**
+   * Write-through the latest backend payload for a user, stamping
+   * `syncedAt = now()`.
+   */
+  cacheProfilePage(userId: string, payload: ProfilePageData): void;
+  /**
+   * Age of the cached profile-page row as an ISO timestamp, or null
+   * when no row exists. Lets a caller fetch only the timestamp
+   * without parsing the full JSON blob.
+   */
+  getProfilePageAge(userId: string): string | null;
+  /**
+   * Drop the cached profile-page payload for a user. Called by the
+   * future PATCH /profile mutation (M6 PR-4) so a stale view doesn't
+   * survive an edit. Available now so the storage surface stays
+   * symmetrical with `invalidateDashboard`.
+   */
+  invalidateProfilePage(userId: string): void;
 
   // -- Active Session (M3) --
   /**

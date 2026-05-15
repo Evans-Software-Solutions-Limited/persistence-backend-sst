@@ -28,6 +28,12 @@ describe("AndroidStubHealthAdapter", () => {
     const energyResult = await adapter.getActiveCaloriesToday();
     expect(energyResult.ok).toBe(false);
 
+    const basalResult = await adapter.getBasalCaloriesToday();
+    expect(basalResult.ok).toBe(false);
+
+    const standResult = await adapter.getStandTimeTodayMinutes();
+    expect(standResult.ok).toBe(false);
+
     const weightResult = await adapter.getLatestBodyWeight();
     expect(weightResult.ok).toBe(false);
 

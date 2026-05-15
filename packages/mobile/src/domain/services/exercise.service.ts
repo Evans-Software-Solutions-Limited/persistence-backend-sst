@@ -140,11 +140,20 @@ export function filterExercises(
   // for historical parity but hold UUIDs at runtime (see Exercise model
   // docstring). Cast the arrays to `string[]` so the `.includes` call
   // sees the same shape the filter is actually passing.
+  //
+  // Defensive: `(... ?? [])` guards against legacy cached rows whose
+  // muscle / equipment columns were stored as null instead of `[]`.
+  // Without this, `.includes()` throws on null and the entire list
+  // silently empties (the symptom that masquerades as "the filter
+  // doesn't work"). DB schema's `default([])` only protects fresh
+  // rows — historical data in Supabase can still hold NULL.
   if (filters.muscleGroups && filters.muscleGroups.length > 0) {
     const groups = filters.muscleGroups;
     result = result.filter((e) => {
-      const primary = e.primaryMuscleGroups as unknown as string[];
-      const secondary = e.secondaryMuscleGroups as unknown as string[];
+      const primary =
+        (e.primaryMuscleGroups as unknown as string[] | null) ?? [];
+      const secondary =
+        (e.secondaryMuscleGroups as unknown as string[] | null) ?? [];
       return groups.some((g) => primary.includes(g) || secondary.includes(g));
     });
   }
@@ -152,7 +161,7 @@ export function filterExercises(
   if (filters.equipment && filters.equipment.length > 0) {
     const equip = filters.equipment;
     result = result.filter((e) => {
-      const equipment = e.equipment as unknown as string[];
+      const equipment = (e.equipment as unknown as string[] | null) ?? [];
       return equip.some((eq) => equipment.includes(eq));
     });
   }

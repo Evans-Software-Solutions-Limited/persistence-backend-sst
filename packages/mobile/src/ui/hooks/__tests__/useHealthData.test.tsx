@@ -49,6 +49,8 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     getStepsToday: async () => ok(4812),
     getStepsLastNDays: async () => ok([]),
     getActiveCaloriesToday: async () => ok(312),
+    getBasalCaloriesToday: async () => ok(1450),
+    getStandTimeTodayMinutes: async () => ok(54),
     getLatestBodyWeight: async () =>
       ok({ value: 74.5, unit: "kg" as const, date: "2026-04-20T07:00:00Z" }),
     getHeartRateLatest: async () => ok(62),
@@ -64,6 +66,8 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     getStepsToday: jest.fn(base.getStepsToday),
     getStepsLastNDays: jest.fn(base.getStepsLastNDays),
     getActiveCaloriesToday: jest.fn(base.getActiveCaloriesToday),
+    getBasalCaloriesToday: jest.fn(base.getBasalCaloriesToday),
+    getStandTimeTodayMinutes: jest.fn(base.getStandTimeTodayMinutes),
     getLatestBodyWeight: jest.fn(base.getLatestBodyWeight),
     getHeartRateLatest: jest.fn(base.getHeartRateLatest),
     writeBodyWeight: jest.fn(base.writeBodyWeight),

@@ -306,13 +306,22 @@ export class ExerciseRepository {
     }
 
     if (filters.targetedMusclesAny && filters.targetedMusclesAny.length > 0) {
-      // Postgres array overlap: row's primary_muscles shares any uuid with filter
+      // Array overlap against primary OR secondary. Pre-2026-05 this
+      // only checked `primary_muscles`, which silently dropped
+      // exercises that target a muscle as a secondary mover — e.g. a
+      // user filtering by "chest" wouldn't see Close-Grip Bench Press
+      // (chest secondary). The client-side `filterExercises` already
+      // checks both arrays, so checking only primary on the server
+      // also caused a server-vs-cache divergence: search + muscle
+      // filter would return a narrower set than the unsearched
+      // cache-filtered view, which is the surface that surfaces as
+      // "muscle group filter doesn't work as expected".
       conditions.push(
-        sql`${exercises.primaryMuscles} && ${filters.targetedMusclesAny}::uuid[]`,
+        sql`(${exercises.primaryMuscles} || ${exercises.secondaryMuscles}) && ${filters.targetedMusclesAny}::uuid[]`,
       );
     } else if (filters.muscleGroup) {
       conditions.push(
-        sql`${filters.muscleGroup}::uuid = ANY(${exercises.primaryMuscles})`,
+        sql`${filters.muscleGroup}::uuid = ANY(${exercises.primaryMuscles} || ${exercises.secondaryMuscles})`,
       );
     }
 

@@ -36,6 +36,10 @@ export type HealthDataState = {
   /** Per-day step history for the last 7 days, earliest first. */
   stepsHistory: readonly HealthDailySteps[];
   activeCaloriesToday: number | null;
+  /** Cumulative basal (resting) energy burn today in kcal, or null. */
+  basalCaloriesToday: number | null;
+  /** Cumulative Apple Stand Time today in minutes, or null. */
+  standTimeTodayMinutes: number | null;
   latestBodyWeight: HealthWeight | null;
   permissionStatus: HealthPermissionStatus;
   isAvailable: boolean;
@@ -61,6 +65,12 @@ export function useHealthData(): HealthDataState {
   const [activeCaloriesToday, setActiveCaloriesToday] = useState<number | null>(
     null,
   );
+  const [basalCaloriesToday, setBasalCaloriesToday] = useState<number | null>(
+    null,
+  );
+  const [standTimeTodayMinutes, setStandTimeTodayMinutes] = useState<
+    number | null
+  >(null);
   const [latestBodyWeight, setLatestBodyWeight] = useState<HealthWeight | null>(
     null,
   );
@@ -102,16 +112,26 @@ export function useHealthData(): HealthDataState {
 
       setIsReading(true);
       try {
-        const [stepsResult, stepsHistoryResult, caloriesResult, weightResult] =
-          await Promise.all([
-            health.getStepsToday(),
-            health.getStepsLastNDays(STEPS_HISTORY_DAYS),
-            health.getActiveCaloriesToday(),
-            health.getLatestBodyWeight(),
-          ]);
+        const [
+          stepsResult,
+          stepsHistoryResult,
+          caloriesResult,
+          basalResult,
+          standResult,
+          weightResult,
+        ] = await Promise.all([
+          health.getStepsToday(),
+          health.getStepsLastNDays(STEPS_HISTORY_DAYS),
+          health.getActiveCaloriesToday(),
+          health.getBasalCaloriesToday(),
+          health.getStandTimeTodayMinutes(),
+          health.getLatestBodyWeight(),
+        ]);
         if (stepsResult.ok) setStepsToday(stepsResult.value);
         if (stepsHistoryResult.ok) setStepsHistory(stepsHistoryResult.value);
         if (caloriesResult.ok) setActiveCaloriesToday(caloriesResult.value);
+        if (basalResult.ok) setBasalCaloriesToday(basalResult.value);
+        if (standResult.ok) setStandTimeTodayMinutes(standResult.value);
         if (weightResult.ok) setLatestBodyWeight(weightResult.value);
         setLastReadAt(new Date(now).toISOString());
       } finally {
@@ -156,6 +176,8 @@ export function useHealthData(): HealthDataState {
     stepsToday,
     stepsHistory,
     activeCaloriesToday,
+    basalCaloriesToday,
+    standTimeTodayMinutes,
     latestBodyWeight,
     permissionStatus,
     isAvailable,

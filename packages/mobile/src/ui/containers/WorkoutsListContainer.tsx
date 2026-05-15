@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
 import type { Workout } from "@/domain/models/workout";
+import { tokenizeSearch } from "@/domain/services/exercise.service";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
@@ -65,8 +66,8 @@ export function WorkoutsListContainer() {
   // WorkoutCard reads (snake_case + a few denormalised fields).
   const viewModel = useMemo(() => {
     const myAndAssigned = [...sections.mine, ...sections.assigned];
-    const filteredMine = filterByName(myAndAssigned, searchQuery);
-    const filteredDefault = filterByName(sections.default, searchQuery);
+    const filteredMine = filterBySearch(myAndAssigned, searchQuery);
+    const filteredDefault = filterBySearch(sections.default, searchQuery);
 
     const assignedIdSet = new Set(sections.assigned.map((w) => w.id));
     const toCardView = (w: Workout) => ({
@@ -233,8 +234,18 @@ export function WorkoutsListContainer() {
   );
 }
 
-function filterByName(workouts: Workout[], query: string): Workout[] {
-  if (!query.trim()) return workouts;
-  const q = query.toLowerCase();
-  return workouts.filter((w) => w.name.toLowerCase().includes(q));
+/**
+ * Token-AND match against name + description. Reuses `tokenizeSearch`
+ * so the workouts filter agrees with the exercise filter (and the
+ * backend FTS tokeniser) on what a "token" is. Legacy mobile also
+ * matched against a `tags` array — the v2 Workout wire shape has no
+ * tags field today, so name + description is the full surface.
+ */
+function filterBySearch(workouts: Workout[], query: string): Workout[] {
+  const tokens = tokenizeSearch(query);
+  if (tokens.length === 0) return workouts;
+  return workouts.filter((w) => {
+    const haystack = `${w.name} ${w.description ?? ""}`.toLowerCase();
+    return tokens.every((t) => haystack.includes(t));
+  });
 }

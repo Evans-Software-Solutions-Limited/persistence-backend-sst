@@ -63,6 +63,14 @@ export class AndroidStubHealthAdapter implements HealthPort {
     return fail(UNAVAILABLE);
   }
 
+  async getBasalCaloriesToday(): Promise<Result<number, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
+  async getStandTimeTodayMinutes(): Promise<Result<number, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
   async getLatestBodyWeight(): Promise<
     Result<HealthWeight | null, HealthError>
   > {

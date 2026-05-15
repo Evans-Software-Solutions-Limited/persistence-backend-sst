@@ -407,6 +407,39 @@ describe("filterExercises", () => {
       });
       expect(result).toHaveLength(0);
     });
+
+    it("treats null muscle arrays as empty (defensive — legacy cached rows)", () => {
+      // Simulates a cached row whose primary/secondary muscles were
+      // stored as null instead of []. Without the defensive `?? []`
+      // guard, `.includes()` would throw and the entire list would
+      // empty out — masquerading as "the filter is broken".
+      const exotic = makeExercise({
+        id: "ex-null",
+        name: "Ghost",
+        primaryMuscleGroups: null as unknown as never,
+        secondaryMuscleGroups: null as unknown as never,
+      });
+      const result = filterExercises([exotic, ...EXERCISES], {
+        muscleGroups: ["chest"],
+      });
+      // The null row is filtered out (no match), but the call doesn't
+      // throw and the remaining chest exercises still come back.
+      expect(result.find((e) => e.id === "ex-null")).toBeUndefined();
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("treats null equipment array as empty", () => {
+      const exotic = makeExercise({
+        id: "ex-null-eq",
+        name: "Ghost Equipment",
+        equipment: null as unknown as never,
+      });
+      const result = filterExercises([exotic, ...EXERCISES], {
+        equipment: ["barbell"],
+      });
+      expect(result.find((e) => e.id === "ex-null-eq")).toBeUndefined();
+      expect(result.length).toBeGreaterThan(0);
+    });
   });
 
   describe("equipment filter", () => {

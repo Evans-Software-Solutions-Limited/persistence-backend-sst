@@ -315,6 +315,46 @@ export class ExpoHealthKitAdapter implements HealthPort {
     }
   }
 
+  async getBasalCaloriesToday(): Promise<Result<number, HealthError>> {
+    try {
+      const stats = await this.healthkit.queryStatisticsForQuantity(
+        IDENTIFIER.BASAL_ENERGY,
+        ["cumulativeSum"],
+        { filter: { startDate: startOfToday(), endDate: new Date() } },
+      );
+      const value = stats?.sumQuantity?.quantity ?? 0;
+      return ok(Math.round(value));
+    } catch (err) {
+      return fail(
+        readFailure(
+          err instanceof Error ? err.message : "Failed to read basal calories",
+        ),
+      );
+    }
+  }
+
+  async getStandTimeTodayMinutes(): Promise<Result<number, HealthError>> {
+    try {
+      const stats = await this.healthkit.queryStatisticsForQuantity(
+        IDENTIFIER.STAND_TIME,
+        ["cumulativeSum"],
+        { filter: { startDate: startOfToday(), endDate: new Date() } },
+      );
+      // HKQuantityTypeIdentifierAppleStandTime is stored in minutes;
+      // the underlying library normalises the cumulativeSum to the
+      // identifier's default unit, so `.quantity` here is already in
+      // minutes. Round to keep the wire shape clean.
+      const value = stats?.sumQuantity?.quantity ?? 0;
+      return ok(Math.round(value));
+    } catch (err) {
+      return fail(
+        readFailure(
+          err instanceof Error ? err.message : "Failed to read stand time",
+        ),
+      );
+    }
+  }
+
   async getLatestBodyWeight(): Promise<
     Result<HealthWeight | null, HealthError>
   > {

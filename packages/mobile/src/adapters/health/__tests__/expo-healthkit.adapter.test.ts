@@ -202,6 +202,76 @@ describe("ExpoHealthKitAdapter", () => {
     expect(result.error.code).toBe("read_failed");
   });
 
+  it("reads today's basal calories", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => ({
+        sumQuantity: { quantity: 1450.4 },
+      })),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getBasalCaloriesToday();
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value).toBe(1450);
+  });
+
+  it("returns 0 when basal-calorie query returns no sum", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => ({})),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getBasalCaloriesToday();
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value).toBe(0);
+  });
+
+  it("surfaces read_failed when basal-calorie query throws", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => {
+        throw new Error("basal boom");
+      }),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getBasalCaloriesToday();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.code).toBe("read_failed");
+    expect(result.error.message).toBe("basal boom");
+  });
+
+  it("reads today's stand-time minutes", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => ({
+        sumQuantity: { quantity: 54.6 },
+      })),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStandTimeTodayMinutes();
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value).toBe(55);
+  });
+
+  it("returns 0 when stand-time query returns no sum", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => ({})),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStandTimeTodayMinutes();
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value).toBe(0);
+  });
+
+  it("surfaces read_failed when stand-time query throws", async () => {
+    const hk = makeHealthKit({
+      queryStatisticsForQuantity: jest.fn(async () => {
+        throw new Error("stand boom");
+      }),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getStandTimeTodayMinutes();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.code).toBe("read_failed");
+    expect(result.error.message).toBe("stand boom");
+  });
+
   it("reads the latest body weight sample (kg)", async () => {
     const hk = makeHealthKit();
     const adapter = new ExpoHealthKitAdapter(hk as never);

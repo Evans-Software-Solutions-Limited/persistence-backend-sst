@@ -3,6 +3,10 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  CachedProfilePage,
+  ProfilePageData,
+} from "@/domain/models/profilePage";
 import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -40,6 +44,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     new Map();
   private referenceLists: Map<ReferenceListKind, ReferenceList> = new Map();
   private dashboardCache: Map<string, CachedDashboard> = new Map();
+  private profilePageCache: Map<string, CachedProfilePage> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private activeSessions: Map<string, WorkoutSession> = new Map();
@@ -205,6 +210,28 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   invalidateDashboard(userId: string): void {
     this.dashboardCache.delete(userId);
+  }
+
+  // -- Profile-Page Cache (M6) --
+
+  getCachedProfilePage(userId: string): CachedProfilePage | null {
+    return this.profilePageCache.get(userId) ?? null;
+  }
+
+  cacheProfilePage(userId: string, payload: ProfilePageData): void {
+    this.profilePageCache.set(userId, {
+      userId,
+      payload,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getProfilePageAge(userId: string): string | null {
+    return this.profilePageCache.get(userId)?.syncedAt ?? null;
+  }
+
+  invalidateProfilePage(userId: string): void {
+    this.profilePageCache.delete(userId);
   }
 
   // -- Workouts Cache (M2) --
@@ -461,6 +488,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.exerciseCache.clear();
     this.referenceLists.clear();
     this.dashboardCache.clear();
+    this.profilePageCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
     this.activeSessions.clear();
