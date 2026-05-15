@@ -189,3 +189,403 @@ describe("ProfileRepository", () => {
     });
   });
 });
+
+describe("formatTierDisplayName", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("title-cases a snake_case tier name", async () => {
+    const { formatTierDisplayName } = await import("../profileRepository");
+    expect(formatTierDisplayName("premium_annual")).toBe("Premium Annual");
+  });
+
+  it("handles single-word tiers", async () => {
+    const { formatTierDisplayName } = await import("../profileRepository");
+    expect(formatTierDisplayName("free")).toBe("Free");
+  });
+
+  it("returns null for null input", async () => {
+    const { formatTierDisplayName } = await import("../profileRepository");
+    expect(formatTierDisplayName(null)).toBeNull();
+  });
+
+  it("returns null for whitespace-only input", async () => {
+    const { formatTierDisplayName } = await import("../profileRepository");
+    expect(formatTierDisplayName("   ")).toBeNull();
+  });
+
+  it("strips empty segments from consecutive underscores", async () => {
+    const { formatTierDisplayName } = await import("../profileRepository");
+    expect(formatTierDisplayName("premium__annual")).toBe("Premium Annual");
+  });
+});
+
+describe("ProfileRepository.getProfilePageData", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Build a db mock that dispatches per-query based on the projection
+   * keys passed to `select()`. Each query path returns its own fixture.
+   *
+   *   profileSlice           → select({ id, fullName, ... })
+   *   subscriptionSlice      → select({ tierName, paymentStatus, ... })
+   *   workoutsCompletedCount → select({ total })
+   *   recentAchievements     → select({ id, name, description, iconUrl, unlockedAt })
+   *   trainerRelationships   → select({ relationshipId, trainerId, ... })
+   *
+   * The chain shapes per query:
+   *   profile / subscription / achievements / trainers / count
+   *   = .from().{join}.where().{orderBy}.{limit}() OR .from().where()
+   *
+   * The shim resolves every terminal node directly so any chain depth
+   * works — limit / orderBy / count terminals all hit the same resolved
+   * fixture.
+   */
+  function makeAggregateDb(fixtures: {
+    profile?: unknown[];
+    subscription?: unknown[];
+    workoutsCount?: Array<{ total: number }>;
+    achievements?: unknown[];
+    trainers?: unknown[];
+  }) {
+    const select = vi.fn((projection?: Record<string, unknown>) => {
+      let resolved: unknown[];
+      if (!projection) {
+        // No-projection select() is the legacy getById path.
+        resolved = fixtures.profile ?? [];
+      } else if ("trainerId" in projection) {
+        resolved = fixtures.trainers ?? [];
+      } else if ("total" in projection) {
+        resolved = fixtures.workoutsCount ?? [];
+      } else if ("relationshipId" in projection) {
+        resolved = fixtures.trainers ?? [];
+      } else if ("tierName" in projection && "paymentStatus" in projection) {
+        resolved = fixtures.subscription ?? [];
+      } else if ("unlockedAt" in projection && "iconUrl" in projection) {
+        resolved = fixtures.achievements ?? [];
+      } else if ("fullName" in projection && "preferredUnits" in projection) {
+        resolved = fixtures.profile ?? [];
+      } else {
+        resolved = [];
+      }
+      // Each terminal node is thenable (resolves directly when awaited)
+      // AND exposes downstream chain methods. Drizzle queries terminate at
+      // varying chain depths — `.orderBy()` for trainers/achievements,
+      // `.limit()` for profile/subscription, `.where()` for the count —
+      // so any node in the chain must be awaitable.
+      const makeThenable = (downstream: Record<string, unknown> = {}) => ({
+        ...downstream,
+        then: (onResolve: (v: unknown) => unknown, onReject?: any) =>
+          Promise.resolve(resolved).then(onResolve, onReject),
+      });
+      const limitNode = makeThenable();
+      const orderByNode = makeThenable({
+        limit: vi.fn().mockReturnValue(limitNode),
+      });
+      const terminal: any = makeThenable({
+        limit: vi.fn().mockReturnValue(limitNode),
+        orderBy: vi.fn().mockReturnValue(orderByNode),
+      });
+      // After `.where()` resolves OR chains into orderBy/limit. The
+      // thenable lets `count()` await `where()` directly while still
+      // allowing the chain-style calls.
+      const wherePath = terminal;
+      const fromPath: any = {
+        where: vi.fn().mockReturnValue(wherePath),
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue(wherePath),
+        }),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue(wherePath),
+        }),
+      };
+      return { from: vi.fn().mockReturnValue(fromPath) };
+    });
+    return { select };
+  }
+
+  function makeProfileRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "user-1",
+      fullName: "Alex Doe",
+      email: "alex@example.com",
+      username: "alex",
+      avatarUrl: null,
+      role: "user",
+      fitnessLevel: "intermediate",
+      heightCm: "180.5",
+      weightKg: "75.25",
+      preferredUnits: "metric",
+      isProfilePublic: false,
+      createdAt: new Date("2024-01-15T10:00:00Z"),
+      ...overrides,
+    };
+  }
+
+  it("returns null when profile slice doesn't exist (handler maps to 404)", async () => {
+    const mockDb = makeAggregateDb({ profile: [] });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("missing-user");
+    expect(result).toBeNull();
+  });
+
+  it("assembles full payload from sub-slices", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "premium",
+          paymentStatus: "active",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: false,
+          tierDbName: "premium",
+          tierFeatures: { workouts: "unlimited" },
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 42 }],
+      achievements: [
+        {
+          id: "ach-1",
+          name: "First Workout",
+          description: "Completed your first session",
+          iconUrl: null,
+          unlockedAt: new Date("2024-02-01T12:00:00Z"),
+        },
+      ],
+      trainers: [
+        {
+          relationshipId: "rel-1",
+          trainerId: "trainer-1",
+          trainerFullName: "Coach Sam",
+          trainerAvatarUrl: "https://example.com/sam.jpg",
+        },
+      ],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result).not.toBeNull();
+    expect(result?.profile.id).toBe("user-1");
+    expect(result?.profile.heightCm).toBe(180.5);
+    expect(result?.profile.weightKg).toBe(75.25);
+    expect(result?.subscription.tierName).toBe("premium");
+    expect(result?.subscription.tierDisplayName).toBe("Premium");
+    expect(result?.subscription.status).toBe("active");
+    expect(result?.subscription.isFreeTier).toBe(false);
+    expect(result?.subscription.isUnlimited).toBe(true);
+    expect(result?.stats.workoutsCompleted).toBe(42);
+    expect(result?.recentAchievements).toHaveLength(1);
+    expect(result?.recentAchievements[0].name).toBe("First Workout");
+    expect(result?.activeTrainers).toHaveLength(1);
+    expect(result?.activeTrainers[0].trainer.fullName).toBe("Coach Sam");
+  });
+
+  it("falls back to free-tier defaults when no subscription row exists", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription).toEqual({
+      tierName: null,
+      tierDisplayName: null,
+      status: null,
+      isFreeTier: true,
+      isTrainerTier: false,
+      expiresAt: null,
+      cancelledAt: null,
+      workoutLimit: null,
+      isUnlimited: false,
+    });
+  });
+
+  it("coerces decimal columns (heightCm / weightKg) to numbers", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow({ heightCm: "165.7", weightKg: "60.5" })],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(typeof result?.profile.heightCm).toBe("number");
+    expect(typeof result?.profile.weightKg).toBe("number");
+    expect(result?.profile.heightCm).toBe(165.7);
+    expect(result?.profile.weightKg).toBe(60.5);
+  });
+
+  it("normalises preferredUnits to 'metric' when not 'imperial'", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow({ preferredUnits: "garbage" })],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.preferredUnits).toBe("metric");
+  });
+
+  it("collapses unknown role values to 'user'", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow({ role: "intruder" })],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.role).toBe("user");
+  });
+
+  it("preserves valid roles (personal_trainer / physiotherapist / admin)", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow({ role: "personal_trainer" })],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.role).toBe("personal_trainer");
+  });
+
+  it("returns total=0 when workouts-completed count yields no rows (defensive)", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      workoutsCount: [],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+    expect(result?.stats.workoutsCompleted).toBe(0);
+  });
+
+  it("returns empty arrays for achievements / trainers when none exist", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      workoutsCount: [{ total: 5 }],
+      achievements: [],
+      trainers: [],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.recentAchievements).toEqual([]);
+    expect(result?.activeTrainers).toEqual([]);
+    expect(result?.pendingTrainerRequests).toEqual([]);
+  });
+
+  it("uses tier.workoutLimit when tier.features.workouts is not 'unlimited'", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "basic",
+          paymentStatus: "active",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: false,
+          tierDbName: "basic",
+          tierFeatures: { workouts: 10 },
+          workoutLimit: 10,
+        },
+      ],
+      workoutsCount: [{ total: 3 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.workoutLimit).toBe(10);
+    expect(result?.subscription.isUnlimited).toBe(false);
+  });
+
+  it("derives isUnlimited=true when workoutLimit is null even without features.workouts='unlimited'", async () => {
+    // Catches the legacy edge case where a tier has no explicit cap but
+    // also no marker — treat absence-of-limit as unlimited.
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "founder",
+          paymentStatus: "active",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: false,
+          tierDbName: "founder",
+          tierFeatures: {},
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.isUnlimited).toBe(true);
+  });
+
+  it("maps subscription dates to ISO strings (or null when absent)", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "premium",
+          paymentStatus: "cancelled",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: new Date("2026-06-01T00:00:00Z"),
+          isTrainerTier: false,
+          tierDbName: "premium",
+          tierFeatures: { workouts: "unlimited" },
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.expiresAt).toBe("2026-12-31T00:00:00.000Z");
+    expect(result?.subscription.cancelledAt).toBe("2026-06-01T00:00:00.000Z");
+    expect(result?.subscription.status).toBe("cancelled");
+  });
+});
