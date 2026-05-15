@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   achievements,
   profiles,
@@ -287,6 +287,13 @@ export class ProfileRepository {
         cancelledAt: userSubscriptions.cancelledAt,
         isTrainerTier: subscriptionTiers.isTrainerTier,
         tierDbName: subscriptionTiers.tierName,
+        // `display_name` is the authoritative human-readable label
+        // (e.g. "Small Business Trainer Standard") — the title-cased
+        // tier_name diverges from it for trainer/business tiers seeded
+        // in 004_subscriptions_and_roles.sql. Prefer this when present,
+        // fall back to `formatTierDisplayName` for legacy rows without
+        // it.
+        tierDisplayName: subscriptionTiers.displayName,
         tierFeatures: subscriptionTiers.features,
         workoutLimit: subscriptionTiers.workoutLimit,
       })
@@ -325,16 +332,27 @@ export class ProfileRepository {
     };
 
     const tierName = row.tierName ?? null;
+    const isFreeTier = computeIsFreeTier(subscriptionRow);
     const features = (row.tierFeatures ?? {}) as Record<string, unknown>;
     const workoutsFeature = features.workouts;
+    // A user whose subscription has lapsed to free-tier semantics
+    // (computeIsFreeTier=true via cancelled+expired) is on the free
+    // quota regardless of what their *former* paid tier promised.
+    // Coupling `isUnlimited` to the effective tier here keeps the
+    // presenter coherent — "Free Tier" + "Unlimited workouts" was
+    // an impossible state that the previous code emitted.
     const isUnlimited =
-      workoutsFeature === "unlimited" || row.workoutLimit === null;
+      !isFreeTier &&
+      (workoutsFeature === "unlimited" || row.workoutLimit === null);
 
     return {
       tierName,
-      tierDisplayName: formatTierDisplayName(tierName),
+      // Prefer the joined display_name; only fall back to the
+      // title-cased tier_name when the join returned no display_name
+      // (legacy rows, or a deleted/orphaned subscription_tiers row).
+      tierDisplayName: row.tierDisplayName ?? formatTierDisplayName(tierName),
       status: normaliseSubscriptionStatus(row.paymentStatus ?? null),
-      isFreeTier: computeIsFreeTier(subscriptionRow),
+      isFreeTier,
       isTrainerTier: row.isTrainerTier === true,
       expiresAt: toOptionalIsoString(row.expiresAt),
       cancelledAt: toOptionalIsoString(row.cancelledAt),
@@ -404,6 +422,16 @@ export class ProfileRepository {
    * (`feature_pt_relationships`) says AI trainer relationships are
    * stored in the same table but must never surface in the Profile UI.
    *
+   * `is_ai_trainer` is nullable (column-level `DEFAULT false` backfills
+   * inserts, but external/manual inserts can leave it NULL). A naive
+   * `is_ai_trainer = false` predicate evaluates to NULL for those rows
+   * — Postgres treats NULL as not-true, so the row silently disappears
+   * from the user's "Active Trainers" list. The safer reading of
+   * "exclude AI trainers" is "exclude rows where the flag is explicitly
+   * true" — i.e. NULL counts as not-an-AI-trainer. Codified as the
+   * helper below so the same predicate could be reused if more callers
+   * need it later.
+   *
    * Per-row shape mirrors the legacy `useGetProfile` payload:
    *   { id: relationshipId, trainer: { id, fullName, avatarUrl } }
    */
@@ -412,6 +440,11 @@ export class ProfileRepository {
     status: "active" | "pending",
   ): Promise<ProfilePageTrainerRef[]> {
     const db = getDb();
+    const notAiTrainer = or(
+      eq(ptClientRelationships.isAiTrainer, false),
+      isNull(ptClientRelationships.isAiTrainer),
+    ) as SQL;
+
     const rows = await db
       .select({
         relationshipId: ptClientRelationships.id,
@@ -425,7 +458,7 @@ export class ProfileRepository {
         and(
           eq(ptClientRelationships.clientId, userId),
           eq(ptClientRelationships.status, status),
-          eq(ptClientRelationships.isAiTrainer, false),
+          notAiTrainer,
         ),
       )
       .orderBy(desc(ptClientRelationships.createdAt));

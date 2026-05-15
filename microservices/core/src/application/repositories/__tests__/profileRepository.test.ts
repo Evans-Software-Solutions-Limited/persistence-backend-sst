@@ -5,7 +5,22 @@ vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
 }));
 
+// Partial drizzle-orm mock: keeps the real exports so the schema-typed
+// column references continue to work, but lets tests spy on the
+// predicate helpers (or / isNull / eq) used by `getTrainerRelationships`.
+// Matches the pattern in `exerciseRepository.test.ts`.
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    or: vi.fn(actual.or),
+    isNull: vi.fn(actual.isNull),
+    eq: vi.fn(actual.eq),
+  };
+});
+
 import { getDb } from "@persistence/db/client";
+import { isNull, or } from "drizzle-orm";
 
 function makeSelectChain(resolvedValue: unknown) {
   return {
@@ -559,6 +574,144 @@ describe("ProfileRepository.getProfilePageData", () => {
     const result = await repo.getProfilePageData("user-1");
 
     expect(result?.subscription.isUnlimited).toBe(true);
+  });
+
+  it("prefers subscription_tiers.display_name over the title-cased tier_name (trainer-tier parity)", async () => {
+    // Inspector Brad on PR #66: the title-cased tier_name diverges from
+    // the seeded display_name for trainer/business tiers — e.g.
+    // 'small_business_standard' title-cases to 'Small Business Standard'
+    // but the authoritative display_name is 'Small Business Trainer
+    // Standard'. Prefer the joined column when present.
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "small_business_standard",
+          paymentStatus: "active",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: true,
+          tierDbName: "small_business_standard",
+          tierDisplayName: "Small Business Trainer Standard",
+          tierFeatures: { workouts: "unlimited" },
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.tierDisplayName).toBe(
+      "Small Business Trainer Standard",
+    );
+  });
+
+  it("falls back to title-cased tier_name when display_name is null on the joined row", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "premium_annual",
+          paymentStatus: "active",
+          expiresAt: new Date("2026-12-31T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: false,
+          tierDbName: "premium_annual",
+          tierDisplayName: null,
+          tierFeatures: { workouts: "unlimited" },
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.tierDisplayName).toBe("Premium Annual");
+  });
+
+  it("forces isUnlimited=false when subscription is cancelled and expired (free-tier derived)", async () => {
+    // Inspector Brad on PR #66: the cancelled+expired case correctly
+    // derives `isFreeTier=true` via `computeIsFreeTier`, but the previous
+    // `isUnlimited` computation read tier.features in isolation and
+    // emitted `isFreeTier: true, isUnlimited: true` — an impossible
+    // combination that would let an expired user past the free quota.
+    // Gate on the effective tier.
+    const expiredCancelled = new Date("2024-01-01T00:00:00Z"); // < now
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "premium",
+          paymentStatus: "cancelled",
+          expiresAt: expiredCancelled,
+          cancelledAt: new Date("2023-12-01T00:00:00Z"),
+          isTrainerTier: false,
+          tierDbName: "premium",
+          tierDisplayName: "Premium",
+          tierFeatures: { workouts: "unlimited" },
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.isFreeTier).toBe(true);
+    expect(result?.subscription.isUnlimited).toBe(false);
+  });
+
+  it("constructs an OR(eq false, isNull) predicate so NULL is_ai_trainer rows are treated as not-AI", async () => {
+    // Inspector Brad on PR #66: `is_ai_trainer` is nullable; a strict
+    // `eq(isAiTrainer, false)` evaluates to NULL for those rows and
+    // silently drops them from the user's "Active Trainers" list. The
+    // safer reading is "exclude rows where the flag is explicitly true"
+    // — i.e. NULL counts as not-an-AI-trainer.
+    const orMock = or as unknown as ReturnType<typeof vi.fn>;
+    const isNullMock = isNull as unknown as ReturnType<typeof vi.fn>;
+    orMock.mockClear();
+    isNullMock.mockClear();
+
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      workoutsCount: [{ total: 0 }],
+      trainers: [],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    await repo.getProfilePageData("user-1");
+
+    // `isNull` should have been called for the `is_ai_trainer` column,
+    // and `or` should have wrapped it with the explicit-false branch.
+    expect(isNullMock).toHaveBeenCalled();
+    expect(orMock).toHaveBeenCalled();
+    // Verify the isNull call targeted the isAiTrainer column. Drizzle's
+    // column references have a `.name` property — defensively check
+    // either `.name` or the raw column object for resilience across
+    // Drizzle versions.
+    const isNullArgs = isNullMock.mock.calls.flat();
+    const hitAiTrainer = isNullArgs.some(
+      (arg: any) =>
+        arg?.name === "is_ai_trainer" ||
+        arg?._.name === "is_ai_trainer" ||
+        // Drizzle pg-core column shape exposes the snake-case column
+        // name on a few possible paths; cover the obvious ones.
+        String(arg).includes("is_ai_trainer"),
+    );
+    expect(hitAiTrainer).toBe(true);
   });
 
   it("maps subscription dates to ISO strings (or null when absent)", async () => {
