@@ -5,6 +5,7 @@ import openapi from "@elysiajs/openapi";
 
 import { coreErrorHandler } from "./shared/errorHandler";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
+import { exercisesSearchHandler } from "./application/exercises/search/exercisesSearchHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
 import { exercisesCreateHandler } from "./application/exercises/create/exercisesCreateHandler";
 import { exercisesUpdateHandler } from "./application/exercises/update/exercisesUpdateHandler";
@@ -51,6 +52,9 @@ const app = new Elysia()
   .use(openapi())
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
+  // Search MUST be registered before exercisesGetHandler — otherwise the
+  // `/exercises/:id` matcher captures "search" as a literal id.
+  .use(exercisesSearchHandler)
   .use(exercisesGetHandler)
   .use(exercisesCreateHandler)
   .use(exercisesUpdateHandler)

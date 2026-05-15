@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ExerciseRepository } from "../exerciseRepository";
+import { ExerciseRepository, toPrefixTsQuery } from "../exerciseRepository";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -715,5 +715,235 @@ describe("Exercise Lookup Methods", () => {
 
     const result = await repository.getCategories();
     expect(result).toEqual(["strength", "cardio"]);
+  });
+});
+
+describe("toPrefixTsQuery", () => {
+  it("tokenises and AND-joins with :* prefix on each term", () => {
+    expect(toPrefixTsQuery("press bench")).toBe("press:* & bench:*");
+  });
+
+  it("lowercases and collapses whitespace", () => {
+    expect(toPrefixTsQuery("  Bench   Press  ")).toBe("bench:* & press:*");
+  });
+
+  it("returns null for empty input", () => {
+    expect(toPrefixTsQuery("")).toBeNull();
+  });
+
+  it("returns null for whitespace-only input", () => {
+    expect(toPrefixTsQuery("   \t  \n  ")).toBeNull();
+  });
+
+  it("returns null when input is entirely reserved characters", () => {
+    expect(toPrefixTsQuery("&|!:*()<>'\"\\")).toBeNull();
+  });
+
+  it("strips hyphens — 'bench-press' tokenises to two terms", () => {
+    expect(toPrefixTsQuery("bench-press")).toBe("bench:* & press:*");
+  });
+
+  it("single token gets a single :* suffix", () => {
+    expect(toPrefixTsQuery("BENCH")).toBe("bench:*");
+  });
+
+  it("preserves intent on typo input — tokens still emerge, trigram fallback handles the actual match", () => {
+    // 'bnech' is a misspelling; the FTS branch may not match (no 'bnech' in
+    // any exercise name) but the trigram branch in search() will. The
+    // tokenizer's job is just to produce a valid tsquery — it does.
+    expect(toPrefixTsQuery("bnech press")).toBe("bnech:* & press:*");
+  });
+
+  it("sanitises tsquery-reserved characters mixed with words", () => {
+    // 'OR; DROP TABLE--' is a hopeful injection payload. The allowlist
+    // strips every non-letter/non-digit char, so we get clean lexemes
+    // with no dead `or;` tokens. Parameterised SQL handles the rest.
+    expect(toPrefixTsQuery("OR; DROP TABLE--")).toBe("or:* & drop:* & table:*");
+  });
+});
+
+describe("ExerciseRepository.search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Builds a mock `db` whose `select()` chain serves BOTH the row-page
+   * query (.from().where().orderBy().limit().offset() resolving to rows)
+   * AND the count query (.from().where() resolving to [{ total }]).
+   *
+   * The trick: `where()` returns a thenable that also exposes `.orderBy`.
+   * The row-page path keeps chaining through orderBy → limit → offset.
+   * The count path awaits the result of `.where()` directly via its
+   * `then` method, which resolves to `[{ total }]`.
+   *
+   * The PT-relationships subquery used by buildVisibilityCondition for
+   * authed callers also routes through `.from().where()`; its result is
+   * consumed synchronously by the inArray stub (not awaited), so the
+   * thenable interface is harmless there.
+   */
+  function makeSearchDb(rows: any[], total: number) {
+    const offset = vi.fn().mockResolvedValue(rows);
+    const limit = vi.fn().mockReturnValue({ offset });
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const whereResult: any = {
+      orderBy,
+      then: (resolveCb: (v: any) => any, rejectCb?: any) =>
+        Promise.resolve([{ total }]).then(resolveCb, rejectCb),
+    };
+    const where = vi.fn().mockReturnValue(whereResult);
+    const from = vi.fn().mockReturnValue({ where });
+    return {
+      select: vi.fn().mockReturnValue({ from }),
+      // Exposed so tests can assert call counts / call args.
+      _orderBy: orderBy,
+      _where: where,
+      _from: from,
+    };
+  }
+
+  it("returns rows + total from the dual query path", async () => {
+    const mockDb = makeSearchDb([mockExercises[0]], 1);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    const result = await repo.search("press bench", {}, null, 20, 0);
+
+    expect(result.rows).toEqual([mockExercises[0]]);
+    expect(result.total).toBe(1);
+  });
+
+  it("uses the combined FTS + trigram ORDER BY when tokenisation yields tokens", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    await repo.search("press bench", {}, null);
+
+    // orderBy is called with the combined-rank expression (sql template)
+    // — we can't easily introspect the SQL fragment without executing
+    // it, but asserting it was called confirms the rows-path went through
+    // the ordering branch.
+    expect(mockDb._orderBy).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to trigram-only ORDER BY when tokenisation yields nothing", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    // All chars stripped → tokenizer returns null → trigram-only branch.
+    await repo.search("&|!:*", {}, null);
+
+    expect(mockDb._orderBy).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies visibility predicate for unauth callers (single select call for rows + single for count)", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    await repo.search("bench", {}, null);
+
+    // Unauth: no PT subquery select fires (isNull branch short-circuits).
+    // Two calls: one for the row-page select, one for the count select.
+    expect(mockDb.select).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies visibility predicate for authed callers (PT-relationships subquery fires)", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    await repo.search("bench", {}, "user-1");
+
+    // Authed: row-page select + count select + PT subquery select(s).
+    // buildVisibilityCondition is called once per `where` build; both
+    // queries share the same where, so the PT subquery materialises
+    // once per build = twice. >= 3 calls in total.
+    expect(mockDb.select.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("forwards limit and offset to the chain", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    await repo.search("bench", {}, null, 50, 100);
+
+    // The chain's `.limit()` and `.offset()` are reached via the
+    // orderBy → limit → offset path; verify both were called.
+    const limitMock = (mockDb._orderBy as any).mock.results[0].value.limit;
+    expect(limitMock).toHaveBeenCalledWith(50);
+    expect(limitMock.mock.results[0].value.offset).toHaveBeenCalledWith(100);
+  });
+
+  it("defaults to limit=20 offset=0 when not provided", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    await repo.search("bench", {}, null);
+
+    const limitMock = (mockDb._orderBy as any).mock.results[0].value.limit;
+    expect(limitMock).toHaveBeenCalledWith(20);
+    expect(limitMock.mock.results[0].value.offset).toHaveBeenCalledWith(0);
+  });
+
+  it("applies category + equipment + muscle + difficulty + created_by filter axes alongside FTS", async () => {
+    const mockDb = makeSearchDb([], 0);
+    (getDb as any).mockReturnValue(mockDb);
+    const { inArray, and } = await import("drizzle-orm");
+    (inArray as any).mockClear();
+    (and as any).mockClear();
+
+    const repo = new ExerciseRepository();
+    await repo.search(
+      "press",
+      {
+        category: ["cardio"],
+        difficultyLevel: ["beginner"],
+        targetedMusclesAny: ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+        equipmentAny: ["c1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+        createdByFilter: ["system"],
+      },
+      "user-1",
+    );
+
+    // Each enum-array filter axis goes through `inArray`. Visibility +
+    // createdBy=system also call inArray (via the PT subquery / sentinel
+    // OR-clause), so the exact count is implementation-dependent — we
+    // just verify the filter-axis predicates were emitted (>= 2 calls
+    // covers category + difficulty at minimum).
+    expect((inArray as any).mock.calls.length).toBeGreaterThanOrEqual(2);
+    // And: every condition (visibility + filters + FTS) AND-combined.
+    expect(and).toHaveBeenCalled();
+  });
+
+  it("returns total=0 when count query yields no rows (defensive)", async () => {
+    // `makeSearchDb` always resolves count to a single-element array, so
+    // simulate the empty case by overriding the thenable to resolve to []
+    // for the count path. We do this by constructing a custom mock.
+    const offset = vi.fn().mockResolvedValue([]);
+    const limit = vi.fn().mockReturnValue({ offset });
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const whereResult: any = {
+      orderBy,
+      then: (resolveCb: any, rejectCb: any) =>
+        Promise.resolve([]).then(resolveCb, rejectCb),
+    };
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi
+          .fn()
+          .mockReturnValue({ where: vi.fn().mockReturnValue(whereResult) }),
+      }),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const repo = new ExerciseRepository();
+    const result = await repo.search("bench", {}, null);
+    expect(result.total).toBe(0);
+    expect(result.rows).toEqual([]);
   });
 });

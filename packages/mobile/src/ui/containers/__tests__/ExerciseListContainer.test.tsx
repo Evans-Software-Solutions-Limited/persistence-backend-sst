@@ -851,4 +851,118 @@ describe("ExerciseListContainer", () => {
       expect(lastProps?.onLongPressExercise).toBe(firstCallback);
     });
   });
+
+  describe("server-side search (FTS)", () => {
+    it("hits api.searchExercises once the debounced query reaches 2 chars", async () => {
+      const { adapters, api, storage } = createTestAdapters();
+      // Cache has only ex-1; server side has both. If the server path
+      // wins, the rendered count must reflect what the server returned.
+      api.exercises = [
+        makeExercise({ id: "ex-1", name: "Bench Press" }),
+        makeExercise({ id: "ex-2", name: "Incline Bench Press" }),
+      ];
+      storage.cacheExercises([
+        makeExercise({ id: "ex-1", name: "Bench Press" }),
+      ]);
+
+      const searchSpy = jest.spyOn(api, "searchExercises");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-count").props.children).toBe(1);
+      });
+
+      await act(async () => {
+        fireEvent.changeText(getByTestId("stub-search"), "press bench");
+        // SEARCH_DEBOUNCE_MS = 300 — flush.
+        await new Promise((r) => setTimeout(r, 350));
+      });
+
+      // The server's filterExercises shim AND-matches both tokens against
+      // name → both rows match.
+      await waitFor(() => {
+        expect(searchSpy).toHaveBeenCalled();
+        expect(getByTestId("stub-count").props.children).toBeGreaterThanOrEqual(
+          1,
+        );
+      });
+      expect(searchSpy.mock.calls[0][0]).toBe("press bench");
+    });
+
+    it("does NOT hit api.searchExercises when the debounced query is 1 char", async () => {
+      const { adapters, api } = createTestAdapters();
+      api.exercises = [makeExercise()];
+
+      const searchSpy = jest.spyOn(api, "searchExercises");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("presenter-stub")).toBeTruthy();
+      });
+
+      await act(async () => {
+        fireEvent.changeText(getByTestId("stub-search"), "b");
+        await new Promise((r) => setTimeout(r, 350));
+      });
+
+      expect(searchSpy).not.toHaveBeenCalled();
+    });
+
+    it("falls back to local cache + filterExercises when server search errors", async () => {
+      const { adapters, api, storage } = createTestAdapters();
+      // Server-side data the search shim would return.
+      api.exercises = [makeExercise({ id: "ex-srv", name: "Server Bench" })];
+      // Local cache the fallback would render from.
+      storage.cacheExercises([
+        makeExercise({ id: "ex-local", name: "Local Bench" }),
+      ]);
+
+      // Force searchExercises to fail; getExercises stays fine so the
+      // initial cache refresh works.
+      jest.spyOn(api, "searchExercises").mockResolvedValueOnce({
+        ok: false,
+        error: {
+          kind: "api",
+          code: "network",
+          message: "simulated offline",
+        },
+      });
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-count").props.children).toBeGreaterThanOrEqual(
+          1,
+        );
+      });
+
+      await act(async () => {
+        fireEvent.changeText(getByTestId("stub-search"), "bench");
+        await new Promise((r) => setTimeout(r, 350));
+      });
+
+      // Wait for the failed promise to settle and the fallback to render.
+      await waitFor(() => {
+        // Local 'Local Bench' is what the cache contains; the failed
+        // server call means filterExercises(cache, {search:'bench'})
+        // runs and matches 'Local Bench'.
+        const names = lastProps?.exercises.map((e) => e.name) ?? [];
+        expect(names).toContain("Local Bench");
+      });
+    });
+  });
 });

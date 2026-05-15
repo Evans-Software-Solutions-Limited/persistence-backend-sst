@@ -189,3 +189,115 @@ describe("SSTApiAdapter.getWorkouts envelope (M2)", () => {
     expect(url).toContain("offset=10");
   });
 });
+
+describe("SSTApiAdapter.searchExercises", () => {
+  it("hits /exercises/search with the q param and unwraps the double-envelope page", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            data: [
+              {
+                id: "ex-1",
+                name: "Bench Press",
+                description: null,
+                instructions: null,
+                category: "strength",
+                difficulty_level: "intermediate",
+                primary_muscles: [],
+                secondary_muscles: [],
+                equipment_required: [],
+                accessibility_requirements: [],
+                accessibility_modifications: null,
+                video_url: null,
+                thumbnail_url: null,
+                created_by: null,
+                is_public: true,
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-01T00:00:00Z",
+              },
+            ],
+            meta: { total: 1, offset: 0, limit: 20 },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.searchExercises("bench");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("/exercises/search");
+    expect(url).toContain("q=bench");
+    expect(result.value.data).toHaveLength(1);
+    expect(result.value.data[0].name).toBe("Bench Press");
+    expect(result.value.hasMore).toBe(false);
+  });
+
+  it("forwards limit + offset as query params when provided", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: { data: [], meta: { total: 50, offset: 20, limit: 10 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.searchExercises("press", undefined, 20, 10);
+    expect(result.ok).toBe(true);
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("q=press");
+    expect(url).toContain("offset=20");
+    expect(url).toContain("limit=10");
+    if (!result.ok) return;
+    // total=50, offset=20 + 0 returned < 50 → hasMore=true
+    expect(result.value.hasMore).toBe(true);
+  });
+
+  it("forwards category / equipment / muscles / difficulty / created_by filter axes", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: { data: [], meta: { total: 0, offset: 0, limit: 20 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    await adapter.searchExercises("press", {
+      category: "cardio",
+      difficulties: ["beginner"],
+      muscleGroups: ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+      equipment: ["c1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+      createdBy: "system",
+    });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("q=press");
+    expect(url).toContain("category=cardio");
+    expect(url).toContain("difficulty_level=beginner");
+    expect(url).toContain(
+      "targeted_muscles_any=a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    );
+    expect(url).toContain("equipment_any=c1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    expect(url).toContain("created_by=system");
+  });
+
+  it("propagates HTTP 400 (q too short) as api error", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ error: "q must be at least 2 characters after trim" }),
+        { status: 400 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.searchExercises("a");
+    expect(result.ok).toBe(false);
+  });
+});

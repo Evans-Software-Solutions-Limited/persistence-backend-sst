@@ -2,6 +2,7 @@ import type { Exercise, CreateExerciseInput } from "@/domain/models/exercise";
 import {
   filterExercises,
   scoreExercise,
+  tokenizeSearch,
   validateExerciseInput,
 } from "../exercise.service";
 
@@ -114,14 +115,28 @@ describe("scoreExercise", () => {
     expect(scoreExercise(exercise, "bEnCh PrEsS")).toBe(4);
   });
 
-  it("scores 3 for name starts-with (case-insensitive)", () => {
+  it("scores 3 when a token prefixes the first name word (legacy-style start match)", () => {
     expect(scoreExercise(exercise, "bench")).toBe(3);
     expect(scoreExercise(exercise, "BENCH")).toBe(3);
   });
 
-  it("scores 2 for name contains (case-insensitive)", () => {
-    expect(scoreExercise(exercise, "press")).toBe(2);
-    expect(scoreExercise(exercise, "PRESS")).toBe(2);
+  it("scores 3 when a token prefixes any name word — fixes 'press bench' style queries", () => {
+    // Under the new tokenised scorer, 'press' matches the *second* word of
+    // 'Bench Press' because it prefixes that word. Out-of-order multi-token
+    // queries land here too — 'press bench' AND-matches both word-prefixes.
+    expect(scoreExercise(exercise, "press")).toBe(3);
+    expect(scoreExercise(exercise, "press bench")).toBe(3);
+  });
+
+  it("scores 2 for mid-word substring match (no word-prefix match)", () => {
+    // 'ench' is inside 'bench' but isn't a prefix of any word — tier-3
+    // fails, tier-2 (substring anywhere in name) succeeds.
+    expect(scoreExercise(exercise, "ench")).toBe(2);
+  });
+
+  it("scores 2 for partial-word prefix that mid-word matches another token (AND)", () => {
+    // 'benc' prefixes 'bench' → tier-3 candidate. Single token, all-pass.
+    expect(scoreExercise(exercise, "benc")).toBe(3);
   });
 
   it("scores 1 for description contains (case-insensitive)", () => {
@@ -151,6 +166,44 @@ describe("scoreExercise", () => {
   it("trims whitespace around a valid term before scoring", () => {
     expect(scoreExercise(exercise, "  bench press  ")).toBe(4);
     expect(scoreExercise(exercise, " bench ")).toBe(3);
+  });
+
+  it("tier-1 description fallback requires every token to appear somewhere", () => {
+    const fixture = makeExercise({
+      name: "Romanian Deadlift",
+      description: "Hip-hinge pattern with a barbell, slight knee bend",
+    });
+    // 'barbell' in description, 'knee' in description → both present → tier 1
+    expect(scoreExercise(fixture, "barbell knee")).toBe(1);
+    // 'barbell' present, 'zebra' absent → at least one miss → 0
+    expect(scoreExercise(fixture, "barbell zebra")).toBe(0);
+  });
+
+  it("hyphenated input tokenises into two terms (port parity with backend toPrefixTsQuery)", () => {
+    // 'bench-press' → ['bench', 'press']. Against name 'Bench Press' both
+    // are word-prefixes → tier 3.
+    expect(scoreExercise(exercise, "bench-press")).toBe(3);
+  });
+});
+
+describe("tokenizeSearch", () => {
+  it("splits on whitespace and lowercases", () => {
+    expect(tokenizeSearch("Press Bench")).toEqual(["press", "bench"]);
+  });
+
+  it("returns empty array on empty / whitespace-only input", () => {
+    expect(tokenizeSearch("")).toEqual([]);
+    expect(tokenizeSearch("   \t\n")).toEqual([]);
+  });
+
+  it("strips punctuation under the same allowlist as the backend tokeniser", () => {
+    expect(tokenizeSearch("bench-press")).toEqual(["bench", "press"]);
+    expect(tokenizeSearch("hello, world!")).toEqual(["hello", "world"]);
+    expect(tokenizeSearch("&|!:*()")).toEqual([]);
+  });
+
+  it("preserves digits inside tokens", () => {
+    expect(tokenizeSearch("5x5 squat")).toEqual(["5x5", "squat"]);
   });
 });
 
@@ -213,6 +266,31 @@ describe("filterExercises", () => {
       const result = filterExercises(exercises, { search: "curl" });
       expect(result[0].name).toBe("Alternating Curl");
       expect(result[1].name).toBe("Zottman Curl");
+    });
+
+    it("finds out-of-order multi-token queries — 'press bench' finds Bench Press", () => {
+      // This is the staging-reported failure that triggered the FTS work.
+      const result = filterExercises(EXERCISES, { search: "press bench" });
+      const benchIdx = result.findIndex((e) => e.id === "ex-1");
+      expect(benchIdx).toBeGreaterThanOrEqual(0);
+    });
+
+    it("finds partial-word matches — 'benc' finds Bench Press", () => {
+      const result = filterExercises(EXERCISES, { search: "benc" });
+      expect(result.some((e) => e.id === "ex-1")).toBe(true);
+    });
+
+    it("AND-matches all tokens — every query token must appear somewhere", () => {
+      // 'pull bodyweight': 'pull' in name 'Pull Up' OR desc 'Bodyweight pull';
+      // 'bodyweight' in desc. Both present → tier 1 match for ex-3.
+      const result = filterExercises(EXERCISES, { search: "pull bodyweight" });
+      expect(result.some((e) => e.id === "ex-3")).toBe(true);
+      // 'pull treadmill': 'pull' matches ex-3's name+desc, 'treadmill' only
+      // matches ex-4's desc. No row has both → 0 results.
+      const noMatch = filterExercises(EXERCISES, {
+        search: "pull treadmill",
+      });
+      expect(noMatch).toHaveLength(0);
     });
   });
 
