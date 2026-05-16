@@ -306,22 +306,24 @@ export class ExerciseRepository {
     }
 
     if (filters.targetedMusclesAny && filters.targetedMusclesAny.length > 0) {
-      // Array overlap against primary OR secondary. Pre-2026-05 this
-      // only checked `primary_muscles`, which silently dropped
-      // exercises that target a muscle as a secondary mover — e.g. a
-      // user filtering by "chest" wouldn't see Close-Grip Bench Press
-      // (chest secondary). The client-side `filterExercises` already
-      // checks both arrays, so checking only primary on the server
-      // also caused a server-vs-cache divergence: search + muscle
-      // filter would return a narrower set than the unsearched
-      // cache-filtered view, which is the surface that surfaces as
-      // "muscle group filter doesn't work as expected".
+      // Postgres array overlap: row's primary_muscles shares any uuid
+      // with filter. Matches legacy (`primary_muscles.ov.{…}`) and
+      // user mental model — selecting "Chest" should surface
+      // chest-as-primary movers, not every compound lift that
+      // incidentally hits chest as a secondary. A prior attempt
+      // widened this to `(primary || secondary) && …` to also catch
+      // secondary movers, but (a) it over-matched ("abs" returning
+      // ~1300 rows because nearly everything works core secondary)
+      // and (b) Postgres `||` with a NULL operand returns NULL, which
+      // makes the whole predicate NULL and silently drops every row
+      // with `secondary_muscles IS NULL` — a regression on legacy
+      // rows that pre-date the `default([])` column default.
       conditions.push(
-        sql`(${exercises.primaryMuscles} || ${exercises.secondaryMuscles}) && ${filters.targetedMusclesAny}::uuid[]`,
+        sql`${exercises.primaryMuscles} && ${filters.targetedMusclesAny}::uuid[]`,
       );
     } else if (filters.muscleGroup) {
       conditions.push(
-        sql`${filters.muscleGroup}::uuid = ANY(${exercises.primaryMuscles} || ${exercises.secondaryMuscles})`,
+        sql`${filters.muscleGroup}::uuid = ANY(${exercises.primaryMuscles})`,
       );
     }
 

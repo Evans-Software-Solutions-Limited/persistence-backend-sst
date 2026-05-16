@@ -141,6 +141,14 @@ export function filterExercises(
   // docstring). Cast the arrays to `string[]` so the `.includes` call
   // sees the same shape the filter is actually passing.
   //
+  // Primary-only by design — matches backend
+  // (`exerciseRepository.targetedMusclesAny`) and legacy mobile. A
+  // brief experiment widened this to primary + secondary, but
+  // "selecting Abs returned ~1300 exercises" because nearly every
+  // compound lift works the core as a secondary mover — broke the
+  // user's mental model that the filter narrows to muscles the
+  // exercise actually targets.
+  //
   // Defensive: `(... ?? [])` guards against legacy cached rows whose
   // muscle / equipment columns were stored as null instead of `[]`.
   // Without this, `.includes()` throws on null and the entire list
@@ -152,9 +160,7 @@ export function filterExercises(
     result = result.filter((e) => {
       const primary =
         (e.primaryMuscleGroups as unknown as string[] | null) ?? [];
-      const secondary =
-        (e.secondaryMuscleGroups as unknown as string[] | null) ?? [];
-      return groups.some((g) => primary.includes(g) || secondary.includes(g));
+      return groups.some((g) => primary.includes(g));
     });
   }
 

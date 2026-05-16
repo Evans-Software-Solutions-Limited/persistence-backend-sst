@@ -85,7 +85,7 @@ describe("ExerciseCard", () => {
   });
 
   it("renders primary muscle groups (max 2 visible, overflow +N)", () => {
-    const { getByText, getByTestId } = renderWithTheme(
+    const { getByText } = renderWithTheme(
       <ExerciseCard
         exercise={{
           ...baseExercise,
@@ -97,12 +97,11 @@ describe("ExerciseCard", () => {
     );
     expect(getByText("Quads")).toBeTruthy();
     expect(getByText("Glutes")).toBeTruthy();
-    expect(getByTestId("card-muscles-overflow")).toBeTruthy();
     expect(getByText("+1")).toBeTruthy();
   });
 
   it("renders equipment (max 3 visible, overflow '+N more')", () => {
-    const { getByText, getByTestId } = renderWithTheme(
+    const { getByText } = renderWithTheme(
       <ExerciseCard
         exercise={{
           ...baseExercise,
@@ -115,30 +114,43 @@ describe("ExerciseCard", () => {
     expect(getByText("Barbell")).toBeTruthy();
     expect(getByText("Cable")).toBeTruthy();
     expect(getByText("Dumbbell")).toBeTruthy();
-    expect(getByTestId("card-equipment-overflow")).toBeTruthy();
     expect(getByText("+2 more")).toBeTruthy();
   });
 
-  it("omits the equipment row entirely when equipment is empty", () => {
-    const { queryByTestId } = renderWithTheme(
+  it("renders muscle + equipment chips on the same row", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseCard
+        exercise={baseExercise}
+        onPress={jest.fn()}
+        testID="card"
+      />,
+    );
+    expect(getByTestId("card-tags")).toBeTruthy();
+  });
+
+  it("keeps the chip row visible when equipment is empty but muscles are populated", () => {
+    const { getByTestId, getByText, queryByText } = renderWithTheme(
       <ExerciseCard
         exercise={{ ...baseExercise, equipment: [] }}
         onPress={jest.fn()}
         testID="card"
       />,
     );
-    expect(queryByTestId("card-equipment")).toBeNull();
+    // Row stays — muscle chips still need a home.
+    expect(getByTestId("card-tags")).toBeTruthy();
+    expect(getByText("Quads")).toBeTruthy();
+    expect(queryByText("Barbell")).toBeNull();
   });
 
-  it("omits the muscles row entirely when primary muscle groups is empty", () => {
+  it("omits the chip row entirely when both muscles + equipment are empty", () => {
     const { queryByTestId } = renderWithTheme(
       <ExerciseCard
-        exercise={{ ...baseExercise, primaryMuscleGroups: [] }}
+        exercise={{ ...baseExercise, primaryMuscleGroups: [], equipment: [] }}
         onPress={jest.fn()}
         testID="card"
       />,
     );
-    expect(queryByTestId("card-muscles")).toBeNull();
+    expect(queryByTestId("card-tags")).toBeNull();
   });
 
   it("shows the primary left-accent only when isCustom is true", () => {
@@ -211,7 +223,7 @@ describe("ExerciseCard", () => {
       expect(queryByText("")).toBeNull();
       // The chip row renders (muscles testID present), proving it wasn't
       // suppressed by the empty-filter.
-      expect(getByTestId("card-muscles")).toBeTruthy();
+      expect(getByTestId("card-tags")).toBeTruthy();
     });
 
     it("renders no chips when the labels array is a same-length all-empty-strings (reference lookup hydrated but row has no matches)", () => {
@@ -231,7 +243,7 @@ describe("ExerciseCard", () => {
       );
 
       // No chip row at all when every label is empty post-filter.
-      expect(queryByTestId("card-muscles")).toBeNull();
+      expect(queryByTestId("card-tags")).toBeNull();
     });
 
     it("falls back to legacy enum→label map when labels array is empty (reference lookup not hydrated)", () => {

@@ -384,21 +384,25 @@ describe("filterExercises", () => {
       expect(result[0].id).toBe("ex-3");
     });
 
-    it("matches secondary muscle groups", () => {
+    it("does NOT match secondary muscle groups (primary-only contract)", () => {
+      // Pull Up has biceps as a SECONDARY muscle — no exercise in
+      // the fixture lists biceps as primary, so the result must be
+      // empty. Keeps server and client filters in lock-step and
+      // matches user expectation ("filter by X = exercises whose
+      // primary target is X").
       const result = filterExercises(EXERCISES, {
         muscleGroups: ["biceps"],
       });
-      // Pull Up has biceps as secondary
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe("ex-3");
+      expect(result).toHaveLength(0);
     });
 
-    it("matches any of multiple muscle groups (OR logic)", () => {
+    it("matches any of multiple muscle groups (OR logic, primary-only)", () => {
       const result = filterExercises(EXERCISES, {
         muscleGroups: ["chest", "back"],
       });
-      // Bench Press, Incline DB Press, Pull Up, Cable Fly + Close-Grip (secondary chest)
-      expect(result.length).toBeGreaterThanOrEqual(4);
+      // Primary-only: Bench Press, Incline DB Press, Pull Up, Cable Fly.
+      // Close-Grip has chest as secondary so it does NOT count.
+      expect(result).toHaveLength(4);
     });
 
     it("returns empty when no exercises match muscle groups", () => {
@@ -491,8 +495,10 @@ describe("filterExercises", () => {
         muscleGroups: ["chest"],
         equipment: ["barbell"],
       });
-      // Bench Press (primary chest, barbell) + Close-Grip (secondary chest, barbell)
-      expect(result).toHaveLength(2);
+      // Primary-only: Bench Press (primary chest, barbell). Close-Grip
+      // has chest as secondary, so it falls out of the muscle filter.
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("ex-1");
     });
 
     it("returns empty when combined filters are too restrictive", () => {
