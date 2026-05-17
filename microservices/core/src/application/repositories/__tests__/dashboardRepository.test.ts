@@ -325,11 +325,46 @@ describe("DashboardRepository pure helpers", () => {
       expect(computeIsFreeTier(row, now)).toBe(false);
     });
 
-    it("returns false for a trialing subscription", () => {
+    it("returns false for a trialing subscription still inside the trial window", () => {
       const row: SubscriptionRow = {
         tierName: "pro",
         paymentStatus: "trialing",
         expiresAt: new Date("2027-01-01T00:00:00Z"),
+        cancelledAt: null,
+        isTrainerTier: false,
+        tierDbName: "pro",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(false);
+    });
+
+    it("returns true for a trialing subscription past expires_at (missed webhook safety net)", () => {
+      // Belt-and-braces: V2 backend doesn't yet handle the Stripe
+      // webhook events that move a row out of `trialing`, so a row
+      // with `paymentStatus = 'trialing'` and a past `expiresAt`
+      // would otherwise render as an active Trial badge with a
+      // stale renew date. Treating it as free tier is the correct
+      // user-facing fallback.
+      const row: SubscriptionRow = {
+        tierName: "pro",
+        paymentStatus: "trialing",
+        // `now` in this suite is set to 2026-05-15, so 2026-02-15 is
+        // three months in the past.
+        expiresAt: new Date("2026-02-15T00:00:00Z"),
+        cancelledAt: null,
+        isTrainerTier: false,
+        tierDbName: "pro",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(true);
+    });
+
+    it("returns false for a trialing subscription with a null expiresAt", () => {
+      // No expiry → can't conclude it's expired. Stay non-free; the
+      // user keeps premium until either a webhook updates the row
+      // or someone fills in expires_at by hand.
+      const row: SubscriptionRow = {
+        tierName: "pro",
+        paymentStatus: "trialing",
+        expiresAt: null,
         cancelledAt: null,
         isTrainerTier: false,
         tierDbName: "pro",

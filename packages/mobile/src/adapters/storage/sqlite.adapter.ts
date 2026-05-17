@@ -4,6 +4,10 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import type {
+  CachedProfilePage,
+  ProfilePageData,
+} from "@/domain/models/profilePage";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -213,6 +217,15 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- DASHBOARD_STALE_AFTER_MS) is enforced by the query layer,
       -- not the storage adapter.
       CREATE TABLE IF NOT EXISTS cached_dashboard (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- M6: profile-page cache. One row per user; payload is the
+      -- full JSON-serialised ProfilePageData. 5-minute TTL
+      -- (PROFILE_PAGE_STALE_AFTER_MS) enforced by the query layer.
+      CREATE TABLE IF NOT EXISTS cached_profile_page (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -611,6 +624,47 @@ export class SQLiteStorageAdapter implements StoragePort {
   invalidateDashboard(userId: string): void {
     const db = this.getDb();
     db.runSync(`DELETE FROM cached_dashboard WHERE user_id = ?`, [userId]);
+  }
+
+  // -- Profile-Page Cache (M6) --
+
+  getCachedProfilePage(userId: string): CachedProfilePage | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, payload, synced_at FROM cached_profile_page WHERE user_id = ?`,
+      [userId],
+    ) as { user_id: string; payload: string; synced_at: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      payload: JSON.parse(row.payload) as ProfilePageData,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheProfilePage(userId: string, payload: ProfilePageData): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_profile_page (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getProfilePageAge(userId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_profile_page WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  invalidateProfilePage(userId: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_profile_page WHERE user_id = ?`, [userId]);
   }
 
   // -- Active Session (M3) --
@@ -1057,6 +1111,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM sync_metadata;
       DELETE FROM reference_lists;
       DELETE FROM cached_dashboard;
+      DELETE FROM cached_profile_page;
     `);
   }
 }

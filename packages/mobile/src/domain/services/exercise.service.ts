@@ -140,19 +140,34 @@ export function filterExercises(
   // for historical parity but hold UUIDs at runtime (see Exercise model
   // docstring). Cast the arrays to `string[]` so the `.includes` call
   // sees the same shape the filter is actually passing.
+  //
+  // Primary-only by design — matches backend
+  // (`exerciseRepository.targetedMusclesAny`) and legacy mobile. A
+  // brief experiment widened this to primary + secondary, but
+  // "selecting Abs returned ~1300 exercises" because nearly every
+  // compound lift works the core as a secondary mover — broke the
+  // user's mental model that the filter narrows to muscles the
+  // exercise actually targets.
+  //
+  // Defensive: `(... ?? [])` guards against legacy cached rows whose
+  // muscle / equipment columns were stored as null instead of `[]`.
+  // Without this, `.includes()` throws on null and the entire list
+  // silently empties (the symptom that masquerades as "the filter
+  // doesn't work"). DB schema's `default([])` only protects fresh
+  // rows — historical data in Supabase can still hold NULL.
   if (filters.muscleGroups && filters.muscleGroups.length > 0) {
     const groups = filters.muscleGroups;
     result = result.filter((e) => {
-      const primary = e.primaryMuscleGroups as unknown as string[];
-      const secondary = e.secondaryMuscleGroups as unknown as string[];
-      return groups.some((g) => primary.includes(g) || secondary.includes(g));
+      const primary =
+        (e.primaryMuscleGroups as unknown as string[] | null) ?? [];
+      return groups.some((g) => primary.includes(g));
     });
   }
 
   if (filters.equipment && filters.equipment.length > 0) {
     const equip = filters.equipment;
     result = result.filter((e) => {
-      const equipment = e.equipment as unknown as string[];
+      const equipment = (e.equipment as unknown as string[] | null) ?? [];
       return equip.some((eq) => equipment.includes(eq));
     });
   }

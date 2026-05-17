@@ -199,6 +199,13 @@ export function ActiveSessionContainer() {
     (sessionExerciseId: string) => {
       if (!userId) return;
       logSetCommand({ storage, generateId, userId }, { sessionExerciseId });
+      // Match the update / remove paths below: any active-session
+      // mutation invalidates the dashboard so the workouts-this-month
+      // tile + recent-activity update immediately on the next focus.
+      // Without this, logging a set didn't flip the dashboard cache
+      // and Home would show pre-session counts until the next manual
+      // refresh.
+      storage.invalidateDashboard(userId);
       rereadCache();
     },
     [userId, storage, generateId, rereadCache],
@@ -211,6 +218,7 @@ export function ActiveSessionContainer() {
         { storage, generateId, userId },
         { sessionExerciseIds },
       );
+      storage.invalidateDashboard(userId);
       rereadCache();
     },
     [userId, storage, generateId, rereadCache],

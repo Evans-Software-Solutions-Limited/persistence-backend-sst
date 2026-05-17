@@ -306,7 +306,18 @@ export class ExerciseRepository {
     }
 
     if (filters.targetedMusclesAny && filters.targetedMusclesAny.length > 0) {
-      // Postgres array overlap: row's primary_muscles shares any uuid with filter
+      // Postgres array overlap: row's primary_muscles shares any uuid
+      // with filter. Matches legacy (`primary_muscles.ov.{…}`) and
+      // user mental model — selecting "Chest" should surface
+      // chest-as-primary movers, not every compound lift that
+      // incidentally hits chest as a secondary. A prior attempt
+      // widened this to `(primary || secondary) && …` to also catch
+      // secondary movers, but (a) it over-matched ("abs" returning
+      // ~1300 rows because nearly everything works core secondary)
+      // and (b) Postgres `||` with a NULL operand returns NULL, which
+      // makes the whole predicate NULL and silently drops every row
+      // with `secondary_muscles IS NULL` — a regression on legacy
+      // rows that pre-date the `default([])` column default.
       conditions.push(
         sql`${exercises.primaryMuscles} && ${filters.targetedMusclesAny}::uuid[]`,
       );

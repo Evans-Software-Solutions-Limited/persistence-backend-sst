@@ -157,9 +157,25 @@ export function deriveFirstName(fullName: string | null): string | null {
  *   - no subscription row → true
  *   - tier_name = 'free' (either side of the join) → true
  *   - payment_status = 'cancelled' AND expires_at <= now → true
+ *   - payment_status = 'trialing' AND expires_at <= now → true (M6)
  *   - otherwise → false
  *
  * `now` is injected so the cancellation-grace branch is testable.
+ *
+ * The trialing-past-expiry branch is a belt-and-braces guard against
+ * missed Stripe webhooks: V2 backend doesn't yet handle the
+ * `customer.subscription.*` events that move a row out of `trialing`
+ * (still served by the legacy Supabase Edge Functions, which can
+ * silently fail). Without this rule, a trial whose expiry has passed
+ * still renders as a Trial badge with a stale "renew on DD/MM/YYYY"
+ * date — confusing for the user and gating premium features off a
+ * subscription they no longer have. Treating expired trials as free
+ * tier means the user sees the correct upgrade CTA + workout limits
+ * even when the upstream payment state hasn't been synced. Active /
+ * past_due rows are intentionally NOT included: an `active` row past
+ * expiry is the classic "renewal in flight" window where Stripe
+ * extends the period before the next invoice — kicking the user out
+ * of premium there would be hostile.
  */
 export function computeIsFreeTier(
   row: SubscriptionRow | null,
@@ -169,7 +185,7 @@ export function computeIsFreeTier(
   const tier = row.tierDbName ?? row.tierName;
   if (tier === "free") return true;
   if (
-    row.paymentStatus === "cancelled" &&
+    (row.paymentStatus === "cancelled" || row.paymentStatus === "trialing") &&
     row.expiresAt !== null &&
     row.expiresAt.getTime() <= now.getTime()
   ) {

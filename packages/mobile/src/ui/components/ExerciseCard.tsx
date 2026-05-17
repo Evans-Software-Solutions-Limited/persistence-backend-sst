@@ -111,21 +111,46 @@ const CustomAccent = styled(View, {
 });
 
 const OutlinedChip = styled(View, {
-  paddingHorizontal: "$sm",
-  paddingVertical: 3,
+  paddingHorizontal: 10,
+  paddingVertical: 4,
   borderRadius: "$full",
   borderWidth: 1,
   borderColor: "$borderColor",
   backgroundColor: "transparent",
+
+  variants: {
+    // Muscle chips use the surface-secondary fill + brighter text so
+    // they read as the row's primary tag, with equipment chips
+    // (outline-only) playing the supporting role on the same line.
+    kind: {
+      muscle: {
+        backgroundColor: "$surfaceSecondary",
+        borderColor: "transparent",
+      },
+      equipment: {
+        backgroundColor: "transparent",
+      },
+    },
+  } as const,
 });
 
 const ChipText = styled(TamaguiText, {
   fontFamily: "$body",
-  fontSize: 11,
-  lineHeight: 14,
+  fontSize: 12,
+  lineHeight: 16,
   fontWeight: "500",
-  letterSpacing: 0.3,
-  color: "$colorSecondary",
+  letterSpacing: 0.2,
+
+  variants: {
+    kind: {
+      muscle: { color: "$color", fontWeight: "600" },
+      equipment: { color: "$colorSecondary" },
+    },
+  } as const,
+
+  defaultVariants: {
+    kind: "equipment",
+  },
 });
 
 type ExerciseCardProps = {
@@ -141,36 +166,56 @@ type ExerciseCardProps = {
   testID?: string;
 };
 
+type ChipKind = "muscle" | "equipment";
+
+type CardChip = {
+  key: string;
+  label: string;
+  kind: ChipKind;
+};
+
 /**
- * Render up to `max` chips from a pre-built `{key, label}` list, with an
- * overflow "+N" chip when the full list is longer. Kept generic on the
- * item shape so muscle + equipment rows share one implementation.
+ * Cap each chip family before merging so a 5-equipment exercise can't
+ * crowd the muscle chips off the row. Overflow chips render in-place
+ * per-family ("+N" for muscles, "+N more" for equipment) to keep the
+ * row scannable.
  */
-function renderChipRow(
-  chips: { key: string; label: string }[],
-  max: number,
-  overflowLabel: (remaining: number) => string,
-  testIdPrefix?: string,
-) {
-  if (chips.length === 0) return null;
-  const visible = chips.slice(0, max);
-  const remaining = chips.length - visible.length;
-  return (
-    <Row gap="xs" wrap testID={testIdPrefix}>
-      {visible.map((chip) => (
-        <OutlinedChip key={chip.key}>
-          <ChipText>{chip.label}</ChipText>
-        </OutlinedChip>
-      ))}
-      {remaining > 0 && (
-        <OutlinedChip
-          testID={testIdPrefix ? `${testIdPrefix}-overflow` : undefined}
-        >
-          <ChipText>{overflowLabel(remaining)}</ChipText>
-        </OutlinedChip>
-      )}
-    </Row>
-  );
+function buildChipList(
+  muscleChips: { key: string; label: string }[],
+  equipmentChips: { key: string; label: string }[],
+  muscleMax: number,
+  equipmentMax: number,
+): CardChip[] {
+  const out: CardChip[] = [];
+  const muscleVisible = muscleChips.slice(0, muscleMax);
+  for (const chip of muscleVisible) {
+    out.push({ key: `m-${chip.key}`, label: chip.label, kind: "muscle" });
+  }
+  const muscleOverflow = muscleChips.length - muscleVisible.length;
+  if (muscleOverflow > 0) {
+    out.push({
+      key: "m-overflow",
+      label: `+${muscleOverflow}`,
+      kind: "muscle",
+    });
+  }
+  const equipmentVisible = equipmentChips.slice(0, equipmentMax);
+  for (const chip of equipmentVisible) {
+    out.push({
+      key: `e-${chip.key}`,
+      label: chip.label,
+      kind: "equipment",
+    });
+  }
+  const equipmentOverflow = equipmentChips.length - equipmentVisible.length;
+  if (equipmentOverflow > 0) {
+    out.push({
+      key: "e-overflow",
+      label: `+${equipmentOverflow} more`,
+      kind: "equipment",
+    });
+  }
+  return out;
 }
 
 /**
@@ -251,29 +296,35 @@ function ExerciseCardBase({
           </Text>
         )}
 
-        {/* Muscle chip row */}
-        {renderChipRow(
-          labelledChips(
+        {/* Combined muscle + equipment chip row — both groups land on
+            one wrap-row to keep the card scannable and consistent
+            (legacy split rendered them as two separate rows, which
+            read as unrelated). Muscles render filled, equipment
+            outlined-only, so the visual hierarchy still distinguishes
+            them at a glance. */}
+        {(() => {
+          const muscleChips = labelledChips(
             exercise.primaryMuscleGroups,
             exercise.primaryMuscleGroupLabels,
             MUSCLE_GROUP_LABELS,
-          ),
-          2,
-          (n) => `+${n}`,
-          testID ? `${testID}-muscles` : undefined,
-        )}
-
-        {/* Equipment chip row */}
-        {renderChipRow(
-          labelledChips(
+          );
+          const equipmentChips = labelledChips(
             exercise.equipment,
             exercise.equipmentLabels,
             EQUIPMENT_LABELS,
-          ),
-          3,
-          (n) => `+${n} more`,
-          testID ? `${testID}-equipment` : undefined,
-        )}
+          );
+          const merged = buildChipList(muscleChips, equipmentChips, 2, 3);
+          if (merged.length === 0) return null;
+          return (
+            <Row gap="xs" wrap testID={testID ? `${testID}-tags` : undefined}>
+              {merged.map((chip) => (
+                <OutlinedChip key={chip.key} kind={chip.kind}>
+                  <ChipText kind={chip.kind}>{chip.label}</ChipText>
+                </OutlinedChip>
+              ))}
+            </Row>
+          );
+        })()}
       </Column>
     </CardFrame>
   );

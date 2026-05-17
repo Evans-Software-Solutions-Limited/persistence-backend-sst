@@ -52,6 +52,20 @@ export interface HealthPort {
     days: number,
   ): Promise<Result<readonly HealthDailySteps[], HealthError>>;
   getActiveCaloriesToday(): Promise<Result<number, HealthError>>;
+  /**
+   * Cumulative basal (resting) energy burn so far today, in kcal. The
+   * Home tab's "Resting" ring reads this; legacy mobile rendered 0
+   * here because the read path was never wired. Implementations that
+   * can't surface this (Android in M1, stub) return 0 — same
+   * convention as `getActiveCaloriesToday`.
+   */
+  getBasalCaloriesToday(): Promise<Result<number, HealthError>>;
+  /**
+   * Cumulative Apple Stand Time so far today, in minutes. Apple
+   * surfaces this on the Activity ring on watchOS / iOS. Android
+   * has no analogous metric — implementations return 0 there.
+   */
+  getStandTimeTodayMinutes(): Promise<Result<number, HealthError>>;
   getLatestBodyWeight(): Promise<Result<HealthWeight | null, HealthError>>;
   /**
    * Most recent heart rate sample in bpm, or null when no samples are

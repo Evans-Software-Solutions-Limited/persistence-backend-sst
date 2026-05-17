@@ -9,6 +9,7 @@ import type {
   ExerciseFilters,
   MuscleGroup,
 } from "@/domain/models/exercise";
+import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
   ReferenceListKind,
@@ -276,6 +277,17 @@ export class SSTApiAdapter implements ApiPort {
       method: "PATCH",
       body: data,
     });
+  }
+
+  /**
+   * M6: Profile-tab aggregation. Backend returns a single envelope
+   * `{ data: ProfilePageData }`; `requestEnvelope<T>` unwraps the
+   * one layer.
+   *
+   * Spec: specs/milestones/M6-profile/BACKEND_BRIEF.md
+   */
+  async getProfilePage() {
+    return this.requestEnvelope<ProfilePageData>("/profile/page");
   }
 
   // -- Workouts (M2) --

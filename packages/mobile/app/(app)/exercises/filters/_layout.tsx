@@ -93,7 +93,25 @@ function FiltersLayoutInner() {
       if (currentCreatedBy) applied.toggleQuickFilter(currentCreatedBy);
       if (pending.createdBy) applied.toggleQuickFilter(pending.createdBy);
     }
-    router.back();
+    // `dismissTo` — Apply must close the WHOLE modal and land the user
+    // back on the exercise list with the new filter set applied,
+    // regardless of which axis screen they were on when they tapped
+    // Apply.
+    //
+    // Why not `back()` or `dismissAll()`:
+    //   - `router.back()` only pops ONE screen. From an axis detail
+    //     screen (muscles / equipment / difficulty / created-by) it
+    //     pops back to the filter index instead of dismissing the
+    //     modal — the user sees "Show N exercises" tap then lands on
+    //     the filter index, never reaches the list.
+    //   - `router.dismissAll()` is supposed to walk the whole modal
+    //     stack but doesn't traverse the nested Stack inside this
+    //     modal — empirically it leaves the user on the filter index
+    //     too. Same symptom as `back()`.
+    //
+    // `dismissTo(href)` dismisses modals + pops screens until landing
+    // at the target route. Robust regardless of nesting depth.
+    router.dismissTo("/(app)/(tabs)/exercises");
   }, [applied, pending, router]);
 
   // Live match count for the Apply button. Uses the same merge helper as the

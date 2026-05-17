@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
   ReferenceListKind,
@@ -54,6 +55,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public referenceLists: Partial<Record<ReferenceListKind, ReferenceEntry[]>> =
     {};
   public dashboard: DashboardPayload | null = null;
+  public profilePage: ProfilePageData | null = null;
   public shouldFail = false;
   public failError: ApiError = {
     kind: "api",
@@ -437,6 +439,17 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return this.mayFail(this.dashboard);
+  }
+
+  async getProfilePage(): Promise<Result<ProfilePageData, ApiError>> {
+    if (this.profilePage === null) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No profile-page fixture configured",
+      });
+    }
+    return this.mayFail(this.profilePage);
   }
 
   async getExercise(id: string) {

@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
   ReferenceListKind,
@@ -34,6 +35,16 @@ export interface ApiPort {
   updateProfile(
     data: Partial<ApiProfile>,
   ): Promise<Result<ApiProfile, ApiError>>;
+
+  /**
+   * M6: fetch the Profile-tab aggregation payload in a single round trip.
+   *
+   * Single-envelope response (`{ data: ProfilePageData }`) — adapter
+   * unwraps once. No reference-list UUID translation required.
+   *
+   * Spec: specs/milestones/M6-profile/BACKEND_BRIEF.md
+   */
+  getProfilePage(): Promise<Result<ProfilePageData, ApiError>>;
 
   // -- Workouts (M2) --
   /**
