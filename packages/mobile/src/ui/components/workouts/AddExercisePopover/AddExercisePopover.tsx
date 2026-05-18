@@ -153,19 +153,27 @@ function AddExercisePopoverContainer({
     onClose();
   };
 
+  // Resolve picks in the order the user tapped them. The previous
+  // implementation used `allRows.filter(...)`, which returns rows in
+  // *list* order (alphabetical) rather than *selection* order — picking
+  // C-then-A-then-B silently became A, B, C on insert, which read as
+  // "reverse order" to anyone who scanned bottom-up. A Map keyed on id
+  // lets us iterate `selectedExerciseIds` (which is appended-on-tap, so
+  // already in pick order) and pull each row by lookup.
+  const resolveSelectionInPickOrder = useCallback(() => {
+    const byId = new Map(allRows.map((ex) => [ex.id, ex]));
+    return selectedExerciseIds
+      .map((id) => byId.get(id))
+      .filter((ex): ex is (typeof allRows)[number] => ex !== undefined);
+  }, [allRows, selectedExerciseIds]);
+
   const handleAddExercisesClick = () => {
-    const selectedExercises = allRows.filter((ex) =>
-      selectedExerciseIds.includes(ex.id),
-    );
-    onAddExercises(selectedExercises);
+    onAddExercises(resolveSelectionInPickOrder());
     setSelectedExerciseIds([]);
   };
 
   const handleAddSupersetClick = () => {
-    const selectedExercises = allRows.filter((ex) =>
-      selectedExerciseIds.includes(ex.id),
-    );
-    onAddSuperset(selectedExercises);
+    onAddSuperset(resolveSelectionInPickOrder());
     setSelectedExerciseIds([]);
   };
 
@@ -338,6 +346,12 @@ function AddExercisePopoverPresenter({
             between the sticky search bar and the sticky footer. */}
         <ScrollView
           style={styles.modalScroll}
+          // `flexGrow: 1` on the content container lets the loading-state
+          // View (which uses `flexGrow: 1` itself) consume the full
+          // visible area of the scroll region — without this, the loader
+          // sits flush to the top of the scroll viewport rather than
+          // centred mid-screen.
+          contentContainerStyle={styles.modalScrollContent}
           showsVerticalScrollIndicator={false}
         >
           <AddExerciseList
