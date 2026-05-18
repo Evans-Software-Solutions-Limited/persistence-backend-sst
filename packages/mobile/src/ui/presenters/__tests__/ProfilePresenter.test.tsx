@@ -45,6 +45,8 @@ function makeProps(
     displayName: "Brad Simms",
     email: "brad@example.com",
     avatarUrl: null,
+    avatarCacheKey: 0,
+    isAvatarWorking: false,
     userRoleLabel: "User",
     subscription: freeSubscription(),
     isTrainer: false,
@@ -552,5 +554,47 @@ describe("ProfilePresenter", () => {
       />,
     );
     expect(getByTestId("profile-avatar-image")).toBeTruthy();
+  });
+
+  it("appends the avatarCacheKey as a _cb query param so RN's image cache is bypassed", () => {
+    const { getByTestId } = renderWithTheme(
+      <ProfilePresenter
+        {...makeProps({
+          avatarUrl: "https://example.com/me.png",
+          avatarCacheKey: 3,
+        })}
+      />,
+    );
+    const image = getByTestId("profile-avatar-image");
+    expect(image.props.source.uri).toBe("https://example.com/me.png?_cb=3");
+  });
+
+  it("uses & separator when avatarUrl already has a query string", () => {
+    const { getByTestId } = renderWithTheme(
+      <ProfilePresenter
+        {...makeProps({
+          avatarUrl: "https://example.com/me.png?v=42",
+          avatarCacheKey: 2,
+        })}
+      />,
+    );
+    const image = getByTestId("profile-avatar-image");
+    expect(image.props.source.uri).toBe(
+      "https://example.com/me.png?v=42&_cb=2",
+    );
+  });
+
+  it("disables the avatar tap while isAvatarWorking is true", () => {
+    const onSelectProfilePicture = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ProfilePresenter
+        {...makeProps({
+          isAvatarWorking: true,
+          onSelectProfilePicture,
+        })}
+      />,
+    );
+    fireEvent.press(getByTestId("profile-avatar-button"));
+    expect(onSelectProfilePicture).not.toHaveBeenCalled();
   });
 });

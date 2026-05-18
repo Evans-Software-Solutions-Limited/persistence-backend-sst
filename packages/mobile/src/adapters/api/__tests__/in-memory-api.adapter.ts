@@ -29,6 +29,7 @@ import type {
   UpdateSetInput,
   CreateSetInput,
   CreateGoalInput,
+  UploadAvatarInput,
 } from "@/domain/ports/api.port";
 import type {
   CreateWorkoutInput,
@@ -450,6 +451,48 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return this.mayFail(this.profilePage);
+  }
+
+  public uploadAvatarCalls: UploadAvatarInput[] = [];
+  public nextAvatarUrl = "https://test-avatars/test-user/avatar.jpg";
+
+  async uploadAvatar(
+    input: UploadAvatarInput,
+  ): Promise<Result<{ avatarUrl: string }, ApiError>> {
+    this.uploadAvatarCalls.push(input);
+    const result = this.mayFail({ avatarUrl: this.nextAvatarUrl });
+    if (!result.ok) return result;
+    if (this.profiles[0]) {
+      this.profiles[0] = { ...this.profiles[0], avatarUrl: this.nextAvatarUrl };
+    }
+    if (this.profilePage) {
+      this.profilePage = {
+        ...this.profilePage,
+        profile: {
+          ...this.profilePage.profile,
+          avatarUrl: this.nextAvatarUrl,
+        },
+      };
+    }
+    return result;
+  }
+
+  public deleteAvatarCalls = 0;
+
+  async deleteAvatar(): Promise<Result<{ avatarUrl: null }, ApiError>> {
+    this.deleteAvatarCalls += 1;
+    const result = this.mayFail({ avatarUrl: null as null });
+    if (!result.ok) return result;
+    if (this.profiles[0]) {
+      this.profiles[0] = { ...this.profiles[0], avatarUrl: null };
+    }
+    if (this.profilePage) {
+      this.profilePage = {
+        ...this.profilePage,
+        profile: { ...this.profilePage.profile, avatarUrl: null },
+      };
+    }
+    return result;
   }
 
   async getExercise(id: string) {

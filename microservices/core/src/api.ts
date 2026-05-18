@@ -21,6 +21,7 @@ import { workoutsDeleteHandler } from "./application/workouts/delete/workoutsDel
 import { profilesGetHandler } from "./application/profiles/get/profilesGetHandler";
 import { profilesPageGetHandler } from "./application/profiles/page/profilesPageGetHandler";
 import { profilesUpdateHandler } from "./application/profiles/update/profilesUpdateHandler";
+import { profilesAvatarHandler } from "./application/profiles/avatar/profilesAvatarHandler";
 import { sessionsCreateHandler } from "./application/sessions/create/sessionsCreateHandler";
 import { sessionsListHandler } from "./application/sessions/list/sessionsListHandler";
 import { sessionsGetHandler } from "./application/sessions/get/sessionsGetHandler";
@@ -71,6 +72,7 @@ const app = new Elysia()
   .use(profilesGetHandler)
   .use(profilesPageGetHandler)
   .use(profilesUpdateHandler)
+  .use(profilesAvatarHandler)
   .use(sessionsCreateHandler)
   .use(sessionsListHandler)
   .use(sessionsGetHandler)

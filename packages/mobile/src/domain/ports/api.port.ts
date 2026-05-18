@@ -46,6 +46,24 @@ export interface ApiPort {
    */
   getProfilePage(): Promise<Result<ProfilePageData, ApiError>>;
 
+  /**
+   * M6 PR-3: upload a new avatar via multipart POST. The mobile flow
+   * resizes the source image client-side (expo-image-manipulator) to
+   * 512×512 JPEG before calling this — server validates content-type
+   * (image/jpeg|png|webp) and 5MB cap but does not re-encode. Returns
+   * the canonical public S3 URL on success.
+   */
+  uploadAvatar(
+    input: UploadAvatarInput,
+  ): Promise<Result<{ avatarUrl: string }, ApiError>>;
+
+  /**
+   * M6 PR-3: remove the user's avatar — deletes the S3 object and
+   * nulls `profiles.avatar_url`. Idempotent: succeeds whether the
+   * object exists in S3 or not.
+   */
+  deleteAvatar(): Promise<Result<{ avatarUrl: null }, ApiError>>;
+
   // -- Workouts (M2) --
   /**
    * Fetch a workouts list slice for one of the three section types
@@ -275,6 +293,9 @@ export type ApiProfile = {
   role: "user" | "personal_trainer" | "physiotherapist" | "admin";
   fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite" | null;
   avatarUrl: string | null;
+  /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
+   *  added to the wire type when Edit Profile started writing it. */
+  isProfilePublic?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -559,4 +580,17 @@ export type CreateGoalInput = {
   goalTypeId: string;
   priority?: number;
   targetDate?: string;
+};
+
+/**
+ * M6 PR-3: multipart avatar upload input. `uri` is the local file:// URI
+ * returned by expo-image-picker (after resize via expo-image-manipulator).
+ * React Native's FormData accepts the `{ uri, name, type }` shape natively
+ * — the SST adapter passes it through to `fetch` without re-reading bytes
+ * into JS.
+ */
+export type UploadAvatarInput = {
+  uri: string;
+  mimeType: string;
+  name?: string;
 };

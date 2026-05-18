@@ -47,6 +47,16 @@ export type ProfilePresenterProps = {
   displayName: string | null;
   email: string | null;
   avatarUrl: string | null;
+  /**
+   * Increments on every successful avatar upload/remove. Threaded into the
+   * `<Image>`'s `key` AND appended as a `?_cb=` query param so RN's
+   * in-memory image cache (and any CDN edge layer) is bypassed on next
+   * paint. Without this, the URL is stable per-user, so the old image
+   * sticks visually until the user kills the app.
+   */
+  avatarCacheKey: number;
+  /** Disables avatar tap while picker/resize/upload is in flight. */
+  isAvatarWorking: boolean;
   userRoleLabel: string;
 
   // Subscription
@@ -130,6 +140,8 @@ export function ProfilePresenter({
   displayName,
   email,
   avatarUrl,
+  avatarCacheKey,
+  isAvatarWorking,
   userRoleLabel,
   subscription,
   isTrainer,
@@ -187,12 +199,18 @@ export function ProfilePresenter({
           <TouchableOpacity
             style={styles.profilePictureContainer}
             onPress={onSelectProfilePicture}
+            disabled={isAvatarWorking}
             testID="profile-avatar-button"
           >
             <View style={styles.profilePictureWrapper}>
               {avatarUrl ? (
                 <Image
-                  source={{ uri: avatarUrl }}
+                  key={`${avatarUrl}-${avatarCacheKey}`}
+                  source={{
+                    uri: `${avatarUrl}${
+                      avatarUrl.includes("?") ? "&" : "?"
+                    }_cb=${avatarCacheKey}`,
+                  }}
                   style={styles.profilePicture}
                   resizeMode="cover"
                   testID="profile-avatar-image"
@@ -208,7 +226,11 @@ export function ProfilePresenter({
               )}
             </View>
             <View style={styles.editIconContainer}>
-              <Ionicons name="camera" size={16} color={Colors.text.primary} />
+              {isAvatarWorking ? (
+                <PLogoDrawLoader size={16} />
+              ) : (
+                <Ionicons name="camera" size={16} color={Colors.text.primary} />
+              )}
             </View>
           </TouchableOpacity>
 

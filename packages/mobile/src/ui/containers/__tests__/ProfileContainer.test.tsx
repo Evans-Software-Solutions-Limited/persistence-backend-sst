@@ -18,6 +18,19 @@ import { ProfileContainer } from "../ProfileContainer";
 
 jest.setTimeout(15_000);
 
+// Native modules pulled in by useAvatarUpload — Jest can't load the real
+// expo-modules-core glue, so stub the surface that the hook touches.
+jest.mock("expo-image-picker", () => ({
+  requestCameraPermissionsAsync: jest.fn(),
+  requestMediaLibraryPermissionsAsync: jest.fn(),
+  launchCameraAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(),
+}));
+jest.mock("expo-image-manipulator", () => ({
+  manipulateAsync: jest.fn(),
+  SaveFormat: { JPEG: "jpeg" },
+}));
+
 jest.mock("@/ui/presenters/ProfilePresenter");
 const MockPresenter = jest.mocked(ProfilePresenter);
 
@@ -504,7 +517,7 @@ describe("ProfileContainer", () => {
     });
   });
 
-  it("opens an alert when the avatar is tapped", async () => {
+  it("opens the Profile Picture sheet on avatar tap (no Remove option when avatar is null)", async () => {
     const { adapters } = await createTestAdapters();
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -518,6 +531,62 @@ describe("ProfileContainer", () => {
       fireEvent.press(getByTestId("stub-avatar"));
     });
     expect(alertSpy).toHaveBeenCalled();
+    const lastCall = alertSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe("Profile Picture");
+    expect(lastCall?.[1]).toBe("Choose an option");
+    const buttons = lastCall?.[2] as { text: string; style?: string }[];
+    expect(buttons.map((b) => b.text)).toEqual([
+      "Camera",
+      "Photo Library",
+      "Cancel",
+    ]);
+    expect(
+      buttons.find((b) => b.text === "Remove Profile Picture"),
+    ).toBeUndefined();
+  });
+
+  it("includes Remove Profile Picture in the avatar sheet when avatar is set", async () => {
+    const { adapters, api } = await createTestAdapters();
+    api.profilePage = makeProfilePagePayload({
+      profile: {
+        id: "user-1",
+        fullName: "Brad Simms",
+        email: "brad@example.com",
+        username: null,
+        avatarUrl: "https://avatars/test/avatar.jpg",
+        role: "user",
+        fitnessLevel: null,
+        heightCm: null,
+        weightKg: null,
+        preferredUnits: "metric",
+        isProfilePublic: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-email").props.children).toBe("brad@example.com");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-avatar"));
+    });
+    const lastCall = alertSpy.mock.calls.at(-1);
+    const buttons = lastCall?.[2] as { text: string; style?: string }[];
+    expect(buttons.map((b) => b.text)).toEqual([
+      "Camera",
+      "Photo Library",
+      "Remove Profile Picture",
+      "Cancel",
+    ]);
+    const remove = buttons.find((b) => b.text === "Remove Profile Picture");
+    expect(remove?.style).toBe("destructive");
   });
 
   it("routes each menu item to its placeholder path", async () => {

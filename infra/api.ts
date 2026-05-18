@@ -1,5 +1,6 @@
 import { databaseUrl } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
+import { avatarsBucket } from "./storage";
 
 // Custom domain only on stable named stages (production / staging). Personal
 // dev stages fall back to the auto-generated API Gateway URL — the mobile
@@ -32,6 +33,7 @@ export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 
 coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
+  link: [avatarsBucket],
   environment: {
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
