@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
+import type { ApiProfile } from "@/domain/ports/api.port";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
@@ -40,6 +41,15 @@ function asFitnessLevel(
   return "beginner";
 }
 
+/**
+ * Form snapshot used as the diff baseline on save. The snapshot stores
+ * the picker's *collapsed* fitness level (null → "beginner") rather than
+ * the raw nullable value — so a user who'd never picked a level and
+ * leaves the placeholder untouched naturally diffs to "no change" against
+ * the same collapsed value, instead of being silently saved as "beginner"
+ * because they edited the public switch. Inspector Brad PR #68
+ * medium-severity find.
+ */
 type Snapshot = {
   fullName: string;
   fitnessLevel: EditProfileFitnessLevel;
@@ -94,15 +104,47 @@ export function EditProfileContainer() {
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
+    if (!initial) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
+      // Diff against the hydrated snapshot — only PATCH fields the user
+      // actually changed. This avoids two real bugs:
+      //   1. Sending `fitnessLevel: "beginner"` on every save would silently
+      //      overwrite a user who'd never picked a level (the picker showed
+      //      "beginner" only as a placeholder).
+      //   2. Sending `fullName: null` when the user didn't edit the field
+      //      would briefly fail backend validation in the old `Optional(
+      //      String)` schema. The schema's been widened, but only-send-what-
+      //      changed is the broader correctness principle anyway.
       const trimmedName = fullName.trim();
-      const result = await api.updateProfile({
-        fullName: trimmedName.length > 0 ? trimmedName : null,
-        fitnessLevel,
-        isProfilePublic,
-      });
+      const nextFullName: string | null =
+        trimmedName.length > 0 ? trimmedName : null;
+      const initialFullName: string | null =
+        initial.fullName.length > 0 ? initial.fullName : null;
+      const body: Partial<ApiProfile> = {};
+      if (nextFullName !== initialFullName) {
+        body.fullName = nextFullName;
+      }
+      if (fitnessLevel !== initial.fitnessLevel) {
+        // The picker's "placeholder" beginner state collapses against the
+        // initial snapshot's same collapsed value, so a user who never
+        // picked a level naturally diffs to no-change here.
+        body.fitnessLevel = fitnessLevel;
+      }
+      if (isProfilePublic !== initial.isProfilePublic) {
+        body.isProfilePublic = isProfilePublic;
+      }
+
+      if (Object.keys(body).length === 0) {
+        // Nothing to send — route back as if save succeeded. Keeps the UX
+        // of "tapped Save → returned to Profile" intact while skipping a
+        // pointless no-op round trip.
+        router.back();
+        return;
+      }
+
+      const result = await api.updateProfile(body);
       if (!result.ok) {
         setErrorMessage(
           result.error.message ||
@@ -123,6 +165,7 @@ export function EditProfileContainer() {
     router,
     session?.userId,
     isSaving,
+    initial,
     fullName,
     fitnessLevel,
     isProfilePublic,

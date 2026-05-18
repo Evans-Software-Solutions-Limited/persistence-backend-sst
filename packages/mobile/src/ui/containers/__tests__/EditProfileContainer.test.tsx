@@ -224,7 +224,13 @@ describe("EditProfileContainer", () => {
     expect(invalidateSpy).toHaveBeenCalledWith(userId);
   });
 
-  it("sends fullName as null when the field is whitespace-only", async () => {
+  it("sends fullName as null when the user clears a previously-set name", async () => {
+    // Inspector Brad PR #68 high-severity find: the old `Optional(String)`
+    // schema rejected null end-to-end, so even though the in-memory adapter
+    // accepted this body, the real backend would have 422'd. Schema is now
+    // widened to `Optional(Union([String, Null]))` (covered by a backend
+    // test) and the diff-on-save still emits fullName: null when the user
+    // genuinely wipes a stored name.
     const { adapters, storage, auth, api } = await createTestAdapters();
     const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
     if (!userId) throw new Error("expected a signed-in session");
@@ -265,9 +271,78 @@ describe("EditProfileContainer", () => {
     await waitFor(() => {
       expect(updateSpy).toHaveBeenCalled();
     });
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ fullName: null }),
+    // Diff-on-save: only the fullName changed (initial "Brad Simms" → null).
+    // fitnessLevel and isProfilePublic stayed put and MUST NOT be in the body
+    // (Inspector Brad PR #68 medium-severity find: silent fitnessLevel
+    // overwrite when only an unrelated field was edited).
+    const call = updateSpy.mock.calls[0][0];
+    expect(call).toEqual({ fullName: null });
+  });
+
+  it("does NOT emit fitnessLevel when the user had no stored level and only edited the public switch", async () => {
+    // The picker collapses null → "beginner" for display. Before the diff-
+    // on-save fix, every save sent `fitnessLevel: "beginner"`, silently
+    // writing a real value to a user who'd never picked one. Now we diff
+    // against the same collapsed snapshot, so an untouched picker emits
+    // nothing.
+    const { adapters, storage, auth, api } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(
+      userId,
+      makeProfilePagePayload({ fitnessLevel: null }),
     );
+    const updateSpy = jest.spyOn(api, "updateProfile");
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent(getByTestId("stub-public-switch"), "valueChange", true);
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalled();
+    });
+    const call = updateSpy.mock.calls[0][0];
+    expect(call).toEqual({ isProfilePublic: true });
+    expect(call).not.toHaveProperty("fitnessLevel");
+    expect(call).not.toHaveProperty("fullName");
+  });
+
+  it("routes back without calling updateProfile when nothing changed and the user taps Save", async () => {
+    const { adapters, storage, auth, api } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+    const updateSpy = jest.spyOn(api, "updateProfile");
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(mockBack).toHaveBeenCalled();
   });
 
   it("surfaces an error message and does not navigate when save fails", async () => {
@@ -288,8 +363,15 @@ describe("EditProfileContainer", () => {
       expect(getByTestId("stub-loading").props.children).toBe("false");
     });
 
+    // Split: the diff-on-save logic reads `fullName` from the handleSave
+    // closure, which is recreated by useCallback when state changes. Firing
+    // changeText + press in the same act() leaves handleSave still pointing
+    // at the pre-edit closure (empty diff → no API call → silent back-route)
+    // and the test would assert against a no-op rather than a failed save.
     await act(async () => {
       fireEvent.changeText(getByTestId("stub-full-name"), "Edited");
+    });
+    await act(async () => {
       fireEvent.press(getByTestId("stub-save"));
     });
 
