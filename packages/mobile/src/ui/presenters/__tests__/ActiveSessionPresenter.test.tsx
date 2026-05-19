@@ -246,4 +246,24 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     );
     expect(getByTestId("rest-timer-display")).toBeTruthy();
   });
+
+  // The KeyboardAvoidingView branch covers the bug where SetLogger TextInputs
+  // were occluded by the keyboard mid-workout. We assert the platform-conditional
+  // both ways so a regression to a single hard-coded behavior (or no KAV) shows
+  // up here, not on device.
+  it("renders the screen on Android (KAV behavior = undefined)", () => {
+    const PlatformModule = jest.requireActual(
+      "react-native/Libraries/Utilities/Platform",
+    ) as typeof import("react-native").Platform;
+    const originalOS = PlatformModule.OS;
+    (PlatformModule as { OS: string }).OS = "android";
+    try {
+      const { getByTestId } = renderWithTheme(
+        <ActiveSessionPresenter {...baseProps} />,
+      );
+      expect(getByTestId("active-session-screen")).toBeTruthy();
+    } finally {
+      (PlatformModule as { OS: string }).OS = originalOS;
+    }
+  });
 });

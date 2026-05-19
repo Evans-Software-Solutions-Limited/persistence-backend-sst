@@ -105,8 +105,21 @@ export const styles = StyleSheet.create({
   modalScroll: {
     flex: 1,
   },
+  modalScrollContent: {
+    flexGrow: 1,
+  },
   contentContainer: {
     paddingHorizontal: Spacing.lg,
+  },
+  // Centering shell for the in-list loading + empty branches. `flexGrow`
+  // (not `flex`) lets the View occupy the ScrollView's full visible area
+  // when the content is small (so the loader sits mid-screen) without
+  // collapsing the container when there is real list content to render.
+  loadingContainer: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xl,
   },
   emptyState: {
     paddingVertical: Spacing.xl,

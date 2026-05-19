@@ -201,6 +201,64 @@ describe("AddExercisePopover", () => {
     expect(arg.map((ex) => ex.id)).toEqual(["a"]);
   });
 
+  it("emits selections in pick order, not list order", () => {
+    // Seed the cache so list order is C, A, B but the user picks A→B→C.
+    // The emitted array must mirror the pick order — otherwise multi-add
+    // lands exercises shuffled (the legacy bug the user reported).
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "c", name: "Cable Row" }),
+      buildExercise({ id: "a", name: "Bench Press" }),
+      buildExercise({ id: "b", name: "Squat" }),
+    ]);
+    const onAddExercises = jest.fn();
+    const { getByText, getByTestId } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <AddExercisePopover
+          visible
+          onClose={jest.fn()}
+          onAddExercises={onAddExercises}
+          onAddSuperset={jest.fn()}
+        />,
+      ),
+    );
+    fireEvent.press(getByText("Bench Press"));
+    fireEvent.press(getByText("Squat"));
+    fireEvent.press(getByText("Cable Row"));
+    fireEvent.press(getByTestId("add-exercises-button"));
+    const arg = onAddExercises.mock.calls[0][0] as { id: string }[];
+    expect(arg.map((ex) => ex.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("emits superset selections in pick order, not list order", () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "c", name: "Cable Row" }),
+      buildExercise({ id: "a", name: "Bench Press" }),
+      buildExercise({ id: "b", name: "Squat" }),
+    ]);
+    const onAddSuperset = jest.fn();
+    const { getByText, getByTestId } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <AddExercisePopover
+          visible
+          onClose={jest.fn()}
+          onAddExercises={jest.fn()}
+          onAddSuperset={onAddSuperset}
+        />,
+      ),
+    );
+    fireEvent.press(getByText("Squat"));
+    fireEvent.press(getByText("Bench Press"));
+    fireEvent.press(getByTestId("add-superset-button"));
+    const arg = onAddSuperset.mock.calls[0][0] as { id: string }[];
+    expect(arg.map((ex) => ex.id)).toEqual(["b", "a"]);
+  });
+
   it("disables the Superset CTA until ≥2 selected, then emits", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

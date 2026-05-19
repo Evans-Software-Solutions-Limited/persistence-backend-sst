@@ -55,7 +55,12 @@ export const profilesUpdateHandler = new Elysia()
     },
     {
       body: t.Object({
-        fullName: t.Optional(t.String()),
+        // `fullName` accepts `null` so the Edit Profile screen can clear
+        // a previously-set display name (DB column is nullable). The other
+        // legacy string fields below stay `Optional(String)` for now — they
+        // have no clearable-from-UI surface in v2 yet; widen them at the
+        // point a screen needs to send null, alongside a test for that path.
+        fullName: t.Optional(t.Union([t.String(), t.Null()])),
         username: t.Optional(t.String()),
         avatarUrl: t.Optional(t.String()),
         fitnessLevel: t.Optional(

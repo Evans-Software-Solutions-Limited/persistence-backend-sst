@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type {
   ProfilePageRole,
@@ -8,6 +8,7 @@ import type {
   ProfilePageData,
 } from "@/domain/models/profilePage";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 
@@ -16,7 +17,7 @@ import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
  *  - cache-and-subscribe to `/profile/page` via `useProfilePage`
  *  - all navigation handlers for menu items + subscription
  *  - sign-out flow (re-entrant guarded via ref, same pattern as M0)
- *  - avatar-tap placeholder alert (multipart upload is M6 PR-3)
+ *  - avatar picker + upload + remove via `useAvatarUpload` (M6 PR-3)
  *
  * Spec: specs/milestones/M6-profile/BACKEND_BRIEF.md
  */
@@ -108,12 +109,19 @@ export function ProfileContainer() {
     }, [refresh]),
   );
 
-  const onSelectProfilePicture = useCallback(() => {
-    Alert.alert(
-      "Avatar upload",
-      "Profile picture upload lands in the next PR (M6 PR-3).",
-    );
-  }, []);
+  const avatarUrl = profilePage.payload?.profile.avatarUrl ?? null;
+  const avatarUpload = useAvatarUpload(avatarUrl);
+  // After an upload/remove succeeds, the hook bumps `cacheKey` and clears
+  // the storage cache. Refresh from the network so the view-model picks up
+  // the updated `avatarUrl` (null after remove, new public URL after upload)
+  // while the user is still on the screen — useFocusEffect only fires on
+  // tab re-enter, which is too late if the user uploads then stays put.
+  useEffect(() => {
+    if (avatarUpload.cacheKey === 0) return;
+    void profilePage.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarUpload.cacheKey, profilePage.refresh]);
+  const onSelectProfilePicture = avatarUpload.showAvatarSheet;
 
   const onManageSubscription = useCallback(() => {
     Alert.alert(
@@ -177,7 +185,6 @@ export function ProfileContainer() {
     return {
       displayName: deriveDisplayName(profile, session?.email ?? null),
       email: profile?.email ?? session?.email ?? null,
-      avatarUrl: profile?.avatarUrl ?? null,
       userRoleLabel: USER_ROLE_LABEL[profile?.role ?? "user"] ?? "User",
       subscription,
       isTrainer,
@@ -211,7 +218,9 @@ export function ProfileContainer() {
       errorMessage={errorMessage}
       displayName={viewModel.displayName}
       email={viewModel.email}
-      avatarUrl={viewModel.avatarUrl}
+      avatarUrl={avatarUrl}
+      avatarCacheKey={avatarUpload.cacheKey}
+      isAvatarWorking={avatarUpload.isWorking}
       userRoleLabel={viewModel.userRoleLabel}
       subscription={viewModel.subscription}
       isTrainer={viewModel.isTrainer}

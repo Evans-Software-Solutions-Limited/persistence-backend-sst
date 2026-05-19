@@ -35,6 +35,7 @@ import type {
   CreateGoalInput,
   RecordSessionInput,
   RecordedApiSession,
+  UploadAvatarInput,
 } from "@/domain/ports/api.port";
 import type {
   CreateWorkoutInput,
@@ -288,6 +289,80 @@ export class SSTApiAdapter implements ApiPort {
    */
   async getProfilePage() {
     return this.requestEnvelope<ProfilePageData>("/profile/page");
+  }
+
+  /**
+   * M6 PR-3: multipart avatar upload. Bypasses the JSON `request` helper
+   * because the body is FormData, not JSON, and `fetch` needs to set the
+   * `Content-Type: multipart/form-data; boundary=…` header itself —
+   * setting it manually clobbers the boundary the runtime injects.
+   *
+   * React Native's FormData accepts a `{ uri, name, type }` shape as the
+   * second arg even though TS types it as `Blob | string`; the native
+   * bridge streams the file from disk without reading bytes into JS.
+   */
+  async uploadAvatar(input: UploadAvatarInput) {
+    const formData = new FormData();
+    formData.append("file", {
+      uri: input.uri,
+      name: input.name ?? "avatar.jpg",
+      type: input.mimeType,
+    } as unknown as Blob);
+
+    const headers: Record<string, string> = {};
+    if (this.tokenProvider) {
+      const token = await this.tokenProvider();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(this.buildUrl("/profile/avatar"), {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        const message =
+          (errorBody as { error?: string })?.error ?? response.statusText;
+        return fail<ApiError>({
+          kind: "api",
+          code:
+            response.status === 401
+              ? "unauthorized"
+              : response.status === 404
+                ? "not_found"
+                : "server",
+          message,
+          status: response.status,
+        });
+      }
+
+      const body = (await response.json()) as ApiResponse<{
+        avatarUrl: string;
+      }>;
+      if (isErrorResponse(body)) {
+        return fail<ApiError>({
+          kind: "api",
+          code: "server",
+          message: body.error,
+        });
+      }
+      return ok(body.data);
+    } catch (err) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "network",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    }
+  }
+
+  async deleteAvatar() {
+    return this.requestEnvelope<{ avatarUrl: null }>("/profile/avatar", {
+      method: "DELETE",
+    });
   }
 
   // -- Workouts (M2) --

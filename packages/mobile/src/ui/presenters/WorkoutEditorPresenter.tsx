@@ -15,6 +15,8 @@ import type {
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -143,179 +145,194 @@ export function WorkoutEditorPresenter({
             <View style={styles.placeholder} />
           </View>
 
-          <ScrollView
-            style={styles.content}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            contentContainerStyle={styles.scrollContentContainer}
-            automaticallyAdjustKeyboardInsets
+          {/* See WorkoutCreatorPresenter for the rationale on the explicit
+              KeyboardAvoidingView wrapper. Same pattern, same reason: long
+              forms where the keyboard can cover the focused TextInput. */}
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoider}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <View style={styles.section}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Workout Name *</Text>
-                <TextInput
-                  style={[styles.textInput, nameError && styles.textInputError]}
-                  placeholder="Enter workout name"
-                  placeholderTextColor={Colors.text.secondary}
-                  value={formState.name}
-                  onChangeText={onSetName}
-                  testID="workout-name-input"
-                />
-                {nameError && <Text style={styles.errorText}>{nameError}</Text>}
-              </View>
+            <ScrollView
+              style={styles.content}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={styles.scrollContentContainer}
+              automaticallyAdjustKeyboardInsets
+            >
+              <View style={styles.section}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Workout Name *</Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      nameError && styles.textInputError,
+                    ]}
+                    placeholder="Enter workout name"
+                    placeholderTextColor={Colors.text.secondary}
+                    value={formState.name}
+                    onChangeText={onSetName}
+                    testID="workout-name-input"
+                  />
+                  {nameError && (
+                    <Text style={styles.errorText}>{nameError}</Text>
+                  )}
+                </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  placeholder="Enter workout description (optional)"
-                  placeholderTextColor={Colors.text.secondary}
-                  value={formState.description}
-                  onChangeText={onSetDescription}
-                  multiline
-                  numberOfLines={3}
-                  testID="workout-description-input"
-                />
-              </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Description</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Enter workout description (optional)"
+                    placeholderTextColor={Colors.text.secondary}
+                    value={formState.description}
+                    onChangeText={onSetDescription}
+                    multiline
+                    numberOfLines={3}
+                    testID="workout-description-input"
+                  />
+                </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Visibility</Text>
-                <View style={styles.visibilityRow}>
-                  {VISIBILITY_OPTIONS.map((opt) => {
-                    const selected = formState.visibility === opt.value;
-                    return (
-                      <TouchableOpacity
-                        key={opt.value}
-                        style={[
-                          styles.visibilityOption,
-                          selected && styles.visibilityOptionSelected,
-                        ]}
-                        onPress={() => onSetVisibility(opt.value)}
-                        testID={`visibility-${opt.value}`}
-                      >
-                        <Text
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Visibility</Text>
+                  <View style={styles.visibilityRow}>
+                    {VISIBILITY_OPTIONS.map((opt) => {
+                      const selected = formState.visibility === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
                           style={[
-                            styles.visibilityOptionText,
-                            selected && styles.visibilityOptionTextSelected,
+                            styles.visibilityOption,
+                            selected && styles.visibilityOptionSelected,
                           ]}
+                          onPress={() => onSetVisibility(opt.value)}
+                          testID={`visibility-${opt.value}`}
                         >
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.visibilityOptionText,
+                              selected && styles.visibilityOptionTextSelected,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
-            </View>
 
-            {/* Exercises */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>
-                  Exercises ({exercises.length})
-                </Text>
+              {/* Exercises */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>
+                    Exercises ({exercises.length})
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.addExerciseButton}
+                    onPress={onAddExerciseTap}
+                    testID="add-exercise-button"
+                  >
+                    <Ionicons
+                      name="add"
+                      size={20}
+                      color={Colors.primary.DEFAULT}
+                    />
+                    <Text style={styles.addExerciseButtonText}>
+                      Add Exercise
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {exercises.length === 0 ? (
+                  <View style={styles.emptyExercises}>
+                    <Ionicons
+                      name="fitness-outline"
+                      size={48}
+                      color={
+                        hasAttemptedSubmit
+                          ? Colors.error.DEFAULT
+                          : Colors.text.tertiary
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.emptyExercisesTitle,
+                        hasAttemptedSubmit && styles.emptyExercisesTitleError,
+                      ]}
+                    >
+                      {hasAttemptedSubmit
+                        ? "Please add at least one exercise"
+                        : "No exercises added"}
+                    </Text>
+                    <Text style={styles.emptyExercisesMessage}>
+                      Tap &quot;Add Exercise&quot; to browse and select
+                      exercises for your workout
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.exercisesList}>
+                    {exercises.map((exercise, index) => {
+                      const hasSupersetGroup = exercise.superset_group !== null;
+                      const supersetExercises: WorkoutFormExercise[] =
+                        hasSupersetGroup
+                          ? exercises.filter(
+                              (ex) =>
+                                ex.superset_group === exercise.superset_group,
+                            )
+                          : [];
+                      const isSupersetStart =
+                        hasSupersetGroup &&
+                        supersetExercises[0]?.id === exercise.id;
+                      const isSupersetEnd =
+                        hasSupersetGroup &&
+                        supersetExercises.at(-1)?.id === exercise.id;
+
+                      return (
+                        <View key={exercise.id}>
+                          <ExerciseConfigCard
+                            exercise={exercise}
+                            index={index}
+                            onRemove={() => onRemoveExercise(exercise.id)}
+                            onConfigChange={(field, value) =>
+                              onExerciseConfigChange(exercise.id, field, value)
+                            }
+                            isSupersetStart={isSupersetStart}
+                            isSupersetEnd={isSupersetEnd}
+                            supersetGroupNumber={
+                              exercise.superset_group ?? undefined
+                            }
+                            supersetLeadExercise={supersetExercises[0]}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                {submitError && (
+                  <Text style={styles.errorText}>{submitError}</Text>
+                )}
+              </View>
+
+              {/* Save Button */}
+              <View style={styles.section}>
                 <TouchableOpacity
-                  style={styles.addExerciseButton}
-                  onPress={onAddExerciseTap}
-                  testID="add-exercise-button"
+                  style={[
+                    styles.saveButton,
+                    isSubmitting && styles.saveButtonDisabled,
+                  ]}
+                  onPress={onSubmit}
+                  disabled={isSubmitting}
+                  testID="save-workout-button"
                 >
-                  <Ionicons
-                    name="add"
-                    size={20}
-                    color={Colors.primary.DEFAULT}
-                  />
-                  <Text style={styles.addExerciseButtonText}>Add Exercise</Text>
+                  <Text style={styles.saveButtonText}>
+                    {isSubmitting ? "Saving…" : "Update Workout"}
+                  </Text>
                 </TouchableOpacity>
               </View>
-
-              {exercises.length === 0 ? (
-                <View style={styles.emptyExercises}>
-                  <Ionicons
-                    name="fitness-outline"
-                    size={48}
-                    color={
-                      hasAttemptedSubmit
-                        ? Colors.error.DEFAULT
-                        : Colors.text.tertiary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.emptyExercisesTitle,
-                      hasAttemptedSubmit && styles.emptyExercisesTitleError,
-                    ]}
-                  >
-                    {hasAttemptedSubmit
-                      ? "Please add at least one exercise"
-                      : "No exercises added"}
-                  </Text>
-                  <Text style={styles.emptyExercisesMessage}>
-                    Tap &quot;Add Exercise&quot; to browse and select exercises
-                    for your workout
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.exercisesList}>
-                  {exercises.map((exercise, index) => {
-                    const hasSupersetGroup = exercise.superset_group !== null;
-                    const supersetExercises: WorkoutFormExercise[] =
-                      hasSupersetGroup
-                        ? exercises.filter(
-                            (ex) =>
-                              ex.superset_group === exercise.superset_group,
-                          )
-                        : [];
-                    const isSupersetStart =
-                      hasSupersetGroup &&
-                      supersetExercises[0]?.id === exercise.id;
-                    const isSupersetEnd =
-                      hasSupersetGroup &&
-                      supersetExercises.at(-1)?.id === exercise.id;
-
-                    return (
-                      <View key={exercise.id}>
-                        <ExerciseConfigCard
-                          exercise={exercise}
-                          index={index}
-                          onRemove={() => onRemoveExercise(exercise.id)}
-                          onConfigChange={(field, value) =>
-                            onExerciseConfigChange(exercise.id, field, value)
-                          }
-                          isSupersetStart={isSupersetStart}
-                          isSupersetEnd={isSupersetEnd}
-                          supersetGroupNumber={
-                            exercise.superset_group ?? undefined
-                          }
-                          supersetLeadExercise={supersetExercises[0]}
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-              {submitError && (
-                <Text style={styles.errorText}>{submitError}</Text>
-              )}
-            </View>
-
-            {/* Save Button */}
-            <View style={styles.section}>
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  isSubmitting && styles.saveButtonDisabled,
-                ]}
-                onPress={onSubmit}
-                disabled={isSubmitting}
-                testID="save-workout-button"
-              >
-                <Text style={styles.saveButtonText}>
-                  {isSubmitting ? "Saving…" : "Update Workout"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </SafeAreaView>
 
@@ -338,6 +355,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background.primary,
+  },
+  keyboardAvoider: {
+    flex: 1,
   },
   scrollContentContainer: {
     flexGrow: 1,

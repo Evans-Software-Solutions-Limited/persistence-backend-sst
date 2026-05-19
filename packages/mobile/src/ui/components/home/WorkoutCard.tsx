@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   BorderRadius,
@@ -70,10 +70,27 @@ export function WorkoutCard({
     (onEdit || onDelete);
 
   return (
-    <TouchableOpacity
+    // `Pressable` + `unstable_pressDelay` (rather than `TouchableOpacity`)
+    // because the card sits inside a horizontal `react-native-reanimated-
+    // carousel`. The carousel's pan gesture has `activeOffsetX([-10, 10])`,
+    // meaning it doesn't claim the touch until the user has moved 10px
+    // horizontally. `TouchableOpacity.onPress` fires immediately on any
+    // touch release, so a small right-swipe (< 10px) registered as a tap
+    // and opened the workout instead of just panning the carousel.
+    //
+    // `unstable_pressDelay={120}` defers `onPress` recognition by 120ms,
+    // long enough for the carousel's pan gesture to win on a swipe. A
+    // genuine tap still feels instant — well under the iOS 200ms
+    // "perceived-as-immediate" threshold. The press-feedback opacity dip
+    // that TouchableOpacity provided automatically is intentionally NOT
+    // reproduced here — a per-press style function adds an extra
+    // branch-coverage burden for a barely-perceptible visual that the
+    // carousel parallax already gives strong feedback on.
+    <Pressable
       style={[styles.workoutCard, isDisabled && styles.workoutCardDisabled]}
       onPress={isDisabled ? undefined : onPress}
       disabled={isDisabled}
+      unstable_pressDelay={120}
       testID={`workout-card-${workout.id}`}
     >
       <View style={styles.cardHeader}>
@@ -224,7 +241,7 @@ export function WorkoutCard({
           ) : null}
         </View>
       ) : null}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

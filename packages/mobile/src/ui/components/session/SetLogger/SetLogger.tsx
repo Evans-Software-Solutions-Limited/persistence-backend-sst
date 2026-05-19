@@ -85,6 +85,14 @@ export function SetLogger(props: SetLoggerProps) {
         onChangeText={handleRepsChange}
         keyboardType="number-pad"
         returnKeyType="next"
+        // `blurOnSubmit={false}` keeps the keyboard open across the
+        // reps → weight focus hop. The default is `true` for single-
+        // line TextInputs, which blurs the field on submit BEFORE the
+        // onSubmitEditing callback transfers focus — iOS sees a no-
+        // focused-input window and dismisses the keyboard, then re-
+        // shows it when the weight input gains focus, producing a
+        // visible content jump-down-and-back-up.
+        blurOnSubmit={false}
         onSubmitEditing={() => weightInputRef.current?.focus()}
         testID="set-logger-reps"
       />
@@ -96,6 +104,11 @@ export function SetLogger(props: SetLoggerProps) {
         onChangeText={handleWeightChange}
         keyboardType="decimal-pad"
         returnKeyType="done"
+        // Weight is the last field in the chain, so the default
+        // `blurOnSubmit={true}` is correct here — Return/Done should
+        // close the keyboard, and the explicit `Keyboard.dismiss` call
+        // belt-and-braces this on the platforms where blurring alone
+        // doesn't suffice.
         onSubmitEditing={Keyboard.dismiss}
         testID="set-logger-weight"
       />

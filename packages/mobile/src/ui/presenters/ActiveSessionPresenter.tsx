@@ -24,6 +24,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -190,135 +192,147 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
 
   return (
     <View style={styles.container} testID="active-session-screen">
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      {/* SetLogger TextInputs sit inside the ScrollView; without an
+          explicit KeyboardAvoidingView wrapper the keyboard slides over
+          the active weight/reps field and the user can't see what they're
+          typing. Same pattern as WorkoutCreator/Editor. */}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <SessionHeader
-          startedAt={props.startedAt}
-          sessionName={props.sessionName}
-        />
-        {orderedExercises.length === 0 ? (
-          <View style={styles.emptyWrap} testID="active-session-empty">
-            <Text style={styles.emptyTitle}>No exercises yet</Text>
-            <Text style={styles.emptyBody}>
-              Add exercises from the library to start logging sets.
-            </Text>
-            <TouchableOpacity
-              onPress={props.onAddExercise}
-              style={styles.emptyAddButton}
-              testID="active-session-empty-add"
-              accessibilityLabel="Add exercise"
-            >
-              <Ionicons name="add" size={18} color={Colors.text.primary} />
-              <Text style={styles.emptyAddLabel}>Add exercise</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.exercisesContainer}>
-            {displayItems.map((item) => {
-              if (item.kind === "exercise") {
-                const ex = item.exercise;
-                const template =
-                  props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+        >
+          <SessionHeader
+            startedAt={props.startedAt}
+            sessionName={props.sessionName}
+          />
+          {orderedExercises.length === 0 ? (
+            <View style={styles.emptyWrap} testID="active-session-empty">
+              <Text style={styles.emptyTitle}>No exercises yet</Text>
+              <Text style={styles.emptyBody}>
+                Add exercises from the library to start logging sets.
+              </Text>
+              <TouchableOpacity
+                onPress={props.onAddExercise}
+                style={styles.emptyAddButton}
+                testID="active-session-empty-add"
+                accessibilityLabel="Add exercise"
+              >
+                <Ionicons name="add" size={18} color={Colors.text.primary} />
+                <Text style={styles.emptyAddLabel}>Add exercise</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.exercisesContainer}>
+              {displayItems.map((item) => {
+                if (item.kind === "exercise") {
+                  const ex = item.exercise;
+                  const template =
+                    props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+                  return (
+                    <SessionExerciseCard
+                      key={ex.id}
+                      exercise={ex}
+                      previousSetsBySetNumber={
+                        props.previousSetsByExercise[ex.id] ?? {}
+                      }
+                      exerciseImageUrl={template.imageUrl}
+                      targetSets={template.targetSets}
+                      targetRepsMin={template.targetRepsMin}
+                      targetRepsMax={template.targetRepsMax}
+                      restSeconds={template.restSeconds}
+                      onLogSet={() => props.onLogSet(ex.id)}
+                      onUpdateSet={(setId, patch) =>
+                        props.onUpdateSet(ex.id, setId, patch)
+                      }
+                      onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+                      onOpenNotes={() => props.onOpenNotes(ex.id)}
+                      onSubstitute={() => props.onSubstitute(ex.id)}
+                      onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+                      onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+                      onStartRest={() => props.onStartRest(ex.id)}
+                    />
+                  );
+                }
                 return (
-                  <SessionExerciseCard
-                    key={ex.id}
-                    exercise={ex}
-                    previousSetsBySetNumber={
-                      props.previousSetsByExercise[ex.id] ?? {}
-                    }
-                    exerciseImageUrl={template.imageUrl}
-                    targetSets={template.targetSets}
-                    targetRepsMin={template.targetRepsMin}
-                    targetRepsMax={template.targetRepsMax}
-                    restSeconds={template.restSeconds}
-                    onLogSet={() => props.onLogSet(ex.id)}
-                    onUpdateSet={(setId, patch) =>
-                      props.onUpdateSet(ex.id, setId, patch)
-                    }
-                    onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
-                    onOpenNotes={() => props.onOpenNotes(ex.id)}
-                    onSubstitute={() => props.onSubstitute(ex.id)}
-                    onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-                    onTapExercise={() => props.onTapExercise(ex.exerciseId)}
-                    onStartRest={() => props.onStartRest(ex.id)}
+                  <ActiveSupersetRow
+                    key={`superset-${item.supersetGroup}`}
+                    supersetGroup={item.supersetGroup}
+                    exercises={item.exercises}
+                    previousSetsByExercise={props.previousSetsByExercise}
+                    templateByExercise={props.templateByExercise}
+                    onLogSupersetSet={props.onLogSupersetSet}
+                    onUpdateSet={props.onUpdateSet}
+                    onRemoveSupersetSet={props.onRemoveSupersetSet}
+                    onStartRest={props.onStartRest}
+                    onSubstitute={props.onSubstitute}
+                    onRemoveExercise={props.onRemoveExercise}
+                    onOpenSupersetNotes={props.onOpenSupersetNotes}
+                    onAddExerciseToSuperset={props.onAddExerciseToSuperset}
                   />
                 );
-              }
-              return (
-                <ActiveSupersetRow
-                  key={`superset-${item.supersetGroup}`}
-                  supersetGroup={item.supersetGroup}
-                  exercises={item.exercises}
-                  previousSetsByExercise={props.previousSetsByExercise}
-                  templateByExercise={props.templateByExercise}
-                  onLogSupersetSet={props.onLogSupersetSet}
-                  onUpdateSet={props.onUpdateSet}
-                  onRemoveSupersetSet={props.onRemoveSupersetSet}
-                  onStartRest={props.onStartRest}
-                  onSubstitute={props.onSubstitute}
-                  onRemoveExercise={props.onRemoveExercise}
-                  onOpenSupersetNotes={props.onOpenSupersetNotes}
-                  onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-                />
-              );
-            })}
-          </View>
-        )}
+              })}
+            </View>
+          )}
 
-        {orderedExercises.length > 0 && (
-          <View
-            style={styles.addExerciseSection}
-            testID="active-session-add-exercise-row"
-          >
-            <View style={styles.divider} />
+          {orderedExercises.length > 0 && (
+            <View
+              style={styles.addExerciseSection}
+              testID="active-session-add-exercise-row"
+            >
+              <View style={styles.divider} />
+              <TouchableOpacity
+                onPress={props.onAddExercise}
+                style={styles.addExerciseLink}
+                testID="active-session-add-exercise"
+                accessibilityLabel="Add exercise"
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={20}
+                  color={Colors.primary.DEFAULT}
+                />
+                <Text style={styles.addExerciseText}>Add Exercise</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.actionButtonsContainer}>
             <TouchableOpacity
-              onPress={props.onAddExercise}
-              style={styles.addExerciseLink}
-              testID="active-session-add-exercise"
-              accessibilityLabel="Add exercise"
+              style={styles.discardButton}
+              onPress={props.onDiscard}
+              testID="active-session-discard"
+              accessibilityLabel="Discard session"
             >
               <Ionicons
-                name="add-circle-outline"
+                name="trash-outline"
                 size={20}
-                color={Colors.primary.DEFAULT}
+                color={Colors.error.DEFAULT}
               />
-              <Text style={styles.addExerciseText}>Add Exercise</Text>
+              <Text style={styles.discardButtonText}>Discard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.completeButton}
+              onPress={props.onFinish}
+              testID="active-session-finish"
+              accessibilityLabel="Complete session"
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={20}
+                color={Colors.text.primary}
+              />
+              <Text style={styles.completeButtonText}>Complete</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={styles.discardButton}
-            onPress={props.onDiscard}
-            testID="active-session-discard"
-            accessibilityLabel="Discard session"
-          >
-            <Ionicons
-              name="trash-outline"
-              size={20}
-              color={Colors.error.DEFAULT}
-            />
-            <Text style={styles.discardButtonText}>Discard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.completeButton}
-            onPress={props.onFinish}
-            testID="active-session-finish"
-            accessibilityLabel="Complete session"
-          >
-            <Ionicons
-              name="checkmark-circle-outline"
-              size={20}
-              color={Colors.text.primary}
-            />
-            <Text style={styles.completeButtonText}>Complete</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
@@ -340,6 +354,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background.primary,
   },
+  keyboardAvoider: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: {
     padding: Spacing.md,

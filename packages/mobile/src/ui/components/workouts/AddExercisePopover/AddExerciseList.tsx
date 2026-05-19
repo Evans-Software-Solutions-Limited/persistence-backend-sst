@@ -23,7 +23,7 @@ export function AddExerciseList({
 }: AddExerciseListProps) {
   if (isLoading) {
     return (
-      <View style={styles.contentContainer}>
+      <View style={[styles.contentContainer, styles.loadingContainer]}>
         <PLogoDrawLoader />
       </View>
     );

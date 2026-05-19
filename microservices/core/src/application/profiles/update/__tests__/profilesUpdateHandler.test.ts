@@ -174,6 +174,32 @@ describe("ProfilesUpdateHandler", () => {
       );
     });
 
+    it("should accept and persist fullName: null so the user can clear their display name", async () => {
+      // Inspector Brad PR #68 high-severity find: the original schema was
+      // `t.Optional(t.String())`, which rejected `null` and produced a 422
+      // — making the Edit Profile screen's "clear my name" path unreachable
+      // even though the DB column is nullable. Pin both the schema acceptance
+      // and the downstream `repository.update(..., { fullName: null })` call.
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fullName: null }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ fullName: null }),
+      );
+    });
+
     it("should convert heightCm and weightKg to strings for decimal columns", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");
