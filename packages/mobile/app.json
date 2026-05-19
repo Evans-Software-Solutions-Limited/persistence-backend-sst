@@ -86,6 +86,13 @@
           "icon": "./assets/icons/adaptive-icon.png",
           "color": "#0C111A"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Persistence needs access to your photos so you can choose a profile picture from your library.",
+          "cameraPermission": "Persistence needs access to your camera so you can take a profile picture."
+        }
       ]
     ],
     "experiments": {
