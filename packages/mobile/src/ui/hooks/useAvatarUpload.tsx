@@ -144,12 +144,36 @@ export function useAvatarUpload(
     invalidateAndBump();
   }, [api, invalidateAndBump]);
 
+  // Wraps each avatar-sheet action with a re-entrancy guard AND a defensive
+  // catch. Without the catch, native-module rejections from expo-image-picker
+  // (e.g. camera unavailable on simulator, native bridge errors) or from
+  // expo-image-manipulator (invalid input) would escape as unhandled promise
+  // rejections — the user would see no alert because `Alert.alert("Upload
+  // failed")` only fires on `!result.ok` from the API layer, and `isWorking`
+  // would still flip back via finally so the surface looks normal. Inspector
+  // Brad PR #68 medium-severity find: silent no-op on native throws.
   const run = useCallback(async (action: () => Promise<void>) => {
     if (isWorkingRef.current) return;
     isWorkingRef.current = true;
     setIsWorking(true);
     try {
       await action();
+    } catch (err) {
+      // Generic fallback alert. API-layer failures (upload/remove) are
+      // already surfaced with their own targeted copy inside `uploadFromUri`
+      // and `handleRemove` — those branches return normally rather than
+      // throw, so they never reach this catch. We only land here on native-
+      // module exceptions: picker bridge errors, manipulator invalid input,
+      // etc. Logging the cause keeps debugging cheap; the user gets a
+      // single readable alert instead of a silent no-op.
+      console.warn(
+        "[useAvatarUpload] action threw:",
+        err instanceof Error ? err.message : err,
+      );
+      Alert.alert(
+        "Something went wrong",
+        "We couldn't update your profile picture. Please try again.",
+      );
     } finally {
       setIsWorking(false);
       isWorkingRef.current = false;

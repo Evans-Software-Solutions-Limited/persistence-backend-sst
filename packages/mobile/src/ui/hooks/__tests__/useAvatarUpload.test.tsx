@@ -359,4 +359,69 @@ describe("useAvatarUpload", () => {
     });
     expect(result.current.cacheKey).toBe(0);
   });
+
+  it("alerts with a fallback when expo-image-manipulator rejects (native throw)", async () => {
+    // Inspector Brad PR #68: native module rejections from picker / manipulator
+    // used to escape the hook because `run` was try/finally with no catch —
+    // user got a silent no-op + an unhandled-promise warning. Pin both the
+    // alert AND that we don't bump cacheKey on this failure.
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockedPicker.requestMediaLibraryPermissionsAsync.mockResolvedValue({
+      granted: true,
+    } as Awaited<
+      ReturnType<typeof ImagePicker.requestMediaLibraryPermissionsAsync>
+    >);
+    mockedPicker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: "file:///gallery.jpg" }],
+    } as Awaited<ReturnType<typeof ImagePicker.launchImageLibraryAsync>>);
+    mockedManipulator.manipulateAsync.mockRejectedValueOnce(
+      new Error("ImageManipulator: invalid input"),
+    );
+
+    const { result, api } = setupHook({ avatarUrl: null });
+
+    await act(async () => {
+      result.current.showAvatarSheet();
+      fireSheetButton("Photo Library", alertSpy);
+    });
+
+    await waitFor(() => {
+      const fallbackCall = alertSpy.mock.calls.find(
+        (c) => c[0] === "Something went wrong",
+      );
+      expect(fallbackCall).toBeTruthy();
+    });
+    expect(api.uploadAvatarCalls).toHaveLength(0);
+    expect(result.current.cacheKey).toBe(0);
+    expect(result.current.isWorking).toBe(false);
+    warnSpy.mockRestore();
+  });
+
+  it("alerts with a fallback when expo-image-picker rejects (native throw)", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockedPicker.requestCameraPermissionsAsync.mockResolvedValue({
+      granted: true,
+    } as Awaited<ReturnType<typeof ImagePicker.requestCameraPermissionsAsync>>);
+    mockedPicker.launchCameraAsync.mockRejectedValueOnce(
+      new Error("Camera not available"),
+    );
+
+    const { result } = setupHook({ avatarUrl: null });
+
+    await act(async () => {
+      result.current.showAvatarSheet();
+      fireSheetButton("Camera", alertSpy);
+    });
+
+    await waitFor(() => {
+      const fallbackCall = alertSpy.mock.calls.find(
+        (c) => c[0] === "Something went wrong",
+      );
+      expect(fallbackCall).toBeTruthy();
+    });
+    expect(result.current.cacheKey).toBe(0);
+    expect(result.current.isWorking).toBe(false);
+    warnSpy.mockRestore();
+  });
 });
