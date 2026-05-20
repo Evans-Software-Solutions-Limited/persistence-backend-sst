@@ -49,4 +49,15 @@ describe("handleTrialWillEnd", () => {
     warnSpy.mockRestore();
     logSpy.mockRestore();
   });
+
+  it("renders trial_end='null' in the log when Stripe omits the field", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await handleTrialWillEnd(
+      buildEvent({ trial_end: null } as Partial<Stripe.Subscription>),
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("trial_end=null"),
+    );
+    logSpy.mockRestore();
+  });
 });
