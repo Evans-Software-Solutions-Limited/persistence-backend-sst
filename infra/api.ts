@@ -1,4 +1,4 @@
-import { databaseUrl } from "./secrets";
+import { databaseUrl, stripeSecretKey, stripeWebhookSecret } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { avatarsBucket } from "./storage";
 
@@ -37,6 +37,14 @@ coreAPI.route("$default", {
   environment: {
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
+    // Stripe — server-side only. The webhook handler uses
+    // `STRIPE_WEBHOOK_SECRET` for signature verification, and outbound
+    // subscription operations use `STRIPE_SECRET_KEY` against the Stripe
+    // SDK. Both are set per-stage by deploy-staging.yml / production-
+    // deploy.yml; missing values fail fast at handler init rather than
+    // silently degrading to "no Stripe access".
+    STRIPE_SECRET_KEY: stripeSecretKey.value,
+    STRIPE_WEBHOOK_SECRET: stripeWebhookSecret.value,
   },
 });
 
