@@ -115,5 +115,30 @@ jobs:
           fi
           bunx sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage production
 
+      # Stripe secrets used by the SST API Lambda for outbound SDK calls
+      # (subscriptionCreate/cancel) AND inbound webhook signature
+      # verification. Both must be set or the deploy fails fast — without
+      # the webhook secret an attacker could forge events and mutate
+      # user_subscriptions; without the API key outbound endpoints throw
+      # at first SDK call. Use sk_live_… on production.
+      - name: Set SST secrets (Stripe)
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$STRIPE_SECRET_KEY" ]; then
+            echo "::error::STRIPE_SECRET_KEY is not set on the Production GitHub environment."
+            echo "Add it under Settings → Environments → Production → Secrets (expected: sk_live_…)."
+            exit 1
+          fi
+          if [ -z "$STRIPE_WEBHOOK_SECRET" ]; then
+            echo "::error::STRIPE_WEBHOOK_SECRET is not set on the Production GitHub environment."
+            echo "Add it under Settings → Environments → Production → Secrets (expected: whsec_…)."
+            echo "Issued by Stripe when the webhook endpoint is registered against the production API URL."
+            exit 1
+          fi
+          bunx sst secret set StripeSecretKey "$STRIPE_SECRET_KEY" --stage production
+          bunx sst secret set StripeWebhookSecret "$STRIPE_WEBHOOK_SECRET" --stage production
+
       - name: Deploy
         run: bunx sst deploy --stage production
