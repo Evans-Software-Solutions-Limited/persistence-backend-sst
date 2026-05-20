@@ -380,6 +380,14 @@ describe("handleSubscriptionUpdated", () => {
         tierName: "basic",
         billingCycle: "monthly",
         paymentStatus: "active",
+        // Inspector Brad sweep #3 low-severity find: the basic-update
+        // pass above stamps cancelledAt from the FAILED sub's data
+        // (incomplete_expired has canceled_at set by Stripe). Without
+        // an explicit null in the restoration, the UI would render
+        // "Active until X" + "Cancelled at Y" together for the
+        // restored original sub. Pin the null so a regression shows
+        // up here.
+        cancelledAt: null,
       });
     });
 
@@ -407,6 +415,12 @@ describe("handleSubscriptionUpdated", () => {
           c[1].externalSubscriptionId === "sub_old" && !("tierName" in c[1]),
       );
       expect(fallbackCall).toBeDefined();
+      // Same cancelledAt-cleanup as the happy-path restoration — even
+      // when we can't reach Stripe, we shouldn't leave the row
+      // advertising a cancelled date for what's now the active sub.
+      expect(fallbackCall![1]).toMatchObject({
+        cancelledAt: null,
+      });
 
       errorSpy.mockRestore();
     });

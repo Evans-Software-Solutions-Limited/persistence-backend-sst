@@ -331,6 +331,15 @@ export async function handleSubscriptionUpdated(
         tierName: tierLookup?.tierName ?? "free",
         billingCycle: tierLookup?.billingCycle ?? "monthly",
         paymentStatus: originalStatus,
+        // Clear cancelledAt: the basic-update pass above wrote it from
+        // the FAILED sub's data (incomplete_expired subs have a
+        // canceled_at set by Stripe), but we're now restoring to the
+        // ORIGINAL sub which is still active. Without this the row
+        // ends up "Active until X" + "Cancelled at Y" simultaneously,
+        // exactly the confused state PR #67's defensive client-side
+        // collapse was trying to clean up (Inspector Brad PR #69
+        // sweep #3 low-severity find).
+        cancelledAt: null,
         trialEndsAt: unixSecondsToDate(original.trial_end),
         expiresAt: unixSecondsToDate(readCurrentPeriodEnd(original)),
         nextBillingDate: unixSecondsToDate(readCurrentPeriodEnd(original)),
@@ -357,6 +366,13 @@ export async function handleSubscriptionUpdated(
       await repo
         .updateById(refreshed.id, {
           externalSubscriptionId: oldStripeSubId,
+          // Same reasoning as the happy-path restoration: clear the
+          // failed-sub's cancelledAt so the row doesn't carry conflicting
+          // active-vs-cancelled signals. We don't know the original sub's
+          // status here (couldn't reach Stripe), but pointing the row at
+          // the old id without clearing cancelledAt would leave the UI
+          // showing a cancelled-at date for what's now the active sub.
+          cancelledAt: null,
           metadata: {
             ...rest,
             stripe_subscription_id: oldStripeSubId,

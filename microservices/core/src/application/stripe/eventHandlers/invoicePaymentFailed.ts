@@ -4,6 +4,42 @@ import { getStripe } from "../stripeClient";
 import { readInvoiceSubscriptionId } from "./_helpers";
 
 /**
+ * Mirror of `deriveInvoicePaidStatus` in `invoicePaymentSucceeded.ts`,
+ * but for the failure side. Returns the status to write, or `null` to
+ * skip the update entirely.
+ *
+ * The race chain this guards against — same as the .payment_succeeded
+ * version, just inverted:
+ *   1. Final .payment_failed fires at T0; our handler 5xx's (Neon hiccup,
+ *      Lambda cold-start timeout).
+ *   2. Stripe gives up on invoice retries and fires
+ *      customer.subscription.deleted at T1 → our row goes to
+ *      payment_status="cancelled".
+ *   3. Stripe replays the original .payment_failed at T2 → without this
+ *      guard we'd unconditionally overwrite the cancelled row back to
+ *      "past_due", leaving the UI labelling a cancelled user as
+ *      past-due-but-not-cancelled forever (no follow-up event arrives
+ *      for an already-deleted sub).
+ *
+ * Only `past_due` and `incomplete` Stripe statuses qualify as evidence
+ * that the row should genuinely be in `past_due` — every other status
+ * means another event has already moved the row past this state, and
+ * we should preserve it. Inspector Brad PR #69 sweep #3 medium-severity
+ * find.
+ */
+function deriveInvoiceFailedStatus(
+  status: Stripe.Subscription.Status,
+): string | null {
+  switch (status) {
+    case "past_due":
+    case "incomplete":
+      return "past_due";
+    default:
+      return null;
+  }
+}
+
+/**
  * Handler for `invoice.payment_failed` — Stripe fires this when a
  * recurring charge fails. The user's subscription is moved to
  * `past_due` status, giving them a grace period to update their
@@ -51,8 +87,16 @@ export async function handleInvoicePaymentFailed(
     return;
   }
 
+  const paymentStatus = deriveInvoiceFailedStatus(subscription.status);
+  if (paymentStatus === null) {
+    console.log(
+      `[stripe:invoice.payment_failed] subscription=${subscriptionId} status=${subscription.status} — not actively-billing, preserving existing row (likely a Stripe-retry of a failure that landed AFTER cancellation)`,
+    );
+    return;
+  }
+
   await repo.updateById(userSubscription.id, {
-    paymentStatus: "past_due",
+    paymentStatus,
   });
 
   // TODO(M9): send push notification to the user about the failed payment.

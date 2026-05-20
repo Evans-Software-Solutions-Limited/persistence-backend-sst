@@ -49,7 +49,12 @@ describe("handleInvoicePaymentFailed", () => {
     } as Stripe.Event;
   }
 
-  it("updates payment_status to past_due", async () => {
+  it("updates payment_status to past_due when the retrieved subscription is past_due", async () => {
+    subscriptionsRetrieveMock.mockResolvedValue({
+      id: "sub_test",
+      status: "past_due",
+      metadata: { supabase_user_id: "user-1" },
+    });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleInvoicePaymentFailed(buildEvent());
     expect(updateByIdMock).toHaveBeenCalledWith(
@@ -57,6 +62,56 @@ describe("handleInvoicePaymentFailed", () => {
       expect.objectContaining({ paymentStatus: "past_due" }),
     );
     logSpy.mockRestore();
+  });
+
+  it("updates payment_status to past_due when the retrieved subscription is incomplete", async () => {
+    subscriptionsRetrieveMock.mockResolvedValue({
+      id: "sub_test",
+      status: "incomplete",
+      metadata: { supabase_user_id: "user-1" },
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await handleInvoicePaymentFailed(buildEvent());
+    expect(updateByIdMock).toHaveBeenCalledWith(
+      "us_test",
+      expect.objectContaining({ paymentStatus: "past_due" }),
+    );
+    logSpy.mockRestore();
+  });
+
+  describe("non-billing-status race protection (Inspector Brad sweep #3)", () => {
+    // Mirror of the .payment_succeeded race protection. A delayed retry
+    // of a .payment_failed event arriving AFTER .subscription.deleted
+    // has cancelled the row must not revert it to past_due.
+    const nonBillingStatuses = [
+      "canceled",
+      "incomplete_expired",
+      "unpaid",
+      "paused",
+      // active is also a no-op: if the sub is currently active, the
+      // failed-payment event is stale and shouldn't move us off active.
+      "active",
+      "trialing",
+    ] as const;
+
+    for (const status of nonBillingStatuses) {
+      it(`preserves the existing row when subscription.status="${status}"`, async () => {
+        subscriptionsRetrieveMock.mockResolvedValue({
+          id: "sub_test",
+          status,
+          metadata: { supabase_user_id: "user-1" },
+        });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+        await handleInvoicePaymentFailed(buildEvent());
+
+        expect(updateByIdMock).not.toHaveBeenCalled();
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.stringContaining("not actively-billing"),
+        );
+        logSpy.mockRestore();
+      });
+    }
   });
 
   it("skips one-off invoices with no subscription id", async () => {
