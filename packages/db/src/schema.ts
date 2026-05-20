@@ -321,6 +321,26 @@ export const subscriptionLimits = pgTable(
   ],
 );
 
+/**
+ * Idempotency log for Stripe webhook events.
+ *
+ * The webhook handler inserts the Stripe-assigned `event_id` BEFORE
+ * dispatching to side effects, using ON CONFLICT DO NOTHING for dedup.
+ * Stripe's at-least-once delivery guarantees mean a duplicate event will
+ * eventually arrive; without this table the legacy webhook would re-run
+ * mutations on every retry.
+ *
+ * Schema mirrors `supabase/migrations/20260520120000_stripe_webhook_events.sql`.
+ */
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  type: text("type").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+});
+
 // ─── Exercises ────────────────────────────────────────────────────────────────
 
 export const exercises = pgTable("exercises", {
