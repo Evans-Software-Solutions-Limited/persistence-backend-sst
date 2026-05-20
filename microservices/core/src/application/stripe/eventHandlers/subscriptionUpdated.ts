@@ -58,6 +58,34 @@ const MAX_CANCEL_ATTEMPTS = 3;
  * that needs manual intervention, not a webhook-retry candidate
  * (Stripe retrying the same event won't change the answer).
  */
+/**
+ * Detect Stripe errors that mean "the subscription is already cancelled
+ * or deleted" — i.e. our previous attempt at this same operation
+ * succeeded server-side but couldn't commit the local metadata clear
+ * (Neon hiccup mid-operation, etc.) and Stripe is now retrying us.
+ *
+ * Treating these as success closes the loop the legacy stripe-webhook
+ * left open: without this, Stripe retries the same event for ~3 days,
+ * burning 6s of Lambda time per delivery on doomed cancel attempts,
+ * never reaching the metadata clear (Inspector Brad PR #69
+ * medium-severity find).
+ *
+ * Two error shapes to detect:
+ *   - `code: "resource_missing"` — Stripe's standard code when the
+ *     target id no longer exists (subscription fully deleted).
+ *   - Stripe API error messages containing "already cancel(l)ed" /
+ *     "has been canceled" — for partially-deleted-but-readable subs.
+ */
+function isAlreadyCanceledError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code =
+    (err as { code?: unknown }).code ??
+    (err as { raw?: { code?: unknown } }).raw?.code;
+  if (code === "resource_missing") return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /already\s+cancell?ed|has been cancell?ed/i.test(message);
+}
+
 async function cancelOldSubscriptionWithRetry(oldId: string): Promise<boolean> {
   const stripe = getStripe();
   for (let attempt = 1; attempt <= MAX_CANCEL_ATTEMPTS; attempt += 1) {
@@ -68,6 +96,16 @@ async function cancelOldSubscriptionWithRetry(oldId: string): Promise<boolean> {
       );
       return true;
     } catch (err) {
+      if (isAlreadyCanceledError(err)) {
+        // Idempotent recovery: a previous delivery cancelled the sub on
+        // Stripe's side but failed to clear our local metadata. We're
+        // here on a retry — proceed to the metadata clear as if the
+        // cancel succeeded.
+        console.log(
+          `[stripe:subscription.updated] old sub ${oldId} already cancelled on Stripe — treating as success and clearing local marker`,
+        );
+        return true;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
         `[stripe:subscription.updated] cancel attempt ${attempt} for ${oldId} failed: ${message}`,
@@ -206,18 +244,30 @@ export async function handleSubscriptionUpdated(
     periodEnd <= Math.floor(Date.now() / 1000)
   ) {
     const newTier = existingMeta.scheduled_downgrade.new_tier;
-    if (newTier && newTier !== "free") {
-      const { scheduled_downgrade: _drop, ...rest } = existingMeta;
-      void _drop;
+    const { scheduled_downgrade: _drop, ...rest } = existingMeta;
+    void _drop;
+
+    if (typeof newTier !== "string" || newTier.length === 0) {
+      // Malformed marker — JSON metadata could carry anything, and a
+      // missing / empty / wrong-type `new_tier` would otherwise leave the
+      // marker in place forever, with every subsequent
+      // customer.subscription.updated re-entering this dead branch.
+      // Clear the marker so we don't loop, and log loudly so the bad
+      // outbound write is visible (Inspector Brad PR #69 medium-severity
+      // find).
+      console.warn(
+        `[stripe:subscription.updated] scheduled_downgrade has malformed new_tier (${JSON.stringify(newTier)}) on user_subscriptions.id=${existing.id} — clearing marker without applying a tier change`,
+      );
+      await repo.updateById(existing.id, { metadata: rest });
+    } else if (newTier !== "free") {
       await repo.updateById(existing.id, {
         tierName: newTier,
         paymentStatus,
         cancelledAt: null,
         metadata: rest,
       });
-    } else if (newTier === "free") {
-      const { scheduled_downgrade: _drop, ...rest } = existingMeta;
-      void _drop;
+    } else {
+      // newTier === "free"
       await repo.updateById(existing.id, {
         tierName: "free",
         paymentStatus: "cancelled",

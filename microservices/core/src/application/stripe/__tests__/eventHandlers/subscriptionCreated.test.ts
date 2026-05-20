@@ -110,4 +110,51 @@ describe("handleSubscriptionCreated", () => {
     const payload = insertMock.mock.calls[0][0];
     expect(payload.metadata.stripe_customer_id).toBe("cus_obj");
   });
+
+  it("skips + warns when the insert collides with the active-unique partial index (code 23505)", async () => {
+    // Simulate the partial-unique-index violation: user already has an
+    // active/pending row. Without the fix, the error would propagate to
+    // the dispatcher → 500 → Stripe retries the same event for ~3 days.
+    const pgError = Object.assign(new Error("duplicate key value"), {
+      code: "23505",
+    });
+    insertMock.mockRejectedValueOnce(pgError);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      handleSubscriptionCreated(buildEvent()),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("collides with the active-unique constraint"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("matches the constraint name in the error message when the code is buried in a cause chain", async () => {
+    // postgres-js / Drizzle sometimes wrap the SQLSTATE inside a `cause`
+    // chain rather than exposing it on the outer error. We fall back to
+    // matching the constraint name literally.
+    const wrapped = Object.assign(
+      new Error(
+        'Failed query: insert into user_subscriptions; duplicate key value violates unique constraint "user_subscriptions_active_unique"',
+      ),
+      { code: undefined },
+    );
+    insertMock.mockRejectedValueOnce(wrapped);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      handleSubscriptionCreated(buildEvent()),
+    ).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("rethrows non-unique-violation errors so Stripe retries normally", async () => {
+    insertMock.mockRejectedValueOnce(new Error("Neon: connection terminated"));
+    await expect(handleSubscriptionCreated(buildEvent())).rejects.toThrow(
+      /Neon: connection terminated/,
+    );
+  });
 });

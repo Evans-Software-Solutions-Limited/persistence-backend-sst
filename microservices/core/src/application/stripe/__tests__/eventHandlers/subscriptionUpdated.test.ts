@@ -158,6 +158,47 @@ describe("handleSubscriptionUpdated", () => {
       );
     });
 
+    it("clears the marker + warns when new_tier is malformed (Inspector Brad medium-severity)", async () => {
+      // Malformed new_tier: undefined / "" / non-string. Without the fix
+      // the branch silently no-ops, leaving scheduled_downgrade in
+      // metadata forever and every subsequent .updated event re-entering
+      // the dead branch.
+      const pastPeriodEnd = Math.floor(Date.now() / 1000) - 60;
+      const cases: unknown[] = [undefined, "", 42];
+      for (const malformed of cases) {
+        vi.clearAllMocks();
+        findByExternalIdMock.mockResolvedValue({
+          ...fakeRow,
+          metadata: { scheduled_downgrade: { new_tier: malformed } },
+        });
+        updateByIdMock.mockResolvedValue({ id: "us_test" });
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        await handleSubscriptionUpdated(
+          buildEvent({
+            cancel_at_period_end: true,
+            items: {
+              data: [{ current_period_end: pastPeriodEnd }],
+            } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+          }),
+        );
+
+        // The marker must be cleared (no scheduled_downgrade in the
+        // final metadata) AND no tier_name update should have happened.
+        const malformedCall = updateByIdMock.mock.calls.find(
+          (c) =>
+            c[1].metadata &&
+            !("scheduled_downgrade" in (c[1].metadata as object)) &&
+            !("tierName" in c[1]),
+        );
+        expect(malformedCall).toBeDefined();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("malformed new_tier"),
+        );
+        warnSpy.mockRestore();
+      }
+    });
+
     it("downgrades to free with payment_status=cancelled when scheduled_downgrade.new_tier='free'", async () => {
       const pastPeriodEnd = Math.floor(Date.now() / 1000) - 60;
       findByExternalIdMock.mockResolvedValue({
@@ -196,6 +237,63 @@ describe("handleSubscriptionUpdated", () => {
           !("old_stripe_subscription_id" in (c[1].metadata as object)),
       );
       expect(clearCall).toBeDefined();
+    });
+
+    it("treats `resource_missing` from cancel as success (sub already cancelled on Stripe; Inspector Brad medium)", async () => {
+      // The non-atomic failure mode: previous delivery cancelled on
+      // Stripe's side but couldn't commit the local metadata clear.
+      // Stripe retries the event → we re-enter the commit branch →
+      // cancel call now hits an already-gone subscription. Without the
+      // fix this errors 3× per attempt and never clears the marker.
+      findByExternalIdMock.mockResolvedValue({
+        ...fakeRow,
+        metadata: { old_stripe_subscription_id: "sub_old" },
+      });
+      const stripeError = Object.assign(new Error("No such subscription"), {
+        code: "resource_missing",
+      });
+      subscriptionsCancelMock.mockRejectedValueOnce(stripeError);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await handleSubscriptionUpdated(buildEvent());
+
+      // Only ONE cancel attempt — we recognised "already canceled" and
+      // proceeded straight to the metadata clear instead of retrying.
+      expect(subscriptionsCancelMock).toHaveBeenCalledTimes(1);
+      const clearCall = updateByIdMock.mock.calls.find(
+        (c) =>
+          c[1].metadata &&
+          !("old_stripe_subscription_id" in (c[1].metadata as object)),
+      );
+      expect(clearCall).toBeDefined();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("already cancelled"),
+      );
+      logSpy.mockRestore();
+    });
+
+    it("treats 'already cancelled' error messages as success even without resource_missing code", async () => {
+      // Belt-and-braces: Stripe's text "Subscription has been canceled"
+      // (some endpoints don't set the standard code field on this error).
+      findByExternalIdMock.mockResolvedValue({
+        ...fakeRow,
+        metadata: { old_stripe_subscription_id: "sub_old" },
+      });
+      subscriptionsCancelMock.mockRejectedValueOnce(
+        new Error("This subscription has been canceled"),
+      );
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await handleSubscriptionUpdated(buildEvent());
+
+      expect(subscriptionsCancelMock).toHaveBeenCalledTimes(1);
+      const clearCall = updateByIdMock.mock.calls.find(
+        (c) =>
+          c[1].metadata &&
+          !("old_stripe_subscription_id" in (c[1].metadata as object)),
+      );
+      expect(clearCall).toBeDefined();
+      logSpy.mockRestore();
     });
 
     it("logs and preserves metadata when cancelling the old sub fails permanently", async () => {

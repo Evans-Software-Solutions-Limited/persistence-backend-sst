@@ -8,6 +8,33 @@ import {
 } from "./_helpers";
 
 /**
+ * Detect a Postgres unique-constraint violation. postgres-js + Neon both
+ * expose the SQLSTATE on the error's `code` property; Drizzle wraps with
+ * a `cause` chain, so we walk it. Specifically targets the
+ * `user_subscriptions_active_unique` partial index but tolerates any
+ * 23505 (matches by SQLSTATE rather than constraint name so future
+ * partial-unique indexes on this table don't slip through).
+ */
+function isUniqueViolation(err: unknown): boolean {
+  let cursor: unknown = err;
+  for (
+    let depth = 0;
+    depth < 4 && cursor !== undefined && cursor !== null;
+    depth += 1
+  ) {
+    const code = (cursor as { code?: unknown }).code;
+    if (code === "23505") return true;
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  // Belt-and-braces: postgres-js sometimes drops the code on the cause
+  // chain and only leaves the human-readable message on the outer
+  // Error. Match the constraint name literally so we don't mistake
+  // some other duplicate-key error for the active-unique collision.
+  const message = err instanceof Error ? err.message : String(err);
+  return /user_subscriptions_active_unique/.test(message);
+}
+
+/**
  * Handler for `customer.subscription.created`.
  *
  * Idempotent: if a `user_subscriptions` row already exists for this
@@ -51,22 +78,43 @@ export async function handleSubscriptionCreated(
   const tierName = subscription.metadata?.tier_name ?? "basic";
   const billingCycle = subscription.metadata?.billing_cycle ?? "monthly";
 
-  await repo.insert({
-    userId,
-    tierName,
-    billingCycle,
-    paymentStatus: mapStripeStatusToPaymentStatus(subscription.status),
-    startsAt: unixSecondsToDate(subscription.created) ?? new Date(),
-    expiresAt: unixSecondsToDate(readCurrentPeriodEnd(subscription)),
-    trialEndsAt: unixSecondsToDate(subscription.trial_end),
-    nextBillingDate: unixSecondsToDate(readCurrentPeriodEnd(subscription)),
-    externalSubscriptionId: subscription.id,
-    metadata: {
-      stripe_customer_id:
-        typeof subscription.customer === "string"
-          ? subscription.customer
-          : subscription.customer.id,
-      stripe_subscription_id: subscription.id,
-    },
-  });
+  try {
+    await repo.insert({
+      userId,
+      tierName,
+      billingCycle,
+      paymentStatus: mapStripeStatusToPaymentStatus(subscription.status),
+      startsAt: unixSecondsToDate(subscription.created) ?? new Date(),
+      expiresAt: unixSecondsToDate(readCurrentPeriodEnd(subscription)),
+      trialEndsAt: unixSecondsToDate(subscription.trial_end),
+      nextBillingDate: unixSecondsToDate(readCurrentPeriodEnd(subscription)),
+      externalSubscriptionId: subscription.id,
+      metadata: {
+        stripe_customer_id:
+          typeof subscription.customer === "string"
+            ? subscription.customer
+            : subscription.customer.id,
+        stripe_subscription_id: subscription.id,
+      },
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      // The user already has an active/pending row in user_subscriptions
+      // (partial-unique-index collision). This happens when a sub is
+      // created out-of-band (Stripe dashboard) while a previous one is
+      // still active, or when the outbound flow and the webhook race.
+      //
+      // Skipping is safe and necessary: the existing active row is the
+      // authoritative state, and subsequent customer.subscription.{updated,
+      // deleted} events on EITHER subscription will reconcile the local
+      // state correctly. Rethrowing would return 500 → Stripe retries the
+      // same event for ~3 days, hitting the same constraint each time,
+      // until manual intervention.
+      console.warn(
+        `[stripe:subscription.created] external_subscription_id=${subscription.id} collides with the active-unique constraint for user=${userId} — skipping insert, existing row is canonical (Inspector Brad PR #69 high-severity find)`,
+      );
+      return;
+    }
+    throw err;
+  }
 }
