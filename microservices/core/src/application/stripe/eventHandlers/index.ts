@@ -1,4 +1,10 @@
 import type Stripe from "stripe";
+import { handleInvoicePaymentFailed } from "./invoicePaymentFailed";
+import { handleInvoicePaymentSucceeded } from "./invoicePaymentSucceeded";
+import { handleSubscriptionCreated } from "./subscriptionCreated";
+import { handleSubscriptionDeleted } from "./subscriptionDeleted";
+import { handleSubscriptionUpdated } from "./subscriptionUpdated";
+import { handleTrialWillEnd } from "./trialWillEnd";
 
 /**
  * Per-event-type handler signature. Each handler is responsible for the
@@ -8,47 +14,27 @@ import type Stripe from "stripe";
  *
  * Handlers MUST be idempotent: a duplicate delivery that races past the
  * `event_id` claim (rare but possible under parallel retries) should
- * leave the DB in the same state as a single delivery.
+ * leave the DB in the same state as a single delivery. The DB-trigger
+ * `update_subscription_limits_trigger` is also idempotent — it
+ * recomputes derived state from scratch on each user_subscriptions
+ * write, so repeated writes don't drift.
  */
 export type StripeEventHandler = (event: Stripe.Event) => Promise<void>;
 
 /**
  * Dispatch table mapping Stripe event types to handler functions.
- *
- * Phase 1 ships stub handlers that only log — they unblock the webhook
- * route end-to-end (signature verify + idempotency + dispatch routing)
- * and let the integration test suite run before the per-event business
- * logic lands. The real handlers are wired in the next commit and
- * write to `user_subscriptions` via `SubscriptionRepository`. The DB
- * trigger `update_subscription_limits_trigger` propagates derived state
- * to `profiles.subscription_id` / `profiles.role` / `subscription_limits`
- * automatically — handlers MUST NOT touch those columns.
- *
- * Event types covered (mirrors legacy stripe-webhook/index.ts switch):
- *   - customer.subscription.created
- *   - customer.subscription.updated   (heaviest — scheduled cancellation,
- *                                       upgrade rollback, etc.)
- *   - customer.subscription.deleted
- *   - invoice.payment_succeeded
- *   - invoice.payment_failed
- *   - customer.subscription.trial_will_end  (log-only in legacy)
+ * Mirrors the 6 cases of the legacy stripe-webhook switch statement.
  *
  * Events not in this table fall through to a log-and-200 path — Stripe
  * accepts new event types over time and we don't want to 500 on them.
  */
-async function stubHandler(event: Stripe.Event): Promise<void> {
-  console.log(
-    `[stripe:webhook:stub] received ${event.type} (${event.id}) — handler stub, no side effects until next commit`,
-  );
-}
-
 export const eventHandlers: Record<string, StripeEventHandler> = {
-  "customer.subscription.created": stubHandler,
-  "customer.subscription.updated": stubHandler,
-  "customer.subscription.deleted": stubHandler,
-  "invoice.payment_succeeded": stubHandler,
-  "invoice.payment_failed": stubHandler,
-  "customer.subscription.trial_will_end": stubHandler,
+  "customer.subscription.created": handleSubscriptionCreated,
+  "customer.subscription.updated": handleSubscriptionUpdated,
+  "customer.subscription.deleted": handleSubscriptionDeleted,
+  "invoice.payment_succeeded": handleInvoicePaymentSucceeded,
+  "invoice.payment_failed": handleInvoicePaymentFailed,
+  "customer.subscription.trial_will_end": handleTrialWillEnd,
 };
 
 /**

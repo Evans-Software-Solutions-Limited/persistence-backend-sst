@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { eventHandlers, resolveEventHandler } from "../eventHandlers";
 
 describe("resolveEventHandler", () => {
@@ -22,18 +22,11 @@ describe("resolveEventHandler", () => {
     expect(resolveEventHandler("")).toBeNull();
   });
 
-  it("stub handlers log and resolve without throwing", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const handler = eventHandlers["customer.subscription.updated"];
-    expect(handler).toBeDefined();
-    await expect(
-      handler!({
-        id: "evt_test",
-        type: "customer.subscription.updated",
-        // Minimal subset — the stub only reads .type and .id for logging.
-      } as unknown as Parameters<typeof handler>[0]),
-    ).resolves.toBeUndefined();
-    expect(logSpy).toHaveBeenCalled();
-    logSpy.mockRestore();
+  it("exposes the same set of handlers via `eventHandlers` map and `resolveEventHandler`", () => {
+    // Sanity check that the named exports stay in lockstep — without this,
+    // a future contributor could add a handler to one but not the other.
+    for (const [type, handler] of Object.entries(eventHandlers)) {
+      expect(resolveEventHandler(type)).toBe(handler);
+    }
   });
 });
