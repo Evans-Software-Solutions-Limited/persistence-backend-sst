@@ -48,6 +48,7 @@ import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
 import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
+import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -102,7 +103,16 @@ const app = new Elysia()
 
 export type CoreApi = typeof app;
 
-const honoHandler = handle(new Hono().mount("/", app.fetch));
+// `/stripe/webhook` lives on the Hono parent rather than inside Elysia
+// because Stripe signature verification requires the EXACT raw request
+// bytes (an HMAC over the body — even Elysia's JSON re-serialise breaks
+// it). Hono's `c.req.raw` exposes the underlying Request unmodified.
+// Routes registered on the parent take priority over the mounted Elysia
+// sub-app, so this doesn't conflict with anything below.
+const honoApp = new Hono();
+honoApp.post("/stripe/webhook", (c) => handleStripeWebhook(c.req.raw));
+honoApp.mount("/", app.fetch);
+const honoHandler = handle(honoApp);
 
 /**
  * Lambda entrypoint with a defensive top-level catch.
