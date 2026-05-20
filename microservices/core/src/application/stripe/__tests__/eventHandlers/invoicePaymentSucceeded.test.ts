@@ -100,4 +100,37 @@ describe("handleInvoicePaymentSucceeded", () => {
     expect(updateByIdMock).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  describe("non-billing-status race protection (Inspector Brad medium)", () => {
+    // Outbound cancel(invoice_now: true, prorate: true) fires BOTH
+    // customer.subscription.deleted AND invoice.payment_succeeded. Webhook
+    // delivery order between them isn't guaranteed. If .deleted lands first
+    // and stamps payment_status="cancelled", THIS handler must NOT later
+    // overwrite that back to "active" off the final prorated invoice.
+    const nonBillingStatuses = [
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "unpaid",
+      "paused",
+    ] as const;
+
+    for (const status of nonBillingStatuses) {
+      it(`preserves the existing row when subscription.status="${status}"`, async () => {
+        subscriptionsRetrieveMock.mockResolvedValueOnce({
+          ...fakeSub,
+          status,
+        });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+        await handleInvoicePaymentSucceeded(buildEvent());
+
+        expect(updateByIdMock).not.toHaveBeenCalled();
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.stringContaining("not actively billing"),
+        );
+        logSpy.mockRestore();
+      });
+    }
+  });
 });

@@ -8,6 +8,47 @@ import {
 } from "./_helpers";
 
 /**
+ * Derive the `payment_status` to write when `invoice.payment_succeeded`
+ * arrives, based on the retrieved Stripe subscription's status.
+ *
+ * Returns `null` when the subscription is NOT actively billing — caller
+ * skips the local update entirely, preserving whatever state
+ * `subscriptionDeleted` (or any other webhook) has already written.
+ *
+ * Why this is necessary: Stripe fires `invoice.payment_succeeded` for the
+ * final prorated invoice when an outbound flow calls
+ * `subscriptions.cancel(id, { invoice_now: true, prorate: true })`,
+ * AND webhook delivery order between that and
+ * `customer.subscription.deleted` is not guaranteed. The previous code
+ * defaulted to `paymentStatus = "active"` for ANY non-(trialing|past_due)
+ * status — including `canceled` and `incomplete_expired`. The race chain
+ * that broke: `.deleted` lands first → row goes to "cancelled" →
+ * `payment_succeeded` lands → row reverts to "active" → UI shows an
+ * Active badge for a cancelled user. Exactly the stranded-row failure
+ * PR #67's client-side defensive collapse was supposed to mask
+ * (Inspector Brad PR #69 medium-severity find).
+ */
+function deriveInvoicePaidStatus(
+  status: Stripe.Subscription.Status,
+): string | null {
+  switch (status) {
+    case "active":
+      return "active";
+    case "trialing":
+      return "trialing";
+    case "past_due":
+      return "past_due";
+    // canceled, incomplete, incomplete_expired, unpaid, paused — none
+    // of these mean "the user is now actively billing because an
+    // invoice succeeded". For all of them, the invoice is either a
+    // final prorated cancellation receipt or a race against another
+    // state-changing event — don't overwrite the row.
+    default:
+      return null;
+  }
+}
+
+/**
  * Handler for `invoice.payment_succeeded` — Stripe fires this on every
  * successful recurring charge (and the initial charge on a new
  * subscription).
@@ -60,17 +101,20 @@ export async function handleInvoicePaymentSucceeded(
     return;
   }
 
+  const paymentStatus = deriveInvoicePaidStatus(subscription.status);
+  if (paymentStatus === null) {
+    // The retrieved subscription is no longer actively billing — most
+    // commonly the final prorated invoice from an outbound cancel that
+    // already fired `customer.subscription.deleted` (or will fire it
+    // shortly). Skip the local update; the deleted handler is
+    // authoritative for the terminal state.
+    console.log(
+      `[stripe:invoice.payment_succeeded] subscription=${subscription.id} status=${subscription.status} is not actively billing — preserving existing row state`,
+    );
+    return;
+  }
+
   const nextBillingDate = unixSecondsToDate(readCurrentPeriodEnd(subscription));
-  // Default `payment_status` to "active" rather than "pending" — the
-  // invoice succeeded, so even if subscription.status comes back stale
-  // from Stripe, the user is definitively paid through the next cycle.
-  // Matches legacy line 612.
-  const paymentStatus =
-    subscription.status === "trialing"
-      ? "trialing"
-      : subscription.status === "past_due"
-        ? "past_due"
-        : "active";
 
   await repo.updateById(userSubscription.id, {
     paymentStatus,
