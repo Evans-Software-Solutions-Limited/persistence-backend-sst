@@ -615,7 +615,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
   });
 
-  it("returns 501 placeholder for subscription-change existing rows (Phase 2A.3 not yet landed)", async () => {
+  it("dispatches change-path (not new-sub) when existing row has a stripe_subscription_id but different tier", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
@@ -629,11 +629,19 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       paymentStatus: "active",
       metadata: { stripe_subscription_id: "sub_old_active" },
     });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new", status: "trialing" }),
+    );
     const res = await postCreate(validBody);
-    expect(res.status).toBe(501);
-    expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("Subscription-change"),
-    });
+    expect(res.status).toBe(200);
+    // Change-path UPDATES the existing row in place — never inserts.
+    expect(subscriptionRepositoryMocks.insert).not.toHaveBeenCalled();
+    expect(subscriptionRepositoryMocks.updateById).toHaveBeenCalled();
+    // The new Stripe sub gets the old marker baked into its metadata.
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.metadata.old_stripe_subscription_id).toBe(
+      "sub_old_active",
+    );
   });
 
   it("reuses an existing Stripe customer when metadata.stripe_customer_id resolves", async () => {
@@ -984,9 +992,13 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
       reinstateableRow({ tierName: "basic" }),
     );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_changed", status: "active" }),
+    );
     const res = await postCreate(validBody);
-    // Phase 2A.3 stub still in place
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
+    // change-path took over — Stripe.create was called (not .update)
+    expect(stripeMock.subscriptions.create).toHaveBeenCalled();
     expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
   });
 
@@ -1000,8 +1012,466 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
       reinstateableRow({ billingCycle: "yearly" }),
     );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_changed", status: "active" }),
+    );
     const res = await postCreate(validBody);
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
+    expect(stripeMock.subscriptions.create).toHaveBeenCalled();
     expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Handler integration tests — subscription-change path ────────────
+
+/** Build an existing row that should drive the change-path. */
+function changePathRow(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "us_existing",
+    userId: "user-1",
+    tierName: "basic",
+    billingCycle: "monthly",
+    paymentStatus: "active",
+    cancelledAt: null,
+    metadata: {
+      stripe_customer_id: "cus_existing",
+      stripe_subscription_id: "sub_old_active",
+      platform: "ios",
+    },
+    ...over,
+  };
+}
+
+describe("subscriptionsCreateHandler — subscription-change path", () => {
+  it("creates a new Stripe sub stamped with old_stripe_subscription_id, updates the local row in place, clears cancelledAt", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({ cancelledAt: new Date("2026-04-01") }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_new_premium",
+        status: "trialing",
+        trial_end: 1700604800,
+      }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      requires_action: false,
+      subscription_id: "us_existing", // UPDATED, not inserted
+      stripe_subscription_id: "sub_new_premium",
+      payment_status: "trialing",
+    });
+    // Should NOT be flagged as reinstated — that's the reinstate-path return shape.
+    expect(body.reinstated).toBeUndefined();
+
+    // Old marker propagated to BOTH Stripe metadata and local metadata
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.metadata).toMatchObject({
+      supabase_user_id: "user-1",
+      tier_name: "premium",
+      billing_cycle: "monthly",
+      old_stripe_subscription_id: "sub_old_active",
+    });
+
+    // updateById was called — NOT insert
+    expect(subscriptionRepositoryMocks.insert).not.toHaveBeenCalled();
+    expect(subscriptionRepositoryMocks.updateById).toHaveBeenCalledTimes(1);
+    const [updatedId, patch] =
+      subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(updatedId).toBe("us_existing");
+    expect(patch).toMatchObject({
+      tierName: "premium",
+      billingCycle: "monthly",
+      currency: "GBP",
+      paymentStatus: "trialing",
+      externalSubscriptionId: "sub_new_premium",
+      cancelledAt: null,
+    });
+    expect(patch.metadata).toMatchObject({
+      stripe_subscription_id: "sub_new_premium",
+      old_stripe_subscription_id: "sub_old_active",
+      stripe_payment_method_id: "pm_card",
+    });
+
+    // Trial flag flipped (eligible — hasUsedUserTrial was false)
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedUserTrial: true,
+    });
+
+    // NO inline old-sub cancel — that's the webhook's job
+    expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+  });
+
+  it("clears any pending scheduled_downgrade marker per Q7", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          scheduled_downgrade: { new_tier: "basic" },
+        },
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new_premium", status: "active" }),
+    );
+    await postCreate(validBody);
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(
+      (patch.metadata as Record<string, unknown>).scheduled_downgrade,
+    ).toBeUndefined();
+    // ...but the new old-sub marker IS present
+    expect(
+      (patch.metadata as Record<string, unknown>).old_stripe_subscription_id,
+    ).toBe("sub_old_active");
+  });
+
+  it("does not grant a trial when user has already used user trial", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    profileRepositoryMocks.getById.mockResolvedValueOnce(
+      fakeProfile({ hasUsedUserTrial: true }),
+    );
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_no_trial",
+        status: "active",
+        trial_end: null as unknown as number,
+      }),
+    );
+    await postCreate(validBody);
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.trial_period_days).toBeUndefined();
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("returns requires_action with client_secret when the new sub needs 3DS", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_change_3ds",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_change_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      requires_action: true,
+      subscription_id: "us_existing",
+      stripe_subscription_id: "sub_change_3ds",
+      payment_status: "pending",
+      client_secret: "pi_change_3ds_secret",
+    });
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(patch.paymentStatus).toBe("pending");
+    expect(
+      (patch.metadata as Record<string, unknown>).requires_3d_secure,
+    ).toBe(true);
+    // Trial flag flipped on 3DS path (anti-farming)
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedUserTrial: true,
+    });
+  });
+
+  it("rolls back the new Stripe sub when the DB update fails", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_to_roll_back", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockRejectedValueOnce(
+      new Error("neon transient"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
+      "sub_to_roll_back",
+    );
+    // Trial flag flip skipped on rollback
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("logs but does not error when Stripe rollback ALSO fails on change-path DB failure", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_double_fail", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockRejectedValueOnce(
+      new Error("neon dead"),
+    );
+    stripeMock.subscriptions.cancel.mockRejectedValueOnce(
+      new Error("stripe down"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Stripe rollback ALSO failed"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("rolls back when updateById returns null (existing row vanished between findMostRecent and the update)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_null_update", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockResolvedValueOnce(null);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
+      "sub_null_update",
+    );
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("sub_null_update"),
+    });
+    errSpy.mockRestore();
+  });
+
+  it("logs but does not error when Stripe rollback ALSO fails after a null updateById", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_null_then_fail", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockResolvedValueOnce(null);
+    stripeMock.subscriptions.cancel.mockRejectedValueOnce(
+      new Error("stripe sick"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("ALSO failed"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("returns 400 when PM attach fails on change path", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    const attachErr: any = new Error("expired card");
+    attachErr.code = "card_expired";
+    stripeMock.paymentMethods.attach.mockRejectedValueOnce(attachErr);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(400);
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("returns 500 when stripe.subscriptions.create throws on change path", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockRejectedValueOnce(
+      new Error("price archived"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(subscriptionRepositoryMocks.updateById).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("flips hasUsedTrainerTrial on the change path for a trainer pro tier", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_trainer_pro_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: true,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_change_to_trainer_pro",
+        status: "trialing",
+      }),
+    );
+    await postCreate({ ...validBody, tier_name: "individual_trainer_pro" });
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedTrainerTrial: true,
+    });
+  });
+
+  it("tolerates null billingCycle on the existing row (reinstateable check uses 'monthly' default)", async () => {
+    // Drizzle marks billingCycle as nullable on read — a legacy / out-of-band
+    // row could carry null here. Eligibility check must fall through to
+    // monthly by default rather than mis-classifying as not-reinstateable.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({ billingCycle: null }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old", status: "active" }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith(
+      "sub_old",
+      expect.any(Object),
+    );
+  });
+
+  it("creates Stripe customer with undefined email/name when the profile has them null", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    profileRepositoryMocks.getById.mockResolvedValueOnce(
+      fakeProfile({ email: null, fullName: null }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_null_profile" }),
+    );
+    await postCreate(validBody);
+    expect(stripeMock.customers.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: undefined,
+        name: undefined,
+      }),
+    );
+  });
+
+  it("3DS branch returns client_secret=undefined when the Stripe PaymentIntent has null client_secret", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_3ds_no_secret",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: null,
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.requires_action).toBe(true);
+    expect(body.client_secret).toBeUndefined();
+  });
+
+  it("logs but does not error when trial flag update fails on change path", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_trial_flag_fail", status: "trialing" }),
+    );
+    profileRepositoryMocks.update.mockRejectedValueOnce(new Error("neon"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("trial flag update failed"),
+    );
+    errSpy.mockRestore();
   });
 });

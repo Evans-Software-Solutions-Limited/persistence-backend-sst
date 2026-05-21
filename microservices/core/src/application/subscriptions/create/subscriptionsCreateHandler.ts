@@ -493,6 +493,234 @@ async function handleReinstate(args: {
   };
 }
 
+/**
+ * Subscription-change branch. Caller has already attached the payment
+ * method and resolved the Stripe customer id.
+ *
+ * Webhook-driven cleanup contract (Brad Q10 sign-off):
+ *   The new Stripe sub is created with
+ *   `metadata.old_stripe_subscription_id` set. The local row is updated
+ *   (NOT inserted — we're reusing the existing primary key so the partial-
+ *   unique-index on (user_id) WHERE payment_status IN ('active','pending')
+ *   never collides) with the same marker plus a clean payment_status from
+ *   the new sub. When Stripe later fires
+ *   `customer.subscription.updated` on the new sub:
+ *     - status=active|trialing → eventHandlers/subscriptionUpdated.ts
+ *       cancels the OLD Stripe sub (with retry + already-cancelled
+ *       tolerance from Phase 1) and clears the marker.
+ *     - status=incomplete_expired → same handler retrieves the OLD sub
+ *       from Stripe and rolls the local row back to its state.
+ *
+ * The synchronous endpoint never tries to cancel inline — that was the
+ * legacy "billed twice on cancel-fail" failure mode. If the new sub
+ * never makes it out of `incomplete`, Stripe automatically transitions
+ * it to `incomplete_expired` after 23 hours, which triggers the
+ * rollback path on its own.
+ *
+ * Trial flags + scheduled_downgrade marker:
+ *   - Trial eligibility is computed the same way as new-sub
+ *     (`resolveTrial`) — the user gets a trial only if they haven't
+ *     used one for that tier family yet. Flags are flipped immediately
+ *     on trial-using paths (including 3DS), same anti-farming behaviour
+ *     as new-sub.
+ *   - If the existing row carries a `scheduled_downgrade` metadata
+ *     marker (user previously requested a downgrade-at-period-end),
+ *     this fresh change supersedes that intent — clear the marker
+ *     (Brad Q7 sign-off).
+ */
+async function handleSubscriptionChange(args: {
+  stripe: Stripe;
+  subRepo: SubscriptionRepository;
+  profileRepo: ProfileRepository;
+  ctx: StatusSettable;
+  userId: string;
+  existing: UserSubscription;
+  existingStripeSubId: string;
+  customerId: string;
+  priceInfo: { priceId: string; currency: string; isTrainerTier: boolean };
+  tierName: string;
+  billingCycle: "monthly" | "yearly";
+  paymentMethodId: string;
+  platform: "ios" | "android" | null;
+  trial: { days: number; flag: "user" | "trainer" | null };
+}): Promise<SuccessResponse | ErrorResponse> {
+  const {
+    stripe,
+    subRepo,
+    profileRepo,
+    ctx,
+    userId,
+    existing,
+    existingStripeSubId,
+    customerId,
+    priceInfo,
+    tierName,
+    billingCycle,
+    paymentMethodId,
+    platform,
+    trial,
+  } = args;
+
+  const createParams: Stripe.SubscriptionCreateParams = {
+    customer: customerId,
+    items: [{ price: priceInfo.priceId }],
+    payment_behavior: "default_incomplete",
+    payment_settings: {
+      payment_method_types: ["card"],
+      save_default_payment_method: "on_subscription",
+    },
+    expand: ["latest_invoice.payment_intent"],
+    metadata: {
+      supabase_user_id: userId,
+      tier_name: tierName,
+      billing_cycle: billingCycle,
+      // Stripe-side marker so the webhook's subscriptionUpdated handler
+      // can cancel the old one when the new sub becomes active/trialing.
+      // The Phase 1 handler reads this from the LOCAL row's metadata
+      // (we set it there below as well), so the Stripe-side metadata is
+      // primarily for ops debugging — but harmless and a useful audit.
+      old_stripe_subscription_id: existingStripeSubId,
+    },
+  };
+  if (trial.days > 0) {
+    createParams.trial_period_days = trial.days;
+  }
+
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await stripe.subscriptions.create(createParams);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[subscriptions:create:change] stripe.subscriptions.create failed for user=${userId}: ${message}`,
+    );
+    ctx.set.status = 500;
+    return { error: `Failed to create Stripe subscription: ${message}` };
+  }
+
+  const requiresActionIntent = readRequiresActionIntent(subscription);
+  const paymentStatus = requiresActionIntent
+    ? "pending"
+    : derivePaymentStatus(subscription);
+  const expiresAt = periodEndDate(subscription);
+  const trialEndsAt = trialEndDate(subscription);
+
+  // Preserve relevant prior metadata, layer in the new sub's identifiers,
+  // stamp the old-sub marker for the webhook, and DROP any pending
+  // scheduled_downgrade (per Brad Q7 — this change supersedes the prior
+  // intent).
+  const existingMeta = readMetadata(existing);
+  const {
+    scheduled_downgrade: _droppedDowngrade,
+    ...metaWithoutDowngrade
+  } = existingMeta as Record<string, unknown> & {
+    scheduled_downgrade?: unknown;
+  };
+  void _droppedDowngrade;
+
+  const newMeta: Record<string, unknown> = {
+    ...metaWithoutDowngrade,
+    stripe_customer_id: customerId,
+    stripe_subscription_id: subscription.id,
+    stripe_payment_method_id: paymentMethodId,
+    platform: platform,
+    payment_type: "apple_pay_or_google_pay",
+    old_stripe_subscription_id: existingStripeSubId,
+    ...(requiresActionIntent ? { requires_3d_secure: true } : {}),
+  };
+
+  let updated: UserSubscription | null;
+  try {
+    updated = await subRepo.updateById(existing.id, {
+      tierName,
+      billingCycle,
+      currency: priceInfo.currency,
+      paymentStatus,
+      startsAt: new Date(),
+      expiresAt,
+      trialEndsAt,
+      nextBillingDate: expiresAt,
+      externalSubscriptionId: subscription.id,
+      cancelledAt: null, // change clears any prior cancellation stamp
+      metadata: newMeta,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[subscriptions:create:change] DB update failed for stripe_sub=${subscription.id}: ${message} — rolling back Stripe subscription`,
+    );
+    await stripe.subscriptions.cancel(subscription.id).catch((cancelErr) => {
+      const cm =
+        cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+      console.error(
+        `[subscriptions:create:change] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
+      );
+    });
+    ctx.set.status = 500;
+    return { error: `Failed to update subscription record: ${message}` };
+  }
+
+  if (updated === null) {
+    // Existing row went missing between findMostRecentForUser and now.
+    // Almost certainly impossible — the user is JWT-bound and the row
+    // was looked up by the same userId — but log + roll back the new
+    // Stripe sub so we don't strand a paid sub against no DB row.
+    console.error(
+      `[subscriptions:create:change] updateById returned null for user_subscriptions.id=${existing.id}; rolling back new Stripe sub ${subscription.id}`,
+    );
+    await stripe.subscriptions.cancel(subscription.id).catch((cancelErr) => {
+      const cm =
+        cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+      console.error(
+        `[subscriptions:create:change] Stripe rollback after null update ALSO failed for ${subscription.id}: ${cm}`,
+      );
+    });
+    ctx.set.status = 500;
+    return {
+      error: `Subscription change failed — existing record could not be located. Please contact support with subscription ID: ${subscription.id}`,
+    };
+  }
+
+  // Trial flag flip (same anti-farming behaviour as new-sub).
+  if (trial.flag !== null) {
+    const updateData =
+      trial.flag === "user"
+        ? { hasUsedUserTrial: true }
+        : { hasUsedTrainerTrial: true };
+    try {
+      await profileRepo.update(userId, updateData);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[subscriptions:create:change] trial flag update failed for user=${userId}: ${message} — partial-unique-index will still block duplicate active sub`,
+      );
+    }
+  }
+
+  if (requiresActionIntent) {
+    return {
+      success: true,
+      requires_action: true,
+      subscription_id: updated.id,
+      stripe_subscription_id: subscription.id,
+      trial_ends_at: toIso(trialEndsAt),
+      next_billing_date: toIso(expiresAt),
+      payment_status: "pending",
+      client_secret: requiresActionIntent.client_secret ?? undefined,
+    };
+  }
+
+  return {
+    success: true,
+    requires_action: false,
+    subscription_id: updated.id,
+    stripe_subscription_id: subscription.id,
+    trial_ends_at: toIso(trialEndsAt),
+    next_billing_date: toIso(expiresAt),
+    payment_status: paymentStatus,
+  };
+}
+
 export const subscriptionsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -574,9 +802,61 @@ export const subscriptionsCreateHandler = new Elysia()
           paymentMethodId: body.payment_method_id,
         });
       }
+      // --- Subscription-change path (Phase 2A.3) --------------------------
+      // Different tier OR billing cycle, OR same tier+cycle but status not
+      // in the reinstateable set. Create a NEW Stripe subscription and
+      // stamp the previous Stripe sub id into BOTH the new Stripe sub's
+      // metadata AND the local row's metadata. The webhook handler
+      // (subscriptionUpdated.ts) drives the eventual:
+      //   - cancel-of-old when the new sub transitions to active/trialing
+      //   - rollback-to-original when the new sub fails as incomplete_expired
+      // This pattern removes the legacy's "billed twice" failure mode
+      // (Brad Q10 sign-off).
       if (existing !== null && existingStripeSubId !== null) {
-        ctx.set.status = 501;
-        return { error: "Subscription-change path not yet implemented" };
+        const stripe = getStripe();
+        const customerId = await resolveCustomerId(stripe, userId, existing, {
+          email: profile.email ?? null,
+          fullName: profile.fullName ?? null,
+        });
+        try {
+          await attachPaymentMethod(
+            stripe,
+            customerId,
+            body.payment_method_id,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[subscriptions:create] attach payment method failed for user=${userId} on subscription change: ${message}`,
+          );
+          ctx.set.status = 400;
+          return { error: `Failed to attach payment method: ${message}` };
+        }
+
+        const trialForChange = resolveTrial(
+          body.tier_name,
+          priceInfo.isTrainerTier,
+          body.use_trial,
+          profile.hasUsedUserTrial ?? false,
+          profile.hasUsedTrainerTrial ?? false,
+        );
+
+        return handleSubscriptionChange({
+          stripe,
+          subRepo,
+          profileRepo,
+          ctx,
+          userId,
+          existing,
+          existingStripeSubId,
+          customerId,
+          priceInfo,
+          tierName: body.tier_name,
+          billingCycle: body.billing_cycle,
+          paymentMethodId: body.payment_method_id,
+          platform: body.platform ?? null,
+          trial: trialForChange,
+        });
       }
 
       // --- New subscription path -----------------------------------------
