@@ -1,0 +1,22 @@
+{
+  "name": "@persistence/scripts",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "reconcile-stripe": "bun run reconcile-stripe.ts"
+  },
+  "dependencies": {
+    "@persistence/db": "workspace:*",
+    "drizzle-orm": "^0.44.2",
+    "stripe": "^22.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@vitest/coverage-v8": "^2.1.9",
+    "typescript": "^5",
+    "vitest": "^2.1.9"
+  }
+}
