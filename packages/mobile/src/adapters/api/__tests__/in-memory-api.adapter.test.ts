@@ -438,4 +438,95 @@ describe("InMemoryApiAdapter", () => {
       expect(api.exercises).toHaveLength(0);
     });
   });
+
+  describe("subscriptions (M7)", () => {
+    it("createSubscription captures input + counter + returns the canned response", async () => {
+      const result = await api.createSubscription({
+        tier_name: "premium",
+        billing_cycle: "monthly",
+        payment_method_id: "pm_card",
+        use_trial: true,
+        platform: "ios",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({
+        success: true,
+        requires_action: false,
+        subscription_id: "us_test_1",
+        stripe_subscription_id: "sub_test_1",
+        payment_status: "active",
+      });
+      expect(api.createSubscriptionCalls).toBe(1);
+      expect(api.lastCreateSubscriptionInput).toEqual({
+        tier_name: "premium",
+        billing_cycle: "monthly",
+        payment_method_id: "pm_card",
+        use_trial: true,
+        platform: "ios",
+      });
+    });
+
+    it("createSubscription returns a configurable requires_action shape", async () => {
+      api.setNextCreateSubscriptionResponse({
+        requires_action: true,
+        client_secret: "pi_3ds_secret",
+        payment_status: "pending",
+      });
+      const result = await api.createSubscription({
+        tier_name: "premium",
+        billing_cycle: "monthly",
+        payment_method_id: "pm_card",
+        use_trial: true,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.requires_action).toBe(true);
+      expect(result.value.client_secret).toBe("pi_3ds_secret");
+      expect(result.value.payment_status).toBe("pending");
+    });
+
+    it("createSubscription surfaces api failure when shouldFail flips", async () => {
+      api.shouldFail = true;
+      const result = await api.createSubscription({
+        tier_name: "premium",
+        billing_cycle: "monthly",
+        payment_method_id: "pm_card",
+        use_trial: false,
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    it("cancelSubscription captures (subscriptionId, input) pair and counts calls", async () => {
+      const result = await api.cancelSubscription("us_123", {
+        cancel_immediately: true,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({
+        success: true,
+        cancelled_at: expect.any(String),
+        subscription_ends_at: expect.any(String),
+      });
+      expect(api.cancelSubscriptionCalls).toBe(1);
+      expect(api.lastCancelSubscription).toEqual({
+        subscriptionId: "us_123",
+        input: { cancel_immediately: true },
+      });
+    });
+
+    it("cancelSubscription defaults the input to {} when omitted", async () => {
+      await api.cancelSubscription("us_default_input");
+      expect(api.lastCancelSubscription).toEqual({
+        subscriptionId: "us_default_input",
+        input: {},
+      });
+    });
+
+    it("cancelSubscription surfaces api failure when shouldFail flips", async () => {
+      api.shouldFail = true;
+      const result = await api.cancelSubscription("us_123");
+      expect(result.ok).toBe(false);
+    });
+  });
 });

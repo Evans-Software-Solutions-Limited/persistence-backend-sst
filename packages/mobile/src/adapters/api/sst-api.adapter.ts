@@ -36,6 +36,10 @@ import type {
   RecordSessionInput,
   RecordedApiSession,
   UploadAvatarInput,
+  CreateSubscriptionInput,
+  CreateSubscriptionResponse,
+  CancelSubscriptionInput,
+  CancelSubscriptionResponse,
 } from "@/domain/ports/api.port";
 import type {
   CreateWorkoutInput,
@@ -802,6 +806,39 @@ export class SSTApiAdapter implements ApiPort {
 
   async deleteGoal(id: string) {
     return this.request<void>(`/goals/${id}`, { method: "DELETE" });
+  }
+
+  // -- Subscriptions (M7) --
+  //
+  // Both endpoints return their data flat (NOT under a `{ data }` envelope)
+  // so they use `request<T>` not `requestEnvelope<T>`. The backend already
+  // surfaces error bodies as `{ error: "..." }` on non-2xx; `request<T>`'s
+  // existing error mapping reads the `error` field and propagates a
+  // friendly message.
+
+  async createSubscription(
+    input: CreateSubscriptionInput,
+  ): Promise<Result<CreateSubscriptionResponse, ApiError>> {
+    return this.request<CreateSubscriptionResponse>("/subscriptions", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async cancelSubscription(
+    subscriptionId: string,
+    input: CancelSubscriptionInput = {},
+  ): Promise<Result<CancelSubscriptionResponse, ApiError>> {
+    return this.request<CancelSubscriptionResponse>(
+      `/subscriptions/${subscriptionId}/cancel`,
+      {
+        method: "POST",
+        // Always send a JSON body — backend's Elysia validator expects an
+        // object (cancel_immediately is optional, defaults to false on the
+        // backend). An empty object is safe and explicit.
+        body: input,
+      },
+    );
   }
 }
 

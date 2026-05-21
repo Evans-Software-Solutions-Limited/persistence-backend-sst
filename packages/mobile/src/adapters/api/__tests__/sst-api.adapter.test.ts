@@ -301,3 +301,175 @@ describe("SSTApiAdapter.searchExercises", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("SSTApiAdapter.createSubscription (M7)", () => {
+  it("POSTs the input body to /subscriptions and returns the flat payload", async () => {
+    const mock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          requires_action: false,
+          subscription_id: "us_abc",
+          stripe_subscription_id: "sub_abc",
+          trial_ends_at: "2026-06-01T00:00:00.000Z",
+          next_billing_date: "2026-07-01T00:00:00.000Z",
+          payment_status: "trialing",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createSubscription({
+      tier_name: "premium",
+      billing_cycle: "monthly",
+      payment_method_id: "pm_card",
+      use_trial: true,
+      platform: "ios",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      success: true,
+      requires_action: false,
+      subscription_id: "us_abc",
+      stripe_subscription_id: "sub_abc",
+      payment_status: "trialing",
+    });
+
+    // Verify the request shape (path + JSON body)
+    const [url, init] = mock.mock.calls[0];
+    expect(url).toBe("http://test.local/subscriptions");
+    expect((init as { method: string }).method).toBe("POST");
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body).toEqual({
+      tier_name: "premium",
+      billing_cycle: "monthly",
+      payment_method_id: "pm_card",
+      use_trial: true,
+      platform: "ios",
+    });
+  });
+
+  it("propagates the requires_action shape including client_secret", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          requires_action: true,
+          subscription_id: "us_3ds",
+          stripe_subscription_id: "sub_3ds",
+          trial_ends_at: null,
+          next_billing_date: null,
+          payment_status: "pending",
+          client_secret: "pi_3ds_secret",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createSubscription({
+      tier_name: "premium",
+      billing_cycle: "monthly",
+      payment_method_id: "pm_card",
+      use_trial: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.requires_action).toBe(true);
+    expect(result.value.client_secret).toBe("pi_3ds_secret");
+  });
+
+  it("maps a backend 400 + { error } into api/server with the message preserved", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Cannot create subscription for free tier. Free tier is the default state.",
+        }),
+        { status: 400 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createSubscription({
+      tier_name: "free",
+      billing_cycle: "monthly",
+      payment_method_id: "pm_card",
+      use_trial: false,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("free tier");
+    expect(result.error.status).toBe(400);
+  });
+});
+
+describe("SSTApiAdapter.cancelSubscription (M7)", () => {
+  it("POSTs to /subscriptions/:id/cancel with the body, returns the flat payload", async () => {
+    const mock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          cancelled_at: "2026-05-21T12:00:00.000Z",
+          subscription_ends_at: "2026-06-01T00:00:00.000Z",
+          message: "Subscription will be cancelled at the end of the billing period",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.cancelSubscription("us_abc", {
+      cancel_immediately: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      success: true,
+      cancelled_at: "2026-05-21T12:00:00.000Z",
+      subscription_ends_at: "2026-06-01T00:00:00.000Z",
+    });
+
+    const [url, init] = mock.mock.calls[0];
+    expect(url).toBe("http://test.local/subscriptions/us_abc/cancel");
+    expect((init as { method: string }).method).toBe("POST");
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body).toEqual({ cancel_immediately: false });
+  });
+
+  it("defaults the body to {} when no input is provided", async () => {
+    const mock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          cancelled_at: "2026-05-21T12:00:00.000Z",
+          subscription_ends_at: "2026-06-01T00:00:00.000Z",
+          message: "Subscription will be cancelled at the end of the billing period",
+        }),
+        { status: 200 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    await adapter.cancelSubscription("us_abc");
+    const [, init] = mock.mock.calls[0];
+    expect(JSON.parse((init as { body: string }).body)).toEqual({});
+  });
+
+  it("maps a backend 404 + { error } into api/not_found", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ error: "Subscription not found" }),
+        { status: 404 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.cancelSubscription("us_missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not_found");
+  });
+});

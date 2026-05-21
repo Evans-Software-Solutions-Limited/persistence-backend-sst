@@ -43,10 +43,6 @@ import { getStripe } from "../../stripe/stripeClient";
  * sweep #3, so a double-update is safe.
  */
 
-type CancelBody = {
-  cancel_immediately?: boolean;
-};
-
 type CancelSuccess = {
   success: true;
   cancelled_at: string;
