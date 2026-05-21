@@ -139,9 +139,9 @@ describe("reconcile-stripe — pure helpers", () => {
 
   it("readTierFromMetadata + readBillingCycleFromMetadata fall back to safe defaults", () => {
     expect(readTierFromMetadata({ metadata: {} } as any)).toBe("basic");
-    expect(readTierFromMetadata({ metadata: { tier_name: "premium" } } as any)).toBe(
-      "premium",
-    );
+    expect(
+      readTierFromMetadata({ metadata: { tier_name: "premium" } } as any),
+    ).toBe("premium");
     expect(readBillingCycleFromMetadata({ metadata: {} } as any)).toBe(
       "monthly",
     );
@@ -185,36 +185,35 @@ describe("reconcile-stripe — buildOp", () => {
       externalSubscriptionId: "sub_test_123",
     });
     expect(op.payload.expiresAt).toEqual(new Date(1717200000 * 1000));
-    expect((op.payload.metadata as any).stripe_customer_id).toBe("cus_test_456");
+    expect((op.payload.metadata as any).stripe_customer_id).toBe(
+      "cus_test_456",
+    );
     expect((op.payload.metadata as any).reconciled_at).toEqual(
       expect.any(String),
     );
   });
 
   it("builds an update op when a local row already exists, preserving prior metadata", () => {
-    const op = buildOp(
-      fakeSubscription({ status: "past_due" }),
-      {
-        id: "us_local_1",
-        userId: "user-1",
-        tierName: "basic",
-        billingCycle: "monthly",
-        paymentStatus: "active",
-        startsAt: new Date(),
-        expiresAt: null,
-        cancelledAt: null,
-        trialEndsAt: null,
-        nextBillingDate: null,
-        externalSubscriptionId: "sub_test_123",
-        metadata: {
-          stripe_customer_id: "cus_old",
-          platform: "ios",
-        },
-        currency: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any,
-    );
+    const op = buildOp(fakeSubscription({ status: "past_due" }), {
+      id: "us_local_1",
+      userId: "user-1",
+      tierName: "basic",
+      billingCycle: "monthly",
+      paymentStatus: "active",
+      startsAt: new Date(),
+      expiresAt: null,
+      cancelledAt: null,
+      trialEndsAt: null,
+      nextBillingDate: null,
+      externalSubscriptionId: "sub_test_123",
+      metadata: {
+        stripe_customer_id: "cus_old",
+        platform: "ios",
+      },
+      currency: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
     expect(op.op).toBe("update");
     if (op.op !== "update") return;
     expect(op.localId).toBe("us_local_1");

@@ -106,10 +106,7 @@ export class SubscriptionRepository {
       .select()
       .from(userSubscriptions)
       .where(
-        and(
-          eq(userSubscriptions.id, id),
-          eq(userSubscriptions.userId, userId),
-        ),
+        and(eq(userSubscriptions.id, id), eq(userSubscriptions.userId, userId)),
       )
       .limit(1);
     return rows[0] ?? null;

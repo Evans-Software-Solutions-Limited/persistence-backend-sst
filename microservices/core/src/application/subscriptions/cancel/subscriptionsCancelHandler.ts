@@ -158,7 +158,7 @@ export const subscriptionsCancelHandler = new Elysia()
         const periodEnd =
           typeof legacyEnd === "number" && legacyEnd > 0
             ? legacyEnd
-            : updated.items?.data?.[0]?.current_period_end ?? null;
+            : (updated.items?.data?.[0]?.current_period_end ?? null);
         const periodEndDate = unixToIso(periodEnd);
         if (periodEndDate !== null) {
           endsAt = new Date(periodEndDate);

@@ -414,7 +414,8 @@ describe("SSTApiAdapter.cancelSubscription (M7)", () => {
           success: true,
           cancelled_at: "2026-05-21T12:00:00.000Z",
           subscription_ends_at: "2026-06-01T00:00:00.000Z",
-          message: "Subscription will be cancelled at the end of the billing period",
+          message:
+            "Subscription will be cancelled at the end of the billing period",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -446,7 +447,8 @@ describe("SSTApiAdapter.cancelSubscription (M7)", () => {
           success: true,
           cancelled_at: "2026-05-21T12:00:00.000Z",
           subscription_ends_at: "2026-06-01T00:00:00.000Z",
-          message: "Subscription will be cancelled at the end of the billing period",
+          message:
+            "Subscription will be cancelled at the end of the billing period",
         }),
         { status: 200 },
       );
@@ -460,10 +462,9 @@ describe("SSTApiAdapter.cancelSubscription (M7)", () => {
 
   it("maps a backend 404 + { error } into api/not_found", async () => {
     installFetchMock(async () => {
-      return new Response(
-        JSON.stringify({ error: "Subscription not found" }),
-        { status: 404 },
-      );
+      return new Response(JSON.stringify({ error: "Subscription not found" }), {
+        status: 404,
+      });
     });
 
     const adapter = new SSTApiAdapter();

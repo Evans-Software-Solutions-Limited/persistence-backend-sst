@@ -610,12 +610,10 @@ async function handleSubscriptionChange(args: {
   // scheduled_downgrade (per Brad Q7 — this change supersedes the prior
   // intent).
   const existingMeta = readMetadata(existing);
-  const {
-    scheduled_downgrade: _droppedDowngrade,
-    ...metaWithoutDowngrade
-  } = existingMeta as Record<string, unknown> & {
-    scheduled_downgrade?: unknown;
-  };
+  const { scheduled_downgrade: _droppedDowngrade, ...metaWithoutDowngrade } =
+    existingMeta as Record<string, unknown> & {
+      scheduled_downgrade?: unknown;
+    };
   void _droppedDowngrade;
 
   const newMeta: Record<string, unknown> = {
@@ -780,11 +778,7 @@ export const subscriptionsCreateHandler = new Elysia()
           fullName: profile.fullName ?? null,
         });
         try {
-          await attachPaymentMethod(
-            stripe,
-            customerId,
-            body.payment_method_id,
-          );
+          await attachPaymentMethod(stripe, customerId, body.payment_method_id);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -819,11 +813,7 @@ export const subscriptionsCreateHandler = new Elysia()
           fullName: profile.fullName ?? null,
         });
         try {
-          await attachPaymentMethod(
-            stripe,
-            customerId,
-            body.payment_method_id,
-          );
+          await attachPaymentMethod(stripe, customerId, body.payment_method_id);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -952,13 +942,17 @@ export const subscriptionsCreateHandler = new Elysia()
         console.error(
           `[subscriptions:create] DB insert failed for stripe_sub=${subscription.id}: ${message} — rolling back Stripe subscription`,
         );
-        await stripe.subscriptions.cancel(subscription.id).catch((cancelErr) => {
-          const cm =
-            cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
-          console.error(
-            `[subscriptions:create] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
-          );
-        });
+        await stripe.subscriptions
+          .cancel(subscription.id)
+          .catch((cancelErr) => {
+            const cm =
+              cancelErr instanceof Error
+                ? cancelErr.message
+                : String(cancelErr);
+            console.error(
+              `[subscriptions:create] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
+            );
+          });
         ctx.set.status = 500;
         return { error: `Failed to create subscription record: ${message}` };
       }
@@ -1018,9 +1012,7 @@ export const subscriptionsCreateHandler = new Elysia()
         // Required explicit — no silent default. Caller must opt in to
         // trial usage (Brad Q3 sign-off).
         use_trial: t.Boolean(),
-        platform: t.Optional(
-          t.Union([t.Literal("ios"), t.Literal("android")]),
-        ),
+        platform: t.Optional(t.Union([t.Literal("ios"), t.Literal("android")])),
       }),
     },
   );

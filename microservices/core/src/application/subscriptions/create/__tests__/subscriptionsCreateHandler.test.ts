@@ -76,9 +76,7 @@ vi.mock("../../../repositories/subscriptionRepository", () => ({
 }));
 
 vi.mock("../../../repositories/profileRepository", () => ({
-  ProfileRepository: vi
-    .fn()
-    .mockImplementation(() => profileRepositoryMocks),
+  ProfileRepository: vi.fn().mockImplementation(() => profileRepositoryMocks),
 }));
 
 vi.mock("../../../stripe/stripeClient", () => ({
@@ -92,12 +90,14 @@ vi.mock("../../../stripe/stripeClient", () => ({
  * `resolvePrice` is the only consumer in the handler; mock it per-test
  * via `mockPriceLookup` below.
  */
-function mockPriceLookup(row: {
-  priceMonthly?: string | null;
-  priceYearly?: string | null;
-  currency?: string | null;
-  isTrainerTier?: boolean | null;
-} | null) {
+function mockPriceLookup(
+  row: {
+    priceMonthly?: string | null;
+    priceYearly?: string | null;
+    currency?: string | null;
+    isTrainerTier?: boolean | null;
+  } | null,
+) {
   dbSelectMock.mockImplementationOnce(() => ({
     from: () => ({
       where: () => ({
@@ -133,9 +133,8 @@ function fakeProfile(over: Partial<Record<string, unknown>> = {}) {
 }
 
 async function postCreate(body: unknown, withAuth = true) {
-  const { subscriptionsCreateHandler } = await import(
-    "../subscriptionsCreateHandler"
-  );
+  const { subscriptionsCreateHandler } =
+    await import("../subscriptionsCreateHandler");
   return subscriptionsCreateHandler.handle(
     new Request("http://localhost/subscriptions", {
       method: "POST",
@@ -243,18 +242,13 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     ).toEqual({ days: 0, flag: null });
     // standard trainer tier (no _pro suffix) → no trial
     expect(
-      resolveTrial(
-        "individual_trainer_standard",
-        true,
-        true,
-        false,
-        false,
-      ),
+      resolveTrial("individual_trainer_standard", true, true, false, false),
     ).toEqual({ days: 0, flag: null });
     // is_trainer_tier flag false but name ends _pro — guard rejects
-    expect(
-      resolveTrial("rogue_pro", false, true, false, false),
-    ).toEqual({ days: 0, flag: null });
+    expect(resolveTrial("rogue_pro", false, true, false, false)).toEqual({
+      days: 0,
+      flag: null,
+    });
   });
 
   it("resolveTrial returns no trial for basic + non-pro trainer tiers", async () => {
@@ -278,16 +272,32 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     expect(isReinstateable(row, "premium", "yearly")).toBe(false);
     expect(isReinstateable(row, "basic", "monthly")).toBe(false);
     expect(
-      isReinstateable({ ...row, paymentStatus: "active" }, "premium", "monthly"),
+      isReinstateable(
+        { ...row, paymentStatus: "active" },
+        "premium",
+        "monthly",
+      ),
     ).toBe(false);
     expect(
-      isReinstateable({ ...row, paymentStatus: "trialing" }, "premium", "monthly"),
+      isReinstateable(
+        { ...row, paymentStatus: "trialing" },
+        "premium",
+        "monthly",
+      ),
     ).toBe(true);
     expect(
-      isReinstateable({ ...row, paymentStatus: "past_due" }, "premium", "monthly"),
+      isReinstateable(
+        { ...row, paymentStatus: "past_due" },
+        "premium",
+        "monthly",
+      ),
     ).toBe(true);
     expect(
-      isReinstateable({ ...row, paymentStatus: "canceled" }, "premium", "monthly"),
+      isReinstateable(
+        { ...row, paymentStatus: "canceled" },
+        "premium",
+        "monthly",
+      ),
     ).toBe(true);
   });
 
@@ -305,9 +315,7 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
         items: { data: [{ current_period_end: 200 }] },
       } as any),
     ).toBe(200);
-    expect(
-      readCurrentPeriodEnd({ items: { data: [] } } as any),
-    ).toBeNull();
+    expect(readCurrentPeriodEnd({ items: { data: [] } } as any)).toBeNull();
   });
 });
 
@@ -885,9 +893,9 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     });
     const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
     expect(patch.paymentStatus).toBe("pending");
-    expect(
-      (patch.metadata as Record<string, unknown>).requires_3d_secure,
-    ).toBe(true);
+    expect((patch.metadata as Record<string, unknown>).requires_3d_secure).toBe(
+      true,
+    );
   });
 
   it("returns 500 with operator-friendly message when stripe.subscriptions.update throws", async () => {
@@ -1202,9 +1210,9 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     });
     const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
     expect(patch.paymentStatus).toBe("pending");
-    expect(
-      (patch.metadata as Record<string, unknown>).requires_3d_secure,
-    ).toBe(true);
+    expect((patch.metadata as Record<string, unknown>).requires_3d_secure).toBe(
+      true,
+    );
     // Trial flag flipped on 3DS path (anti-farming)
     expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
       hasUsedUserTrial: true,
@@ -1312,9 +1320,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await postCreate(validBody);
     expect(res.status).toBe(500);
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining("ALSO failed"),
-    );
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("ALSO failed"));
     errSpy.mockRestore();
   });
 
@@ -1463,7 +1469,10 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
       changePathRow(),
     );
     stripeMock.subscriptions.create.mockResolvedValueOnce(
-      buildStripeSubscription({ id: "sub_trial_flag_fail", status: "trialing" }),
+      buildStripeSubscription({
+        id: "sub_trial_flag_fail",
+        status: "trialing",
+      }),
     );
     profileRepositoryMocks.update.mockRejectedValueOnce(new Error("neon"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});

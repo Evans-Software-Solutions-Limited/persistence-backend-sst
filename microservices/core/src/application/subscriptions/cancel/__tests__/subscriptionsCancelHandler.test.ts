@@ -60,9 +60,8 @@ function fakeRow(over: Partial<Record<string, unknown>> = {}) {
 }
 
 async function postCancel(id: string, body: unknown = {}, withAuth = true) {
-  const { subscriptionsCancelHandler } = await import(
-    "../subscriptionsCancelHandler"
-  );
+  const { subscriptionsCancelHandler } =
+    await import("../subscriptionsCancelHandler");
   return subscriptionsCancelHandler.handle(
     new Request(`http://localhost/subscriptions/${id}/cancel`, {
       method: "POST",
@@ -162,16 +161,15 @@ describe("subscriptionsCancelHandler", () => {
       );
       expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
 
-      const [, patch] =
-        subscriptionRepositoryMocks.updateById.mock.calls[0];
+      const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
       expect(patch.paymentStatus).toBe("active"); // preserved
       expect(patch.cancelledAt).toEqual(expect.any(Date));
-      expect((patch.metadata as Record<string, unknown>).cancel_immediately).toBe(
-        false,
-      );
       expect(
-        (patch.metadata as Record<string, unknown>).cancelled_at,
-      ).toEqual(expect.any(String));
+        (patch.metadata as Record<string, unknown>).cancel_immediately,
+      ).toBe(false);
+      expect((patch.metadata as Record<string, unknown>).cancelled_at).toEqual(
+        expect.any(String),
+      );
       // Original metadata preserved
       expect((patch.metadata as Record<string, unknown>).platform).toBe("ios");
     });
@@ -223,8 +221,7 @@ describe("subscriptionsCancelHandler", () => {
         fakeRow({ paymentStatus: "trialing" }),
       );
       await postCancel("us_1");
-      const [, patch] =
-        subscriptionRepositoryMocks.updateById.mock.calls[0];
+      const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
       expect(patch.paymentStatus).toBe("trialing");
     });
 
@@ -251,12 +248,11 @@ describe("subscriptionsCancelHandler", () => {
         "sub_stripe_id",
       );
       expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
-      const [, patch] =
-        subscriptionRepositoryMocks.updateById.mock.calls[0];
+      const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
       expect(patch.paymentStatus).toBe("cancelled");
-      expect((patch.metadata as Record<string, unknown>).cancel_immediately).toBe(
-        true,
-      );
+      expect(
+        (patch.metadata as Record<string, unknown>).cancel_immediately,
+      ).toBe(true);
     });
 
     it("uses Stripe's canceled_at for subscription_ends_at", async () => {
