@@ -1,0 +1,597 @@
+import Elysia, { t } from "elysia";
+import type Stripe from "stripe";
+import { eq } from "drizzle-orm";
+import { subscriptionTiers } from "@persistence/db";
+import { getDb } from "@persistence/db/client";
+import {
+  getAuthUser,
+  getUser,
+  requireAuth,
+} from "@persistence/api-utils/auth/supabaseAuth";
+
+import {
+  SubscriptionRepository,
+  type UserSubscription,
+} from "../../repositories/subscriptionRepository";
+import { ProfileRepository } from "../../repositories/profileRepository";
+import { getStripe } from "../../stripe/stripeClient";
+
+/**
+ * POST /subscriptions — single endpoint that folds four outbound flows:
+ *
+ *   1. **New subscription**   — fresh user, no prior `user_subscriptions` row,
+ *                                or a row that doesn't qualify for reinstate.
+ *   2. **Reinstatement**       — same tier + billing cycle as the latest row,
+ *                                and that row's `payment_status` is in
+ *                                {cancelled, canceled, past_due, trialing}.
+ *                                We resume the SAME Stripe subscription via
+ *                                `cancel_at_period_end: false`.
+ *   3. **Subscription change** — different tier or billing cycle from the
+ *                                latest row. We create a NEW Stripe sub and
+ *                                stamp the previous Stripe sub id into
+ *                                `metadata.old_stripe_subscription_id` on
+ *                                BOTH the new Stripe sub AND the local row.
+ *                                The webhook handler
+ *                                (`subscriptionUpdated.ts`) drives the
+ *                                eventual cancel-of-old when the new sub
+ *                                transitions to active/trialing, or rolls
+ *                                back to the original on incomplete_expired.
+ *                                The synchronous endpoint never cancels
+ *                                inline — that was legacy's "billed twice"
+ *                                failure mode.
+ *   4. **3D Secure**            — when the resulting Stripe subscription's
+ *                                latest_invoice.payment_intent is
+ *                                `requires_action`, return
+ *                                `requires_action: true` with the
+ *                                `client_secret` so mobile can complete the
+ *                                challenge. The DB row is written first
+ *                                (status=`pending`) so an abandoned 3DS flow
+ *                                can't refarm trial flags.
+ *
+ * Contract (consolidated — DIFFERS FROM LEGACY, see Brad sign-off above):
+ *   - `subscription_id` always means our local `user_subscriptions.id` UUID,
+ *     `stripe_subscription_id` always means the Stripe `sub_…` id. Legacy
+ *     conflated these in the 3DS branch.
+ *   - `use_trial` is required explicit on the request body — no silent
+ *     default. Caller must opt in to trial usage.
+ *   - `payment_method_id` is required — no fallback to stored default.
+ *   - The handler writes only to `user_subscriptions` AND to two
+ *     `profiles` columns (`has_used_user_trial` / `has_used_trainer_trial`)
+ *     when a trial is granted. The DB trigger
+ *     `update_subscription_limits_trigger` maintains
+ *     `profiles.subscription_id`, `profiles.role`, and
+ *     `subscription_limits.*` automatically — DO NOT touch those here.
+ *
+ * Legacy reference: `persistence-backend/supabase/functions/
+ * stripe-create-subscription/index.ts` (1040 lines, folded the same 4
+ * flows). PR #69 webhook handlers must remain unchanged — they already
+ * understand the `old_stripe_subscription_id` and `scheduled_downgrade`
+ * markers we write here.
+ */
+
+const TRAINER_TIER_TRIAL_DAYS = 14;
+const USER_TIER_TRIAL_DAYS = 7;
+
+const REINSTATEMENT_STATUSES = new Set([
+  "cancelled",
+  "canceled",
+  "past_due",
+  "trialing",
+]);
+
+type CreateSubscriptionBody = {
+  tier_name: string;
+  billing_cycle: "monthly" | "yearly";
+  payment_method_id: string;
+  use_trial: boolean;
+  platform?: "ios" | "android";
+};
+
+type SuccessResponse = {
+  success: true;
+  requires_action: boolean;
+  subscription_id: string; // local UUID
+  stripe_subscription_id: string;
+  trial_ends_at: string | null;
+  next_billing_date: string | null;
+  payment_status: string;
+  reinstated?: boolean;
+  client_secret?: string;
+};
+
+type ErrorResponse = { error: string };
+
+function toIso(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  return date.toISOString();
+}
+
+/**
+ * Read the expanded `payment_intent` off a Stripe invoice across API
+ * versions. The SDK's `Stripe.Invoice` type no longer declares
+ * `payment_intent` as an indexable field (v22 moved it under
+ * `confirmation_secret` in some shapes), but the runtime payload from
+ * `expand: ["latest_invoice.payment_intent"]` still carries it directly.
+ * Same `as unknown as { ... }` pattern used by
+ * `eventHandlers/_helpers.ts:readInvoiceSubscriptionId`.
+ */
+function readExpandedPaymentIntent(
+  invoice: Stripe.Invoice | null | undefined,
+): Stripe.PaymentIntent | null {
+  if (!invoice) return null;
+  const pi = (
+    invoice as unknown as {
+      payment_intent?: Stripe.PaymentIntent | string | null;
+    }
+  ).payment_intent;
+  if (pi === null || pi === undefined || typeof pi === "string") return null;
+  return pi;
+}
+
+/**
+ * Map a Stripe `Subscription.status` (plus, for incomplete subs, the
+ * payment intent status) to our local `payment_status`. Mirrors legacy
+ * lines 794-813 + 469-489.
+ */
+function derivePaymentStatus(subscription: Stripe.Subscription): string {
+  switch (subscription.status) {
+    case "trialing":
+      return "trialing";
+    case "active":
+      return "active";
+    case "past_due":
+      return "past_due";
+    case "incomplete":
+    case "incomplete_expired": {
+      const invoice = subscription.latest_invoice as Stripe.Invoice | null;
+      const pi = readExpandedPaymentIntent(invoice);
+      if (pi?.status === "succeeded") return "active";
+      return "pending";
+    }
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * Read `current_period_end` across API versions (newer Stripe API moved
+ * the field onto items). Mirrors `eventHandlers/_helpers.ts:readCurrentPeriodEnd`
+ * — duplicated here rather than imported because the inbound helper is
+ * scoped to the webhook side and re-exporting from `_helpers` would
+ * widen its surface unnecessarily. Behaviour must stay in lockstep with
+ * that helper — if you change one, change both (covered by tests on each
+ * side).
+ */
+function readCurrentPeriodEnd(
+  subscription: Stripe.Subscription,
+): number | null {
+  const legacy = (
+    subscription as unknown as { current_period_end?: number | null }
+  ).current_period_end;
+  if (typeof legacy === "number" && legacy > 0) return legacy;
+  const itemEnd = subscription.items?.data?.[0]?.current_period_end;
+  return typeof itemEnd === "number" && itemEnd > 0 ? itemEnd : null;
+}
+
+function periodEndDate(subscription: Stripe.Subscription): Date | null {
+  const seconds = readCurrentPeriodEnd(subscription);
+  if (seconds === null) return null;
+  return new Date(seconds * 1000);
+}
+
+function trialEndDate(subscription: Stripe.Subscription): Date | null {
+  if (!subscription.trial_end) return null;
+  return new Date(subscription.trial_end * 1000);
+}
+
+/**
+ * Read the requires-action payment intent off a Stripe subscription's
+ * latest invoice, if any. Returns null when the sub doesn't need any
+ * 3DS challenge — caller proceeds with a normal happy-path response.
+ */
+function readRequiresActionIntent(
+  subscription: Stripe.Subscription,
+): Stripe.PaymentIntent | null {
+  const invoice = subscription.latest_invoice as Stripe.Invoice | null;
+  const pi = readExpandedPaymentIntent(invoice);
+  if (pi?.status === "requires_action") return pi;
+  return null;
+}
+
+/**
+ * Look up a Stripe price id from `subscription_tiers` for the requested
+ * tier + cycle. Returns null when the tier doesn't exist OR when the
+ * cycle's price id is unset (mis-configured tier — handler 500s).
+ *
+ * Inlined rather than added to a repository because (a) it's a single
+ * read used by exactly one caller, (b) the legacy webhook handler does
+ * the inverse lookup (price → tier) inline in subscriptionUpdated.ts:
+ * `resolveTierForPrice` for the same reason.
+ */
+async function resolvePrice(
+  tierName: string,
+  billingCycle: "monthly" | "yearly",
+): Promise<{
+  priceId: string;
+  currency: string;
+  isTrainerTier: boolean;
+} | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      priceMonthly: subscriptionTiers.stripePriceIdMonthly,
+      priceYearly: subscriptionTiers.stripePriceIdYearly,
+      currency: subscriptionTiers.currency,
+      isTrainerTier: subscriptionTiers.isTrainerTier,
+    })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, tierName))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  const priceId =
+    billingCycle === "monthly" ? row.priceMonthly : row.priceYearly;
+  if (typeof priceId !== "string" || priceId.length === 0) return null;
+  return {
+    priceId,
+    currency: row.currency ?? "GBP",
+    isTrainerTier: row.isTrainerTier ?? false,
+  };
+}
+
+/**
+ * Trial-eligibility resolver. Returns the number of trial days to grant
+ * (0 = no trial), and which trial flag to set on the profile after the
+ * subscription writes succeed.
+ *
+ *   - `premium` (user tier) — 7 days, gated on `has_used_user_trial`.
+ *   - `*_pro` (trainer pro tiers) — 14 days, gated on
+ *     `has_used_trainer_trial`. Recognised via the
+ *     `subscription_tiers.is_trainer_tier` flag rather than a name
+ *     prefix sniff — the latter is what legacy did and it's fragile if
+ *     a future tier doesn't fit the convention.
+ *   - Anything else — no trial.
+ */
+function resolveTrial(
+  tierName: string,
+  isTrainerTier: boolean,
+  useTrial: boolean,
+  hasUsedUserTrial: boolean,
+  hasUsedTrainerTrial: boolean,
+): { days: number; flag: "user" | "trainer" | null } {
+  if (!useTrial) return { days: 0, flag: null };
+
+  const isUserTier = tierName === "premium";
+  if (isUserTier) {
+    if (hasUsedUserTrial) return { days: 0, flag: null };
+    return { days: USER_TIER_TRIAL_DAYS, flag: "user" };
+  }
+
+  const isTrainerPro = isTrainerTier && tierName.endsWith("_pro");
+  if (isTrainerPro) {
+    if (hasUsedTrainerTrial) return { days: 0, flag: null };
+    return { days: TRAINER_TIER_TRIAL_DAYS, flag: "trainer" };
+  }
+
+  return { days: 0, flag: null };
+}
+
+/**
+ * Classify the existing row as reinstatement-eligible or
+ * subscription-change. Mirrors legacy line 297-305.
+ */
+function isReinstateable(
+  existing: UserSubscription,
+  tierName: string,
+  billingCycle: string,
+): boolean {
+  if (existing.tierName !== tierName) return false;
+  if ((existing.billingCycle ?? "monthly") !== billingCycle) return false;
+  const status = existing.paymentStatus ?? "";
+  return REINSTATEMENT_STATUSES.has(status);
+}
+
+function readMetadata(row: UserSubscription): Record<string, unknown> {
+  return (row.metadata as Record<string, unknown> | null) ?? {};
+}
+
+function readStringMeta(
+  meta: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = meta[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Get or create the Stripe customer for this user. Reuses
+ * `metadata.stripe_customer_id` from any prior row when it's still
+ * resolvable by Stripe; falls back to creating a new customer.
+ */
+async function resolveCustomerId(
+  stripe: Stripe,
+  userId: string,
+  existing: UserSubscription | null,
+  profile: { email: string | null; fullName: string | null },
+): Promise<string> {
+  const existingCustomerId = existing
+    ? readStringMeta(readMetadata(existing), "stripe_customer_id")
+    : null;
+
+  if (existingCustomerId !== null) {
+    try {
+      await stripe.customers.retrieve(existingCustomerId);
+      return existingCustomerId;
+    } catch {
+      // Customer was deleted on Stripe's side (rare — manual ops or a
+      // test-mode reset). Fall through to create a fresh one.
+    }
+  }
+
+  const customer = await stripe.customers.create({
+    email: profile.email ?? undefined,
+    name: profile.fullName ?? undefined,
+    metadata: { supabase_user_id: userId },
+  });
+  return customer.id;
+}
+
+/**
+ * Attach the payment method to the customer and set as default. Tolerates
+ * the `resource_already_exists` error (PM is already attached to this
+ * customer — fine, proceed). Any other attach failure surfaces as a 400
+ * up to the caller.
+ */
+async function attachPaymentMethod(
+  stripe: Stripe,
+  customerId: string,
+  paymentMethodId: string,
+): Promise<void> {
+  try {
+    await stripe.paymentMethods.attach(paymentMethodId, {
+      customer: customerId,
+    });
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code !== "resource_already_exists") {
+      throw err;
+    }
+  }
+  await stripe.customers.update(customerId, {
+    invoice_settings: { default_payment_method: paymentMethodId },
+  });
+}
+
+export const subscriptionsCreateHandler = new Elysia()
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
+  .post(
+    "/subscriptions",
+    async (ctx): Promise<SuccessResponse | ErrorResponse> => {
+      const { sub: userId } = getUser(ctx);
+      const body = ctx.body as CreateSubscriptionBody;
+
+      if (body.tier_name === "free") {
+        ctx.set.status = 400;
+        return {
+          error:
+            "Cannot create subscription for free tier. Free tier is the default state.",
+        };
+      }
+
+      const priceInfo = await resolvePrice(body.tier_name, body.billing_cycle);
+      if (priceInfo === null) {
+        ctx.set.status = 400;
+        return {
+          error: `Stripe price id not configured for ${body.tier_name} ${body.billing_cycle}`,
+        };
+      }
+
+      const profileRepo = new ProfileRepository();
+      const profile = await profileRepo.getById(userId);
+      if (profile === null) {
+        ctx.set.status = 404;
+        return { error: "User profile not found" };
+      }
+
+      const subRepo = new SubscriptionRepository();
+      const existing = await subRepo.findMostRecentForUser(userId);
+
+      // Branch dispatch:
+      //   - existing reinstate-eligible → reinstate path (Phase 2A.2)
+      //   - existing with stripe sub id → subscription-change path (Phase 2A.3)
+      //   - otherwise → new-subscription path (this commit)
+      if (
+        existing !== null &&
+        isReinstateable(existing, body.tier_name, body.billing_cycle)
+      ) {
+        ctx.set.status = 501;
+        return { error: "Reinstatement path not yet implemented" };
+      }
+      const existingStripeSubId =
+        existing !== null
+          ? readStringMeta(readMetadata(existing), "stripe_subscription_id")
+          : null;
+      if (existing !== null && existingStripeSubId !== null) {
+        ctx.set.status = 501;
+        return { error: "Subscription-change path not yet implemented" };
+      }
+
+      // --- New subscription path -----------------------------------------
+      const trial = resolveTrial(
+        body.tier_name,
+        priceInfo.isTrainerTier,
+        body.use_trial,
+        profile.hasUsedUserTrial ?? false,
+        profile.hasUsedTrainerTrial ?? false,
+      );
+
+      const stripe = getStripe();
+      const customerId = await resolveCustomerId(stripe, userId, existing, {
+        email: profile.email ?? null,
+        fullName: profile.fullName ?? null,
+      });
+
+      try {
+        await attachPaymentMethod(stripe, customerId, body.payment_method_id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[subscriptions:create] attach payment method failed for user=${userId}: ${message}`,
+        );
+        ctx.set.status = 400;
+        return { error: `Failed to attach payment method: ${message}` };
+      }
+
+      const createParams: Stripe.SubscriptionCreateParams = {
+        customer: customerId,
+        items: [{ price: priceInfo.priceId }],
+        payment_behavior: "default_incomplete",
+        payment_settings: {
+          payment_method_types: ["card"],
+          save_default_payment_method: "on_subscription",
+        },
+        expand: ["latest_invoice.payment_intent"],
+        metadata: {
+          supabase_user_id: userId,
+          tier_name: body.tier_name,
+          billing_cycle: body.billing_cycle,
+        },
+      };
+      if (trial.days > 0) {
+        createParams.trial_period_days = trial.days;
+      }
+
+      let subscription: Stripe.Subscription;
+      try {
+        subscription = await stripe.subscriptions.create(createParams);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[subscriptions:create] stripe.subscriptions.create failed for user=${userId}: ${message}`,
+        );
+        ctx.set.status = 500;
+        return { error: `Failed to create Stripe subscription: ${message}` };
+      }
+
+      const paymentStatus = derivePaymentStatus(subscription);
+      const expiresAt = periodEndDate(subscription);
+      const trialEndsAt = trialEndDate(subscription);
+
+      const requiresActionIntent = readRequiresActionIntent(subscription);
+
+      // Persist locally BEFORE flipping trial flags. If the DB insert
+      // fails, we cancel the Stripe sub (rollback) so we never leave
+      // Stripe + DB in inconsistent states (legacy line 880-890).
+      let inserted: UserSubscription;
+      try {
+        inserted = await subRepo.insert({
+          userId,
+          tierName: body.tier_name,
+          billingCycle: body.billing_cycle,
+          currency: priceInfo.currency,
+          paymentStatus: requiresActionIntent ? "pending" : paymentStatus,
+          startsAt: new Date(),
+          expiresAt,
+          trialEndsAt,
+          nextBillingDate: expiresAt,
+          externalSubscriptionId: subscription.id,
+          metadata: {
+            stripe_customer_id: customerId,
+            stripe_subscription_id: subscription.id,
+            stripe_payment_method_id: body.payment_method_id,
+            platform: body.platform ?? null,
+            payment_type: "apple_pay_or_google_pay",
+            ...(requiresActionIntent ? { requires_3d_secure: true } : {}),
+          },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[subscriptions:create] DB insert failed for stripe_sub=${subscription.id}: ${message} — rolling back Stripe subscription`,
+        );
+        await stripe.subscriptions.cancel(subscription.id).catch((cancelErr) => {
+          const cm =
+            cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+          console.error(
+            `[subscriptions:create] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
+          );
+        });
+        ctx.set.status = 500;
+        return { error: `Failed to create subscription record: ${message}` };
+      }
+
+      // Flip trial flags immediately on a trial-using path — even on the
+      // 3DS branch, so an abandoned challenge can't refarm trials (legacy
+      // line 740-765). This is the ONE path where the handler touches
+      // `profiles.*`; the DB trigger handles every other derived column.
+      if (trial.flag !== null) {
+        const updateData =
+          trial.flag === "user"
+            ? { hasUsedUserTrial: true }
+            : { hasUsedTrainerTrial: true };
+        try {
+          await profileRepo.update(userId, updateData);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Non-fatal: the subscription is created and recorded. A failed
+          // trial-flag flip means the user could theoretically retry and
+          // get another trial, but the partial-unique-index on
+          // user_subscriptions(active OR pending) will block a duplicate
+          // active sub. Log loudly so ops can backfill.
+          console.error(
+            `[subscriptions:create] trial flag update failed for user=${userId}: ${message} — partial-unique-index will still block duplicate active sub`,
+          );
+        }
+      }
+
+      if (requiresActionIntent) {
+        return {
+          success: true,
+          requires_action: true,
+          subscription_id: inserted.id,
+          stripe_subscription_id: subscription.id,
+          trial_ends_at: toIso(trialEndsAt),
+          next_billing_date: toIso(expiresAt),
+          payment_status: "pending",
+          client_secret: requiresActionIntent.client_secret ?? undefined,
+        };
+      }
+
+      return {
+        success: true,
+        requires_action: false,
+        subscription_id: inserted.id,
+        stripe_subscription_id: subscription.id,
+        trial_ends_at: toIso(trialEndsAt),
+        next_billing_date: toIso(expiresAt),
+        payment_status: paymentStatus,
+      };
+    },
+    {
+      body: t.Object({
+        tier_name: t.String({ minLength: 1 }),
+        billing_cycle: t.Union([t.Literal("monthly"), t.Literal("yearly")]),
+        payment_method_id: t.String({ minLength: 1 }),
+        // Required explicit — no silent default. Caller must opt in to
+        // trial usage (Brad Q3 sign-off).
+        use_trial: t.Boolean(),
+        platform: t.Optional(
+          t.Union([t.Literal("ios"), t.Literal("android")]),
+        ),
+      }),
+    },
+  );
+
+// Export pure internals for direct unit tests (resolveTrial,
+// derivePaymentStatus, isReinstateable are easier to exercise
+// against a matrix of inputs without spinning up the Elysia harness).
+export const __internals = {
+  derivePaymentStatus,
+  resolveTrial,
+  isReinstateable,
+  readCurrentPeriodEnd,
+};
