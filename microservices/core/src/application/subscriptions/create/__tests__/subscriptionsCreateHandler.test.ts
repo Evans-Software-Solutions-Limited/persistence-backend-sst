@@ -371,7 +371,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: false,
@@ -573,7 +573,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: true,
@@ -792,7 +792,7 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: false,
@@ -873,7 +873,7 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: true,
@@ -1062,7 +1062,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: false,
@@ -1191,7 +1191,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body).toMatchObject({
       success: true,
       requires_action: true,
@@ -1447,7 +1447,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     );
     const res = await postCreate(validBody);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
     expect(body.requires_action).toBe(true);
     expect(body.client_secret).toBeUndefined();
   });

@@ -94,6 +94,43 @@ describe("SubscriptionRepository", () => {
     });
   });
 
+  describe("findByIdForUser", () => {
+    it("returns the row when both id AND userId match", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([fakeRow])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      const result = await repo.findByIdForUser(
+        "00000000-0000-0000-0000-000000000001",
+        "user-1",
+      );
+      expect(result).toEqual(fakeRow);
+    });
+
+    it("returns null when no row matches the (id, userId) pair", async () => {
+      // covers BOTH the "id doesn't exist" case AND the "id exists but
+      // belongs to a different user" case — the row scope is enforced
+      // at the SQL layer via the AND clause.
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      const result = await repo.findByIdForUser(
+        "00000000-0000-0000-0000-000000000999",
+        "user-other",
+      );
+      expect(result).toBeNull();
+    });
+  });
+
   describe("findMostRecentForUser", () => {
     it("returns the most recent row for a user", async () => {
       const mockDb = {
