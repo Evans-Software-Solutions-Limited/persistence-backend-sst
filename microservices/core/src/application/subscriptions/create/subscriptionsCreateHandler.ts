@@ -363,6 +363,136 @@ async function attachPaymentMethod(
   });
 }
 
+/**
+ * Reinstate the existing Stripe subscription. The PM has already been
+ * attached + set as default; here we flip `cancel_at_period_end: false`
+ * + set the new default PM on the sub itself + re-read state from
+ * Stripe + update the local row.
+ *
+ * Trial flags are NOT touched — reinstatement doesn't consume a trial
+ * (Brad Q6 sign-off + legacy 429-430). The Stripe sub's trial_end is
+ * also unaffected by the resume — if the user was mid-trial when they
+ * cancelled, they keep whatever was left of the trial.
+ *
+ * 3DS handling: if the resumed sub's latest_invoice.payment_intent is
+ * `requires_action`, we return the client_secret + write the local row
+ * as `payment_status=pending` with `requires_3d_secure: true`. Mirrors
+ * the new-sub 3DS path so mobile renders the same Apple Pay challenge
+ * sheet either way.
+ */
+type StatusSettable = { set: { status?: number | string } };
+
+async function handleReinstate(args: {
+  stripe: Stripe;
+  subRepo: SubscriptionRepository;
+  ctx: StatusSettable;
+  existing: UserSubscription;
+  existingStripeSubId: string;
+  paymentMethodId: string;
+}): Promise<SuccessResponse | ErrorResponse> {
+  const {
+    stripe,
+    subRepo,
+    ctx,
+    existing,
+    existingStripeSubId,
+    paymentMethodId,
+  } = args;
+
+  let resumed: Stripe.Subscription;
+  try {
+    // Cast the SDK response down to the bare Subscription shape —
+    // `Stripe.Response<T>` adds non-indexable metadata that breaks
+    // downstream property reads. Same pattern as
+    // eventHandlers/subscriptionUpdated.ts line 320-322.
+    resumed = (await stripe.subscriptions.update(existingStripeSubId, {
+      cancel_at_period_end: false,
+      default_payment_method: paymentMethodId,
+      expand: ["latest_invoice.payment_intent"],
+    })) as unknown as Stripe.Subscription;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[subscriptions:create:reinstate] stripe.subscriptions.update failed for ${existingStripeSubId}: ${message}`,
+    );
+    ctx.set.status = 500;
+    return {
+      error: `Failed to reinstate subscription. Please try again or contact support.`,
+    };
+  }
+
+  const requiresActionIntent = readRequiresActionIntent(resumed);
+  const paymentStatus = requiresActionIntent
+    ? "pending"
+    : derivePaymentStatus(resumed);
+  const expiresAt = periodEndDate(resumed);
+  const trialEndsAt = trialEndDate(resumed);
+
+  // Preserve prior metadata (esp. stripe_customer_id, platform) and
+  // append the reinstatement audit stamp. The DB trigger picks up the
+  // updated row and recomputes profiles.role / subscription_limits.
+  const existingMeta = readMetadata(existing);
+  const newMeta: Record<string, unknown> = {
+    ...existingMeta,
+    stripe_subscription_id: resumed.id,
+    stripe_payment_method_id: paymentMethodId,
+    reinstated_at: new Date().toISOString(),
+  };
+  if (requiresActionIntent) {
+    newMeta.requires_3d_secure = true;
+  } else {
+    // Clear the flag if a prior 3DS-requiring reinstate has now cleared.
+    delete newMeta.requires_3d_secure;
+  }
+
+  const updated = await subRepo.updateById(existing.id, {
+    paymentStatus,
+    trialEndsAt,
+    expiresAt,
+    nextBillingDate: expiresAt,
+    externalSubscriptionId: resumed.id,
+    cancelledAt: null, // reinstatement clears the prior cancellation stamp
+    metadata: newMeta,
+  });
+
+  if (updated === null) {
+    // Should be impossible — caller located `existing` by primary key
+    // immediately above. Surface as 500 so it shows up loudly.
+    console.error(
+      `[subscriptions:create:reinstate] updateById returned null for user_subscriptions.id=${existing.id}; Stripe sub ${resumed.id} was resumed but local row could not be updated — manual intervention required`,
+    );
+    ctx.set.status = 500;
+    return {
+      error: `Reinstatement partially successful but database update failed. Please contact support with subscription ID: ${resumed.id}`,
+    };
+  }
+
+  if (requiresActionIntent) {
+    return {
+      success: true,
+      requires_action: true,
+      subscription_id: updated.id,
+      stripe_subscription_id: resumed.id,
+      trial_ends_at: toIso(trialEndsAt),
+      next_billing_date: toIso(expiresAt),
+      payment_status: "pending",
+      client_secret: requiresActionIntent.client_secret ?? undefined,
+      reinstated: true,
+    };
+  }
+
+  return {
+    success: true,
+    requires_action: false,
+    subscription_id: updated.id,
+    stripe_subscription_id: resumed.id,
+    trial_ends_at: toIso(trialEndsAt),
+    next_billing_date: toIso(expiresAt),
+    payment_status: paymentStatus,
+    reinstated: true,
+  };
+}
+
 export const subscriptionsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -399,22 +529,51 @@ export const subscriptionsCreateHandler = new Elysia()
 
       const subRepo = new SubscriptionRepository();
       const existing = await subRepo.findMostRecentForUser(userId);
-
-      // Branch dispatch:
-      //   - existing reinstate-eligible → reinstate path (Phase 2A.2)
-      //   - existing with stripe sub id → subscription-change path (Phase 2A.3)
-      //   - otherwise → new-subscription path (this commit)
-      if (
-        existing !== null &&
-        isReinstateable(existing, body.tier_name, body.billing_cycle)
-      ) {
-        ctx.set.status = 501;
-        return { error: "Reinstatement path not yet implemented" };
-      }
       const existingStripeSubId =
         existing !== null
           ? readStringMeta(readMetadata(existing), "stripe_subscription_id")
           : null;
+
+      // Branch dispatch:
+      //   - existing reinstate-eligible (same tier + cycle, status in
+      //     {cancelled, canceled, past_due, trialing}) AND we have the
+      //     prior Stripe sub id → reinstate path
+      //   - existing with stripe sub id (anything else) → subscription-
+      //     change path (Phase 2A.3)
+      //   - otherwise → new-subscription path
+      if (
+        existing !== null &&
+        existingStripeSubId !== null &&
+        isReinstateable(existing, body.tier_name, body.billing_cycle)
+      ) {
+        const stripe = getStripe();
+        const customerId = await resolveCustomerId(stripe, userId, existing, {
+          email: profile.email ?? null,
+          fullName: profile.fullName ?? null,
+        });
+        try {
+          await attachPaymentMethod(
+            stripe,
+            customerId,
+            body.payment_method_id,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[subscriptions:create] attach payment method failed for user=${userId} on reinstate: ${message}`,
+          );
+          ctx.set.status = 400;
+          return { error: `Failed to attach payment method: ${message}` };
+        }
+        return handleReinstate({
+          stripe,
+          subRepo,
+          ctx,
+          existing,
+          existingStripeSubId,
+          paymentMethodId: body.payment_method_id,
+        });
+      }
       if (existing !== null && existingStripeSubId !== null) {
         ctx.set.status = 501;
         return { error: "Subscription-change path not yet implemented" };

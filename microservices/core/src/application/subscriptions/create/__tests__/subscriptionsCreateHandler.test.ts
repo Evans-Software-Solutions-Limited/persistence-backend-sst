@@ -7,6 +7,7 @@ import type Stripe from "stripe";
 const subscriptionRepositoryMocks = {
   findMostRecentForUser: vi.fn(),
   insert: vi.fn(),
+  updateById: vi.fn(),
 };
 
 const profileRepositoryMocks = {
@@ -25,6 +26,7 @@ const stripeMock = {
   },
   subscriptions: {
     create: vi.fn(),
+    update: vi.fn(),
     cancel: vi.fn(),
   },
 };
@@ -157,6 +159,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue(null);
   subscriptionRepositoryMocks.insert.mockResolvedValue({ id: "us_new" });
+  subscriptionRepositoryMocks.updateById.mockImplementation(
+    async (id: string, patch: Record<string, unknown>) => ({
+      id,
+      ...patch,
+    }),
+  );
+  stripeMock.subscriptions.update.mockResolvedValue(buildStripeSubscription());
   profileRepositoryMocks.getById.mockResolvedValue(fakeProfile());
   profileRepositoryMocks.update.mockResolvedValue(fakeProfile());
   stripeMock.customers.create.mockResolvedValue({ id: "cus_new" });
@@ -585,7 +594,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     });
   });
 
-  it("returns 501 placeholder for reinstate-eligible existing rows (Phase 2A.2 not yet landed)", async () => {
+  it("does not treat reinstateable status as reinstate when stripe_subscription_id is missing (falls through to new-sub)", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
@@ -593,17 +602,17 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       isTrainerTier: false,
     });
     subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce({
-      id: "us_old",
+      id: "us_old_no_sub",
       tierName: "premium",
       billingCycle: "monthly",
       paymentStatus: "cancelled",
-      metadata: { stripe_subscription_id: "sub_old" },
+      metadata: { stripe_customer_id: "cus_old" },
     });
     const res = await postCreate(validBody);
-    expect(res.status).toBe(501);
-    expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("Reinstatement"),
-    });
+    expect(res.status).toBe(200);
+    // New-sub path runs (stripe.subscriptions.create), not reinstate (.update)
+    expect(stripeMock.subscriptions.create).toHaveBeenCalled();
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
   });
 
   it("returns 501 placeholder for subscription-change existing rows (Phase 2A.3 not yet landed)", async () => {
@@ -732,5 +741,267 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       expect.stringContaining("trial flag update failed"),
     );
     errSpy.mockRestore();
+  });
+});
+
+// ─── Handler integration tests — reinstatement path ──────────────────
+
+/** Build a reinstate-eligible existing row. */
+function reinstateableRow(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "us_old",
+    userId: "user-1",
+    tierName: "premium",
+    billingCycle: "monthly",
+    paymentStatus: "cancelled",
+    cancelledAt: new Date("2026-04-01"),
+    metadata: {
+      stripe_customer_id: "cus_existing",
+      stripe_subscription_id: "sub_old",
+      platform: "ios",
+    },
+    ...over,
+  };
+}
+
+describe("subscriptionsCreateHandler — reinstatement path", () => {
+  it("resumes the existing Stripe sub, updates the local row, clears cancelledAt, does NOT flip trial flags", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old",
+        status: "active",
+        trial_end: null as unknown as number,
+      }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      requires_action: false,
+      subscription_id: "us_old",
+      stripe_subscription_id: "sub_old",
+      payment_status: "active",
+      reinstated: true,
+    });
+
+    // Stripe update call shape
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith("sub_old", {
+      cancel_at_period_end: false,
+      default_payment_method: "pm_card",
+      expand: ["latest_invoice.payment_intent"],
+    });
+    // Reinstate must NOT create a new Stripe sub
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+
+    // Local row updated, cancelledAt cleared, prior metadata preserved
+    expect(subscriptionRepositoryMocks.updateById).toHaveBeenCalledTimes(1);
+    const [updatedId, patch] =
+      subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(updatedId).toBe("us_old");
+    expect(patch.cancelledAt).toBeNull();
+    expect(patch.paymentStatus).toBe("active");
+    expect(patch.externalSubscriptionId).toBe("sub_old");
+    expect((patch.metadata as Record<string, unknown>).stripe_customer_id).toBe(
+      "cus_existing",
+    );
+    expect((patch.metadata as Record<string, unknown>).platform).toBe("ios");
+    expect((patch.metadata as Record<string, unknown>).reinstated_at).toEqual(
+      expect.any(String),
+    );
+
+    // Trial flags are NOT touched on reinstate — per Brad Q6
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("reuses the existing customer when retrievable (no new customer)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old", status: "active" }),
+    );
+    await postCreate(validBody);
+    expect(stripeMock.customers.retrieve).toHaveBeenCalledWith("cus_existing");
+    expect(stripeMock.customers.create).not.toHaveBeenCalled();
+  });
+
+  it("returns 3DS shape when the resumed sub's latest invoice needs action", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({ paymentStatus: "past_due" }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old",
+        status: "past_due",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_reinstate_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      success: true,
+      requires_action: true,
+      subscription_id: "us_old",
+      stripe_subscription_id: "sub_old",
+      payment_status: "pending",
+      client_secret: "pi_reinstate_3ds_secret",
+      reinstated: true,
+    });
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(patch.paymentStatus).toBe("pending");
+    expect(
+      (patch.metadata as Record<string, unknown>).requires_3d_secure,
+    ).toBe(true);
+  });
+
+  it("returns 500 with operator-friendly message when stripe.subscriptions.update throws", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    stripeMock.subscriptions.update.mockRejectedValueOnce(
+      new Error("stripe 503"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Failed to reinstate"),
+    });
+    expect(subscriptionRepositoryMocks.updateById).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 with a support-id when Stripe sub resumed but updateById returns null", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockResolvedValueOnce(null);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("sub_old"),
+    });
+    errSpy.mockRestore();
+  });
+
+  it("returns 400 if attaching the payment method fails on the reinstate path", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    const attachErr: any = new Error("card declined");
+    attachErr.code = "card_declined";
+    stripeMock.paymentMethods.attach.mockRejectedValueOnce(attachErr);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(400);
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("clears requires_3d_secure flag from prior metadata when the resumed sub no longer needs action", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old",
+          requires_3d_secure: true,
+        },
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old", status: "active" }),
+    );
+    await postCreate(validBody);
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(
+      (patch.metadata as Record<string, unknown>).requires_3d_secure,
+    ).toBeUndefined();
+  });
+
+  it("does not enter reinstate when tier_name differs (falls through to change path)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({ tierName: "basic" }),
+    );
+    const res = await postCreate(validBody);
+    // Phase 2A.3 stub still in place
+    expect(res.status).toBe(501);
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("does not enter reinstate when billing_cycle differs", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({ billingCycle: "yearly" }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(501);
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
   });
 });
