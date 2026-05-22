@@ -40,10 +40,25 @@ function fakeSubscription(
       tier_name: "premium",
       billing_cycle: "monthly",
     },
-    items: { data: [{ current_period_end: 1717200000 }] },
+    items: {
+      data: [
+        {
+          current_period_end: 1717200000,
+          price: { id: "price_premium_monthly" },
+        },
+      ],
+    },
     ...over,
   } as unknown as Stripe.Subscription;
 }
+
+// Resolved tier shape — produced by the script's resolveTierForPrice
+// against `subscription_tiers`. Tests pass this in directly so we don't
+// need to mock the DB.
+const tierPremiumMonthly = {
+  tierName: "premium",
+  billingCycle: "monthly" as const,
+};
 
 describe("reconcile-stripe — parseArgs", () => {
   it("defaults to dry-run on", () => {
@@ -164,7 +179,11 @@ describe("reconcile-stripe — pure helpers", () => {
 
 describe("reconcile-stripe — buildOp", () => {
   it("returns skip when supabase_user_id metadata is missing", () => {
-    const op = buildOp(fakeSubscription({ metadata: {} }), null);
+    const op = buildOp(
+      fakeSubscription({ metadata: {} }),
+      null,
+      tierPremiumMonthly,
+    );
     expect(op).toEqual({
       op: "skip",
       reason: "missing supabase_user_id metadata",
@@ -179,7 +198,11 @@ describe("reconcile-stripe — buildOp", () => {
     // fired. findMostRecentForUser's createdAt-DESC ordering then
     // returned that phantom as the user's "most recent" row, breaking
     // subsequent subscribes via active-unique-index collision.
-    const op = buildOp(fakeSubscription({ status: "canceled" }), null);
+    const op = buildOp(
+      fakeSubscription({ status: "canceled" }),
+      null,
+      tierPremiumMonthly,
+    );
     expect(op.op).toBe("skip");
     if (op.op !== "skip") return;
     expect(op.reason).toContain("terminal Stripe status");
@@ -190,37 +213,55 @@ describe("reconcile-stripe — buildOp", () => {
     const op = buildOp(
       fakeSubscription({ status: "incomplete_expired" }),
       null,
+      tierPremiumMonthly,
     );
     expect(op.op).toBe("skip");
   });
 
   it("still UPDATES a local row when the matching Stripe sub is canceled (terminal-skip applies to INSERT branch only)", () => {
     // A locally-known canceled sub is the user's real cancelled state —
-    // we should mirror Stripe into it, not skip.
-    const op = buildOp(fakeSubscription({ status: "canceled" }), {
-      id: "us_known_cancelled",
-      userId: "user-1",
-      tierName: "premium",
-      billingCycle: "monthly",
-      paymentStatus: "active",
-      startsAt: new Date(),
-      expiresAt: null,
-      cancelledAt: null,
-      trialEndsAt: null,
-      nextBillingDate: null,
-      externalSubscriptionId: "sub_test_123",
-      metadata: {},
-      currency: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as any);
+    // we should mirror Stripe into it, not skip. Use canceled_at + a
+    // past period_end so the grace-period check resolves to "cancelled"
+    // rather than "active" (sweep #4 grace-period mapping).
+    const op = buildOp(
+      fakeSubscription({
+        status: "canceled",
+        canceled_at: 1700000000,
+        items: {
+          data: [
+            {
+              current_period_end: 1700604800, // also in the past
+              price: { id: "price_premium_monthly" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      {
+        id: "us_known_cancelled",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
     expect(op.op).toBe("update");
     if (op.op !== "update") return;
     expect(op.patch.paymentStatus).toBe("cancelled");
   });
 
   it("builds an insert op when no local row exists", () => {
-    const op = buildOp(fakeSubscription(), null);
+    const op = buildOp(fakeSubscription(), null, tierPremiumMonthly);
     expect(op.op).toBe("insert");
     if (op.op !== "insert") return;
     expect(op.userId).toBe("user-1");
@@ -246,26 +287,30 @@ describe("reconcile-stripe — buildOp", () => {
   });
 
   it("builds an update op when a local row already exists, preserving prior metadata", () => {
-    const op = buildOp(fakeSubscription({ status: "past_due" }), {
-      id: "us_local_1",
-      userId: "user-1",
-      tierName: "basic",
-      billingCycle: "monthly",
-      paymentStatus: "active",
-      startsAt: new Date(),
-      expiresAt: null,
-      cancelledAt: null,
-      trialEndsAt: null,
-      nextBillingDate: null,
-      externalSubscriptionId: "sub_test_123",
-      metadata: {
-        stripe_customer_id: "cus_old",
-        platform: "ios",
-      },
-      currency: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as any);
+    const op = buildOp(
+      fakeSubscription({ status: "past_due" }),
+      {
+        id: "us_local_1",
+        userId: "user-1",
+        tierName: "basic",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {
+          stripe_customer_id: "cus_old",
+          platform: "ios",
+        },
+        currency: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
     expect(op.op).toBe("update");
     if (op.op !== "update") return;
     expect(op.localId).toBe("us_local_1");
@@ -283,6 +328,14 @@ describe("reconcile-stripe — buildOp", () => {
       fakeSubscription({
         status: "canceled",
         canceled_at: 1710000000,
+        items: {
+          data: [
+            {
+              current_period_end: 1700000000, // past — so grace expired
+              price: { id: "price_premium_monthly" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
       }),
       {
         id: "us_local_2",
@@ -290,11 +343,182 @@ describe("reconcile-stripe — buildOp", () => {
         externalSubscriptionId: "sub_test_123",
         metadata: {},
       } as any,
+      tierPremiumMonthly,
     );
     expect(op.op).toBe("update");
     if (op.op !== "update") return;
     expect(op.patch.paymentStatus).toBe("cancelled");
     expect(op.patch.cancelledAt).toEqual(new Date(1710000000 * 1000));
+  });
+
+  // ─── Sweep #4 regressions ──────────────────────────────────────────
+
+  it("does NOT silently downgrade tier to 'basic'/'monthly' when Stripe metadata is missing tier_name (Inspector Brad PR #70 sweep #4 high)", () => {
+    // Previously the script wrote `tier_name: "basic"` and `billing_cycle:
+    // "monthly"` defaults straight onto an existing premium/yearly row
+    // when Stripe metadata was missing — and the DB trigger would
+    // re-derive profiles.role + subscription_limits against the wrong
+    // tier, silently downgrading the user.
+    //
+    // Fix: resolve tier+cycle from the price id via subscription_tiers.
+    // Caller passes a non-null tierFromPrice here, so the patch uses
+    // those values rather than the metadata defaults.
+    const op = buildOp(
+      fakeSubscription({
+        // No tier_name / billing_cycle in metadata at all
+        metadata: { supabase_user_id: "user-1" },
+      }),
+      {
+        id: "us_premium_yearly",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "yearly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      { tierName: "premium", billingCycle: "yearly" }, // resolved from price id
+    );
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    expect(op.patch.tierName).toBe("premium");
+    expect(op.patch.billingCycle).toBe("yearly");
+  });
+
+  it("falls back to metadata with a warning when price-id lookup misses (defensive — Inspector Brad PR #70 sweep #4)", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const op = buildOp(
+      fakeSubscription({
+        metadata: {
+          supabase_user_id: "user-1",
+          tier_name: "individual_trainer_pro",
+          billing_cycle: "monthly",
+        },
+      }),
+      null,
+      null, // price-id lookup missed
+    );
+    expect(op.op).toBe("insert");
+    if (op.op !== "insert") return;
+    expect(op.payload.tierName).toBe("individual_trainer_pro");
+    expect(op.payload.billingCycle).toBe("monthly");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("price-id lookup missed"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("skips the op entirely when BOTH price-id lookup AND metadata are missing — never silently writes basic/monthly", () => {
+    const op = buildOp(
+      fakeSubscription({
+        // No tier metadata, and caller couldn't resolve from price
+        metadata: { supabase_user_id: "user-1" },
+      }),
+      null,
+      null,
+    );
+    expect(op.op).toBe("skip");
+    if (op.op !== "skip") return;
+    expect(op.reason).toContain("cannot resolve tier");
+  });
+
+  it("preserves 'active' for an in-grace-period cancel-at-period-end sub instead of flipping to 'cancelled' (Inspector Brad PR #70 sweep #4 medium)", async () => {
+    // Regression: previously the script used the bare
+    // mapStripeStatusToPaymentStatus which mapped canceled →
+    // "cancelled" unconditionally. The webhook handler uses the
+    // grace-period-aware ForUpdate variant, which preserves "active"
+    // while canceled_at is set AND current_period_end is in the
+    // future. Reconcile diverging from the webhook would let the DB
+    // trigger revoke profiles.role early and pull access before the
+    // user-paid period ends. Reconcile now mirrors the ForUpdate
+    // semantics.
+    const futureSeconds = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+    const op = buildOp(
+      fakeSubscription({
+        status: "canceled",
+        canceled_at: Math.floor(Date.now() / 1000) - 60 * 60,
+        items: {
+          data: [
+            {
+              current_period_end: futureSeconds,
+              price: { id: "price_premium_monthly" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      {
+        id: "us_in_grace",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    // Grace period still active → payment_status stays "active"
+    expect(op.patch.paymentStatus).toBe("active");
+    // But cancelledAt is still stamped so the UI can render
+    // "Active until DD-MM"
+    expect(op.patch.cancelledAt).not.toBeNull();
+  });
+
+  it("flips to 'cancelled' once the grace period has expired", () => {
+    const pastSeconds = Math.floor(Date.now() / 1000) - 60 * 60;
+    const op = buildOp(
+      fakeSubscription({
+        status: "canceled",
+        canceled_at: pastSeconds - 60 * 60,
+        items: {
+          data: [
+            {
+              current_period_end: pastSeconds,
+              price: { id: "price_premium_monthly" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      {
+        id: "us_grace_expired",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    expect(op.patch.paymentStatus).toBe("cancelled");
   });
 });
 

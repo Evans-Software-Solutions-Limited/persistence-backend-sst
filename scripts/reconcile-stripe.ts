@@ -65,8 +65,8 @@
  */
 
 import Stripe from "stripe";
-import { eq } from "drizzle-orm";
-import { userSubscriptions } from "@persistence/db";
+import { eq, or } from "drizzle-orm";
+import { subscriptionTiers, userSubscriptions } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
 // ─── Argument parsing ─────────────────────────────────────────────────
@@ -132,6 +132,47 @@ function mapStripeStatusToPaymentStatus(
   }
 }
 
+/**
+ * Grace-period-aware status mapping, mirroring
+ * `eventHandlers/_helpers.ts:mapStripeStatusToPaymentStatusForUpdate`.
+ *
+ * The bare `mapStripeStatusToPaymentStatus` above flips `canceled`
+ * straight to `"cancelled"`. But the standard Stripe cancel-at-period-
+ * end flow leaves the sub in `status: canceled` with `canceled_at` set
+ * AND `current_period_end` still in the future — the user has paid
+ * access until that date. Mapping to `"cancelled"` here would let the
+ * DB trigger revoke `profiles.role` early and pull access before the
+ * period the user paid for actually ends (Inspector Brad PR #70 sweep
+ * #4 medium-severity find).
+ *
+ * Reconcile uses THIS variant — same correctness rationale as the
+ * webhook handler. The bare mapping is kept for the rare cases where
+ * we genuinely want the unconditional collapse (currently unused after
+ * this fix; preserved for symmetry with the inbound helper file).
+ */
+function mapStripeStatusToPaymentStatusForUpdate(
+  subscription: Stripe.Subscription,
+): string {
+  const status = subscription.status;
+  if (status === "trialing") return "trialing";
+  if (status === "active") return "active";
+  if (status === "past_due") return "past_due";
+
+  if (status === "canceled" || status === "incomplete_expired") {
+    const periodEnd = readCurrentPeriodEnd(subscription);
+    if (subscription.canceled_at && periodEnd !== null) {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (periodEnd > nowSeconds) return "active";
+      return "cancelled";
+    }
+    return "cancelled";
+  }
+
+  if (status === "unpaid") return "expired";
+
+  return "pending";
+}
+
 function unixSecondsToDate(seconds: number | null | undefined): Date | null {
   if (seconds === null || seconds === undefined || seconds === 0) return null;
   return new Date(seconds * 1000);
@@ -184,6 +225,52 @@ async function findByExternalId(externalSubscriptionId: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * Resolve `tier_name` + `billing_cycle` from a Stripe price id by
+ * querying `subscription_tiers`. Mirrors the inverse lookup in
+ * `eventHandlers/subscriptionUpdated.ts:resolveTierForPrice` — kept
+ * in lockstep so reconcile derives tier the same way the webhook does
+ * (never trusts `metadata.tier_name` for the active tier, since
+ * mass-imported / ops-portal subs may not carry it).
+ *
+ * Returns `null` when the price doesn't match a known tier. Caller
+ * falls back to metadata (with a warning) so we don't silently
+ * downgrade premium/yearly subs to basic/monthly when the price-id
+ * lookup misses (Inspector Brad PR #70 sweep #4 high-severity find).
+ */
+async function resolveTierForPrice(priceId: string): Promise<{
+  tierName: string;
+  billingCycle: "monthly" | "yearly";
+} | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      tierName: subscriptionTiers.tierName,
+      monthly: subscriptionTiers.stripePriceIdMonthly,
+      yearly: subscriptionTiers.stripePriceIdYearly,
+    })
+    .from(subscriptionTiers)
+    .where(
+      or(
+        eq(subscriptionTiers.stripePriceIdMonthly, priceId),
+        eq(subscriptionTiers.stripePriceIdYearly, priceId),
+      ),
+    )
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    tierName: row.tierName,
+    billingCycle: row.monthly === priceId ? "monthly" : "yearly",
+  };
+}
+
+function readStripePriceId(subscription: Stripe.Subscription): string | null {
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+  return typeof priceId === "string" && priceId.length > 0 ? priceId : null;
+}
+
 type ReconciliationOp =
   | { op: "skip"; reason: string; stripeId: string }
   | {
@@ -231,6 +318,10 @@ const TERMINAL_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>([
 function buildOp(
   subscription: Stripe.Subscription,
   existing: typeof userSubscriptions.$inferSelect | null,
+  tierFromPrice: {
+    tierName: string;
+    billingCycle: "monthly" | "yearly";
+  } | null,
 ): ReconciliationOp {
   const userId = readUserIdFromMetadata(subscription);
   if (userId === null) {
@@ -241,7 +332,45 @@ function buildOp(
     };
   }
 
-  const paymentStatus = mapStripeStatusToPaymentStatus(subscription.status);
+  // Resolve tier + cycle from the Stripe PRICE id first (price ids are
+  // immutable and authoritative for the active tier). Fall back to
+  // metadata only when the price-id lookup didn't find a match — and
+  // even then, warn so ops can investigate. Never silently default to
+  // basic/monthly when both lookups fail — that would silently downgrade
+  // an active premium/yearly row (Inspector Brad PR #70 sweep #4
+  // high-severity find).
+  const metadataTier = subscription.metadata?.tier_name;
+  const metadataCycle = subscription.metadata?.billing_cycle;
+  let resolvedTierName: string | null = null;
+  let resolvedBillingCycle: string | null = null;
+  if (tierFromPrice !== null) {
+    resolvedTierName = tierFromPrice.tierName;
+    resolvedBillingCycle = tierFromPrice.billingCycle;
+  } else if (typeof metadataTier === "string" && metadataTier.length > 0) {
+    resolvedTierName = metadataTier;
+    resolvedBillingCycle =
+      typeof metadataCycle === "string" && metadataCycle.length > 0
+        ? metadataCycle
+        : "monthly";
+    console.warn(
+      `[reconcile] ${subscription.id}: price-id lookup missed; falling back to metadata.tier_name=${metadataTier}`,
+    );
+  }
+  // If neither resolved → skip with a clear reason rather than silently
+  // writing basic/monthly into the patch.
+  if (resolvedTierName === null || resolvedBillingCycle === null) {
+    return {
+      op: "skip",
+      reason: `cannot resolve tier (no price-id match in subscription_tiers, no metadata.tier_name)`,
+      stripeId: subscription.id,
+    };
+  }
+
+  // Grace-period-aware status mapping — mirrors the webhook so an
+  // in-grace-period cancel-at-period-end sub stays "active" until the
+  // period actually ends (Inspector Brad PR #70 sweep #4
+  // medium-severity find).
+  const paymentStatus = mapStripeStatusToPaymentStatusForUpdate(subscription);
   const periodEnd = unixSecondsToDate(readCurrentPeriodEnd(subscription));
   const trialEnd = unixSecondsToDate(subscription.trial_end);
   const startsAt = unixSecondsToDate(subscription.created) ?? new Date();
@@ -264,8 +393,8 @@ function buildOp(
       userId,
       payload: {
         userId,
-        tierName: readTierFromMetadata(subscription),
-        billingCycle: readBillingCycleFromMetadata(subscription),
+        tierName: resolvedTierName,
+        billingCycle: resolvedBillingCycle,
         paymentStatus,
         // Preserve Stripe's `created` as the local `createdAt` rather
         // than letting the schema's `defaultNow()` fire. Otherwise the
@@ -298,8 +427,8 @@ function buildOp(
     userId,
     localId: existing.id,
     patch: {
-      tierName: readTierFromMetadata(subscription),
-      billingCycle: readBillingCycleFromMetadata(subscription),
+      tierName: resolvedTierName,
+      billingCycle: resolvedBillingCycle,
       paymentStatus,
       expiresAt: periodEnd,
       trialEndsAt: trialEnd,
@@ -375,7 +504,10 @@ export async function reconcile(args: CliArgs): Promise<{
 
     counts.total += 1;
     const existing = await findByExternalId(subscription.id);
-    const op = buildOp(subscription, existing);
+    const priceId = readStripePriceId(subscription);
+    const tierFromPrice =
+      priceId !== null ? await resolveTierForPrice(priceId) : null;
+    const op = buildOp(subscription, existing, tierFromPrice);
     ops.push(op);
     if (op.op === "skip") counts.skip += 1;
     else if (op.op === "insert") counts.insert += 1;
@@ -425,12 +557,14 @@ if (import.meta.main) {
 export const __internals = {
   parseArgs,
   mapStripeStatusToPaymentStatus,
+  mapStripeStatusToPaymentStatusForUpdate,
   unixSecondsToDate,
   readCurrentPeriodEnd,
   readUserIdFromMetadata,
   readTierFromMetadata,
   readBillingCycleFromMetadata,
   readStripeCustomerId,
+  readStripePriceId,
   buildOp,
   summarizeOp,
 };
