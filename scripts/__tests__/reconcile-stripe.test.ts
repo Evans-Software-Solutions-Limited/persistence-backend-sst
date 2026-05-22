@@ -190,6 +190,32 @@ describe("reconcile-stripe — pure helpers", () => {
       "cus_xyz",
     );
   });
+
+  it("readStripePriceCurrency reads from price + uppercases (Inspector Brad PR #70 sweep #6)", () => {
+    const { readStripePriceCurrency } = __internals;
+    // Stripe stores currency lowercase; we uppercase to match the
+    // `user_subscriptions.currency` column convention.
+    expect(
+      readStripePriceCurrency({
+        items: { data: [{ price: { currency: "usd" } }] },
+      } as any),
+    ).toBe("USD");
+    expect(
+      readStripePriceCurrency({
+        items: { data: [{ price: { currency: "EUR" } }] },
+      } as any),
+    ).toBe("EUR");
+    // Missing → null so caller can omit from the patch
+    expect(readStripePriceCurrency({} as any)).toBeNull();
+    expect(
+      readStripePriceCurrency({ items: { data: [{}] } } as any),
+    ).toBeNull();
+    expect(
+      readStripePriceCurrency({
+        items: { data: [{ price: { currency: "" } }] },
+      } as any),
+    ).toBeNull();
+  });
 });
 
 describe("reconcile-stripe — buildOp", () => {
@@ -495,6 +521,100 @@ describe("reconcile-stripe — buildOp", () => {
     // But cancelledAt is still stamped so the UI can render
     // "Active until DD-MM"
     expect(op.patch.cancelledAt).not.toBeNull();
+  });
+
+  it("INSERT payload includes Stripe price currency (uppercase) instead of falling back to the schema's GBP default (Inspector Brad PR #70 sweep #6)", () => {
+    const op = buildOp(
+      fakeSubscription({
+        items: {
+          data: [
+            {
+              current_period_end: 1717200000,
+              price: { id: "price_premium_monthly", currency: "usd" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      null,
+      tierPremiumMonthly,
+    );
+    expect(op.op).toBe("insert");
+    if (op.op !== "insert") return;
+    expect(op.payload.currency).toBe("USD");
+  });
+
+  it("UPDATE patch includes Stripe price currency too — not just on INSERT", () => {
+    const op = buildOp(
+      fakeSubscription({
+        items: {
+          data: [
+            {
+              current_period_end: 1717200000,
+              price: { id: "price_premium_monthly", currency: "eur" },
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      {
+        id: "us_local_currency",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: "GBP", // wrong — should be overwritten by reconcile
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    expect(op.patch.currency).toBe("EUR");
+  });
+
+  it("omits currency from patch when Stripe price has no currency — preserves existing column rather than nulling it", () => {
+    const op = buildOp(
+      fakeSubscription({
+        items: {
+          data: [
+            {
+              current_period_end: 1717200000,
+              price: { id: "price_premium_monthly" }, // no currency field
+            },
+          ],
+        } as unknown as Stripe.Subscription["items"],
+      }),
+      {
+        id: "us_no_currency",
+        userId: "user-1",
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentStatus: "active",
+        startsAt: new Date(),
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        nextBillingDate: null,
+        externalSubscriptionId: "sub_test_123",
+        metadata: {},
+        currency: "GBP",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+      tierPremiumMonthly,
+    );
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    // patch does NOT contain a `currency` key — Drizzle will leave the
+    // column alone on UPDATE, preserving whatever was there before.
+    expect("currency" in op.patch).toBe(false);
   });
 
   it("flips to 'cancelled' once the grace period has expired", () => {

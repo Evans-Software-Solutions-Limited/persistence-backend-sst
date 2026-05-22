@@ -271,6 +271,29 @@ function readStripePriceId(subscription: Stripe.Subscription): string | null {
   return typeof priceId === "string" && priceId.length > 0 ? priceId : null;
 }
 
+/**
+ * Read the active price's currency from a Stripe subscription. Stripe
+ * exposes this at `subscription.items.data[0].price.currency` as a
+ * lowercase ISO 4217 string; we uppercase to match the convention used
+ * across the `user_subscriptions.currency` column (the schema's default
+ * is `"GBP"`, and the outbound flows read `subscription_tiers.currency`
+ * which is also uppercase).
+ *
+ * Returns null when the field is missing — caller omits `currency` from
+ * the patch in that case so the column keeps whatever value the existing
+ * row already had (Inspector Brad PR #70 sweep #6 low-severity find:
+ * previously neither the INSERT payload nor the UPDATE patch set
+ * `currency` at all, so a future non-GBP tier would silently stamp every
+ * reconciled row to the schema-default "GBP").
+ */
+function readStripePriceCurrency(
+  subscription: Stripe.Subscription,
+): string | null {
+  const currency = subscription.items?.data?.[0]?.price?.currency;
+  if (typeof currency !== "string" || currency.length === 0) return null;
+  return currency.toUpperCase();
+}
+
 type ReconciliationOp =
   | { op: "skip"; reason: string; stripeId: string }
   | {
@@ -376,6 +399,15 @@ function buildOp(
   const startsAt = unixSecondsToDate(subscription.created) ?? new Date();
   const cancelledAt = unixSecondsToDate(subscription.canceled_at);
   const customerId = readStripeCustomerId(subscription);
+  // Read the active price's currency from Stripe truth. The
+  // `user_subscriptions.currency` column has a schema default of "GBP"
+  // which fired on every reconciled INSERT before this fix — latent
+  // today because every `subscription_tiers` row is seeded GBP, but
+  // mass-imports + future non-GBP tiers would silently mis-classify
+  // (Inspector Brad PR #70 sweep #6 low-severity find). We omit the
+  // field from the patch when missing so the column keeps whatever
+  // value the existing row already had, rather than nulling it out.
+  const currency = readStripePriceCurrency(subscription);
 
   if (existing === null) {
     // Skip phantom-row creation for permanently-dead Stripe subs that
@@ -409,6 +441,7 @@ function buildOp(
         nextBillingDate: periodEnd,
         cancelledAt,
         externalSubscriptionId: subscription.id,
+        ...(currency !== null ? { currency } : {}),
         metadata: {
           stripe_customer_id: customerId,
           stripe_subscription_id: subscription.id,
@@ -435,6 +468,7 @@ function buildOp(
       nextBillingDate: periodEnd,
       cancelledAt,
       externalSubscriptionId: subscription.id,
+      ...(currency !== null ? { currency } : {}),
       metadata: {
         ...existingMeta,
         stripe_customer_id: customerId,
@@ -613,6 +647,7 @@ export const __internals = {
   readBillingCycleFromMetadata,
   readStripeCustomerId,
   readStripePriceId,
+  readStripePriceCurrency,
   buildOp,
   summarizeOp,
 };

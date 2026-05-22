@@ -280,6 +280,43 @@ describe("subscriptionsCancelHandler", () => {
       expect(patch.paymentStatus).toBe("trialing");
     });
 
+    it("treats Stripe `resource_missing` on cross-mode retry as success — local row written as cancelled (Inspector Brad PR #70 sweep #6)", async () => {
+      // Cross-mode retry trigger: a previous `cancel_immediately: true`
+      // call succeeded on Stripe but the DB write failed, returning 500.
+      // User retries with the default body `{}` (cancel_immediately
+      // omitted). The local row is still `active`, so neither the 400
+      // already-cancelled nor 409 in-flight guards fire. Handler enters
+      // the period-end branch and calls
+      // `stripe.subscriptions.update(canceled_sub, cancel_at_period_end:
+      // true)` which throws `resource_missing`.
+      //
+      // Previously this returned 502; now it's recognised as success
+      // and the local row is written as cancelled immediately (no
+      // grace period left on a permanently-dead sub).
+      const stripeErr: any = new Error("No such subscription");
+      stripeErr.code = "resource_missing";
+      stripeMock.subscriptions.update.mockRejectedValueOnce(stripeErr);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const res = await postCancel("us_1");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body).toMatchObject({
+        success: true,
+      });
+      // Crucially: paymentStatus collapses to "cancelled" — NOT the
+      // usual "preserved" semantics, because there's no grace period
+      // on a dead sub.
+      const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+      expect(patch.paymentStatus).toBe("cancelled");
+      // endsAt falls back to cancelledAt (now) since Stripe gave us
+      // nothing to read current_period_end from.
+      expect(body.subscription_ends_at).toBe(body.cancelled_at);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("period-end retry"),
+      );
+      logSpy.mockRestore();
+    });
+
     it("returns 502 with a useful message when stripe.subscriptions.update throws", async () => {
       stripeMock.subscriptions.update.mockRejectedValueOnce(
         new Error("stripe 503"),

@@ -221,46 +221,75 @@ export const subscriptionsCancelHandler = new Elysia()
             : cancelledAt;
         nextPaymentStatus = "cancelled";
       } else {
-        let updated: Stripe.Subscription;
+        let updated: Stripe.Subscription | null = null;
         try {
           updated = (await stripe.subscriptions.update(stripeSubscriptionId, {
             cancel_at_period_end: true,
           })) as unknown as Stripe.Subscription;
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.error(
-            `[subscriptions:cancel] stripe.subscriptions.update(cancel_at_period_end) failed for ${stripeSubscriptionId}: ${message}`,
-          );
-          ctx.set.status = 502;
-          return {
-            error: `Failed to schedule subscription cancellation: ${message}`,
-          };
+          if (isAlreadyCanceledError(err)) {
+            // Cross-mode retry recovery: a previous `cancel_immediately:
+            // true` attempt succeeded on Stripe but couldn't commit the
+            // local-row update, and the caller is now retrying with the
+            // default `cancel_immediately: false` body. Stripe rejects
+            // `subscriptions.update(canceled, { cancel_at_period_end:
+            // true })` with `resource_missing` — but the user's intent
+            // ("I want to be unsubscribed") was already fully realised
+            // by the original Stripe cancel. Treat it as success and
+            // write the local row as `cancelled` immediately (NOT
+            // preserving paymentStatus="active" like the normal period-
+            // end path would — the underlying Stripe sub is permanently
+            // dead, there's no grace period left to honour).
+            //
+            // Mirror of the immediate-cancel branch's recovery added in
+            // sweep #5 (Inspector Brad PR #70 sweep #6).
+            console.log(
+              `[subscriptions:cancel] ${stripeSubscriptionId} already cancelled on Stripe — period-end retry treated as success, writing local row as cancelled`,
+            );
+          } else {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(
+              `[subscriptions:cancel] stripe.subscriptions.update(cancel_at_period_end) failed for ${stripeSubscriptionId}: ${message}`,
+            );
+            ctx.set.status = 502;
+            return {
+              error: `Failed to schedule subscription cancellation: ${message}`,
+            };
+          }
         }
-        // Read current_period_end across API versions — Stripe migrated
-        // the field onto items in newer dashboard endpoints. Same
-        // pattern as eventHandlers/_helpers.ts:readCurrentPeriodEnd.
-        const legacyEnd = (
-          updated as unknown as { current_period_end?: number | null }
-        ).current_period_end;
-        const periodEnd =
-          typeof legacyEnd === "number" && legacyEnd > 0
-            ? legacyEnd
-            : (updated.items?.data?.[0]?.current_period_end ?? null);
-        const periodEndDate = unixToIso(periodEnd);
-        if (periodEndDate !== null) {
-          endsAt = new Date(periodEndDate);
-        } else if (subscription.expiresAt) {
-          // Fallback to whatever expiresAt we already had — keeps the
-          // UI's "Active until X" stable even if Stripe returns a
-          // truncated payload.
-          endsAt = new Date(subscription.expiresAt);
-        } else {
+
+        if (updated === null) {
+          // Recovery path: Stripe sub already canceled. No period to
+          // honour — collapse to immediate-cancel semantics.
           endsAt = cancelledAt;
+          nextPaymentStatus = "cancelled";
+        } else {
+          // Read current_period_end across API versions — Stripe migrated
+          // the field onto items in newer dashboard endpoints. Same
+          // pattern as eventHandlers/_helpers.ts:readCurrentPeriodEnd.
+          const legacyEnd = (
+            updated as unknown as { current_period_end?: number | null }
+          ).current_period_end;
+          const periodEnd =
+            typeof legacyEnd === "number" && legacyEnd > 0
+              ? legacyEnd
+              : (updated.items?.data?.[0]?.current_period_end ?? null);
+          const periodEndDate = unixToIso(periodEnd);
+          if (periodEndDate !== null) {
+            endsAt = new Date(periodEndDate);
+          } else if (subscription.expiresAt) {
+            // Fallback to whatever expiresAt we already had — keeps the
+            // UI's "Active until X" stable even if Stripe returns a
+            // truncated payload.
+            endsAt = new Date(subscription.expiresAt);
+          } else {
+            endsAt = cancelledAt;
+          }
+          // Preserve existing paymentStatus — the user still has paid
+          // access until the period elapses, the webhook flips it to
+          // "cancelled" when current_period_end passes.
+          nextPaymentStatus = subscription.paymentStatus ?? "active";
         }
-        // Preserve existing paymentStatus — the user still has paid
-        // access until the period elapses, the webhook flips it to
-        // "cancelled" when current_period_end passes.
-        nextPaymentStatus = subscription.paymentStatus ?? "active";
       }
 
       const updatedRow = await subRepo.updateById(subscription.id, {
