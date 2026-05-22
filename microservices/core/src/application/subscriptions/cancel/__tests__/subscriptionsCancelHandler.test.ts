@@ -131,6 +131,41 @@ describe("subscriptionsCancelHandler", () => {
       expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
     });
 
+    it("returns 409 when the row carries an in-flight old_stripe_subscription_id marker (Inspector Brad PR #70 sweep #3)", async () => {
+      // Regression: previously the handler would cancel only the row's
+      // current externalSubscriptionId (= the NEW sub from an in-flight
+      // change-of-tier), leaving the ORIGINAL sub (marker target) still
+      // active on Stripe and billing the user. The follow-up webhook
+      // for the new sub arriving with status=canceled doesn't fire
+      // either of subscriptionUpdated.ts's two cleanup branches
+      // (active/trialing cancel-old, incomplete_expired rollback), so
+      // the marker is preserved and the original sub never gets
+      // cancelled. Mirrors the change-path's chained-change 409 guard.
+      subscriptionRepositoryMocks.findByIdForUser.mockResolvedValueOnce(
+        fakeRow({
+          paymentStatus: "active",
+          externalSubscriptionId: "sub_new_in_flight",
+          metadata: {
+            stripe_customer_id: "cus_existing",
+            stripe_subscription_id: "sub_new_in_flight",
+            old_stripe_subscription_id: "sub_original_still_billing",
+          },
+        }),
+      );
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const res = await postCancel("us_1");
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: expect.stringContaining("previous subscription change"),
+      });
+      // Critically: NO Stripe call against either sub. The webhook chain
+      // for the in-flight change needs to settle first.
+      expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+      expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+      expect(subscriptionRepositoryMocks.updateById).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
     it("returns 400 ALSO for the US-spelled 'canceled' payment_status (Inspector Brad PR #70)", async () => {
       // Regression: the create handler's REINSTATEMENT_STATUSES treats
       // both UK + US spellings as valid local payment_statuses (legacy

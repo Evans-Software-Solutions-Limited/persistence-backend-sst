@@ -98,6 +98,38 @@ export const subscriptionsCancelHandler = new Elysia()
         return { error: "Subscription is already cancelled" };
       }
 
+      // Refuse cancels on mid-change-of-tier rows. The row's
+      // externalSubscriptionId is the NEW sub from the in-flight change,
+      // while `metadata.old_stripe_subscription_id` points at the ORIGINAL
+      // sub which is still active on Stripe. Cancelling only the new sub
+      // here would leave the original silently billing — the follow-up
+      // `subscription.updated` webhook for the new sub arriving with
+      // `status: canceled` doesn't trigger either the active/trialing
+      // cancel-old branch or the incomplete_expired rollback branch in
+      // `subscriptionUpdated.ts`, so the marker is preserved and the
+      // original is never cancelled (Inspector Brad PR #70 sweep #3
+      // high-severity find). Mirrors the change-path's chained-change
+      // 409 guard. Window is bounded by Stripe's ~23h auto-transition
+      // of incomplete subs to incomplete_expired, after which the inbound
+      // webhook rolls the row back to a clean state and a fresh cancel
+      // can proceed.
+      const existingMeta =
+        (subscription.metadata as Record<string, unknown> | null) ?? {};
+      const inFlightOldMarker = existingMeta.old_stripe_subscription_id;
+      if (
+        typeof inFlightOldMarker === "string" &&
+        inFlightOldMarker.length > 0
+      ) {
+        console.warn(
+          `[subscriptions:cancel] refusing cancel for user_subscriptions.id=${subscription.id}: in-flight old_stripe_subscription_id=${inFlightOldMarker} (previous change not yet webhook-resolved)`,
+        );
+        ctx.set.status = 409;
+        return {
+          error:
+            "A previous subscription change is still being processed. Please wait a few minutes and try again.",
+        };
+      }
+
       const stripeSubscriptionId = subscription.externalSubscriptionId;
       if (
         typeof stripeSubscriptionId !== "string" ||
@@ -188,8 +220,6 @@ export const subscriptionsCancelHandler = new Elysia()
         nextPaymentStatus = subscription.paymentStatus ?? "active";
       }
 
-      const existingMeta =
-        (subscription.metadata as Record<string, unknown> | null) ?? {};
       const updatedRow = await subRepo.updateById(subscription.id, {
         paymentStatus: nextPaymentStatus,
         cancelledAt,

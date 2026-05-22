@@ -200,6 +200,34 @@ type ReconciliationOp =
       patch: Partial<typeof userSubscriptions.$inferInsert>;
     };
 
+/**
+ * Stripe statuses representing permanently-dead subs. We do NOT insert
+ * phantom local rows for these — they're historical, the underlying
+ * Stripe sub is immutable and irrelevant to the user's current state,
+ * and the change-of-tier flow in `subscriptionsCreateHandler.ts`
+ * repurposes local rows in place rather than retiring the old one, so
+ * canceled subs from prior changes never had a corresponding local
+ * row to begin with.
+ *
+ * Without this skip, reconcile would create a fresh row per historical
+ * canceled sub with `createdAt = now()` — and since
+ * `findMostRecentForUser` orders by `createdAt DESC`, the phantom would
+ * become the user's "most recent" row. On the user's next subscribe,
+ * dispatch would route through change-path against the phantom and try
+ * to flip its paymentStatus to active, colliding with the still-active
+ * row on the `user_subscriptions_active_unique` partial index. The user
+ * would be permanently locked out of subscribing until the phantom is
+ * hand-cleaned (Inspector Brad PR #70 sweep #3 high-severity find).
+ *
+ * UPDATE branch is unaffected — when a canceled Stripe sub DOES have a
+ * matching local row, that row is the user's current cancelled state
+ * and reconcile correctly mirrors Stripe into it.
+ */
+const TERMINAL_STRIPE_STATUSES = new Set<Stripe.Subscription.Status>([
+  "canceled",
+  "incomplete_expired",
+]);
+
 function buildOp(
   subscription: Stripe.Subscription,
   existing: typeof userSubscriptions.$inferSelect | null,
@@ -221,6 +249,15 @@ function buildOp(
   const customerId = readStripeCustomerId(subscription);
 
   if (existing === null) {
+    // Skip phantom-row creation for permanently-dead Stripe subs that
+    // have no matching local row. See TERMINAL_STRIPE_STATUSES docstring.
+    if (TERMINAL_STRIPE_STATUSES.has(subscription.status)) {
+      return {
+        op: "skip",
+        reason: `terminal Stripe status (${subscription.status}) with no matching local row — declining to create a phantom`,
+        stripeId: subscription.id,
+      };
+    }
     return {
       op: "insert",
       stripeId: subscription.id,
@@ -230,6 +267,13 @@ function buildOp(
         tierName: readTierFromMetadata(subscription),
         billingCycle: readBillingCycleFromMetadata(subscription),
         paymentStatus,
+        // Preserve Stripe's `created` as the local `createdAt` rather
+        // than letting the schema's `defaultNow()` fire. Otherwise the
+        // row's createdAt would skew "now" for historical subs and
+        // confuse `findMostRecentForUser`'s createdAt-DESC ordering
+        // (defense-in-depth alongside the terminal-status skip above —
+        // Inspector Brad PR #70 sweep #3).
+        createdAt: startsAt,
         startsAt,
         expiresAt: periodEnd,
         trialEndsAt: trialEnd,

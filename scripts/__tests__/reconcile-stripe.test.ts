@@ -172,6 +172,53 @@ describe("reconcile-stripe — buildOp", () => {
     });
   });
 
+  it("skips inserting a phantom row for a permanently-canceled Stripe sub with no matching local row (Inspector Brad PR #70 sweep #3)", () => {
+    // Regression: previously the script would INSERT a fresh local row
+    // for any historical canceled Stripe sub, with createdAt=now()
+    // because the payload omitted createdAt and the schema's defaultNow
+    // fired. findMostRecentForUser's createdAt-DESC ordering then
+    // returned that phantom as the user's "most recent" row, breaking
+    // subsequent subscribes via active-unique-index collision.
+    const op = buildOp(fakeSubscription({ status: "canceled" }), null);
+    expect(op.op).toBe("skip");
+    if (op.op !== "skip") return;
+    expect(op.reason).toContain("terminal Stripe status");
+    expect(op.reason).toContain("canceled");
+  });
+
+  it("skips inserting a phantom row for incomplete_expired Stripe subs with no matching local row", () => {
+    const op = buildOp(
+      fakeSubscription({ status: "incomplete_expired" }),
+      null,
+    );
+    expect(op.op).toBe("skip");
+  });
+
+  it("still UPDATES a local row when the matching Stripe sub is canceled (terminal-skip applies to INSERT branch only)", () => {
+    // A locally-known canceled sub is the user's real cancelled state —
+    // we should mirror Stripe into it, not skip.
+    const op = buildOp(fakeSubscription({ status: "canceled" }), {
+      id: "us_known_cancelled",
+      userId: "user-1",
+      tierName: "premium",
+      billingCycle: "monthly",
+      paymentStatus: "active",
+      startsAt: new Date(),
+      expiresAt: null,
+      cancelledAt: null,
+      trialEndsAt: null,
+      nextBillingDate: null,
+      externalSubscriptionId: "sub_test_123",
+      metadata: {},
+      currency: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
+    expect(op.op).toBe("update");
+    if (op.op !== "update") return;
+    expect(op.patch.paymentStatus).toBe("cancelled");
+  });
+
   it("builds an insert op when no local row exists", () => {
     const op = buildOp(fakeSubscription(), null);
     expect(op.op).toBe("insert");
@@ -185,6 +232,11 @@ describe("reconcile-stripe — buildOp", () => {
       externalSubscriptionId: "sub_test_123",
     });
     expect(op.payload.expiresAt).toEqual(new Date(1717200000 * 1000));
+    // Preserve Stripe's `created` as the local createdAt (Inspector
+    // Brad PR #70 sweep #3) — otherwise the schema's defaultNow would
+    // fire and the row would skew "now" in findMostRecentForUser's
+    // createdAt-DESC ordering.
+    expect(op.payload.createdAt).toEqual(new Date(1700000000 * 1000));
     expect((op.payload.metadata as any).stripe_customer_id).toBe(
       "cus_test_456",
     );
