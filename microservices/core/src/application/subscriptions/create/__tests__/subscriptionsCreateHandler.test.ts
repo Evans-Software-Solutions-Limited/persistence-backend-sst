@@ -1032,6 +1032,49 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
     ).toBeUndefined();
   });
 
+  it("returns 409 when the row carries an in-flight old_stripe_subscription_id marker (Inspector Brad PR #70 sweep #8)", async () => {
+    // Regression: pre-fix, the change-path's 409 guard lived inside
+    // handleSubscriptionChange, so the REINSTATE path completely
+    // bypassed it. A row with paymentStatus="trialing" + a stale
+    // old_stripe_subscription_id (e.g. cancelOldSubscriptionWithRetry
+    // exhausted its 3 attempts) would reinstate successfully, but
+    // handleReinstate's `...existingMeta` spread carried the marker
+    // forward and the orphaned predecessor kept billing.
+    //
+    // The guard now lives above the dispatch, so reinstate + change +
+    // any future branch all get refused uniformly.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow({
+        // trialing → reinstate-eligible per REINSTATEMENT_STATUSES,
+        // but the marker should refuse the call before dispatch.
+        paymentStatus: "trialing",
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_trialing_b",
+          old_stripe_subscription_id: "sub_a_orphaned",
+        },
+      }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("previous subscription change"),
+    });
+    // Critically: NO Stripe call against either sub. The webhook chain
+    // for the in-flight change needs to settle first.
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+    expect(subscriptionRepositoryMocks.updateById).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("does not enter reinstate when tier_name differs (falls through to change path)", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",

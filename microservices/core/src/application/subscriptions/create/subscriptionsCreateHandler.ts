@@ -567,37 +567,11 @@ async function handleSubscriptionChange(args: {
     trial,
   } = args;
 
-  // Refuse chained changes — an in-flight `old_stripe_subscription_id`
-  // marker means the PREVIOUS change-of-tier hasn't been resolved by
-  // the webhook yet (the new sub is still incomplete, or 3DS was
-  // abandoned). Proceeding here would silently overwrite that marker,
-  // orphaning the original Stripe sub: when the new-new sub eventually
-  // goes active, the webhook handler cancels only what it sees as the
-  // "old" (the previous *change's* new sub), leaving the *original*
-  // sub still active on Stripe with no local reference. User gets
-  // billed for a sub they thought was replaced (Inspector Brad PR #70
-  // sweep #2 medium-severity find).
-  //
-  // The window for this is bounded by Stripe's auto-transition of
-  // incomplete subs to incomplete_expired (~23 hours), after which
-  // the inbound webhook rolls the local row back to a clean state.
-  // Caller can retry then, OR sooner once the webhook chain settles
-  // for the in-flight sub.
-  const existingMetaPrecheck = readMetadata(existing);
-  const inFlightOldMarker = readStringMeta(
-    existingMetaPrecheck,
-    "old_stripe_subscription_id",
-  );
-  if (inFlightOldMarker !== null) {
-    console.warn(
-      `[subscriptions:create:change] refusing change for user=${userId}: in-flight old_stripe_subscription_id=${inFlightOldMarker} (previous change not yet webhook-resolved)`,
-    );
-    ctx.set.status = 409;
-    return {
-      error:
-        "A previous subscription change is still being processed. Please wait a few minutes and try again.",
-    };
-  }
+  // In-flight chained-change guard now lives at the top of the POST
+  // handler (above the reinstate/change dispatch) so it covers BOTH
+  // branches uniformly — see the comment block at that call site. Was
+  // duplicated here pre-sweep-#8; removed to keep a single source of
+  // truth.
 
   const createParams: Stripe.SubscriptionCreateParams = {
     customer: customerId,
@@ -813,6 +787,45 @@ export const subscriptionsCreateHandler = new Elysia()
         existing !== null
           ? readStringMeta(readMetadata(existing), "stripe_subscription_id")
           : null;
+
+      // ─── In-flight chained-change guard ──────────────────────────────
+      // Refuse ANY follow-up flow (reinstate, change-of-tier) when the
+      // existing row carries an `old_stripe_subscription_id` marker
+      // from a previous change that hasn't been webhook-resolved yet.
+      //
+      // Trigger (Brad sweep #8): user has trialing premium → changes
+      // tier → sub_B created in trialing, row.metadata.old_stripe_
+      // subscription_id = sub_A. cancelOldSubscriptionWithRetry
+      // exhausts (3 attempts) or webhook delivery is out, so the
+      // marker is preserved. User then re-submits POST /subscriptions
+      // for the SAME tier (e.g. to update payment method on the now-
+      // trialing sub_B). Dispatch routes them through reinstate;
+      // handleReinstate spreads `...existingMeta` into the new
+      // metadata blob, preserving the marker; sub_A keeps billing
+      // forever because subscriptionUpdated.ts's cancel-of-old branch
+      // only fires on a STATUS TRANSITION into active/trialing — sub_B
+      // was already trialing, no new event triggers it.
+      //
+      // The check was originally inside handleSubscriptionChange
+      // (Brad sweep #2). Lifted here so reinstate + any future branch
+      // gets the same guard from one source of truth.
+      if (existing !== null) {
+        const existingMetaPrecheck = readMetadata(existing);
+        const inFlightOldMarker = readStringMeta(
+          existingMetaPrecheck,
+          "old_stripe_subscription_id",
+        );
+        if (inFlightOldMarker !== null) {
+          console.warn(
+            `[subscriptions:create] refusing follow-up flow for user=${userId}: in-flight old_stripe_subscription_id=${inFlightOldMarker} (previous change not yet webhook-resolved)`,
+          );
+          ctx.set.status = 409;
+          return {
+            error:
+              "A previous subscription change is still being processed. Please wait a few minutes and try again.",
+          };
+        }
+      }
 
       // Branch dispatch:
       //   - existing reinstate-eligible (same tier + cycle, status in
