@@ -332,6 +332,59 @@ describe("subscriptionsCancelHandler", () => {
       expect(body.subscription_ends_at).toBe(body.cancelled_at);
     });
 
+    it("treats Stripe `resource_missing` on retry as success and proceeds to update the local row (Inspector Brad PR #70 sweep #5)", async () => {
+      // Regression: previously a partial failure (Stripe cancel succeeds
+      // but DB update throws) would 500 the first attempt; then on
+      // retry, the local row still showed paymentStatus=active so the
+      // 400 "already cancelled" / 409 in-flight guards wouldn't fire,
+      // we'd call stripe.subscriptions.cancel again, Stripe would
+      // throw resource_missing, and we'd 502 — masking a successful
+      // Stripe cancel as an upstream error.
+      const stripeErr: any = new Error("No such subscription: sub_stripe_id");
+      stripeErr.code = "resource_missing";
+      stripeMock.subscriptions.cancel.mockRejectedValueOnce(stripeErr);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const res = await postCancel("us_1", { cancel_immediately: true });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body).toMatchObject({
+        success: true,
+        message: expect.stringContaining("immediately"),
+      });
+      // Local row STILL gets updated to cancelled even though Stripe
+      // threw — the whole point of the recovery
+      const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+      expect(patch.paymentStatus).toBe("cancelled");
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("already cancelled on Stripe"),
+      );
+      logSpy.mockRestore();
+    });
+
+    it("treats Stripe 'already cancelled' message (no code) as success too", async () => {
+      stripeMock.subscriptions.cancel.mockRejectedValueOnce(
+        new Error("Subscription has been canceled"),
+      );
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const res = await postCancel("us_1", { cancel_immediately: true });
+      expect(res.status).toBe(200);
+      expect(subscriptionRepositoryMocks.updateById).toHaveBeenCalled();
+      logSpy.mockRestore();
+    });
+
+    it("falls back to cancelledAt (now) for endsAt when recovering from a resource_missing retry (no Stripe subscription to read canceled_at from)", async () => {
+      const stripeErr: any = new Error("No such subscription");
+      stripeErr.code = "resource_missing";
+      stripeMock.subscriptions.cancel.mockRejectedValueOnce(stripeErr);
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const res = await postCancel("us_1", { cancel_immediately: true });
+      const body = (await res.json()) as any;
+      // Without a Stripe sub to read canceled_at from, endsAt should
+      // match the cancelledAt timestamp we just stamped.
+      expect(body.subscription_ends_at).toBe(body.cancelled_at);
+      logSpy.mockRestore();
+    });
+
     it("returns 502 with a useful message when stripe.subscriptions.cancel throws", async () => {
       stripeMock.subscriptions.cancel.mockRejectedValueOnce(
         new Error("stripe down"),

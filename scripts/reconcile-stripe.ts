@@ -470,8 +470,28 @@ function summarizeOp(op: ReconciliationOp): string {
 
 // ─── Main ─────────────────────────────────────────────────────────────
 
+/**
+ * Counters returned by `reconcile`.
+ *
+ * `skip/insert/update/total` describe the PLANNED op shape — what
+ * `buildOp` decided to do. `applied/failed` describe what actually
+ * landed when `--write` was passed; both are 0 in dry-run mode
+ * (Inspector Brad PR #70 sweep #5 medium-severity find — previously
+ * the summary reported planned counts as "COMMITTED" even when the
+ * underlying DB writes errored out, and the exit-code-2 guard only
+ * triggered on 100%-skip runs so 100%-failed runs exited 0).
+ */
+export type ReconcileCounts = {
+  skip: number;
+  insert: number;
+  update: number;
+  total: number;
+  applied: number;
+  failed: number;
+};
+
 export async function reconcile(args: CliArgs): Promise<{
-  counts: { skip: number; insert: number; update: number; total: number };
+  counts: ReconcileCounts;
   ops: ReconciliationOp[];
 }> {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -488,7 +508,14 @@ export async function reconcile(args: CliArgs): Promise<{
   const stripe = new Stripe(stripeKey);
 
   const ops: ReconciliationOp[] = [];
-  const counts = { skip: 0, insert: 0, update: 0, total: 0 };
+  const counts: ReconcileCounts = {
+    skip: 0,
+    insert: 0,
+    update: 0,
+    total: 0,
+    applied: 0,
+    failed: 0,
+  };
 
   for await (const subscription of stripe.subscriptions.list({
     status: "all",
@@ -515,11 +542,15 @@ export async function reconcile(args: CliArgs): Promise<{
 
     console.log(summarizeOp(op));
     if (!args.dryRun) {
+      // `skip` ops have no apply step — they're already terminal.
+      if (op.op === "skip") continue;
       try {
         await applyOp(op);
+        counts.applied += 1;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`  ✗ apply failed: ${message}`);
+        counts.failed += 1;
       }
     }
   }
@@ -534,8 +565,15 @@ if (import.meta.main) {
   reconcile(args)
     .then(({ counts, ops }) => {
       console.log("");
+      // Summary line carries BOTH the planned counts AND, in --write
+      // mode, the actually-applied/failed counts. Cron monitors should
+      // assert `failed=0` and `applied = insert + update` to catch
+      // silent DB-side failures.
+      const writeSummary = args.dryRun
+        ? "DRY RUN — no DB writes"
+        : `applied=${counts.applied} failed=${counts.failed}`;
       console.log(
-        `Done. total=${counts.total} insert=${counts.insert} update=${counts.update} skip=${counts.skip} (${args.dryRun ? "DRY RUN — no DB writes" : "COMMITTED"})`,
+        `Done. total=${counts.total} insert=${counts.insert} update=${counts.update} skip=${counts.skip} (${writeSummary})`,
       );
       // surface a non-zero exit when every sub was skipped — likely a
       // metadata configuration issue worth alerting on.
@@ -544,6 +582,16 @@ if (import.meta.main) {
           "All subscriptions were skipped — likely missing supabase_user_id metadata. Investigate before retrying.",
         );
         process.exit(2);
+      }
+      // Surface a non-zero exit when any apply failed in --write mode.
+      // Without this, a run where every UPDATE / INSERT errored out
+      // silently exited 0 because the prior guard only fired on the
+      // 100%-skip case (Inspector Brad PR #70 sweep #5).
+      if (counts.failed > 0) {
+        console.error(
+          `${counts.failed} of ${counts.applied + counts.failed} writes failed — see the per-op "apply failed:" lines above for details.`,
+        );
+        process.exit(3);
       }
       void ops;
     })

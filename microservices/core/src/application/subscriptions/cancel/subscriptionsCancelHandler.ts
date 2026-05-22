@@ -57,6 +57,34 @@ function unixToIso(seconds: number | null | undefined): string | null {
   return new Date(seconds * 1000).toISOString();
 }
 
+/**
+ * Detect Stripe errors that mean "the subscription is already cancelled
+ * or deleted on Stripe's side" — i.e. our previous attempt succeeded
+ * server-side but couldn't commit the local-row update (Neon hiccup,
+ * etc.) and the caller is retrying us.
+ *
+ * Treating these as success closes the retry-loop trap the cancel
+ * handler would otherwise have: without this, a partial-failure retry
+ * would re-call `stripe.subscriptions.cancel()` against the already-
+ * dead sub, Stripe would throw `resource_missing`, and our catch would
+ * map that to 502 — masking a Stripe success as an upstream error
+ * until the `customer.subscription.deleted` webhook eventually fixed
+ * the local row (Inspector Brad PR #70 sweep #5 medium-severity find).
+ *
+ * Mirrors `eventHandlers/subscriptionUpdated.ts:isAlreadyCanceledError`
+ * verbatim — the two helpers MUST stay in lockstep so retries from
+ * either path behave identically.
+ */
+function isAlreadyCanceledError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code =
+    (err as { code?: unknown }).code ??
+    (err as { raw?: { code?: unknown } }).raw?.code;
+  if (code === "resource_missing") return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /already\s+cancell?ed|has been cancell?ed/i.test(message);
+}
+
 export const subscriptionsCancelHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -155,7 +183,7 @@ export const subscriptionsCancelHandler = new Elysia()
       let nextPaymentStatus: string;
 
       if (cancelImmediately) {
-        let cancelled: Stripe.Subscription;
+        let cancelled: Stripe.Subscription | null = null;
         try {
           // Cast as in eventHandlers/subscriptionUpdated.ts — Stripe SDK
           // v22 wraps the response in `Stripe.Response<T>` which TS
@@ -164,14 +192,29 @@ export const subscriptionsCancelHandler = new Elysia()
             stripeSubscriptionId,
           )) as unknown as Stripe.Subscription;
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.error(
-            `[subscriptions:cancel] stripe.subscriptions.cancel failed for ${stripeSubscriptionId}: ${message}`,
-          );
-          ctx.set.status = 502;
-          return { error: `Failed to cancel subscription: ${message}` };
+          if (isAlreadyCanceledError(err)) {
+            // Stripe already cancelled this sub on a prior attempt that
+            // couldn't commit the local-row update. Treat as success and
+            // proceed to bring the local row in sync — same idempotent-
+            // recovery pattern as eventHandlers/subscriptionUpdated.ts's
+            // cancelOldSubscriptionWithRetry (Inspector Brad PR #70
+            // sweep #5).
+            console.log(
+              `[subscriptions:cancel] ${stripeSubscriptionId} already cancelled on Stripe — treating retry as success and updating local row`,
+            );
+            // `cancelled` stays null; the canceledAt fallback below
+            // stamps `cancelledAt` (now) for endsAt, matching what we'd
+            // get if Stripe returned a sub with no canceled_at.
+          } else {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(
+              `[subscriptions:cancel] stripe.subscriptions.cancel failed for ${stripeSubscriptionId}: ${message}`,
+            );
+            ctx.set.status = 502;
+            return { error: `Failed to cancel subscription: ${message}` };
+          }
         }
-        const canceledAtSeconds = cancelled.canceled_at;
+        const canceledAtSeconds = cancelled?.canceled_at;
         endsAt =
           typeof canceledAtSeconds === "number" && canceledAtSeconds > 0
             ? new Date(canceledAtSeconds * 1000)

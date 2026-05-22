@@ -6,11 +6,26 @@ import type Stripe from "stripe";
 // time. The pure-helper tests don't need either, but `buildOp` exercises
 // builds against Drizzle's $inferInsert type, so we mock the client.
 
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(),
+// vi.mock factories are hoisted above all module-level code, so any vars
+// they reference must be declared via vi.hoisted() to be available at
+// hoist time. Without this, the closure capture fails with "Cannot
+// access X before initialization".
+const { getDbMock, stripeConstructorMock } = vi.hoisted(() => ({
+  getDbMock: vi.fn(),
+  stripeConstructorMock: vi.fn(),
 }));
 
-import { __internals } from "../reconcile-stripe";
+vi.mock("@persistence/db/client", () => ({
+  getDb: getDbMock,
+}));
+
+// `reconcile` constructs a Stripe instance inside. Mock the module so
+// the constructor returns a synthetic SDK we can drive.
+vi.mock("stripe", () => ({
+  default: stripeConstructorMock,
+}));
+
+import { __internals, reconcile } from "../reconcile-stripe";
 
 const {
   parseArgs,
@@ -558,5 +573,225 @@ describe("reconcile-stripe — summarizeOp", () => {
     expect(out).toContain("UPDATE");
     expect(out).toContain("us_1");
     expect(out).toContain("past_due");
+  });
+});
+
+// ─── reconcile() — applied / failed counters ─────────────────────────
+
+describe("reconcile() applied/failed counters (Inspector Brad PR #70 sweep #5)", () => {
+  // Drive `reconcile()` end-to-end via top-level Stripe + DB mocks so
+  // we can assert that planned counts (skip/insert/update/total) and
+  // actually-applied counts (applied/failed) diverge correctly when
+  // some applyOp calls fail.
+
+  function makeAsyncIterable<T>(items: T[]): AsyncIterable<T> {
+    return {
+      [Symbol.asyncIterator]() {
+        let i = 0;
+        return {
+          next() {
+            if (i < items.length) {
+              return Promise.resolve({ value: items[i++], done: false });
+            }
+            return Promise.resolve({ value: undefined as any, done: true });
+          },
+        };
+      },
+    };
+  }
+
+  function buildPremiumSubscription(
+    overrides: Partial<Stripe.Subscription> = {},
+  ): Stripe.Subscription {
+    return {
+      id: "sub_seed",
+      status: "active",
+      created: 1700000000,
+      trial_end: null,
+      canceled_at: null,
+      customer: "cus_seed",
+      metadata: {
+        supabase_user_id: "user-1",
+        tier_name: "premium",
+        billing_cycle: "monthly",
+      },
+      items: {
+        data: [
+          {
+            current_period_end: 1717200000,
+            price: { id: "price_premium_monthly" },
+          },
+        ],
+      },
+      ...overrides,
+    } as unknown as Stripe.Subscription;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.STRIPE_SECRET_KEY = "sk_test_x";
+    process.env.DATABASE_URL = "postgres://test";
+  });
+
+  it("tracks applied/failed separately from planned, surfacing DB-side errors that previously sailed through as 'COMMITTED'", async () => {
+    // Two subscriptions in the Stripe page — both planned as UPDATEs
+    // (matching local rows). One DB update succeeds; one throws.
+    const subOk = buildPremiumSubscription({ id: "sub_ok" });
+    const subFails = buildPremiumSubscription({ id: "sub_fails" });
+
+    stripeConstructorMock.mockImplementation(() => ({
+      subscriptions: {
+        list: () => makeAsyncIterable([subOk, subFails]),
+      },
+    }));
+
+    // findByExternalId returns a local row for both → both routed to
+    // UPDATE branch in buildOp. (subscriptionTiers price lookup is the
+    // FIRST SELECT call in the loop, then findByExternalId. Order
+    // matters for our mock sequence.)
+    const limitOk = vi.fn().mockResolvedValue([{ id: "us_ok" }]);
+    const limitFails = vi.fn().mockResolvedValue([{ id: "us_fails" }]);
+    const limitPriceOk = vi.fn().mockResolvedValue([
+      {
+        tierName: "premium",
+        monthly: "price_premium_monthly",
+        yearly: null,
+      },
+    ]);
+    const limitPriceFails = vi.fn().mockResolvedValue([
+      {
+        tierName: "premium",
+        monthly: "price_premium_monthly",
+        yearly: null,
+      },
+    ]);
+
+    const select = vi
+      .fn()
+      // sub_ok: 1st call is the price-id lookup (resolveTierForPrice),
+      // 2nd is findByExternalId
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: limitPriceOk }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: limitOk }) }),
+      })
+      // sub_fails: same order
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: limitPriceFails }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: limitFails }) }),
+      });
+
+    // applyOp does a Drizzle update on the user_subscriptions table.
+    // For sub_ok we resolve cleanly; for sub_fails we throw.
+    const updateChainOk = {
+      set: () => ({ where: () => Promise.resolve() }),
+    };
+    const updateChainFails = {
+      set: () => ({
+        where: () => Promise.reject(new Error("neon transient")),
+      }),
+    };
+    const update = vi
+      .fn()
+      .mockReturnValueOnce(updateChainOk)
+      .mockReturnValueOnce(updateChainFails);
+
+    getDbMock.mockReturnValue({ select, update });
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { counts } = await reconcile({ dryRun: false, userId: null });
+
+    expect(counts.total).toBe(2);
+    expect(counts.update).toBe(2); // both planned as UPDATEs
+    expect(counts.applied).toBe(1); // only sub_ok actually landed
+    expect(counts.failed).toBe(1); // sub_fails errored
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("apply failed"),
+    );
+
+    errSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it("does NOT increment applied or failed on dry-run mode (no DB writes attempted)", async () => {
+    const sub = buildPremiumSubscription();
+    stripeConstructorMock.mockImplementation(() => ({
+      subscriptions: {
+        list: () => makeAsyncIterable([sub]),
+      },
+    }));
+
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                tierName: "premium",
+                monthly: "price_premium_monthly",
+                yearly: null,
+              },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([{ id: "us_ok" }]),
+          }),
+        }),
+      });
+    const update = vi.fn();
+    getDbMock.mockReturnValue({ select, update });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { counts } = await reconcile({ dryRun: true, userId: null });
+
+    expect(counts.total).toBe(1);
+    expect(counts.update).toBe(1);
+    expect(counts.applied).toBe(0);
+    expect(counts.failed).toBe(0);
+    expect(update).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it("does NOT count skip ops as applied or failed (they have no apply step)", async () => {
+    // Sub with no supabase_user_id metadata → buildOp returns skip
+    const sub = buildPremiumSubscription({
+      id: "sub_skip",
+      metadata: {}, // missing user id
+    });
+    stripeConstructorMock.mockImplementation(() => ({
+      subscriptions: {
+        list: () => makeAsyncIterable([sub]),
+      },
+    }));
+
+    const select = vi.fn().mockReturnValue({
+      from: () => ({
+        where: () => ({
+          // price lookup returns empty, findByExternalId returns empty
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    const update = vi.fn();
+    getDbMock.mockReturnValue({ select, update });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { counts } = await reconcile({ dryRun: false, userId: null });
+
+    expect(counts.skip).toBe(1);
+    expect(counts.applied).toBe(0);
+    expect(counts.failed).toBe(0);
+    expect(update).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 });
