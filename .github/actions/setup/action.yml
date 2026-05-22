@@ -23,6 +23,7 @@ runs:
           node_modules
           packages/*/node_modules
           microservices/*/node_modules
+          scripts/node_modules
         key: ${{ runner.os }}-${{ runner.arch }}-bun-${{ hashFiles('bun.lock', 'bun.lockb') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-bun-
