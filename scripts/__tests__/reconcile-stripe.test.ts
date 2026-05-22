@@ -250,6 +250,54 @@ describe("reconcile-stripe — buildOp", () => {
     expect(op.reason).toContain("canceled");
   });
 
+  it("skips inserting a phantom row for an in-flight predecessor sub (Inspector Brad PR #70 sweep #7)", () => {
+    // Regression: sub_A is still `active` on Stripe (cleanup webhook
+    // never fired or its 3-attempt retry exhausted), no local row
+    // points at sub_A any more because handleSubscriptionChange swapped
+    // the row's external id to sub_B mid-flow. The successor row
+    // carries `metadata.old_stripe_subscription_id: sub_A`. Without
+    // this guard, reconcile would INSERT a phantom for sub_A, either
+    // colliding with the active-unique index or creating a tie-broken
+    // duplicate row.
+    const successorRow = {
+      id: "us_successor",
+      userId: "user-1",
+      tierName: "premium",
+      billingCycle: "yearly",
+      paymentStatus: "trialing",
+      startsAt: new Date(),
+      expiresAt: null,
+      cancelledAt: null,
+      trialEndsAt: null,
+      nextBillingDate: null,
+      externalSubscriptionId: "sub_B",
+      metadata: { old_stripe_subscription_id: "sub_A_still_active" },
+      currency: "GBP",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any;
+    const op = buildOp(
+      fakeSubscription({ id: "sub_A_still_active", status: "active" }),
+      null, // sub_A has no matching local row
+      tierPremiumMonthly,
+      successorRow, // …but the successor row references it as old
+    );
+    expect(op.op).toBe("skip");
+    if (op.op !== "skip") return;
+    expect(op.reason).toContain("in-flight change-of-tier predecessor");
+    expect(op.reason).toContain("us_successor");
+  });
+
+  it("still INSERTs when sub has no local row AND no successor references it as old (the standard fresh-INSERT path)", () => {
+    const op = buildOp(
+      fakeSubscription({ id: "sub_fresh", status: "active" }),
+      null,
+      tierPremiumMonthly,
+      null, // no successor with marker → standard INSERT path
+    );
+    expect(op.op).toBe("insert");
+  });
+
   it("skips inserting a phantom row for incomplete_expired Stripe subs with no matching local row", () => {
     const op = buildOp(
       fakeSubscription({ status: "incomplete_expired" }),

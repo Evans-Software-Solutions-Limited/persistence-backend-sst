@@ -65,7 +65,7 @@
  */
 
 import Stripe from "stripe";
-import { eq, or } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { subscriptionTiers, userSubscriptions } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -226,6 +226,54 @@ async function findByExternalId(externalSubscriptionId: string) {
 }
 
 /**
+ * Find any local row whose `metadata.old_stripe_subscription_id` matches
+ * the given Stripe sub id. Used by the reconcile loop to detect an
+ * **in-flight predecessor** — a Stripe sub that's still alive (non-
+ * terminal status) but no longer has a local row pointing at it because
+ * `handleSubscriptionChange` swapped the row's external id to a
+ * successor sub during a change-of-tier flow.
+ *
+ * Returns the successor row (which carries the marker), or null when
+ * no local row references this id as old.
+ *
+ * Why this matters: sweep #3 added a terminal-only INSERT skip for
+ * canceled / incomplete_expired Stripe subs with no matching local
+ * row. But the change-of-tier marker cleanup is **webhook-driven** —
+ * if the webhook for the successor sub never fires (delivery outage,
+ * 3-attempt retry exhaustion in subscriptionUpdated.ts), the
+ * predecessor stays in `active`/`trialing` status forever. Reconcile
+ * sees it, falls through the terminal skip, and creates a phantom row.
+ *
+ * Two failure modes from that phantom:
+ *   - successor row is `active`/`pending` → phantom INSERT collides
+ *     with `user_subscriptions_active_unique`. counts.failed surfaces
+ *     it, but sub keeps billing silently from Stripe's side.
+ *   - successor row is `trialing` (not in the active-unique partial
+ *     index) → phantom INSERT succeeds. User now has TWO rows;
+ *     `findMostRecentForUser`'s createdAt-DESC tie-break is unspecified
+ *     (both rows can carry the same `created` from sweep #3's
+ *     preserve-createdAt fix), so the next `POST /subscriptions` may
+ *     dispatch against the wrong row.
+ *
+ * Inspector Brad PR #70 sweep #7 medium-severity find.
+ */
+async function findRowWithOldMarker(stripeSubscriptionId: string) {
+  const db = getDb();
+  // The metadata column is jsonb; use the `->>` JSON-text accessor to
+  // pull the marker value out as a string and compare against the
+  // Stripe sub id. Drizzle's `sql` template handles parameterisation
+  // safely.
+  const rows = await db
+    .select()
+    .from(userSubscriptions)
+    .where(
+      sql`${userSubscriptions.metadata}->>'old_stripe_subscription_id' = ${stripeSubscriptionId}`,
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
  * Resolve `tier_name` + `billing_cycle` from a Stripe price id by
  * querying `subscription_tiers`. Mirrors the inverse lookup in
  * `eventHandlers/subscriptionUpdated.ts:resolveTierForPrice` — kept
@@ -345,12 +393,31 @@ function buildOp(
     tierName: string;
     billingCycle: "monthly" | "yearly";
   } | null,
+  successorWithMarker: typeof userSubscriptions.$inferSelect | null = null,
 ): ReconciliationOp {
   const userId = readUserIdFromMetadata(subscription);
   if (userId === null) {
     return {
       op: "skip",
       reason: "missing supabase_user_id metadata",
+      stripeId: subscription.id,
+    };
+  }
+
+  // In-flight predecessor: this Stripe sub has no matching local row,
+  // but a DIFFERENT local row claims it as its
+  // `metadata.old_stripe_subscription_id`. The change-of-tier webhook
+  // cleanup for that other row hasn't run yet (delivery outage), or
+  // its 3-attempt cancelOldSubscriptionWithRetry retry exhausted and
+  // left the marker behind. Skip with a flagged reason rather than
+  // INSERTing a phantom row that would either collide with the
+  // active-unique index OR create a tie-broken duplicate. See
+  // findRowWithOldMarker docstring for the full failure-mode analysis
+  // (Inspector Brad PR #70 sweep #7 medium-severity find).
+  if (existing === null && successorWithMarker !== null) {
+    return {
+      op: "skip",
+      reason: `in-flight change-of-tier predecessor (successor row ${successorWithMarker.id} still references this id as old_stripe_subscription_id; webhook cleanup outstanding) — declining to create a phantom`,
       stripeId: subscription.id,
     };
   }
@@ -568,7 +635,20 @@ export async function reconcile(args: CliArgs): Promise<{
     const priceId = readStripePriceId(subscription);
     const tierFromPrice =
       priceId !== null ? await resolveTierForPrice(priceId) : null;
-    const op = buildOp(subscription, existing, tierFromPrice);
+    // Only run the (extra) old-marker lookup when we'd otherwise be
+    // about to INSERT — non-terminal status + no matching local row.
+    // This is the narrow window where sweep #3's terminal-only skip
+    // leaves the phantom-row risk open (Inspector Brad PR #70 sweep #7).
+    const successorWithMarker =
+      existing === null && !TERMINAL_STRIPE_STATUSES.has(subscription.status)
+        ? await findRowWithOldMarker(subscription.id)
+        : null;
+    const op = buildOp(
+      subscription,
+      existing,
+      tierFromPrice,
+      successorWithMarker,
+    );
     ops.push(op);
     if (op.op === "skip") counts.skip += 1;
     else if (op.op === "insert") counts.insert += 1;
