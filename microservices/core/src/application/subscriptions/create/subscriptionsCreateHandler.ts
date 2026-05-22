@@ -621,11 +621,27 @@ async function handleSubscriptionChange(args: {
     stripe_customer_id: customerId,
     stripe_subscription_id: subscription.id,
     stripe_payment_method_id: paymentMethodId,
-    platform: platform,
+    // Only overwrite `platform` when the caller explicitly sent one. The
+    // spread above carries the prior row's platform (set at original buy
+    // time), so a returning iOS user who changes tier from a caller that
+    // omits `platform` keeps their iOS attribution rather than getting
+    // it nulled out (Inspector Brad PR #70 medium-severity find).
+    ...(platform !== null ? { platform } : {}),
     payment_type: "apple_pay_or_google_pay",
     old_stripe_subscription_id: existingStripeSubId,
-    ...(requiresActionIntent ? { requires_3d_secure: true } : {}),
   };
+  // Mirror the reinstate path's explicit set-or-delete for the 3DS flag.
+  // The bare ternary spread above would only SET the flag on a 3DS-
+  // requiring response; without an explicit delete on the else branch,
+  // a prior `requires_3d_secure: true` carried in via metaWithoutDowngrade
+  // would survive even when the new sub doesn't need 3DS — leaving the UI
+  // showing a 3DS-pending state on an active row (Inspector Brad PR #70
+  // medium-severity find).
+  if (requiresActionIntent) {
+    newMeta.requires_3d_secure = true;
+  } else {
+    delete newMeta.requires_3d_secure;
+  }
 
   let updated: UserSubscription | null;
   try {

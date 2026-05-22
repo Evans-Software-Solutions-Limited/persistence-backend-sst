@@ -1119,6 +1119,97 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
   });
 
+  it("clears any pending requires_3d_secure from prior metadata when the new sub no longer needs 3DS (Inspector Brad PR #70)", async () => {
+    // Regression: previously the change-path only SET the flag on a 3DS-
+    // requiring response, but never CLEARED it on the else branch. A
+    // user whose prior subscription required 3DS, then changes tier
+    // with a card that doesn't require it, would end up with stale
+    // metadata.requires_3d_secure: true on an active row.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          requires_3d_secure: true,
+        },
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new_no_3ds", status: "active" }),
+    );
+    await postCreate(validBody);
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(
+      (patch.metadata as Record<string, unknown>).requires_3d_secure,
+    ).toBeUndefined();
+    // ...but the new old-sub marker IS present
+    expect(
+      (patch.metadata as Record<string, unknown>).old_stripe_subscription_id,
+    ).toBe("sub_old_active");
+  });
+
+  it("preserves prior platform when the caller omits it on a change-of-tier (Inspector Brad PR #70)", async () => {
+    // Regression: previously `platform: body.platform ?? null` hard-
+    // overwrote the prior row's platform with `null` whenever the
+    // caller omitted `platform` in the body. A returning iOS user
+    // who changes tier through any caller that doesn't repeat the
+    // platform field would lose their iOS attribution.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          platform: "ios",
+        },
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new_no_platform", status: "active" }),
+    );
+    // validBody does NOT include `platform`
+    await postCreate(validBody);
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect((patch.metadata as Record<string, unknown>).platform).toBe("ios");
+  });
+
+  it("overwrites prior platform when the caller does send one on a change-of-tier", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          platform: "ios",
+        },
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new_android", status: "active" }),
+    );
+    await postCreate({ ...validBody, platform: "android" });
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect((patch.metadata as Record<string, unknown>).platform).toBe(
+      "android",
+    );
+  });
+
   it("clears any pending scheduled_downgrade marker per Q7", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",

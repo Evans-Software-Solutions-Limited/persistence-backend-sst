@@ -131,6 +131,26 @@ describe("subscriptionsCancelHandler", () => {
       expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
     });
 
+    it("returns 400 ALSO for the US-spelled 'canceled' payment_status (Inspector Brad PR #70)", async () => {
+      // Regression: the create handler's REINSTATEMENT_STATUSES treats
+      // both UK + US spellings as valid local payment_statuses (legacy
+      // rows + inbound Stripe pass-throughs both write US). The cancel
+      // handler must do the same — otherwise a row with `canceled`
+      // falls through to a fresh Stripe.cancel() against an already-
+      // cancelled sub, surfacing as a 502 to the caller rather than
+      // the friendly 400.
+      subscriptionRepositoryMocks.findByIdForUser.mockResolvedValueOnce(
+        fakeRow({ paymentStatus: "canceled" }),
+      );
+      const res = await postCancel("us_1");
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        error: "Subscription is already cancelled",
+      });
+      expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+      expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    });
+
     it("returns 404 when the row has no externalSubscriptionId", async () => {
       subscriptionRepositoryMocks.findByIdForUser.mockResolvedValueOnce(
         fakeRow({ externalSubscriptionId: null }),

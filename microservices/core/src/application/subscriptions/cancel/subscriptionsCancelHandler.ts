@@ -81,7 +81,19 @@ export const subscriptionsCancelHandler = new Elysia()
         return { error: "Subscription not found" };
       }
 
-      if (subscription.paymentStatus === "cancelled") {
+      // Match both UK + US spellings — local rows can carry either,
+      // depending on whether they were written by handler code (UK) vs.
+      // an inbound Stripe event with US-spelled status passed through
+      // (US). The create handler's REINSTATEMENT_STATUSES already accepts
+      // both spellings; this check has to as well or a `canceled` row
+      // would fall through and we'd issue a fresh
+      // `stripe.subscriptions.cancel()` against a sub Stripe already
+      // considers canceled, surfacing as a 502 to the caller rather than
+      // the friendly 400 (Inspector Brad PR #70 low-severity find).
+      if (
+        subscription.paymentStatus === "cancelled" ||
+        subscription.paymentStatus === "canceled"
+      ) {
         ctx.set.status = 400;
         return { error: "Subscription is already cancelled" };
       }
