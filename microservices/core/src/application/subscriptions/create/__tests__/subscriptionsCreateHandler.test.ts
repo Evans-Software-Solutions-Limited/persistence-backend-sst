@@ -260,13 +260,13 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     });
   });
 
-  it("isReinstateable: same tier + cycle + reinstateable status", async () => {
+  it("isReinstateable: same tier + cycle + reinstateable status (past_due / trialing only)", async () => {
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { isReinstateable } = __internals;
     const row = {
       tierName: "premium",
       billingCycle: "monthly",
-      paymentStatus: "cancelled",
+      paymentStatus: "past_due",
     } as any;
     expect(isReinstateable(row, "premium", "monthly")).toBe(true);
     expect(isReinstateable(row, "premium", "yearly")).toBe(false);
@@ -285,20 +285,23 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
         "monthly",
       ),
     ).toBe(true);
+    // Permanently-cancelled statuses are NOT reinstateable (Inspector
+    // Brad PR #70 sweep #2): the underlying Stripe sub is dead and
+    // can't be resumed, so these rows fall through to the change-path.
     expect(
       isReinstateable(
-        { ...row, paymentStatus: "past_due" },
+        { ...row, paymentStatus: "cancelled" },
         "premium",
         "monthly",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isReinstateable(
         { ...row, paymentStatus: "canceled" },
         "premium",
         "monthly",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("readCurrentPeriodEnd prefers legacy top-level, falls back to items", async () => {
@@ -613,7 +616,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       id: "us_old_no_sub",
       tierName: "premium",
       billingCycle: "monthly",
-      paymentStatus: "cancelled",
+      paymentStatus: "past_due",
       metadata: { stripe_customer_id: "cus_old" },
     });
     const res = await postCreate(validBody);
@@ -621,6 +624,40 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     // New-sub path runs (stripe.subscriptions.create), not reinstate (.update)
     expect(stripeMock.subscriptions.create).toHaveBeenCalled();
     expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("routes a cancelled-then-resubscribe (same tier+cycle) through change-path, not reinstate (Inspector Brad PR #70 sweep #2)", async () => {
+    // Regression: previously REINSTATEMENT_STATUSES included "cancelled"/
+    // "canceled", which always 500'd because Stripe refuses to
+    // reactivate canceled subs. The row now falls through to the
+    // change-path, which creates a fresh Stripe sub.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce({
+      id: "us_old_cancelled",
+      userId: "user-1",
+      tierName: "premium",
+      billingCycle: "monthly",
+      paymentStatus: "cancelled",
+      metadata: {
+        stripe_customer_id: "cus_existing",
+        stripe_subscription_id: "sub_old_dead",
+      },
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_resub", status: "active" }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    // Change-path = create + update, NOT reinstate-via-update
+    expect(stripeMock.subscriptions.create).toHaveBeenCalled();
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.metadata.old_stripe_subscription_id).toBe("sub_old_dead");
   });
 
   it("dispatches change-path (not new-sub) when existing row has a stripe_subscription_id but different tier", async () => {
@@ -762,15 +799,20 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
 
 // ─── Handler integration tests — reinstatement path ──────────────────
 
-/** Build a reinstate-eligible existing row. */
+/**
+ * Build a reinstate-eligible existing row. Defaults to `past_due` —
+ * `cancelled`/`canceled` are NO LONGER reinstateable (Inspector Brad
+ * PR #70 sweep #2: Stripe rejects reactivation of permanently-canceled
+ * subs). Rows in those statuses fall through to the change-path.
+ */
 function reinstateableRow(over: Partial<Record<string, unknown>> = {}) {
   return {
     id: "us_old",
     userId: "user-1",
     tierName: "premium",
     billingCycle: "monthly",
-    paymentStatus: "cancelled",
-    cancelledAt: new Date("2026-04-01"),
+    paymentStatus: "past_due",
+    cancelledAt: null,
     metadata: {
       stripe_customer_id: "cus_existing",
       stripe_subscription_id: "sub_old",
@@ -1117,6 +1159,40 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
 
     // NO inline old-sub cancel — that's the webhook's job
     expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when a previous change is still in-flight (Inspector Brad PR #70 sweep #2)", async () => {
+    // Regression: a returning user with an in-flight
+    // old_stripe_subscription_id on their row (previous change A→B
+    // never resolved by the webhook — abandoned 3DS, etc.) would
+    // previously have their old marker overwritten by a new change
+    // B→C, orphaning sub_A on Stripe. We now refuse with 409.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_B_in_flight",
+          old_stripe_subscription_id: "sub_A_still_active",
+        },
+      }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("previous subscription change"),
+    });
+    // No Stripe sub created — the webhook chain for the in-flight
+    // change has to settle first.
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+    expect(subscriptionRepositoryMocks.updateById).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it("clears any pending requires_3d_secure from prior metadata when the new sub no longer needs 3DS (Inspector Brad PR #70)", async () => {

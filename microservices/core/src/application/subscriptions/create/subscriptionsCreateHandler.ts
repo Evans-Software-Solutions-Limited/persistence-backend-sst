@@ -72,12 +72,18 @@ import { getStripe } from "../../stripe/stripeClient";
 const TRAINER_TIER_TRIAL_DAYS = 14;
 const USER_TIER_TRIAL_DAYS = 7;
 
-const REINSTATEMENT_STATUSES = new Set([
-  "cancelled",
-  "canceled",
-  "past_due",
-  "trialing",
-]);
+// Local payment_statuses that mean "the Stripe subscription is still
+// alive and resumable via stripe.subscriptions.update(cancel_at_period_end:
+// false)". Permanently-cancelled subs (Stripe status: "canceled") are
+// deliberately NOT in this set — Stripe rejects reactivation of those
+// with "You can't reactivate canceled subscriptions", and every path
+// that writes the local "cancelled"/"canceled" payment_status (immediate
+// cancel via cancel_immediately:true, subscriptionDeleted webhook,
+// subscriptionUpdated after current_period_end) corresponds to a
+// permanently-dead Stripe sub. Rows in that state fall through to the
+// change-of-tier branch instead, which creates a fresh Stripe sub
+// (Inspector Brad PR #70 sweep #2 medium-severity find).
+const REINSTATEMENT_STATUSES = new Set(["past_due", "trialing"]);
 
 type CreateSubscriptionBody = {
   tier_name: string;
@@ -560,6 +566,38 @@ async function handleSubscriptionChange(args: {
     platform,
     trial,
   } = args;
+
+  // Refuse chained changes — an in-flight `old_stripe_subscription_id`
+  // marker means the PREVIOUS change-of-tier hasn't been resolved by
+  // the webhook yet (the new sub is still incomplete, or 3DS was
+  // abandoned). Proceeding here would silently overwrite that marker,
+  // orphaning the original Stripe sub: when the new-new sub eventually
+  // goes active, the webhook handler cancels only what it sees as the
+  // "old" (the previous *change's* new sub), leaving the *original*
+  // sub still active on Stripe with no local reference. User gets
+  // billed for a sub they thought was replaced (Inspector Brad PR #70
+  // sweep #2 medium-severity find).
+  //
+  // The window for this is bounded by Stripe's auto-transition of
+  // incomplete subs to incomplete_expired (~23 hours), after which
+  // the inbound webhook rolls the local row back to a clean state.
+  // Caller can retry then, OR sooner once the webhook chain settles
+  // for the in-flight sub.
+  const existingMetaPrecheck = readMetadata(existing);
+  const inFlightOldMarker = readStringMeta(
+    existingMetaPrecheck,
+    "old_stripe_subscription_id",
+  );
+  if (inFlightOldMarker !== null) {
+    console.warn(
+      `[subscriptions:create:change] refusing change for user=${userId}: in-flight old_stripe_subscription_id=${inFlightOldMarker} (previous change not yet webhook-resolved)`,
+    );
+    ctx.set.status = 409;
+    return {
+      error:
+        "A previous subscription change is still being processed. Please wait a few minutes and try again.",
+    };
+  }
 
   const createParams: Stripe.SubscriptionCreateParams = {
     customer: customerId,
