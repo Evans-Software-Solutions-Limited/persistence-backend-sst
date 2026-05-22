@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { userSubscriptions } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -83,6 +83,31 @@ export class SubscriptionRepository {
       .from(userSubscriptions)
       .where(eq(userSubscriptions.userId, userId))
       .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Lookup a `user_subscriptions` row by primary key, scoped to the
+   * authenticated user. Used by `POST /subscriptions/:id/cancel` to
+   * enforce ownership before issuing any Stripe-side cancel — without
+   * the `userId` constraint a user could pass another user's row id
+   * and trigger a cancellation on their subscription. Returns `null`
+   * either when the row doesn't exist OR when it belongs to a different
+   * user; the handler maps both to 404 to avoid revealing whether an
+   * id exists.
+   */
+  async findByIdForUser(
+    id: string,
+    userId: string,
+  ): Promise<UserSubscription | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(userSubscriptions)
+      .where(
+        and(eq(userSubscriptions.id, id), eq(userSubscriptions.userId, userId)),
+      )
       .limit(1);
     return rows[0] ?? null;
   }

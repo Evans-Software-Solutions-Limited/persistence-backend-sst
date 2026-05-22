@@ -49,6 +49,8 @@ import { progressStatsHandler } from "./application/progress/progressStatsHandle
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
 import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
+import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
+import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -99,7 +101,9 @@ const app = new Elysia()
   .use(dashboardHandler)
   .use(progressStatsHandler)
   .use(progressRecordsHandler)
-  .use(progressHistoryHandler);
+  .use(progressHistoryHandler)
+  .use(subscriptionsCreateHandler)
+  .use(subscriptionsCancelHandler);
 
 export type CoreApi = typeof app;
 

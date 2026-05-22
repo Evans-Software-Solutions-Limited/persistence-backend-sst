@@ -4,7 +4,8 @@
   "packageManager": "bun@1.3.9",
   "workspaces": [
     "packages/*",
-    "microservices/*"
+    "microservices/*",
+    "scripts"
   ],
   "scripts": {
     "dev": "sst dev",

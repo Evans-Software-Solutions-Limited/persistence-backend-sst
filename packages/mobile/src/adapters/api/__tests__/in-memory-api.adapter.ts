@@ -30,6 +30,10 @@ import type {
   CreateSetInput,
   CreateGoalInput,
   UploadAvatarInput,
+  CreateSubscriptionInput,
+  CreateSubscriptionResponse,
+  CancelSubscriptionInput,
+  CancelSubscriptionResponse,
 } from "@/domain/ports/api.port";
 import type {
   CreateWorkoutInput,
@@ -658,5 +662,78 @@ export class InMemoryApiAdapter implements ApiPort {
   async deleteGoal(id: string) {
     this.goals = this.goals.filter((g) => g.id !== id);
     return this.mayFail(undefined);
+  }
+
+  // -- Subscriptions (M7) --
+  //
+  // The in-memory model only needs to record what mobile-side code asked
+  // for + replay a stub response. The webhook + DB-trigger semantics that
+  // make the backend code interesting are out of scope here; tests that
+  // need to exercise those should use a real DB integration setup.
+
+  /**
+   * Last `createSubscription` input captured, so containers + presenters
+   * can be asserted against the exact payload they sent. `null` until
+   * the first call.
+   */
+  public lastCreateSubscriptionInput: CreateSubscriptionInput | null = null;
+  /** Counter — convenient for "called exactly once" assertions. */
+  public createSubscriptionCalls = 0;
+
+  /**
+   * Next response to return from `createSubscription`. Defaults to a
+   * minimal happy-path payload; tests can swap to a `requires_action`
+   * shape via `setNextCreateSubscriptionResponse({ requires_action: true,
+   * client_secret: "pi_…" })`.
+   */
+  public nextCreateSubscriptionResponse: CreateSubscriptionResponse = {
+    success: true,
+    requires_action: false,
+    subscription_id: "us_test_1",
+    stripe_subscription_id: "sub_test_1",
+    trial_ends_at: null,
+    next_billing_date: null,
+    payment_status: "active",
+  };
+
+  setNextCreateSubscriptionResponse(
+    next: Partial<CreateSubscriptionResponse>,
+  ): void {
+    this.nextCreateSubscriptionResponse = {
+      ...this.nextCreateSubscriptionResponse,
+      ...next,
+    };
+  }
+
+  async createSubscription(input: CreateSubscriptionInput) {
+    this.createSubscriptionCalls += 1;
+    this.lastCreateSubscriptionInput = input;
+    return this.mayFail<CreateSubscriptionResponse>(
+      this.nextCreateSubscriptionResponse,
+    );
+  }
+
+  /** Captures the (subscriptionId, input) pair for the last cancel call. */
+  public lastCancelSubscription: {
+    subscriptionId: string;
+    input: CancelSubscriptionInput;
+  } | null = null;
+  public cancelSubscriptionCalls = 0;
+  public nextCancelSubscriptionResponse: CancelSubscriptionResponse = {
+    success: true,
+    cancelled_at: "2026-05-21T00:00:00.000Z",
+    subscription_ends_at: "2026-06-01T00:00:00.000Z",
+    message: "Subscription will be cancelled at the end of the billing period",
+  };
+
+  async cancelSubscription(
+    subscriptionId: string,
+    input: CancelSubscriptionInput = {},
+  ) {
+    this.cancelSubscriptionCalls += 1;
+    this.lastCancelSubscription = { subscriptionId, input };
+    return this.mayFail<CancelSubscriptionResponse>(
+      this.nextCancelSubscriptionResponse,
+    );
   }
 }

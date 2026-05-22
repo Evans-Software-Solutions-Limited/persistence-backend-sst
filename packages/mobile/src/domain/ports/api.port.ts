@@ -273,6 +273,40 @@ export interface ApiPort {
    */
   getDashboard(): Promise<Result<DashboardPayload, ApiError>>;
 
+  // -- Subscriptions (M7) --
+  /**
+   * Create a Stripe subscription. Folds four flows on the backend (new
+   * sub / reinstate / change of tier or cycle / 3DS), but the mobile
+   * contract is a single call — the backend distinguishes based on the
+   * authenticated user's most-recent `user_subscriptions` row.
+   *
+   * Returns the canonical local `subscription_id` (UUID) + Stripe sub id,
+   * plus `requires_action` as a discriminator. When `requires_action` is
+   * true, mobile presents the `client_secret` to Stripe's mobile SDK to
+   * complete a 3DS challenge; the eventual `customer.subscription.updated`
+   * webhook commits the payment_status flip server-side. When false,
+   * `payment_status` already reflects the final state.
+   *
+   * Wraps `POST /subscriptions`. Spec: BACKEND_BRIEF (M7).
+   */
+  createSubscription(
+    input: CreateSubscriptionInput,
+  ): Promise<Result<CreateSubscriptionResponse, ApiError>>;
+
+  /**
+   * Cancel a subscription either at the end of the billing period
+   * (default) or immediately. `subscriptionId` is the local
+   * `user_subscriptions.id` UUID, NOT the Stripe `sub_…` id. Backend
+   * scopes by both id AND userId — a wrong / missing id returns 404
+   * without leaking which.
+   *
+   * Wraps `POST /subscriptions/:id/cancel`.
+   */
+  cancelSubscription(
+    subscriptionId: string,
+    input?: CancelSubscriptionInput,
+  ): Promise<Result<CancelSubscriptionResponse, ApiError>>;
+
   // -- Goals --
   getGoals(params?: PaginationParams): Promise<Result<ApiGoal[], ApiError>>;
   getGoal(id: string): Promise<Result<ApiGoal, ApiError>>;
@@ -580,6 +614,58 @@ export type CreateGoalInput = {
   goalTypeId: string;
   priority?: number;
   targetDate?: string;
+};
+
+/**
+ * M7: request body for `POST /subscriptions`. `use_trial` is required
+ * explicit (no silent default) — caller decides whether to opt into a
+ * trial. Backend rejects an attempt to subscribe to "free" with 400.
+ */
+export type CreateSubscriptionInput = {
+  tier_name: string;
+  billing_cycle: "monthly" | "yearly";
+  payment_method_id: string;
+  use_trial: boolean;
+  platform?: "ios" | "android";
+};
+
+/**
+ * M7: response from `POST /subscriptions`. `subscription_id` is the
+ * local `user_subscriptions.id` UUID; `stripe_subscription_id` is the
+ * Stripe `sub_…` id. The two are deliberately separated (legacy had
+ * them conflated on the 3DS branch).
+ *
+ * On `requires_action: true` the caller must use `client_secret` with
+ * the Stripe mobile SDK to complete the 3DS challenge; the webhook
+ * commits the final payment_status server-side. On `false`,
+ * `payment_status` already reflects the final state.
+ *
+ * `reinstated: true` is set when the backend resumed an existing
+ * Stripe subscription rather than creating a fresh one.
+ */
+export type CreateSubscriptionResponse = {
+  success: true;
+  requires_action: boolean;
+  subscription_id: string;
+  stripe_subscription_id: string;
+  trial_ends_at: string | null;
+  next_billing_date: string | null;
+  payment_status: string;
+  client_secret?: string;
+  reinstated?: boolean;
+};
+
+/** M7: optional body for `POST /subscriptions/:id/cancel`. */
+export type CancelSubscriptionInput = {
+  cancel_immediately?: boolean;
+};
+
+/** M7: response from `POST /subscriptions/:id/cancel`. */
+export type CancelSubscriptionResponse = {
+  success: true;
+  cancelled_at: string;
+  subscription_ends_at: string;
+  message: string;
 };
 
 /**
