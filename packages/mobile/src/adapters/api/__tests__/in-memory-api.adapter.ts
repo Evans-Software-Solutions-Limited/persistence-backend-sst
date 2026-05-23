@@ -31,10 +31,14 @@ import type {
   CreateGoalInput,
   UploadAvatarInput,
   CreateSubscriptionInput,
-  CreateSubscriptionResponse,
   CancelSubscriptionInput,
-  CancelSubscriptionResponse,
 } from "@/domain/ports/api.port";
+import type {
+  CancelSubscriptionResult,
+  CreateSubscriptionResult,
+  MySubscription,
+  SubscriptionTier,
+} from "@/domain/models/subscription";
 import type {
   CreateWorkoutInput,
   UpdateWorkoutInput,
@@ -664,12 +668,33 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(undefined);
   }
 
-  // -- Subscriptions (M7) --
+  // -- Subscriptions (M7 / M10) --
   //
-  // The in-memory model only needs to record what mobile-side code asked
-  // for + replay a stub response. The webhook + DB-trigger semantics that
-  // make the backend code interesting are out of scope here; tests that
-  // need to exercise those should use a real DB integration setup.
+  // The in-memory model records what mobile-side code asked for + replays
+  // a stub response. The webhook + DB-trigger semantics that make the
+  // backend code interesting are out of scope here; tests that need to
+  // exercise those should use a real DB integration setup.
+
+  /** Catalog used by `getSubscriptionTiers`. */
+  public subscriptionTiers: SubscriptionTier[] = [];
+
+  /** Per-user current subscription used by `getMySubscription`. */
+  public mySubscription: MySubscription | null = null;
+
+  async getSubscriptionTiers() {
+    return this.mayFail<SubscriptionTier[]>([...this.subscriptionTiers]);
+  }
+
+  async getMySubscription() {
+    if (!this.mySubscription) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No subscription",
+      });
+    }
+    return this.mayFail<MySubscription>(this.mySubscription);
+  }
 
   /**
    * Last `createSubscription` input captured, so containers + presenters
@@ -682,22 +707,26 @@ export class InMemoryApiAdapter implements ApiPort {
 
   /**
    * Next response to return from `createSubscription`. Defaults to a
-   * minimal happy-path payload; tests can swap to a `requires_action`
-   * shape via `setNextCreateSubscriptionResponse({ requires_action: true,
-   * client_secret: "pi_…" })`.
+   * minimal happy-path payload; tests can swap to a `requiresAction`
+   * shape via `setNextCreateSubscriptionResponse({ requiresAction: true,
+   * clientSecret: "pi_…" })`.
    */
-  public nextCreateSubscriptionResponse: CreateSubscriptionResponse = {
+  public nextCreateSubscriptionResponse: CreateSubscriptionResult = {
     success: true,
-    requires_action: false,
-    subscription_id: "us_test_1",
-    stripe_subscription_id: "sub_test_1",
-    trial_ends_at: null,
-    next_billing_date: null,
-    payment_status: "active",
+    requiresAction: false,
+    subscriptionId: "us_test_1",
+    stripeSubscriptionId: "sub_test_1",
+    trialEndsAt: null,
+    nextBillingDate: null,
+    paymentStatus: "active",
+    changeType: "new",
+    scheduled: false,
+    effectiveAt: null,
+    isTrial: false,
   };
 
   setNextCreateSubscriptionResponse(
-    next: Partial<CreateSubscriptionResponse>,
+    next: Partial<CreateSubscriptionResult>,
   ): void {
     this.nextCreateSubscriptionResponse = {
       ...this.nextCreateSubscriptionResponse,
@@ -708,7 +737,7 @@ export class InMemoryApiAdapter implements ApiPort {
   async createSubscription(input: CreateSubscriptionInput) {
     this.createSubscriptionCalls += 1;
     this.lastCreateSubscriptionInput = input;
-    return this.mayFail<CreateSubscriptionResponse>(
+    return this.mayFail<CreateSubscriptionResult>(
       this.nextCreateSubscriptionResponse,
     );
   }
@@ -719,10 +748,10 @@ export class InMemoryApiAdapter implements ApiPort {
     input: CancelSubscriptionInput;
   } | null = null;
   public cancelSubscriptionCalls = 0;
-  public nextCancelSubscriptionResponse: CancelSubscriptionResponse = {
+  public nextCancelSubscriptionResponse: CancelSubscriptionResult = {
     success: true,
-    cancelled_at: "2026-05-21T00:00:00.000Z",
-    subscription_ends_at: "2026-06-01T00:00:00.000Z",
+    cancelledAt: "2026-05-21T00:00:00.000Z",
+    subscriptionEndsAt: "2026-06-01T00:00:00.000Z",
     message: "Subscription will be cancelled at the end of the billing period",
   };
 
@@ -732,7 +761,7 @@ export class InMemoryApiAdapter implements ApiPort {
   ) {
     this.cancelSubscriptionCalls += 1;
     this.lastCancelSubscription = { subscriptionId, input };
-    return this.mayFail<CancelSubscriptionResponse>(
+    return this.mayFail<CancelSubscriptionResult>(
       this.nextCancelSubscriptionResponse,
     );
   }

@@ -37,10 +37,14 @@ import type {
   RecordedApiSession,
   UploadAvatarInput,
   CreateSubscriptionInput,
-  CreateSubscriptionResponse,
   CancelSubscriptionInput,
-  CancelSubscriptionResponse,
 } from "@/domain/ports/api.port";
+import type {
+  CancelSubscriptionResult,
+  CreateSubscriptionResult,
+  MySubscription,
+  SubscriptionTier,
+} from "@/domain/models/subscription";
 import type {
   CreateWorkoutInput,
   UpdateWorkoutInput,
@@ -808,37 +812,83 @@ export class SSTApiAdapter implements ApiPort {
     return this.request<void>(`/goals/${id}`, { method: "DELETE" });
   }
 
-  // -- Subscriptions (M7) --
+  // -- Subscriptions (M7 / M10) --
   //
-  // Both endpoints return their data flat (NOT under a `{ data }` envelope)
-  // so they use `request<T>` not `requestEnvelope<T>`. The backend already
-  // surfaces error bodies as `{ error: "..." }` on non-2xx; `request<T>`'s
-  // existing error mapping reads the `error` field and propagates a
-  // friendly message.
+  // Write endpoints (POST /subscriptions, POST /subscriptions/:id/cancel)
+  // return their data flat — no `{ data }` envelope — so they use
+  // `request<T>`. The new M10 read endpoints (`GET /subscription-tiers`,
+  // `GET /subscriptions/me`) use the single-envelope shape per design.md
+  // and go via `requestEnvelope<T>`.
+  //
+  // The adapter handles the camelCase domain ↔ snake_case wire mapping
+  // at this boundary so containers + presenters never touch snake_case.
+
+  async getSubscriptionTiers() {
+    return this.requestEnvelope<WireSubscriptionTier[]>("/subscription-tiers", {
+      // No auth — public catalog. The base `request<T>` only attaches
+      // the Authorization header when the token provider has a token,
+      // so an unauthenticated app launch's catalog fetch still works.
+    }).then((result) =>
+      result.ok
+        ? ok(result.value.map(mapSubscriptionTier))
+        : (result as Result<SubscriptionTier[], ApiError>),
+    );
+  }
+
+  async getMySubscription() {
+    return this.requestEnvelope<MySubscription>("/subscriptions/me");
+  }
 
   async createSubscription(
     input: CreateSubscriptionInput,
-  ): Promise<Result<CreateSubscriptionResponse, ApiError>> {
-    return this.request<CreateSubscriptionResponse>("/subscriptions", {
-      method: "POST",
-      body: input,
-    });
+  ): Promise<Result<CreateSubscriptionResult, ApiError>> {
+    const body: Record<string, unknown> = {
+      tier_name: input.tierName,
+      billing_cycle: input.billingCycle,
+      use_trial: input.useTrial,
+    };
+    if (input.paymentMethodId !== undefined) {
+      body.payment_method_id = input.paymentMethodId;
+    }
+    if (input.platform !== undefined) {
+      body.platform = input.platform;
+    }
+    const result = await this.request<WireCreateSubscriptionResponse>(
+      "/subscriptions",
+      {
+        method: "POST",
+        body,
+      },
+    );
+    if (!result.ok) return result;
+    return ok(mapCreateSubscriptionResponse(result.value));
   }
 
   async cancelSubscription(
     subscriptionId: string,
     input: CancelSubscriptionInput = {},
-  ): Promise<Result<CancelSubscriptionResponse, ApiError>> {
-    return this.request<CancelSubscriptionResponse>(
+  ): Promise<Result<CancelSubscriptionResult, ApiError>> {
+    // Always send a JSON body — backend's Elysia validator expects an
+    // object (`cancel_immediately` is optional, defaults to false). An
+    // empty object is safe and explicit.
+    const body: Record<string, unknown> = {};
+    if (input.cancelImmediately !== undefined) {
+      body.cancel_immediately = input.cancelImmediately;
+    }
+    const result = await this.request<WireCancelSubscriptionResponse>(
       `/subscriptions/${subscriptionId}/cancel`,
       {
         method: "POST",
-        // Always send a JSON body — backend's Elysia validator expects an
-        // object (cancel_immediately is optional, defaults to false on the
-        // backend). An empty object is safe and explicit.
-        body: input,
+        body,
       },
     );
+    if (!result.ok) return result;
+    return ok({
+      success: true,
+      cancelledAt: result.value.cancelled_at,
+      subscriptionEndsAt: result.value.subscription_ends_at,
+      message: result.value.message,
+    });
   }
 }
 
@@ -936,3 +986,119 @@ export function mapCreateExerciseInputToApi(
     payload.equipment_required = input.equipment;
   return payload;
 }
+
+// -- Subscription wire-format mapping --
+//
+// The backend's `subscription_tiers` rows surface decimal-string prices
+// (Postgres numeric / decimal columns) over the wire; the adapter parses
+// them to numbers at this boundary so the rest of the mobile app
+// (containers / presenters / domain services) only ever sees `number`.
+
+/**
+ * Raw row shape returned by `GET /subscription-tiers`. Carries decimal-
+ * string prices and JSONB features as the backend emits them.
+ */
+type WireSubscriptionTier = {
+  tierName: SubscriptionTier["tierName"];
+  displayName: string;
+  description: string | null;
+  /** Wire format is decimal string ("9.99"); parsed at this boundary. */
+  priceMonthly: string | number;
+  priceYearly: string | number | null;
+  currency: string;
+  features: Record<string, unknown>;
+  workoutLimit: number | null;
+  aiAccess: boolean;
+  aiWorkoutLimit: number;
+  gymBuddyAccess: boolean;
+  trainerClientLimit: number | null;
+  isTrainerTier: boolean;
+  analyticsAccess: boolean;
+  exportAccess: boolean;
+  stripePriceIdMonthly: string | null;
+  stripePriceIdYearly: string | null;
+};
+
+function parseDecimal(value: string | number): number {
+  return typeof value === "number" ? value : Number.parseFloat(value);
+}
+
+export function mapSubscriptionTier(raw: WireSubscriptionTier): SubscriptionTier {
+  return {
+    tierName: raw.tierName,
+    displayName: raw.displayName,
+    description: raw.description,
+    priceMonthly: parseDecimal(raw.priceMonthly),
+    priceYearly:
+      raw.priceYearly === null ? null : parseDecimal(raw.priceYearly),
+    currency: raw.currency,
+    features: raw.features,
+    workoutLimit: raw.workoutLimit,
+    aiAccess: raw.aiAccess,
+    aiWorkoutLimit: raw.aiWorkoutLimit,
+    gymBuddyAccess: raw.gymBuddyAccess,
+    trainerClientLimit: raw.trainerClientLimit,
+    isTrainerTier: raw.isTrainerTier,
+    analyticsAccess: raw.analyticsAccess,
+    exportAccess: raw.exportAccess,
+    stripePriceIdMonthly: raw.stripePriceIdMonthly,
+    stripePriceIdYearly: raw.stripePriceIdYearly,
+  };
+}
+
+/**
+ * Wire shape returned by `POST /subscriptions`. snake_case fields as
+ * the backend emits them. Includes the M10 discriminators added to
+ * the response surface.
+ */
+type WireCreateSubscriptionResponse = {
+  success: true;
+  requires_action: boolean;
+  subscription_id: string;
+  stripe_subscription_id: string;
+  trial_ends_at: string | null;
+  next_billing_date: string | null;
+  payment_status: string;
+  client_secret?: string;
+  reinstated?: boolean;
+  // M10 additions
+  change_type: "new" | "upgrade" | "downgrade" | "reinstate" | "cycle_change";
+  scheduled: boolean;
+  effective_at: string | null;
+  is_trial: boolean;
+};
+
+export function mapCreateSubscriptionResponse(
+  raw: WireCreateSubscriptionResponse,
+): CreateSubscriptionResult {
+  const result: CreateSubscriptionResult = {
+    success: true,
+    requiresAction: raw.requires_action,
+    subscriptionId: raw.subscription_id,
+    stripeSubscriptionId: raw.stripe_subscription_id,
+    trialEndsAt: raw.trial_ends_at,
+    nextBillingDate: raw.next_billing_date,
+    // The wire type widens payment_status to `string` because the
+    // backend's enum is the source of truth; cast at the boundary so
+    // the domain shape stays strict.
+    paymentStatus: raw.payment_status as CreateSubscriptionResult["paymentStatus"],
+    changeType: raw.change_type,
+    scheduled: raw.scheduled,
+    effectiveAt: raw.effective_at,
+    isTrial: raw.is_trial,
+  };
+  if (raw.client_secret !== undefined) result.clientSecret = raw.client_secret;
+  if (raw.reinstated !== undefined) result.reinstated = raw.reinstated;
+  return result;
+}
+
+/**
+ * Wire shape returned by `POST /subscriptions/:id/cancel`. Unchanged
+ * from PR #70 — M10 doesn't touch this endpoint.
+ */
+type WireCancelSubscriptionResponse = {
+  success: true;
+  cancelled_at: string;
+  subscription_ends_at: string;
+  message: string;
+};
