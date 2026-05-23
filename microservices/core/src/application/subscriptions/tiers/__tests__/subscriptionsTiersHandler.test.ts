@@ -40,9 +40,8 @@ function tierRow(over: Partial<Record<string, unknown>> = {}) {
 }
 
 async function getTiers(withAuth = false) {
-  const { subscriptionsTiersHandler } = await import(
-    "../subscriptionsTiersHandler"
-  );
+  const { subscriptionsTiersHandler } =
+    await import("../subscriptionsTiersHandler");
   return subscriptionsTiersHandler.handle(
     new Request("http://localhost/subscription-tiers", {
       method: "GET",

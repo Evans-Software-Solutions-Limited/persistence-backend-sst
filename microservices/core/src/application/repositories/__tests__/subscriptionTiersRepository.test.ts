@@ -56,9 +56,8 @@ describe("SubscriptionTiersRepository", () => {
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const { SubscriptionTiersRepository } = await import(
-        "../subscriptionTiersRepository"
-      );
+      const { SubscriptionTiersRepository } =
+        await import("../subscriptionTiersRepository");
       const repo = new SubscriptionTiersRepository();
       const result = await repo.listActive();
       expect(result).toEqual([fakeRow]);
@@ -73,9 +72,8 @@ describe("SubscriptionTiersRepository", () => {
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const { SubscriptionTiersRepository } = await import(
-        "../subscriptionTiersRepository"
-      );
+      const { SubscriptionTiersRepository } =
+        await import("../subscriptionTiersRepository");
       const repo = new SubscriptionTiersRepository();
       const result = await repo.listActive();
       expect(result).toEqual([]);
