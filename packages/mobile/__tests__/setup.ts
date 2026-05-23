@@ -183,6 +183,40 @@ jest.mock("expo-notifications", () => ({
   },
 }));
 
+// Mock @stripe/stripe-react-native — M10. The native module isn't
+// linked in Jest, so importing it for real throws on iOS-only
+// bindings. The adapter under test (`StripeApplePayAdapter`) carries
+// its own per-test mock at the top of its spec file (which takes
+// precedence over this global). This global covers the rest of the
+// suite — chiefly the root layout test which mounts `<StripeProvider>`
+// and any future container test that pulls in the providers tree.
+jest.mock("@stripe/stripe-react-native", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  return {
+    __esModule: true,
+    StripeProvider: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(View, null, children),
+    isPlatformPaySupported: jest.fn(async () => false),
+    createPlatformPayPaymentMethod: jest.fn(async () => ({})),
+    handleNextAction: jest.fn(async () => ({})),
+    PlatformPay: {
+      PaymentType: {
+        Immediate: "Immediate",
+        Recurring: "Recurring",
+        Deferred: "Deferred",
+      },
+      IntervalUnit: {
+        Minute: "minute",
+        Hour: "hour",
+        Day: "day",
+        Month: "month",
+        Year: "year",
+      },
+    },
+  };
+});
+
 // Mock @react-native-async-storage/async-storage — the native module
 // isn't linked in the Jest environment, so importing it directly
 // throws `[@RNC/AsyncStorage]: NativeModule: AsyncStorage is null`.

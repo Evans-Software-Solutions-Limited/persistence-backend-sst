@@ -20,6 +20,9 @@ export type {
 export type {
   PaymentsPort,
   PaymentError,
-  PaymentSheetParams,
+  PaymentErrorKind,
+  ApplePayCartItem,
+  CollectApplePayPaymentMethodInput,
+  CollectApplePayPaymentMethodResult,
 } from "./payments.port";
 export type { SyncOperation, SyncStatus } from "./sync.types";

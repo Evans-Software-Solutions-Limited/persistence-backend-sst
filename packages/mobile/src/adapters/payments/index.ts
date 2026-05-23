@@ -1,1 +1,4 @@
-export { StubPaymentsAdapter } from "./stub.adapter";
+export {
+  StripeApplePayAdapter,
+  classifyStripeError,
+} from "./stripe.adapter";

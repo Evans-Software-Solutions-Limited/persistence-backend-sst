@@ -3,7 +3,7 @@ import { SSTApiAdapter } from "@/adapters/api";
 import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
 import { ExpoNotificationsAdapter } from "@/adapters/notifications";
-import { StubPaymentsAdapter } from "@/adapters/payments";
+import { StripeApplePayAdapter } from "@/adapters/payments";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -32,7 +32,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       storage,
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
-      payments: new StubPaymentsAdapter(),
+      payments: new StripeApplePayAdapter(),
     };
   }, []);
 

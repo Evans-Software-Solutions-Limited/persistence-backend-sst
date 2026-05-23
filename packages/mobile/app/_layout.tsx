@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
+import { StripeProvider } from "@stripe/stripe-react-native";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
@@ -101,6 +103,21 @@ export default function RootLayout() {
     });
   }, []);
 
+  // M10 — Stripe publishable key from Expo's runtime config or env. The
+  // SDK accepts an empty string and just silently no-ops Apple Pay; in
+  // dev that surfaces as the inline "Apple Pay unavailable" state and
+  // is harmless. Production / staging EAS builds inject the key via
+  // `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+  //
+  // `merchantIdentifier` MUST match the entry in `ios.entitlements`
+  // (app.json line 20). Mismatch = silent Apple Pay sheet failure on
+  // device. Mirrors legacy `persistence-mobile/app/_layout.tsx:95-97`
+  // pattern.
+  const stripePublishableKey =
+    (Constants.expoConfig?.extra?.stripePublishableKey as
+      | string
+      | undefined) ?? process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+
   // `GestureHandlerRootView` is required by react-native-gesture-handler
   // for any descendant `<GestureDetector>` to recognise touches. Phase 3a
   // added the SemiCircleSlider (rating screen) which uses GestureDetector;
@@ -111,10 +128,15 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
-        <AppProviders>
-          <NotificationPermissionsBootstrap />
-          <AuthGate />
-        </AppProviders>
+        <StripeProvider
+          publishableKey={stripePublishableKey}
+          merchantIdentifier="merchant.com.bradleyevans96.persistence"
+        >
+          <AppProviders>
+            <NotificationPermissionsBootstrap />
+            <AuthGate />
+          </AppProviders>
+        </StripeProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
