@@ -22,3 +22,13 @@ export {
   calculateSummary,
   detectPersonalRecords,
 } from "./sessionService";
+
+export {
+  isFreeTier,
+  isSubscriptionActive,
+  canCancelSubscription,
+  isTrialing,
+  isCancelledButActive,
+  shouldShowTrialBanner,
+  getSubscriptionDisplayInfo,
+} from "./subscriptionService";
