@@ -28,6 +28,7 @@ const stripeMock = {
     create: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
+    retrieve: vi.fn(),
   },
 };
 
@@ -96,12 +97,32 @@ function mockPriceLookup(
     priceYearly?: string | null;
     currency?: string | null;
     isTrainerTier?: boolean | null;
+    /**
+     * M10-added decimal amounts read by the M10 dispatch for change-type
+     * derivation. Tests that don't set these get a sensible default
+     * (priceMonthlyAmount mirrors priceMonthly's Stripe-priced shape;
+     * for upgrade-path tests it should be set explicitly).
+     */
+    priceMonthlyAmount?: string | null;
+    priceYearlyAmount?: string | null;
   } | null,
 ) {
+  // Default `priceMonthlyAmount` to "14.99" (premium tier price) so legacy
+  // PR #70 tests that pre-date the M10 amount fields still drive the
+  // upgrade-vs-downgrade comparison sensibly when paired with the
+  // change-path's default 0-fallback for missing old prices.
+  const enriched =
+    row === null
+      ? null
+      : {
+          priceMonthlyAmount: "14.99",
+          priceYearlyAmount: null,
+          ...row,
+        };
   dbSelectMock.mockImplementationOnce(() => ({
     from: () => ({
       where: () => ({
-        limit: async () => (row === null ? [] : [row]),
+        limit: async () => (enriched === null ? [] : [enriched]),
       }),
     }),
   }));
@@ -156,6 +177,25 @@ const validBody = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // vi.clearAllMocks() only clears call history; queued
+  // mockResolvedValueOnce returns from prior tests survive. Reset the
+  // mocks that use queued returns so a leftover from a previous test
+  // doesn't bleed into the default-null path here.
+  subscriptionRepositoryMocks.findMostRecentForUser.mockReset();
+  subscriptionRepositoryMocks.insert.mockReset();
+  subscriptionRepositoryMocks.updateById.mockReset();
+  profileRepositoryMocks.getById.mockReset();
+  profileRepositoryMocks.update.mockReset();
+  dbSelectMock.mockReset();
+  stripeMock.subscriptions.create.mockReset();
+  stripeMock.subscriptions.update.mockReset();
+  stripeMock.subscriptions.cancel.mockReset();
+  stripeMock.subscriptions.retrieve.mockReset();
+  stripeMock.customers.create.mockReset();
+  stripeMock.customers.retrieve.mockReset();
+  stripeMock.customers.update.mockReset();
+  stripeMock.paymentMethods.attach.mockReset();
+
   subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue(null);
   subscriptionRepositoryMocks.insert.mockResolvedValue({ id: "us_new" });
   subscriptionRepositoryMocks.updateById.mockImplementation(
@@ -165,6 +205,14 @@ beforeEach(() => {
     }),
   );
   stripeMock.subscriptions.update.mockResolvedValue(buildStripeSubscription());
+  stripeMock.subscriptions.retrieve.mockResolvedValue(
+    buildStripeSubscription({
+      id: "sub_old_active",
+      items: {
+        data: [{ id: "si_existing_item", current_period_end: 1700604800 }],
+      } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+    }),
+  );
   profileRepositoryMocks.getById.mockResolvedValue(fakeProfile());
   profileRepositoryMocks.update.mockResolvedValue(fakeProfile());
   stripeMock.customers.create.mockResolvedValue({ id: "cus_new" });
@@ -173,6 +221,18 @@ beforeEach(() => {
   stripeMock.paymentMethods.attach.mockResolvedValue({});
   stripeMock.subscriptions.create.mockResolvedValue(buildStripeSubscription());
   stripeMock.subscriptions.cancel.mockResolvedValue({});
+  // Default dbSelectMock fallback for any unmocked SELECTs. M10 added a
+  // second SELECT to the change-path (resolveTierPrices for the existing
+  // tier's price comparison) — tests that don't explicitly mock it get
+  // an empty-array response, which the change-type derivation
+  // defensively treats as "tier not found → upgrade-by-default".
+  dbSelectMock.mockImplementation(() => ({
+    from: () => ({
+      where: () => ({
+        limit: async () => [],
+      }),
+    }),
+  }));
 });
 
 // ─── Pure-helper tests ───────────────────────────────────────────────
@@ -1692,5 +1752,1108 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
       expect.stringContaining("trial flag update failed"),
     );
     errSpy.mockRestore();
+  });
+});
+
+// ─── M10: deriveChangeType pure helper ──────────────────────────────
+
+describe("subscriptionsCreateHandler — deriveChangeType (M10)", () => {
+  it("classifies a tier change with higher new monthly price as upgrade (not scheduled)", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "basic",
+      newTierName: "premium",
+      oldCycle: "monthly",
+      newCycle: "monthly",
+      oldPriceMonthly: 9.99,
+      newPriceMonthly: 14.99,
+      oldPriceYearly: 95.88,
+      newPriceYearly: 143.88,
+    });
+    expect(result).toEqual({ changeType: "upgrade", isDowngrade: false });
+  });
+
+  it("classifies a tier change with lower new monthly price as downgrade (scheduled)", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "premium",
+      newTierName: "basic",
+      oldCycle: "monthly",
+      newCycle: "monthly",
+      oldPriceMonthly: 14.99,
+      newPriceMonthly: 9.99,
+      oldPriceYearly: 143.88,
+      newPriceYearly: 95.88,
+    });
+    expect(result).toEqual({ changeType: "downgrade", isDowngrade: true });
+  });
+
+  it("ties on equal monthly price default to upgrade (sibling-tier swap)", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "basic",
+      newTierName: "sibling",
+      oldCycle: "monthly",
+      newCycle: "monthly",
+      oldPriceMonthly: 9.99,
+      newPriceMonthly: 9.99,
+      oldPriceYearly: null,
+      newPriceYearly: null,
+    });
+    expect(result).toEqual({ changeType: "upgrade", isDowngrade: false });
+  });
+
+  it("classifies a monthly→yearly switch with cheaper annual cost as cycle_change downgrade", async () => {
+    // monthly × 12 = £119.88; yearly = £95.88 → cycle change is a
+    // downgrade in total annual spend.
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "basic",
+      newTierName: "basic",
+      oldCycle: "monthly",
+      newCycle: "yearly",
+      oldPriceMonthly: 9.99,
+      newPriceMonthly: 9.99,
+      oldPriceYearly: 95.88,
+      newPriceYearly: 95.88,
+    });
+    expect(result).toEqual({ changeType: "cycle_change", isDowngrade: true });
+  });
+
+  it("classifies a yearly→monthly switch with higher annual cost as cycle_change upgrade", async () => {
+    // yearly = £95.88; switching to monthly = 9.99 × 12 = £119.88 → upgrade
+    // in total annual spend.
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "basic",
+      newTierName: "basic",
+      oldCycle: "yearly",
+      newCycle: "monthly",
+      oldPriceMonthly: 9.99,
+      newPriceMonthly: 9.99,
+      oldPriceYearly: 95.88,
+      newPriceYearly: 95.88,
+    });
+    expect(result).toEqual({ changeType: "cycle_change", isDowngrade: false });
+  });
+
+  it("cycle_change falls back to monthly×12 when yearly is null", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const result = __internals.deriveChangeType({
+      oldTierName: "basic",
+      newTierName: "basic",
+      oldCycle: "monthly",
+      newCycle: "yearly",
+      oldPriceMonthly: 9.99,
+      newPriceMonthly: 9.99,
+      oldPriceYearly: null,
+      newPriceYearly: null,
+    });
+    // Both sides fall back to monthly×12 = same → equal → upgrade default.
+    expect(result.changeType).toBe("cycle_change");
+    expect(result.isDowngrade).toBe(false);
+  });
+});
+
+describe("subscriptionsCreateHandler — parseDecimal (M10)", () => {
+  it("parses decimal strings, passes through numbers, returns null otherwise", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    expect(__internals.parseDecimal("9.99")).toBe(9.99);
+    expect(__internals.parseDecimal(12.5)).toBe(12.5);
+    expect(__internals.parseDecimal(null)).toBeNull();
+    expect(__internals.parseDecimal(Number.NaN)).toBeNull();
+    expect(__internals.parseDecimal(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(__internals.parseDecimal("garbage")).toBeNull();
+  });
+});
+
+// ─── M10: response discriminator fields populated on every branch ───
+
+describe("subscriptionsCreateHandler — response discriminators (M10)", () => {
+  it("new-sub success populates change_type='new' / scheduled=false / effective_at=null / is_trial=(trialing)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new", status: "trialing" }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "new",
+      scheduled: false,
+      effective_at: null,
+      is_trial: true,
+    });
+  });
+
+  it("new-sub on 3DS path sets is_trial=false even though trial_period_days was requested", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_3ds",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(validBody);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "new",
+      scheduled: false,
+      effective_at: null,
+      is_trial: false,
+      requires_action: true,
+    });
+  });
+
+  it("reinstate success populates change_type='reinstate'", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      reinstateableRow(),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old", status: "active" }),
+    );
+    const res = await postCreate(validBody);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "reinstate",
+      scheduled: false,
+      effective_at: null,
+      reinstated: true,
+    });
+  });
+
+  it("with-PM change-path upgrade populates change_type='upgrade', scheduled=false, effective_at=null", async () => {
+    // Existing row on `basic` @ 9.99 → switching to `premium` @ 14.99 is an upgrade.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    // Existing tier price lookup (resolveTierPrices) — old "basic" @ 9.99
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new", status: "active" }),
+    );
+    const res = await postCreate(validBody);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "upgrade",
+      scheduled: false,
+      effective_at: null,
+    });
+  });
+
+  it("with-PM change-path downgrade populates scheduled=true and effective_at from period end", async () => {
+    // Existing row on `premium` @ 14.99 → switching to `basic` @ 9.99 is a downgrade.
+    mockPriceLookup({
+      priceMonthly: "price_basic_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "9.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "14.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({ tierName: "premium" }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_new_basic",
+        status: "active",
+        items: {
+          data: [{ current_period_end: 1735689600 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>, // 2026-01-01
+      }),
+    );
+    const res = await postCreate({ ...validBody, tier_name: "basic" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "downgrade",
+      scheduled: true,
+    });
+    expect(body.effective_at).toBe(new Date(1735689600 * 1000).toISOString());
+  });
+
+  it("new-sub path handles non-Error rejections from stripe.subscriptions.create + DB insert + profile.update (covers defensive String() branches)", async () => {
+    // Stripe.subscriptions.create non-Error reject
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    stripeMock.subscriptions.create.mockRejectedValueOnce(
+      "stripe-non-error-reject" as unknown as Error,
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("stripe-non-error-reject"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("new-sub path handles non-Error rejection from subRepo.insert (DB string-reject branch)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_db_string_fail" }),
+    );
+    subscriptionRepositoryMocks.insert.mockRejectedValueOnce(
+      "neon-non-error-reject" as unknown as Error,
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("neon-non-error-reject"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("change-path: handles non-Error rejection from attachPaymentMethod + null trial flags", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    profileRepositoryMocks.getById.mockResolvedValueOnce(
+      fakeProfile({ hasUsedUserTrial: null, hasUsedTrainerTrial: null }),
+    );
+    stripeMock.paymentMethods.attach.mockRejectedValueOnce(
+      "attach-string-reject-change" as unknown as Error,
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(400);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("attach-string-reject-change"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("handles non-Error rejection from attachPaymentMethod (new-sub path)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    stripeMock.paymentMethods.attach.mockRejectedValueOnce(
+      "attach-non-error-reject" as unknown as Error,
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(400);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("attach-non-error-reject"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("treats null profile.has_used_*_trial as false (legacy/null-defaulted rows)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    profileRepositoryMocks.getById.mockResolvedValueOnce(
+      fakeProfile({
+        hasUsedUserTrial: null,
+        hasUsedTrainerTrial: null,
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_null_trial_flags",
+        status: "trialing",
+      }),
+    );
+    await postCreate(validBody);
+    // null trial flag is treated as false → eligible for trial → flag flipped
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedUserTrial: true,
+    });
+  });
+
+  it("new-sub path handles non-Error rejection from profileRepo.update on trial-flag flip", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_trial_str_fail", status: "trialing" }),
+    );
+    profileRepositoryMocks.update.mockRejectedValueOnce(
+      "trial-flag-non-error-reject" as unknown as Error,
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    // Trial flag failure is non-fatal — request still succeeds
+    expect(res.status).toBe(200);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("trial-flag-non-error-reject"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("new-sub rollback handles a non-Error rejection from stripe.subscriptions.cancel (covers String() branch)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_rollback_non_error" }),
+    );
+    subscriptionRepositoryMocks.insert.mockRejectedValueOnce(
+      new Error("neon timeout"),
+    );
+    // Non-Error rejection — exercises the `String(cancelErr)` branch in
+    // the rollback's nested catch.
+    stripeMock.subscriptions.cancel.mockRejectedValueOnce(
+      "stripe-string-reject" as unknown as Error,
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Stripe rollback ALSO failed"),
+    );
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("stripe-string-reject"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("with-PM change-path defaults existing billingCycle to 'monthly' when null", async () => {
+    // Legacy / out-of-band rows can carry a null billingCycle. The change
+    // path must still classify the change correctly.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({ tierName: "basic", billingCycle: null }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new", status: "active" }),
+    );
+    const res = await postCreate(validBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    // basic@monthly → premium@monthly: tier change with higher price = upgrade
+    expect(body.change_type).toBe("upgrade");
+  });
+
+  it("with-PM cycle change populates change_type='cycle_change'", async () => {
+    // Same tier `basic`, different cycle.
+    mockPriceLookup({
+      priceMonthly: "price_basic_monthly",
+      priceYearly: "price_basic_yearly",
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "9.99",
+      priceYearlyAmount: "95.88",
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: "95.88" }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({ tierName: "basic", billingCycle: "monthly" }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_yearly", status: "active" }),
+    );
+    const res = await postCreate({
+      ...validBody,
+      tier_name: "basic",
+      billing_cycle: "yearly",
+    });
+    const body = (await res.json()) as any;
+    expect(body.change_type).toBe("cycle_change");
+  });
+});
+
+// ─── M10: no-payment-method change-of-tier path ─────────────────────
+
+describe("subscriptionsCreateHandler — no-payment-method change-path (M10)", () => {
+  const noPmBody = {
+    tier_name: "premium",
+    billing_cycle: "monthly" as const,
+    use_trial: false,
+    // payment_method_id intentionally omitted
+  };
+
+  function existingActiveRow(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: "us_existing",
+      userId: "user-1",
+      tierName: "basic",
+      billingCycle: "monthly",
+      paymentStatus: "active",
+      cancelledAt: null,
+      metadata: {
+        stripe_customer_id: "cus_existing",
+        stripe_subscription_id: "sub_old_active",
+      },
+      ...over,
+    };
+  }
+
+  it("returns 422 when no PM AND no active sub (precedence #2)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    // No findMostRecentForUser mock → null by default
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("payment_method_id required"),
+    });
+    // Nothing happened on Stripe
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when no PM + same tier + same cycle (precedence #3)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({ tierName: "premium", billingCycle: "monthly" }),
+    );
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("no change to apply"),
+    });
+  });
+
+  it("routes no PM + different tier through subscriptions.update() (precedence #4) as upgrade", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    // existing tier price lookup → basic @ 9.99
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "upgrade",
+      scheduled: false,
+      effective_at: null,
+      stripe_subscription_id: "sub_old_active",
+    });
+
+    // No new sub created — only an update
+    expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+    // attach should NOT be called either — no PM provided
+    expect(stripeMock.paymentMethods.attach).not.toHaveBeenCalled();
+
+    // The update call carries the item swap + always_invoice proration
+    const updateArgs = stripeMock.subscriptions.update.mock.calls[0];
+    expect(updateArgs[0]).toBe("sub_old_active");
+    expect(updateArgs[1].items).toEqual([
+      { id: "si_existing", price: "price_premium_monthly" },
+    ]);
+    expect(updateArgs[1].proration_behavior).toBe("always_invoice");
+
+    // Local row patched in place, NOT inserted
+    expect(subscriptionRepositoryMocks.insert).not.toHaveBeenCalled();
+    expect(subscriptionRepositoryMocks.updateById).toHaveBeenCalled();
+    const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    expect(patch.tierName).toBe("premium");
+    expect(patch.billingCycle).toBe("monthly");
+  });
+
+  it("routes no PM + downgrade (premium → basic) through subscriptions.update() with proration_behavior=none + billing_cycle_anchor=unchanged, stamps scheduled_change", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_basic_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "9.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "14.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({ tierName: "premium" }),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1735689600 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1735689600 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    const res = await postCreate({ ...noPmBody, tier_name: "basic" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      change_type: "downgrade",
+      scheduled: true,
+    });
+    expect(body.effective_at).toBe(new Date(1735689600 * 1000).toISOString());
+
+    // Verify Stripe call shape — defer to period end
+    const updateArgs = stripeMock.subscriptions.update.mock.calls[0][1];
+    expect(updateArgs.proration_behavior).toBe("none");
+    expect(updateArgs.billing_cycle_anchor).toBe("unchanged");
+
+    // Local row keeps tier_name = premium until webhook flips it
+    const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    expect(patch.tierName).toBeUndefined();
+    expect(patch.billingCycle).toBeUndefined();
+    // But metadata.scheduled_change is stamped
+    expect(patch.metadata.scheduled_change).toEqual({
+      next_tier_name: "basic",
+      next_billing_cycle: "monthly",
+      effective_at: new Date(1735689600 * 1000).toISOString(),
+    });
+  });
+
+  it("does not stamp scheduled_change when the resulting Stripe sub has no current_period_end", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_basic_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "9.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "14.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({ tierName: "premium" }),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    // Updated sub has NO current_period_end on items — exercises the
+    // `effectiveAtIso === null` else-branch where no scheduled_change is
+    // stamped despite isDowngrade being true.
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "active",
+        items: {
+          data: [],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    const res = await postCreate({ ...noPmBody, tier_name: "basic" });
+    expect(res.status).toBe(200);
+    const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    expect(patch.metadata.scheduled_change).toBeUndefined();
+  });
+
+  it("clears a stale scheduled_change marker when no-PM upgrade is requested", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          scheduled_change: {
+            next_tier_name: "free",
+            effective_at: "2026-12-01T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "active",
+      }),
+    );
+    await postCreate(noPmBody);
+    const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    expect(patch.metadata.scheduled_change).toBeUndefined();
+  });
+
+  it("refuses no-PM dispatch when the in-flight marker guard fires (409)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_B_in_flight",
+          old_stripe_subscription_id: "sub_A_orphaned",
+        },
+      }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(409);
+    expect(stripeMock.subscriptions.retrieve).not.toHaveBeenCalled();
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("returns 500 when stripe.subscriptions.retrieve fails", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockRejectedValueOnce(
+      new Error("stripe 503"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Failed to load existing subscription"),
+    });
+    expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 when the existing Stripe sub has no items (cannot swap price)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("no items on Stripe"),
+    });
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 when stripe.subscriptions.update fails", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockRejectedValueOnce(
+      new Error("stripe price archived"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Failed to change subscription tier"),
+    });
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 when DB update fails after Stripe-side change applied (no rollback)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old_active", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockRejectedValueOnce(
+      new Error("neon down"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(500);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("manual backfill required"),
+    );
+    // Stripe.subscriptions.cancel must NOT be called — there's no fresh
+    // sub to roll back, the original is intentionally still alive.
+    expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 when updateById returns null (row vanished between findMostRecent and update)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old_active", status: "active" }),
+    );
+    subscriptionRepositoryMocks.updateById.mockResolvedValueOnce(null);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("sub_old_active"),
+    });
+    errSpy.mockRestore();
+  });
+
+  it("returns 3DS shape when the updated Stripe sub's latest_invoice requires action", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "9.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow(),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      requires_action: true,
+      payment_status: "pending",
+      client_secret: "pi_3ds_secret",
+      change_type: "upgrade",
+    });
+  });
+
+  it("defaults billing_cycle to 'monthly' when existing row has it null (no-PM path)", async () => {
+    // Drizzle's billingCycle column is nullable; pre-M10 / legacy rows
+    // can carry null. Body says billing_cycle: monthly → if defaults to
+    // monthly, dispatch case #3 fires (no change to apply, 400).
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "14.99",
+      priceYearlyAmount: null,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({ tierName: "premium", billingCycle: null }),
+    );
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("no change to apply"),
+    });
+  });
+
+  it("tolerates a missing existing tier in the catalog by defaulting to upgrade", async () => {
+    // resolveTierPrices for the old tier returns null (no row found),
+    // the handler defaults the old-tier prices to 0 → new price > 0 →
+    // upgrade.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    // existing tier lookup returns empty (out-of-band data)
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({ tierName: "ghost_tier" }),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_old_active", status: "active" }),
+    );
+    const res = await postCreate(noPmBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.change_type).toBe("upgrade");
   });
 });
