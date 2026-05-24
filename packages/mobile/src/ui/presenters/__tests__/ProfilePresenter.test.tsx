@@ -43,6 +43,7 @@ function makeProps(
     isRefreshing: false,
     errorMessage: null,
     displayName: "Brad Simms",
+    badge: null,
     email: "brad@example.com",
     avatarUrl: null,
     avatarCacheKey: 0,
@@ -596,5 +597,69 @@ describe("ProfilePresenter", () => {
     );
     fireEvent.press(getByTestId("profile-avatar-button"));
     expect(onSelectProfilePicture).not.toHaveBeenCalled();
+  });
+
+  describe("SubscriptionBadge placement (M10.5 Wave 2)", () => {
+    it("omits the badge when the badge prop is null (cache not resolved yet)", () => {
+      const { queryByTestId } = renderWithTheme(
+        <ProfilePresenter {...makeProps({ badge: null })} />,
+      );
+      expect(queryByTestId("profile-subscription-badge")).toBeNull();
+    });
+
+    it("renders the badge next to the display name for an active free user", () => {
+      const { getByTestId, getByText } = renderWithTheme(
+        <ProfilePresenter
+          {...makeProps({
+            badge: { tier: "free", paymentStatus: "active" },
+          })}
+        />,
+      );
+      expect(getByTestId("profile-subscription-badge")).toBeTruthy();
+      expect(getByTestId("subscription-badge-free")).toBeTruthy();
+      // Display name + chip should both be visible in the header row.
+      expect(getByText("Brad Simms")).toBeTruthy();
+      expect(getByText("Free")).toBeTruthy();
+    });
+
+    it.each([
+      ["basic", "active", "Basic"],
+      ["premium", "active", "Premium"],
+      ["individual_trainer_pro", "active", "Trainer Pro"],
+      ["small_business_standard", "active", "Business"],
+    ] as const)(
+      "renders the badge for tier %s with label %s",
+      (tier, paymentStatus, label) => {
+        const { getByText, getByTestId } = renderWithTheme(
+          <ProfilePresenter
+            {...makeProps({ badge: { tier, paymentStatus } })}
+          />,
+        );
+        expect(getByTestId(`subscription-badge-${tier}`)).toBeTruthy();
+        expect(getByText(label)).toBeTruthy();
+      },
+    );
+
+    it("appends the Trial suffix when paymentStatus is trialing", () => {
+      const { getByText } = renderWithTheme(
+        <ProfilePresenter
+          {...makeProps({
+            badge: { tier: "premium", paymentStatus: "trialing" },
+          })}
+        />,
+      );
+      expect(getByText("Premium · Trial")).toBeTruthy();
+    });
+
+    it("appends the Cancelled suffix when paymentStatus is cancelled", () => {
+      const { getByText } = renderWithTheme(
+        <ProfilePresenter
+          {...makeProps({
+            badge: { tier: "premium", paymentStatus: "cancelled" },
+          })}
+        />,
+      );
+      expect(getByText("Premium · Cancelled")).toBeTruthy();
+    });
   });
 });

@@ -7,8 +7,13 @@ import type {
   ProfilePageSubscription,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type {
+  SubscriptionStatus,
+  SubscriptionTierName,
+} from "@/domain/models/subscription";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
+import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 
@@ -58,6 +63,16 @@ export function ProfileContainer() {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const profilePage = useProfilePage();
+  // Source the badge from `useMySubscription` rather than the
+  // ProfilePage payload because the badge requires the typed
+  // `SubscriptionTierName` enum + the full `SubscriptionStatus` enum,
+  // and the ProfilePage shape carries `tierName: string | null` and
+  // `status: ProfilePageSubscriptionStatus | null` (the loose legacy
+  // DB shape). Both calls share the same React Query key per
+  // useMySubscription.ts, so this is a cache hit after first mount.
+  // See specs/11-payments-subscriptions/design.md § Per-screen feature-
+  // gate integration > Wave 2 Progress / Health / Profile subset.
+  const mySubscription = useMySubscription();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -173,6 +188,18 @@ export function ProfileContainer() {
     router.push("/(app)/profile/privacy" as never);
   }, [router]);
 
+  // Badge slice — derived from `useMySubscription` (typed enums), NOT
+  // the ProfilePage payload. When the query hasn't resolved we emit
+  // `null` and the presenter omits the chip entirely.
+  const badge: {
+    tier: SubscriptionTierName;
+    paymentStatus: SubscriptionStatus;
+  } | null = useMemo(() => {
+    const sub = mySubscription.data;
+    if (!sub) return null;
+    return { tier: sub.tierName, paymentStatus: sub.paymentStatus };
+  }, [mySubscription.data]);
+
   // View-model derivation: collapse cached payload + auth session into
   // the props the presenter consumes. Memoised so it doesn't churn on
   // unrelated re-renders (sign-out spinner toggling, error setting).
@@ -217,6 +244,7 @@ export function ProfileContainer() {
       isRefreshing={profilePage.isRefreshing}
       errorMessage={errorMessage}
       displayName={viewModel.displayName}
+      badge={badge}
       email={viewModel.email}
       avatarUrl={avatarUrl}
       avatarCacheKey={avatarUpload.cacheKey}
