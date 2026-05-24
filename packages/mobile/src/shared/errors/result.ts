@@ -28,6 +28,25 @@ export function unwrap<T, E>(result: Result<T, E>): T {
 
 export type AppError = ApiError | StorageError | AuthError | ValidationError;
 
+/**
+ * Structured entitlement payload stamped on an `ApiError` by the
+ * `SSTApiAdapter`'s 402 path. Present iff `code === "entitlement_denied"`.
+ *
+ * Field names are camelCase here even though the wire body is
+ * snake_case — the adapter converts at the boundary so the rest of the
+ * mobile code (containers, presenters, hooks) only ever touches camelCase.
+ *
+ * Spec: specs/11-payments-subscriptions/design.md § Mobile feature-gate model
+ *       · § Entitlement enforcement (M10.5) > 402 response shape
+ * Satisfies: requirements.md AC 10.4
+ */
+export type ApiErrorEntitlementPayload = {
+  readonly feature: string;
+  readonly currentTier: string;
+  readonly upgradeTo: string | null;
+  readonly upgradePriceMonthly: number | null;
+};
+
 export type ApiError = {
   readonly kind: "api";
   readonly code:
@@ -36,9 +55,17 @@ export type ApiError = {
     | "not_found"
     | "server"
     | "timeout"
+    | "entitlement_denied"
     | "unknown";
   readonly message: string;
   readonly status?: number;
+  /**
+   * M10.5: structured entitlement-denied payload. Only populated when
+   * `code === "entitlement_denied"` (HTTP 402 + structured body).
+   * Containers can consume this directly to render a paywall without a
+   * second round-trip to the server.
+   */
+  readonly entitlement?: ApiErrorEntitlementPayload;
 };
 
 export type StorageError = {
