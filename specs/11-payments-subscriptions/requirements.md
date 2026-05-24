@@ -86,20 +86,19 @@ Tier names + display names + features + Stripe price IDs are stored in the `subs
 - [ ] AC 3.8 — Trainer tier upgrades/downgrades route via the selection screen (not Management) because they cross the role boundary
 - [ ] AC 3.9 — All write operations invalidate `['user-subscription']` + `['user-profile']` + `['profile-data']` query caches so dependent screens (Home, Profile) refresh
 
-### STORY-004: As a user, I want features gated by my subscription tier — **deferred beyond M10**
+### STORY-004: As a user, I want features gated by my subscription tier — **lands in M10.5**
 
-**Acceptance Criteria (deferred):**
+**Acceptance Criteria:**
 
 - [ ] AC 4.1 — Free tier: basic workout tracking only, limited exercise library
 - [ ] AC 4.2 — Basic tier: limited monthly workouts + 1 AI workout/month
 - [ ] AC 4.3 — Premium tier: unlimited workouts + 6 AI workouts/month + Reps Gym Buddy access
 - [ ] AC 4.4 — Trainer Standard: client management up to slot limit, analytics + reporting
 - [ ] AC 4.5 — Trainer Pro: above + AI Buddy + AI-supported reporting
-- [ ] AC 4.6 — Paywalled features show upgrade prompt, not hidden; deep-links to Subscription Selection
-- [ ] AC 4.7 — Subscription state checked from server (not cached long-term)
-- [ ] AC 4.8 — `useFeatureGate(feature)` hook returns `{ allowed, showUpgrade }`; consumers call `showUpgrade()` on tap when gated
-
-**M10 does NOT ship feature-gate integration.** The two subscription screens + adapter surface + entitlement read are the M10 scope. Per-screen gate integration is its own follow-up slice — likely M11 polish or a dedicated milestone.
+- [ ] AC 4.6 — Paywalled features show upgrade prompt, not hidden; deep-links to Subscription Selection with the target tier pre-selected
+- [ ] AC 4.7 — Subscription state checked from server on app launch + on every premium-only mutation (server-side enforcement is the source of truth)
+- [ ] AC 4.8 — `useFeatureGate(feature)` hook returns `{ allowed, reason, gateProps }`; consumers render a `<FeatureGatePrompt>` when not allowed
+- [ ] AC 4.9 — M10.5 ships the gate primitives (Wave 1) + per-screen integration across exercise library, progress, health, trainer placeholders (Wave 2). Per-screen integration is not yet wired in this milestone where listed; gate primitives + the assertEntitlement backend helper land first.
 
 ### STORY-005: As a user, I want subscription state to be reliable
 
@@ -107,10 +106,42 @@ Tier names + display names + features + Stripe price IDs are stored in the `subs
 
 - [ ] AC 5.1 — Subscription status fetched from `GET /subscriptions/me` on app launch
 - [ ] AC 5.2 — Cached for session duration (2-minute stale-time via Tanstack Query); refetched on screen focus
-- [ ] AC 5.3 — Offline: last-known state used; no "stale subscription" warning required for M10 (offline-subscription edge cases parked for later)
+- [ ] AC 5.3 — Offline: last-known state used; subscription screens show an "offline" indicator (M10.5). No client-side grace-window / `validUntil` enforcement — `expiresAt` is trusted as-is and the server enforces entitlement at every premium-only mutation (see STORY-009).
 - [ ] AC 5.4 — Subscription state never granted from local cache when the user has no row in `user_subscriptions` — fall back to synthetic `free` shape from `GET /subscriptions/me`
 - [ ] AC 5.5 — Trial eligibility carried in the `GET /subscriptions/me` payload (`has_used_user_trial`, `has_used_trainer_trial`, `is_eligible_user`, `is_eligible_trainer`) — single round-trip
 - [ ] AC 5.6 — Mutations (`createSubscription`, `cancelSubscription`) invalidate `['user-subscription']`; the next read pulls fresh server state
+
+### STORY-009: As the platform, I want server-side entitlement enforcement on premium-only mutations (M10.5)
+
+**Acceptance Criteria:**
+
+- [ ] AC 9.1 — A reusable `assertEntitlement(userId, feature)` helper exists at the application layer. It reads the user's current sub + tier features + counts and either returns or throws a structured `EntitlementError`.
+- [ ] AC 9.2 — `assertEntitlement` returns `EntitlementError` with shape `{ code: "ENTITLEMENT_DENIED", feature, current_tier, upgrade_to, upgrade_price_monthly? }`. Handlers translate to HTTP 402 with the same payload — chosen over 403 because 402 (Payment Required) is the standard semantic for this case.
+- [ ] AC 9.3 — `POST /workouts` calls `assertEntitlement(userId, "create_workout")` BEFORE the create; refuses with 402 when the user is at or above their tier's workout limit
+- [ ] AC 9.4 — `POST /sessions/record` calls `assertEntitlement(userId, "create_workout")` BEFORE the transaction; refuses with 402 when the resulting session would push the user past their workout limit (sessions that aren't a fresh workout are exempt)
+- [ ] AC 9.5 — Feature enum covers: `create_workout`, `ai_workout` (stub for future), `gym_buddy` (stub), `unlimited_exercise_library` (stub), `trainer_clients` (stub). Each stub returns "allowed: true" today; switches on when the consuming feature ships.
+- [ ] AC 9.6 — `assertEntitlement` never reads from the JWT alone — always joins live DB state (profiles + user_subscriptions + subscription_tiers + subscription_limits). Defends against the "valid token but cancelled sub" abuse vector.
+- [ ] AC 9.7 — Helper is unit-tested with 100% branch coverage. Handler integration tests cover 402-on-limit + 200-when-unlimited + structured-response-shape.
+
+### STORY-010: As a user, I want clear feedback when I tap a premium feature I don't have access to (M10.5)
+
+**Acceptance Criteria:**
+
+- [ ] AC 10.1 — `useFeatureGate(feature)` hook returns `{ allowed: boolean, reason: 'tier' | 'limit' | 'cancelled' | 'unknown', gateProps: FeatureGatePromptProps }`. Pure function of the cached `MySubscription`; no network in the hot path.
+- [ ] AC 10.2 — `FeatureGatePrompt` component renders a paywall card: feature description, upgrade-target tier card, price comparison, "Upgrade to …" CTA that routes to `/(auth)/subscription-selection` with the target tier and billing cycle pre-applied
+- [ ] AC 10.3 — `SubscriptionBadge` component renders a small tier chip (Free / Basic / Premium / Trainer*) for use in Profile and elsewhere
+- [ ] AC 10.4 — Backend 402 responses are intercepted by `SSTApiAdapter` and converted to a domain `ApiError` with `code: 'ENTITLEMENT_DENIED'` + the same payload fields. Containers can call `useFeatureGate` to re-render the gate component without a second round-trip.
+- [ ] AC 10.5 — Feature gate primitives ship in Wave 1 of M10.5 — per-screen integration (exercise library, progress, health, trainer placeholders) ships in Wave 2.
+
+### STORY-011: As a user, I want the subscription screens to behave gracefully on flaky / offline networks (M10.5)
+
+**Acceptance Criteria:**
+
+- [ ] AC 11.1 — Both Subscription Selection and Subscription Management show a small "You're offline" banner when `useOnlineStatus()` reports `false`; cached `MySubscription` + tier catalog still render
+- [ ] AC 11.2 — When offline, the buy / change / cancel CTAs are visually disabled but tappable; tap surfaces an alert "You need to be online to manage your subscription" rather than mounting Apple Pay against a doomed network call
+- [ ] AC 11.3 — `useSubscriptionTiers` and `useMySubscription` surface a "still working…" indicator if the network call hasn't resolved in 8s (slow-network UX); the underlying request continues
+- [ ] AC 11.4 — `createSubscription` and `cancelSubscription` mutations check `useOnlineStatus()` pre-flight and refuse with the same alert before invoking the Apple Pay SDK or the API
+- [ ] AC 11.5 — 3DS confirmation (`payments.confirm3DS`) also pre-flight checks online status; if the network drops mid-3DS, the user sees a clear "Connection lost during 3DS confirmation — please try again" alert and the local state resets so they can retry
 
 ### STORY-006: As a personal trainer, I want trainer-tier subscription with client slots
 

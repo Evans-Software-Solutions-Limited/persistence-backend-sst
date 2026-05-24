@@ -567,3 +567,144 @@ Handler code MUST NOT write to those columns. The `profiles.has_used_*_trial` fl
 ### Smoke test
 
 See `specs/milestones/M10-subscriptions/SMOKE_TEST.md` for the full e2e walkthrough.
+
+---
+
+## Entitlement enforcement (M10.5)
+
+After M10 shipped, three architectural gaps remained: server-side enforcement of premium-only mutations, mobile feature-gate primitives + per-screen integration, and offline UX on the subscription screens. M10.5 ("Entitlement hardening + feature gates + offline UX") addresses all three. The design below documents the contract; per-slice execution detail lives in `specs/milestones/M10-5-entitlement-hardening/`.
+
+### Server-side `assertEntitlement` helper
+
+Lives at `microservices/core/src/application/entitlement/assertEntitlement.ts`. Reusable across handlers that mutate premium-gated state. Reads live DB — **never trusts JWT claims alone**, defending the "valid token but cancelled sub" abuse vector.
+
+```typescript
+// microservices/core/src/application/entitlement/assertEntitlement.ts
+
+export type EntitlementFeature =
+  | "create_workout"          // ENFORCED in M10.5: POST /workouts, POST /sessions/record
+  | "ai_workout"              // STUB: future AI endpoint
+  | "gym_buddy"               // STUB
+  | "unlimited_exercise_library"  // STUB
+  | "trainer_clients";        // STUB: future M8 endpoints
+
+export type EntitlementVerdict =
+  | { allowed: true }
+  | {
+      allowed: false;
+      reason: "tier" | "limit" | "cancelled" | "expired";
+      currentTier: SubscriptionTierName;
+      upgradeTo: SubscriptionTierName | null;
+      upgradePriceMonthly: number | null;
+    };
+
+export async function assertEntitlement(
+  userId: string,
+  feature: EntitlementFeature,
+): Promise<EntitlementVerdict>;
+
+export class EntitlementError extends Error {
+  constructor(
+    public readonly verdict: Extract<EntitlementVerdict, { allowed: false }>,
+  ) { super("ENTITLEMENT_DENIED"); }
+}
+```
+
+Handlers call `assertEntitlement(userId, feature)`; if the verdict denies, throw `EntitlementError(verdict)`. A shared Elysia error handler maps `EntitlementError` to HTTP 402 with the structured body:
+
+```json
+{
+  "code": "ENTITLEMENT_DENIED",
+  "error": "Subscription does not include this feature",
+  "feature": "create_workout",
+  "current_tier": "basic",
+  "upgrade_to": "premium",
+  "upgrade_price_monthly": 14.99
+}
+```
+
+**Feature → tier-rule mapping (M10.5 scope):**
+
+| Feature | Rule | Defining column |
+|---|---|---|
+| `create_workout` | `subscription_limits.workouts_per_month.current_count < subscription_limits.workouts_per_month.limit_value` (null limit = unlimited) | `subscription_limits` table + trigger-maintained |
+| `ai_workout` | `subscription_tiers.aiAccess === true` AND `subscription_limits.ai_workouts_per_month.current_count < ai_workouts_per_month.limit_value` | stubbed today |
+| `gym_buddy` | `subscription_tiers.gymBuddyAccess === true` | stubbed today |
+| `unlimited_exercise_library` | tier-level boolean (TBD on schema — out of M10.5) | stubbed today |
+| `trainer_clients` | `subscription_tiers.isTrainerTier === true` AND under `trainerClientLimit` | stubbed today |
+
+### Mobile feature-gate model
+
+Three components + one hook, all framework-aware but stateless:
+
+```typescript
+// packages/mobile/src/ui/hooks/useFeatureGate.ts
+export type FeatureGateReason = "tier" | "limit" | "cancelled" | "unknown";
+
+export interface FeatureGateResult {
+  allowed: boolean;
+  reason: FeatureGateReason;
+  gateProps: FeatureGatePromptProps;
+}
+
+export function useFeatureGate(
+  feature: EntitlementFeature,
+): FeatureGateResult;
+
+// packages/mobile/src/ui/components/subscription/FeatureGatePrompt.tsx
+export interface FeatureGatePromptProps {
+  feature: EntitlementFeature;
+  featureDisplayName: string;
+  currentTier: SubscriptionTierName;
+  upgradeTo: SubscriptionTierName | null;
+  upgradePriceMonthly: number | null;
+  onUpgrade: () => void;  // routes to /(auth)/subscription-selection with target pre-selected
+}
+
+export function FeatureGatePrompt(props: FeatureGatePromptProps): JSX.Element;
+
+// packages/mobile/src/ui/components/subscription/SubscriptionBadge.tsx
+export interface SubscriptionBadgeProps {
+  tier: SubscriptionTierName;
+  paymentStatus: SubscriptionStatus;
+  compact?: boolean;
+}
+
+export function SubscriptionBadge(props: SubscriptionBadgeProps): JSX.Element;
+```
+
+The hook is **a pure function of the cached `MySubscription`** — no network in the hot path. It computes the verdict client-side and returns props ready for the gate prompt to render. The server's 402 path is the authoritative defense — the client-side gate is UX-only.
+
+**402 response interception (`SSTApiAdapter`):**
+
+```typescript
+// On a 402 from any endpoint, parse the structured body and produce
+// an ApiError carrying the same verdict shape. Containers can either:
+//   (a) catch the error, call useFeatureGate(feature), render the gate
+//   (b) re-throw and let an upstream boundary render the gate
+// — adapter never silently swallows the error.
+```
+
+### Offline UX on subscription screens
+
+`useOnlineStatus()` hook returns `boolean` based on RN's `NetInfo`. Two consumers in M10.5:
+
+1. **Subscription Selection / Management screens**: when offline, render an "You're offline" banner above the tier cards. The cached `MySubscription` + tier catalog still render. CTAs are visually disabled-style but tappable — tap surfaces an alert "You need to be online to manage your subscription".
+2. **Mutation pre-flight**: before invoking `payments.collectApplePayPaymentMethod` or `payments.confirm3DS` or `api.createSubscription` or `api.cancelSubscription`, check `useOnlineStatus`. If offline, refuse with the same alert.
+
+`useSubscriptionTiers` and `useMySubscription` add an 8-second "still working…" indicator via a sibling state that flips after the timeout; the underlying Tanstack query continues. Mobile UX gets clear "we know it's slow" feedback without spamming retries.
+
+**No client-side grace window / `validUntil`.** `expiresAt` is trusted as-is on the client — server enforces at every premium-only mutation. This was Brad's explicit call: trade marginal client-side abuse-defense for simplicity, knowing AI features inherently require network anyway.
+
+### Per-screen feature-gate integration (Wave 2)
+
+After Wave 1 ships the primitives, Wave 2 wires `useFeatureGate` + `FeatureGatePrompt` into specific screens:
+
+- `app/(app)/(tabs)/exercises.tsx` — premium exercises locked behind gate
+- `app/(app)/exercises/create.tsx` — AI-generated workout-creator step locked
+- `app/(app)/workouts/create.tsx` — `create_workout` limit warning at limit-3, gate at limit
+- `app/(app)/(tabs)/progress.tsx` — advanced analytics locked for free
+- `app/(app)/(tabs)/profile.tsx` — `SubscriptionBadge` rendered next to display name
+- Trainer routes — stub gate when accessed by non-trainer or free trainer tier
+
+Each Wave 2 agent owns a different screen tree to keep parallelism.

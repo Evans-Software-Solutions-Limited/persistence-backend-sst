@@ -107,15 +107,62 @@ Parent milestone: **M10 — Subscriptions & payments (Stripe)** — see [`../mil
 - [ ] `bun --filter @persistence/mobile test:unit` clean (mobile suite passes 90% global)
 - [ ] E2E smoke test ([`../milestones/M10-subscriptions/SMOKE_TEST.md`](../milestones/M10-subscriptions/SMOKE_TEST.md)) passes against `bun run dev` + staging Stripe (test mode)
 
-## Deferred phases (not M10)
+## Current state (2026-05-24, post M10)
 
-### Future — Feature gates
+**Shipped on `main` via PR #71:**
 
-- [ ] AC 4.x — `FeatureGatePrompt` component
-- [ ] AC 4.x — `useFeatureGate(feature)` hook
-- [ ] AC 4.x — `SubscriptionBadge` component (tier indicator)
-- [ ] AC 4.x — Integrate gates into: exercise library, progress analytics, health integration, trainer features
-- [ ] AC 4.x — Tests (free user sees gate, premium user accesses feature)
+- `GET /subscription-tiers` (public catalog)
+- `GET /subscriptions/me` (authed entitlement read with joined tier + profile + trial flags + scheduled-change marker)
+- `POST /subscriptions` extensions (optional `payment_method_id`, response discriminators `change_type` / `scheduled` / `effective_at` / `is_trial`)
+- 8-tier role-toggle Selection screen, Management screen, Success screen ported 1:1 from legacy
+- `StripeApplePayAdapter` (production) + `MockPaymentsAdapter` (tests) backing the rewritten `PaymentsPort`
+- Apple-Pay-only buy flow on iOS; Android shows "Apple Pay only on iOS" inline state (matches legacy + App Store policy)
+- 4 Inspector Brad findings closed in sweep #1 (scheduled_change marker leakage, no-PM downgrade stale-marker clear, alert chaining, yearly-not-available)
+- Test deltas: core 728 → 799 (+71), mobile 1413 → 1647 (+234), scripts 37 unchanged
+
+**Next: M10.5 — Entitlement hardening + feature gates + offline UX** (specs/milestones/M10-5-entitlement-hardening/)
+
+## Phase 9 — Server-side `assertEntitlement` (M10.5 backend)
+
+- [ ] AC 9.1, 9.6 — Build `microservices/core/src/application/entitlement/assertEntitlement.ts` with the feature enum + verdict shape + `EntitlementError`. Reads live DB only; no JWT-only paths.
+- [ ] AC 9.2 — Add a shared Elysia error handler that maps `EntitlementError` to HTTP 402 with the structured `{ code, error, feature, current_tier, upgrade_to, upgrade_price_monthly }` body
+- [ ] AC 9.3 — Wire `assertEntitlement(userId, "create_workout")` into `POST /workouts` (workoutsCreateHandler.ts)
+- [ ] AC 9.4 — Wire `assertEntitlement(userId, "create_workout")` into `POST /sessions/record` (sessionsRecordHandler.ts) — only when the session represents a fresh workout (not re-recording an existing one)
+- [ ] AC 9.5 — Stub `ai_workout`, `gym_buddy`, `unlimited_exercise_library`, `trainer_clients` features — each returns `{ allowed: true }` today
+- [ ] AC 9.7 — 100% branch coverage on `assertEntitlement.ts`; handler integration tests cover 402 + 200 paths
+
+## Phase 10 — Mobile feature-gate primitives (M10.5 frontend — Wave 1)
+
+- [ ] AC 10.1 — `useFeatureGate(feature)` hook reading the cached `MySubscription`; pure (no network)
+- [ ] AC 10.2 — `FeatureGatePrompt` component (paywall card with upgrade CTA)
+- [ ] AC 10.3 — `SubscriptionBadge` component (tier chip)
+- [ ] AC 10.4 — `SSTApiAdapter` intercepts 402 → produces `ApiError` with `code: 'ENTITLEMENT_DENIED'` + verdict payload
+- [ ] AC 10.5 — Wave 1 ships primitives only; per-screen integration is Wave 2
+- [ ] Tests: hook unit tests, component snapshot tests, adapter 402-handling test
+
+## Phase 11 — Mobile offline UX on subscription screens (M10.5 frontend — Wave 1)
+
+- [ ] AC 11.1 — `useOnlineStatus()` hook using RN `NetInfo`; offline banner on both subscription screens
+- [ ] AC 11.2 — Offline pre-flight on buy / change / cancel CTAs — alert "You need to be online to manage your subscription" instead of mounting Apple Pay
+- [ ] AC 11.3 — Slow-network "still working…" indicator at 8s on `useSubscriptionTiers` + `useMySubscription`
+- [ ] AC 11.4 — Pre-flight check on `createSubscription` + `cancelSubscription` mutations
+- [ ] AC 11.5 — 3DS confirmation pre-flight + mid-flight network-drop recovery
+- [ ] Tests: hook tests with mocked NetInfo, container tests for offline + online + mid-flow disconnection
+
+## Phase 12 — Per-screen feature-gate integration (M10.5 Wave 2)
+
+Lands AFTER Phase 10 primitives are on `main`. Split across 3 parallel agents in Wave 2:
+
+- [ ] AC 4.6 — Exercise library / workout creator (m105-gates-workouts)
+- [ ] AC 4.6 — Progress + health + profile (m105-gates-progress)
+- [ ] AC 4.6 — Trainer route stubs (m105-gates-trainer)
+
+## Deferred phases (out of M10.5)
+
+### Future — Sync-queue entitlement re-check (M10.6 candidate)
+
+- [ ] Offline-then-flush abuse vector — user creates N workouts offline past their tier limit, then sync flushes them all
+- [ ] Server validates each sync queue entry against `assertEntitlement` at flush time; reject items past the limit with a UX path to re-subscribe-and-retry
 
 ### Future — Operational
 
