@@ -68,8 +68,7 @@ export function ProgressContainer() {
   }, [refresh]);
 
   const viewModel = useMemo<ProgressPresenterViewModel>(() => {
-    const isLoading =
-      dashboard.payload === null && dashboard.isRefreshing;
+    const isLoading = dashboard.payload === null && dashboard.isRefreshing;
     const errorMessage =
       dashboard.payload !== null && dashboard.error
         ? "Couldn't refresh — showing cached data."

@@ -181,7 +181,8 @@ function makeMySubscription(
     startsAt: "2026-04-01T00:00:00.000Z",
     expiresAt: tierName === "free" ? null : "2026-05-01T00:00:00.000Z",
     cancelledAt: null,
-    trialEndsAt: paymentStatus === "trialing" ? "2026-04-30T00:00:00.000Z" : null,
+    trialEndsAt:
+      paymentStatus === "trialing" ? "2026-04-30T00:00:00.000Z" : null,
     externalSubscriptionId: tierName === "free" ? null : "stripe-sub-1",
     tierDisplayName: tierName === "premium" ? "Premium" : "Free",
     tierDescription: null,
@@ -190,7 +191,10 @@ function makeMySubscription(
     aiWorkoutLimit: tierName === "premium" ? 6 : 0,
     gymBuddyAccess: tierName === "premium",
     trainerClientLimit: null,
-    isTrainerTier: tierName.includes("trainer") || tierName.includes("business") || tierName.includes("enterprise"),
+    isTrainerTier:
+      tierName.includes("trainer") ||
+      tierName.includes("business") ||
+      tierName.includes("enterprise"),
     role: "user",
     hasUsedUserTrial: false,
     hasUsedTrainerTrial: false,

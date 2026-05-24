@@ -799,9 +799,9 @@ describe("HomeContainer", () => {
       );
 
       await waitFor(() => {
-        expect(
-          mockHomePresenterProps.current?.healthTilesGate?.allowed,
-        ).toBe(false);
+        expect(mockHomePresenterProps.current?.healthTilesGate?.allowed).toBe(
+          false,
+        );
       });
       // The gate ships ready-to-render props with the upgrade chain.
       expect(
@@ -824,9 +824,9 @@ describe("HomeContainer", () => {
       );
 
       await waitFor(() => {
-        expect(
-          mockHomePresenterProps.current?.healthTilesGate?.allowed,
-        ).toBe(true);
+        expect(mockHomePresenterProps.current?.healthTilesGate?.allowed).toBe(
+          true,
+        );
       });
     });
   });

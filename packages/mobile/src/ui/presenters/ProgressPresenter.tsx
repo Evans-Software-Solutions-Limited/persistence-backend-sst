@@ -1,5 +1,11 @@
 import React from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
 import type { FeatureGatePromptProps } from "@/ui/components/subscription/FeatureGatePrompt";
@@ -101,7 +107,10 @@ export function ProgressPresenter({
           <Text style={styles.sectionTitle}>This Month</Text>
           <View style={styles.statCard}>
             <View style={styles.statRow}>
-              <Text style={styles.statValue} testID="progress-workouts-this-month">
+              <Text
+                style={styles.statValue}
+                testID="progress-workouts-this-month"
+              >
                 {viewModel.workoutsThisMonth}
               </Text>
               <Text style={styles.statLabel}>workouts</Text>
@@ -120,7 +129,10 @@ export function ProgressPresenter({
           <View style={styles.section} testID="progress-advanced-analytics">
             <Text style={styles.sectionTitle}>Personal Records & Trends</Text>
             {analyticsGate.allowed ? (
-              <View style={styles.placeholderCard} testID="progress-analytics-placeholder">
+              <View
+                style={styles.placeholderCard}
+                testID="progress-analytics-placeholder"
+              >
                 <Ionicons
                   name="stats-chart-outline"
                   size={32}
@@ -128,8 +140,8 @@ export function ProgressPresenter({
                 />
                 <Text style={styles.placeholderTitle}>Coming soon</Text>
                 <Text style={styles.placeholderSubtitle}>
-                  Detailed PR carousel, volume trends, and body measurement charts
-                  land in milestone M4 — TODO: see specs/05-progress/.
+                  Detailed PR carousel, volume trends, and body measurement
+                  charts land in milestone M4 — TODO: see specs/05-progress/.
                 </Text>
               </View>
             ) : (

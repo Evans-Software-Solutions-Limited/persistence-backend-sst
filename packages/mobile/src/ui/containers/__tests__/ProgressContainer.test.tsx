@@ -237,12 +237,12 @@ describe("ProgressContainer", () => {
     await waitFor(() => {
       expect(mockProgressPresenterProps.current?.viewModel).toBeTruthy();
     });
-    expect(
-      mockProgressPresenterProps.current.viewModel.workoutsThisMonth,
-    ).toBe(DASHBOARD_FIXTURE.progress.workoutsThisMonth);
-    expect(
-      mockProgressPresenterProps.current.viewModel.workoutsLastMonth,
-    ).toBe(DASHBOARD_FIXTURE.progress.workoutsLastMonth);
+    expect(mockProgressPresenterProps.current.viewModel.workoutsThisMonth).toBe(
+      DASHBOARD_FIXTURE.progress.workoutsThisMonth,
+    );
+    expect(mockProgressPresenterProps.current.viewModel.workoutsLastMonth).toBe(
+      DASHBOARD_FIXTURE.progress.workoutsLastMonth,
+    );
   });
 
   it("emits analyticsGate=null until useMySubscription resolves", async () => {
@@ -280,9 +280,9 @@ describe("ProgressContainer", () => {
     );
 
     await waitFor(() => {
-      expect(
-        mockProgressPresenterProps.current?.analyticsGate?.allowed,
-      ).toBe(false);
+      expect(mockProgressPresenterProps.current?.analyticsGate?.allowed).toBe(
+        false,
+      );
     });
     expect(
       mockProgressPresenterProps.current.analyticsGate.gateProps.currentTier,
@@ -304,9 +304,9 @@ describe("ProgressContainer", () => {
     );
 
     await waitFor(() => {
-      expect(
-        mockProgressPresenterProps.current?.analyticsGate?.allowed,
-      ).toBe(true);
+      expect(mockProgressPresenterProps.current?.analyticsGate?.allowed).toBe(
+        true,
+      );
     });
   });
 
@@ -326,12 +326,12 @@ describe("ProgressContainer", () => {
     await waitFor(() => {
       expect(mockProgressPresenterProps.current).not.toBeNull();
     });
-    expect(
-      mockProgressPresenterProps.current.viewModel.workoutsThisMonth,
-    ).toBe(0);
-    expect(
-      mockProgressPresenterProps.current.viewModel.workoutsLastMonth,
-    ).toBe(0);
+    expect(mockProgressPresenterProps.current.viewModel.workoutsThisMonth).toBe(
+      0,
+    );
+    expect(mockProgressPresenterProps.current.viewModel.workoutsLastMonth).toBe(
+      0,
+    );
   });
 
   it("invokes the dashboard refresh on the presenter's onRefresh tap", async () => {

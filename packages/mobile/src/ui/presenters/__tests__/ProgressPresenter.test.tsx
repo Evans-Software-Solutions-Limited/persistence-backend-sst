@@ -114,7 +114,9 @@ describe("ProgressPresenter", () => {
 
   it("renders the error banner when errorMessage is set", () => {
     renderProgress({
-      viewModel: makeViewModel({ errorMessage: "Couldn't refresh — showing cached data." }),
+      viewModel: makeViewModel({
+        errorMessage: "Couldn't refresh — showing cached data.",
+      }),
     });
     expect(screen.getByTestId("progress-error-banner")).toBeTruthy();
   });

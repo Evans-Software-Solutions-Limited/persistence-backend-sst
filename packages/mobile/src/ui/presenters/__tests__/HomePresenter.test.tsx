@@ -117,7 +117,8 @@ function makeGateProps(currentTier: "free" | "basic" = "free") {
     feature: "gym_buddy" as const,
     featureDisplayName: "Gym Buddy access",
     currentTier,
-    upgradeTo: currentTier === "free" ? ("basic" as const) : ("premium" as const),
+    upgradeTo:
+      currentTier === "free" ? ("basic" as const) : ("premium" as const),
     upgradePriceMonthly: 4.99,
     onUpgrade: jest.fn(),
   };
@@ -240,6 +241,7 @@ describe("HomePresenter", () => {
           animationStyles={[{}, {}, {}, {}, {}]}
           isLoading={false}
           isRefreshing={false}
+          healthTilesGate={null}
           onRefresh={jest.fn()}
           onUpgradePress={jest.fn()}
           onWorkoutPress={jest.fn()}
