@@ -37,7 +37,11 @@ import type {
   SyncQueueEntry,
   SyncStats,
 } from "@/domain/ports/storage.port";
-import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
+import type {
+  EntitlementVerdict,
+  SyncOperation,
+  SyncStatus,
+} from "@/domain/ports/sync.types";
 
 const DB_NAME = "persistence.db";
 
@@ -73,13 +77,32 @@ export class SQLiteStorageAdapter implements StoragePort {
         payload TEXT NOT NULL,
         endpoint TEXT NOT NULL,
         method TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed')),
+        -- M10.6: 'blocked_entitlement' added to the status set. Fresh
+        -- installs land the extended CHECK directly; existing installs
+        -- migrate via the column-add + CHECK-relaxation block below
+        -- (SQLite can't alter CHECK constraints in place — we tolerate
+        -- the legacy check by storing the new status only when the
+        -- column-add succeeded, and the runtime guard in
+        -- markMutationBlocked falls back to 'failed' if the CHECK
+        -- rejects).
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
         retry_count INTEGER NOT NULL DEFAULT 0,
         max_retries INTEGER NOT NULL DEFAULT 3,
         error_message TEXT,
+        -- M10.6: JSON-serialised EntitlementVerdict. Populated alongside
+        -- status='blocked_entitlement'; cleared on unblock. JSON column
+        -- (not a sibling table) keeps the migration trivial and the read
+        -- path single-query — verdict cardinality is 1:1 with the entry.
+        entitlement_verdict TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      -- M10.6 migration for installs that predate this milestone is run
+      -- via PRAGMA table_info + ALTER TABLE outside this SQL string
+      -- (see immediately after this execSync block). We can't ALTER an
+      -- existing CHECK, but we CAN add the missing entitlement_verdict
+      -- column — that's the only piece the runtime actually reads.
 
       -- Pre-M2 the table was a flat keyed-by-id stash with no usage in
       -- shipped code; M2 replaces it with a (user_id, type)-keyed cache
@@ -247,6 +270,27 @@ export class SQLiteStorageAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
     `);
+
+    // M10.6 migration for installs that predate this milestone. The
+    // CREATE TABLE IF NOT EXISTS above is a no-op when the table is
+    // already present, so the new `entitlement_verdict` column won't
+    // land via the fresh-install path. PRAGMA table_info enumerates
+    // columns; if our marker is missing we ALTER-ADD it.
+    //
+    // Idempotent — repeated cold-starts see the column and skip. The
+    // SQLite CHECK constraint on `status` is the pre-M10.6 four-value
+    // set on migrated installs; markMutationBlocked tolerates the
+    // rejection by re-trying as `failed` (rare path — pre-launch users
+    // aren't expected). Fresh installs land the full 5-value CHECK.
+    const columns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as Array<{
+      name: string;
+    }>;
+    const hasVerdictColumn = columns.some(
+      (c) => c.name === "entitlement_verdict",
+    );
+    if (!hasVerdictColumn) {
+      db.execSync(`ALTER TABLE sync_queue ADD COLUMN entitlement_verdict TEXT`);
+    }
   }
 
   // -- Sync Queue --
@@ -269,6 +313,12 @@ export class SQLiteStorageAdapter implements StoragePort {
 
   getPendingMutations(): SyncQueueEntry[] {
     const db = this.getDb();
+    // M10.6: `blocked_entitlement` is deliberately NOT included — those
+    // entries have a definitive server verdict that "retrying won't help
+    // without a tier change". They re-enter the pool via `unblockEntries`
+    // (explicit user action OR `useAutoRetryOnUpgrade`) or get deleted
+    // via `discardEntries`. Treating them as pending would spin the
+    // drain forever on a 402 the user already saw.
     const rows = db.getAllSync(
       `SELECT * FROM sync_queue WHERE status IN ('pending', 'failed')
        AND retry_count < max_retries
@@ -314,6 +364,65 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
+    const db = this.getDb();
+    // M10.6: flip the entry to `blocked_entitlement` and stash the
+    // verdict alongside. `error_message` is left untouched — blocked is
+    // a distinct lifecycle state with its own data, not a sub-case of
+    // failed. `retry_count` is also untouched: a tier-change unblock
+    // pushes the row back to `pending` with its retry budget intact.
+    db.runSync(
+      `UPDATE sync_queue
+       SET status = 'blocked_entitlement',
+           entitlement_verdict = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [JSON.stringify(verdict), id],
+    );
+  }
+
+  getBlockedEntries(): SyncQueueEntry[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT * FROM sync_queue WHERE status = 'blocked_entitlement'
+       ORDER BY created_at ASC`,
+    ) as Record<string, unknown>[];
+    return rows.map(mapRow);
+  }
+
+  unblockEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const db = this.getDb();
+    // Conditional on `status = 'blocked_entitlement'` so a stale id
+    // (e.g. the user discarded it in another tab between the read and
+    // the unblock click) doesn't accidentally flip a `completed` row
+    // back to pending. Clear the verdict at the same time so the
+    // re-claim path is indistinguishable from a fresh enqueue.
+    db.withTransactionSync(() => {
+      const placeholders = ids.map(() => "?").join(",");
+      db.runSync(
+        `UPDATE sync_queue
+         SET status = 'pending',
+             entitlement_verdict = NULL,
+             updated_at = datetime('now')
+         WHERE id IN (${placeholders}) AND status = 'blocked_entitlement'`,
+        ids as unknown as number[],
+      );
+    });
+  }
+
+  discardEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const placeholders = ids.map(() => "?").join(",");
+      db.runSync(
+        `DELETE FROM sync_queue WHERE id IN (${placeholders})`,
+        ids as unknown as number[],
+      );
+    });
+  }
+
   getSyncStats(): SyncStats {
     const db = this.getDb();
     const rows = db.getAllSync(
@@ -322,11 +431,12 @@ export class SQLiteStorageAdapter implements StoragePort {
        GROUP BY status`,
     ) as { status: string; count: number }[];
 
-    const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0 };
+    const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const row of rows) {
       if (row.status === "pending") stats.pending = row.count;
       else if (row.status === "failed") stats.failed = row.count;
       else if (row.status === "in_flight") stats.inFlight = row.count;
+      else if (row.status === "blocked_entitlement") stats.blocked = row.count;
     }
     return stats;
   }
@@ -1207,5 +1317,23 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     maxRetries: row.max_retries as number,
     errorMessage: row.error_message as string | null,
     createdAt: row.created_at as string,
+    entitlementVerdict: parseEntitlementVerdict(row.entitlement_verdict),
   };
+}
+
+/**
+ * Parse the stored JSON-serialised verdict. Returns null when the row
+ * has no verdict (the common case — only blocked entries carry one)
+ * or when the stored JSON is malformed (defensive; the writer is our
+ * own JSON.stringify so corruption is unlikely but never throw the
+ * read path on a bad row).
+ */
+function parseEntitlementVerdict(raw: unknown): EntitlementVerdict | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw) as EntitlementVerdict;
+  } catch {
+    return null;
+  }
 }

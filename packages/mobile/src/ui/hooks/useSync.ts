@@ -23,6 +23,7 @@ export function useSync(pollIntervalMs = 5000): SyncState {
     pending: 0,
     failed: 0,
     inFlight: 0,
+    blocked: 0,
     isClean: true,
   });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -31,6 +32,10 @@ export function useSync(pollIntervalMs = 5000): SyncState {
     const stats = storage.getSyncStats();
     setState({
       ...stats,
+      // M10.6: `blocked` is intentionally OUT of the cleanliness signal —
+      // blocked entries don't represent "still syncing" work; they're
+      // waiting on a user decision (upgrade / retry / discard). The
+      // syncing-spinner UI shouldn't spin for them.
       isClean:
         stats.pending === 0 && stats.failed === 0 && stats.inFlight === 0,
     });
@@ -85,5 +90,7 @@ export function syncStatusLabel(status: SyncStatus): string {
       return "Sync failed";
     case "completed":
       return "Synced";
+    case "blocked_entitlement":
+      return "Blocked by your plan";
   }
 }

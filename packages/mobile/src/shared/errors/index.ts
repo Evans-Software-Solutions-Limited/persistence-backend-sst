@@ -10,3 +10,7 @@ export {
   fail,
   unwrap,
 } from "./result";
+export {
+  parseEntitlementDeniedResponseBody,
+  parseEntitlementDeniedResponseText,
+} from "./parseEntitlement";
