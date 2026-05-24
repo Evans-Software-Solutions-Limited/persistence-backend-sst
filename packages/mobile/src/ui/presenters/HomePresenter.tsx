@@ -15,10 +15,12 @@ import type { ApiError } from "@/shared/errors";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { GoalsSection, type Goal } from "@/ui/components/home/GoalsSection";
 import { GreetingSection } from "@/ui/components/home/GreetingSection";
+import { MyProgressLockedSection } from "@/ui/components/home/MyProgressLockedSection";
 import { MyProgressSection } from "@/ui/components/home/MyProgressSection";
 import { RecentActivitySection } from "@/ui/components/home/RecentActivitySection";
 import { YourWorkoutsSection } from "@/ui/components/home/YourWorkoutsSection";
 import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
+import type { FeatureGatePromptProps } from "@/ui/components/subscription/FeatureGatePrompt";
 import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
 import { colorPalette } from "@/ui/theme/tokens";
 
@@ -106,6 +108,29 @@ export type HomePresenterProps = {
    */
   error?: ApiError | null;
   isRefreshing: boolean;
+  /**
+   * Feature-gate verdict for the HealthKit-backed tile grid (steps,
+   * energy, body weight, body fat). When `allowed: false`, the
+   * presenter renders `MyProgressLockedSection` — keeps the workout-
+   * count tile visible (it's a backend-derived stat, no HealthKit
+   * dependency) and replaces the rest of the grid with a
+   * `FeatureGatePrompt`. When `allowed: true`, the full
+   * `MyProgressSection` renders.
+   *
+   * The gate verdict is computed by `useFeatureGate("gym_buddy")` in
+   * the container — `gym_buddy` is the closest existing stub for the
+   * missing `health_integration` entitlement feature. See
+   * specs/11-payments-subscriptions/design.md § Per-screen feature-
+   * gate integration > Wave 2 Progress / Health / Profile subset.
+   *
+   * `null` while `useMySubscription` hasn't resolved yet — presenter
+   * defaults to the full section (fail-open at the UI layer; the
+   * server's 402 enforcement remains authoritative).
+   */
+  healthTilesGate: {
+    allowed: boolean;
+    gateProps: FeatureGatePromptProps;
+  } | null;
   onRefresh: () => void;
   onUpgradePress: () => void;
   onManageSubscriptionPress?: () => void;
@@ -161,6 +186,7 @@ export function HomePresenter({
   showSlowLoaderCaption = false,
   error = null,
   isRefreshing,
+  healthTilesGate,
   onRefresh,
   onUpgradePress,
   onManageSubscriptionPress,
@@ -276,25 +302,34 @@ export function HomePresenter({
         </Animated.View>
 
         <Animated.View style={progressStyle}>
-          <MyProgressSection
-            workoutsThisMonth={viewModel.workoutsThisMonth}
-            workoutsLastMonth={viewModel.workoutsLastMonth}
-            activeEnergy={viewModel.activeEnergy}
-            basalEnergy={viewModel.basalEnergy}
-            standTime={viewModel.standTime}
-            bodyWeight={viewModel.bodyWeight}
-            bodyWeightUnit={viewModel.bodyWeightUnit}
-            bodyWeightHistory={viewModel.bodyWeightHistory}
-            bodyFat={viewModel.bodyFat}
-            bodyFatHistory={viewModel.bodyFatHistory}
-            stepsToday={viewModel.stepsToday}
-            stepsHistory={viewModel.stepsHistory}
-            healthIsAvailable={viewModel.healthIsAvailable}
-            healthPermissionStatus={viewModel.healthPermissionStatus}
-            latestBodyWeight={viewModel.latestBodyWeight}
-            onConnectHealthPress={onConnectHealthPress}
-            onViewAllPress={onViewAllProgressPress}
-          />
+          {healthTilesGate && !healthTilesGate.allowed ? (
+            <MyProgressLockedSection
+              workoutsThisMonth={viewModel.workoutsThisMonth}
+              workoutsLastMonth={viewModel.workoutsLastMonth}
+              gateProps={healthTilesGate.gateProps}
+              onViewAllPress={onViewAllProgressPress}
+            />
+          ) : (
+            <MyProgressSection
+              workoutsThisMonth={viewModel.workoutsThisMonth}
+              workoutsLastMonth={viewModel.workoutsLastMonth}
+              activeEnergy={viewModel.activeEnergy}
+              basalEnergy={viewModel.basalEnergy}
+              standTime={viewModel.standTime}
+              bodyWeight={viewModel.bodyWeight}
+              bodyWeightUnit={viewModel.bodyWeightUnit}
+              bodyWeightHistory={viewModel.bodyWeightHistory}
+              bodyFat={viewModel.bodyFat}
+              bodyFatHistory={viewModel.bodyFatHistory}
+              stepsToday={viewModel.stepsToday}
+              stepsHistory={viewModel.stepsHistory}
+              healthIsAvailable={viewModel.healthIsAvailable}
+              healthPermissionStatus={viewModel.healthPermissionStatus}
+              latestBodyWeight={viewModel.latestBodyWeight}
+              onConnectHealthPress={onConnectHealthPress}
+              onViewAllPress={onViewAllProgressPress}
+            />
+          )}
         </Animated.View>
 
         <Animated.View style={activityStyle}>

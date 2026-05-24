@@ -1,5 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -11,6 +12,11 @@ import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { ProfilePageData } from "@/domain/models/profilePage";
+import type {
+  MySubscription,
+  SubscriptionStatus,
+  SubscriptionTierName,
+} from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -40,6 +46,10 @@ MockPresenter.mockImplementation((props) => {
     <View testID="profile-presenter-stub">
       <Text testID="stub-email">{props.email ?? "none"}</Text>
       <Text testID="stub-display-name">{props.displayName ?? "none"}</Text>
+      <Text testID="stub-badge-tier">{props.badge?.tier ?? "none"}</Text>
+      <Text testID="stub-badge-status">
+        {props.badge?.paymentStatus ?? "none"}
+      </Text>
       <Text testID="stub-role">{props.userRoleLabel}</Text>
       <Text testID="stub-workouts">{props.workoutsCompleted}</Text>
       <Text testID="stub-is-trainer">{props.isTrainer ? "true" : "false"}</Text>
@@ -159,6 +169,41 @@ jest.mock("expo-router", () => ({
   },
 }));
 
+function makeMySubscription(
+  tierName: SubscriptionTierName,
+  paymentStatus: SubscriptionStatus = "active",
+): MySubscription {
+  return {
+    subscriptionId: tierName === "free" ? null : "sub-1",
+    tierName,
+    paymentStatus,
+    billingCycle: tierName === "free" ? null : "monthly",
+    startsAt: "2026-04-01T00:00:00.000Z",
+    expiresAt: tierName === "free" ? null : "2026-05-01T00:00:00.000Z",
+    cancelledAt: null,
+    trialEndsAt:
+      paymentStatus === "trialing" ? "2026-04-30T00:00:00.000Z" : null,
+    externalSubscriptionId: tierName === "free" ? null : "stripe-sub-1",
+    tierDisplayName: tierName === "premium" ? "Premium" : "Free",
+    tierDescription: null,
+    workoutLimit: tierName === "premium" ? null : 3,
+    aiAccess: tierName === "premium",
+    aiWorkoutLimit: tierName === "premium" ? 6 : 0,
+    gymBuddyAccess: tierName === "premium",
+    trainerClientLimit: null,
+    isTrainerTier:
+      tierName.includes("trainer") ||
+      tierName.includes("business") ||
+      tierName.includes("enterprise"),
+    role: "user",
+    hasUsedUserTrial: false,
+    hasUsedTrainerTrial: false,
+    isEligibleForUserTrial: true,
+    isEligibleForTrainerTrial: true,
+    scheduledChange: null,
+  };
+}
+
 function makeProfilePagePayload(
   overrides: Partial<ProfilePageData> = {},
 ): ProfilePageData {
@@ -218,12 +263,26 @@ async function createTestAdapters(): Promise<{
   return { adapters, auth, storage, api };
 }
 
+function makeQueryClient(): QueryClient {
+  // Disable retries in tests so a not_found response from
+  // getMySubscription resolves synchronously to `data: undefined`
+  // rather than hanging on the default retry-once-then-fail.
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+}
+
 function TestWrapper({
   children,
   adapters,
+  queryClient = makeQueryClient(),
 }: {
   children: ReactNode;
   adapters: Adapters;
+  queryClient?: QueryClient;
 }) {
   return (
     <SafeAreaProvider
@@ -233,7 +292,11 @@ function TestWrapper({
       }}
     >
       <TamaguiProvider config={config} defaultTheme="dark">
-        <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+        <AdapterProvider adapters={adapters}>
+          <QueryClientProvider client={queryClient}>
+            {children}
+          </QueryClientProvider>
+        </AdapterProvider>
       </TamaguiProvider>
     </SafeAreaProvider>
   );
@@ -637,5 +700,95 @@ describe("ProfileContainer", () => {
     fireEvent.press(getByTestId("stub-manage-sub"));
     fireEvent.press(getByTestId("stub-become-trainer"));
     expect(alertSpy).toHaveBeenCalled();
+  });
+
+  describe("badge sourcing (M10.5 Wave 2)", () => {
+    it("emits badge=none until useMySubscription resolves", async () => {
+      const { adapters } = await createTestAdapters();
+      // No subscription seeded — InMemoryApiAdapter returns a not_found
+      // ApiError, leaving useMySubscription unresolved. The container
+      // must thread badge=null through to the presenter (rendered as
+      // 'none' by the stub) so the badge chip is omitted.
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+      await waitFor(() => {
+        expect(getByTestId("profile-presenter-stub")).toBeTruthy();
+      });
+      expect(getByTestId("stub-badge-tier").props.children).toBe("none");
+      expect(getByTestId("stub-badge-status").props.children).toBe("none");
+    });
+
+    it("threads the typed tier + payment status from useMySubscription onto the presenter", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.mySubscription = makeMySubscription("premium", "active");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-badge-tier").props.children).toBe("premium");
+      });
+      expect(getByTestId("stub-badge-status").props.children).toBe("active");
+    });
+
+    it("threads the trialing payment status through unchanged", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.mySubscription = makeMySubscription("premium", "trialing");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-badge-status").props.children).toBe(
+          "trialing",
+        );
+      });
+    });
+
+    it("threads cancelled payment status through unchanged (cancelled-but-paid-through window)", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.mySubscription = makeMySubscription("premium", "cancelled");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-badge-status").props.children).toBe(
+          "cancelled",
+        );
+      });
+    });
+
+    it("threads trainer tiers through (typed SubscriptionTierName, not loose string)", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.mySubscription = makeMySubscription(
+        "individual_trainer_pro",
+        "active",
+      );
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-badge-tier").props.children).toBe(
+          "individual_trainer_pro",
+        );
+      });
+    });
   });
 });

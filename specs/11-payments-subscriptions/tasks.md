@@ -155,6 +155,10 @@ Lands AFTER Phase 10 primitives are on `main`. Split across 3 parallel agents in
 
 - [ ] AC 4.6 — Exercise library / workout creator (m105-gates-workouts)
 - [ ] AC 4.6 — Progress + health + profile (m105-gates-progress)
+  - [ ] Progress tab — render gate prompt for advanced analytics when free; full content otherwise. Free-tier verdict computed via `useFeatureGate("gym_buddy")` (closest existing stub for the missing `advanced_analytics` feature; see design.md § Per-screen feature-gate integration > Wave 2 Progress / Health / Profile subset).
+  - [ ] Home tab — wrap the `MyProgressSection` health tiles (Steps / Body weight / Body fat / Energy) with the same gate (`gym_buddy`); free users see a single gate prompt in place of the tile grid.
+  - [ ] Profile tab — render `<SubscriptionBadge tier paymentStatus compact />` next to display name; reads `useMySubscription()` directly so the badge gets the typed `SubscriptionTierName` enum.
+  - [ ] Tests — `ProgressContainer.test.tsx` (free vs premium), `HomeContainer.test.tsx` extension (free vs premium health tiles), `ProfileContainer.test.tsx` extension (badge rendering + each tier variant).
 - [ ] AC 4.6 — Trainer route stubs (m105-gates-trainer)
 
 ## Phase 13 — Sync-queue entitlement re-check (M10.6 — single mobile agent)

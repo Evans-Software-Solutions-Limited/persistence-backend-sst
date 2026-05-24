@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ComingSoon } from "@/ui/components/ComingSoon";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { SubscriptionBadge } from "@/ui/components/subscription/SubscriptionBadge";
 import {
   BorderRadius,
   Colors,
@@ -24,6 +25,10 @@ import type {
   ProfilePageSubscriptionStatus,
   ProfilePageTrainerRef,
 } from "@/domain/models/profilePage";
+import type {
+  SubscriptionStatus,
+  SubscriptionTierName,
+} from "@/domain/models/subscription";
 
 /**
  * Pure presenter for the Profile tab. Layout, copy, and StyleSheet
@@ -45,6 +50,21 @@ export type ProfilePresenterProps = {
 
   // Header
   displayName: string | null;
+  /**
+   * Tier + payment-status pair sourced from `useMySubscription` (typed
+   * SubscriptionTierName + SubscriptionStatus enums). `null` while the
+   * query hasn't resolved yet — the presenter omits the chip entirely
+   * in that window rather than rendering a placeholder.
+   *
+   * Spec: specs/11-payments-subscriptions/design.md § Per-screen
+   *       feature-gate integration > Wave 2 Progress / Health / Profile
+   *       subset > "SubscriptionBadge reads useMySubscription directly".
+   * Satisfies: requirements.md AC 10.3.
+   */
+  badge: {
+    tier: SubscriptionTierName;
+    paymentStatus: SubscriptionStatus;
+  } | null;
   email: string | null;
   avatarUrl: string | null;
   /**
@@ -138,6 +158,7 @@ export function ProfilePresenter({
   isRefreshing,
   errorMessage,
   displayName,
+  badge,
   email,
   avatarUrl,
   avatarCacheKey,
@@ -234,9 +255,23 @@ export function ProfilePresenter({
             </View>
           </TouchableOpacity>
 
-          <Text style={styles.userName} testID="profile-name">
-            {displayName ?? "User"}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.userName} testID="profile-name">
+              {displayName ?? "User"}
+            </Text>
+            {badge && (
+              <View
+                style={styles.nameBadge}
+                testID="profile-subscription-badge"
+              >
+                <SubscriptionBadge
+                  tier={badge.tier}
+                  paymentStatus={badge.paymentStatus}
+                  compact
+                />
+              </View>
+            )}
+          </View>
           <Text style={styles.userEmail} testID="profile-email">
             {email ?? ""}
           </Text>
@@ -745,10 +780,21 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.background.primary,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  nameBadge: {
+    // SubscriptionBadge has its own background colour + padding; this
+    // wrapper aligns the chip vertically with the display name without
+    // forcing the chip to inherit the username's typographic colour.
+  },
   userName: {
     ...Typography.h2,
     textAlign: "center",
-    marginBottom: Spacing.xs,
   },
   userEmail: {
     ...Typography.body2,
