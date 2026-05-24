@@ -4,6 +4,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const sessionMocks = { recordSession: vi.fn() };
 const prMocks = { recordPRsForSession: vi.fn() };
 
+// Hoisted so the vi.mock factory below can reference it (factories
+// run at module-load time, BEFORE the top-level `const` initialisers).
+// Widened verdict type so per-test deny overrides typecheck.
+const assertEntitlementMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      userId: string,
+      feature: string,
+    ) => Promise<
+      | { allowed: true }
+      | {
+          allowed: false;
+          reason: "tier" | "limit" | "cancelled" | "expired";
+          currentTier: string;
+          upgradeTo: string | null;
+          upgradePriceMonthly: number | null;
+        }
+    >
+  >(async () => ({ allowed: true })),
+);
+
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
@@ -31,6 +52,20 @@ vi.mock("../../../repositories/sessionRepository", () => ({
 vi.mock("../../../repositories/personalRecordsRepository", () => ({
   PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
 }));
+
+// Mock the entitlement helper so handler tests don't hit live DB. The
+// real EntitlementError class is re-exported so the handler's
+// `throw new EntitlementError(...)` reaches the error handler's
+// `instanceof EntitlementError` check.
+vi.mock("../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../entitlement/assertEntitlement")
+  >("../../../entitlement/assertEntitlement");
+  return {
+    ...actual,
+    assertEntitlement: assertEntitlementMock,
+  };
+});
 
 const validBody = {
   workoutId: "workout-1",
@@ -62,6 +97,10 @@ const validBody = {
 describe("sessionsRecordHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-establish allow-all default after clearAllMocks (which blanks
+    // the impl). Tests that need a deny verdict override per-call via
+    // mockResolvedValueOnce.
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     sessionMocks.recordSession.mockResolvedValue({
       id: "server-session-1",
       userId: "test-user-id",
@@ -235,5 +274,146 @@ describe("sessionsRecordHandler", () => {
       }),
     );
     expect(response.status).toBe(201);
+  });
+
+  // ─── Entitlement gate (M10.5) ─────────────────────────────────────
+  //
+  // Gate runs ONLY for fresh-workout sessions — i.e. those without a
+  // `workoutId` reference. Re-recording against an existing template
+  // doesn't consume a new workout-limit slot.
+  //
+  // Spec: specs/11-payments-subscriptions/requirements.md AC 9.4
+  describe("entitlement gate", () => {
+    async function buildAppWithErrorHandler() {
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      return new Elysia().use(coreErrorHandler).use(sessionsRecordHandler);
+    }
+
+    // Same exercises payload, but no workoutId — ad-hoc / fresh-workout
+    // session. The handler runs the gate in this case.
+    const freshBody = {
+      name: "Ad-hoc squat session",
+      startedAt: validBody.startedAt,
+      completedAt: validBody.completedAt,
+      status: validBody.status,
+      exercises: validBody.exercises,
+    };
+
+    it("calls assertEntitlement when workoutId is omitted (fresh workout)", async () => {
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(freshBody),
+        }),
+      );
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "create_workout",
+      );
+    });
+
+    it("calls assertEntitlement when workoutId is explicitly null", async () => {
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ...freshBody, workoutId: null }),
+        }),
+      );
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "create_workout",
+      );
+    });
+
+    it("SKIPS the gate when workoutId is set (recording against an existing template)", async () => {
+      // validBody has workoutId: "workout-1". The session is logging
+      // an instance of an already-existing template — the user paid
+      // the workout-count slot when they created the template. No
+      // new gate call.
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      const response = await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody),
+        }),
+      );
+      expect(response.status).toBe(201);
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+
+    it("returns 402 with the spec body when assertEntitlement denies on a fresh workout", async () => {
+      assertEntitlementMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "limit",
+        currentTier: "free",
+        upgradeTo: "basic",
+        upgradePriceMonthly: 7.99,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(freshBody),
+        }),
+      );
+      expect(response.status).toBe(402);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        code: "ENTITLEMENT_DENIED",
+        feature: "create_workout",
+        reason: "limit",
+        current_tier: "free",
+        upgrade_to: "basic",
+        upgrade_price_monthly: 7.99,
+      });
+    });
+
+    it("does NOT call recordSession when the gate denies", async () => {
+      assertEntitlementMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "limit",
+        currentTier: "free",
+        upgradeTo: "basic",
+        upgradePriceMonthly: 7.99,
+      });
+      const app = await buildAppWithErrorHandler();
+      await app.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(freshBody),
+        }),
+      );
+      expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+    });
   });
 });

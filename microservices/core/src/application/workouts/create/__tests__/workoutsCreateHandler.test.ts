@@ -10,6 +10,28 @@ const workoutRepositoryMocks = {
   getQuota: vi.fn(),
 };
 
+// Hoisted so the vi.mock factory below can reference it (factories run
+// at module-load time, BEFORE the top-level `const` initialisers). The
+// generic widens the resolved-value type so per-test deny overrides
+// (`{ allowed: false, reason: ..., ... }`) typecheck cleanly.
+const assertEntitlementMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      userId: string,
+      feature: string,
+    ) => Promise<
+      | { allowed: true }
+      | {
+          allowed: false;
+          reason: "tier" | "limit" | "cancelled" | "expired";
+          currentTier: string;
+          upgradeTo: string | null;
+          upgradePriceMonthly: number | null;
+        }
+    >
+  >(async () => ({ allowed: true })),
+);
+
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -36,9 +58,28 @@ vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
+// Mock the entitlement helper so the handler tests don't hit live DB.
+// Default behaviour is allow-all; deny tests override per case. The
+// real EntitlementError class is re-exported so the handler's
+// `throw new EntitlementError(...)` reaches the error handler's
+// `instanceof EntitlementError` check.
+vi.mock("../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../entitlement/assertEntitlement")
+  >("../../../entitlement/assertEntitlement");
+  return {
+    ...actual,
+    assertEntitlement: assertEntitlementMock,
+  };
+});
+
 describe("WorkoutsCreateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-establish allow-all default (clearAllMocks blanks the impl,
+    // but the helper's signature contract is "always return a verdict"
+    // — without a default impl the handler would receive undefined).
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     workoutRepositoryMocks.createWithExercises.mockImplementation(
       async (userId: string, data: any) => ({
         id: "workout-1",
@@ -349,6 +390,150 @@ describe("WorkoutsCreateHandler", () => {
         "test-user-id",
         expect.objectContaining({ exercises: [] }),
       );
+    });
+  });
+
+  // ─── Entitlement gate (M10.5) ─────────────────────────────────────
+  //
+  // The handler calls assertEntitlement(userId, "create_workout") AFTER
+  // input validation, BEFORE createWithExercises. Tests below verify:
+  //
+  //   1. Allow path → 201 + repo invoked with userId
+  //   2. Deny path through coreErrorHandler → 402 with spec body
+  //   3. Deny path → repo NOT invoked (no DB insert, no trigger fire)
+  //   4. Invalid input still returns 400 (gate runs AFTER validation)
+  //
+  // Spec: specs/11-payments-subscriptions/requirements.md AC 9.3
+  describe("entitlement gate", () => {
+    async function buildAppWithErrorHandler() {
+      // Compose the route with the global error handler so deny
+      // verdicts surface as 402 with the spec'd snake_case body — that
+      // mapping lives in coreErrorHandler, not the route itself.
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      return new Elysia().use(coreErrorHandler).use(workoutsCreateHandler);
+    }
+
+    it("calls assertEntitlement with the authenticated userId + create_workout", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Allowed" }),
+        }),
+      );
+
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "create_workout",
+      );
+    });
+
+    it("returns 402 with the spec snake_case body when assertEntitlement denies for 'limit'", async () => {
+      assertEntitlementMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "limit",
+        currentTier: "free",
+        upgradeTo: "basic",
+        upgradePriceMonthly: 7.99,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Over Limit" }),
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      const body = (await response.json()) as Record<string, unknown>;
+      // EXACT field names — mobile parses these verbatim.
+      expect(body).toMatchObject({
+        code: "ENTITLEMENT_DENIED",
+        error: "Subscription does not include this feature",
+        feature: "create_workout",
+        reason: "limit",
+        current_tier: "free",
+        upgrade_to: "basic",
+        upgrade_price_monthly: 7.99,
+      });
+    });
+
+    it("does NOT invoke the repository when the gate denies", async () => {
+      assertEntitlementMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "cancelled",
+        currentTier: "premium",
+        upgradeTo: null,
+        upgradePriceMonthly: null,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Cancelled User" }),
+        }),
+      );
+
+      expect(workoutRepositoryMocks.createWithExercises).not.toHaveBeenCalled();
+    });
+
+    it("still returns 400 for invalid input even when entitlement would allow (validation runs first)", async () => {
+      // Sanity check on ordering — gate runs AFTER validation, so an
+      // invalid payload should still surface 400 (more informative)
+      // rather than 402.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "   " }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+
+    it("returns 201 (premium-equivalent) when assertEntitlement allows", async () => {
+      // Default impl is allow-all, so this is the happy path — but
+      // make it explicit alongside the deny tests so the contract is
+      // visible.
+      assertEntitlementMock.mockResolvedValueOnce({ allowed: true });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Premium user" }),
+        }),
+      );
+      expect(response.status).toBe(201);
     });
   });
 });

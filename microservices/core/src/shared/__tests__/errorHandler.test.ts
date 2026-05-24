@@ -1,6 +1,7 @@
 import Elysia, { t } from "elysia";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { coreErrorHandler } from "../errorHandler";
+import { EntitlementError } from "../../application/entitlement/assertEntitlement";
 
 describe("coreErrorHandler", () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -238,5 +239,176 @@ describe("coreErrorHandler", () => {
     // Prod response must not leak driver internals in the body
     expect(body.causes).toBeUndefined();
     expect(body.stack).toBeUndefined();
+  });
+
+  // ─── EntitlementError → 402 mapping (M10.5) ────────────────────────
+  //
+  // Spec: specs/11-payments-subscriptions/design.md
+  //       § Entitlement enforcement (M10.5) > 402 response shape
+  // The wire field names MUST be snake_case and match the mobile
+  // adapter's parser verbatim — these tests are the contract.
+  describe("EntitlementError → HTTP 402 mapping", () => {
+    it("maps a limit deny to 402 with the spec snake_case body", async () => {
+      delete process.env.SST_STAGE;
+      const app = new Elysia().use(coreErrorHandler).post("/workouts", () => {
+        throw new EntitlementError(
+          {
+            allowed: false,
+            reason: "limit",
+            currentTier: "free",
+            upgradeTo: "basic",
+            upgradePriceMonthly: 7.99,
+          },
+          "create_workout",
+        );
+      });
+
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      const body = await jsonBody(response);
+      // EXACT field names + values — mobile parses these verbatim.
+      expect(body).toMatchObject({
+        code: "ENTITLEMENT_DENIED",
+        error: "Subscription does not include this feature",
+        feature: "create_workout",
+        reason: "limit",
+        current_tier: "free",
+        upgrade_to: "basic",
+        upgrade_price_monthly: 7.99,
+      });
+    });
+
+    it("maps a cancelled deny to 402 with null upgrade fields", async () => {
+      delete process.env.SST_STAGE;
+      const app = new Elysia().use(coreErrorHandler).post("/workouts", () => {
+        throw new EntitlementError(
+          {
+            allowed: false,
+            reason: "cancelled",
+            currentTier: "premium",
+            upgradeTo: null,
+            upgradePriceMonthly: null,
+          },
+          "create_workout",
+        );
+      });
+
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      const body = await jsonBody(response);
+      expect(body).toEqual(
+        expect.objectContaining({
+          code: "ENTITLEMENT_DENIED",
+          feature: "create_workout",
+          reason: "cancelled",
+          current_tier: "premium",
+          upgrade_to: null,
+          upgrade_price_monthly: null,
+        }),
+      );
+    });
+
+    it("does NOT include stack / causes on the 402 response (it's not a server fault)", async () => {
+      delete process.env.SST_STAGE;
+      const app = new Elysia().use(coreErrorHandler).post("/workouts", () => {
+        throw new EntitlementError(
+          {
+            allowed: false,
+            reason: "limit",
+            currentTier: "free",
+            upgradeTo: "basic",
+            upgradePriceMonthly: 7.99,
+          },
+          "create_workout",
+        );
+      });
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }),
+      );
+      const body = await jsonBody(response);
+      // The generic 500 path serializes stack + causes; the 402 branch
+      // intentionally returns ONLY the entitlement contract fields so
+      // the wire shape is stable for the mobile adapter.
+      expect(body.stack).toBeUndefined();
+      expect(body.causes).toBeUndefined();
+      expect(body.detail).toBeUndefined();
+    });
+
+    it("logs a concise [api:402] line (not the generic [api:error] line)", async () => {
+      delete process.env.SST_STAGE;
+      const app = new Elysia().use(coreErrorHandler).post("/workouts", () => {
+        throw new EntitlementError(
+          {
+            allowed: false,
+            reason: "limit",
+            currentTier: "free",
+            upgradeTo: "basic",
+            upgradePriceMonthly: 7.99,
+          },
+          "create_workout",
+        );
+      });
+      await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }),
+      );
+
+      const calls = consoleErrorSpy.mock.calls.map((c) => String(c[0]));
+      const has402Log = calls.some((line) => line.startsWith("[api:402]"));
+      const hasGenericErrorLog = calls.some((line) =>
+        line.startsWith("[api:error]"),
+      );
+      expect(has402Log).toBe(true);
+      expect(hasGenericErrorLog).toBe(false);
+    });
+
+    it("surfaces requestId on the 402 body when x-amz-request-id is set", async () => {
+      delete process.env.SST_STAGE;
+      const app = new Elysia().use(coreErrorHandler).post("/workouts", () => {
+        throw new EntitlementError(
+          {
+            allowed: false,
+            reason: "limit",
+            currentTier: "free",
+            upgradeTo: "basic",
+            upgradePriceMonthly: 7.99,
+          },
+          "create_workout",
+        );
+      });
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-amz-request-id": "req-xyz",
+          },
+          body: "{}",
+        }),
+      );
+      const body = await jsonBody(response);
+      expect(body.requestId).toBe("req-xyz");
+    });
   });
 });

@@ -7,6 +7,10 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import type { RecordSessionInput } from "../../repositories/sessionRepository";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * POST /sessions/record
@@ -43,6 +47,45 @@ export const sessionsRecordHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const payload = ctx.body as RecordSessionInput;
+
+      // Server-side entitlement gate (M10.5). Only enforced when the
+      // recorded session represents a FRESH workout — i.e., when the
+      // payload doesn't reference an existing workout template
+      // (`workoutId` is null or absent). Re-recording a session
+      // against an existing template is the user logging another
+      // instance of a workout they already had — no new entitlement
+      // cost.
+      //
+      // Why workoutId is the right discriminator (TRACE):
+      //   - `recordSession` inserts only into `workout_sessions` /
+      //     `session_exercises` / `exercise_sets`. It does NOT insert
+      //     into `workouts`, so the AFTER-INSERT trigger on `workouts`
+      //     (subscription_limits 'workouts' counter, see migration
+      //     004 line 450) does NOT fire from this path. The "workout
+      //     count" the gate compares against is the count of `workouts`
+      //     rows, which the user grew via POST /workouts.
+      //   - Therefore: when `workoutId` is set, the session points at
+      //     an existing template the user already paid the
+      //     entitlement-count for at template-create time. Allowing
+      //     the session record adds zero to the count.
+      //   - When `workoutId` is null, the session is ad-hoc / freeform.
+      //     The brief's policy is to count these toward the limit even
+      //     though no `workouts` row gets inserted. We enforce the gate
+      //     here so a user at-cap on workouts can't bypass the gate by
+      //     recording ad-hoc sessions instead of creating templates.
+      //
+      // Position: BEFORE the recordSession transaction (so a denied
+      // request never opens a Postgres transaction at all).
+      //
+      // Spec: specs/11-payments-subscriptions/requirements.md AC 9.4
+      const isFreshWorkout =
+        payload.workoutId === undefined || payload.workoutId === null;
+      if (isFreshWorkout) {
+        const verdict = await assertEntitlement(userId, "create_workout");
+        if (!verdict.allowed) {
+          throw new EntitlementError(verdict, "create_workout");
+        }
+      }
 
       // Hand off the PR-detection function to the repo so it can run
       // inside the same transaction. Keeps SessionRepository free of
