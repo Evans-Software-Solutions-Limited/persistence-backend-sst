@@ -213,7 +213,13 @@ export class SSTApiAdapter implements ApiPort {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        return fail(mapHttpErrorToApiError(response.status, response.statusText, errorBody));
+        return fail(
+          mapHttpErrorToApiError(
+            response.status,
+            response.statusText,
+            errorBody,
+          ),
+        );
       }
 
       // Handle 204 No Content (typical for DELETE)
@@ -327,7 +333,11 @@ export class SSTApiAdapter implements ApiPort {
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
         return fail<ApiError>(
-          mapHttpErrorToApiError(response.status, response.statusText, errorBody),
+          mapHttpErrorToApiError(
+            response.status,
+            response.statusText,
+            errorBody,
+          ),
         );
       }
 
@@ -970,7 +980,9 @@ export function mapHttpErrorToApiError(
   body: unknown,
 ): ApiError {
   const message =
-    (body as { error?: string } | null)?.error ?? statusText ?? "Request failed";
+    (body as { error?: string } | null)?.error ??
+    statusText ??
+    "Request failed";
 
   if (status === 402) {
     const entitlement = parseEntitlementDeniedBody(body);
@@ -997,11 +1009,7 @@ export function mapHttpErrorToApiError(
   return {
     kind: "api",
     code:
-      status === 401
-        ? "unauthorized"
-        : status === 404
-          ? "not_found"
-          : "server",
+      status === 401 ? "unauthorized" : status === 404 ? "not_found" : "server",
     message,
     status,
   };

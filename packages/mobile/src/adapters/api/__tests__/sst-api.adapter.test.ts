@@ -768,7 +768,9 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
     );
     expect((e as Record<string, unknown>).current_tier).toBeUndefined();
     expect((e as Record<string, unknown>).upgrade_to).toBeUndefined();
-    expect((e as Record<string, unknown>).upgrade_price_monthly).toBeUndefined();
+    expect(
+      (e as Record<string, unknown>).upgrade_price_monthly,
+    ).toBeUndefined();
   });
 
   it("preserves null upgrade_to + null upgrade_price_monthly (top-tier denial path)", async () => {
@@ -806,7 +808,9 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
   it("falls back to api/server when the 402 body is malformed (no code field)", async () => {
     installFetchMock(async () => {
       return new Response(
-        JSON.stringify({ error: "Payment required but no entitlement context" }),
+        JSON.stringify({
+          error: "Payment required but no entitlement context",
+        }),
         { status: 402 },
       );
     });

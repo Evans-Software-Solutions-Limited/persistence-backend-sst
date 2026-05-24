@@ -307,10 +307,12 @@ describe("useFeatureGate hook", () => {
     });
 
     await waitFor(() => expect(result.current.reason).toBe("tier"));
+    await waitFor(() =>
+      expect(result.current.gateProps.upgradePriceMonthly).toBe(4.99),
+    );
     expect(result.current.allowed).toBe(false);
     expect(result.current.gateProps.currentTier).toBe("free");
     expect(result.current.gateProps.upgradeTo).toBe("basic");
-    expect(result.current.gateProps.upgradePriceMonthly).toBe(4.99);
     expect(result.current.gateProps.featureDisplayName).toContain("workout");
   });
 
@@ -349,11 +351,18 @@ describe("useFeatureGate hook", () => {
       wrapper: wrapper(adapters, makeQueryClient()),
     });
 
-    // Wait for sub to load. gym_buddy on basic = denied → onUpgrade routes
-    // to Premium with cycle=yearly (the user's current cycle).
-    await waitFor(() => expect(result.current.allowed).toBe(false));
+    // Wait for sub + tier catalog to load. The hook's fallback branch
+    // (before useMySubscription resolves) returns currentTier="free"
+    // and upgradeTo="basic"; we need to observe the post-resolve state
+    // where currentTier="basic" and upgradeTo="premium".
+    await waitFor(() =>
+      expect(result.current.gateProps.currentTier).toBe("basic"),
+    );
+    await waitFor(() =>
+      expect(result.current.gateProps.upgradePriceMonthly).toBe(14.99),
+    );
+    expect(result.current.allowed).toBe(false);
     expect(result.current.gateProps.upgradeTo).toBe("premium");
-    expect(result.current.gateProps.upgradePriceMonthly).toBe(14.99);
 
     act(() => {
       result.current.gateProps.onUpgrade();
@@ -401,7 +410,13 @@ describe("useFeatureGate hook", () => {
       wrapper: wrapper(adapters, makeQueryClient()),
     });
 
-    await waitFor(() => expect(result.current.allowed).toBe(false));
+    // Wait for the sub to actually resolve to premium — otherwise we
+    // observe the pre-resolution fallback (currentTier="free",
+    // upgradeTo="basic") and miss the top-tier-terminal branch entirely.
+    await waitFor(() =>
+      expect(result.current.gateProps.currentTier).toBe("premium"),
+    );
+    expect(result.current.allowed).toBe(false);
     expect(result.current.gateProps.upgradeTo).toBeNull();
     expect(result.current.gateProps.upgradePriceMonthly).toBeNull();
 

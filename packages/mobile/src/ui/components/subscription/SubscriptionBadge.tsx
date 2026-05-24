@@ -72,10 +72,7 @@ function variantFor(tier: SubscriptionTierName): Variant {
   }
 }
 
-const VARIANT_STYLES: Record<
-  Variant,
-  { background: string; text: string }
-> = {
+const VARIANT_STYLES: Record<Variant, { background: string; text: string }> = {
   free: {
     background: Colors.surface.secondary,
     text: Colors.text.secondary,

@@ -87,11 +87,7 @@ export function FeatureGatePrompt({
   return (
     <View style={styles.card} testID={`feature-gate-prompt-${feature}`}>
       <View style={styles.iconWrapper}>
-        <Ionicons
-          name="lock-closed"
-          size={28}
-          color={Colors.primary.DEFAULT}
-        />
+        <Ionicons name="lock-closed" size={28} color={Colors.primary.DEFAULT} />
       </View>
 
       <Text style={styles.title}>{featureDisplayName}</Text>

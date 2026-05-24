@@ -206,12 +206,14 @@ export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult {
       };
     }
 
-    const { allowed, reason } = computeFeatureGateVerdict(feature, subscription);
+    const { allowed, reason } = computeFeatureGateVerdict(
+      feature,
+      subscription,
+    );
 
     const upgradeTo = resolveUpgradeTarget(subscription.tierName);
     const upgradeTier = findTier(tiers, upgradeTo);
-    const billingCycle: BillingCycle =
-      subscription.billingCycle ?? "monthly";
+    const billingCycle: BillingCycle = subscription.billingCycle ?? "monthly";
 
     const gateProps: FeatureGatePromptProps = {
       feature,
