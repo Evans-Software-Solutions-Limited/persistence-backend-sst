@@ -27,5 +27,9 @@
   },
   "dependencies": {
     "sst": "^3"
+  },
+  "overrides": {
+    "@sinclair/typebox": "^0.34.0",
+    "react-dom": "19.2.0"
   }
 }

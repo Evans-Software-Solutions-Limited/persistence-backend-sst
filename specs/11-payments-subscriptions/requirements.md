@@ -129,7 +129,7 @@ Tier names + display names + features + Stripe price IDs are stored in the `subs
 
 - [ ] AC 10.1 — `useFeatureGate(feature)` hook returns `{ allowed: boolean, reason: 'tier' | 'limit' | 'cancelled' | 'unknown', gateProps: FeatureGatePromptProps }`. Pure function of the cached `MySubscription`; no network in the hot path.
 - [ ] AC 10.2 — `FeatureGatePrompt` component renders a paywall card: feature description, upgrade-target tier card, price comparison, "Upgrade to …" CTA that routes to `/(auth)/subscription-selection` with the target tier and billing cycle pre-applied
-- [ ] AC 10.3 — `SubscriptionBadge` component renders a small tier chip (Free / Basic / Premium / Trainer*) for use in Profile and elsewhere
+- [ ] AC 10.3 — `SubscriptionBadge` component renders a small tier chip (Free / Basic / Premium / Trainer\*) for use in Profile and elsewhere
 - [ ] AC 10.4 — Backend 402 responses are intercepted by `SSTApiAdapter` and converted to a domain `ApiError` with `code: 'ENTITLEMENT_DENIED'` + the same payload fields. Containers can call `useFeatureGate` to re-render the gate component without a second round-trip.
 - [ ] AC 10.5 — Feature gate primitives ship in Wave 1 of M10.5 — per-screen integration (exercise library, progress, health, trainer placeholders) ships in Wave 2.
 

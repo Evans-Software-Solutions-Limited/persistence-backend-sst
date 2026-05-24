@@ -38,7 +38,7 @@ export type SyncEntryStatus =
   | "pending"
   | "syncing"
   | "synced"
-  | "failed"           // generic / network / 5xx
+  | "failed" // generic / network / 5xx
   | "blocked_entitlement"; // NEW: M10.6 — server returned 402 with ENTITLEMENT_DENIED
 
 export interface SyncEntry {
@@ -51,12 +51,13 @@ export interface SyncEntry {
     currentTier: SubscriptionTierName;
     upgradeTo: SubscriptionTierName | null;
     upgradePriceMonthly: number | null;
-    blockedAt: string;  // ISO timestamp
+    blockedAt: string; // ISO timestamp
   };
 }
 ```
 
 Storage adapter changes:
+
 - Add `getBlockedEntries(): SyncEntry[]` to `StoragePort` for the UI to enumerate blocked entries
 - Add `unblockEntries(ids: string[]): void` for the retry path (flips status back to `pending`)
 - Extend the SQLite schema if needed (add the `entitlement_verdict` column as JSON OR a sibling table). Use the simpler JSON-column approach if the schema-migration cost is non-trivial.
@@ -68,6 +69,7 @@ In-memory storage adapter (test) mirrors.
 `packages/mobile/src/application/commands/sync.command.ts`:
 
 Today's behaviour (line ~94):
+
 ```typescript
 if (!response.ok) {
   throw new Error(`HTTP ${response.status}: ${body}`);
@@ -78,7 +80,7 @@ Replace with:
 
 ```typescript
 if (response.status === 402) {
-  const apiError = parseApiError(body);  // existing helper from M10.5 Wave 1 adapter
+  const apiError = parseApiError(body); // existing helper from M10.5 Wave 1 adapter
   if (apiError.code === "ENTITLEMENT_DENIED" && apiError.entitlement) {
     // Record the verdict and mark the entry blocked
     await storage.markEntryBlocked(entry.id, {
@@ -97,6 +99,7 @@ if (!response.ok) {
 Add `markEntryBlocked` to the `StoragePort`. The sync engine continues processing the rest of the queue after a 402 — one blocked entry doesn't poison the whole flush.
 
 **Don't retry blocked entries on subsequent flushes.** The flush worker filters `status === "pending"` only; `blocked_entitlement` entries are explicitly excluded. They re-enter the pool ONLY via:
+
 - The user explicitly tapping "Retry" / "Upgrade and retry" on the UI
 - An automatic re-pool when `useMySubscription` reports a tier change that would satisfy the verdict's `upgradeTo` (e.g., user upgrades from basic to premium → all blocked entries with `upgradeTo: 'premium'` get unblocked)
 
@@ -129,6 +132,7 @@ Tapping "Review" routes to a new screen: `packages/mobile/app/(app)/sync-blocked
 `packages/mobile/src/ui/containers/SyncBlockedContainer.tsx` (new) + `SyncBlockedPresenter.tsx` (new):
 
 Lists blocked entries grouped by the upgrade target tier. Each group shows:
+
 - "Unlimited workouts requires Premium · 5 items"
 - An expandable list of the entries (brief: "Workout #1 from 2026-05-23", "Workout #2…")
 - "Upgrade to Premium and retry" primary CTA → routes to `/(auth)/subscription-selection?tier=premium`
@@ -146,6 +150,7 @@ export function useAutoRetryOnUpgrade(): void;
 ```
 
 Implementation:
+
 - Subscribe to `useMySubscription`
 - Track the previously-observed `tierName` in a ref
 - On change from old → new tier: query `storage.getBlockedEntries()`, filter to those whose `entitlementVerdict.upgradeTo` is satisfied by the new tier (tier hierarchy: premium > basic > free; trainer pro > trainer standard > free)
@@ -157,28 +162,33 @@ Tier hierarchy comparison helper goes in `packages/mobile/src/domain/services/su
 ## Tests
 
 `packages/mobile/src/application/commands/__tests__/sync.command.test.ts` (extend):
+
 - 402 with ENTITLEMENT_DENIED → entry marked blocked + verdict stored + sync continues
 - 402 without ENTITLEMENT_DENIED body → falls through to generic error path (today's behaviour)
 - 200 + 5xx + transient errors → unchanged from today
 
 `packages/mobile/src/ui/hooks/__tests__/useBlockedSyncEntries.test.tsx`:
+
 - Returns correct totals + breakdown per feature
 - Updates on storage changes (polling or subscription)
 - Returns earliest `blockedAt` correctly
 
 `packages/mobile/src/ui/containers/__tests__/SyncBlockedContainer.test.tsx`:
+
 - Empty state when no blocked entries
 - Grouped list when present
 - "Upgrade and retry" routes with correct tier param
 - "Discard" confirmation flow
 
 `packages/mobile/src/ui/hooks/__tests__/useAutoRetryOnUpgrade.test.tsx`:
+
 - Tier change to one satisfying blocked entries → unblock + flush
 - Tier change that doesn't satisfy → no-op
 - No tier change → no-op
 - Free → trainer tier doesn't unblock user-tier-required entries (no cross-track retry)
 
 `packages/mobile/src/domain/services/__tests__/subscriptionService.test.ts` (extend):
+
 - `tierSatisfies(currentTier, requiredTier)` for all relevant combinations
 
 90% global coverage non-negotiable.
@@ -262,6 +272,7 @@ TRACE before patching. Same protocol.
 ## When you finish
 
 Report:
+
 - Branch name
 - Commits
 - Test delta

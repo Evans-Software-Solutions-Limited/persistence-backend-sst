@@ -8,11 +8,11 @@ Spawn the three Wave 2 agents ONLY after Wave 1 has merged into `feat/m10-5-enti
 
 ## Three parallel agents — disjoint screen trees
 
-| Agent | Brief | Screens |
-|---|---|---|
+| Agent                 | Brief                                                                | Screens                                                                                                                                                                                                                               |
+| --------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `m105-gates-workouts` | [`WAVE_2_GATES_WORKOUTS_BRIEF.md`](./WAVE_2_GATES_WORKOUTS_BRIEF.md) | Exercise library (lock customs beyond `workout_limit` reads — actual enforcement is server). Workout creator (lock AI-generated workout step when `!aiAccess`). Workout limit warning at limit-3, gate at limit-equal. Session start. |
-| `m105-gates-progress` | [`WAVE_2_GATES_PROGRESS_BRIEF.md`](./WAVE_2_GATES_PROGRESS_BRIEF.md) | Progress tab (lock advanced analytics for free tier). Health integration (lock for free tier — premium-and-above can wire HealthKit). Profile tab (render `SubscriptionBadge` next to display name). |
-| `m105-gates-trainer` | [`WAVE_2_GATES_TRAINER_BRIEF.md`](./WAVE_2_GATES_TRAINER_BRIEF.md) | Trainer route stubs — Clients tab placeholder (until M8 ships real implementation). Gate access by `tier.isTrainerTier`. |
+| `m105-gates-progress` | [`WAVE_2_GATES_PROGRESS_BRIEF.md`](./WAVE_2_GATES_PROGRESS_BRIEF.md) | Progress tab (lock advanced analytics for free tier). Health integration (lock for free tier — premium-and-above can wire HealthKit). Profile tab (render `SubscriptionBadge` next to display name).                                  |
+| `m105-gates-trainer`  | [`WAVE_2_GATES_TRAINER_BRIEF.md`](./WAVE_2_GATES_TRAINER_BRIEF.md)   | Trainer route stubs — Clients tab placeholder (until M8 ships real implementation). Gate access by `tier.isTrainerTier`.                                                                                                              |
 
 Files are disjoint across the three agents — no merge conflicts expected.
 

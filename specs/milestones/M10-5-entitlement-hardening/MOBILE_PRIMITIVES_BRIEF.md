@@ -45,6 +45,7 @@ export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult;
 **Pure function of the cached `MySubscription`** — reads from `useMySubscription()` and returns a verdict. No network in the hot path. The verdict logic mirrors the backend `assertEntitlement` rules but is computed client-side for UX (server-side is authoritative for actual writes).
 
 Feature → rule mapping:
+
 - `create_workout`: `paymentStatus IN ('active', 'trialing')` AND tier's `workoutLimit === null` (unlimited) OR `workoutLimit > 0` (free + basic have non-zero limits). Reason `'limit'` is hard to detect client-side without a usage counter — for M10.5, return `'tier'` reason for any non-active sub on this feature.
 - `ai_workout`: `paymentStatus IN ('active', 'trialing')` AND `tierFeatures.aiAccess === true`. (Trial users count.)
 - `gym_buddy`: `tier.gymBuddyAccess === true`.
@@ -58,6 +59,7 @@ Feature → rule mapping:
 Location: `packages/mobile/src/ui/components/subscription/FeatureGatePrompt.tsx`
 
 Pure presenter. Renders a paywall card:
+
 - A lock icon
 - Feature display name ("AI Workouts", "Gym Buddy access", "Custom workouts beyond your monthly limit")
 - Current tier badge
@@ -93,11 +95,12 @@ Compact chip showing the user's current tier. Used in Profile and elsewhere. Pur
 export interface SubscriptionBadgeProps {
   tier: SubscriptionTierName;
   paymentStatus: SubscriptionStatus;
-  compact?: boolean;  // smaller variant for tight layouts
+  compact?: boolean; // smaller variant for tight layouts
 }
 ```
 
 Style variations:
+
 - Free: grey background
 - Basic: blue background
 - Premium: gold background
@@ -152,21 +155,25 @@ Keep the two definitions in sync — if backend adds a feature, mobile mirrors. 
 ## Tests
 
 `packages/mobile/src/ui/hooks/__tests__/useFeatureGate.test.tsx`:
+
 - For each feature: allowed when tier matches + active/trialing; denied otherwise with correct reason
 - Returns sensible `gateProps` (feature name, upgrade target, callback)
 - Stub features (`ai_workout`, `gym_buddy`, etc.) return allowed today
 
 `packages/mobile/src/ui/components/subscription/__tests__/FeatureGatePrompt.test.tsx`:
+
 - Renders the title, current tier badge, upgrade tier card, both CTAs
 - `onUpgrade` fires on press
 - `upgradeTo === null` path renders "Contact support" instead
 
 `packages/mobile/src/ui/components/subscription/__tests__/SubscriptionBadge.test.tsx`:
+
 - Renders the correct label + style for each tier
 - Trial / Cancelled suffixes appear when status calls for them
 - Compact variant collapses correctly
 
 `packages/mobile/src/adapters/api/__tests__/sst-api.adapter.test.ts` (extend existing):
+
 - 402 with `code: "ENTITLEMENT_DENIED"` + valid body → produces `ApiError` with `entitlement` field populated
 - 402 with malformed body → falls back to standard `ApiError` (no `entitlement`)
 - 4xx/5xx other than 402 → unchanged behaviour

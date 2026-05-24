@@ -19,6 +19,8 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 // eslint-disable-next-line import/first
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 // eslint-disable-next-line import/first
 import type {
   MySubscription,
@@ -59,6 +61,7 @@ function makeAdapters(): {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments: new MockPaymentsAdapter(),
+    netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, api, auth };
 }

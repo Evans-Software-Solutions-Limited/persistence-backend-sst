@@ -49,11 +49,13 @@ Any route file that gates by `role` directly should be updated to use `useFeatur
 ## Tests
 
 `packages/mobile/app/(app)/(tabs)/__tests__/clients.test.tsx` (or wherever the route placeholder lives):
+
 - Non-trainer user sees `FeatureGatePrompt`
 - Trainer-standard user sees the placeholder (or `FeatureGatePrompt` if standards don't get clients — verify the rule)
 - Trainer-pro user sees the placeholder
 
 Tab-bar visibility test (likely covered by an existing `_layout.test.tsx`):
+
 - Free user: 4 tabs (no Clients)
 - Trainer-pro user: 5 tabs (with Clients)
 
@@ -93,6 +95,7 @@ Same report shape. Be specific about:
 - What you found in the legacy `persistence-mobile/components/trainer/` directory that should inform M8's brief (drop-link your notes)
 
 Citations:
+
 ```
 Implements: specs/11-payments-subscriptions/design.md § Per-screen feature-gate integration (Wave 2)
 Closes: specs/11-payments-subscriptions/tasks.md § Phase 12 (m105-gates-trainer subset)

@@ -25,8 +25,8 @@ M10.6 closes the loop: sync engine classifies 402 responses as entitlement-block
 
 This is a smaller milestone — backend work is zero (Wave 1's `assertEntitlement` already returns the right 402 shape on every mutation). Only the mobile sync engine + UX need work.
 
-| Agent | Brief | Scope |
-|---|---|---|
+| Agent              | Brief                                  | Scope                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `m106-sync-rcheck` | [`MOBILE_BRIEF.md`](./MOBILE_BRIEF.md) | Sync engine catches 402, marks entries as `blocked-entitlement`, records the verdict on the entry. UI: banner on Home + Profile showing "X items blocked"; tap → list of blocked entries grouped by tier-upgrade-required; "Upgrade and retry" CTA → routes to Selection with target tier pre-selected; on tier change (detected via `useMySubscription` invalidation), automatically retry the previously-blocked entries. |
 
 ## When this milestone spawns

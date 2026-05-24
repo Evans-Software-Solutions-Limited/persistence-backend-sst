@@ -54,7 +54,9 @@ export async function assertEntitlement(
 export class EntitlementError extends Error {
   constructor(
     public readonly verdict: Extract<EntitlementVerdict, { allowed: false }>,
-  ) { super("ENTITLEMENT_DENIED"); }
+  ) {
+    super("ENTITLEMENT_DENIED");
+  }
 }
 ```
 
@@ -108,15 +110,18 @@ Read the existing handler to identify which branch creates a fresh workout. If u
 ## Tests
 
 `microservices/core/src/application/entitlement/__tests__/assertEntitlement.test.ts`:
+
 - 100% branch coverage required (non-negotiable for new code under this path)
 - Cover: free tier under limit (allowed), free tier at limit (denied with reason `'limit'`), basic at limit (denied with reason `'limit'` + upgrade_to = `'premium'`), premium unlimited (allowed), cancelled sub (denied with reason `'cancelled'`), expired sub (denied with reason `'expired'`), every stub feature returns allowed today
 
 `microservices/core/src/application/workouts/create/__tests__/workoutsCreateHandler.test.ts` (extend existing):
+
 - New test: basic tier at limit → 402 with the structured body
 - New test: premium tier → 201 (no entitlement-related regression)
 - New test: 402 body shape matches the spec field names exactly
 
 `microservices/core/src/application/sessions/record/__tests__/sessionsRecordHandler.test.ts` (extend existing):
+
 - Same shape: 402 when fresh-workout record at limit, 201 when re-recording existing
 
 ## Quality gates

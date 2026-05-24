@@ -74,6 +74,7 @@ The CTAs themselves stay visually disabled-style when offline (use a `style.disa
 Locations: where `useSubscriptionTiers` and `useMySubscription` are consumed (the two containers).
 
 Pattern:
+
 - Each container tracks `isSlowLoading` boolean local state
 - Sibling `setTimeout` runs alongside the Tanstack query: after 8s of `isLoading === true`, flip `isSlowLoading = true`
 - Clear the timeout on query success / error
@@ -86,6 +87,7 @@ Make the 8s threshold a named constant (`SLOW_NETWORK_INDICATOR_DELAY_MS = 8000`
 ### 4. 3DS network-drop recovery
 
 In `SubscriptionSelectionContainer`'s `handlePaymentMethodReady` callback, the 3DS branch currently calls `payments.confirm3DS(clientSecret)`. Wrap that call to:
+
 - Pre-flight `useOnlineStatus()` check
 - If offline before 3DS → "You need to be online to complete payment verification. Your subscription is on hold." + reset selectedTier + don't show 3DS
 - If `confirm3DS` throws with what looks like a network error → "Connection lost during payment verification. Please try again." + reset state
@@ -101,22 +103,26 @@ This means the existing M10 tests that check Apple Pay UI must continue to pass.
 ## Tests
 
 `packages/mobile/src/ui/hooks/__tests__/useOnlineStatus.test.tsx`:
+
 - Returns true when adapter reports connected
 - Returns false when adapter reports disconnected
 - Updates on subscription event
 - Cleans up subscription on unmount
 
 `packages/mobile/src/adapters/netInfo/__tests__/InMemoryNetInfoAdapter.test.ts`:
+
 - `setConnected(false)` then read returns false
 - Subscribers fire on transitions
 
 `packages/mobile/src/ui/containers/__tests__/SubscriptionSelectionContainer.test.tsx` (extend existing):
+
 - Offline + tap tier → alert fires + Apple Pay does NOT mount + no `createSubscription` call
 - Offline → online → tap tier → Apple Pay mounts normally
 - Online + slow query (>8s) → "Still loading..." indicator visible
 - Offline + tap cancel → alert + no cancel mutation
 
 `packages/mobile/src/ui/containers/__tests__/SubscriptionManagementContainer.test.tsx` (extend existing):
+
 - Offline + tap upgrade/downgrade/cancel → alert + no mutation
 
 90% global coverage non-negotiable.

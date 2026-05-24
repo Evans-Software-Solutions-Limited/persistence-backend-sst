@@ -42,6 +42,7 @@ Today `ai_workout` is stubbed (always allowed) on the backend per Wave 1's brief
 File: same workout creator file as above, plus `packages/mobile/src/ui/containers/SessionStartContainer.tsx` (or wherever session-start handles creating a fresh workout — search the codebase).
 
 On any screen that creates a new workout:
+
 - Read `useMySubscription()`; read `workoutLimit` from the cached tier info
 - Compute `remaining = workoutLimit - currentMonthCount` if both known (limit non-null + count known)
 - When `remaining <= 3 && remaining > 0`: show a small inline warning banner above the create button ("3 workouts remaining this month — Upgrade to Premium for unlimited")
@@ -54,12 +55,14 @@ On any screen that creates a new workout:
 Per screen, add container tests using `InMemoryApiAdapter`:
 
 `packages/mobile/src/ui/containers/__tests__/ExerciseCreateContainer.test.tsx`:
+
 - Free user sees `FeatureGatePrompt` instead of the form (assuming exercise creation is gated)
 - Premium user sees the form
 - Form submit with server 402 swaps to gate prompt
 - Tap "Upgrade" routes to `/(auth)/subscription-selection?tier=basic`
 
 `packages/mobile/src/ui/containers/__tests__/WorkoutCreateContainer.test.tsx`:
+
 - Free user: AI option shows gate; manual option shows form
 - Basic user near limit (mock `currentMonthCount = workoutLimit - 2`): warning banner visible
 - Basic user at limit: gate prompt instead of form
@@ -110,6 +113,7 @@ Note: you'll need to discover the actual container/presenter file names — M5 s
   - Spec amendment flags (especially around `currentMonthCount` field availability)
 
 Citations in commit footer:
+
 ```
 Implements: specs/11-payments-subscriptions/design.md § Per-screen feature-gate integration (Wave 2)
 Closes: specs/11-payments-subscriptions/tasks.md § Phase 12 (m105-gates-workouts subset)

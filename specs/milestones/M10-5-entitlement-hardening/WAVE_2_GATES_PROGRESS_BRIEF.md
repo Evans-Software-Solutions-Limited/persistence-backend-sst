@@ -87,14 +87,17 @@ Also: extend Profile's "Subscription" row (the entry-point to Subscription Manag
 ## Tests
 
 `packages/mobile/src/ui/containers/__tests__/ProgressContainer.test.tsx`:
+
 - Free user: basic stats visible; gate prompt visible where advanced sections used to render
 - Premium user: full progress data visible; no gate prompts
 
 `packages/mobile/src/ui/containers/__tests__/HomeContainer.test.tsx` (or wherever health tiles live):
+
 - Free user: health tiles section locked with gate prompt
 - Premium user: tiles render
 
 `packages/mobile/src/ui/containers/__tests__/ProfileContainer.test.tsx`:
+
 - SubscriptionBadge renders for each tier (parameterised test)
 - Trial / Cancelled suffix appears at the right times
 - Profile sub-management row navigates correctly
@@ -138,6 +141,7 @@ Same report shape as the other agents. Include a clear list of:
 - Screens you gated, screens you found-and-skipped (because they don't yet exist on this branch)
 
 Citations:
+
 ```
 Implements: specs/11-payments-subscriptions/design.md § Per-screen feature-gate integration (Wave 2)
 Closes: specs/11-payments-subscriptions/tasks.md § Phase 12 (m105-gates-progress subset)

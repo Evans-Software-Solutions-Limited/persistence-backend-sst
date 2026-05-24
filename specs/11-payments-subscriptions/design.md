@@ -582,11 +582,11 @@ Lives at `microservices/core/src/application/entitlement/assertEntitlement.ts`. 
 // microservices/core/src/application/entitlement/assertEntitlement.ts
 
 export type EntitlementFeature =
-  | "create_workout"          // ENFORCED in M10.5: POST /workouts, POST /sessions/record
-  | "ai_workout"              // STUB: future AI endpoint
-  | "gym_buddy"               // STUB
-  | "unlimited_exercise_library"  // STUB
-  | "trainer_clients";        // STUB: future M8 endpoints
+  | "create_workout" // ENFORCED in M10.5: POST /workouts, POST /sessions/record
+  | "ai_workout" // STUB: future AI endpoint
+  | "gym_buddy" // STUB
+  | "unlimited_exercise_library" // STUB
+  | "trainer_clients"; // STUB: future M8 endpoints
 
 export type EntitlementVerdict =
   | { allowed: true }
@@ -606,7 +606,9 @@ export async function assertEntitlement(
 export class EntitlementError extends Error {
   constructor(
     public readonly verdict: Extract<EntitlementVerdict, { allowed: false }>,
-  ) { super("ENTITLEMENT_DENIED"); }
+  ) {
+    super("ENTITLEMENT_DENIED");
+  }
 }
 ```
 
@@ -625,13 +627,13 @@ Handlers call `assertEntitlement(userId, feature)`; if the verdict denies, throw
 
 **Feature → tier-rule mapping (M10.5 scope):**
 
-| Feature | Rule | Defining column |
-|---|---|---|
-| `create_workout` | `subscription_limits.workouts_per_month.current_count < subscription_limits.workouts_per_month.limit_value` (null limit = unlimited) | `subscription_limits` table + trigger-maintained |
-| `ai_workout` | `subscription_tiers.aiAccess === true` AND `subscription_limits.ai_workouts_per_month.current_count < ai_workouts_per_month.limit_value` | stubbed today |
-| `gym_buddy` | `subscription_tiers.gymBuddyAccess === true` | stubbed today |
-| `unlimited_exercise_library` | tier-level boolean (TBD on schema — out of M10.5) | stubbed today |
-| `trainer_clients` | `subscription_tiers.isTrainerTier === true` AND under `trainerClientLimit` | stubbed today |
+| Feature                      | Rule                                                                                                                                     | Defining column                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `create_workout`             | `subscription_limits.workouts_per_month.current_count < subscription_limits.workouts_per_month.limit_value` (null limit = unlimited)     | `subscription_limits` table + trigger-maintained |
+| `ai_workout`                 | `subscription_tiers.aiAccess === true` AND `subscription_limits.ai_workouts_per_month.current_count < ai_workouts_per_month.limit_value` | stubbed today                                    |
+| `gym_buddy`                  | `subscription_tiers.gymBuddyAccess === true`                                                                                             | stubbed today                                    |
+| `unlimited_exercise_library` | tier-level boolean (TBD on schema — out of M10.5)                                                                                        | stubbed today                                    |
+| `trainer_clients`            | `subscription_tiers.isTrainerTier === true` AND under `trainerClientLimit`                                                               | stubbed today                                    |
 
 ### Mobile feature-gate model
 
@@ -647,9 +649,7 @@ export interface FeatureGateResult {
   gateProps: FeatureGatePromptProps;
 }
 
-export function useFeatureGate(
-  feature: EntitlementFeature,
-): FeatureGateResult;
+export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult;
 
 // packages/mobile/src/ui/components/subscription/FeatureGatePrompt.tsx
 export interface FeatureGatePromptProps {
@@ -658,7 +658,7 @@ export interface FeatureGatePromptProps {
   currentTier: SubscriptionTierName;
   upgradeTo: SubscriptionTierName | null;
   upgradePriceMonthly: number | null;
-  onUpgrade: () => void;  // routes to /(auth)/subscription-selection with target pre-selected
+  onUpgrade: () => void; // routes to /(auth)/subscription-selection with target pre-selected
 }
 
 export function FeatureGatePrompt(props: FeatureGatePromptProps): JSX.Element;
@@ -711,7 +711,7 @@ export type SyncEntryStatus =
   | "syncing"
   | "synced"
   | "failed"
-  | "blocked_entitlement";  // NEW
+  | "blocked_entitlement"; // NEW
 
 export interface SyncEntry {
   id: string;
@@ -722,7 +722,7 @@ export interface SyncEntry {
     currentTier: SubscriptionTierName;
     upgradeTo: SubscriptionTierName | null;
     upgradePriceMonthly: number | null;
-    blockedAt: string;  // ISO timestamp
+    blockedAt: string; // ISO timestamp
   };
 }
 ```

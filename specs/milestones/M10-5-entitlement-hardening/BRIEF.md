@@ -18,21 +18,21 @@ M10.5 closes all three. **Brad's explicit decision:** skip client-side grace win
 
 ### Wave 1 — three parallel agents (fork off the M10.5 briefs commit)
 
-| Agent | Brief | Scope |
-|---|---|---|
-| `m105-backend` | [`BACKEND_BRIEF.md`](./BACKEND_BRIEF.md) | `assertEntitlement` helper + `EntitlementError` mapper + apply to `POST /workouts` + `POST /sessions/record`. Feature enum + stubs for `ai_workout` / `gym_buddy` / `trainer_clients` / `unlimited_exercise_library`. 402 with structured payload. |
-| `m105-mobile-primitives` | [`MOBILE_PRIMITIVES_BRIEF.md`](./MOBILE_PRIMITIVES_BRIEF.md) | `useFeatureGate(feature)` hook + `FeatureGatePrompt` component + `SubscriptionBadge` component. 402 interception in `SSTApiAdapter`. No per-screen integration. |
-| `m105-mobile-offline-ux` | [`MOBILE_OFFLINE_UX_BRIEF.md`](./MOBILE_OFFLINE_UX_BRIEF.md) | `useOnlineStatus()` hook + offline banners on both subscription screens + mutation pre-flight + slow-network "still working…" indicator + 3DS network-drop recovery. |
+| Agent                    | Brief                                                        | Scope                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `m105-backend`           | [`BACKEND_BRIEF.md`](./BACKEND_BRIEF.md)                     | `assertEntitlement` helper + `EntitlementError` mapper + apply to `POST /workouts` + `POST /sessions/record`. Feature enum + stubs for `ai_workout` / `gym_buddy` / `trainer_clients` / `unlimited_exercise_library`. 402 with structured payload. |
+| `m105-mobile-primitives` | [`MOBILE_PRIMITIVES_BRIEF.md`](./MOBILE_PRIMITIVES_BRIEF.md) | `useFeatureGate(feature)` hook + `FeatureGatePrompt` component + `SubscriptionBadge` component. 402 interception in `SSTApiAdapter`. No per-screen integration.                                                                                    |
+| `m105-mobile-offline-ux` | [`MOBILE_OFFLINE_UX_BRIEF.md`](./MOBILE_OFFLINE_UX_BRIEF.md) | `useOnlineStatus()` hook + offline banners on both subscription screens + mutation pre-flight + slow-network "still working…" indicator + 3DS network-drop recovery.                                                                               |
 
 These three agents touch disjoint trees and have no contract dependency on each other. They land on the same `feat/m10-5-entitlement` PR branch, in three separate merges from worktrees.
 
 ### Wave 2 — three parallel agents (fork off Wave 1's merged state, on a new branch)
 
-| Agent | Brief | Scope |
-|---|---|---|
-| `m105-gates-workouts` | (Wave 2 brief — author after Wave 1 merges) | Wire `FeatureGatePrompt` into exercise library, workout creator, session start. |
-| `m105-gates-progress` | (Wave 2 brief) | Lock advanced analytics + health for free tier; render `SubscriptionBadge` on Profile. |
-| `m105-gates-trainer` | (Wave 2 brief) | Stub gates on trainer route placeholders. M8 will replace stubs with real client management. |
+| Agent                 | Brief                                       | Scope                                                                                        |
+| --------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `m105-gates-workouts` | (Wave 2 brief — author after Wave 1 merges) | Wire `FeatureGatePrompt` into exercise library, workout creator, session start.              |
+| `m105-gates-progress` | (Wave 2 brief)                              | Lock advanced analytics + health for free tier; render `SubscriptionBadge` on Profile.       |
+| `m105-gates-trainer`  | (Wave 2 brief)                              | Stub gates on trainer route placeholders. M8 will replace stubs with real client management. |
 
 **Wave 2 is NOT in scope for this milestone PR.** It's authored once Wave 1 primitives ship so per-screen agents can import the real hook + component, not mocks.
 
