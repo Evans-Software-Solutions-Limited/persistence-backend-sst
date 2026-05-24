@@ -245,6 +245,22 @@ describe("computeFeatureGateVerdict (pure)", () => {
     expect(verdict.reason).toBe("cancelled");
   });
 
+  it("ai_workout: past_due (non-active, non-cancelled) → denied with reason 'tier'", () => {
+    // Anti-regression: the cancelled vs tier branch in ai_workout was
+    // previously only exercised through the cancelled side. Past-due
+    // covers the !isActive && !isCancelled branch.
+    const verdict = computeFeatureGateVerdict(
+      "ai_workout",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "past_due",
+        aiAccess: true,
+      }),
+    );
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toBe("tier");
+  });
+
   it("gym_buddy: gymBuddyAccess=true (premium) → allowed", () => {
     const verdict = computeFeatureGateVerdict(
       "gym_buddy",
