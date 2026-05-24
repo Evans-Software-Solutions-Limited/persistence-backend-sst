@@ -31,10 +31,7 @@ import type {
   RecordResponseSummary,
   RestTimerState,
 } from "@/domain/ports/storage.port";
-import type {
-  EntitlementVerdict,
-  SyncStatus,
-} from "@/domain/ports/sync.types";
+import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
  * In-memory storage adapter for testing.

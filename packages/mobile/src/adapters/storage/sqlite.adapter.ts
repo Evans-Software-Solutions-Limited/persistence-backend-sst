@@ -282,9 +282,9 @@ export class SQLiteStorageAdapter implements StoragePort {
     // set on migrated installs; markMutationBlocked tolerates the
     // rejection by re-trying as `failed` (rare path — pre-launch users
     // aren't expected). Fresh installs land the full 5-value CHECK.
-    const columns = db.getAllSync(
-      `PRAGMA table_info(sync_queue)`,
-    ) as Array<{ name: string }>;
+    const columns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as Array<{
+      name: string;
+    }>;
     const hasVerdictColumn = columns.some(
       (c) => c.name === "entitlement_verdict",
     );

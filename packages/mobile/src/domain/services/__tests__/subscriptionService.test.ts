@@ -10,6 +10,7 @@ import {
   isSubscriptionActive,
   isTrialing,
   shouldShowTrialBanner,
+  tierSatisfies,
 } from "@/domain/services/subscriptionService";
 
 /**
@@ -324,5 +325,77 @@ describe("getSubscriptionDisplayInfo", () => {
       tierNames,
     );
     expect(info.nextTierDisplayName).toBe("Small Business (Standard)");
+  });
+});
+
+describe("tierSatisfies (M10.6)", () => {
+  // -- User track --
+
+  it("same tier always satisfies (identity)", () => {
+    expect(tierSatisfies("premium", "premium")).toBe(true);
+    expect(tierSatisfies("basic", "basic")).toBe(true);
+    expect(tierSatisfies("free", "free")).toBe(true);
+  });
+
+  it("higher user-track tier satisfies lower user-track tier", () => {
+    expect(tierSatisfies("premium", "basic")).toBe(true);
+  });
+
+  it("lower user-track tier does NOT satisfy higher user-track tier", () => {
+    expect(tierSatisfies("basic", "premium")).toBe(false);
+    expect(tierSatisfies("free", "premium")).toBe(false);
+    expect(tierSatisfies("free", "basic")).toBe(false);
+  });
+
+  // -- Trainer track --
+
+  it("higher trainer tier satisfies lower trainer tier within the same family", () => {
+    expect(
+      tierSatisfies("individual_trainer_pro", "individual_trainer_standard"),
+    ).toBe(true);
+    expect(tierSatisfies("small_business_pro", "small_business_standard")).toBe(
+      true,
+    );
+    expect(
+      tierSatisfies("medium_enterprise_pro", "medium_enterprise_standard"),
+    ).toBe(true);
+  });
+
+  it("any trainer-pro satisfies any trainer-standard requirement (rank-based, cross-family)", () => {
+    // Both rank 2 vs rank 1 on the trainer track. The hook doesn't
+    // need to know whether they're individual vs small_business — a
+    // Pro tier on any family is "more entitlement" than Standard.
+    expect(
+      tierSatisfies("small_business_pro", "individual_trainer_standard"),
+    ).toBe(true);
+  });
+
+  // -- Track independence (AC 12.7) --
+
+  it("user-track tier does NOT satisfy trainer-track requirement", () => {
+    expect(tierSatisfies("premium", "individual_trainer_pro")).toBe(false);
+    expect(tierSatisfies("basic", "individual_trainer_standard")).toBe(false);
+    expect(tierSatisfies("premium", "small_business_pro")).toBe(false);
+  });
+
+  it("trainer-track tier does NOT satisfy user-track requirement", () => {
+    expect(tierSatisfies("individual_trainer_pro", "premium")).toBe(false);
+    expect(tierSatisfies("small_business_standard", "basic")).toBe(false);
+  });
+
+  // -- Edge cases --
+
+  it("free does not satisfy any meaningful upgrade requirement", () => {
+    expect(tierSatisfies("free", "basic")).toBe(false);
+    expect(tierSatisfies("free", "premium")).toBe(false);
+    expect(tierSatisfies("free", "individual_trainer_standard")).toBe(false);
+    expect(tierSatisfies("free", "individual_trainer_pro")).toBe(false);
+  });
+
+  it("required tier of 'free' is treated defensively as 'never satisfies' (no real-world callsite)", () => {
+    // The hook never sees upgradeTo === 'free' in practice — the
+    // backend doesn't gate against free — but be defensive.
+    expect(tierSatisfies("basic", "free")).toBe(false);
+    expect(tierSatisfies("premium", "free")).toBe(false);
   });
 });
