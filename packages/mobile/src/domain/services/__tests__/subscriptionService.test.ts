@@ -24,9 +24,7 @@ import {
 const FUTURE_ISO = "2030-01-01T00:00:00.000Z";
 const PAST_ISO = "2020-01-01T00:00:00.000Z";
 
-function makeSub(
-  overrides: Partial<MySubscription> = {},
-): MySubscription {
+function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   return {
     subscriptionId: "us_1",
     tierName: "premium",
@@ -74,16 +72,14 @@ describe("isFreeTier", () => {
   });
 
   it("returns false for trainer tiers", () => {
-    expect(
-      isFreeTier(makeSub({ tierName: "individual_trainer_pro" })),
-    ).toBe(false);
+    expect(isFreeTier(makeSub({ tierName: "individual_trainer_pro" }))).toBe(
+      false,
+    );
   });
 
   it("returns false for trialing subscriptions on paid tiers (legacy parity)", () => {
     expect(
-      isFreeTier(
-        makeSub({ tierName: "premium", paymentStatus: "trialing" }),
-      ),
+      isFreeTier(makeSub({ tierName: "premium", paymentStatus: "trialing" })),
     ).toBe(false);
   });
 });
@@ -95,7 +91,9 @@ describe("isSubscriptionActive", () => {
 
   it("returns false when cancelledAt is set", () => {
     expect(
-      isSubscriptionActive(makeSub({ cancelledAt: "2026-01-01T00:00:00.000Z" })),
+      isSubscriptionActive(
+        makeSub({ cancelledAt: "2026-01-01T00:00:00.000Z" }),
+      ),
     ).toBe(false);
   });
 
@@ -138,9 +136,9 @@ describe("canCancelSubscription", () => {
   });
 
   it("returns true for a trialing subscription (legacy parity — trials cancelable)", () => {
-    expect(
-      canCancelSubscription(makeSub({ paymentStatus: "trialing" })),
-    ).toBe(true);
+    expect(canCancelSubscription(makeSub({ paymentStatus: "trialing" }))).toBe(
+      true,
+    );
   });
 });
 
@@ -244,15 +242,15 @@ describe("shouldShowTrialBanner", () => {
   it("returns false for tiers with no trial offering", () => {
     expect(shouldShowTrialBanner(eligible, "free")).toBe(false);
     expect(shouldShowTrialBanner(eligible, "basic")).toBe(false);
-    expect(
-      shouldShowTrialBanner(eligible, "individual_trainer_standard"),
-    ).toBe(false);
+    expect(shouldShowTrialBanner(eligible, "individual_trainer_standard")).toBe(
+      false,
+    );
     expect(shouldShowTrialBanner(eligible, "small_business_standard")).toBe(
       false,
     );
-    expect(
-      shouldShowTrialBanner(eligible, "medium_enterprise_standard"),
-    ).toBe(false);
+    expect(shouldShowTrialBanner(eligible, "medium_enterprise_standard")).toBe(
+      false,
+    );
   });
 });
 

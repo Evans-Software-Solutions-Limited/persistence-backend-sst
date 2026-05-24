@@ -207,7 +207,9 @@ describe("SubscriptionManagementContainer", () => {
     });
     // Success alert shows effective date
     await waitFor(() => {
-      const successCall = alertSpy.mock.calls.find(([title]) => title === "Success");
+      const successCall = alertSpy.mock.calls.find(
+        ([title]) => title === "Success",
+      );
       expect(successCall).toBeTruthy();
     });
   });
@@ -261,7 +263,9 @@ describe("SubscriptionManagementContainer", () => {
       ([title]) => title === "Cancel Subscription",
     );
     expect(cancelAlert?.[1]).not.toMatch(/trial/);
-    const destructive = cancelAlert?.[2]?.find((b) => b.style === "destructive");
+    const destructive = cancelAlert?.[2]?.find(
+      (b) => b.style === "destructive",
+    );
     await act(async () => {
       await destructive?.onPress?.();
     });
@@ -307,9 +311,9 @@ describe("SubscriptionManagementContainer", () => {
       await upgradeButton?.onPress?.();
     });
     await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Error"),
-      ).toBe(true),
+      expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
+        true,
+      ),
     );
   });
 
@@ -337,9 +341,9 @@ describe("SubscriptionManagementContainer", () => {
       await downgradeButton?.onPress?.();
     });
     await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Error"),
-      ).toBe(true),
+      expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
+        true,
+      ),
     );
   });
 
@@ -360,14 +364,16 @@ describe("SubscriptionManagementContainer", () => {
     const cancelAlert = alertSpy.mock.calls.find(
       ([title]) => title === "Cancel Subscription",
     );
-    const destructive = cancelAlert?.[2]?.find((b) => b.style === "destructive");
+    const destructive = cancelAlert?.[2]?.find(
+      (b) => b.style === "destructive",
+    );
     await act(async () => {
       await destructive?.onPress?.();
     });
     await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Error"),
-      ).toBe(true),
+      expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
+        true,
+      ),
     );
   });
 
@@ -429,7 +435,11 @@ describe("SubscriptionManagementContainer", () => {
   });
 
   it("does nothing when cancel pressed but subscriptionId is null (free shape)", async () => {
-    const freeSub = { ...BASIC_SUB, tierName: "free" as const, subscriptionId: null };
+    const freeSub = {
+      ...BASIC_SUB,
+      tierName: "free" as const,
+      subscriptionId: null,
+    };
     const { adapters, api } = makeAdapters(freeSub);
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>

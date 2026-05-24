@@ -27,6 +27,7 @@ If you find the spec disagrees with this brief or with your implementation reali
 The legacy app's subscription flow is proven, A/B-tested, and ratified by real users. Your job is to port flows, business logic, copy, and visual layout **exactly**. The /frontend-design polish pass is M11 — NOT M10.
 
 Specifically:
+
 - Match legacy copy verbatim (CTAs, alerts, modal text, error strings)
 - Match legacy navigation (post-auth lands on selection; profile entry to management)
 - Match legacy interaction model (tap card → immediate Apple Pay sheet; cancel button → confirmation modal; reinstate via tap-current-tier)
@@ -44,6 +45,7 @@ Seven slices. Recommended commit order: domain → ports/adapters → API integr
 Spec: [`design.md` § Domain models](../../11-payments-subscriptions/design.md), satisfies AC 1.1, 1.2, 1.3.
 
 **Rewrite** `packages/mobile/src/domain/models/subscription.ts` to the new shape:
+
 - `SubscriptionTierName` — string union of the 8 named tiers + `'free'`
 - `SubscriptionRole` — `'user' | 'personal_trainer' | 'physiotherapist' | 'admin'`
 - `SubscriptionStatus` — full Stripe-aligned union (`'active' | 'trialing' | 'past_due' | 'cancelled' | 'incomplete' | 'incomplete_expired' | 'unpaid'`)
@@ -55,6 +57,7 @@ Spec: [`design.md` § Domain models](../../11-payments-subscriptions/design.md),
 - `CancelSubscriptionResult` interface — unchanged from PR #70
 
 **Port domain services** from legacy `persistence-mobile/lib/utils/subscriptionUtils.ts`:
+
 - `canCancelSubscription(sub: MySubscription): boolean`
 - `getSubscriptionDisplayInfo(sub, tierDisplayNames): { currentTierDisplayName, hasScheduledChange, nextTierDisplayName, effectiveAt, currentTierActiveUntil }`
 - `isCancelledButActive(sub: MySubscription): boolean`
@@ -68,12 +71,14 @@ These belong at `packages/mobile/src/domain/services/subscriptionService.ts` as 
 Spec: [`design.md` § PaymentsPort](../../11-payments-subscriptions/design.md), satisfies AC 2.1, 2.2, 2.7, 2.8, 7.3, 8.1.
 
 **Rewrite** `packages/mobile/src/domain/ports/payments.port.ts` to the new shape (see design.md for full interface):
+
 - `isApplePaySupported(): Promise<boolean>`
 - `collectApplePayPaymentMethod(input: CollectApplePayPaymentMethodInput): Promise<Result<{ paymentMethodId: string }, PaymentError>>`
 - `confirm3DS(clientSecret: string): Promise<Result<void, PaymentError>>`
 - `PaymentError` shape: `{ kind: 'cancelled' | 'platform_unavailable' | 'no_payment_methods' | 'stripe_error' | 'unknown', code: string | null, message: string }`
 
 **Implement** `StripeApplePayAdapter` at `packages/mobile/src/adapters/payments/stripe.adapter.ts`:
+
 - Uses `@stripe/stripe-react-native`'s `usePlatformPay()` hook for `isPlatformPaySupported` + `createPlatformPayPaymentMethod`
 - For 3DS: uses Stripe SDK's `handleNextAction(clientSecret)`
 - Maps Stripe SDK error codes to `PaymentError.kind`:
@@ -84,6 +89,7 @@ Spec: [`design.md` § PaymentsPort](../../11-payments-subscriptions/design.md), 
   - Unknown → `'unknown'`
 
 **Implement** `MockPaymentsAdapter` at `packages/mobile/src/adapters/payments/__tests__/mock.adapter.ts`:
+
 - Configurable per-test: pass `{ supported: true, response: { paymentMethodId: 'pm_test_…' } }` or `{ response: { kind: 'cancelled' } }` etc.
 - For 3DS: configurable success/failure.
 
@@ -116,7 +122,7 @@ interface ApiPort {
 export type CreateSubscriptionInput = {
   tier_name: SubscriptionTierName;
   billing_cycle: BillingCycle;
-  payment_method_id?: string;     // optional
+  payment_method_id?: string; // optional
   use_trial: boolean;
   platform?: "ios" | "android";
 };
@@ -141,11 +147,13 @@ export type CreateSubscriptionResult = {
 ```
 
 **Implement** in `packages/mobile/src/adapters/api/sst-api.adapter.ts`:
+
 - `getSubscriptionTiers`: `GET /subscription-tiers`, unwrap `{ data }`, transform decimal-string fields to numbers
 - `getMySubscription`: `GET /subscriptions/me`, unwrap `{ data }`, no transformation needed (camelCase wire match)
 - `createSubscription`: update body to optionally omit `payment_method_id`; type the response with the new discriminators
 
 **Implement** in `packages/mobile/src/adapters/api/__tests__/in-memory-api.adapter.ts`:
+
 - Maintain an internal `tiers: SubscriptionTier[]` + `subscriptionsByUser: Map<string, MySubscription>` state
 - `getSubscriptionTiers` returns the in-memory list
 - `getMySubscription` returns the row for the current user or a synthetic free shape
@@ -159,6 +167,7 @@ export type CreateSubscriptionResult = {
 Spec: [`design.md` § Subscription state (mobile)](../../11-payments-subscriptions/design.md), satisfies AC 5.1, 5.2, 5.6.
 
 Create:
+
 - `packages/mobile/src/ui/hooks/useSubscriptionTiers.ts` — wraps `api.getSubscriptionTiers`. Stale-time 10 minutes. Key `['subscription-tiers']`.
 - `packages/mobile/src/ui/hooks/useMySubscription.ts` — wraps `api.getMySubscription`. Stale-time 2 minutes. Key `['user-subscription', userId]`. Requires `userId`.
 - `packages/mobile/src/ui/hooks/useCreateSubscription.ts` — wraps `api.createSubscription`. `onSuccess` invalidates `['user-subscription']` + `['user-profile']` + `['profile-data']` (prefix match).
@@ -172,13 +181,13 @@ Spec: [`design.md` § UI structure](../../11-payments-subscriptions/design.md), 
 
 Port each of these 1:1 from legacy. Layouts MUST match legacy visually (spacing, colours, copy, button placement). Use the V2 theme tokens at `packages/mobile/src/ui/theme/tokens.ts` (port colours/spacing from legacy `constants/colors.ts` + `constants/theme.ts` if missing).
 
-| V2 path | Legacy reference | Behaviour |
-|---|---|---|
-| `ui/components/subscription/SubscriptionCard.tsx` | `components/subscription/SubscriptionCard.tsx` | Single-column user tier card. Pure presenter. Props: `tier`, `billingCycle`, `isCurrent`, `showTrialBanner`, `trialBannerText`, `onPress`, `disabled`, `getFeaturesList(tier, isTrainer)`, `isTrainer` |
-| `ui/components/subscription/TrainerSubscriptionCard.tsx` | `components/subscription/TrainerSubscriptionCard.tsx` | Dual-column Standard/Pro card. Pure presenter. Props: `standardTier`, `proTier`, `billingCycle`, `isStandardCurrent`, `isProCurrent`, `showProTrialBanner`, `trialBannerText`, `onStandardPress`, `onProPress`, `disabled` |
-| `ui/components/subscription/PaymentMethodForm.tsx` | `components/payment/PaymentMethodForm.tsx` | Apple Pay trigger. Uses `PaymentsPort` (not direct Stripe SDK). Props: `amount`, `currency`, `billingCycle`, `trialDuration`, `isTrialEligible`, `recurringAmount`, `isProcessing`, `shouldTrigger`, `onPaymentMethodReady`, `onError`. Renders nothing on success path (component-as-trigger). Renders error state inline on Android / no-wallet. |
-| `ui/components/subscription/CancelSubscriptionModal.tsx` | (inline in legacy selection screen, lines 567–636) | Confirmation modal. Props: `subscriptionEndsAt`, `onConfirm`, `onDismiss`, `isProcessing` |
-| `ui/components/subscription/CurrentSubscriptionStatusCard.tsx` | (inline in legacy selection screen, lines 373–414) | "Current: <tier>" or "Cancelled: <tier> ends <date>" status header. Includes scheduled-change indicator. |
+| V2 path                                                        | Legacy reference                                      | Behaviour                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ui/components/subscription/SubscriptionCard.tsx`              | `components/subscription/SubscriptionCard.tsx`        | Single-column user tier card. Pure presenter. Props: `tier`, `billingCycle`, `isCurrent`, `showTrialBanner`, `trialBannerText`, `onPress`, `disabled`, `getFeaturesList(tier, isTrainer)`, `isTrainer`                                                                                                                                             |
+| `ui/components/subscription/TrainerSubscriptionCard.tsx`       | `components/subscription/TrainerSubscriptionCard.tsx` | Dual-column Standard/Pro card. Pure presenter. Props: `standardTier`, `proTier`, `billingCycle`, `isStandardCurrent`, `isProCurrent`, `showProTrialBanner`, `trialBannerText`, `onStandardPress`, `onProPress`, `disabled`                                                                                                                         |
+| `ui/components/subscription/PaymentMethodForm.tsx`             | `components/payment/PaymentMethodForm.tsx`            | Apple Pay trigger. Uses `PaymentsPort` (not direct Stripe SDK). Props: `amount`, `currency`, `billingCycle`, `trialDuration`, `isTrialEligible`, `recurringAmount`, `isProcessing`, `shouldTrigger`, `onPaymentMethodReady`, `onError`. Renders nothing on success path (component-as-trigger). Renders error state inline on Android / no-wallet. |
+| `ui/components/subscription/CancelSubscriptionModal.tsx`       | (inline in legacy selection screen, lines 567–636)    | Confirmation modal. Props: `subscriptionEndsAt`, `onConfirm`, `onDismiss`, `isProcessing`                                                                                                                                                                                                                                                          |
+| `ui/components/subscription/CurrentSubscriptionStatusCard.tsx` | (inline in legacy selection screen, lines 373–414)    | "Current: <tier>" or "Cancelled: <tier> ends <date>" status header. Includes scheduled-change indicator.                                                                                                                                                                                                                                           |
 
 **Component tests**: pure component tests using `@testing-library/react-native`. No mocking of hooks (presenters are hookless). Snapshot tests for visual regression on key states (current, trial-eligible, cancelled-but-active, scheduled-change).
 
@@ -191,6 +200,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 **Legacy reference**: `app/(auth)/subscription-selection.tsx` (1853 lines — container + presenter live in the same file; you split them).
 
 **Container responsibilities** (see design.md § Container responsibilities for the full state machine):
+
 - Fetch tiers (`useSubscriptionTiers`) + current sub (`useMySubscription`)
 - Manage role toggle (`'user' | 'trainer'`) — auto-default from `profile.role`
 - Manage billing cycle (`'monthly' | 'yearly'`) — auto-default from current sub if exists
@@ -202,7 +212,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
   - If `free` → no-op
   - Otherwise set `selectedTierForPayment = tier` → Apple Pay sheet auto-triggers
 - Handle `onPaymentMethodReady(paymentMethodId)`:
-  - Compute trial eligibility (premium → user-trial, _pro tiers → trainer-trial, others → none; reinstating cancelled-still-in-trial preserves remaining days)
+  - Compute trial eligibility (premium → user-trial, \_pro tiers → trainer-trial, others → none; reinstating cancelled-still-in-trial preserves remaining days)
   - Call `createSubscription({ tier_name, billing_cycle, payment_method_id, use_trial })`
   - On `requires_action: true` → call `payments.confirm3DS(clientSecret)`; on success continue; on failure → alert + reset
   - On success → invalidate queries + `router.push('/(auth)/success')`
@@ -213,6 +223,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 - Handle role/billing toggle changes — reset `selectedTierForPayment` on role change
 
 **Presenter**: pure. Receives all data via props. Renders:
+
 - Header (back button, "Choose your plan" title)
 - Processing overlay (when `isProcessingSubscription`)
 - Role toggle (User / Trainer)
@@ -228,6 +239,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 **Legacy reference**: `app/subscription-management.tsx` (560 lines).
 
 **Container responsibilities**:
+
 - Fetch current sub (`useMySubscription`)
 - Derive `canUpgrade` (basic → premium), `canDowngrade` (premium → basic), `canCancel` (paid + active/trialing + not already cancelled). **Note: this screen handles user tiers ONLY**; trainer changes route via Selection.
 - `handleUpgrade(tier)` → confirmation Alert → `createSubscription({ tier_name, billing_cycle })` with NO payment_method_id → success alert
@@ -235,6 +247,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 - `handleCancel` → confirmation Alert (trial-aware wording) → `cancelSubscription({})` → success alert with end date
 
 **Presenter**: pure. Renders:
+
 - Header (back button, "Subscription Management")
 - Current Plan card with badges (Active / Trial / Cancelled)
 - Plan metadata rows (next billing date / access ends / trial ends / billing cycle / client slots for trainer)
@@ -248,6 +261,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 **Legacy reference**: `app/(auth)/success.tsx` (203 lines).
 
 **Container responsibilities**:
+
 - Fetch current sub (`useMySubscription`)
 - Derive benefits list from `subscriptionData.tier_name` (legacy `getSubscriptionBenefits`)
 - Derive success message from tier (legacy `getSuccessMessage`)
@@ -255,6 +269,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 - Handle "Manage Clients" (trainer tiers only) → `router.replace('/(tabs)/clients')` — even though Clients tab is M8, the route stub should exist
 
 **Presenter**: pure. Renders:
+
 - Title "Subscription Activated!"
 - Tier-specific success message
 - "What you now have access to:" benefits list
@@ -264,6 +279,7 @@ Spec: [`design.md` § UI structure > Container responsibilities](../../11-paymen
 #### Expo Router screen wrappers (thin)
 
 Create three thin route files that just render the container:
+
 - `packages/mobile/app/(auth)/subscription-selection.tsx` → `<SubscriptionSelectionContainer />`
 - `packages/mobile/app/subscription-management.tsx` → `<SubscriptionManagementContainer />`
 - `packages/mobile/app/(auth)/success.tsx` → `<SubscriptionSuccessContainer />`
@@ -356,24 +372,24 @@ packages/mobile/src/ui/
 
 Read each of these in legacy `persistence-mobile/` to understand the proven behaviour. **Do not copy architecture** (legacy uses direct Supabase queries + hook-heavy patterns; V2 is ports/adapters). Do copy: flows, business logic, copy strings, layouts, edge-case handling.
 
-| Legacy file | Lines | What it tells you |
-|---|---|---|
-| `app/(auth)/subscription-selection.tsx` | 1853 | The full buy/cancel/change UX state machine. Container responsibilities are lines 639–1053; presenter is lines 79–564; cancel modal is lines 567–636. |
-| `app/subscription-management.tsx` | 560 | Smaller management surface with upgrade/downgrade/cancel buttons. Container lines 255–415; presenter lines 22–253. |
-| `app/(auth)/success.tsx` | 203 | Post-payment success landing. Container + presenter both small. |
-| `components/payment/PaymentMethodForm.tsx` | 387 | Apple Pay trigger via `usePlatformPay`. Cart-item construction with trial breakdown. Error handling for cancellation. |
-| `components/subscription/SubscriptionCard.tsx` | 222 | Single-tier card layout. |
-| `components/subscription/TrainerSubscriptionCard.tsx` | 357 | Dual-column Standard/Pro card layout. |
-| `components/subscription/ComparisonTable.tsx` | 351 | **Not used by the selection screen.** Skip the port; legacy includes it for a never-shipped path. |
-| `lib/utils/subscriptionUtils.ts` | (not yet read) | Domain helpers — port to `domain/services/subscriptionService.ts`. |
-| `hooks/api/usePostCreateStripeSubscription.ts` | 91 | The legacy mutation hook. V2 replaces with `useCreateSubscription` + `ApiPort.createSubscription`. |
-| `hooks/api/usePostCancelSubscription.ts` | (not yet read) | Legacy cancel hook → V2 `useCancelSubscription`. |
-| `hooks/api/usePostUpgradeSubscription.ts` | 58 | Legacy upgrade hook → V2 unified into `useCreateSubscription` with no `payment_method_id`. |
-| `hooks/api/usePostDowngradeSubscription.ts` | 54 | Legacy downgrade hook → V2 unified into `useCreateSubscription` with no `payment_method_id`. |
-| `hooks/api/useGetSubscriptionTiers.ts` | 25 | Legacy direct Supabase select → V2 `useSubscriptionTiers` + `ApiPort.getSubscriptionTiers`. |
-| `hooks/api/useGetUserSubscription.ts` | 30 | Legacy view read → V2 `useMySubscription` + `ApiPort.getMySubscription`. |
-| `hooks/api/useGetTrialEligibility.ts` | 43 | Legacy direct profile read → V2 trial flags fold into `MySubscription` response. No separate hook. |
-| `constants/colors.ts`, `constants/theme.ts` | — | Theme tokens reference. Match or evolve in V2 tokens file. |
+| Legacy file                                           | Lines          | What it tells you                                                                                                                                     |
+| ----------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/(auth)/subscription-selection.tsx`               | 1853           | The full buy/cancel/change UX state machine. Container responsibilities are lines 639–1053; presenter is lines 79–564; cancel modal is lines 567–636. |
+| `app/subscription-management.tsx`                     | 560            | Smaller management surface with upgrade/downgrade/cancel buttons. Container lines 255–415; presenter lines 22–253.                                    |
+| `app/(auth)/success.tsx`                              | 203            | Post-payment success landing. Container + presenter both small.                                                                                       |
+| `components/payment/PaymentMethodForm.tsx`            | 387            | Apple Pay trigger via `usePlatformPay`. Cart-item construction with trial breakdown. Error handling for cancellation.                                 |
+| `components/subscription/SubscriptionCard.tsx`        | 222            | Single-tier card layout.                                                                                                                              |
+| `components/subscription/TrainerSubscriptionCard.tsx` | 357            | Dual-column Standard/Pro card layout.                                                                                                                 |
+| `components/subscription/ComparisonTable.tsx`         | 351            | **Not used by the selection screen.** Skip the port; legacy includes it for a never-shipped path.                                                     |
+| `lib/utils/subscriptionUtils.ts`                      | (not yet read) | Domain helpers — port to `domain/services/subscriptionService.ts`.                                                                                    |
+| `hooks/api/usePostCreateStripeSubscription.ts`        | 91             | The legacy mutation hook. V2 replaces with `useCreateSubscription` + `ApiPort.createSubscription`.                                                    |
+| `hooks/api/usePostCancelSubscription.ts`              | (not yet read) | Legacy cancel hook → V2 `useCancelSubscription`.                                                                                                      |
+| `hooks/api/usePostUpgradeSubscription.ts`             | 58             | Legacy upgrade hook → V2 unified into `useCreateSubscription` with no `payment_method_id`.                                                            |
+| `hooks/api/usePostDowngradeSubscription.ts`           | 54             | Legacy downgrade hook → V2 unified into `useCreateSubscription` with no `payment_method_id`.                                                          |
+| `hooks/api/useGetSubscriptionTiers.ts`                | 25             | Legacy direct Supabase select → V2 `useSubscriptionTiers` + `ApiPort.getSubscriptionTiers`.                                                           |
+| `hooks/api/useGetUserSubscription.ts`                 | 30             | Legacy view read → V2 `useMySubscription` + `ApiPort.getMySubscription`.                                                                              |
+| `hooks/api/useGetTrialEligibility.ts`                 | 43             | Legacy direct profile read → V2 trial flags fold into `MySubscription` response. No separate hook.                                                    |
+| `constants/colors.ts`, `constants/theme.ts`           | —              | Theme tokens reference. Match or evolve in V2 tokens file.                                                                                            |
 
 ## Inspector Brad expectations
 

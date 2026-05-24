@@ -7,10 +7,12 @@ End-to-end verification walkthrough for Milestone 10 — Subscriptions & Payment
 1. `git checkout feat/m10-integration` (or the shared milestone branch if running pre-merge integration)
 
 2. **Backend** (against local dev OR staging):
+
    ```
    bun install
    bun run dev   # local — wait for the "Ready!" banner
    ```
+
    OR test directly against staging at `https://api.staging.persistence.evans-software-solutions.com`.
 
 3. **Stripe test mode**:
@@ -25,11 +27,13 @@ End-to-end verification walkthrough for Milestone 10 — Subscriptions & Payment
 5. **Database**: ensure the target Postgres (Supabase) has the M0–M9 schema + seeded `subscription_tiers` rows. If empty, run the subscription_tiers seed.
 
 6. **Mobile**:
+
    ```
    cd packages/mobile
    bun install
    bun run start
    ```
+
    Open in iOS simulator (NOT Android — buy flow requires Apple Pay).
 
 7. Confirm `.env` has:

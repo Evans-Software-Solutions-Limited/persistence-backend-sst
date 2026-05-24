@@ -31,7 +31,11 @@ export function getSubscriptionBenefits(
     },
   ];
 
-  if (tier.includes("trainer") || tier.includes("business") || tier.includes("enterprise")) {
+  if (
+    tier.includes("trainer") ||
+    tier.includes("business") ||
+    tier.includes("enterprise")
+  ) {
     benefits.push({
       icon: "people",
       title: "Client Management",

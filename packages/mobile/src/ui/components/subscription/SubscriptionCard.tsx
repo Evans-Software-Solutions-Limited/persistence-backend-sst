@@ -29,10 +29,7 @@ export interface SubscriptionCardProps {
   trialBannerText?: string;
   onPress: () => void;
   disabled?: boolean;
-  getFeaturesList: (
-    tier: SubscriptionTier,
-    isTrainer: boolean,
-  ) => string[];
+  getFeaturesList: (tier: SubscriptionTier, isTrainer: boolean) => string[];
   isTrainer?: boolean;
 }
 
@@ -74,11 +71,9 @@ export function SubscriptionCard({
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>{tier.displayName}</Text>
-          {isTrainer &&
-            clientSlots !== null &&
-            clientSlots !== undefined && (
-              <Text style={styles.clientSlots}>{clientSlots} client slots</Text>
-            )}
+          {isTrainer && clientSlots !== null && clientSlots !== undefined && (
+            <Text style={styles.clientSlots}>{clientSlots} client slots</Text>
+          )}
         </View>
         <View style={styles.priceContainer}>
           {billingCycle === "yearly" && yearlySavings > 0 && (
@@ -113,7 +108,10 @@ export function SubscriptionCard({
 
       <View style={styles.subscribeButtonContainer}>
         <TouchableOpacity
-          style={[styles.subscribeButton, isCurrent && styles.subscribeButtonCurrent]}
+          style={[
+            styles.subscribeButton,
+            isCurrent && styles.subscribeButtonCurrent,
+          ]}
           onPress={onPress}
           disabled={disabled}
           activeOpacity={0.7}

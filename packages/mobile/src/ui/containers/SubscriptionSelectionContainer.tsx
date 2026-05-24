@@ -148,8 +148,7 @@ export function SubscriptionSelectionContainer() {
         tierName: tierToProcess,
         isReinstatingCurrentTier,
         subscription: subscriptionData,
-        isTrialEligibleUser:
-          subscriptionData?.isEligibleForUserTrial ?? false,
+        isTrialEligibleUser: subscriptionData?.isEligibleForUserTrial ?? false,
         isTrialEligibleTrainer:
           subscriptionData?.isEligibleForTrainerTrial ?? false,
       });
@@ -172,11 +171,9 @@ export function SubscriptionSelectionContainer() {
         if (response.requiresAction && response.clientSecret) {
           const result = await payments.confirm3DS(response.clientSecret);
           if (!result.ok) {
-            Alert.alert(
-              "Payment Authentication Failed",
-              result.error.message,
-              [{ text: "OK" }],
-            );
+            Alert.alert("Payment Authentication Failed", result.error.message, [
+              { text: "OK" },
+            ]);
             setIsProcessingSubscription(false);
             return;
           }
@@ -291,8 +288,7 @@ export function SubscriptionSelectionContainer() {
       tierName: selectedTierForPayment,
       isReinstatingCurrentTier,
       subscription: subscriptionData,
-      isTrialEligibleUser:
-        subscriptionData?.isEligibleForUserTrial ?? false,
+      isTrialEligibleUser: subscriptionData?.isEligibleForUserTrial ?? false,
       isTrialEligibleTrainer:
         subscriptionData?.isEligibleForTrainerTrial ?? false,
     });

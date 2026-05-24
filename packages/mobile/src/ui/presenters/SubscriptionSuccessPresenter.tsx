@@ -38,8 +38,13 @@ export interface SubscriptionSuccessPresenterProps {
 export function SubscriptionSuccessPresenter(
   props: SubscriptionSuccessPresenterProps,
 ) {
-  const { successMessage, benefits, isTrainerTier, onGoToHome, onManageClients } =
-    props;
+  const {
+    successMessage,
+    benefits,
+    isTrainerTier,
+    onGoToHome,
+    onManageClients,
+  } = props;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -63,7 +68,11 @@ export function SubscriptionSuccessPresenter(
                   {/* The Ionicons name type is loose; legacy uses
                       `as any` here. */}
                   <Ionicons
-                    name={benefit.icon as React.ComponentProps<typeof Ionicons>["name"]}
+                    name={
+                      benefit.icon as React.ComponentProps<
+                        typeof Ionicons
+                      >["name"]
+                    }
                     size={24}
                     color={Colors.primary.DEFAULT}
                   />

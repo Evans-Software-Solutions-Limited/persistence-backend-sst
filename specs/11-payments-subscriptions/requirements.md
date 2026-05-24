@@ -21,24 +21,24 @@ Eight named tiers across a role toggle. The free tier is the default starting st
 
 ### User-facing tiers
 
-| `tier_name` | `display_name` | Trial | Notes |
-|---|---|---|---|
-| `free` | Free | n/a | Default starting state. Limited workouts, no AI access. |
-| `basic` | Basic | none | Limited monthly workouts, 1 AI workout/month |
-| `premium` | Premium | **7-day** | Unlimited workouts, 6 AI workouts/month, Reps Gym Buddy |
+| `tier_name` | `display_name` | Trial     | Notes                                                   |
+| ----------- | -------------- | --------- | ------------------------------------------------------- |
+| `free`      | Free           | n/a       | Default starting state. Limited workouts, no AI access. |
+| `basic`     | Basic          | none      | Limited monthly workouts, 1 AI workout/month            |
+| `premium`   | Premium        | **7-day** | Unlimited workouts, 6 AI workouts/month, Reps Gym Buddy |
 
 ### Trainer-facing tiers
 
 Three "sizes" × two levels each = six trainer tiers. All have client slot allowances + analytics + reporting; all Pro variants additionally include AI Buddy and a 14-day trial.
 
-| `tier_name` | `display_name` | Trial | Notes |
-|---|---|---|---|
-| `individual_trainer_standard` | Individual Trainer (Standard) | none | Smallest client slot count |
-| `individual_trainer_pro` | Individual Trainer (Pro) | **14-day** | + AI Buddy + AI supported reporting |
-| `small_business_standard` | Small Business (Standard) | none | Mid client slot count |
-| `small_business_pro` | Small Business (Pro) | **14-day** | + AI Buddy + AI supported reporting |
-| `medium_enterprise_standard` | Medium / Enterprise (Standard) | none | Largest client slot count |
-| `medium_enterprise_pro` | Medium / Enterprise (Pro) | **14-day** | + AI Buddy + AI supported reporting |
+| `tier_name`                   | `display_name`                 | Trial      | Notes                               |
+| ----------------------------- | ------------------------------ | ---------- | ----------------------------------- |
+| `individual_trainer_standard` | Individual Trainer (Standard)  | none       | Smallest client slot count          |
+| `individual_trainer_pro`      | Individual Trainer (Pro)       | **14-day** | + AI Buddy + AI supported reporting |
+| `small_business_standard`     | Small Business (Standard)      | none       | Mid client slot count               |
+| `small_business_pro`          | Small Business (Pro)           | **14-day** | + AI Buddy + AI supported reporting |
+| `medium_enterprise_standard`  | Medium / Enterprise (Standard) | none       | Largest client slot count           |
+| `medium_enterprise_pro`       | Medium / Enterprise (Pro)      | **14-day** | + AI Buddy + AI supported reporting |
 
 Tier names + display names + features + Stripe price IDs are stored in the `subscription_tiers` table (see [`packages/db/src/schema.ts:241`](../../packages/db/src/schema.ts)). The mobile app reads this catalog via `GET /subscription-tiers` — no hard-coding.
 

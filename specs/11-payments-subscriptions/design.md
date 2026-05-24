@@ -26,7 +26,11 @@ export type SubscriptionTierName =
   | "medium_enterprise_standard"
   | "medium_enterprise_pro";
 
-export type SubscriptionRole = "user" | "personal_trainer" | "physiotherapist" | "admin";
+export type SubscriptionRole =
+  | "user"
+  | "personal_trainer"
+  | "physiotherapist"
+  | "admin";
 
 export type SubscriptionStatus =
   | "active"
@@ -39,7 +43,12 @@ export type SubscriptionStatus =
 
 export type BillingCycle = "monthly" | "yearly";
 
-export type ChangeType = "new" | "upgrade" | "downgrade" | "reinstate" | "cycle_change";
+export type ChangeType =
+  | "new"
+  | "upgrade"
+  | "downgrade"
+  | "reinstate"
+  | "cycle_change";
 
 /**
  * Catalog entry. Mirrors the `subscription_tiers` table.
@@ -48,11 +57,11 @@ export interface SubscriptionTier {
   tierName: SubscriptionTierName;
   displayName: string;
   description: string | null;
-  priceMonthly: number;          // pounds (e.g. 9.99) — wire decimal string parsed to number
+  priceMonthly: number; // pounds (e.g. 9.99) — wire decimal string parsed to number
   priceYearly: number | null;
-  currency: string;              // ISO-4217, default "GBP"
+  currency: string; // ISO-4217, default "GBP"
   features: Record<string, unknown>;
-  workoutLimit: number | null;   // null = unlimited
+  workoutLimit: number | null; // null = unlimited
   aiAccess: boolean;
   aiWorkoutLimit: number;
   gymBuddyAccess: boolean;
@@ -72,15 +81,15 @@ export interface SubscriptionTier {
  */
 export interface MySubscription {
   // From user_subscriptions
-  subscriptionId: string | null;     // null only for synthetic free shape
+  subscriptionId: string | null; // null only for synthetic free shape
   tierName: SubscriptionTierName;
   paymentStatus: SubscriptionStatus;
   billingCycle: BillingCycle | null;
-  startsAt: string;                  // ISO
+  startsAt: string; // ISO
   expiresAt: string | null;
   cancelledAt: string | null;
   trialEndsAt: string | null;
-  externalSubscriptionId: string | null;  // Stripe sub id
+  externalSubscriptionId: string | null; // Stripe sub id
 
   // From subscription_tiers (joined)
   tierDisplayName: string;
@@ -98,14 +107,14 @@ export interface MySubscription {
   // Trial eligibility (read from profiles.has_used_*_trial)
   hasUsedUserTrial: boolean;
   hasUsedTrainerTrial: boolean;
-  isEligibleForUserTrial: boolean;     // = !hasUsedUserTrial
-  isEligibleForTrainerTrial: boolean;  // = !hasUsedTrainerTrial
+  isEligibleForUserTrial: boolean; // = !hasUsedUserTrial
+  isEligibleForTrainerTrial: boolean; // = !hasUsedTrainerTrial
 
   // Scheduled-change marker (read from user_subscriptions.metadata.scheduled_change when present)
   scheduledChange: {
     nextTierName: SubscriptionTierName;
     nextDisplayName: string;
-    effectiveAt: string;               // ISO
+    effectiveAt: string; // ISO
   } | null;
 }
 
@@ -124,11 +133,11 @@ export interface CreateSubscriptionResult {
   trialEndsAt: string | null;
   nextBillingDate: string | null;
   paymentStatus: SubscriptionStatus;
-  clientSecret?: string;             // present iff requiresAction === true
+  clientSecret?: string; // present iff requiresAction === true
   reinstated?: boolean;
   changeType: ChangeType;
-  scheduled: boolean;                // true iff downgrade scheduled to period-end
-  effectiveAt: string | null;        // ISO when scheduled
+  scheduled: boolean; // true iff downgrade scheduled to period-end
+  effectiveAt: string | null; // ISO when scheduled
   isTrial: boolean;
 }
 
@@ -148,10 +157,10 @@ The legacy stub (`initializePaymentSheet` / `presentPaymentSheet`) is replaced. 
 // src/domain/ports/payments.port.ts
 
 export type PaymentErrorKind =
-  | "cancelled"            // user cancelled the Apple Pay sheet
+  | "cancelled" // user cancelled the Apple Pay sheet
   | "platform_unavailable" // Apple Pay not supported on this device / Android
-  | "no_payment_methods"   // Apple Wallet empty
-  | "stripe_error"         // Stripe SDK returned an error
+  | "no_payment_methods" // Apple Wallet empty
+  | "stripe_error" // Stripe SDK returned an error
   | "unknown";
 
 export interface PaymentError {
@@ -166,13 +175,13 @@ export interface ApplePayCartItem {
   paymentType: "Immediate" | "Recurring" | "Deferred";
   intervalCount?: number;
   intervalUnit?: "minute" | "hour" | "day" | "month" | "year";
-  startDate?: number;     // unix seconds — used to defer recurring start past trial
+  startDate?: number; // unix seconds — used to defer recurring start past trial
   isPending?: boolean;
 }
 
 export interface CollectApplePayPaymentMethodInput {
-  merchantCountryCode: string;     // "GB"
-  currencyCode: string;             // "GBP"
+  merchantCountryCode: string; // "GB"
+  currencyCode: string; // "GBP"
   cartItems: ApplePayCartItem[];
 }
 
@@ -255,7 +264,7 @@ interface ApiPort {
 export type CreateSubscriptionInput = {
   tier_name: SubscriptionTierName;
   billing_cycle: BillingCycle;
-  payment_method_id?: string;       // optional — required only for new-sub / 3DS / reinstate
+  payment_method_id?: string; // optional — required only for new-sub / 3DS / reinstate
   use_trial: boolean;
   platform?: "ios" | "android";
 };
@@ -327,19 +336,23 @@ Shipped in PR #70. M10 does not touch this endpoint. Period-end cancel by defaul
 
 ### Tanstack Query keys
 
-| Key | Purpose | Stale-time |
-|---|---|---|
-| `['subscription-tiers']` | Catalog | 10 minutes |
-| `['user-subscription', userId]` | Current user's `MySubscription` | 2 minutes |
+| Key                             | Purpose                         | Stale-time |
+| ------------------------------- | ------------------------------- | ---------- |
+| `['subscription-tiers']`        | Catalog                         | 10 minutes |
+| `['user-subscription', userId]` | Current user's `MySubscription` | 2 minutes  |
 
 ### Hooks
 
 ```typescript
 // ui/hooks/useSubscriptionTiers.ts
-export function useSubscriptionTiers() { /* wraps api.getSubscriptionTiers */ }
+export function useSubscriptionTiers() {
+  /* wraps api.getSubscriptionTiers */
+}
 
 // ui/hooks/useMySubscription.ts
-export function useMySubscription() { /* wraps api.getMySubscription */ }
+export function useMySubscription() {
+  /* wraps api.getMySubscription */
+}
 
 // ui/hooks/useCreateSubscription.ts
 export function useCreateSubscription() {
@@ -388,16 +401,16 @@ ui/components/subscription/
 
 ### Legacy → V2 mapping
 
-| Legacy path | V2 path | Notes |
-|---|---|---|
-| `app/(auth)/subscription-selection.tsx` | `ui/containers/SubscriptionSelectionContainer.tsx` + `ui/presenters/SubscriptionSelectionPresenter.tsx` | Container owns data + state machine; presenter is pure |
-| `app/subscription-management.tsx` | `ui/containers/SubscriptionManagementContainer.tsx` + `ui/presenters/SubscriptionManagementPresenter.tsx` | Same split |
-| `app/(auth)/success.tsx` | `ui/containers/SubscriptionSuccessContainer.tsx` + `ui/presenters/SubscriptionSuccessPresenter.tsx` | Reads `useMySubscription` to derive benefits list |
-| `components/subscription/SubscriptionCard.tsx` | `ui/components/subscription/SubscriptionCard.tsx` | Pure presenter |
-| `components/subscription/TrainerSubscriptionCard.tsx` | `ui/components/subscription/TrainerSubscriptionCard.tsx` | Pure presenter |
-| `components/subscription/ComparisonTable.tsx` | (not ported — replaced by the role-toggle + stacked cards model from legacy `subscription-selection.tsx`. Legacy `ComparisonTable.tsx` is referenced but unused in the legacy selection screen.) | Skip |
-| `components/payment/PaymentMethodForm.tsx` | `ui/components/subscription/PaymentMethodForm.tsx` | Uses `PaymentsPort` instead of direct Stripe SDK |
-| `lib/utils/subscriptionUtils.ts` | `domain/services/subscriptionService.ts` | Port `canCancelSubscription`, `getSubscriptionDisplayInfo`, `isCancelledButActive` as pure functions |
+| Legacy path                                           | V2 path                                                                                                                                                                                          | Notes                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `app/(auth)/subscription-selection.tsx`               | `ui/containers/SubscriptionSelectionContainer.tsx` + `ui/presenters/SubscriptionSelectionPresenter.tsx`                                                                                          | Container owns data + state machine; presenter is pure                                               |
+| `app/subscription-management.tsx`                     | `ui/containers/SubscriptionManagementContainer.tsx` + `ui/presenters/SubscriptionManagementPresenter.tsx`                                                                                        | Same split                                                                                           |
+| `app/(auth)/success.tsx`                              | `ui/containers/SubscriptionSuccessContainer.tsx` + `ui/presenters/SubscriptionSuccessPresenter.tsx`                                                                                              | Reads `useMySubscription` to derive benefits list                                                    |
+| `components/subscription/SubscriptionCard.tsx`        | `ui/components/subscription/SubscriptionCard.tsx`                                                                                                                                                | Pure presenter                                                                                       |
+| `components/subscription/TrainerSubscriptionCard.tsx` | `ui/components/subscription/TrainerSubscriptionCard.tsx`                                                                                                                                         | Pure presenter                                                                                       |
+| `components/subscription/ComparisonTable.tsx`         | (not ported — replaced by the role-toggle + stacked cards model from legacy `subscription-selection.tsx`. Legacy `ComparisonTable.tsx` is referenced but unused in the legacy selection screen.) | Skip                                                                                                 |
+| `components/payment/PaymentMethodForm.tsx`            | `ui/components/subscription/PaymentMethodForm.tsx`                                                                                                                                               | Uses `PaymentsPort` instead of direct Stripe SDK                                                     |
+| `lib/utils/subscriptionUtils.ts`                      | `domain/services/subscriptionService.ts`                                                                                                                                                         | Port `canCancelSubscription`, `getSubscriptionDisplayInfo`, `isCancelledButActive` as pure functions |
 
 ### Container responsibilities (Selection screen)
 
@@ -478,14 +491,14 @@ ui/components/subscription/
 
 Lives at the Hono parent layer (not Elysia) because signature verification requires the raw request bytes. See [`microservices/core/src/api.ts:117`](../../microservices/core/src/api.ts).
 
-| Event type | Handler | What it does |
-|---|---|---|
-| `customer.subscription.created` | `subscriptionCreated.ts` | Inserts or updates `user_subscriptions` row matching Stripe sub id |
-| `customer.subscription.updated` | `subscriptionUpdated.ts` | Updates tier / billing_cycle / payment_status; drives change-of-tier cleanup of the old sub when `metadata.old_stripe_subscription_id` resolves; rollback to original on `incomplete_expired` |
-| `customer.subscription.deleted` | `subscriptionDeleted.ts` | Flips local row to `cancelled` |
-| `invoice.payment_succeeded` | `invoicePaymentSucceeded.ts` | Updates `next_billing_date`; flips `trialing` → `active` after trial end |
-| `invoice.payment_failed` | `invoicePaymentFailed.ts` | Flips local row to `past_due` |
-| `customer.subscription.trial_will_end` | `trialWillEnd.ts` | (currently logs — future: push notification) |
+| Event type                             | Handler                      | What it does                                                                                                                                                                                  |
+| -------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `customer.subscription.created`        | `subscriptionCreated.ts`     | Inserts or updates `user_subscriptions` row matching Stripe sub id                                                                                                                            |
+| `customer.subscription.updated`        | `subscriptionUpdated.ts`     | Updates tier / billing_cycle / payment_status; drives change-of-tier cleanup of the old sub when `metadata.old_stripe_subscription_id` resolves; rollback to original on `incomplete_expired` |
+| `customer.subscription.deleted`        | `subscriptionDeleted.ts`     | Flips local row to `cancelled`                                                                                                                                                                |
+| `invoice.payment_succeeded`            | `invoicePaymentSucceeded.ts` | Updates `next_billing_date`; flips `trialing` → `active` after trial end                                                                                                                      |
+| `invoice.payment_failed`               | `invoicePaymentFailed.ts`    | Flips local row to `past_due`                                                                                                                                                                 |
+| `customer.subscription.trial_will_end` | `trialWillEnd.ts`            | (currently logs — future: push notification)                                                                                                                                                  |
 
 Idempotency dedup via `stripe_webhook_events` table (atomic INSERT before dispatch; release-on-failure for retries).
 
@@ -521,6 +534,7 @@ Any follow-up flow on a row carrying `metadata.old_stripe_subscription_id` is re
 ### Trigger contract reminder
 
 `update_subscription_limits_trigger` on `user_subscriptions` maintains:
+
 - `profiles.subscription_id`
 - `profiles.role` (auto-set to `personal_trainer` for `is_trainer_tier` subs)
 - `subscription_limits.{limit_type, limit_value, current_count, reset_date}`

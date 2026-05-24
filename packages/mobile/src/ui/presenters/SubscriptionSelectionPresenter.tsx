@@ -218,9 +218,7 @@ export function SubscriptionSelectionPresenter(
             isProCurrent={isProCurrent}
             showProTrialBanner={showProTrialBanner}
             trialBannerText="14-day free trial"
-            onStandardPress={() =>
-              std && onTierSelect(std.tierName)
-            }
+            onStandardPress={() => std && onTierSelect(std.tierName)}
             onProPress={() => pro && onTierSelect(pro.tierName)}
             disabled={!!selectedTierForPayment || isProcessingSubscription}
           />,
@@ -242,7 +240,10 @@ export function SubscriptionSelectionPresenter(
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea} testID="subscription-selection-loading">
+      <SafeAreaView
+        style={styles.safeArea}
+        testID="subscription-selection-loading"
+      >
         <View style={styles.loadingContainer}>
           <PLogoDrawLoader />
           <Text style={styles.loadingText}>
@@ -255,7 +256,10 @@ export function SubscriptionSelectionPresenter(
 
   if (errorMessage) {
     return (
-      <SafeAreaView style={styles.safeArea} testID="subscription-selection-error">
+      <SafeAreaView
+        style={styles.safeArea}
+        testID="subscription-selection-error"
+      >
         <View style={styles.errorContainer}>
           <Ionicons name="warning" size={48} color={Colors.error.DEFAULT} />
           <Text style={styles.errorTitle}>
@@ -301,7 +305,9 @@ export function SubscriptionSelectionPresenter(
         >
           <View style={styles.processingContainer}>
             <PLogoDrawLoader />
-            <Text style={styles.processingText}>Processing subscription...</Text>
+            <Text style={styles.processingText}>
+              Processing subscription...
+            </Text>
             <Text style={styles.processingSubtext}>Please wait</Text>
           </View>
         </View>
@@ -384,8 +390,7 @@ export function SubscriptionSelectionPresenter(
               />
             </TouchableOpacity>
             <Text style={styles.billingToggleLabel}>
-              Yearly{" "}
-              <Text style={styles.billingToggleSavings}>(Save 20%)</Text>
+              Yearly <Text style={styles.billingToggleSavings}>(Save 20%)</Text>
             </Text>
           </View>
 
@@ -395,8 +400,8 @@ export function SubscriptionSelectionPresenter(
                 <Text style={styles.trainerDescriptionText}>
                   The AI Buddy gives your clients the ability to enhance their
                   training experience with you, giving them support of needing
-                  to swap exercises out or ask any generic questions about
-                  their program.
+                  to swap exercises out or ask any generic questions about their
+                  program.
                 </Text>
                 {trainerTierCards.length > 0 ? (
                   <View style={styles.tierCards}>{trainerTierCards}</View>
@@ -503,7 +508,9 @@ export function getFeaturesList(
   }
 
   if (tier.features.gym_buddy || tier.tierName === "premium") {
-    features.push("Reps Gym Buddy - there to buddy you on your fitness journey");
+    features.push(
+      "Reps Gym Buddy - there to buddy you on your fitness journey",
+    );
   }
 
   return features;
@@ -523,10 +530,7 @@ export function getFeaturesList(
 export function deriveTrialEligibility(args: {
   tierName: SubscriptionTierName;
   isReinstatingCurrentTier: boolean;
-  subscription: Pick<
-    MySubscription,
-    "trialEndsAt" | "paymentStatus"
-  > | null;
+  subscription: Pick<MySubscription, "trialEndsAt" | "paymentStatus"> | null;
   isTrialEligibleUser: boolean;
   isTrialEligibleTrainer: boolean;
 }): { isTrialEligible: boolean; trialDuration: number | null } {
@@ -545,7 +549,11 @@ export function deriveTrialEligibility(args: {
     new Date(subscription!.trialEndsAt!) > new Date() &&
     isPaymentStatusTrialing;
 
-  if (isReinstatingCurrentTier && isInTrialPeriod && subscription?.trialEndsAt) {
+  if (
+    isReinstatingCurrentTier &&
+    isInTrialPeriod &&
+    subscription?.trialEndsAt
+  ) {
     const trialEndDate = new Date(subscription.trialEndsAt);
     const now = new Date();
     const remainingDays = Math.ceil(

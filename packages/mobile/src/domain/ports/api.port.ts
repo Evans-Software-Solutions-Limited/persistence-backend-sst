@@ -291,9 +291,7 @@ export interface ApiPort {
    *
    * Wraps `GET /subscription-tiers`. Spec: design.md § Backend endpoints.
    */
-  getSubscriptionTiers(): Promise<
-    Result<SubscriptionTier[], ApiError>
-  >;
+  getSubscriptionTiers(): Promise<Result<SubscriptionTier[], ApiError>>;
 
   /**
    * M10: fetch the current user's subscription joined with tier metadata

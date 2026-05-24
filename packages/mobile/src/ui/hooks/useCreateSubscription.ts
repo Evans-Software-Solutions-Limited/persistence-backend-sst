@@ -27,7 +27,11 @@ export function useCreateSubscription() {
   const { api } = useAdapters();
   const queryClient = useQueryClient();
 
-  return useMutation<CreateSubscriptionResult, ApiError, CreateSubscriptionInput>({
+  return useMutation<
+    CreateSubscriptionResult,
+    ApiError,
+    CreateSubscriptionInput
+  >({
     mutationFn: async (input) => {
       const result = await api.createSubscription(input);
       if (!result.ok) throw result.error;

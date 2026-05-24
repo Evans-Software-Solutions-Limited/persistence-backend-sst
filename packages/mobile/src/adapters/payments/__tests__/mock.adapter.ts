@@ -72,9 +72,7 @@ export class MockPaymentsAdapter implements PaymentsPort {
     return fail(this.nextCollectResponse.error);
   }
 
-  async confirm3DS(
-    clientSecret: string,
-  ): Promise<Result<void, PaymentError>> {
+  async confirm3DS(clientSecret: string): Promise<Result<void, PaymentError>> {
     this.confirm3DSCalls += 1;
     this.lastConfirm3DSSecret = clientSecret;
     if (this.nextConfirm3DSResponse.ok) {

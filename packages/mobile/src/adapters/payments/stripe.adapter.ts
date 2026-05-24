@@ -107,14 +107,13 @@ export class StripeApplePayAdapter implements PaymentsPort {
       return fail({
         kind: "unknown",
         code: null,
-        message: err instanceof Error ? err.message : "Failed to process Apple Pay.",
+        message:
+          err instanceof Error ? err.message : "Failed to process Apple Pay.",
       });
     }
   }
 
-  async confirm3DS(
-    clientSecret: string,
-  ): Promise<Result<void, PaymentError>> {
+  async confirm3DS(clientSecret: string): Promise<Result<void, PaymentError>> {
     try {
       const { error } = await handleNextAction(clientSecret);
       if (error) {
@@ -126,7 +125,9 @@ export class StripeApplePayAdapter implements PaymentsPort {
         kind: "unknown",
         code: null,
         message:
-          err instanceof Error ? err.message : "Failed to confirm 3DS challenge.",
+          err instanceof Error
+            ? err.message
+            : "Failed to confirm 3DS challenge.",
       });
     }
   }

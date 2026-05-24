@@ -80,10 +80,7 @@ export function TrainerSubscriptionCard({
   const proYearlySavings = proMonthlyPrice * 12 - (proTier?.priceYearly ?? 0);
 
   return (
-    <View
-      style={styles.card}
-      testID={`trainer-subscription-card-${baseName}`}
-    >
+    <View style={styles.card} testID={`trainer-subscription-card-${baseName}`}>
       <View style={styles.header}>
         <Text style={styles.title}>{displayName}</Text>
       </View>

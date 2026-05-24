@@ -1,4 +1,8 @@
-import { fireEvent, render as rawRender, screen } from "@testing-library/react-native";
+import {
+  fireEvent,
+  render as rawRender,
+  screen,
+} from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import config from "../../../../tamagui.config";
 import { SubscriptionSuccessPresenter } from "@/ui/presenters/SubscriptionSuccessPresenter";

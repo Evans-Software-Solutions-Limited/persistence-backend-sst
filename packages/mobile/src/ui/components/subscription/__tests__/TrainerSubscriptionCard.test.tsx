@@ -63,7 +63,10 @@ describe("TrainerSubscriptionCard", () => {
   });
 
   it("derives display name for individual_trainer family", () => {
-    const trainerStd = { ...STD, tierName: "individual_trainer_standard" as const };
+    const trainerStd = {
+      ...STD,
+      tierName: "individual_trainer_standard" as const,
+    };
     const trainerPro = { ...PRO, tierName: "individual_trainer_pro" as const };
     render(
       <TrainerSubscriptionCard
@@ -174,8 +177,12 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={onPro}
       />,
     );
-    fireEvent.press(screen.getByTestId("trainer-card-small_business_standard-standard"));
-    fireEvent.press(screen.getByTestId("trainer-card-small_business_standard-pro"));
+    fireEvent.press(
+      screen.getByTestId("trainer-card-small_business_standard-standard"),
+    );
+    fireEvent.press(
+      screen.getByTestId("trainer-card-small_business_standard-pro"),
+    );
     expect(onStd).toHaveBeenCalledTimes(1);
     expect(onPro).toHaveBeenCalledTimes(1);
   });

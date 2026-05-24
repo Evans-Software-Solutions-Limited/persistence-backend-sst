@@ -104,7 +104,9 @@ describe("SubscriptionSelectionPresenter — render states", () => {
         onRetry={onRetry}
       />,
     );
-    expect(screen.getByText("Failed to Load Subscription Options")).toBeTruthy();
+    expect(
+      screen.getByText("Failed to Load Subscription Options"),
+    ).toBeTruthy();
     expect(screen.getByText("Network down")).toBeTruthy();
     fireEvent.press(screen.getByTestId("subscription-selection-retry"));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -126,7 +128,9 @@ describe("SubscriptionSelectionPresenter — render states", () => {
       />,
     );
     expect(
-      screen.getByTestId("trainer-subscription-card-individual_trainer_standard"),
+      screen.getByTestId(
+        "trainer-subscription-card-individual_trainer_standard",
+      ),
     ).toBeTruthy();
   });
 
@@ -161,7 +165,9 @@ describe("SubscriptionSelectionPresenter — render states", () => {
         isProcessingSubscription
       />,
     );
-    expect(screen.getByTestId("subscription-selection-processing")).toBeTruthy();
+    expect(
+      screen.getByTestId("subscription-selection-processing"),
+    ).toBeTruthy();
   });
 });
 

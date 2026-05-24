@@ -30,9 +30,7 @@ describe("CancelSubscriptionModal", () => {
     );
     // The string contains the date; assertion is loose to tolerate
     // timezone shifts (15 vs 14 June).
-    expect(
-      screen.getByText(/(June|2026)/),
-    ).toBeTruthy();
+    expect(screen.getByText(/(June|2026)/)).toBeTruthy();
   });
 
   it("falls back to a generic phrase when end date is missing", () => {
@@ -43,9 +41,7 @@ describe("CancelSubscriptionModal", () => {
         isProcessing={false}
       />,
     );
-    expect(
-      screen.getByText(/end of your current billing period/),
-    ).toBeTruthy();
+    expect(screen.getByText(/end of your current billing period/)).toBeTruthy();
   });
 
   it("falls back when end date is malformed", () => {

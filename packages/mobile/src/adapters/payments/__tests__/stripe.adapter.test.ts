@@ -173,8 +173,8 @@ describe("StripeApplePayAdapter.collectApplePayPaymentMethod", () => {
         },
       ],
     });
-    const items = mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay
-      .cartItems;
+    const items =
+      mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay.cartItems;
     expect(items[0]).toMatchObject({
       paymentType: "Immediate",
       label: "7-day free trial",
@@ -208,8 +208,8 @@ describe("StripeApplePayAdapter.collectApplePayPaymentMethod", () => {
         },
       ],
     });
-    const item = mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay
-      .cartItems[0];
+    const item =
+      mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay.cartItems[0];
     expect(item.paymentType).toBe("Deferred");
     // Allow 5s drift for slow test machines.
     expect(item.deferredDate).toBeGreaterThanOrEqual(nowSec - 5);
@@ -306,8 +306,9 @@ describe("StripeApplePayAdapter.collectApplePayPaymentMethod", () => {
           },
         ],
       });
-      const item = mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay
-        .cartItems[0];
+      const item =
+        mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay
+          .cartItems[0];
       expect(item.intervalUnit).toBe(unit);
     }
   });
@@ -329,8 +330,8 @@ describe("StripeApplePayAdapter.collectApplePayPaymentMethod", () => {
         },
       ],
     });
-    const item = mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay
-      .cartItems[0];
+    const item =
+      mockCreatePlatformPayPaymentMethod.mock.calls[0][0].applePay.cartItems[0];
     expect(item.intervalCount).toBe(1);
     expect(item.intervalUnit).toBe("month");
   });
@@ -374,9 +375,7 @@ describe("StripeApplePayAdapter.confirm3DS", () => {
     const result = await adapter.confirm3DS("pi_test");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.message).toBe(
-        "Failed to confirm 3DS challenge.",
-      );
+      expect(result.error.message).toBe("Failed to confirm 3DS challenge.");
     }
   });
 });
@@ -407,9 +406,9 @@ describe("classifyStripeError", () => {
     expect(
       classifyStripeError("Failed", "No card configured in wallet").kind,
     ).toBe("no_payment_methods");
-    expect(
-      classifyStripeError("Failed", "Apple Wallet is empty").kind,
-    ).toBe("no_payment_methods");
+    expect(classifyStripeError("Failed", "Apple Wallet is empty").kind).toBe(
+      "no_payment_methods",
+    );
   });
 
   it("treats anything else with a code as stripe_error", () => {

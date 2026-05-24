@@ -35,7 +35,9 @@ describe("PaymentMethodForm — Android no-buy state", () => {
         payments={payments}
       />,
     );
-    expect(await screen.findByTestId("payment-form-android-state")).toBeTruthy();
+    expect(
+      await screen.findByTestId("payment-form-android-state"),
+    ).toBeTruthy();
     expect(
       screen.getByText(/Apple Pay is only available on iOS devices/),
     ).toBeTruthy();

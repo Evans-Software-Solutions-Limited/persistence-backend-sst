@@ -36,6 +36,7 @@ Spec: [`design.md` § Backend endpoints > GET /subscription-tiers](../../11-paym
 **Handler**: `microservices/core/src/application/subscriptions/tiers/subscriptionsTiersHandler.ts`
 
 **Behaviour**:
+
 - Method: `GET`
 - Path: `/subscription-tiers`
 - Auth: **none** (public). The auth-flow selection screen renders before sign-in.
@@ -43,11 +44,13 @@ Spec: [`design.md` § Backend endpoints > GET /subscription-tiers](../../11-paym
 - Response: `{ data: SubscriptionTier[] }` ordered by `price_monthly ASC`. Each row maps `subscription_tiers` columns to camelCase per Drizzle's `$inferSelect` — but emit as JSON with consistent field names matching the spec's `SubscriptionTier` type.
 
 **Repository**: `microservices/core/src/application/repositories/subscriptionTiersRepository.ts`
+
 - `listActive(): Promise<SubscriptionTier[]>`
 - Single query: `SELECT * FROM subscription_tiers WHERE is_active = true ORDER BY price_monthly ASC`
 - No userId filter — catalog is global.
 
 **Wire shape** (mirror in mobile's `InMemoryApiAdapter`):
+
 ```typescript
 {
   data: [
@@ -58,7 +61,9 @@ Spec: [`design.md` § Backend endpoints > GET /subscription-tiers](../../11-paym
       priceMonthly: 9.99,
       priceYearly: 95.88,
       currency: "GBP",
-      features: { /* JSONB */ },
+      features: {
+        /* JSONB */
+      },
       workoutLimit: 20,
       aiAccess: true,
       aiWorkoutLimit: 1,
@@ -68,14 +73,15 @@ Spec: [`design.md` § Backend endpoints > GET /subscription-tiers](../../11-paym
       analyticsAccess: false,
       exportAccess: false,
       stripePriceIdMonthly: "price_…",
-      stripePriceIdYearly: "price_…"
+      stripePriceIdYearly: "price_…",
     },
     /* ... more tiers ... */
-  ]
+  ];
 }
 ```
 
 **Edge cases**:
+
 - Empty catalog → returns `{ data: [] }` + 200 (not 404). Caller treats empty catalog as a deploy-misconfiguration issue, not a runtime error.
 - `is_active = false` rows excluded — they exist in legacy as the historical record.
 - Decimal handling: Drizzle returns `price_monthly` / `price_yearly` as decimal strings (e.g. `"9.99"`). Parse to `number` in the handler before emitting JSON.
@@ -89,6 +95,7 @@ Spec: [`design.md` § Backend endpoints > GET /subscriptions/me](../../11-paymen
 **Handler**: `microservices/core/src/application/subscriptions/me/subscriptionsMeHandler.ts`
 
 **Behaviour**:
+
 - Method: `GET`
 - Path: `/subscriptions/me`
 - Auth: **required** (JWT, via `requireAuth` middleware).
@@ -98,12 +105,14 @@ Spec: [`design.md` § Backend endpoints > GET /subscriptions/me](../../11-paymen
 **Repository**: extend `microservices/core/src/application/repositories/subscriptionRepository.ts` with `findForUser(userId: string): Promise<MySubscription>`.
 
 **Query logic**:
+
 - LEFT JOIN `user_subscriptions` on `profiles.id = user_subscriptions.user_id` (latest active row per user — use the partial unique index `user_subscriptions_active_unique` semantics)
 - INNER JOIN `subscription_tiers` on `tier_name`
 - Selects all the fields the `MySubscription` type lists
 - When no active `user_subscriptions` row: synthesise the response from `SELECT * FROM subscription_tiers WHERE tier_name = 'free'`, with `subscriptionId: null`, `paymentStatus: 'active'` (free tier is always "active"), null dates, `scheduledChange: null`.
 
 **Scheduled-change derivation** (AC 3.7):
+
 - Read `user_subscriptions.metadata.scheduled_change` if present. Shape:
   ```typescript
   metadata.scheduled_change: {
@@ -115,11 +124,13 @@ Spec: [`design.md` § Backend endpoints > GET /subscriptions/me](../../11-paymen
 - Resolve `next_display_name` from `subscription_tiers` lookup.
 
 **Trial-eligibility flags** (AC 5.5):
+
 - Read `profiles.has_used_user_trial` + `profiles.has_used_trainer_trial`.
 - `isEligibleForUserTrial: !hasUsedUserTrial`
 - `isEligibleForTrainerTrial: !hasUsedTrainerTrial`
 
 **Edge cases**:
+
 - Auth failure → 401 (handled by `requireAuth` middleware).
 - User exists in `profiles` but has no `user_subscriptions` row → synthesised free shape.
 - `subscription_tiers WHERE tier_name = 'free'` is missing → 500 with structured log (deploy misconfig).
@@ -133,12 +144,13 @@ Spec: [`design.md` § Backend endpoints > POST /subscriptions — extended](../.
 You are extending the existing `microservices/core/src/application/subscriptions/create/subscriptionsCreateHandler.ts`. **Read it end-to-end first.** PR #70 went through 8 Inspector Brad sweeps closing 14 findings; the patterns there are load-bearing.
 
 **Body validator change**:
+
 ```typescript
 // Before (PR #70):
-payment_method_id: t.String({ minLength: 1 })
+payment_method_id: t.String({ minLength: 1 });
 
 // After (M10):
-payment_method_id: t.Optional(t.String({ minLength: 1 }))
+payment_method_id: t.Optional(t.String({ minLength: 1 }));
 ```
 
 **Dispatch precedence** (handler enforces in order — see `design.md` § Backend endpoints > POST /subscriptions for full rules):
@@ -166,6 +178,7 @@ Add four fields to the success response (alongside the existing fields):
 ```
 
 **Discriminator derivation** (server-side, by dispatch branch):
+
 - New-sub path → `change_type: "new"`, `scheduled: false`, `effective_at: null`
 - Reinstate path → `change_type: "reinstate"`, `scheduled: false`, `effective_at: null` (reinstate is always immediate)
 - Change-of-tier where `new_price_monthly > current_price_monthly` → `change_type: "upgrade"`, `scheduled: false` (Stripe prorates + bills immediately on `proration_behavior: "always_invoice"`), `effective_at: null`
@@ -174,6 +187,7 @@ Add four fields to the success response (alongside the existing fields):
 - `is_trial`: `payment_status === "trialing"` (read from Stripe sub response after create/update).
 
 **Existing PR #70 behaviours that MUST be preserved**:
+
 - 14 Inspector Brad findings closed across 8 sweeps. Do not regress any of them. Especially:
   - Stale `requires_3d_secure: true` cleared on change-path
   - `platform` not clobbered when caller omits it
@@ -184,6 +198,7 @@ Add four fields to the success response (alongside the existing fields):
 - The webhook-driven cleanup pattern stays: change-of-tier NEVER cancels inline; `metadata.old_stripe_subscription_id` stamped on both new sub + local row; webhook handler drives the actual cancel-of-old (on `active`/`trialing`) or rollback (on `incomplete_expired`).
 
 **Tests to add**:
+
 - Optional `payment_method_id`: missing + active sub + different tier → change-path dispatch + 200
 - Optional `payment_method_id`: missing + no active sub → 422
 - Optional `payment_method_id`: missing + active sub + same tier + same cycle → 400

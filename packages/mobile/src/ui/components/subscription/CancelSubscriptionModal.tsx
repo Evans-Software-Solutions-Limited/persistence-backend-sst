@@ -55,11 +55,7 @@ export function CancelSubscriptionModal({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Ionicons
-              name="warning"
-              size={48}
-              color={Colors.warning.DEFAULT}
-            />
+            <Ionicons name="warning" size={48} color={Colors.warning.DEFAULT} />
             <Text style={styles.modalTitle}>Cancel Subscription?</Text>
           </View>
 
@@ -87,7 +83,9 @@ export function CancelSubscriptionModal({
               disabled={isProcessing}
               testID="cancel-modal-dismiss"
             >
-              <Text style={styles.modalButtonCancelText}>Keep Subscription</Text>
+              <Text style={styles.modalButtonCancelText}>
+                Keep Subscription
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, styles.modalButtonConfirm]}

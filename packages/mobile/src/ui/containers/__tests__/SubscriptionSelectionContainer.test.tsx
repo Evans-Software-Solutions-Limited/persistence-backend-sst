@@ -182,7 +182,9 @@ describe("SubscriptionSelectionContainer", () => {
 
     await act(async () => {
       // Simulate the user tapping the Subscribe CTA on the premium card.
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
 
     await waitFor(() => expect(api.createSubscriptionCalls).toBe(1));
@@ -192,7 +194,9 @@ describe("SubscriptionSelectionContainer", () => {
       paymentMethodId: "pm_buy",
       useTrial: true,
     });
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/(auth)/success"));
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/(auth)/success"),
+    );
   });
 
   it("3DS flow: requiresAction=true triggers payments.confirm3DS", async () => {
@@ -212,7 +216,9 @@ describe("SubscriptionSelectionContainer", () => {
     );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
 
     await waitFor(() => expect(payments.confirm3DSCalls).toBe(1));
@@ -240,7 +246,9 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
     await waitFor(() => expect(payments.confirm3DSCalls).toBe(1));
     await waitFor(() =>
@@ -268,7 +276,9 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
     // Adapter collect was called but no Payment Method Error alert.
     await waitFor(() => expect(payments.collectCalls).toBe(1));
@@ -293,7 +303,9 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
     await waitFor(() =>
       expect(alertSpy).toHaveBeenCalledWith(
@@ -433,9 +445,9 @@ describe("SubscriptionSelectionContainer", () => {
       fireEvent.press(screen.getByTestId("cancel-modal-confirm"));
     });
     await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Error"),
-      ).toBe(true),
+      expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
+        true,
+      ),
     );
   });
 
@@ -453,7 +465,9 @@ describe("SubscriptionSelectionContainer", () => {
     // Flip shouldFail AFTER initial data loads so only the create call fails.
     api.shouldFail = true;
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
     await waitFor(() =>
       expect(
@@ -501,7 +515,9 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
     });
     await waitFor(() =>
       expect(
@@ -571,7 +587,9 @@ describe("SubscriptionSelectionContainer", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByTestId("trainer-subscription-card-individual_trainer_standard"),
+        screen.getByTestId(
+          "trainer-subscription-card-individual_trainer_standard",
+        ),
       ).toBeTruthy(),
     );
   });
@@ -596,9 +614,7 @@ describe("SubscriptionSelectionContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(
-        screen.getByTestId(/^trainer-subscription-card/),
-      ).toBeTruthy(),
+      expect(screen.getByTestId(/^trainer-subscription-card/)).toBeTruthy(),
     );
   });
 

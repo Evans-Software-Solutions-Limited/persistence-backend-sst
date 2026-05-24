@@ -1,4 +1,1 @@
-export {
-  StripeApplePayAdapter,
-  classifyStripeError,
-} from "./stripe.adapter";
+export { StripeApplePayAdapter, classifyStripeError } from "./stripe.adapter";

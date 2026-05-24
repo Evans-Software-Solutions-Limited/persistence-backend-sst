@@ -122,9 +122,9 @@ export default function RootLayout() {
   // device. Mirrors legacy `persistence-mobile/app/_layout.tsx:95-97`
   // pattern.
   const stripePublishableKey =
-    (Constants.expoConfig?.extra?.stripePublishableKey as
-      | string
-      | undefined) ?? process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+    (Constants.expoConfig?.extra?.stripePublishableKey as string | undefined) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    "";
 
   // `GestureHandlerRootView` is required by react-native-gesture-handler
   // for any descendant `<GestureDetector>` to recognise touches. Phase 3a

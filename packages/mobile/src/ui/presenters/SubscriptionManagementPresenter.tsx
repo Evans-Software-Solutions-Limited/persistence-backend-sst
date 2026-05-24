@@ -102,7 +102,10 @@ export function SubscriptionManagementPresenter(
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea} testID="subscription-management-loading">
+      <SafeAreaView
+        style={styles.safeArea}
+        testID="subscription-management-loading"
+      >
         <View style={styles.loadingContainer}>
           <PLogoDrawLoader />
           <Text style={styles.loadingText}>
@@ -148,11 +151,17 @@ export function SubscriptionManagementPresenter(
               )}
             </View>
 
-            <Text style={styles.tierName}>{getTierDisplayName(currentTier)}</Text>
+            <Text style={styles.tierName}>
+              {getTierDisplayName(currentTier)}
+            </Text>
 
             {paymentStatus === "cancelled" && subscriptionEndsAt && (
               <View style={styles.infoRow}>
-                <Ionicons name="warning" size={16} color={Colors.warning.DEFAULT} />
+                <Ionicons
+                  name="warning"
+                  size={16}
+                  color={Colors.warning.DEFAULT}
+                />
                 <Text style={styles.infoText}>
                   Access ends: {formatDate(subscriptionEndsAt)}
                 </Text>
@@ -161,7 +170,11 @@ export function SubscriptionManagementPresenter(
 
             {trialEndsAt && paymentStatus !== "cancelled" && (
               <View style={styles.infoRow}>
-                <Ionicons name="gift" size={16} color={Colors.primary.DEFAULT} />
+                <Ionicons
+                  name="gift"
+                  size={16}
+                  color={Colors.primary.DEFAULT}
+                />
                 <Text style={styles.infoText}>
                   Trial ends: {formatDate(trialEndsAt)}
                 </Text>
@@ -183,7 +196,11 @@ export function SubscriptionManagementPresenter(
 
             {billingCycle && (
               <View style={styles.infoRow}>
-                <Ionicons name="repeat" size={16} color={Colors.text.secondary} />
+                <Ionicons
+                  name="repeat"
+                  size={16}
+                  color={Colors.text.secondary}
+                />
                 <Text style={styles.infoText}>
                   Billing:{" "}
                   {billingCycle.charAt(0).toUpperCase() + billingCycle.slice(1)}
@@ -191,14 +208,19 @@ export function SubscriptionManagementPresenter(
               </View>
             )}
 
-            {trainerClientLimit !== null && trainerClientLimit !== undefined && (
-              <View style={styles.infoRow}>
-                <Ionicons name="people" size={16} color={Colors.text.secondary} />
-                <Text style={styles.infoText}>
-                  Client slots: {trainerClientLimit}
-                </Text>
-              </View>
-            )}
+            {trainerClientLimit !== null &&
+              trainerClientLimit !== undefined && (
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="people"
+                    size={16}
+                    color={Colors.text.secondary}
+                  />
+                  <Text style={styles.infoText}>
+                    Client slots: {trainerClientLimit}
+                  </Text>
+                </View>
+              )}
           </View>
 
           {canUpgrade && (
@@ -259,7 +281,8 @@ export function SubscriptionManagementPresenter(
               <Text style={styles.actionTitle}>Subscription Cancelled</Text>
               <Text style={styles.actionDescription}>
                 Your subscription has been cancelled. You&apos;ll continue to
-                have access to all features until {formatDate(subscriptionEndsAt)}.
+                have access to all features until{" "}
+                {formatDate(subscriptionEndsAt)}.
               </Text>
             </View>
           )}

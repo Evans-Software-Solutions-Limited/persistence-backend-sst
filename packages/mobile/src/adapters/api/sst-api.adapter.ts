@@ -1023,7 +1023,9 @@ function parseDecimal(value: string | number): number {
   return typeof value === "number" ? value : Number.parseFloat(value);
 }
 
-export function mapSubscriptionTier(raw: WireSubscriptionTier): SubscriptionTier {
+export function mapSubscriptionTier(
+  raw: WireSubscriptionTier,
+): SubscriptionTier {
   return {
     tierName: raw.tierName,
     displayName: raw.displayName,
@@ -1081,7 +1083,8 @@ export function mapCreateSubscriptionResponse(
     // The wire type widens payment_status to `string` because the
     // backend's enum is the source of truth; cast at the boundary so
     // the domain shape stays strict.
-    paymentStatus: raw.payment_status as CreateSubscriptionResult["paymentStatus"],
+    paymentStatus:
+      raw.payment_status as CreateSubscriptionResult["paymentStatus"],
     changeType: raw.change_type,
     scheduled: raw.scheduled,
     effectiveAt: raw.effective_at,
