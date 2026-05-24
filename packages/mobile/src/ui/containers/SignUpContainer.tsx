@@ -38,13 +38,18 @@ export function SignUpContainer() {
       const { confirmationRequired } = await signUp(email, password);
       if (confirmationRequired) {
         setConfirmationSent(true);
+      } else {
+        // M10: post-sign-up routes through Subscription Selection so
+        // the user picks a tier before landing in the app. AuthGate
+        // whitelists this route for signed-in users.
+        router.push("/(auth)/subscription-selection");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, confirmPassword, signUp]);
+  }, [email, password, confirmPassword, signUp, router]);
 
   const handleOAuth = useCallback(
     async (provider: OAuthProvider) => {

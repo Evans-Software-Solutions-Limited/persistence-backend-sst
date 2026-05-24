@@ -68,12 +68,20 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inAppGroup = segments[0] === "(app)";
+    // M10: subscription-selection + success live under (auth) because
+    // they're rendered post-sign-up before the user has reached the
+    // app. AuthGate must NOT bounce signed-in users out of those
+    // screens — otherwise the auth-flow Selection card never gets
+    // its chance to appear before AuthGate redirects to home.
+    const segmentName = (segments as readonly string[])[1];
+    const inPostAuthSubscriptionFlow =
+      inAuthGroup &&
+      (segmentName === "subscription-selection" || segmentName === "success");
 
-    if (session && !inAppGroup) {
-      // Signed in but not in app (auth screen or root) — go to app.
-      // `/(app)` alone isn't typed any more now that the app group has no
-      // direct index (the home tab lives at `/(app)/(tabs)/index`).
-      // `/(app)/(tabs)` resolves to the tab navigator's first tab (home).
+    if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
+      // Signed in but not in app and not in the post-sign-up flow —
+      // go to app. `/(app)/(tabs)` resolves to the tab navigator's
+      // first tab (home).
       router.replace("/(app)/(tabs)");
     } else if (!session && !inAuthGroup) {
       // Not signed in and not on auth screen — go to sign-in
