@@ -31,7 +31,10 @@ import type {
   RecordResponseSummary,
   RestTimerState,
 } from "@/domain/ports/storage.port";
-import type { SyncStatus } from "@/domain/ports/sync.types";
+import type {
+  EntitlementVerdict,
+  SyncStatus,
+} from "@/domain/ports/sync.types";
 
 /**
  * In-memory storage adapter for testing.
@@ -80,10 +83,14 @@ export class InMemoryStorageAdapter implements StoragePort {
       maxRetries: 3,
       errorMessage: null,
       createdAt: new Date().toISOString(),
+      entitlementVerdict: null,
     });
   }
 
   getPendingMutations(): SyncQueueEntry[] {
+    // M10.6: parity with SQLite — `blocked_entitlement` is excluded.
+    // Those entries only re-enter the pool via `unblockEntries` (tier
+    // upgrade or explicit user retry) or get deleted via `discardEntries`.
     return this.queue.filter(
       (e) =>
         (e.status === "pending" || e.status === "failed") &&
@@ -117,12 +124,53 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
+    // M10.6: parity with SQLite — flip to blocked_entitlement and
+    // persist the verdict. `errorMessage` + `retryCount` untouched so
+    // the unblock path returns the row to pending with its budget intact.
+    const entry = this.queue.find((e) => e.id === id);
+    if (!entry) return;
+    entry.status = "blocked_entitlement";
+    entry.entitlementVerdict = { ...verdict };
+  }
+
+  getBlockedEntries(): SyncQueueEntry[] {
+    // FIFO order — the in-memory queue is already insertion-ordered
+    // since we push to the end.
+    return this.queue
+      .filter((e) => e.status === "blocked_entitlement")
+      .map((e) => ({
+        ...e,
+        entitlementVerdict: e.entitlementVerdict
+          ? { ...e.entitlementVerdict }
+          : null,
+      }));
+  }
+
+  unblockEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    for (const entry of this.queue) {
+      if (!idSet.has(entry.id)) continue;
+      if (entry.status !== "blocked_entitlement") continue;
+      entry.status = "pending";
+      entry.entitlementVerdict = null;
+    }
+  }
+
+  discardEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    this.queue = this.queue.filter((e) => !idSet.has(e.id));
+  }
+
   getSyncStats(): SyncStats {
-    const stats = { pending: 0, failed: 0, inFlight: 0 };
+    const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const entry of this.queue) {
       if (entry.status === "pending") stats.pending++;
       else if (entry.status === "failed") stats.failed++;
       else if (entry.status === "in_flight") stats.inFlight++;
+      else if (entry.status === "blocked_entitlement") stats.blocked++;
     }
     return stats;
   }

@@ -21,7 +21,11 @@ import type {
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
-import type { SyncOperation, SyncStatus } from "@/domain/ports/sync.types";
+import type {
+  EntitlementVerdict,
+  SyncOperation,
+  SyncStatus,
+} from "@/domain/ports/sync.types";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -71,6 +75,52 @@ export interface StoragePort {
   markMutationInFlight(id: number): boolean;
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
+  /**
+   * M10.6: flip a queue entry to `blocked_entitlement` and persist the
+   * server's verdict on the row. The sync worker calls this in response
+   * to HTTP 402 + `code: "ENTITLEMENT_DENIED"` and CONTINUES processing
+   * the rest of the queue (one blocked entry never aborts the flush).
+   *
+   * Blocked entries are excluded from `getPendingMutations()` — they
+   * only re-enter the pool via `unblockEntries` (called by
+   * `useAutoRetryOnUpgrade` on tier-change or by an explicit user
+   * "Retry" action) or via `discardEntries` (delete entirely).
+   *
+   * Verdict is stored on the row as JSON so a single-column schema
+   * extension keeps the migration trivial (no sibling table) and
+   * survives app restarts (AC 12.2).
+   *
+   * Spec: specs/11-payments-subscriptions/design.md § Sync-queue entitlement handling (M10.6)
+   * Satisfies: requirements.md AC 12.1, 12.2
+   */
+  markMutationBlocked(id: number, verdict: EntitlementVerdict): void;
+  /**
+   * Read all entries currently in the `blocked_entitlement` state.
+   * Powers `useBlockedSyncEntries` (banner + review screen) and the
+   * tier-change unblock logic in `useAutoRetryOnUpgrade`.
+   *
+   * Returned in FIFO order (oldest first) so the UI's "earliest
+   * blocked at" derives from the head row without an extra scan.
+   */
+  getBlockedEntries(): SyncQueueEntry[];
+  /**
+   * Flip the given entry ids from `blocked_entitlement` back to
+   * `pending` and clear their stored verdict. Used by:
+   *   1. Explicit user retry ("Retry these N items" on /sync-blocked)
+   *   2. `useAutoRetryOnUpgrade` after observing a satisfying tier change
+   *
+   * Silently skips ids that aren't currently `blocked_entitlement`
+   * (defensive — the verdict might already have been cleared by another
+   * tab / a concurrent unblock).
+   */
+  unblockEntries(ids: readonly number[]): void;
+  /**
+   * Permanently delete the given queue entries. Called from the Discard
+   * CTA on /sync-blocked. The container is responsible for any local-
+   * data cleanup (e.g. the cached workout row the entry referenced) —
+   * the storage layer doesn't reference-count across mutation types.
+   */
+  discardEntries(ids: readonly number[]): void;
   getSyncStats(): SyncStats;
   pruneCompletedMutations(olderThanHours?: number): void;
 
@@ -430,12 +480,27 @@ export type SyncQueueEntry = {
   maxRetries: number;
   errorMessage: string | null;
   createdAt: string;
+  /**
+   * M10.6: present iff `status === "blocked_entitlement"`. Captures the
+   * server-side verdict (feature + currentTier + upgradeTo +
+   * upgradePriceMonthly + blockedAt) at the moment the 402 landed.
+   * Persisted as a JSON blob in the SQLite `entitlement_verdict`
+   * column; the storage layer parses on read so callers always see
+   * the camelCase object.
+   */
+  entitlementVerdict: EntitlementVerdict | null;
 };
 
 export type SyncStats = {
   pending: number;
   failed: number;
   inFlight: number;
+  /**
+   * M10.6: count of entries currently in `blocked_entitlement`.
+   * Distinct from `failed` because the entry has a definitive verdict
+   * from the server — retrying without a tier change won't help.
+   */
+  blocked: number;
 };
 
 /**
