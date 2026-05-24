@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colorPalette } from "../../../src/ui/theme";
+import { useMySubscription } from "../../../src/ui/hooks/useMySubscription";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -57,6 +58,22 @@ export default function TabsLayout() {
   // hardcoding 84pt. Phones without a home indicator get ~72pt; phones with
   // one get ~94pt — both feel right for their device.
   const tabBarHeight = 60 + insets.bottom;
+
+  // M10.5 Wave 2 — Clients tab visibility. Only trainer-tier users see
+  // the 6th tab. We pass `href: null` (rather than skipping the
+  // <Tabs.Screen> entirely) so the route file `clients.tsx` stays
+  // registered and the post-payment Success screen's "Manage Clients"
+  // CTA can `router.replace('/(app)/(tabs)/clients')` regardless. For
+  // non-trainer users, the route still mounts on direct navigation and
+  // `ClientsContainer` shows the `FeatureGatePrompt`.
+  //
+  // While the subscription cache is still resolving we default to
+  // hiding the tab (`isTrainerTier === false`) to avoid a brief
+  // flash-then-disappear on first launch. Trainer users see the tab
+  // reappear on the next focus once `useMySubscription` resolves —
+  // acceptable lag per the brief.
+  const subQuery = useMySubscription();
+  const isTrainerTier = subQuery.data?.isTrainerTier ?? false;
 
   return (
     <Tabs
@@ -136,6 +153,24 @@ export default function TabsLayout() {
               {...p}
               focusedName="albums"
               unfocusedName="albums-outline"
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="clients"
+        options={{
+          title: "Clients",
+          // M10.5 Wave 2 — `href: null` hides the tab icon for non-
+          // trainer users while keeping the route registered (so the
+          // Success screen's "Manage Clients" CTA still resolves).
+          // Setting `href` to `undefined` makes the tab visible.
+          href: isTrainerTier ? undefined : null,
+          tabBarIcon: (p) => (
+            <TabIcon
+              {...p}
+              focusedName="people"
+              unfocusedName="people-outline"
             />
           ),
         }}
