@@ -35,6 +35,8 @@ function defaultProps(): SubscriptionManagementPresenterProps {
     canUpgrade: true,
     canDowngrade: false,
     canCancel: true,
+    isOffline: false,
+    isSlowLoading: false,
     onUpgrade: jest.fn(),
     onDowngrade: jest.fn(),
     onCancel: jest.fn(),
@@ -176,5 +178,24 @@ describe("SubscriptionManagementPresenter", () => {
     );
     fireEvent.press(screen.getByTestId("subscription-management-back"));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  // M10.5 — offline + slow-network UX
+  it("renders the offline banner when isOffline (M10.5 AC 11.1)", () => {
+    render(<SubscriptionManagementPresenter {...defaultProps()} isOffline />);
+    expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy();
+  });
+
+  it("renders the slow-loading indicator when isSlowLoading && isLoading (M10.5 AC 11.3)", () => {
+    render(
+      <SubscriptionManagementPresenter
+        {...defaultProps()}
+        isLoading
+        isSlowLoading
+      />,
+    );
+    expect(
+      screen.getByTestId("subscription-management-slow-loading"),
+    ).toBeTruthy();
   });
 });

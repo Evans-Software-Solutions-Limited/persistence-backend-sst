@@ -19,6 +19,8 @@ node_modules
 
 # claude local settings (machine-specific)
 .claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
 
 # expo cache
 **/.expo

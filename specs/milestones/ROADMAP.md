@@ -103,6 +103,27 @@ This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent
 - **Parent spec:** [13-nutrition-tracking](../13-nutrition-tracking/) (stub; requirements pass scheduled pre-M9)
 - **Brief:** [`M9-nutrition/BRIEF.md`](./M9-nutrition/BRIEF.md)
 
+### M10.6 — Sync-queue entitlement re-check
+
+**Purpose:** close the offline-then-flush abuse path. Mobile sync engine catches 402 + ENTITLEMENT_DENIED responses, marks the entries `blocked_entitlement` with the server's verdict captured, and surfaces them via a banner + review screen. Tier change auto-retries previously-blocked entries; manual discard path also available. Backend already correct from M10.5; M10.6 is mobile-only.
+
+- **Status:** briefs authored (2026-05-24); spawn after M10.5 Wave 1 merges
+- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — STORY-012 + new "Sync-queue entitlement handling (M10.6)" design section
+- **Brief:** [`M10-6-sync-queue-entitlement/BRIEF.md`](./M10-6-sync-queue-entitlement/BRIEF.md)
+- **Agent brief:** [`MOBILE_BRIEF.md`](./M10-6-sync-queue-entitlement/MOBILE_BRIEF.md) (single agent)
+- **Smoke test:** [`SMOKE_TEST.md`](./M10-6-sync-queue-entitlement/SMOKE_TEST.md)
+
+### M10.5 — Entitlement hardening + feature gates + offline UX
+
+**Purpose:** server-side `assertEntitlement` helper + apply to workout creation + session record paths. Mobile feature-gate primitives (`useFeatureGate`, `FeatureGatePrompt`, `SubscriptionBadge`). Offline UX on the subscription screens (online-status indicator, mutation pre-flight, slow-network "still working…", 3DS network-drop recovery). Brad call: no client-side grace windows — `expiresAt` trusted as-is, server enforces.
+
+- **Status:** briefs authored (2026-05-24); Wave 1 spawning
+- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — extended with STORY-009/010/011 + new "Entitlement enforcement (M10.5)" design section
+- **Brief:** [`M10-5-entitlement-hardening/BRIEF.md`](./M10-5-entitlement-hardening/BRIEF.md)
+- **Wave 1 agent briefs:** [`BACKEND_BRIEF.md`](./M10-5-entitlement-hardening/BACKEND_BRIEF.md) · [`MOBILE_PRIMITIVES_BRIEF.md`](./M10-5-entitlement-hardening/MOBILE_PRIMITIVES_BRIEF.md) · [`MOBILE_OFFLINE_UX_BRIEF.md`](./M10-5-entitlement-hardening/MOBILE_OFFLINE_UX_BRIEF.md)
+- **Smoke test:** [`SMOKE_TEST.md`](./M10-5-entitlement-hardening/SMOKE_TEST.md)
+- **Wave 2 (deferred):** per-screen feature-gate integration across exercise library, progress, profile, trainer placeholders. Briefs authored after Wave 1 merges.
+
 ### M10 — Subscriptions & payments (Stripe)
 
 **Purpose:** mobile port of legacy buy/cancel/upgrade/downgrade screens against the SST API + Stripe surface shipped in PRs #69 + #70. Adds backend reads (`GET /subscription-tiers`, `GET /subscriptions/me`) and `POST /subscriptions` response/request extensions. Apple Pay only (matches legacy + App Store IAP policy).

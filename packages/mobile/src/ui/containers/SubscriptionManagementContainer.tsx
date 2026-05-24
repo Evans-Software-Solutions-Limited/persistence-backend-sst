@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import type {
@@ -8,7 +8,18 @@ import type {
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
 import { useCreateSubscription } from "@/ui/hooks/useCreateSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { SubscriptionManagementPresenter } from "@/ui/presenters/SubscriptionManagementPresenter";
+import { SLOW_NETWORK_INDICATOR_DELAY_MS } from "@/ui/containers/SubscriptionSelectionContainer";
+
+/**
+ * M10.5 — alert copy reused across both subscription screens. Inlined
+ * here (not shared) to keep the management container's import graph
+ * tight; both screens use the same wording per spec.
+ */
+const OFFLINE_ALERT_TITLE = "You're offline";
+const OFFLINE_ALERT_MESSAGE =
+  "You need to be online to manage your subscription. Please reconnect and try again.";
 
 /**
  * Subscription Management container. Owns the upgrade / downgrade /
@@ -28,11 +39,29 @@ import { SubscriptionManagementPresenter } from "@/ui/presenters/SubscriptionMan
  */
 export function SubscriptionManagementContainer() {
   const router = useRouter();
+  const isOnline = useOnlineStatus();
   const subQuery = useMySubscription();
   const createSubscriptionMutation = useCreateSubscription();
   const cancelSubscriptionMutation = useCancelSubscription();
 
   const subscriptionData = subQuery.data ?? null;
+
+  // M10.5 — slow-network indicator. Mirrors the pattern in
+  // SubscriptionSelectionContainer; same constant + threshold.
+  const isStillLoading = subQuery.isLoading;
+  const [isSlowLoading, setIsSlowLoading] = useState(false);
+  useEffect(() => {
+    if (!isStillLoading) {
+      setIsSlowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsSlowLoading(true);
+    }, SLOW_NETWORK_INDICATOR_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isStillLoading]);
 
   const currentTier: SubscriptionTierName =
     subscriptionData?.tierName ?? "free";
@@ -55,6 +84,11 @@ export function SubscriptionManagementContainer() {
 
   const handleUpgrade = useCallback(
     (tier: SubscriptionTierName) => {
+      // M10.5 — offline pre-flight. AC 11.2 + 11.4.
+      if (!isOnline) {
+        Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_ALERT_MESSAGE);
+        return;
+      }
       Alert.alert(
         "Upgrade Subscription",
         "You will be charged a prorated amount immediately. Continue?",
@@ -80,11 +114,16 @@ export function SubscriptionManagementContainer() {
         ],
       );
     },
-    [createSubscriptionMutation, billingCycle],
+    [createSubscriptionMutation, billingCycle, isOnline],
   );
 
   const handleDowngrade = useCallback(
     (tier: SubscriptionTierName) => {
+      // M10.5 — offline pre-flight. AC 11.2 + 11.4.
+      if (!isOnline) {
+        Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_ALERT_MESSAGE);
+        return;
+      }
       Alert.alert(
         "Downgrade Subscription",
         "Your subscription will change at the end of your current billing period. Continue?",
@@ -118,11 +157,16 @@ export function SubscriptionManagementContainer() {
         ],
       );
     },
-    [createSubscriptionMutation, billingCycle],
+    [createSubscriptionMutation, billingCycle, isOnline],
   );
 
   const handleCancel = useCallback(() => {
     if (!subscriptionData?.subscriptionId) return;
+    // M10.5 — offline pre-flight. AC 11.2 + 11.4.
+    if (!isOnline) {
+      Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_ALERT_MESSAGE);
+      return;
+    }
     const isTrialing = paymentStatus === "trialing";
     const cancelMessage = isTrialing
       ? "Cancel your trial to avoid being charged when it ends. You'll continue to have access until your trial period ends. Continue?"
@@ -158,7 +202,7 @@ export function SubscriptionManagementContainer() {
         },
       },
     ]);
-  }, [subscriptionData, paymentStatus, cancelSubscriptionMutation]);
+  }, [subscriptionData, paymentStatus, cancelSubscriptionMutation, isOnline]);
 
   return (
     <SubscriptionManagementPresenter
@@ -177,6 +221,8 @@ export function SubscriptionManagementContainer() {
       canUpgrade={canUpgrade}
       canDowngrade={canDowngrade}
       canCancel={canCancel}
+      isOffline={!isOnline}
+      isSlowLoading={isSlowLoading}
       onUpgrade={handleUpgrade}
       onDowngrade={handleDowngrade}
       onCancel={handleCancel}

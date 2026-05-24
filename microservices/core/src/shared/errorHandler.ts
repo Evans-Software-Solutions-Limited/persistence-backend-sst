@@ -1,4 +1,5 @@
 import Elysia from "elysia";
+import { EntitlementError } from "../application/entitlement/assertEntitlement";
 
 /**
  * Global error-logging + response-shape plugin for the core Elysia app.
@@ -67,6 +68,64 @@ export const coreErrorHandler = new Elysia({
   // routes of its own.
   { as: "global" },
   ({ code, error, set, request }) => {
+    // EntitlementError is a domain-level deny from the assertEntitlement
+    // helper (see microservices/core/src/application/entitlement/
+    // assertEntitlement.ts). It carries a structured deny verdict that
+    // the mobile feature-gate adapter parses verbatim — we map it to
+    // HTTP 402 (Payment Required) with the spec'd snake_case body
+    // BEFORE the generic logging / detail-stripping pipeline below,
+    // because:
+    //
+    //   1. The wire shape is fixed: `{ code, error, feature,
+    //      current_tier, upgrade_to, upgrade_price_monthly }`. Mobile's
+    //      `SSTApiAdapter` looks up these exact field names; the
+    //      generic shape (`{ code, error: 'Request failed', detail,
+    //      stack, … }`) would break the parse.
+    //
+    //   2. A 402 is an expected user-facing condition, not a server
+    //      fault. The verbose CloudWatch JSON line + stack trace are
+    //      noise for this path — we still log a single concise line so
+    //      operators can spot "user X hit feature gate Y" patterns,
+    //      but we skip the cause chain / driver-error unwinding.
+    //
+    //   3. The verdict's `currentTier` / `upgradeTo` / `upgradePriceMonthly`
+    //      are camelCase inside TS; the wire flips to snake_case (per
+    //      design.md § 402 response shape) so REST conventions hold.
+    //
+    // Spec: specs/11-payments-subscriptions/design.md
+    //       § Entitlement enforcement (M10.5) > 402 response shape
+    //       specs/11-payments-subscriptions/requirements.md AC 9.2
+    if (error instanceof EntitlementError) {
+      const status = 402;
+      set.status = status;
+
+      const method = request.method;
+      const path = new URL(request.url).pathname;
+      const requestId = request.headers.get("x-amz-request-id") ?? undefined;
+
+      console.error(
+        `[api:402] ${method} ${path} · ${JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          feature: error.feature,
+          reason: error.verdict.reason,
+          currentTier: error.verdict.currentTier,
+          upgradeTo: error.verdict.upgradeTo,
+          requestId,
+        })}`,
+      );
+
+      return {
+        code: "ENTITLEMENT_DENIED",
+        error: "Subscription does not include this feature",
+        feature: error.feature,
+        reason: error.verdict.reason,
+        current_tier: error.verdict.currentTier,
+        upgrade_to: error.verdict.upgradeTo,
+        upgrade_price_monthly: error.verdict.upgradePriceMonthly,
+        ...(requestId ? { requestId } : {}),
+      };
+    }
+
     const status = httpStatusForCode(code);
     set.status = status;
 
