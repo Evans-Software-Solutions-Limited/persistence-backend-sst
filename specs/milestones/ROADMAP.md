@@ -103,6 +103,16 @@ This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent
 - **Parent spec:** [13-nutrition-tracking](../13-nutrition-tracking/) (stub; requirements pass scheduled pre-M9)
 - **Brief:** [`M9-nutrition/BRIEF.md`](./M9-nutrition/BRIEF.md)
 
+### M10.6 — Sync-queue entitlement re-check
+
+**Purpose:** close the offline-then-flush abuse path. Mobile sync engine catches 402 + ENTITLEMENT_DENIED responses, marks the entries `blocked_entitlement` with the server's verdict captured, and surfaces them via a banner + review screen. Tier change auto-retries previously-blocked entries; manual discard path also available. Backend already correct from M10.5; M10.6 is mobile-only.
+
+- **Status:** briefs authored (2026-05-24); spawn after M10.5 Wave 1 merges
+- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — STORY-012 + new "Sync-queue entitlement handling (M10.6)" design section
+- **Brief:** [`M10-6-sync-queue-entitlement/BRIEF.md`](./M10-6-sync-queue-entitlement/BRIEF.md)
+- **Agent brief:** [`MOBILE_BRIEF.md`](./M10-6-sync-queue-entitlement/MOBILE_BRIEF.md) (single agent)
+- **Smoke test:** [`SMOKE_TEST.md`](./M10-6-sync-queue-entitlement/SMOKE_TEST.md)
+
 ### M10.5 — Entitlement hardening + feature gates + offline UX
 
 **Purpose:** server-side `assertEntitlement` helper + apply to workout creation + session record paths. Mobile feature-gate primitives (`useFeatureGate`, `FeatureGatePrompt`, `SubscriptionBadge`). Offline UX on the subscription screens (online-status indicator, mutation pre-flight, slow-network "still working…", 3DS network-drop recovery). Brad call: no client-side grace windows — `expiresAt` trusted as-is, server enforces.

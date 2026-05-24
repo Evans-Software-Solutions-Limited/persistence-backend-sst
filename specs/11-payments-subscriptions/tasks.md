@@ -157,12 +157,18 @@ Lands AFTER Phase 10 primitives are on `main`. Split across 3 parallel agents in
 - [ ] AC 4.6 — Progress + health + profile (m105-gates-progress)
 - [ ] AC 4.6 — Trainer route stubs (m105-gates-trainer)
 
-## Deferred phases (out of M10.5)
+## Phase 13 — Sync-queue entitlement re-check (M10.6 — single mobile agent)
 
-### Future — Sync-queue entitlement re-check (M10.6 candidate)
+- [ ] AC 12.1 — Extend `SyncEntry` with `blocked_entitlement` status + `entitlementVerdict` field; storage adapter persists across restarts
+- [ ] AC 12.2 — `sync.command.ts` catches 402 + ENTITLEMENT_DENIED → marks entry blocked + records verdict + continues processing (no abort)
+- [ ] AC 12.4 — `SyncBlockedBanner` component + `useBlockedSyncEntries` hook → renders on Home when total > 0
+- [ ] AC 12.5 — `/sync-blocked` screen (container + presenter) with grouped list + Upgrade-and-retry / Discard CTAs
+- [ ] AC 12.3 — `useAutoRetryOnUpgrade` hook watches `useMySubscription`; on satisfying tier change, unblocks matching entries + triggers flush
+- [ ] AC 12.7 — `tierSatisfies` helper in `subscriptionService.ts` enforcing track independence (user vs trainer)
+- [ ] AC 12.6 — Regression: non-402 errors still classify as `failed` (existing behaviour preserved)
+- [ ] Tests: 90% global coverage + dedicated coverage on every new file + storage adapter (both in-memory + SQLite)
 
-- [ ] Offline-then-flush abuse vector — user creates N workouts offline past their tier limit, then sync flushes them all
-- [ ] Server validates each sync queue entry against `assertEntitlement` at flush time; reject items past the limit with a UX path to re-subscribe-and-retry
+## Deferred phases (out of M10.6)
 
 ### Future — Operational
 

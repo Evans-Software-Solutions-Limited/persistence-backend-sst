@@ -172,6 +172,18 @@ Tier names + display names + features + Stripe price IDs are stored in the `subs
 - [ ] AC 8.3 — On 3DS user-cancel or failure → mobile shows an alert and reverts to the selection screen; the subscription row stays in `incomplete` and is reaped by Stripe's `incomplete_expired` transition (~23h) → webhook rolls back to the prior tier
 - [ ] AC 8.4 — Cross-mode retry after a partial failure (e.g., DB write failed but Stripe sub created) is idempotent: `POST /subscriptions/:id/cancel` mirrors the webhook's `isAlreadyCanceledError` recovery and returns 200 even when Stripe reports the sub already cancelled — applies to both period-end and immediate branches
 
+### STORY-012: As a user, my offline-created premium-only data is handled cleanly when it can't sync (M10.6)
+
+**Acceptance Criteria:**
+
+- [ ] AC 12.1 — When the sync engine receives HTTP 402 with `code: "ENTITLEMENT_DENIED"` on any sync entry, the entry is marked `blocked_entitlement` with the server's verdict captured (`feature`, `currentTier`, `upgradeTo`, `upgradePriceMonthly`, `blockedAt`). The sync engine continues processing the remaining entries in the queue (one blocked entry does not abort the flush).
+- [ ] AC 12.2 — Blocked entries persist in storage across app restarts; status is stable until either (a) the user takes an explicit action (retry / discard) or (b) the user's tier changes to one satisfying the verdict's `upgradeTo`.
+- [ ] AC 12.3 — On `useMySubscription` reporting a tier change to a satisfying tier, blocked entries automatically flip back to `pending` and a sync flush is triggered. Successful re-sync updates them to `synced`.
+- [ ] AC 12.4 — Home tab (or equivalent always-visible surface) shows a banner when one or more entries are blocked: `"⚠ N items couldn't sync — Upgrade to <tier> [Review]"`. Tap Review → `/sync-blocked` screen.
+- [ ] AC 12.5 — `/sync-blocked` screen groups blocked entries by upgrade target tier; each group lists the affected items, "Upgrade to <tier> and retry" CTA, "Discard these items" secondary CTA (with confirmation modal). Discard removes the sync entries AND the local cached data they referenced (where no other entry references that data).
+- [ ] AC 12.6 — Non-402 errors (5xx, network failures, validation errors) are NOT classified as `blocked_entitlement` — they fall through to the existing `failed` state and retry normally.
+- [ ] AC 12.7 — Tier-hierarchy logic: user-tier upgrades (`basic` → `premium`) do not unblock trainer-tier-required entries and vice versa. Tracks are independent.
+
 ## Non-functional requirements
 
 - **Payment data**: Card numbers never touch the mobile app or the backend. The Stripe SDK collects them inside the Apple Pay sheet (which uses iOS biometric auth) and returns only a `payment_method_id` (an opaque Stripe handle).

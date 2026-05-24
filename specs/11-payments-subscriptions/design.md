@@ -696,6 +696,80 @@ The hook is **a pure function of the cached `MySubscription`** — no network in
 
 **No client-side grace window / `validUntil`.** `expiresAt` is trusted as-is on the client — server enforces at every premium-only mutation. This was Brad's explicit call: trade marginal client-side abuse-defense for simplicity, knowing AI features inherently require network anyway.
 
+### Sync-queue entitlement handling (M10.6)
+
+After M10.5 closes the synchronous-mutation abuse paths, one edge case remains: a user who creates premium-only data while offline (e.g., workouts past their tier limit) and tries to flush via the sync queue. Server-side `assertEntitlement` correctly rejects each entry with 402 — but the mobile sync engine treats it as a generic error and either drops or endlessly retries.
+
+M10.6 makes the sync engine entitlement-aware. The changes are entirely mobile-side; backend stays as M10.5 left it.
+
+**Storage model extension:**
+
+```typescript
+// packages/mobile/src/domain/ports/sync.types.ts (extended in M10.6)
+export type SyncEntryStatus =
+  | "pending"
+  | "syncing"
+  | "synced"
+  | "failed"
+  | "blocked_entitlement";  // NEW
+
+export interface SyncEntry {
+  id: string;
+  // ... existing fields ...
+  status: SyncEntryStatus;
+  entitlementVerdict?: {
+    feature: EntitlementFeature;
+    currentTier: SubscriptionTierName;
+    upgradeTo: SubscriptionTierName | null;
+    upgradePriceMonthly: number | null;
+    blockedAt: string;  // ISO timestamp
+  };
+}
+```
+
+**Sync engine flow:**
+
+```
+[processSyncQueue iterates pending entries]
+         │
+         ▼
+[POST mutation]
+         │
+         ├─ 200/201 ─► [mark synced]
+         ├─ 5xx     ─► [mark failed; retry on next flush]
+         ├─ 402 +
+         │  ENTITLEMENT_DENIED
+         │           ─► [parse verdict; mark blocked_entitlement;
+         │              store verdict; CONTINUE to next entry]
+         └─ other   ─► [mark failed]
+```
+
+The flush worker filters `status === "pending"` only; blocked entries are excluded from automatic retries. They re-enter the pool via two paths:
+
+1. **Explicit user action** on the `/sync-blocked` review screen ("Upgrade and retry" → after upgrade success → manual unblock-all-with-matching-upgradeTo) or ("Retry" → manual unblock for one)
+2. **Automatic on tier change**: `useAutoRetryOnUpgrade` observes `useMySubscription`; when the tier changes to one satisfying `upgradeTo` for any blocked entry's verdict, those entries are unblocked + a flush is triggered.
+
+**Tier hierarchy** (extending `subscriptionService.ts`):
+
+```typescript
+// Returns true if currentTier provides at least the entitlements of requiredTier.
+// User-tier track: free < basic < premium
+// Trainer-tier track: free-trainer-equivalent < standard < pro
+// Tracks are independent — premium does NOT satisfy a trainer_clients requirement.
+export function tierSatisfies(
+  currentTier: SubscriptionTierName,
+  requiredTier: SubscriptionTierName,
+): boolean;
+```
+
+**UI:**
+
+- `SyncBlockedBanner` mounted at the top of Home tab; visible when `useBlockedSyncEntries().total > 0`. Single-line summary with a Review CTA.
+- `/sync-blocked` screen lists entries grouped by upgrade target; per-group CTA: "Upgrade to <tier> and retry" → routes to Selection with target pre-applied.
+- Discard path: confirmation modal → deletes sync entry AND local cached data (when no other entry references it).
+
+**Telemetry hook** (informational, not enforcement): log when `blocked_entitlement` count crosses thresholds — useful product signal for "where users actually hit limits."
+
 ### Per-screen feature-gate integration (Wave 2)
 
 After Wave 1 ships the primitives, Wave 2 wires `useFeatureGate` + `FeatureGatePrompt` into specific screens:
