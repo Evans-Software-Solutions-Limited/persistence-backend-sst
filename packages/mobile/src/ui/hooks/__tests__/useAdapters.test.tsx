@@ -12,6 +12,7 @@ const mockAdapters = {
   health: {},
   notifications: {},
   payments: {},
+  netInfo: {},
 } as unknown as Adapters;
 
 describe("useAdapters", () => {

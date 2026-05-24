@@ -14,6 +14,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type {
   MySubscription,
   SubscriptionTier,
@@ -95,10 +96,12 @@ function makeAdapters(): {
   api: InMemoryApiAdapter;
   auth: InMemoryAuthAdapter;
   payments: MockPaymentsAdapter;
+  netInfo: InMemoryNetInfoAdapter;
 } {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
   const payments = new MockPaymentsAdapter();
+  const netInfo = new InMemoryNetInfoAdapter();
   api.subscriptionTiers = [BASIC_TIER, PREMIUM_TIER];
   api.mySubscription = freeSub();
   auth.currentSession = {
@@ -115,8 +118,9 @@ function makeAdapters(): {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments,
+    netInfo,
   };
-  return { adapters, api, auth, payments };
+  return { adapters, api, auth, payments, netInfo };
 }
 
 function makeQueryClient() {

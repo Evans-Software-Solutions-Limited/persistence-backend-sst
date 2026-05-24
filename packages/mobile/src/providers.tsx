@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SSTApiAdapter } from "@/adapters/api";
 import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
+import { RNNetInfoAdapter } from "@/adapters/netInfo";
 import { ExpoNotificationsAdapter } from "@/adapters/notifications";
 import { StripeApplePayAdapter } from "@/adapters/payments";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
@@ -18,6 +19,7 @@ import { ThemeProvider } from "@/ui/theme";
  * 4. Health (HealthKit / Health Connect)
  * 5. Notifications (Expo)
  * 6. Payments (Stripe Apple Pay — M10)
+ * 7. NetInfo (RN community netinfo — M10.5)
  *
  * Also mounts a Tanstack Query client at the root for the M10
  * subscription hooks (useSubscriptionTiers / useMySubscription /
@@ -44,6 +46,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
       payments: new StripeApplePayAdapter(),
+      netInfo: new RNNetInfoAdapter(),
     };
   }, []);
 

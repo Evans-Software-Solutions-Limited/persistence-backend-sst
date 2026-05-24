@@ -73,6 +73,7 @@ function makeAdapters(
     } as unknown as Adapters["health"],
     notifications: {} as Adapters["notifications"],
     payments: {} as Adapters["payments"],
+    netInfo: {} as Adapters["netInfo"],
   };
 }
 
@@ -363,6 +364,7 @@ describe("useDashboard", () => {
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
+      netInfo: {} as Adapters["netInfo"],
     };
 
     const { result } = renderHook(() => useDashboard(), {
@@ -478,6 +480,7 @@ describe("useDashboard", () => {
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
+      netInfo: {} as Adapters["netInfo"],
     };
 
     renderHook(() => useDashboard(), { wrapper: wrap(adapters) });
@@ -576,6 +579,7 @@ describe("useDashboard", () => {
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
+      netInfo: {} as Adapters["netInfo"],
     };
 
     const getDashboardSpy = jest.spyOn(api, "getDashboard");

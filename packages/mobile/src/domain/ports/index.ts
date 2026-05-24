@@ -25,4 +25,5 @@ export type {
   CollectApplePayPaymentMethodInput,
   CollectApplePayPaymentMethodResult,
 } from "./payments.port";
+export type { NetInfoPort } from "./netInfo.port";
 export type { SyncOperation, SyncStatus } from "./sync.types";

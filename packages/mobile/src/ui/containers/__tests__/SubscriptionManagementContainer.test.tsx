@@ -16,6 +16,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { MySubscription } from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -31,9 +32,11 @@ const alertSpy = jest.spyOn(Alert, "alert");
 function makeAdapters(sub: MySubscription | null): {
   adapters: Adapters;
   api: InMemoryApiAdapter;
+  netInfo: InMemoryNetInfoAdapter;
 } {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
+  const netInfo = new InMemoryNetInfoAdapter();
   api.mySubscription = sub;
   auth.currentSession = {
     accessToken: "tok",
@@ -49,8 +52,9 @@ function makeAdapters(sub: MySubscription | null): {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments: new MockPaymentsAdapter(),
+    netInfo,
   };
-  return { adapters, api };
+  return { adapters, api, netInfo };
 }
 
 function makeQueryClient() {
