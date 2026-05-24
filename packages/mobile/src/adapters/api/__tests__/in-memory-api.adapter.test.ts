@@ -439,79 +439,175 @@ describe("InMemoryApiAdapter", () => {
     });
   });
 
-  describe("subscriptions (M7)", () => {
+  describe("subscriptions (M7 / M10)", () => {
+    it("getSubscriptionTiers returns the configured catalog", async () => {
+      api.subscriptionTiers = [
+        {
+          tierName: "basic",
+          displayName: "Basic",
+          description: null,
+          priceMonthly: 4.99,
+          priceYearly: 49.99,
+          currency: "GBP",
+          features: {},
+          workoutLimit: 10,
+          aiAccess: true,
+          aiWorkoutLimit: 1,
+          gymBuddyAccess: false,
+          trainerClientLimit: null,
+          isTrainerTier: false,
+          analyticsAccess: false,
+          exportAccess: false,
+          stripePriceIdMonthly: "price_basic_m",
+          stripePriceIdYearly: "price_basic_y",
+        },
+      ];
+      const result = await api.getSubscriptionTiers();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      expect(result.value[0].tierName).toBe("basic");
+    });
+
+    it("getSubscriptionTiers surfaces failure flag", async () => {
+      api.shouldFail = true;
+      const result = await api.getSubscriptionTiers();
+      expect(result.ok).toBe(false);
+    });
+
+    it("getMySubscription returns not_found when mySubscription is null", async () => {
+      const result = await api.getMySubscription();
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("not_found");
+    });
+
+    it("getMySubscription returns the configured shape when set", async () => {
+      api.mySubscription = {
+        subscriptionId: "us_1",
+        tierName: "premium",
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        startsAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: "sub_1",
+        tierDisplayName: "Premium",
+        tierDescription: null,
+        workoutLimit: null,
+        aiAccess: true,
+        aiWorkoutLimit: 6,
+        gymBuddyAccess: true,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user",
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+      const result = await api.getMySubscription();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.tierName).toBe("premium");
+    });
+
     it("createSubscription captures input + counter + returns the canned response", async () => {
       const result = await api.createSubscription({
-        tier_name: "premium",
-        billing_cycle: "monthly",
-        payment_method_id: "pm_card",
-        use_trial: true,
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentMethodId: "pm_card",
+        useTrial: true,
         platform: "ios",
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).toMatchObject({
         success: true,
-        requires_action: false,
-        subscription_id: "us_test_1",
-        stripe_subscription_id: "sub_test_1",
-        payment_status: "active",
+        requiresAction: false,
+        subscriptionId: "us_test_1",
+        stripeSubscriptionId: "sub_test_1",
+        paymentStatus: "active",
+        changeType: "new",
+        scheduled: false,
+        effectiveAt: null,
+        isTrial: false,
       });
       expect(api.createSubscriptionCalls).toBe(1);
       expect(api.lastCreateSubscriptionInput).toEqual({
-        tier_name: "premium",
-        billing_cycle: "monthly",
-        payment_method_id: "pm_card",
-        use_trial: true,
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentMethodId: "pm_card",
+        useTrial: true,
         platform: "ios",
       });
     });
 
-    it("createSubscription returns a configurable requires_action shape", async () => {
+    it("createSubscription returns a configurable requiresAction shape", async () => {
       api.setNextCreateSubscriptionResponse({
-        requires_action: true,
-        client_secret: "pi_3ds_secret",
-        payment_status: "pending",
+        requiresAction: true,
+        clientSecret: "pi_3ds_secret",
+        paymentStatus: "incomplete",
       });
       const result = await api.createSubscription({
-        tier_name: "premium",
-        billing_cycle: "monthly",
-        payment_method_id: "pm_card",
-        use_trial: true,
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentMethodId: "pm_card",
+        useTrial: true,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.requires_action).toBe(true);
-      expect(result.value.client_secret).toBe("pi_3ds_secret");
-      expect(result.value.payment_status).toBe("pending");
+      expect(result.value.requiresAction).toBe(true);
+      expect(result.value.clientSecret).toBe("pi_3ds_secret");
+      expect(result.value.paymentStatus).toBe("incomplete");
+    });
+
+    it("createSubscription supports M10 discriminator overrides (downgrade)", async () => {
+      api.setNextCreateSubscriptionResponse({
+        changeType: "downgrade",
+        scheduled: true,
+        effectiveAt: "2026-07-01T00:00:00.000Z",
+      });
+      const result = await api.createSubscription({
+        tierName: "basic",
+        billingCycle: "monthly",
+        useTrial: false,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.changeType).toBe("downgrade");
+      expect(result.value.scheduled).toBe(true);
+      expect(result.value.effectiveAt).toBe("2026-07-01T00:00:00.000Z");
     });
 
     it("createSubscription surfaces api failure when shouldFail flips", async () => {
       api.shouldFail = true;
       const result = await api.createSubscription({
-        tier_name: "premium",
-        billing_cycle: "monthly",
-        payment_method_id: "pm_card",
-        use_trial: false,
+        tierName: "premium",
+        billingCycle: "monthly",
+        paymentMethodId: "pm_card",
+        useTrial: false,
       });
       expect(result.ok).toBe(false);
     });
 
     it("cancelSubscription captures (subscriptionId, input) pair and counts calls", async () => {
       const result = await api.cancelSubscription("us_123", {
-        cancel_immediately: true,
+        cancelImmediately: true,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).toMatchObject({
         success: true,
-        cancelled_at: expect.any(String),
-        subscription_ends_at: expect.any(String),
+        cancelledAt: expect.any(String),
+        subscriptionEndsAt: expect.any(String),
       });
       expect(api.cancelSubscriptionCalls).toBe(1);
       expect(api.lastCancelSubscription).toEqual({
         subscriptionId: "us_123",
-        input: { cancel_immediately: true },
+        input: { cancelImmediately: true },
       });
     });
 

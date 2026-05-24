@@ -9,7 +9,7 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { StubPaymentsAdapter } from "@/adapters/payments";
+import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import type { Adapters } from "@/shared/types";
 import { SignInPresenter } from "@/ui/presenters/SignInPresenter";
 import { SignInContainer } from "../SignInContainer";
@@ -37,7 +37,7 @@ function createTestAdapters(): {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new StubPaymentsAdapter(),
+    payments: new MockPaymentsAdapter(),
   };
   return { adapters, auth };
 }
