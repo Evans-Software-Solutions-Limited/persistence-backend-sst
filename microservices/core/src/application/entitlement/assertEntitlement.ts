@@ -126,11 +126,22 @@ export type EntitlementVerdict =
  * enforcement > 402 response shape).
  */
 export class EntitlementError extends Error {
+  // Plain field declarations (not constructor parameter properties) —
+  // the web package's tsconfig has `erasableSyntaxOnly: true` set,
+  // which forbids parameter properties because they emit runtime
+  // assignment code at construction. Field declarations + an explicit
+  // assignment in the body satisfy the lint and keep the public
+  // surface identical.
+  public readonly verdict: Extract<EntitlementVerdict, { allowed: false }>;
+  public readonly feature: EntitlementFeature;
+
   constructor(
-    public readonly verdict: Extract<EntitlementVerdict, { allowed: false }>,
-    public readonly feature: EntitlementFeature,
+    verdict: Extract<EntitlementVerdict, { allowed: false }>,
+    feature: EntitlementFeature,
   ) {
     super("ENTITLEMENT_DENIED");
+    this.verdict = verdict;
+    this.feature = feature;
     // Re-set the prototype so `instanceof EntitlementError` works after
     // transpilation through downlevel ES targets. Node 20+ doesn't need
     // this, but the build still compiles to commonjs through TS, so the
