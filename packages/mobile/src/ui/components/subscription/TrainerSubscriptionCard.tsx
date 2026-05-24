@@ -63,21 +63,35 @@ export function TrainerSubscriptionCard({
       ? "Small Business"
       : "Medium to Enterprise";
 
+  // Per-column yearly availability. A trainer tier whose `priceYearly`
+  // is null on the catalog row can't be sold yearly — render an
+  // explicit "Yearly not available" state instead of falling back to
+  // £0 (Inspector Brad PR #71 medium-severity find — sweep #1; twin of
+  // the SubscriptionCard fix).
+  const standardYearlyUnavailable =
+    billingCycle === "yearly" && standardTier?.priceYearly === null;
+  const proYearlyUnavailable =
+    billingCycle === "yearly" && proTier?.priceYearly === null;
   const standardPrice = standardTier
     ? billingCycle === "yearly"
-      ? (standardTier.priceYearly ?? 0)
+      ? standardTier.priceYearly
       : standardTier.priceMonthly
     : null;
   const proPrice = proTier
     ? billingCycle === "yearly"
-      ? (proTier.priceYearly ?? 0)
+      ? proTier.priceYearly
       : proTier.priceMonthly
     : null;
   const standardMonthlyPrice = standardTier?.priceMonthly ?? 0;
   const proMonthlyPrice = proTier?.priceMonthly ?? 0;
   const standardYearlySavings =
-    standardMonthlyPrice * 12 - (standardTier?.priceYearly ?? 0);
-  const proYearlySavings = proMonthlyPrice * 12 - (proTier?.priceYearly ?? 0);
+    standardTier && standardTier.priceYearly !== null
+      ? standardMonthlyPrice * 12 - standardTier.priceYearly
+      : 0;
+  const proYearlySavings =
+    proTier && proTier.priceYearly !== null
+      ? proMonthlyPrice * 12 - proTier.priceYearly
+      : 0;
 
   return (
     <View style={styles.card} testID={`trainer-subscription-card-${baseName}`}>
@@ -141,6 +155,7 @@ export function TrainerSubscriptionCard({
                 styles.pricingColumn,
                 styles.pricingColumnTouchable,
                 isStandardCurrent && styles.pricingColumnCurrent,
+                standardYearlyUnavailable && styles.pricingColumnDisabled,
               ]}
               onPress={onStandardPress}
               disabled={disabled}
@@ -152,7 +167,11 @@ export function TrainerSubscriptionCard({
                   <Text style={styles.pricingColumnLabel}>Standard</Text>
                 </View>
                 <View style={styles.pricingContent}>
-                  {billingCycle === "yearly" && standardYearlySavings > 0 ? (
+                  {standardYearlyUnavailable ? (
+                    <Text style={styles.priceUnavailable}>
+                      Yearly not available
+                    </Text>
+                  ) : billingCycle === "yearly" && standardYearlySavings > 0 ? (
                     <>
                       <Text style={styles.priceStrikethrough}>
                         £{standardMonthlyPrice * 12}/year
@@ -164,7 +183,11 @@ export function TrainerSubscriptionCard({
                   )}
                 </View>
                 <View style={styles.subscribeButton}>
-                  <Text style={styles.subscribeButtonText}>Subscribe</Text>
+                  <Text style={styles.subscribeButtonText}>
+                    {standardYearlyUnavailable
+                      ? "Yearly not available"
+                      : "Subscribe"}
+                  </Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -176,13 +199,14 @@ export function TrainerSubscriptionCard({
                 styles.pricingColumn,
                 styles.pricingColumnTouchable,
                 isProCurrent && styles.pricingColumnCurrent,
+                proYearlyUnavailable && styles.pricingColumnDisabled,
               ]}
               onPress={onProPress}
               disabled={disabled}
               activeOpacity={0.7}
               testID={`trainer-card-${baseName}-pro`}
             >
-              {showProTrialBanner && (
+              {showProTrialBanner && !proYearlyUnavailable && (
                 <View style={styles.trialBannerColumn}>
                   <Text style={styles.trialBannerColumnText}>
                     {trialBannerText ?? "14-day free trial"}
@@ -195,7 +219,11 @@ export function TrainerSubscriptionCard({
                   <Text style={styles.pricingColumnLabel}>Pro</Text>
                 </View>
                 <View style={styles.pricingContent}>
-                  {billingCycle === "yearly" && proYearlySavings > 0 ? (
+                  {proYearlyUnavailable ? (
+                    <Text style={styles.priceUnavailable}>
+                      Yearly not available
+                    </Text>
+                  ) : billingCycle === "yearly" && proYearlySavings > 0 ? (
                     <>
                       <Text style={styles.priceStrikethrough}>
                         £{proMonthlyPrice * 12}/year
@@ -207,7 +235,11 @@ export function TrainerSubscriptionCard({
                   )}
                 </View>
                 <View style={styles.subscribeButton}>
-                  <Text style={styles.subscribeButtonText}>Subscribe</Text>
+                  <Text style={styles.subscribeButtonText}>
+                    {proYearlyUnavailable
+                      ? "Yearly not available"
+                      : "Subscribe"}
+                  </Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -311,6 +343,17 @@ const styles = StyleSheet.create({
   pricingColumnCurrent: {
     borderColor: Colors.primary.DEFAULT,
     backgroundColor: Colors.primary.DEFAULT + "10",
+  },
+  pricingColumnDisabled: {
+    opacity: 0.55,
+    borderColor: Colors.surface.border,
+  },
+  priceUnavailable: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.text.secondary,
+    fontStyle: "italic",
+    textAlign: "center",
   },
   trialBannerColumn: {
     position: "absolute",

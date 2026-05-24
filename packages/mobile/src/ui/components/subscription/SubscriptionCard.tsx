@@ -44,10 +44,19 @@ export function SubscriptionCard({
   getFeaturesList,
   isTrainer = false,
 }: SubscriptionCardProps) {
+  // A tier without a configured yearly Stripe price can't be sold on the
+  // yearly cycle. Compute an explicit unavailability flag so we don't
+  // fall back to £0 — that path painted a fake-free card with a red
+  // savings strikethrough and let the user tap into an Apple Pay sheet
+  // for £0, only to error on the backend after the biometric tap
+  // (Inspector Brad PR #71 medium-severity find — sweep #1).
+  const yearlyUnavailable =
+    billingCycle === "yearly" && tier.priceYearly === null;
   const price =
-    billingCycle === "yearly" ? (tier.priceYearly ?? 0) : tier.priceMonthly;
+    billingCycle === "yearly" ? tier.priceYearly : tier.priceMonthly;
   const monthlyPrice = tier.priceMonthly || 0;
-  const yearlySavings = monthlyPrice * 12 - (tier.priceYearly ?? 0);
+  const yearlySavings =
+    tier.priceYearly !== null ? monthlyPrice * 12 - tier.priceYearly : 0;
 
   const features = getFeaturesList(tier, isTrainer);
 
@@ -76,15 +85,21 @@ export function SubscriptionCard({
           )}
         </View>
         <View style={styles.priceContainer}>
-          {billingCycle === "yearly" && yearlySavings > 0 && (
-            <Text style={styles.priceStrikethrough}>
-              £{monthlyPrice * 12}/year
-            </Text>
+          {yearlyUnavailable ? (
+            <Text style={styles.priceUnavailable}>Yearly not available</Text>
+          ) : (
+            <>
+              {billingCycle === "yearly" && yearlySavings > 0 && (
+                <Text style={styles.priceStrikethrough}>
+                  £{monthlyPrice * 12}/year
+                </Text>
+              )}
+              <Text style={styles.price}>
+                £{price}
+                {billingCycle === "yearly" ? "/year" : "/month"}
+              </Text>
+            </>
           )}
-          <Text style={styles.price}>
-            £{price}
-            {billingCycle === "yearly" ? "/year" : "/month"}
-          </Text>
         </View>
       </View>
 
@@ -111,13 +126,16 @@ export function SubscriptionCard({
           style={[
             styles.subscribeButton,
             isCurrent && styles.subscribeButtonCurrent,
+            yearlyUnavailable && styles.subscribeButtonDisabled,
           ]}
           onPress={onPress}
           disabled={disabled}
           activeOpacity={0.7}
           testID={`subscription-card-${tier.tierName}-subscribe`}
         >
-          <Text style={styles.subscribeButtonText}>Subscribe</Text>
+          <Text style={styles.subscribeButtonText}>
+            {yearlyUnavailable ? "Yearly not available" : "Subscribe"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -207,6 +225,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
+  },
+  subscribeButtonDisabled: {
+    backgroundColor: Colors.surface.secondary,
+    opacity: 0.6,
+  },
+  priceUnavailable: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.text.secondary,
+    fontStyle: "italic",
   },
   subscribeButtonCurrent: {
     backgroundColor: Colors.primary.DEFAULT + "CC",

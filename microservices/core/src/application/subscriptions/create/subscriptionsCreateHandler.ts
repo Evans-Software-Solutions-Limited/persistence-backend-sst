@@ -799,17 +799,30 @@ async function handleSubscriptionChange(args: {
 
   // Preserve relevant prior metadata, layer in the new sub's identifiers,
   // stamp the old-sub marker for the webhook, and DROP any pending
-  // scheduled_downgrade (per Brad Q7 — this change supersedes the prior
+  // scheduling markers (per Brad Q7 — this change supersedes the prior
   // intent).
+  //
+  // BOTH markers must be dropped here: legacy `scheduled_downgrade` AND
+  // M10 `scheduled_change` (stamped by `handleChangeOfTierNoPayment`).
+  // Without dropping `scheduled_change`, a user who schedules a downgrade
+  // via Management (no-PM path) and then changes tier via Selection with
+  // a new payment method ends up with a phantom scheduled-change
+  // indicator referencing the superseded downgrade target (Inspector
+  // Brad PR #71 high-severity find — sweep #1).
   const existingMeta = readMetadata(existing);
-  const { scheduled_downgrade: _droppedDowngrade, ...metaWithoutDowngrade } =
-    existingMeta as Record<string, unknown> & {
-      scheduled_downgrade?: unknown;
-    };
+  const {
+    scheduled_downgrade: _droppedDowngrade,
+    scheduled_change: _droppedScheduledChange,
+    ...metaWithoutSchedulingMarkers
+  } = existingMeta as Record<string, unknown> & {
+    scheduled_downgrade?: unknown;
+    scheduled_change?: unknown;
+  };
   void _droppedDowngrade;
+  void _droppedScheduledChange;
 
   const newMeta: Record<string, unknown> = {
-    ...metaWithoutDowngrade,
+    ...metaWithoutSchedulingMarkers,
     stripe_customer_id: customerId,
     stripe_subscription_id: subscription.id,
     stripe_payment_method_id: paymentMethodId,
@@ -1109,6 +1122,14 @@ async function handleChangeOfTierNoPayment(args: {
   const existingMeta = readMetadata(existing);
   const newMeta: Record<string, unknown> = { ...existingMeta };
 
+  // Always clear any prior `scheduled_change` marker before deciding
+  // whether to stamp a new one. Without the unconditional delete, a
+  // downgrade attempt whose `expiresAt` comes back unreadable from
+  // Stripe (effectiveAtIso === null) would silently preserve the prior
+  // downgrade target on the row (Inspector Brad PR #71 medium-severity
+  // find — sweep #1).
+  delete newMeta.scheduled_change;
+
   if (isDowngrade) {
     const effectiveAtIso = toIso(expiresAt);
     if (effectiveAtIso !== null) {
@@ -1118,8 +1139,6 @@ async function handleChangeOfTierNoPayment(args: {
         effective_at: effectiveAtIso,
       };
     }
-  } else {
-    delete newMeta.scheduled_change;
   }
 
   // The 3DS marker bookkeeping mirrors the with-PM change path.

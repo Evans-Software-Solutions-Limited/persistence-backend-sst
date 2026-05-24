@@ -253,8 +253,18 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.getByText("0 client slots")).toBeTruthy();
   });
 
-  it("treats null priceYearly as 0 in the yearly column", () => {
-    const stdNoYearly = { ...STD, priceYearly: null };
+  it("renders 'Yearly not available' + disables tap when a column has no priceYearly on yearly cycle (Inspector Brad PR #71 medium-severity find — sweep #1)", () => {
+    // Regression: previously the column fell back to £0/year + showed
+    // a red strikethrough of monthly*12, making the tier look free
+    // and letting the user tap into an Apple Pay sheet for £0 — the
+    // backend then errored after the biometric tap.
+    const onStandardPress = jest.fn();
+    const onProPress = jest.fn();
+    const stdNoYearly: SubscriptionTier = {
+      ...STD,
+      priceYearly: null,
+      stripePriceIdYearly: null,
+    };
     render(
       <TrainerSubscriptionCard
         standardTier={stdNoYearly}
@@ -262,12 +272,29 @@ describe("TrainerSubscriptionCard", () => {
         billingCycle="yearly"
         isStandardCurrent={false}
         isProCurrent={false}
-        onStandardPress={jest.fn()}
-        onProPress={jest.fn()}
+        onStandardPress={onStandardPress}
+        onProPress={onProPress}
       />,
     );
-    // With priceYearly null → 0; savings = 49*12 - 0 = 588 > 0 → both strikethrough + £0/year
-    expect(screen.getByText("£0/year")).toBeTruthy();
+    // Standard column communicates the unavailable state — no £0/year,
+    // no monthly*12 strikethrough.
+    expect(screen.getAllByText("Yearly not available").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText("£0/year")).toBeNull();
+    expect(screen.queryByText("£588/year")).toBeNull();
+    // Pro column unaffected — has its own yearly price.
+    expect(screen.getByText("£990/year")).toBeTruthy();
+    // Both columns stay tappable — the container alerts on the
+    // unavailable column rather than silently swallowing taps.
+    fireEvent.press(
+      screen.getByTestId("trainer-card-small_business_standard-standard"),
+    );
+    expect(onStandardPress).toHaveBeenCalledTimes(1);
+    fireEvent.press(
+      screen.getByTestId("trainer-card-small_business_standard-pro"),
+    );
+    expect(onProPress).toHaveBeenCalledTimes(1);
   });
 
   it("shows the yearly strikethrough only on the columns where savings exist", () => {

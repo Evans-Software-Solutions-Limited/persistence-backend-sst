@@ -1419,6 +1419,47 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     ).toBe("sub_old_active");
   });
 
+  it("clears any pending scheduled_change marker on with-PM change path (Inspector Brad PR #71 high-severity find — sweep #1)", async () => {
+    // Regression: when a user schedules a downgrade via Management
+    // (no-PM path stamps `metadata.scheduled_change`) and then changes
+    // tier via Selection with a new payment method, the with-PM change
+    // path used to preserve the now-stale marker. `GET /subscriptions/
+    // me` would keep returning it and the Selection screen would show
+    // a phantom "Scheduled: <old downgrade target>" indicator over the
+    // user's new tier.
+    mockPriceLookup({
+      priceMonthly: "price_premium_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow({
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          scheduled_change: {
+            next_tier_name: "basic",
+            next_billing_cycle: "monthly",
+            effective_at: "2026-12-01T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({ id: "sub_new_premium", status: "active" }),
+    );
+    await postCreate(validBody);
+    const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];
+    expect(
+      (patch.metadata as Record<string, unknown>).scheduled_change,
+    ).toBeUndefined();
+    // The new old-sub marker IS present (replacing the stale scheduled_change).
+    expect(
+      (patch.metadata as Record<string, unknown>).old_stripe_subscription_id,
+    ).toBe("sub_old_active");
+  });
+
   it("does not grant a trial when user has already used user trial", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",
@@ -2495,6 +2536,70 @@ describe("subscriptionsCreateHandler — no-payment-method change-path (M10)", (
     const res = await postCreate({ ...noPmBody, tier_name: "basic" });
     expect(res.status).toBe(200);
     const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    expect(patch.metadata.scheduled_change).toBeUndefined();
+  });
+
+  it("clears a stale scheduled_change marker on downgrade even when new effectiveAtIso is null (Inspector Brad PR #71 medium-severity find — sweep #1)", async () => {
+    // Regression: previously, the downgrade branch only wrote a new
+    // scheduled_change when effectiveAtIso !== null — but did nothing
+    // when it was null, leaving any prior marker intact. A second
+    // downgrade attempt whose new Stripe sub returns no readable
+    // current_period_end would silently keep the stale prior target.
+    mockPriceLookup({
+      priceMonthly: "price_basic_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: false,
+      priceMonthlyAmount: "9.99",
+      priceYearlyAmount: null,
+    });
+    dbSelectMock.mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ priceMonthly: "14.99", priceYearly: null }],
+        }),
+      }),
+    }));
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      existingActiveRow({
+        tierName: "premium",
+        metadata: {
+          stripe_customer_id: "cus_existing",
+          stripe_subscription_id: "sub_old_active",
+          // STALE marker from a prior downgrade attempt that the
+          // webhook hasn't yet resolved.
+          scheduled_change: {
+            next_tier_name: "free",
+            next_billing_cycle: "monthly",
+            effective_at: "2026-12-01T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    stripeMock.subscriptions.retrieve.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        items: {
+          data: [{ id: "si_existing", current_period_end: 1700604800 }],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    // Updated sub has NO current_period_end on items — the
+    // `effectiveAtIso === null` branch.
+    stripeMock.subscriptions.update.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_old_active",
+        status: "active",
+        items: {
+          data: [],
+        } as unknown as Stripe.ApiList<Stripe.SubscriptionItem>,
+      }),
+    );
+    const res = await postCreate({ ...noPmBody, tier_name: "basic" });
+    expect(res.status).toBe(200);
+    const patch = subscriptionRepositoryMocks.updateById.mock.calls[0][1];
+    // Stale marker MUST have been cleared even though no new one was
+    // stamped.
     expect(patch.metadata.scheduled_change).toBeUndefined();
   });
 

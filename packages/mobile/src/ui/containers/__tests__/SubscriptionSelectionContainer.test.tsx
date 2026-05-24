@@ -526,6 +526,114 @@ describe("SubscriptionSelectionContainer", () => {
     );
   });
 
+  it("chains scheduled + trial alerts via onPress before navigating (Inspector Brad PR #71 medium-severity find — sweep #1)", async () => {
+    // Regression: previously, when a response had BOTH scheduled=true
+    // and isTrial=true (the trainer-Pro downgrade-with-trial path),
+    // Alert.alert fired twice synchronously and router.push fired
+    // immediately after — RN serialises alerts on iOS so the second
+    // queued behind the first, and the Selection container tore down
+    // before either was dismissed.
+    const { adapters, api, payments } = makeAdapters();
+    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
+    api.setNextCreateSubscriptionResponse({
+      changeType: "downgrade",
+      scheduled: true,
+      effectiveAt: "2026-08-01T00:00:00.000Z",
+      isTrial: true,
+      trialEndsAt: "2026-06-15T00:00:00.000Z",
+    });
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
+    });
+
+    // First alert (Change Scheduled) is queued; second + navigation are NOT yet.
+    await waitFor(() =>
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "Change Scheduled"),
+      ).toBe(true),
+    );
+    expect(
+      alertSpy.mock.calls.some(([title]) => title === "Trial Started!"),
+    ).toBe(false);
+    expect(mockPush).not.toHaveBeenCalled();
+
+    // Dismiss the first alert via its OK button onPress.
+    const firstAlert = alertSpy.mock.calls.find(
+      ([title]) => title === "Change Scheduled",
+    );
+    const firstOk = firstAlert?.[2]?.find((b) => b.text === "OK");
+    await act(async () => {
+      firstOk?.onPress?.();
+    });
+
+    // Second alert (Trial Started) now fires; navigation still deferred.
+    await waitFor(() =>
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "Trial Started!"),
+      ).toBe(true),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+
+    // Dismiss the second alert — navigation finally runs.
+    const secondAlert = alertSpy.mock.calls.find(
+      ([title]) => title === "Trial Started!",
+    );
+    const secondOk = secondAlert?.[2]?.find((b) => b.text === "OK");
+    await act(async () => {
+      secondOk?.onPress?.();
+    });
+
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/success");
+  });
+
+  it("refuses tier tap on yearly cycle when priceYearly is null + alerts user (Inspector Brad PR #71 medium-severity find — sweep #1)", async () => {
+    // Regression: previously, tapping a tier card on the yearly cycle
+    // when the tier had no Stripe yearly price would render £0 in the
+    // Apple Pay sheet (via `priceYearly ?? 0`) and then 400 from the
+    // backend after the biometric tap. Guard the tap at the container.
+    const { adapters, api, payments } = makeAdapters();
+    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_y" });
+    // Override premium tier to have no yearly price.
+    api.subscriptionTiers = [
+      BASIC_TIER,
+      { ...PREMIUM_TIER, priceYearly: null, stripePriceIdYearly: null },
+    ];
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+
+    // Toggle to yearly via the billing-cycle control.
+    fireEvent.press(screen.getByTestId("billing-cycle-toggle"));
+
+    await act(async () => {
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
+    });
+
+    // Alert was shown; no Apple Pay collection; no create call.
+    expect(
+      alertSpy.mock.calls.some(([title]) => title === "Yearly not available"),
+    ).toBe(true);
+    expect(payments.collectCalls).toBe(0);
+    expect(api.createSubscriptionCalls).toBe(0);
+  });
+
   it("retry button reloads the tiers query", async () => {
     const { adapters } = makeAdapters();
     // Need a fresh adapter with shouldFail to put screen into error state.

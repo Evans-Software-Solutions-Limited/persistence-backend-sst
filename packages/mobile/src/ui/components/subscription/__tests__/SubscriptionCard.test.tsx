@@ -158,4 +158,35 @@ describe("SubscriptionCard", () => {
     fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it("renders 'Yearly not available' + disables Subscribe when on yearly cycle with no priceYearly (Inspector Brad PR #71 medium-severity find — sweep #1)", () => {
+    const onPress = jest.fn();
+    const NO_YEARLY: SubscriptionTier = {
+      ...PREMIUM,
+      priceYearly: null,
+      stripePriceIdYearly: null,
+    };
+    render(
+      <SubscriptionCard
+        tier={NO_YEARLY}
+        billingCycle="yearly"
+        isCurrent={false}
+        onPress={onPress}
+        getFeaturesList={() => []}
+      />,
+    );
+    // Both the price slot AND the button label communicate the
+    // unavailable state — no £0/year, no red strikethrough.
+    expect(screen.getAllByText("Yearly not available").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText("£0/year")).toBeNull();
+    expect(screen.queryByText("£179.88/year")).toBeNull();
+    // Button stays tappable — the container responds with an alert
+    // explaining the unavailable state. Disabling at the card level
+    // would silently swallow taps, which is worse UX than an
+    // explanatory alert.
+    fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
 });

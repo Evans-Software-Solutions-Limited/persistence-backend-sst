@@ -121,6 +121,19 @@ export function SubscriptionSelectionContainer() {
       // Free tier is never buyable.
       const tierData = tiersQuery.data?.find((t) => t.tierName === tier);
       if (!tierData || tierData.tierName === "free") return;
+      // Yearly cycle requested but this tier has no yearly Stripe price
+      // configured. Refuse the tap with a user-readable alert instead of
+      // mounting PaymentMethodForm — otherwise the Apple Pay sheet
+      // renders £0 and the backend errors out after the biometric tap
+      // with "Stripe price id not configured" (Inspector Brad PR #71
+      // medium-severity find — sweep #1).
+      if (billingCycle === "yearly" && tierData.priceYearly === null) {
+        Alert.alert(
+          "Yearly not available",
+          `${tierData.displayName} isn't available on a yearly plan yet. Switch to Monthly to subscribe.`,
+        );
+        return;
+      }
       // Prevent duplicates.
       if (isProcessingSubscription) return;
       setSelectedTierForPayment(tier);
@@ -179,18 +192,28 @@ export function SubscriptionSelectionContainer() {
           }
         }
 
+        // Build the list of alerts to show before navigating. Both
+        // `response.scheduled` (downgrade) AND `response.isTrial` can
+        // be true on the same response (e.g. trial-using trainer-Pro
+        // downgrade). Firing both Alert.alert calls synchronously and
+        // then calling router.push immediately swallows the second
+        // alert and tears down the container before the user has
+        // dismissed either (Inspector Brad PR #71 medium-severity find
+        // — sweep #1). Chain via onPress instead; navigate only from
+        // the final dismissal.
+        const alertsToShow: Array<{ title: string; message: string }> = [];
+
         if (response.scheduled && response.effectiveAt) {
           const formatted = new Date(response.effectiveAt).toLocaleDateString(
             "en-GB",
             { day: "numeric", month: "long", year: "numeric" },
           );
-          Alert.alert(
-            "Change Scheduled",
-            `${
+          alertsToShow.push({
+            title: "Change Scheduled",
+            message: `${
               response.changeType === "downgrade" ? "Downgrade" : "Change"
             } scheduled for ${formatted}. Your current plan will remain active until then.`,
-            [{ text: "OK" }],
-          );
+          });
         }
 
         if (response.isTrial && response.trialEndsAt) {
@@ -198,18 +221,34 @@ export function SubscriptionSelectionContainer() {
             "en-GB",
             { day: "numeric", month: "long", year: "numeric" },
           );
-          Alert.alert(
-            "Trial Started!",
-            `Your trial subscription is active. Your trial ends on ${formatted}.`,
-            [{ text: "OK" }],
-          );
+          alertsToShow.push({
+            title: "Trial Started!",
+            message: `Your trial subscription is active. Your trial ends on ${formatted}.`,
+          });
         }
 
-        // Cast required until `.expo/types/router.d.ts` regenerates on
-        // first `expo start` after the new routes landed (see M0
-        // SMOKE_TEST.md § Known-acceptable failures).
-        router.push("/(auth)/success" as Href);
-        setIsProcessingSubscription(false);
+        const navigateToSuccess = () => {
+          // Cast required until `.expo/types/router.d.ts` regenerates
+          // on first `expo start` after the new routes landed (see M0
+          // SMOKE_TEST.md § Known-acceptable failures).
+          router.push("/(auth)/success" as Href);
+          setIsProcessingSubscription(false);
+        };
+
+        if (alertsToShow.length === 0) {
+          navigateToSuccess();
+        } else {
+          const showAlertAt = (idx: number) => {
+            if (idx >= alertsToShow.length) {
+              navigateToSuccess();
+              return;
+            }
+            Alert.alert(alertsToShow[idx].title, alertsToShow[idx].message, [
+              { text: "OK", onPress: () => showAlertAt(idx + 1) },
+            ]);
+          };
+          showAlertAt(0);
+        }
       } catch (err) {
         Alert.alert(
           "Subscription Error",
