@@ -17,6 +17,7 @@ import type {
   SubscriptionTierName,
 } from "@/domain/models/subscription";
 import { Button } from "@/ui/components/Button";
+import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import {
   BorderRadius,
@@ -56,6 +57,9 @@ export interface SubscriptionManagementPresenterProps {
   canUpgrade: boolean;
   canDowngrade: boolean;
   canCancel: boolean;
+  // Offline + slow-network UX (M10.5)
+  isOffline: boolean;
+  isSlowLoading: boolean;
   onUpgrade: (tier: SubscriptionTierName) => void;
   onDowngrade: (tier: SubscriptionTierName) => void;
   onCancel: () => void;
@@ -94,6 +98,8 @@ export function SubscriptionManagementPresenter(
     canUpgrade,
     canDowngrade,
     canCancel,
+    isOffline,
+    isSlowLoading,
     onUpgrade,
     onDowngrade,
     onCancel,
@@ -111,6 +117,14 @@ export function SubscriptionManagementPresenter(
           <Text style={styles.loadingText}>
             Loading subscription details...
           </Text>
+          {isSlowLoading && (
+            <Text
+              style={styles.slowLoadingText}
+              testID="subscription-management-slow-loading"
+            >
+              Still loading subscription information...
+            </Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -131,6 +145,8 @@ export function SubscriptionManagementPresenter(
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
+          {isOffline && <OfflineBanner />}
+
           <View style={styles.subscriptionCard}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Current Plan</Text>
@@ -224,7 +240,9 @@ export function SubscriptionManagementPresenter(
           </View>
 
           {canUpgrade && (
-            <View style={styles.actionCard}>
+            <View
+              style={[styles.actionCard, isOffline && styles.disabledOpacity]}
+            >
               <Text style={styles.actionTitle}>Upgrade Plan</Text>
               <Text style={styles.actionDescription}>
                 Upgrade to Premium for unlimited workouts and advanced features
@@ -240,7 +258,9 @@ export function SubscriptionManagementPresenter(
           )}
 
           {canDowngrade && (
-            <View style={styles.actionCard}>
+            <View
+              style={[styles.actionCard, isOffline && styles.disabledOpacity]}
+            >
               <Text style={styles.actionTitle}>Downgrade Plan</Text>
               <Text style={styles.actionDescription}>
                 Your subscription will change to Basic at the end of your
@@ -258,7 +278,9 @@ export function SubscriptionManagementPresenter(
           )}
 
           {canCancel && paymentStatus !== "cancelled" && (
-            <View style={styles.actionCard}>
+            <View
+              style={[styles.actionCard, isOffline && styles.disabledOpacity]}
+            >
               <Text style={styles.actionTitle}>Cancel Subscription</Text>
               <Text style={styles.actionDescription}>
                 {paymentStatus === "trialing"
@@ -446,5 +468,18 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     marginBottom: Spacing.md,
     lineHeight: 20,
+  },
+  // M10.5 — applied conditionally on upgrade/downgrade/cancel action
+  // cards when `isOffline`. Visual cue only; the underlying Button is
+  // still tappable so the container can surface an explanatory alert.
+  disabledOpacity: {
+    opacity: 0.5,
+  },
+  slowLoadingText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    fontStyle: "italic",
+    marginTop: Spacing.sm,
+    textAlign: "center",
   },
 });

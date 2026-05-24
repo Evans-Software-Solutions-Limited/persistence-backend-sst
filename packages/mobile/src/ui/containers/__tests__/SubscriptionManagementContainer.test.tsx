@@ -472,4 +472,134 @@ describe("SubscriptionManagementContainer", () => {
     fireEvent.press(screen.getByTestId("subscription-management-back"));
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
+
+  // M10.5 — offline + slow-network UX
+  describe("M10.5 — offline + slow-network UX", () => {
+    it("renders the offline banner when netInfo reports disconnected (AC 11.1)", async () => {
+      const { adapters, netInfo } = makeAdapters(BASIC_SUB);
+      netInfo.setConnected(false);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionManagementContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
+      );
+      // Cached sub data still renders.
+      expect(screen.getByText("Current Plan")).toBeTruthy();
+    });
+
+    it("offline + tap Upgrade → alert + no createSubscription (AC 11.2 + 11.4)", async () => {
+      const { adapters, api, netInfo } = makeAdapters(BASIC_SUB);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionManagementContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("management-upgrade-button")).toBeTruthy(),
+      );
+      await act(async () => {
+        netInfo.setConnected(false);
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("management-upgrade-button"));
+      });
+      // Offline alert fired; no Upgrade Subscription confirmation alert.
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+      ).toBe(true);
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "Upgrade Subscription"),
+      ).toBe(false);
+      expect(api.createSubscriptionCalls).toBe(0);
+    });
+
+    it("offline + tap Downgrade → alert + no createSubscription (AC 11.2 + 11.4)", async () => {
+      const { adapters, api, netInfo } = makeAdapters(PREMIUM_SUB);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionManagementContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
+      );
+      await act(async () => {
+        netInfo.setConnected(false);
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("management-downgrade-button"));
+      });
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+      ).toBe(true);
+      expect(
+        alertSpy.mock.calls.some(
+          ([title]) => title === "Downgrade Subscription",
+        ),
+      ).toBe(false);
+      expect(api.createSubscriptionCalls).toBe(0);
+    });
+
+    it("offline + tap Cancel → alert + no cancelSubscription (AC 11.2 + 11.4)", async () => {
+      const { adapters, api, netInfo } = makeAdapters(PREMIUM_SUB);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionManagementContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("management-cancel-button")).toBeTruthy(),
+      );
+      await act(async () => {
+        netInfo.setConnected(false);
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("management-cancel-button"));
+      });
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+      ).toBe(true);
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "Cancel Subscription"),
+      ).toBe(false);
+      expect(api.cancelSubscriptionCalls).toBe(0);
+    });
+
+    it("slow-network indicator appears after 8s on Management while query is loading (AC 11.3)", async () => {
+      jest.useFakeTimers();
+      try {
+        const { adapters } = makeAdapters(BASIC_SUB);
+        const api = adapters.api as InMemoryApiAdapter;
+        jest
+          .spyOn(api, "getMySubscription")
+          .mockImplementation(() => new Promise(() => {}));
+        render(
+          <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+            <SubscriptionManagementContainer />
+          </Wrapper>,
+        );
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("subscription-management-loading"),
+          ).toBeTruthy(),
+        );
+        expect(
+          screen.queryByTestId("subscription-management-slow-loading"),
+        ).toBeNull();
+        act(() => {
+          jest.advanceTimersByTime(8000);
+        });
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("subscription-management-slow-loading"),
+          ).toBeTruthy(),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
 });
