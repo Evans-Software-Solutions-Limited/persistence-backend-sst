@@ -289,12 +289,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
 
   it("treats subscription_limits.current_count = null as count=0", async () => {
     (getDb as any).mockReturnValue(
-      makeQueueDb([
-        PROFILE_USER,
-        [],
-        FREE_TIER_ROW,
-        [{ currentCount: null }],
-      ]),
+      makeQueueDb([PROFILE_USER, [], FREE_TIER_ROW, [{ currentCount: null }]]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
@@ -310,9 +305,9 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
       ]),
     );
 
-    await expect(
-      assertEntitlement("user-1", "create_workout"),
-    ).rejects.toThrow(/free.*missing/);
+    await expect(assertEntitlement("user-1", "create_workout")).rejects.toThrow(
+      /free.*missing/,
+    );
   });
 
   it("treats free tier with workoutLimit=null as unlimited (catalog drift)", async () => {
@@ -510,9 +505,7 @@ describe("assertEntitlement — error paths", () => {
         const failingLimit = vi
           .fn()
           .mockRejectedValue(new Error("connection refused"));
-        const failingOrderBy = vi
-          .fn()
-          .mockReturnValue({ limit: failingLimit });
+        const failingOrderBy = vi.fn().mockReturnValue({ limit: failingLimit });
         const failingWhere = vi
           .fn()
           .mockReturnValue({ limit: failingLimit, orderBy: failingOrderBy });
@@ -526,9 +519,9 @@ describe("assertEntitlement — error paths", () => {
       });
     (getDb as any).mockReturnValue({ select });
 
-    await expect(
-      assertEntitlement("user-1", "create_workout"),
-    ).rejects.toThrow(/connection refused/);
+    await expect(assertEntitlement("user-1", "create_workout")).rejects.toThrow(
+      /connection refused/,
+    );
   });
 });
 
@@ -542,18 +535,12 @@ describe("pure helpers", () => {
     });
     it("returns null for cancelled-with-future-expires_at", () => {
       expect(
-        classifySubscriptionStatus(
-          "cancelled",
-          new Date(Date.now() + 60_000),
-        ),
+        classifySubscriptionStatus("cancelled", new Date(Date.now() + 60_000)),
       ).toBeNull();
     });
     it("returns 'cancelled' for cancelled-with-past-expires_at", () => {
       expect(
-        classifySubscriptionStatus(
-          "cancelled",
-          new Date(Date.now() - 60_000),
-        ),
+        classifySubscriptionStatus("cancelled", new Date(Date.now() - 60_000)),
       ).toBe("cancelled");
     });
     it("returns 'cancelled' for cancelled-with-null-expires_at", () => {

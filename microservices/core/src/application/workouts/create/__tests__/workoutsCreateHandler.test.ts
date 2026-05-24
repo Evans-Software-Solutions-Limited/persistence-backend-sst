@@ -410,7 +410,8 @@ describe("WorkoutsCreateHandler", () => {
       // verdicts surface as 402 with the spec'd snake_case body — that
       // mapping lives in coreErrorHandler, not the route itself.
       const { default: Elysia } = await import("elysia");
-      const { coreErrorHandler } = await import("../../../../shared/errorHandler");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");
       return new Elysia().use(coreErrorHandler).use(workoutsCreateHandler);

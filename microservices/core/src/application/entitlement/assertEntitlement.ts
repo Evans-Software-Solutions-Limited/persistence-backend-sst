@@ -94,11 +94,7 @@ export type SubscriptionTierName =
  *     `incomplete_expired`) — user needs to update payment, not pick a
  *     new tier.
  */
-export type EntitlementDenyReason =
-  | "tier"
-  | "limit"
-  | "cancelled"
-  | "expired";
+export type EntitlementDenyReason = "tier" | "limit" | "cancelled" | "expired";
 
 /**
  * Verdict returned by `assertEntitlement`. Discriminated by `allowed`
