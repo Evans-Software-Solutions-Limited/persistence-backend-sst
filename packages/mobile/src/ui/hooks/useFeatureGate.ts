@@ -65,6 +65,21 @@ const ACTIVE_STATUSES = new Set<MySubscription["paymentStatus"]>([
 ]);
 
 /**
+ * Mirror the server's `isExpiresInFuture` helper from
+ * `microservices/core/src/application/entitlement/assertEntitlement.ts`.
+ * Used to detect "cancelled-but-still-paid-through" subs — the user
+ * paid through `expires_at` and the server treats them as entitled
+ * until that date. The client gate must agree, otherwise the user sees
+ * a paywall on screens they've already paid for.
+ */
+function isExpiresAtInFuture(expiresAt: string | null): boolean {
+  if (expiresAt === null) return false;
+  const t = Date.parse(expiresAt);
+  if (Number.isNaN(t)) return false;
+  return t > Date.now();
+}
+
+/**
  * Human-readable feature labels used in the gate prompt header. Centralised
  * here so the prompt and any future analytics emitter see the same string.
  */
@@ -124,11 +139,20 @@ export function computeFeatureGateVerdict(
 ): { allowed: boolean; reason: FeatureGateReason } {
   const isActive = ACTIVE_STATUSES.has(subscription.paymentStatus);
   const isCancelled = subscription.paymentStatus === "cancelled";
+  // Mirror the server's `classifySubscriptionStatus` rule: cancelled
+  // with `expires_at` in the future is still entitled — the user paid
+  // through that date. The server allows their mutations during this
+  // window; the client gate MUST agree, otherwise the user sees a
+  // paywall on screens they've already paid for (Inspector Brad PR
+  // #72 low-severity find — sweep #2).
+  const isCancelledButStillPaidThrough =
+    isCancelled && isExpiresAtInFuture(subscription.expiresAt);
+  const isEntitled = isActive || isCancelledButStillPaidThrough;
 
   switch (feature) {
     case "create_workout": {
-      // Unlimited (workoutLimit === null) or non-zero limit + active sub.
-      if (!isActive) {
+      // Unlimited (workoutLimit === null) or non-zero limit + entitled sub.
+      if (!isEntitled) {
         return {
           allowed: false,
           reason: isCancelled ? "cancelled" : "tier",
@@ -145,7 +169,7 @@ export function computeFeatureGateVerdict(
       return { allowed, reason: "tier" };
     }
     case "ai_workout": {
-      if (!isActive) {
+      if (!isEntitled) {
         return {
           allowed: false,
           reason: isCancelled ? "cancelled" : "tier",

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const sessionMocks = { recordSession: vi.fn() };
 const prMocks = { recordPRsForSession: vi.fn() };
+const workoutMocks = { getById: vi.fn() };
 
 // Hoisted so the vi.mock factory below can reference it (factories
 // run at module-load time, BEFORE the top-level `const` initialisers).
@@ -53,6 +54,15 @@ vi.mock("../../../repositories/personalRecordsRepository", () => ({
   PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
 }));
 
+// Mock WorkoutRepository so the M10.5-sweep-#2 ownership check in the
+// handler can resolve. The handler skips the entitlement gate ONLY when
+// the referenced workout is owned by the caller — `getById` returns the
+// workout if visible (including ownership), else null. Tests dial in
+// per-case.
+vi.mock("../../../repositories/workoutRepository", () => ({
+  WorkoutRepository: vi.fn().mockImplementation(() => workoutMocks),
+}));
+
 // Mock the entitlement helper so handler tests don't hit live DB. The
 // real EntitlementError class is re-exported so the handler's
 // `throw new EntitlementError(...)` reaches the error handler's
@@ -101,6 +111,14 @@ describe("sessionsRecordHandler", () => {
     // the impl). Tests that need a deny verdict override per-call via
     // mockResolvedValueOnce.
     assertEntitlementMock.mockResolvedValue({ allowed: true });
+    // Default to "workout owned by the calling user" so existing tests
+    // using validBody (workoutId: "workout-1") continue to skip the gate.
+    // Per-test overrides via mockResolvedValueOnce.
+    workoutMocks.getById.mockResolvedValue({
+      id: "workout-1",
+      createdBy: "test-user-id",
+      name: "Push Day",
+    });
     sessionMocks.recordSession.mockResolvedValue({
       id: "server-session-1",
       userId: "test-user-id",
@@ -341,11 +359,11 @@ describe("sessionsRecordHandler", () => {
       );
     });
 
-    it("SKIPS the gate when workoutId is set (recording against an existing template)", async () => {
-      // validBody has workoutId: "workout-1". The session is logging
-      // an instance of an already-existing template — the user paid
-      // the workout-count slot when they created the template. No
-      // new gate call.
+    it("SKIPS the gate when workoutId is set AND owned by the caller (recording against own template)", async () => {
+      // validBody has workoutId: "workout-1". Default mock returns the
+      // workout with `createdBy: "test-user-id"` — owned by the caller.
+      // The user paid the workout-count slot when they created the
+      // template, so no new gate call.
       const { sessionsRecordHandler } =
         await import("../sessionsRecordHandler");
       const response = await sessionsRecordHandler.handle(
@@ -360,6 +378,74 @@ describe("sessionsRecordHandler", () => {
       );
       expect(response.status).toBe(201);
       expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+
+    it("RUNS the gate when workoutId is set but the workout is owned by ANOTHER user (Inspector Brad PR #72 high-severity find — sweep #2)", async () => {
+      // Regression: previously, ANY non-null workoutId bypassed the
+      // gate — a free-tier user at cap could send some-other-user's
+      // workout UUID (a public/shared workout) and the session insert
+      // would land without an entitlement check. The FK on
+      // workout_sessions.workout_id is uncorrelated with user_id, so
+      // foreign workoutIds succeed at insert time.
+      //
+      // After the fix: the handler asserts ownership via
+      // WorkoutRepository.getById + createdBy === userId. A workout
+      // visible to the user (e.g., a public template) but owned by
+      // someone else does NOT skip the gate.
+      workoutMocks.getById.mockResolvedValueOnce({
+        id: "workout-shared-public",
+        createdBy: "different-user-id", // NOT the caller
+        name: "Public workout",
+      });
+
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            workoutId: "workout-shared-public",
+          }),
+        }),
+      );
+
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "create_workout",
+      );
+    });
+
+    it("RUNS the gate when workoutId references a workout that doesn't exist or isn't visible (getById returns null)", async () => {
+      // Same vector as above but for the "user discovered a UUID
+      // that doesn't exist or that they can't see" case. getById
+      // returns null on either condition — the gate still runs.
+      workoutMocks.getById.mockResolvedValueOnce(null);
+
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            workoutId: "workout-unknown-uuid",
+          }),
+        }),
+      );
+
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "create_workout",
+      );
     });
 
     it("returns 402 with the spec body when assertEntitlement denies on a fresh workout", async () => {

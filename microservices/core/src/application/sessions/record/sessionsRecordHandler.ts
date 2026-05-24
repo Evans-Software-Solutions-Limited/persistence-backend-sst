@@ -1,6 +1,7 @@
 import Elysia, { t } from "elysia";
 import { SessionService } from "../../repositories/sessionService";
 import { PersonalRecordsService } from "../../repositories/personalRecordsService";
+import { WorkoutService } from "../../repositories/workoutService";
 import {
   getAuthUser,
   requireAuth,
@@ -42,45 +43,61 @@ export const sessionsRecordHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(SessionService)
   .use(PersonalRecordsService)
+  .use(WorkoutService)
   .post(
     "/sessions/record",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const payload = ctx.body as RecordSessionInput;
 
-      // Server-side entitlement gate (M10.5). Only enforced when the
-      // recorded session represents a FRESH workout — i.e., when the
-      // payload doesn't reference an existing workout template
-      // (`workoutId` is null or absent). Re-recording a session
-      // against an existing template is the user logging another
-      // instance of a workout they already had — no new entitlement
-      // cost.
+      // Server-side entitlement gate (M10.5). Enforced UNLESS the
+      // recorded session references a workout template the calling
+      // user OWNS — i.e., the user already paid the entitlement-count
+      // for that workout at template-create time via POST /workouts.
       //
-      // Why workoutId is the right discriminator (TRACE):
+      // Why workoutId alone is NOT a safe discriminator (Inspector
+      // Brad PR #72 high-severity find — sweep #2):
       //   - `recordSession` inserts only into `workout_sessions` /
       //     `session_exercises` / `exercise_sets`. It does NOT insert
       //     into `workouts`, so the AFTER-INSERT trigger on `workouts`
       //     (subscription_limits 'workouts' counter, see migration
-      //     004 line 450) does NOT fire from this path. The "workout
-      //     count" the gate compares against is the count of `workouts`
-      //     rows, which the user grew via POST /workouts.
-      //   - Therefore: when `workoutId` is set, the session points at
-      //     an existing template the user already paid the
-      //     entitlement-count for at template-create time. Allowing
-      //     the session record adds zero to the count.
-      //   - When `workoutId` is null, the session is ad-hoc / freeform.
-      //     The brief's policy is to count these toward the limit even
-      //     though no `workouts` row gets inserted. We enforce the gate
-      //     here so a user at-cap on workouts can't bypass the gate by
-      //     recording ad-hoc sessions instead of creating templates.
+      //     004 line 450) does NOT fire from this path.
+      //   - The FK on `workout_sessions.workout_id` is uncorrelated
+      //     with `user_id`. A free-tier user at-cap could pass ANY
+      //     valid UUID (a public/shared workout, or even someone
+      //     else's private workout if they discovered the UUID) and
+      //     bypass the gate. The session insert would succeed.
+      //   - Therefore: only skip the gate when the workout is OWNED
+      //     by the caller (`workout.createdBy === userId`). A null
+      //     workoutId (ad-hoc session) or a non-owned workoutId
+      //     (someone else's template, a public workout) runs the gate.
+      //
+      // WorkoutRepository.getById applies visibility checks (private /
+      // friends / public) so a malicious user can't discover workout
+      // existence through this path — `null` covers both "doesn't
+      // exist" and "exists but not visible to you". We additionally
+      // require `createdBy === userId` for the entitlement skip;
+      // visibility-only access (e.g., a PT-shared workout) still runs
+      // the gate.
       //
       // Position: BEFORE the recordSession transaction (so a denied
       // request never opens a Postgres transaction at all).
       //
       // Spec: specs/11-payments-subscriptions/requirements.md AC 9.4
-      const isFreshWorkout =
-        payload.workoutId === undefined || payload.workoutId === null;
-      if (isFreshWorkout) {
+      let canSkipGate = false;
+      if (payload.workoutId !== undefined && payload.workoutId !== null) {
+        const referencedWorkout = await ctx.WorkoutRepository.getById(
+          payload.workoutId,
+          userId,
+        );
+        if (
+          referencedWorkout !== null &&
+          referencedWorkout.createdBy === userId
+        ) {
+          canSkipGate = true;
+        }
+      }
+      if (!canSkipGate) {
         const verdict = await assertEntitlement(userId, "create_workout");
         if (!verdict.allowed) {
           throw new EntitlementError(verdict, "create_workout");

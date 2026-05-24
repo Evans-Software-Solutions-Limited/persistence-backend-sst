@@ -172,17 +172,51 @@ describe("computeFeatureGateVerdict (pure)", () => {
     expect(verdict.allowed).toBe(true);
   });
 
-  it("create_workout: cancelled status → denied with reason 'cancelled'", () => {
+  it("create_workout: cancelled status with PAST expiresAt → denied with reason 'cancelled'", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
       makeSub({
         tierName: "basic",
         paymentStatus: "cancelled",
         workoutLimit: 10,
+        expiresAt: new Date(Date.now() - 86_400_000).toISOString(), // -1 day
       }),
     );
     expect(verdict.allowed).toBe(false);
     expect(verdict.reason).toBe("cancelled");
+  });
+
+  it("create_workout: cancelled status with FUTURE expiresAt → allowed (server mirrors this; Inspector Brad PR #72 low-severity find — sweep #2)", () => {
+    // Regression: previously, `!isActive` returned a `cancelled` deny
+    // regardless of `expiresAt`. The server's `classifySubscriptionStatus`
+    // treats cancelled-with-future-expiresAt as still entitled (the user
+    // paid through that date). Without this fix, mobile would render
+    // a paywall during the paid-through window while the server cheerfully
+    // accepted the mutations — a divergence that becomes user-visible
+    // the moment Wave 2 wires `useFeatureGate` into screen-render guards.
+    const verdict = computeFeatureGateVerdict(
+      "create_workout",
+      makeSub({
+        tierName: "basic",
+        paymentStatus: "cancelled",
+        workoutLimit: 10,
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(), // +1 day
+      }),
+    );
+    expect(verdict.allowed).toBe(true);
+  });
+
+  it("ai_workout: cancelled with FUTURE expiresAt + aiAccess → allowed (mirrors server)", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_workout",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "cancelled",
+        aiAccess: true,
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    );
+    expect(verdict.allowed).toBe(true);
   });
 
   it("create_workout: trialing status with non-zero limit → allowed", () => {
