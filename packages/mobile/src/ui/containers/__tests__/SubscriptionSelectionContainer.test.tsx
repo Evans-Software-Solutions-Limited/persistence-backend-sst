@@ -14,6 +14,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type {
   MySubscription,
   SubscriptionTier,
@@ -95,10 +96,12 @@ function makeAdapters(): {
   api: InMemoryApiAdapter;
   auth: InMemoryAuthAdapter;
   payments: MockPaymentsAdapter;
+  netInfo: InMemoryNetInfoAdapter;
 } {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
   const payments = new MockPaymentsAdapter();
+  const netInfo = new InMemoryNetInfoAdapter();
   api.subscriptionTiers = [BASIC_TIER, PREMIUM_TIER];
   api.mySubscription = freeSub();
   auth.currentSession = {
@@ -115,8 +118,9 @@ function makeAdapters(): {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments,
+    netInfo,
   };
-  return { adapters, api, auth, payments };
+  return { adapters, api, auth, payments, netInfo };
 }
 
 function makeQueryClient() {
@@ -768,5 +772,245 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("cancel-subscription-button")).toBeTruthy(),
     );
     expect(screen.getByTestId("current-subscription-status-card")).toBeTruthy();
+  });
+
+  // M10.5 — offline + slow-network UX
+  describe("M10.5 — offline + slow-network UX", () => {
+    it("renders the offline banner when netInfo reports disconnected (AC 11.1)", async () => {
+      const { adapters, netInfo } = makeAdapters();
+      netInfo.setConnected(false);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
+      );
+      // Cached tiers + cards still render.
+      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy();
+    });
+
+    it("offline + tap tier → alert + Apple Pay does NOT mount + no createSubscription (AC 11.2 + 11.4)", async () => {
+      const { adapters, api, payments, netInfo } = makeAdapters();
+      netInfo.setConnected(false);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+      );
+      // Confirm banner is up.
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
+      );
+
+      await act(async () => {
+        fireEvent.press(
+          screen.getByTestId("subscription-card-premium-subscribe"),
+        );
+      });
+
+      // Alert was shown; no Apple Pay sheet; no create.
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+      ).toBe(true);
+      expect(payments.collectCalls).toBe(0);
+      expect(api.createSubscriptionCalls).toBe(0);
+    });
+
+    it("offline → online transition then tap tier → Apple Pay mounts normally", async () => {
+      const { adapters, api, payments, netInfo } = makeAdapters();
+      netInfo.setConnected(false);
+      payments.setNextCollectResponse({
+        ok: true,
+        paymentMethodId: "pm_rec",
+      });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
+      );
+
+      // Reconnect.
+      await act(async () => {
+        netInfo.setConnected(true);
+      });
+
+      await act(async () => {
+        fireEvent.press(
+          screen.getByTestId("subscription-card-premium-subscribe"),
+        );
+      });
+
+      await waitFor(() => expect(api.createSubscriptionCalls).toBe(1));
+      expect(payments.collectCalls).toBeGreaterThan(0);
+    });
+
+    it("offline + tap cancel → alert + no cancelSubscription (AC 11.2 + 11.4)", async () => {
+      const { adapters, api, netInfo } = makeAdapters();
+      api.mySubscription = freeSub({
+        subscriptionId: "us_1",
+        tierName: "premium",
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        expiresAt: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("cancel-subscription-button")).toBeTruthy(),
+      );
+      // Now go offline and tap cancel.
+      await act(async () => {
+        netInfo.setConnected(false);
+      });
+      fireEvent.press(screen.getByTestId("cancel-subscription-button"));
+      await waitFor(() =>
+        expect(screen.getByTestId("cancel-subscription-modal")).toBeTruthy(),
+      );
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("cancel-modal-confirm"));
+      });
+      expect(
+        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+      ).toBe(true);
+      expect(api.cancelSubscriptionCalls).toBe(0);
+    });
+
+    it("3DS pre-flight: offline between createSubscription + 3DS → alert + 3DS not invoked (AC 11.5)", async () => {
+      const { adapters, api, payments, netInfo } = makeAdapters();
+      payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
+      api.setNextCreateSubscriptionResponse({
+        requiresAction: true,
+        clientSecret: "pi_3ds_secret",
+      });
+      // Custom: flip offline DURING createSubscription. The mutation
+      // resolves with requiresAction=true; before we hand off to 3DS,
+      // the container re-reads online status.
+      const originalCreate = api.createSubscription.bind(api);
+      jest
+        .spyOn(api, "createSubscription")
+        .mockImplementation(async (input) => {
+          const result = await originalCreate(input);
+          netInfo.setConnected(false);
+          return result;
+        });
+
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+      );
+      await act(async () => {
+        fireEvent.press(
+          screen.getByTestId("subscription-card-premium-subscribe"),
+        );
+      });
+
+      await waitFor(() =>
+        expect(
+          alertSpy.mock.calls.some(([title]) => title === "You're offline"),
+        ).toBe(true),
+      );
+      expect(payments.confirm3DSCalls).toBe(0);
+    });
+
+    it("slow-network indicator appears after 8s while query is loading (AC 11.3)", async () => {
+      jest.useFakeTimers();
+      try {
+        const { adapters } = makeAdapters();
+        // Stall the tiers query by returning a never-resolving promise.
+        const api = adapters.api as InMemoryApiAdapter;
+        jest
+          .spyOn(api, "getSubscriptionTiers")
+          .mockImplementation(() => new Promise(() => {}));
+        jest
+          .spyOn(api, "getMySubscription")
+          .mockImplementation(() => new Promise(() => {}));
+        render(
+          <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+            <SubscriptionSelectionContainer />
+          </Wrapper>,
+        );
+        // Loading state up; slow-loading indicator NOT yet (under 8s).
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("subscription-selection-loading"),
+          ).toBeTruthy(),
+        );
+        expect(
+          screen.queryByTestId("subscription-selection-slow-loading"),
+        ).toBeNull();
+        // Advance past the 8s threshold.
+        act(() => {
+          jest.advanceTimersByTime(8000);
+        });
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("subscription-selection-slow-loading"),
+          ).toBeTruthy(),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("3DS mid-flight throw → connection-lost alert + state resets (AC 11.5)", async () => {
+      const { adapters, api, payments } = makeAdapters();
+      payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_y" });
+      api.setNextCreateSubscriptionResponse({
+        requiresAction: true,
+        clientSecret: "pi_3ds_secret",
+      });
+      // confirm3DS THROWS (not Result.err) — simulates the Stripe SDK
+      // throwing when the device loses connectivity during the
+      // challenge sheet.
+      jest
+        .spyOn(payments, "confirm3DS")
+        .mockRejectedValueOnce(new Error("network unreachable"));
+
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSelectionContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+      );
+      await act(async () => {
+        fireEvent.press(
+          screen.getByTestId("subscription-card-premium-subscribe"),
+        );
+      });
+
+      await waitFor(() =>
+        expect(
+          alertSpy.mock.calls.some(
+            ([title, message]) =>
+              title === "You're offline" &&
+              typeof message === "string" &&
+              message.includes("Connection lost"),
+          ),
+        ).toBe(true),
+      );
+      expect(mockPush).not.toHaveBeenCalled();
+    });
   });
 });

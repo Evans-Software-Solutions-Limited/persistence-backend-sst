@@ -73,6 +73,8 @@ function defaultProps(): SubscriptionSelectionPresenterProps {
     isCancelledButActive: false,
     scheduledChange: null,
     currentTierDisplayName: "Free",
+    isOffline: false,
+    isSlowLoading: false,
     selectedTierForPayment: null,
     isProcessingSubscription: false,
     paymentFormProps: null,
@@ -93,6 +95,27 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     render(<SubscriptionSelectionPresenter {...defaultProps()} isLoading />);
     expect(screen.getByTestId("subscription-selection-loading")).toBeTruthy();
     expect(screen.getByText("Loading subscription options...")).toBeTruthy();
+  });
+
+  it("renders the slow-loading indicator when isSlowLoading && isLoading (M10.5 AC 11.3)", () => {
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        isLoading
+        isSlowLoading
+      />,
+    );
+    expect(
+      screen.getByTestId("subscription-selection-slow-loading"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Still loading subscription information..."),
+    ).toBeTruthy();
+  });
+
+  it("renders the offline banner when isOffline (M10.5 AC 11.1)", () => {
+    render(<SubscriptionSelectionPresenter {...defaultProps()} isOffline />);
+    expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy();
   });
 
   it("renders the error state with retry button when errorMessage set", () => {

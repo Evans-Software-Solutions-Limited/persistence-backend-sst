@@ -19,6 +19,7 @@ import type {
 } from "@/domain/models/subscription";
 import type { PaymentsPort } from "@/domain/ports/payments.port";
 import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
+import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
 import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodForm";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
@@ -76,6 +77,10 @@ export interface SubscriptionSelectionPresenterProps {
   } | null;
   currentTierDisplayName: string;
 
+  // Offline + slow-network UX (M10.5)
+  isOffline: boolean;
+  isSlowLoading: boolean;
+
   // Payment-form state
   selectedTierForPayment: SubscriptionTierName | null;
   isProcessingSubscription: boolean;
@@ -118,6 +123,8 @@ export function SubscriptionSelectionPresenter(
     isCancelledButActive,
     scheduledChange,
     currentTierDisplayName,
+    isOffline,
+    isSlowLoading,
     selectedTierForPayment,
     isProcessingSubscription,
     paymentFormProps,
@@ -249,6 +256,14 @@ export function SubscriptionSelectionPresenter(
           <Text style={styles.loadingText}>
             Loading subscription options...
           </Text>
+          {isSlowLoading && (
+            <Text
+              style={styles.slowLoadingText}
+              testID="subscription-selection-slow-loading"
+            >
+              Still loading subscription information...
+            </Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -297,6 +312,8 @@ export function SubscriptionSelectionPresenter(
         <Text style={styles.headerTitle}>Choose your plan</Text>
         <View style={styles.headerSpacer} />
       </View>
+
+      {isOffline && <OfflineBanner />}
 
       {isProcessingSubscription && (
         <View
@@ -394,7 +411,12 @@ export function SubscriptionSelectionPresenter(
             </Text>
           </View>
 
-          <View style={styles.subscriptionOptions}>
+          <View
+            style={[
+              styles.subscriptionOptions,
+              isOffline && styles.disabledOpacity,
+            ]}
+          >
             {selectedRole === "trainer" ? (
               <>
                 <Text style={styles.trainerDescriptionText}>
@@ -422,7 +444,10 @@ export function SubscriptionSelectionPresenter(
           {currentTier !== "free" && canCancel && !isCancelledButActive && (
             <View style={styles.cancelSubscriptionContainer}>
               <TouchableOpacity
-                style={styles.cancelButtonTrainerCard}
+                style={[
+                  styles.cancelButtonTrainerCard,
+                  isOffline && styles.disabledOpacity,
+                ]}
                 onPress={onCancelSubscription}
                 disabled={!!selectedTierForPayment || isProcessingSubscription}
                 testID="cancel-subscription-button"
@@ -788,5 +813,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: Colors.error.DEFAULT,
+  },
+  // M10.5 — applied conditionally on tier cards + cancel CTA when
+  // `isOffline`. Cards remain tappable so the container can surface an
+  // explanatory alert; the opacity is purely visual feedback.
+  disabledOpacity: {
+    opacity: 0.5,
+  },
+  slowLoadingText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    fontStyle: "italic",
+    marginTop: Spacing.sm,
+    textAlign: "center",
   },
 });

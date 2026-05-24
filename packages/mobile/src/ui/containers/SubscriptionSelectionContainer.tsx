@@ -14,6 +14,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
 import { useCreateSubscription } from "@/ui/hooks/useCreateSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { CancelSubscriptionModal } from "@/ui/components/subscription/CancelSubscriptionModal";
 import { USER_CANCELLED_ERROR } from "@/ui/components/subscription/PaymentMethodForm";
@@ -38,14 +39,56 @@ import {
 
 type Role = "user" | "trainer";
 
+/**
+ * M10.5 — milliseconds before the slow-network "Still loading..."
+ * indicator appears. Sibling state to the Tanstack query; the
+ * underlying request continues regardless. Tunable here without
+ * touching the presenter.
+ *
+ * Spec: design.md § Offline UX on subscription screens
+ *       > 8-second slow-network UX
+ */
+export const SLOW_NETWORK_INDICATOR_DELAY_MS = 8000;
+
+/**
+ * M10.5 — copy used for every offline pre-flight alert across both
+ * subscription screens. Centralised so the wording stays consistent.
+ */
+const OFFLINE_ALERT_TITLE = "You're offline";
+const OFFLINE_ALERT_MESSAGE =
+  "You need to be online to manage your subscription. Please reconnect and try again.";
+const OFFLINE_3DS_MESSAGE =
+  "You need to be online to complete payment verification. Your subscription is on hold.";
+const OFFLINE_3DS_LOST_MESSAGE =
+  "Connection lost during payment verification. Please try again.";
+
 export function SubscriptionSelectionContainer() {
   const router = useRouter();
-  const { payments } = useAdapters();
+  const { payments, netInfo } = useAdapters();
+  const isOnline = useOnlineStatus();
 
   const tiersQuery = useSubscriptionTiers();
   const subQuery = useMySubscription();
   const createSubscriptionMutation = useCreateSubscription();
   const cancelSubscriptionMutation = useCancelSubscription();
+
+  // M10.5 — slow-network "still working…" indicator. Sibling state to
+  // the Tanstack query; we don't cancel or retry the underlying call,
+  // just surface a UI hint after `SLOW_NETWORK_INDICATOR_DELAY_MS`.
+  const isStillLoading = tiersQuery.isLoading || subQuery.isLoading;
+  const [isSlowLoading, setIsSlowLoading] = useState(false);
+  useEffect(() => {
+    if (!isStillLoading) {
+      setIsSlowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsSlowLoading(true);
+    }, SLOW_NETWORK_INDICATOR_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isStillLoading]);
 
   const subscriptionData = subQuery.data ?? null;
   const role = subscriptionData?.role;
@@ -134,6 +177,14 @@ export function SubscriptionSelectionContainer() {
         );
         return;
       }
+      // M10.5 — offline pre-flight. MUST fire BEFORE
+      // setSelectedTierForPayment so the PaymentMethodForm doesn't
+      // mount + auto-trigger Apple Pay against a doomed network call.
+      // AC 11.2 + AC 11.4.
+      if (!isOnline) {
+        Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_ALERT_MESSAGE);
+        return;
+      }
       // Prevent duplicates.
       if (isProcessingSubscription) return;
       setSelectedTierForPayment(tier);
@@ -145,6 +196,7 @@ export function SubscriptionSelectionContainer() {
       currentBillingCycle,
       tiersQuery.data,
       isProcessingSubscription,
+      isOnline,
     ],
   );
 
@@ -182,11 +234,40 @@ export function SubscriptionSelectionContainer() {
         // query is invalidated by the mutation's onSuccess; the
         // /(auth)/success screen refetches on mount.
         if (response.requiresAction && response.clientSecret) {
-          const result = await payments.confirm3DS(response.clientSecret);
-          if (!result.ok) {
-            Alert.alert("Payment Authentication Failed", result.error.message, [
-              { text: "OK" },
-            ]);
+          // M10.5 — pre-flight: if the user dropped offline between
+          // `createSubscription` returning + 3DS confirmation, don't
+          // mount the challenge sheet (it'd fail mid-flow). AC 11.5.
+          //
+          // We read directly from `netInfo.isConnected()` here rather
+          // than the React-state-based `isOnline` value — the user
+          // may have flipped network state during the in-flight
+          // mutation, and the captured closure value is stale by the
+          // time this branch runs (Brad's "stale state in async
+          // handlers" caveat in the brief).
+          const stillOnline = await netInfo.isConnected();
+          if (!stillOnline) {
+            Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_3DS_MESSAGE);
+            setIsProcessingSubscription(false);
+            return;
+          }
+          try {
+            const result = await payments.confirm3DS(response.clientSecret);
+            if (!result.ok) {
+              Alert.alert(
+                "Payment Authentication Failed",
+                result.error.message,
+                [{ text: "OK" }],
+              );
+              setIsProcessingSubscription(false);
+              return;
+            }
+          } catch {
+            // M10.5 — mid-3DS network drop. The Stripe SDK can throw
+            // (vs. resolve `result.ok=false`) when the device loses
+            // connectivity during the challenge. Treat any thrown
+            // error here as a recoverable connection drop and reset
+            // local state so the user can retry. AC 11.5.
+            Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_3DS_LOST_MESSAGE);
             setIsProcessingSubscription(false);
             return;
           }
@@ -268,6 +349,7 @@ export function SubscriptionSelectionContainer() {
       createSubscriptionMutation,
       payments,
       router,
+      netInfo,
     ],
   );
 
@@ -281,6 +363,12 @@ export function SubscriptionSelectionContainer() {
   }, []);
 
   const handleConfirmCancel = useCallback(async () => {
+    // M10.5 — offline pre-flight on the cancel mutation. AC 11.4.
+    if (!isOnline) {
+      Alert.alert(OFFLINE_ALERT_TITLE, OFFLINE_ALERT_MESSAGE);
+      setShowCancelConfirm(false);
+      return;
+    }
     // Cancel button only renders when canCancel is true, which by
     // construction implies a paid sub with a non-null subscriptionId.
     // Non-null cast is the contract; if it ever fires nullish at
@@ -307,7 +395,7 @@ export function SubscriptionSelectionContainer() {
       setIsCancellingSubscription(false);
       setShowCancelConfirm(false);
     }
-  }, [subscriptionData, cancelSubscriptionMutation, router]);
+  }, [subscriptionData, cancelSubscriptionMutation, router, isOnline]);
 
   // PaymentMethodForm prop builder. Mirrors legacy lines 482–559.
   const paymentFormProps = useMemo(() => {
@@ -383,6 +471,8 @@ export function SubscriptionSelectionContainer() {
             : null
         }
         currentTierDisplayName={displayInfo.currentTierDisplayName}
+        isOffline={!isOnline}
+        isSlowLoading={isSlowLoading}
         selectedTierForPayment={selectedTierForPayment}
         isProcessingSubscription={isProcessingSubscription}
         paymentFormProps={paymentFormProps}

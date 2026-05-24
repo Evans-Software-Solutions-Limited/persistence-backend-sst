@@ -217,6 +217,24 @@ jest.mock("@stripe/stripe-react-native", () => {
   };
 });
 
+// Mock @react-native-community/netinfo — the native module isn't
+// linked in Jest, so importing it directly throws on its native
+// bindings. The `RNNetInfoAdapter` (production) is the only consumer
+// of the real package; everywhere else, tests inject
+// `InMemoryNetInfoAdapter` via the Adapters context. This global
+// mock keeps `RNNetInfoAdapter`'s own module-load from blowing up
+// the jest module graph if any test happens to import it.
+jest.mock("@react-native-community/netinfo", () => ({
+  __esModule: true,
+  default: {
+    fetch: jest.fn(async () => ({
+      isConnected: true,
+      isInternetReachable: true,
+    })),
+    addEventListener: jest.fn(() => () => undefined),
+  },
+}));
+
 // Mock @react-native-async-storage/async-storage — the native module
 // isn't linked in the Jest environment, so importing it directly
 // throws `[@RNC/AsyncStorage]: NativeModule: AsyncStorage is null`.

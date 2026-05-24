@@ -10,6 +10,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
 import { SignInPresenter } from "@/ui/presenters/SignInPresenter";
 import { SignInContainer } from "../SignInContainer";
@@ -38,6 +39,7 @@ function createTestAdapters(): {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments: new MockPaymentsAdapter(),
+    netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, auth };
 }
