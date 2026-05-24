@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import type {
   BillingCycle,
   SubscriptionTierName,
@@ -205,7 +205,10 @@ export function SubscriptionSelectionContainer() {
           );
         }
 
-        router.push("/(auth)/success");
+        // Cast required until `.expo/types/router.d.ts` regenerates on
+        // first `expo start` after the new routes landed (see M0
+        // SMOKE_TEST.md § Known-acceptable failures).
+        router.push("/(auth)/success" as Href);
         setIsProcessingSubscription(false);
       } catch (err) {
         Alert.alert(
