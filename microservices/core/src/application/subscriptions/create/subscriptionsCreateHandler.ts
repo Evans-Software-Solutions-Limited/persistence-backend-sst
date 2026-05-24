@@ -88,10 +88,35 @@ const REINSTATEMENT_STATUSES = new Set(["past_due", "trialing"]);
 type CreateSubscriptionBody = {
   tier_name: string;
   billing_cycle: "monthly" | "yearly";
-  payment_method_id: string;
+  /**
+   * Optional in M10 (was required in PR #70). When absent, the handler
+   * dispatches to the no-payment-method change-of-tier path that reuses
+   * the customer's default payment method on file with Stripe — used
+   * by the Subscription Management upgrade/downgrade flow (AC 3.3, 3.4).
+   */
+  payment_method_id?: string;
   use_trial: boolean;
   platform?: "ios" | "android";
 };
+
+/**
+ * Discriminator for the response shape — lets the mobile presenter
+ * branch on the kind of change without re-deriving it from the request.
+ *   - "new":          fresh user, no prior active sub
+ *   - "upgrade":      change-of-tier where new monthly price > current
+ *   - "downgrade":    change-of-tier where new monthly price < current;
+ *                     scheduled to end-of-period
+ *   - "reinstate":    same tier as a cancelled/past_due row, resumed
+ *   - "cycle_change": same tier, different billing cycle (monthly ↔ yearly);
+ *                     scheduled/effective_at follow upgrade/downgrade rules
+ *                     by total annual price comparison
+ */
+type ChangeType =
+  | "new"
+  | "upgrade"
+  | "downgrade"
+  | "reinstate"
+  | "cycle_change";
 
 type SuccessResponse = {
   success: true;
@@ -103,6 +128,11 @@ type SuccessResponse = {
   payment_status: string;
   reinstated?: boolean;
   client_secret?: string;
+  // M10 discriminator additions:
+  change_type: ChangeType;
+  scheduled: boolean;
+  effective_at: string | null; // ISO when scheduled; null otherwise
+  is_trial: boolean; // = payment_status === "trialing"
 };
 
 type ErrorResponse = { error: string };
@@ -221,6 +251,17 @@ async function resolvePrice(
   priceId: string;
   currency: string;
   isTrainerTier: boolean;
+  /**
+   * The tier's `price_monthly` value as a JS number. Used by the
+   * change-of-tier dispatch to compute upgrade vs downgrade direction
+   * (BACKEND_BRIEF §3 — "Change-of-tier where new `price_monthly` >
+   * current → upgrade; new < current → downgrade"). Drizzle decimals
+   * arrive as strings — parsed defensively here so the comparison is
+   * numeric.
+   */
+  priceMonthlyAmount: number;
+  /** Yearly amount, or null if the tier has no yearly price. */
+  priceYearlyAmount: number | null;
 } | null> {
   const db = getDb();
   const rows = await db
@@ -229,6 +270,8 @@ async function resolvePrice(
       priceYearly: subscriptionTiers.stripePriceIdYearly,
       currency: subscriptionTiers.currency,
       isTrainerTier: subscriptionTiers.isTrainerTier,
+      priceMonthlyAmount: subscriptionTiers.priceMonthly,
+      priceYearlyAmount: subscriptionTiers.priceYearly,
     })
     .from(subscriptionTiers)
     .where(eq(subscriptionTiers.tierName, tierName))
@@ -243,7 +286,118 @@ async function resolvePrice(
     priceId,
     currency: row.currency ?? "GBP",
     isTrainerTier: row.isTrainerTier ?? false,
+    priceMonthlyAmount: parseDecimal(row.priceMonthlyAmount) ?? 0,
+    priceYearlyAmount: parseDecimal(row.priceYearlyAmount),
   };
+}
+
+/**
+ * Parse a Drizzle `decimal` field (returned as string) to a JS number.
+ * Returns null for null/unparseable input.
+ */
+function parseDecimal(value: string | number | null): number | null {
+  if (value === null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Read just the tier-level metadata needed to classify a change-of-tier
+ * as upgrade / downgrade / cycle_change. Used by the no-payment-method
+ * change path to look up the EXISTING tier's prices for comparison
+ * against the NEW tier requested. Returns null if the tier doesn't
+ * exist in the catalog (out-of-band data — caller falls back to
+ * "upgrade" classification, which is the safest default).
+ */
+async function resolveTierPrices(tierName: string): Promise<{
+  priceMonthly: number;
+  priceYearly: number | null;
+} | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      priceMonthly: subscriptionTiers.priceMonthly,
+      priceYearly: subscriptionTiers.priceYearly,
+    })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, tierName))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    priceMonthly: parseDecimal(row.priceMonthly) ?? 0,
+    priceYearly: parseDecimal(row.priceYearly),
+  };
+}
+
+/**
+ * Classify a change-of-tier event into the response discriminator.
+ *
+ * Rules (BACKEND_BRIEF §3 + design.md § Backend endpoints):
+ *   - new tier_name === old tier_name:
+ *       - same cycle: caller. (Handled upstream as "no change to apply".)
+ *       - different cycle: "cycle_change"; scheduled/effective by total
+ *         annual price comparison (monthly*12 vs yearly).
+ *   - new tier_name !== old tier_name:
+ *       - new `price_monthly` > old → "upgrade"
+ *       - new `price_monthly` < old → "downgrade", scheduled to end-of-period
+ *       - new `price_monthly` === old (rare — sibling-tier swap) →
+ *         tie-broken as "upgrade" (default to not-scheduled, billed now).
+ *
+ * Returned `scheduled` reflects what the BACKEND will instruct Stripe to
+ * do on this call (proration_behavior: "none" + billing_cycle_anchor:
+ * "unchanged" vs "always_invoice" + immediate). `effectiveAt` is provided
+ * by the caller from the resulting Stripe subscription's
+ * `current_period_end`.
+ *
+ * Pure function — exported for unit tests.
+ */
+export function deriveChangeType(input: {
+  oldTierName: string;
+  newTierName: string;
+  oldCycle: "monthly" | "yearly";
+  newCycle: "monthly" | "yearly";
+  oldPriceMonthly: number;
+  newPriceMonthly: number;
+  oldPriceYearly: number | null;
+  newPriceYearly: number | null;
+}): { changeType: ChangeType; isDowngrade: boolean } {
+  const {
+    oldTierName,
+    newTierName,
+    oldCycle,
+    newCycle,
+    oldPriceMonthly,
+    newPriceMonthly,
+    oldPriceYearly,
+    newPriceYearly,
+  } = input;
+
+  if (oldTierName === newTierName) {
+    // Cycle change — compute effective annual cost on each side.
+    const annual = (
+      cycle: "monthly" | "yearly",
+      monthly: number,
+      yearly: number | null,
+    ): number => {
+      if (cycle === "yearly" && yearly !== null) return yearly;
+      return monthly * 12;
+    };
+    const oldAnnual = annual(oldCycle, oldPriceMonthly, oldPriceYearly);
+    const newAnnual = annual(newCycle, newPriceMonthly, newPriceYearly);
+    // Same cycle is caught upstream; this is purely the cycle-flip case.
+    return {
+      changeType: "cycle_change",
+      isDowngrade: newAnnual < oldAnnual,
+    };
+  }
+
+  // Different tier — pure monthly comparison (BACKEND_BRIEF §3).
+  if (newPriceMonthly < oldPriceMonthly) {
+    return { changeType: "downgrade", isDowngrade: true };
+  }
+  return { changeType: "upgrade", isDowngrade: false };
 }
 
 /**
@@ -484,6 +638,11 @@ async function handleReinstate(args: {
       payment_status: "pending",
       client_secret: requiresActionIntent.client_secret ?? undefined,
       reinstated: true,
+      // Reinstate is always immediate — no scheduled effective date.
+      change_type: "reinstate",
+      scheduled: false,
+      effective_at: null,
+      is_trial: false, // pending != trialing
     };
   }
 
@@ -496,6 +655,10 @@ async function handleReinstate(args: {
     next_billing_date: toIso(expiresAt),
     payment_status: paymentStatus,
     reinstated: true,
+    change_type: "reinstate",
+    scheduled: false,
+    effective_at: null,
+    is_trial: paymentStatus === "trialing",
   };
 }
 
@@ -543,12 +706,27 @@ async function handleSubscriptionChange(args: {
   existing: UserSubscription;
   existingStripeSubId: string;
   customerId: string;
-  priceInfo: { priceId: string; currency: string; isTrainerTier: boolean };
+  priceInfo: {
+    priceId: string;
+    currency: string;
+    isTrainerTier: boolean;
+    priceMonthlyAmount: number;
+    priceYearlyAmount: number | null;
+  };
   tierName: string;
   billingCycle: "monthly" | "yearly";
   paymentMethodId: string;
   platform: "ios" | "android" | null;
   trial: { days: number; flag: "user" | "trainer" | null };
+  /**
+   * Pre-computed discriminator (upgrade / downgrade / cycle_change) for
+   * the response shape. Caller derives this from tier prices BEFORE
+   * dispatching here so the with-PM and no-PM change paths use the
+   * same comparison logic.
+   */
+  changeType: ChangeType;
+  /** True for downgrades / unfavourable cycle changes → schedule to period-end. */
+  isDowngrade: boolean;
 }): Promise<SuccessResponse | ErrorResponse> {
   const {
     stripe,
@@ -565,6 +743,8 @@ async function handleSubscriptionChange(args: {
     paymentMethodId,
     platform,
     trial,
+    changeType,
+    isDowngrade,
   } = args;
 
   // In-flight chained-change guard now lives at the top of the POST
@@ -723,6 +903,16 @@ async function handleSubscriptionChange(args: {
     }
   }
 
+  // Discriminator-driven scheduling. The with-PM path uses
+  // subscriptions.create() (not subscriptions.update()), so Stripe bills
+  // the new sub at creation time regardless of `isDowngrade`. The
+  // `scheduled` / `effective_at` fields in the response advertise the
+  // INTENT of the change (downgrade scheduled for period-end) to the
+  // mobile presenter; the actual deferral of the old sub's cancellation
+  // is webhook-driven (see eventHandlers/subscriptionUpdated.ts).
+  const scheduled = isDowngrade;
+  const effectiveAt = scheduled ? toIso(expiresAt) : null;
+
   if (requiresActionIntent) {
     return {
       success: true,
@@ -733,6 +923,10 @@ async function handleSubscriptionChange(args: {
       next_billing_date: toIso(expiresAt),
       payment_status: "pending",
       client_secret: requiresActionIntent.client_secret ?? undefined,
+      change_type: changeType,
+      scheduled,
+      effective_at: effectiveAt,
+      is_trial: false, // pending != trialing
     };
   }
 
@@ -744,6 +938,275 @@ async function handleSubscriptionChange(args: {
     trial_ends_at: toIso(trialEndsAt),
     next_billing_date: toIso(expiresAt),
     payment_status: paymentStatus,
+    change_type: changeType,
+    scheduled,
+    effective_at: effectiveAt,
+    is_trial: paymentStatus === "trialing",
+  };
+}
+
+/**
+ * No-payment-method change-of-tier branch (M10 / AC 3.3, 3.4).
+ *
+ * The caller has an active Stripe subscription on a different tier (or
+ * the same tier but a different billing cycle) and wants to switch
+ * without supplying a new payment method — Stripe falls back to the
+ * customer's existing default PM on file. This is the Subscription
+ * Management screen's upgrade/downgrade flow.
+ *
+ * **Differs from `handleSubscriptionChange`** in two key ways:
+ *
+ *   1. Calls `stripe.subscriptions.update()` on the EXISTING Stripe sub
+ *      (not `subscriptions.create()`). The local row keeps its
+ *      `external_subscription_id`; no `old_stripe_subscription_id`
+ *      marker is needed because there's no "old vs new" sub to clean up.
+ *
+ *   2. Honours the upgrade/downgrade discriminator semantically:
+ *        - Upgrade (newPrice > oldPrice): `proration_behavior: "always_invoice"`
+ *          → Stripe bills the prorated difference immediately, item swap
+ *          takes effect now.
+ *        - Downgrade (newPrice < oldPrice) or unfavourable cycle change:
+ *          `proration_behavior: "none"` + `billing_cycle_anchor:
+ *          "unchanged"` → Stripe holds the change until the current
+ *          period ends. We ALSO stamp `metadata.scheduled_change` on the
+ *          local row so `GET /subscriptions/me` can surface the
+ *          "Scheduled: <next_tier> (effective <date>)" indicator
+ *          (AC 3.7).
+ *
+ * Trial flags are NOT touched — switching tiers with an existing PM is
+ * never a trial-using path (the trialing window is implicit in the
+ * original Stripe sub, which we're keeping).
+ *
+ * Trigger contract: writes only to `user_subscriptions`. Never touches
+ * `profiles.subscription_id` / `profiles.role` / `subscription_limits.*`.
+ */
+async function handleChangeOfTierNoPayment(args: {
+  stripe: Stripe;
+  subRepo: SubscriptionRepository;
+  ctx: StatusSettable;
+  userId: string;
+  existing: UserSubscription;
+  existingStripeSubId: string;
+  newTierName: string;
+  newBillingCycle: "monthly" | "yearly";
+  newPriceInfo: {
+    priceId: string;
+    currency: string;
+    isTrainerTier: boolean;
+    priceMonthlyAmount: number;
+    priceYearlyAmount: number | null;
+  };
+  changeType: ChangeType;
+  isDowngrade: boolean;
+}): Promise<SuccessResponse | ErrorResponse> {
+  const {
+    stripe,
+    subRepo,
+    ctx,
+    userId,
+    existing,
+    existingStripeSubId,
+    newTierName,
+    newBillingCycle,
+    newPriceInfo,
+    changeType,
+    isDowngrade,
+  } = args;
+
+  // Retrieve the existing Stripe sub so we can read the current sub-item
+  // id (needed to swap the price via items[].id + price). Stripe rejects
+  // updates that pass only `price` without the item id.
+  let existingStripeSub: Stripe.Subscription;
+  try {
+    existingStripeSub = (await stripe.subscriptions.retrieve(
+      existingStripeSubId,
+      { expand: ["items"] },
+    )) as unknown as Stripe.Subscription;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[subscriptions:create:change-no-pm] stripe.subscriptions.retrieve failed for ${existingStripeSubId}: ${message}`,
+    );
+    ctx.set.status = 500;
+    return { error: `Failed to load existing subscription: ${message}` };
+  }
+
+  const subscriptionItemId = existingStripeSub.items?.data?.[0]?.id;
+  if (
+    typeof subscriptionItemId !== "string" ||
+    subscriptionItemId.length === 0
+  ) {
+    console.error(
+      `[subscriptions:create:change-no-pm] existing Stripe sub ${existingStripeSubId} has no subscription items — cannot swap price`,
+    );
+    ctx.set.status = 500;
+    return {
+      error: "Existing subscription has no items on Stripe; cannot change tier",
+    };
+  }
+
+  const updateParams: Stripe.SubscriptionUpdateParams = {
+    items: [
+      {
+        id: subscriptionItemId,
+        price: newPriceInfo.priceId,
+      },
+    ],
+    expand: ["latest_invoice.payment_intent"],
+    metadata: {
+      ...(existingStripeSub.metadata ?? {}),
+      supabase_user_id: userId,
+      tier_name: newTierName,
+      billing_cycle: newBillingCycle,
+    },
+  };
+
+  if (isDowngrade) {
+    // Hold the price change until the current period ends. Stripe
+    // continues billing the old price; the item swaps at the next
+    // invoice. NOT a trial reset — `billing_cycle_anchor: "unchanged"`
+    // keeps the existing renewal date.
+    updateParams.proration_behavior = "none";
+    updateParams.billing_cycle_anchor = "unchanged";
+  } else {
+    // Upgrade — Stripe bills the prorated difference immediately on
+    // an invoice generated for the change. The new tier takes effect
+    // from this moment.
+    updateParams.proration_behavior = "always_invoice";
+  }
+
+  let updatedSub: Stripe.Subscription;
+  try {
+    updatedSub = (await stripe.subscriptions.update(
+      existingStripeSubId,
+      updateParams,
+    )) as unknown as Stripe.Subscription;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[subscriptions:create:change-no-pm] stripe.subscriptions.update failed for ${existingStripeSubId}: ${message}`,
+    );
+    ctx.set.status = 500;
+    return { error: `Failed to change subscription tier: ${message}` };
+  }
+
+  const requiresActionIntent = readRequiresActionIntent(updatedSub);
+  const paymentStatus = requiresActionIntent
+    ? "pending"
+    : derivePaymentStatus(updatedSub);
+  const expiresAt = periodEndDate(updatedSub);
+  const trialEndsAt = trialEndDate(updatedSub);
+
+  // Build the metadata patch for the local row.
+  //   - Downgrade: stamp `scheduled_change` so `GET /subscriptions/me`
+  //     can render the indicator (AC 3.7). The actual tier_name on the
+  //     local row stays UNCHANGED until the webhook applies the new
+  //     tier when the period rolls over (`subscriptionUpdated.ts`
+  //     observes the price change at next-invoice time).
+  //   - Upgrade/cycle-change-as-upgrade: clear any stale
+  //     `scheduled_change` marker (the user superseded their prior
+  //     downgrade intent by upgrading instead).
+  const existingMeta = readMetadata(existing);
+  const newMeta: Record<string, unknown> = { ...existingMeta };
+
+  if (isDowngrade) {
+    const effectiveAtIso = toIso(expiresAt);
+    if (effectiveAtIso !== null) {
+      newMeta.scheduled_change = {
+        next_tier_name: newTierName,
+        next_billing_cycle: newBillingCycle,
+        effective_at: effectiveAtIso,
+      };
+    }
+  } else {
+    delete newMeta.scheduled_change;
+  }
+
+  // The 3DS marker bookkeeping mirrors the with-PM change path.
+  if (requiresActionIntent) {
+    newMeta.requires_3d_secure = true;
+  } else {
+    delete newMeta.requires_3d_secure;
+  }
+
+  // For downgrade: keep tier_name + billing_cycle UNCHANGED on the local
+  // row. The webhook (`subscriptionUpdated.ts`) flips it when the period
+  // rolls over. This way `GET /subscriptions/me` returns the current
+  // tier as the active tier and `scheduled_change` as the pending one.
+  //
+  // For upgrade/cycle-change-as-upgrade: the price change took effect
+  // now, so flip tier_name + billing_cycle immediately.
+  const patch: Partial<UserSubscription> = {
+    paymentStatus,
+    expiresAt,
+    trialEndsAt,
+    nextBillingDate: expiresAt,
+    metadata: newMeta,
+  };
+
+  if (!isDowngrade) {
+    patch.tierName = newTierName;
+    patch.billingCycle = newBillingCycle;
+    patch.currency = newPriceInfo.currency;
+  }
+
+  let updated: UserSubscription | null;
+  try {
+    updated = await subRepo.updateById(existing.id, patch);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // No Stripe rollback — Stripe's mutation already landed and reverting
+    // would require swapping the price back, which can itself fail and
+    // strand things in a worse state. Log loudly so ops can backfill.
+    console.error(
+      `[subscriptions:create:change-no-pm] DB update failed for stripe_sub=${existingStripeSubId}: ${message} — Stripe-side change applied but local row not updated; manual backfill required`,
+    );
+    ctx.set.status = 500;
+    return { error: `Failed to update subscription record: ${message}` };
+  }
+
+  if (updated === null) {
+    console.error(
+      `[subscriptions:create:change-no-pm] updateById returned null for user_subscriptions.id=${existing.id} — Stripe sub ${existingStripeSubId} updated but local row could not be found`,
+    );
+    ctx.set.status = 500;
+    return {
+      error: `Subscription change applied on Stripe but local record could not be updated. Please contact support with subscription ID: ${existingStripeSubId}`,
+    };
+  }
+
+  const scheduled = isDowngrade;
+  const effectiveAt = scheduled ? toIso(expiresAt) : null;
+
+  if (requiresActionIntent) {
+    return {
+      success: true,
+      requires_action: true,
+      subscription_id: updated.id,
+      stripe_subscription_id: existingStripeSubId,
+      trial_ends_at: toIso(trialEndsAt),
+      next_billing_date: toIso(expiresAt),
+      payment_status: "pending",
+      client_secret: requiresActionIntent.client_secret ?? undefined,
+      change_type: changeType,
+      scheduled,
+      effective_at: effectiveAt,
+      is_trial: false,
+    };
+  }
+
+  return {
+    success: true,
+    requires_action: false,
+    subscription_id: updated.id,
+    stripe_subscription_id: existingStripeSubId,
+    trial_ends_at: toIso(trialEndsAt),
+    next_billing_date: toIso(expiresAt),
+    payment_status: paymentStatus,
+    change_type: changeType,
+    scheduled,
+    effective_at: effectiveAt,
+    is_trial: paymentStatus === "trialing",
   };
 }
 
@@ -827,17 +1290,90 @@ export const subscriptionsCreateHandler = new Elysia()
         }
       }
 
-      // Branch dispatch:
+      // Existing-active subscription handle: a sub is considered "active"
+      // from the dispatch's perspective if the user has a row with a Stripe
+      // subscription id (regardless of payment_status). Used by the no-PM
+      // path which only operates on a live Stripe sub.
+      const hasActiveSub = existing !== null && existingStripeSubId !== null;
+      const hasPaymentMethod = typeof body.payment_method_id === "string";
+
+      // ─── No-payment-method precedence (M10 / BACKEND_BRIEF §3) ────────
+      //
+      //   2. No PM + no active sub → 422
+      //   3. No PM + active sub + same tier + same cycle → 400 (no-op)
+      //   4. No PM + active sub + different tier or cycle → change-of-tier
+      //      via stripe.subscriptions.update() using customer's default PM
+      //
+      // These precede the with-PM dispatch (cases 5–7) which preserves
+      // the PR #70 paths verbatim.
+      if (!hasPaymentMethod) {
+        if (!hasActiveSub) {
+          ctx.set.status = 422;
+          return {
+            error: "payment_method_id required for new subscription",
+          };
+        }
+
+        // existing + existingStripeSubId both non-null (hasActiveSub = true).
+        const existingTierName = existing!.tierName;
+        const existingBillingCycle = (existing!.billingCycle ?? "monthly") as
+          | "monthly"
+          | "yearly";
+
+        if (
+          existingTierName === body.tier_name &&
+          existingBillingCycle === body.billing_cycle
+        ) {
+          ctx.set.status = 400;
+          return { error: "no change to apply" };
+        }
+
+        // Look up the EXISTING tier's prices for the change-type
+        // classification. Out-of-band data (row references a deleted
+        // tier) defaults to a zero comparison → tagged as "upgrade".
+        const oldPrices = await resolveTierPrices(existingTierName);
+        const safeOldPrices = oldPrices ?? {
+          priceMonthly: 0,
+          priceYearly: null,
+        };
+        const { changeType, isDowngrade } = deriveChangeType({
+          oldTierName: existingTierName,
+          newTierName: body.tier_name,
+          oldCycle: existingBillingCycle,
+          newCycle: body.billing_cycle,
+          oldPriceMonthly: safeOldPrices.priceMonthly,
+          newPriceMonthly: priceInfo.priceMonthlyAmount,
+          oldPriceYearly: safeOldPrices.priceYearly,
+          newPriceYearly: priceInfo.priceYearlyAmount,
+        });
+
+        const stripe = getStripe();
+        return handleChangeOfTierNoPayment({
+          stripe,
+          subRepo,
+          ctx,
+          userId,
+          existing: existing!,
+          existingStripeSubId: existingStripeSubId!,
+          newTierName: body.tier_name,
+          newBillingCycle: body.billing_cycle,
+          newPriceInfo: priceInfo,
+          changeType,
+          isDowngrade,
+        });
+      }
+
+      // Branch dispatch (with-PM paths — preserved verbatim from PR #70):
       //   - existing reinstate-eligible (same tier + cycle, status in
       //     {cancelled, canceled, past_due, trialing}) AND we have the
       //     prior Stripe sub id → reinstate path
       //   - existing with stripe sub id (anything else) → subscription-
       //     change path (Phase 2A.3)
       //   - otherwise → new-subscription path
+      const paymentMethodId = body.payment_method_id as string;
       if (
-        existing !== null &&
-        existingStripeSubId !== null &&
-        isReinstateable(existing, body.tier_name, body.billing_cycle)
+        hasActiveSub &&
+        isReinstateable(existing!, body.tier_name, body.billing_cycle)
       ) {
         const stripe = getStripe();
         const customerId = await resolveCustomerId(stripe, userId, existing, {
@@ -845,7 +1381,7 @@ export const subscriptionsCreateHandler = new Elysia()
           fullName: profile.fullName ?? null,
         });
         try {
-          await attachPaymentMethod(stripe, customerId, body.payment_method_id);
+          await attachPaymentMethod(stripe, customerId, paymentMethodId);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -858,9 +1394,9 @@ export const subscriptionsCreateHandler = new Elysia()
           stripe,
           subRepo,
           ctx,
-          existing,
-          existingStripeSubId,
-          paymentMethodId: body.payment_method_id,
+          existing: existing!,
+          existingStripeSubId: existingStripeSubId!,
+          paymentMethodId,
         });
       }
       // --- Subscription-change path (Phase 2A.3) --------------------------
@@ -873,14 +1409,14 @@ export const subscriptionsCreateHandler = new Elysia()
       //   - rollback-to-original when the new sub fails as incomplete_expired
       // This pattern removes the legacy's "billed twice" failure mode
       // (Brad Q10 sign-off).
-      if (existing !== null && existingStripeSubId !== null) {
+      if (hasActiveSub) {
         const stripe = getStripe();
         const customerId = await resolveCustomerId(stripe, userId, existing, {
           email: profile.email ?? null,
           fullName: profile.fullName ?? null,
         });
         try {
-          await attachPaymentMethod(stripe, customerId, body.payment_method_id);
+          await attachPaymentMethod(stripe, customerId, paymentMethodId);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -898,21 +1434,46 @@ export const subscriptionsCreateHandler = new Elysia()
           profile.hasUsedTrainerTrial ?? false,
         );
 
+        // Derive the change_type discriminator for the response, same
+        // semantics as the no-PM path. Looks up the existing tier's
+        // prices for the comparison.
+        const existingTierName = existing!.tierName;
+        const existingBillingCycle = (existing!.billingCycle ?? "monthly") as
+          | "monthly"
+          | "yearly";
+        const oldPrices = await resolveTierPrices(existingTierName);
+        const safeOldPrices = oldPrices ?? {
+          priceMonthly: 0,
+          priceYearly: null,
+        };
+        const { changeType, isDowngrade } = deriveChangeType({
+          oldTierName: existingTierName,
+          newTierName: body.tier_name,
+          oldCycle: existingBillingCycle,
+          newCycle: body.billing_cycle,
+          oldPriceMonthly: safeOldPrices.priceMonthly,
+          newPriceMonthly: priceInfo.priceMonthlyAmount,
+          oldPriceYearly: safeOldPrices.priceYearly,
+          newPriceYearly: priceInfo.priceYearlyAmount,
+        });
+
         return handleSubscriptionChange({
           stripe,
           subRepo,
           profileRepo,
           ctx,
           userId,
-          existing,
-          existingStripeSubId,
+          existing: existing!,
+          existingStripeSubId: existingStripeSubId!,
           customerId,
           priceInfo,
           tierName: body.tier_name,
           billingCycle: body.billing_cycle,
-          paymentMethodId: body.payment_method_id,
+          paymentMethodId,
           platform: body.platform ?? null,
           trial: trialForChange,
+          changeType,
+          isDowngrade,
         });
       }
 
@@ -932,7 +1493,7 @@ export const subscriptionsCreateHandler = new Elysia()
       });
 
       try {
-        await attachPaymentMethod(stripe, customerId, body.payment_method_id);
+        await attachPaymentMethod(stripe, customerId, paymentMethodId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(
@@ -998,7 +1559,7 @@ export const subscriptionsCreateHandler = new Elysia()
           metadata: {
             stripe_customer_id: customerId,
             stripe_subscription_id: subscription.id,
-            stripe_payment_method_id: body.payment_method_id,
+            stripe_payment_method_id: paymentMethodId,
             platform: body.platform ?? null,
             payment_type: "apple_pay_or_google_pay",
             ...(requiresActionIntent ? { requires_3d_secure: true } : {}),
@@ -1058,6 +1619,10 @@ export const subscriptionsCreateHandler = new Elysia()
           next_billing_date: toIso(expiresAt),
           payment_status: "pending",
           client_secret: requiresActionIntent.client_secret ?? undefined,
+          change_type: "new",
+          scheduled: false,
+          effective_at: null,
+          is_trial: false, // pending != trialing
         };
       }
 
@@ -1069,13 +1634,22 @@ export const subscriptionsCreateHandler = new Elysia()
         trial_ends_at: toIso(trialEndsAt),
         next_billing_date: toIso(expiresAt),
         payment_status: paymentStatus,
+        change_type: "new",
+        scheduled: false,
+        effective_at: null,
+        is_trial: paymentStatus === "trialing",
       };
     },
     {
       body: t.Object({
         tier_name: t.String({ minLength: 1 }),
         billing_cycle: t.Union([t.Literal("monthly"), t.Literal("yearly")]),
-        payment_method_id: t.String({ minLength: 1 }),
+        // Optional in M10. When absent, the handler routes to the no-
+        // payment-method change-of-tier path (reuses the customer's
+        // default PM on file with Stripe) — used by the Subscription
+        // Management upgrade/downgrade flow. Required for new-sub and
+        // reinstate paths; dispatch enforces.
+        payment_method_id: t.Optional(t.String({ minLength: 1 })),
         // Required explicit — no silent default. Caller must opt in to
         // trial usage (Brad Q3 sign-off).
         use_trial: t.Boolean(),
@@ -1092,4 +1666,6 @@ export const __internals = {
   resolveTrial,
   isReinstateable,
   readCurrentPeriodEnd,
+  deriveChangeType,
+  parseDecimal,
 };
