@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import {
   profiles,
   subscriptionLimits,
@@ -299,10 +299,20 @@ export async function assertEntitlement(
       and(
         eq(subscriptionLimits.userId, userId),
         eq(subscriptionLimits.limitType, "workouts"),
+        // Mirror the month-boundary filter the trigger uses on writes
+        // (`increment_usage_limit` in 004_subscriptions_and_roles.sql).
+        // Without this filter, a free user who hit cap in month N is read
+        // as at-cap in month N+1 — denying the next workout before the
+        // trigger ever gets a chance to reset the row. There is no
+        // scheduled invocation of `reset_monthly_limits()` so the row
+        // stays stale forever; the user is locked out until they upgrade
+        // (Inspector Brad PR #72 high-severity find — sweep #1).
+        gte(subscriptionLimits.resetDate, currentMonthStartUtc()),
       ),
     )
     .limit(1);
 
+  // Missing current-month row ⇒ user has no usage this month ⇒ count = 0.
   const currentCount = limitRows[0]?.currentCount ?? 0;
 
   if (currentCount >= workoutLimit) {
@@ -317,6 +327,17 @@ export async function assertEntitlement(
 }
 
 // ─── Pure helpers (exported for testing) ──────────────────────────────
+
+/**
+ * UTC-midnight of the first day of the current month. Used as the lower
+ * bound on `subscription_limits.reset_date` to filter out stale rows from
+ * prior months. Matches `date_trunc('month', NOW())` semantics in
+ * Postgres; the trigger's UTC-month-boundary comparison and this helper
+ * agree on the same instant.
+ */
+export function currentMonthStartUtc(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
 
 /**
  * Tier-status → deny reason mapping. `null` means "no status-based

@@ -164,6 +164,29 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
     expect(verdict).toEqual({ allowed: true });
   });
 
+  it("allows when limit-row query returns no current-month row (stale prior-month data filtered out by gte(resetDate) — Inspector Brad PR #72 high-severity find — sweep #1)", async () => {
+    // Regression: previously the limit-row WHERE had no month-boundary
+    // filter, so a free user who hit cap in month N read at-cap in month
+    // N+1, denying the next workout before the trigger could ever reset
+    // the row. There is no scheduled `reset_monthly_limits()` job, so
+    // the user was locked out until they upgraded.
+    //
+    // After the fix: the gte(resetDate, currentMonthStartUtc) filter
+    // excludes stale prior-month rows; query returns []; helper defaults
+    // count to 0; verdict is `allowed`.
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [],
+        FREE_TIER_ROW,
+        [], // ← stale prior-month row excluded by the new gte filter
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "create_workout");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
   it("denies with reason='limit' when count >= 3 and suggests basic", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([

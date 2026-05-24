@@ -80,6 +80,60 @@ describe("useOnlineStatus", () => {
     expect(netInfo.subscriberCount).toBe(0);
   });
 
+  it("does not let a late probe overwrite a fresher subscribe value (Inspector Brad PR #72 medium-severity find — sweep #1)", async () => {
+    // Regression: the one-shot `isConnected()` probe and the
+    // `subscribe()` listener race. If a connectivity transition fires
+    // through subscribe before the probe Promise resolves, the stale
+    // probe value previously clobbered the fresher subscriber-reported
+    // value, defeating the offline pre-flight check for that window.
+    //
+    // After the fix: a `subscribeFired` flag guards the probe-then-setOnline
+    // path; once any subscribe callback runs, the probe's resolution
+    // becomes a no-op for state.
+    const adapter = new InMemoryNetInfoAdapter(true);
+
+    // Hold the probe Promise pending; we control when it resolves.
+    let resolveProbe: (value: boolean) => void = () => {};
+    const pendingProbe = new Promise<boolean>((resolve) => {
+      resolveProbe = resolve;
+    });
+    jest.spyOn(adapter, "isConnected").mockReturnValueOnce(pendingProbe);
+
+    const adapters: Adapters = {
+      api: new InMemoryApiAdapter(),
+      auth: new InMemoryAuthAdapter(),
+      storage: new InMemoryStorageAdapter(),
+      health: new StubHealthAdapter(),
+      notifications: new StubNotificationsAdapter(),
+      payments: new MockPaymentsAdapter(),
+      netInfo: adapter,
+    };
+
+    const { result } = renderHook(() => useOnlineStatus(), {
+      wrapper: wrap(adapters),
+    });
+
+    // Initial optimistic default.
+    expect(result.current).toBe(true);
+
+    // Subscribe fires the "fresh" signal BEFORE probe resolves.
+    act(() => {
+      adapter.setConnected(false);
+    });
+    await waitFor(() => expect(result.current).toBe(false));
+
+    // NOW the probe resolves with a stale `true`. Without the guard
+    // this would overwrite the false → result.current goes back to true.
+    await act(async () => {
+      resolveProbe(true);
+      // Flush microtasks so the .then() handler runs.
+      await Promise.resolve();
+    });
+
+    // Subscriber's `false` MUST still win.
+    expect(result.current).toBe(false);
+  });
+
   it("swallows probe failures and defaults to true until a transition arrives", async () => {
     // Custom adapter that fails the initial probe — simulates RN
     // NetInfo's `fetch()` throwing on a Jest device with no native

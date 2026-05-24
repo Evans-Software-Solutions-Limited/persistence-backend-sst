@@ -23,6 +23,13 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { SubscriptionSelectionContainer } from "@/ui/containers/SubscriptionSelectionContainer";
 
+// CI runners are markedly slower than local — async `waitFor` chains
+// across React Query providers + AdapterProvider can exceed Jest's
+// default 5s on cold mounts. Bump the file-level timeout so the tests
+// stay green on CI without papering over a real race condition.
+// Local typically finishes each test in <500ms.
+jest.setTimeout(20_000);
+
 const mockPush = jest.fn();
 const mockBack = jest.fn();
 jest.mock("expo-router", () => ({

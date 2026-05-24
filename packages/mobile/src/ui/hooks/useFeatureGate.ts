@@ -136,7 +136,13 @@ export function computeFeatureGateVerdict(
       }
       const limit = subscription.workoutLimit;
       const allowed = limit === null || limit > 0;
-      return { allowed, reason: allowed ? "tier" : "tier" };
+      // Reason is always "tier" — the over-cap case isn't observable
+      // client-side without a real counter; server-side `assertEntitlement`
+      // is the only path that can return `"limit"`. Mobile renders the
+      // gate; the prompt shows the upgrade path regardless of the exact
+      // tier-vs-limit distinction (Inspector Brad PR #72 low-severity find
+      // — sweep #1: dropping the no-op ternary).
+      return { allowed, reason: "tier" };
     }
     case "ai_workout": {
       if (!isActive) {
@@ -150,7 +156,7 @@ export function computeFeatureGateVerdict(
     }
     case "gym_buddy": {
       const allowed = subscription.gymBuddyAccess === true;
-      return { allowed, reason: allowed ? "tier" : "tier" };
+      return { allowed, reason: "tier" };
     }
     case "unlimited_exercise_library": {
       // Backend stub: always allowed. Mirror exactly.

@@ -33,13 +33,17 @@ export function useOnlineStatus(): boolean {
 
   useEffect(() => {
     let mounted = true;
+    let subscribeFired = false;
 
     // Kick off a one-shot probe; refines the initial-render optimistic
-    // default.
+    // default — UNLESS the subscribe stream has already produced a
+    // value, in which case the probe's snapshot is stale and must not
+    // clobber the fresher signal (Inspector Brad PR #72 medium-severity
+    // find — sweep #1).
     netInfo
       .isConnected()
       .then((connected) => {
-        if (mounted) setOnline(connected);
+        if (mounted && !subscribeFired) setOnline(connected);
       })
       .catch(() => {
         // Swallow probe failures — we default to online and let the
@@ -49,7 +53,10 @@ export function useOnlineStatus(): boolean {
       });
 
     const unsubscribe = netInfo.subscribe((connected) => {
-      if (mounted) setOnline(connected);
+      if (mounted) {
+        subscribeFired = true;
+        setOnline(connected);
+      }
     });
 
     return () => {
