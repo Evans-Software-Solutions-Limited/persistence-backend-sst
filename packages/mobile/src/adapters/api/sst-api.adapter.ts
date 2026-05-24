@@ -51,7 +51,13 @@ import type {
   Workout,
   WorkoutQuota,
 } from "@/domain/models/workout";
-import { ok, fail, type Result, type ApiError } from "@/shared/errors";
+import {
+  ok,
+  fail,
+  type Result,
+  type ApiError,
+  type ApiErrorEntitlementPayload,
+} from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
 type ApiSuccessResponse<T> = { data: T };
@@ -207,19 +213,7 @@ export class SSTApiAdapter implements ApiPort {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        const message =
-          (errorBody as { error?: string })?.error ?? response.statusText;
-        return fail({
-          kind: "api",
-          code:
-            response.status === 401
-              ? "unauthorized"
-              : response.status === 404
-                ? "not_found"
-                : "server",
-          message,
-          status: response.status,
-        });
+        return fail(mapHttpErrorToApiError(response.status, response.statusText, errorBody));
       }
 
       // Handle 204 No Content (typical for DELETE)
@@ -332,19 +326,9 @@ export class SSTApiAdapter implements ApiPort {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        const message =
-          (errorBody as { error?: string })?.error ?? response.statusText;
-        return fail<ApiError>({
-          kind: "api",
-          code:
-            response.status === 401
-              ? "unauthorized"
-              : response.status === 404
-                ? "not_found"
-                : "server",
-          message,
-          status: response.status,
-        });
+        return fail<ApiError>(
+          mapHttpErrorToApiError(response.status, response.statusText, errorBody),
+        );
       }
 
       const body = (await response.json()) as ApiResponse<{
@@ -890,6 +874,137 @@ export class SSTApiAdapter implements ApiPort {
       message: result.value.message,
     });
   }
+}
+
+// -- HTTP error → ApiError mapping --
+
+/**
+ * Wire shape of the backend's structured entitlement-denied body. The
+ * 402-response handler in `microservices/core` emits these field names
+ * verbatim — the adapter parses them here at the boundary and converts
+ * to camelCase before stamping the `entitlement` payload on `ApiError`.
+ *
+ * Spec: specs/11-payments-subscriptions/design.md
+ *       § Entitlement enforcement (M10.5) > 402 response shape
+ *
+ * Field origin:
+ *   {
+ *     "code": "ENTITLEMENT_DENIED",
+ *     "error": "Subscription does not include this feature",
+ *     "feature": "create_workout",
+ *     "current_tier": "basic",
+ *     "upgrade_to": "premium",
+ *     "upgrade_price_monthly": 14.99
+ *   }
+ */
+type WireEntitlementDeniedBody = {
+  code?: unknown;
+  error?: unknown;
+  feature?: unknown;
+  current_tier?: unknown;
+  upgrade_to?: unknown;
+  upgrade_price_monthly?: unknown;
+};
+
+/**
+ * Parse a 402 response body into the camelCase entitlement payload, or
+ * return `null` if the body is malformed (missing `code`,
+ * `code !== "ENTITLEMENT_DENIED"`, or the four required wire fields
+ * aren't shaped as expected). The adapter falls back to a vanilla
+ * `server`-code `ApiError` on null — never silently drops the status.
+ *
+ * Strict on `feature` / `current_tier` (must be strings; absence drops
+ * to a plain server error). Lenient on `upgrade_to` (may be null when
+ * the user is already at the top tier) and `upgrade_price_monthly`
+ * (likewise null).
+ */
+function parseEntitlementDeniedBody(
+  body: unknown,
+): ApiErrorEntitlementPayload | null {
+  if (body === null || typeof body !== "object") return null;
+  const raw = body as WireEntitlementDeniedBody;
+  if (raw.code !== "ENTITLEMENT_DENIED") return null;
+  if (typeof raw.feature !== "string") return null;
+  if (typeof raw.current_tier !== "string") return null;
+
+  const upgradeTo =
+    raw.upgrade_to === null || typeof raw.upgrade_to === "string"
+      ? (raw.upgrade_to as string | null)
+      : undefined;
+  if (upgradeTo === undefined) return null;
+
+  const upgradePriceMonthly =
+    raw.upgrade_price_monthly === null ||
+    typeof raw.upgrade_price_monthly === "number"
+      ? (raw.upgrade_price_monthly as number | null)
+      : undefined;
+  if (upgradePriceMonthly === undefined) return null;
+
+  return {
+    feature: raw.feature,
+    currentTier: raw.current_tier,
+    upgradeTo,
+    upgradePriceMonthly,
+  };
+}
+
+/**
+ * Translate an HTTP non-2xx response into a domain `ApiError`. Lives
+ * outside the class so `uploadAvatar` (which has its own fetch loop
+ * for multipart FormData) can share the same mapping with the JSON
+ * `request<T>` path — keeps the 401 / 404 / 402 / generic-server
+ * branches in a single place.
+ *
+ * 402 + `code: "ENTITLEMENT_DENIED"` body → `ApiError` with code
+ * `entitlement_denied` and the `entitlement` payload populated.
+ * 402 with a malformed body falls back to a vanilla `server` error
+ * (the response status is still preserved on `status` so containers
+ * can render a useful fallback).
+ *
+ * Spec: specs/11-payments-subscriptions/design.md § Mobile feature-gate model
+ * Satisfies: requirements.md AC 10.4
+ */
+export function mapHttpErrorToApiError(
+  status: number,
+  statusText: string,
+  body: unknown,
+): ApiError {
+  const message =
+    (body as { error?: string } | null)?.error ?? statusText ?? "Request failed";
+
+  if (status === 402) {
+    const entitlement = parseEntitlementDeniedBody(body);
+    if (entitlement !== null) {
+      return {
+        kind: "api",
+        code: "entitlement_denied",
+        message,
+        status,
+        entitlement,
+      };
+    }
+    // 402 with a malformed / missing body: don't swallow the status —
+    // surface as a generic server error so the container can still
+    // render a fallback. Don't claim it's an entitlement error.
+    return {
+      kind: "api",
+      code: "server",
+      message,
+      status,
+    };
+  }
+
+  return {
+    kind: "api",
+    code:
+      status === 401
+        ? "unauthorized"
+        : status === 404
+          ? "not_found"
+          : "server",
+    message,
+    status,
+  };
 }
 
 // -- Exercise wire-format mapping --

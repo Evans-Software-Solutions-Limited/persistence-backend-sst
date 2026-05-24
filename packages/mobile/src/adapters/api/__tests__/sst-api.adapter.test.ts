@@ -690,3 +690,330 @@ describe("SSTApiAdapter.cancelSubscription (M7 / M10)", () => {
     expect(result.error.code).toBe("not_found");
   });
 });
+
+describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
+  it("parses a structured 402 body into an ApiError with the entitlement payload populated", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "Subscription does not include this feature",
+          feature: "create_workout",
+          current_tier: "basic",
+          upgrade_to: "premium",
+          upgrade_price_monthly: 14.99,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "Push Day",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("entitlement_denied");
+    expect(result.error.status).toBe(402);
+    expect(result.error.message).toBe(
+      "Subscription does not include this feature",
+    );
+    expect(result.error.entitlement).toEqual({
+      feature: "create_workout",
+      currentTier: "basic",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 14.99,
+    });
+  });
+
+  it("converts snake_case wire fields to camelCase on the domain payload", async () => {
+    // Anti-regression: the contract is camelCase domain-side. Any drift
+    // would leave snake_case keys leaking into containers/presenters.
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          feature: "ai_workout",
+          current_tier: "free",
+          upgrade_to: "basic",
+          upgrade_price_monthly: 4.99,
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.recordSession({
+      workoutId: null,
+      startedAt: "2026-05-24T00:00:00.000Z",
+      status: "completed",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.entitlement).toBeDefined();
+    // The shape MUST be camelCase. The presence of a snake_case key
+    // would be a contract bug.
+    const e = result.error.entitlement!;
+    expect(Object.keys(e)).toEqual(
+      expect.arrayContaining([
+        "feature",
+        "currentTier",
+        "upgradeTo",
+        "upgradePriceMonthly",
+      ]),
+    );
+    expect((e as Record<string, unknown>).current_tier).toBeUndefined();
+    expect((e as Record<string, unknown>).upgrade_to).toBeUndefined();
+    expect((e as Record<string, unknown>).upgrade_price_monthly).toBeUndefined();
+  });
+
+  it("preserves null upgrade_to + null upgrade_price_monthly (top-tier denial path)", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "Already at top tier",
+          feature: "trainer_clients",
+          current_tier: "individual_trainer_pro",
+          upgrade_to: null,
+          upgrade_price_monthly: null,
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("entitlement_denied");
+    expect(result.error.entitlement).toEqual({
+      feature: "trainer_clients",
+      currentTier: "individual_trainer_pro",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("falls back to api/server when the 402 body is malformed (no code field)", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ error: "Payment required but no entitlement context" }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Status preserved so containers can still render a generic 402
+    // message, but no entitlement claim is made (don't pretend it's a
+    // gate we can route around).
+    expect(result.error.code).toBe("server");
+    expect(result.error.status).toBe(402);
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("falls back to api/server when the 402 body has code but is missing required fields", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          // Missing feature / current_tier — the wire contract requires
+          // both. Adapter must NOT silently default them.
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("server");
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("falls back to api/server when the 402 body has wrong field types (defensive against contract drift)", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          feature: "create_workout",
+          current_tier: 42, // wrong type — should be string
+          upgrade_to: "premium",
+          upgrade_price_monthly: 14.99,
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("server");
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("falls back to api/server when upgrade_to or upgrade_price_monthly is the wrong type", async () => {
+    // upgrade_to must be string|null (NOT undefined / number).
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          feature: "ai_workout",
+          current_tier: "free",
+          upgrade_to: 42, // wrong type
+          upgrade_price_monthly: 4.99,
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("server");
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("falls back to api/server when upgrade_price_monthly is the wrong type", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          feature: "ai_workout",
+          current_tier: "free",
+          upgrade_to: "basic",
+          upgrade_price_monthly: "4.99", // wrong type — string, not number
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("server");
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("falls back to api/server when the 402 body is not JSON (text/html, empty, etc.)", async () => {
+    installFetchMock(async () => {
+      return new Response("<html>402 Payment Required</html>", { status: 402 });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "x",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("server");
+    expect(result.error.entitlement).toBeUndefined();
+  });
+
+  it("does not stamp entitlement payload on 401 / 403 / 404 / 500 responses (only 402)", async () => {
+    const statuses = [401, 403, 404, 500];
+    for (const status of statuses) {
+      installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            // Even if a malicious / broken backend echoed the
+            // ENTITLEMENT_DENIED shape on a non-402 status, the
+            // adapter must NOT promote it — code stays per-status
+            // and the entitlement field stays unset.
+            code: "ENTITLEMENT_DENIED",
+            error: "test",
+            feature: "create_workout",
+            current_tier: "basic",
+            upgrade_to: "premium",
+            upgrade_price_monthly: 14.99,
+          }),
+          { status },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.createWorkout({
+        name: "x",
+        visibility: "private",
+        exercises: [],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.code).not.toBe("entitlement_denied");
+      expect(result.error.entitlement).toBeUndefined();
+      expect(result.error.status).toBe(status);
+    }
+  });
+
+  it("intercepts 402 on the multipart avatar-upload path too (uniform handling)", async () => {
+    // uploadAvatar has its own fetch loop because of FormData — verify
+    // the same mapping applies there. The backend doesn't gate avatar
+    // uploads today, but the adapter shouldn't silently drop a 402 if
+    // a future endpoint gets gated.
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "denied",
+          feature: "create_workout",
+          current_tier: "free",
+          upgrade_to: "basic",
+          upgrade_price_monthly: 4.99,
+        }),
+        { status: 402 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.uploadAvatar({
+      uri: "file:///tmp/avatar.jpg",
+      mimeType: "image/jpeg",
+      name: "avatar.jpg",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("entitlement_denied");
+    expect(result.error.entitlement?.feature).toBe("create_workout");
+  });
+});
