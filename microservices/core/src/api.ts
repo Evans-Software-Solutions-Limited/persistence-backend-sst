@@ -51,6 +51,8 @@ import { progressHistoryHandler } from "./application/progress/progressHistoryHa
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
 import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
+import { subscriptionsTiersHandler } from "./application/subscriptions/tiers/subscriptionsTiersHandler";
+import { subscriptionsMeHandler } from "./application/subscriptions/me/subscriptionsMeHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -102,6 +104,8 @@ const app = new Elysia()
   .use(progressStatsHandler)
   .use(progressRecordsHandler)
   .use(progressHistoryHandler)
+  .use(subscriptionsTiersHandler)
+  .use(subscriptionsMeHandler)
   .use(subscriptionsCreateHandler)
   .use(subscriptionsCancelHandler);
 

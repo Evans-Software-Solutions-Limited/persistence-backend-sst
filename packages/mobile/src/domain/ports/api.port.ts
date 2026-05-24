@@ -10,6 +10,14 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type {
+  BillingCycle,
+  CancelSubscriptionResult,
+  CreateSubscriptionResult,
+  MySubscription,
+  SubscriptionTier,
+  SubscriptionTierName,
+} from "@/domain/models/subscription";
+import type {
   CreateWorkoutInput as CreateWorkoutDomainInput,
   UpdateWorkoutInput as UpdateWorkoutDomainInput,
   Workout,
@@ -273,25 +281,58 @@ export interface ApiPort {
    */
   getDashboard(): Promise<Result<DashboardPayload, ApiError>>;
 
-  // -- Subscriptions (M7) --
+  // -- Subscriptions (M7 / M10) --
   /**
-   * Create a Stripe subscription. Folds four flows on the backend (new
-   * sub / reinstate / change of tier or cycle / 3DS), but the mobile
-   * contract is a single call — the backend distinguishes based on the
-   * authenticated user's most-recent `user_subscriptions` row.
+   * M10: fetch the active subscription-tier catalog. Public read — no
+   * auth required (the auth-flow Selection screen renders pre-sign-in).
    *
-   * Returns the canonical local `subscription_id` (UUID) + Stripe sub id,
-   * plus `requires_action` as a discriminator. When `requires_action` is
-   * true, mobile presents the `client_secret` to Stripe's mobile SDK to
-   * complete a 3DS challenge; the eventual `customer.subscription.updated`
-   * webhook commits the payment_status flip server-side. When false,
-   * `payment_status` already reflects the final state.
+   * Returns rows in `price_monthly ASC` order, filtered `is_active = true`.
+   * Adapter parses the wire's decimal-string prices to numbers.
    *
-   * Wraps `POST /subscriptions`. Spec: BACKEND_BRIEF (M7).
+   * Wraps `GET /subscription-tiers`. Spec: design.md § Backend endpoints.
+   */
+  getSubscriptionTiers(): Promise<Result<SubscriptionTier[], ApiError>>;
+
+  /**
+   * M10: fetch the current user's subscription joined with tier metadata
+   * + profile role + trial-eligibility flags.
+   *
+   * When the user has no `user_subscriptions` row, the backend synthesises
+   * a `free`-tier shape so the mobile UI never has to handle a null sub
+   * specially (AC 5.4).
+   *
+   * Wraps `GET /subscriptions/me`. Auth required. Spec: design.md §
+   * Backend endpoints.
+   */
+  getMySubscription(): Promise<Result<MySubscription, ApiError>>;
+
+  /**
+   * Create a Stripe subscription. Folds five flows on the backend (new
+   * sub / reinstate / upgrade / downgrade / cycle-change / 3DS), but the
+   * mobile contract is a single call — the backend's dispatch precedence
+   * decides which path to take based on the authenticated user's most-
+   * recent `user_subscriptions` row.
+   *
+   * M10 extends the M7 contract:
+   * - `paymentMethodId` is OPTIONAL on the input. When absent, the
+   *   backend requires an existing active subscription (change-of-tier
+   *   reuses the customer's default payment method on file). 422 otherwise.
+   * - Response carries discriminator fields (`changeType`, `scheduled`,
+   *   `effectiveAt`, `isTrial`) so the UI picks the right success-alert
+   *   wording without inspecting domain state.
+   *
+   * Returns the local `subscriptionId` (UUID) + Stripe sub id, plus
+   * `requiresAction` as a discriminator. When `requiresAction` is true,
+   * mobile presents the `clientSecret` to Stripe's SDK to complete the
+   * 3DS challenge; the eventual webhook commits payment_status server-
+   * side. When false, `paymentStatus` already reflects the final state.
+   *
+   * Wraps `POST /subscriptions`. Spec: design.md § POST /subscriptions —
+   * extended.
    */
   createSubscription(
     input: CreateSubscriptionInput,
-  ): Promise<Result<CreateSubscriptionResponse, ApiError>>;
+  ): Promise<Result<CreateSubscriptionResult, ApiError>>;
 
   /**
    * Cancel a subscription either at the end of the billing period
@@ -300,12 +341,12 @@ export interface ApiPort {
    * scopes by both id AND userId — a wrong / missing id returns 404
    * without leaking which.
    *
-   * Wraps `POST /subscriptions/:id/cancel`.
+   * Wraps `POST /subscriptions/:id/cancel`. Unchanged from M7 / PR #70.
    */
   cancelSubscription(
     subscriptionId: string,
     input?: CancelSubscriptionInput,
-  ): Promise<Result<CancelSubscriptionResponse, ApiError>>;
+  ): Promise<Result<CancelSubscriptionResult, ApiError>>;
 
   // -- Goals --
   getGoals(params?: PaginationParams): Promise<Result<ApiGoal[], ApiError>>;
@@ -617,55 +658,35 @@ export type CreateGoalInput = {
 };
 
 /**
- * M7: request body for `POST /subscriptions`. `use_trial` is required
- * explicit (no silent default) — caller decides whether to opt into a
- * trial. Backend rejects an attempt to subscribe to "free" with 400.
+ * M7 / M10: request body for `POST /subscriptions`. `useTrial` is
+ * required-explicit (no silent default) — caller decides whether to
+ * opt into a trial. Backend rejects an attempt to subscribe to "free"
+ * with 400.
+ *
+ * M10: `paymentMethodId` is OPTIONAL. When omitted the backend
+ * requires an existing active subscription (change-of-tier path reuses
+ * the customer's default payment method on file); 422 otherwise.
+ *
+ * Note: this is the mobile-side domain shape. The adapter translates
+ * to snake_case wire keys (`tier_name`, `billing_cycle`,
+ * `payment_method_id`, `use_trial`) before sending.
  */
 export type CreateSubscriptionInput = {
-  tier_name: string;
-  billing_cycle: "monthly" | "yearly";
-  payment_method_id: string;
-  use_trial: boolean;
+  tierName: SubscriptionTierName;
+  billingCycle: BillingCycle;
+  paymentMethodId?: string;
+  useTrial: boolean;
   platform?: "ios" | "android";
 };
 
 /**
- * M7: response from `POST /subscriptions`. `subscription_id` is the
- * local `user_subscriptions.id` UUID; `stripe_subscription_id` is the
- * Stripe `sub_…` id. The two are deliberately separated (legacy had
- * them conflated on the 3DS branch).
- *
- * On `requires_action: true` the caller must use `client_secret` with
- * the Stripe mobile SDK to complete the 3DS challenge; the webhook
- * commits the final payment_status server-side. On `false`,
- * `payment_status` already reflects the final state.
- *
- * `reinstated: true` is set when the backend resumed an existing
- * Stripe subscription rather than creating a fresh one.
+ * M7 / M10: optional body for `POST /subscriptions/:id/cancel`. When
+ * `cancelImmediately` is `true` the backend cancels via Stripe with
+ * proration; otherwise (default) the sub is cancelled at the end of
+ * the current billing period and the row stays accessible until then.
  */
-export type CreateSubscriptionResponse = {
-  success: true;
-  requires_action: boolean;
-  subscription_id: string;
-  stripe_subscription_id: string;
-  trial_ends_at: string | null;
-  next_billing_date: string | null;
-  payment_status: string;
-  client_secret?: string;
-  reinstated?: boolean;
-};
-
-/** M7: optional body for `POST /subscriptions/:id/cancel`. */
 export type CancelSubscriptionInput = {
-  cancel_immediately?: boolean;
-};
-
-/** M7: response from `POST /subscriptions/:id/cancel`. */
-export type CancelSubscriptionResponse = {
-  success: true;
-  cancelled_at: string;
-  subscription_ends_at: string;
-  message: string;
+  cancelImmediately?: boolean;
 };
 
 /**

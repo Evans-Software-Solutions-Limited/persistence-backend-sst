@@ -124,18 +124,18 @@ export function ProfileContainer() {
   const onSelectProfilePicture = avatarUpload.showAvatarSheet;
 
   const onManageSubscription = useCallback(() => {
-    Alert.alert(
-      "Manage subscription",
-      "Subscription management lights up in a later milestone.",
-    );
-  }, []);
+    // M10: push to the Subscription Management screen. The thin
+    // Expo Router wrapper at app/subscription-management.tsx renders
+    // SubscriptionManagementContainer.
+    router.push("/subscription-management" as never);
+  }, [router]);
 
   const onUpgradeSubscription = useCallback(() => {
-    Alert.alert(
-      "Upgrade coming soon",
-      "Subscription upgrades light up in a later milestone.",
-    );
-  }, []);
+    // M10: free + basic tiers route through Selection (full role
+    // toggle + tier-comparison UI). Management is for premium ↔ basic
+    // user-tier changes only.
+    router.push("/(auth)/subscription-selection" as never);
+  }, [router]);
 
   const onBecomeTrainer = useCallback(() => {
     Alert.alert("Become a trainer", "Trainer onboarding lights up in M8.");

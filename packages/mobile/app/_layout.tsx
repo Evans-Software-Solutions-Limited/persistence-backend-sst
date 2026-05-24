@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
+import { StripeProvider } from "@stripe/stripe-react-native";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
@@ -66,12 +68,20 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inAppGroup = segments[0] === "(app)";
+    // M10: subscription-selection + success live under (auth) because
+    // they're rendered post-sign-up before the user has reached the
+    // app. AuthGate must NOT bounce signed-in users out of those
+    // screens — otherwise the auth-flow Selection card never gets
+    // its chance to appear before AuthGate redirects to home.
+    const segmentName = (segments as readonly string[])[1];
+    const inPostAuthSubscriptionFlow =
+      inAuthGroup &&
+      (segmentName === "subscription-selection" || segmentName === "success");
 
-    if (session && !inAppGroup) {
-      // Signed in but not in app (auth screen or root) — go to app.
-      // `/(app)` alone isn't typed any more now that the app group has no
-      // direct index (the home tab lives at `/(app)/(tabs)/index`).
-      // `/(app)/(tabs)` resolves to the tab navigator's first tab (home).
+    if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
+      // Signed in but not in app and not in the post-sign-up flow —
+      // go to app. `/(app)/(tabs)` resolves to the tab navigator's
+      // first tab (home).
       router.replace("/(app)/(tabs)");
     } else if (!session && !inAuthGroup) {
       // Not signed in and not on auth screen — go to sign-in
@@ -101,6 +111,21 @@ export default function RootLayout() {
     });
   }, []);
 
+  // M10 — Stripe publishable key from Expo's runtime config or env. The
+  // SDK accepts an empty string and just silently no-ops Apple Pay; in
+  // dev that surfaces as the inline "Apple Pay unavailable" state and
+  // is harmless. Production / staging EAS builds inject the key via
+  // `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+  //
+  // `merchantIdentifier` MUST match the entry in `ios.entitlements`
+  // (app.json line 20). Mismatch = silent Apple Pay sheet failure on
+  // device. Mirrors legacy `persistence-mobile/app/_layout.tsx:95-97`
+  // pattern.
+  const stripePublishableKey =
+    (Constants.expoConfig?.extra?.stripePublishableKey as string | undefined) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    "";
+
   // `GestureHandlerRootView` is required by react-native-gesture-handler
   // for any descendant `<GestureDetector>` to recognise touches. Phase 3a
   // added the SemiCircleSlider (rating screen) which uses GestureDetector;
@@ -111,10 +136,15 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
-        <AppProviders>
-          <NotificationPermissionsBootstrap />
-          <AuthGate />
-        </AppProviders>
+        <StripeProvider
+          publishableKey={stripePublishableKey}
+          merchantIdentifier="merchant.com.bradleyevans96.persistence"
+        >
+          <AppProviders>
+            <NotificationPermissionsBootstrap />
+            <AuthGate />
+          </AppProviders>
+        </StripeProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );

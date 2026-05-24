@@ -105,11 +105,15 @@ This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent
 
 ### M10 — Subscriptions & payments (Stripe)
 
-**Purpose:** Stripe webhook receiver, plan catalog, checkout, portal, entitlement; frontend tier selection + feature gates.
+**Purpose:** mobile port of legacy buy/cancel/upgrade/downgrade screens against the SST API + Stripe surface shipped in PRs #69 + #70. Adds backend reads (`GET /subscription-tiers`, `GET /subscriptions/me`) and `POST /subscriptions` response/request extensions. Apple Pay only (matches legacy + App Store IAP policy).
 
-- **Status:** not started
-- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/)
+- **Status:** briefs authored (2026-05-23)
+- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — rewritten 2026-05-23 to match shipped + M10 scope
 - **Brief:** [`M10-subscriptions/BRIEF.md`](./M10-subscriptions/BRIEF.md)
+- **Backend brief:** [`M10-subscriptions/BACKEND_BRIEF.md`](./M10-subscriptions/BACKEND_BRIEF.md)
+- **Frontend brief:** [`M10-subscriptions/FRONTEND_BRIEF.md`](./M10-subscriptions/FRONTEND_BRIEF.md)
+- **Smoke test:** [`M10-subscriptions/SMOKE_TEST.md`](./M10-subscriptions/SMOKE_TEST.md)
+- **Deferred to follow-up:** feature gates (`FeatureGatePrompt` + per-screen integration), Google Pay, Stripe Customer Portal, reconcile cron, helper unification — see parent `tasks.md` § Deferred phases
 
 ### M11 — Polish
 

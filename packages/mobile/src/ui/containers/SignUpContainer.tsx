@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import type { OAuthProvider } from "@/domain/ports/auth.port";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { SignUpPresenter } from "@/ui/presenters/SignUpPresenter";
@@ -38,13 +38,21 @@ export function SignUpContainer() {
       const { confirmationRequired } = await signUp(email, password);
       if (confirmationRequired) {
         setConfirmationSent(true);
+      } else {
+        // M10: post-sign-up routes through Subscription Selection so
+        // the user picks a tier before landing in the app. AuthGate
+        // whitelists this route for signed-in users.
+        // Cast required until `.expo/types/router.d.ts` regenerates on
+        // first `expo start` after the new routes landed (see M0
+        // SMOKE_TEST.md § Known-acceptable failures for the same pattern).
+        router.push("/(auth)/subscription-selection" as Href);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, confirmPassword, signUp]);
+  }, [email, password, confirmPassword, signUp, router]);
 
   const handleOAuth = useCallback(
     async (provider: OAuthProvider) => {
