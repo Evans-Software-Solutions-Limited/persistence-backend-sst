@@ -10,9 +10,7 @@ import {
 } from "@/ui/presenters/HomePresenter";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
-import { useFeatureGate } from "@/ui/hooks/useFeatureGate";
 import { useHealthData } from "@/ui/hooks/useHealthData";
-import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useStableMockHistory } from "@/ui/hooks/useStableMockHistory";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
@@ -64,21 +62,6 @@ export function HomeContainer() {
   const { session } = useAuth();
   const dashboard = useDashboard();
   const health = useHealthData();
-  // M10.5 Wave 2: gate the HealthKit-backed tile grid behind premium.
-  // `gym_buddy` is the closest existing stub feature (premium-and-above
-  // per the live `subscription_tiers` seed). Swap to a dedicated
-  // `health_integration` feature when the backend introduces one.
-  // Server-side enforcement remains the authoritative defense; this
-  // client gate is UX-only.
-  const subscriptionQuery = useMySubscription();
-  const healthGate = useFeatureGate("gym_buddy");
-  const healthTilesGate = useMemo(
-    () =>
-      subscriptionQuery.data
-        ? { allowed: healthGate.allowed, gateProps: healthGate.gateProps }
-        : null,
-    [subscriptionQuery.data, healthGate.allowed, healthGate.gateProps],
-  );
 
   // Memo #1: cachedPayload slice the view-model derives from.
   const cachedPayload = useMemo(() => dashboard.payload, [dashboard.payload]);
@@ -384,7 +367,6 @@ export function HomeContainer() {
       showSlowLoaderCaption={showSlowLoaderCaption}
       error={effectiveError}
       isRefreshing={dashboard.isRefreshing || health.isReading}
-      healthTilesGate={healthTilesGate}
       onRefresh={onRefresh}
       onUpgradePress={onUpgradePress}
       onManageSubscriptionPress={onManageSubscriptionPress}

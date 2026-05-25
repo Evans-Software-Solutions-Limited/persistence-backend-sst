@@ -99,7 +99,6 @@ function renderHome(overrides: Partial<HomePresenterProps> = {}) {
     animationStyles: [{}, {}, {}, {}, {}],
     isLoading: false,
     isRefreshing: false,
-    healthTilesGate: null,
     onRefresh: jest.fn(),
     onUpgradePress: jest.fn(),
     onWorkoutPress: jest.fn(),
@@ -110,18 +109,6 @@ function renderHome(overrides: Partial<HomePresenterProps> = {}) {
     ...overrides,
   };
   return { ...renderWithTheme(<HomePresenter {...props} />), props };
-}
-
-function makeGateProps(currentTier: "free" | "basic" = "free") {
-  return {
-    feature: "gym_buddy" as const,
-    featureDisplayName: "Gym Buddy access",
-    currentTier,
-    upgradeTo:
-      currentTier === "free" ? ("basic" as const) : ("premium" as const),
-    upgradePriceMonthly: 4.99,
-    onUpgrade: jest.fn(),
-  };
 }
 
 describe("HomePresenter", () => {
@@ -241,7 +228,6 @@ describe("HomePresenter", () => {
           animationStyles={[{}, {}, {}, {}, {}]}
           isLoading={false}
           isRefreshing={false}
-          healthTilesGate={null}
           onRefresh={jest.fn()}
           onUpgradePress={jest.fn()}
           onWorkoutPress={jest.fn()}
@@ -271,65 +257,6 @@ describe("HomePresenter", () => {
       expect(queryByTestId("home-error-banner")).toBeNull();
       // Sanity: the happy-path section tree still renders.
       expect(getByTestId("greeting-section")).toBeTruthy();
-    });
-  });
-
-  describe("health-tiles feature-gate (M10.5 Wave 2)", () => {
-    it("renders the full MyProgressSection when healthTilesGate is null (unresolved)", () => {
-      const { getByTestId, queryByTestId } = renderHome({
-        healthTilesGate: null,
-      });
-      expect(getByTestId("my-progress-section")).toBeTruthy();
-      expect(queryByTestId("my-progress-section-locked")).toBeNull();
-      expect(queryByTestId("feature-gate-prompt-gym_buddy")).toBeNull();
-    });
-
-    it("renders the full MyProgressSection when the gate allows", () => {
-      const { getByTestId, queryByTestId } = renderHome({
-        healthTilesGate: { allowed: true, gateProps: makeGateProps("free") },
-      });
-      expect(getByTestId("my-progress-section")).toBeTruthy();
-      expect(queryByTestId("my-progress-section-locked")).toBeNull();
-    });
-
-    it("swaps in MyProgressLockedSection + FeatureGatePrompt when the gate denies", () => {
-      const { getByTestId, queryByTestId } = renderHome({
-        healthTilesGate: { allowed: false, gateProps: makeGateProps("free") },
-      });
-      expect(getByTestId("my-progress-section-locked")).toBeTruthy();
-      expect(getByTestId("feature-gate-prompt-gym_buddy")).toBeTruthy();
-      // The full section must NOT also render — they're mutually exclusive.
-      expect(queryByTestId("my-progress-section")).toBeNull();
-    });
-
-    it("locked section keeps the workouts-this-month tile visible (basic stat, not health)", () => {
-      const { getByTestId } = renderHome({
-        healthTilesGate: { allowed: false, gateProps: makeGateProps("free") },
-      });
-      // The WorkoutsThisMonthTile renders its label "Workouts" — assert
-      // by tile presence; we can't use a testID because the legacy tile
-      // doesn't expose one. The locked section's testID is enough.
-      expect(getByTestId("my-progress-section-locked")).toBeTruthy();
-    });
-
-    it("locked section's View All tap calls onViewAllProgressPress", () => {
-      const onViewAllProgressPress = jest.fn();
-      const { getByTestId } = renderHome({
-        healthTilesGate: { allowed: false, gateProps: makeGateProps("free") },
-        onViewAllProgressPress,
-      });
-      fireEvent.press(getByTestId("my-progress-view-all"));
-      expect(onViewAllProgressPress).toHaveBeenCalled();
-    });
-
-    it("locked section's Upgrade CTA fires the gate's onUpgrade callback", () => {
-      const onUpgrade = jest.fn();
-      const gateProps = { ...makeGateProps("free"), onUpgrade };
-      const { getByTestId } = renderHome({
-        healthTilesGate: { allowed: false, gateProps },
-      });
-      fireEvent.press(getByTestId("feature-gate-upgrade"));
-      expect(onUpgrade).toHaveBeenCalled();
     });
   });
 });

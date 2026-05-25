@@ -23,7 +23,7 @@ const mockHomePresenterProps: { current: any } = { current: null };
 const mockHomePresenterRenders: any[] = [];
 jest.mock("@/ui/presenters/HomePresenter", () => {
   const React = require("react");
-  const { Pressable, Text } = require("react-native");
+  const { Pressable } = require("react-native");
   return {
     HomePresenter: (props: any) => {
       mockHomePresenterProps.current = props;
@@ -32,15 +32,6 @@ jest.mock("@/ui/presenters/HomePresenter", () => {
         require("react-native").View,
         { testID: "home-presenter-stub" },
         [
-          React.createElement(
-            Text,
-            { key: "gate", testID: "stub-health-tiles-gate" },
-            props.healthTilesGate === null
-              ? "null"
-              : props.healthTilesGate.allowed
-                ? "allowed"
-                : "denied",
-          ),
           React.createElement(Pressable, {
             key: "refresh",
             testID: "stub-refresh",
@@ -95,8 +86,6 @@ jest.mock("@/ui/presenters/HomePresenter", () => {
 // eslint-disable-next-line import/first
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-// eslint-disable-next-line import/first
 import type { ReactNode } from "react";
 // eslint-disable-next-line import/first
 import { Alert } from "react-native";
@@ -112,8 +101,6 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import type { HealthPort } from "@/domain/ports/health.port";
 // eslint-disable-next-line import/first
 import { ok } from "@/shared/errors";
-// eslint-disable-next-line import/first
-import type { MySubscription } from "@/domain/models/subscription";
 // eslint-disable-next-line import/first
 import type { Adapters } from "@/shared/types";
 // eslint-disable-next-line import/first
@@ -205,15 +192,6 @@ function makeAdapters(
   };
 }
 
-function makeQueryClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: 0 },
-      mutations: { retry: false },
-    },
-  });
-}
-
 function Wrap({
   adapters,
   children,
@@ -221,69 +199,7 @@ function Wrap({
   adapters: Adapters;
   children: ReactNode;
 }) {
-  return (
-    <AdapterProvider adapters={adapters}>
-      <QueryClientProvider client={makeQueryClient()}>
-        {children}
-      </QueryClientProvider>
-    </AdapterProvider>
-  );
-}
-
-function makePremiumSubscription(): MySubscription {
-  return {
-    subscriptionId: "sub-1",
-    tierName: "premium",
-    paymentStatus: "active",
-    billingCycle: "monthly",
-    startsAt: "2026-04-01T00:00:00.000Z",
-    expiresAt: "2026-05-01T00:00:00.000Z",
-    cancelledAt: null,
-    trialEndsAt: null,
-    externalSubscriptionId: "stripe-sub-1",
-    tierDisplayName: "Premium",
-    tierDescription: null,
-    workoutLimit: null,
-    aiAccess: true,
-    aiWorkoutLimit: 6,
-    gymBuddyAccess: true,
-    trainerClientLimit: null,
-    isTrainerTier: false,
-    role: "user",
-    hasUsedUserTrial: false,
-    hasUsedTrainerTrial: false,
-    isEligibleForUserTrial: true,
-    isEligibleForTrainerTrial: true,
-    scheduledChange: null,
-  };
-}
-
-function makeFreeSubscription(): MySubscription {
-  return {
-    subscriptionId: null,
-    tierName: "free",
-    paymentStatus: "active",
-    billingCycle: null,
-    startsAt: "2026-04-01T00:00:00.000Z",
-    expiresAt: null,
-    cancelledAt: null,
-    trialEndsAt: null,
-    externalSubscriptionId: null,
-    tierDisplayName: "Free",
-    tierDescription: null,
-    workoutLimit: 3,
-    aiAccess: false,
-    aiWorkoutLimit: 0,
-    gymBuddyAccess: false,
-    trainerClientLimit: null,
-    isTrainerTier: false,
-    role: "user",
-    hasUsedUserTrial: false,
-    hasUsedTrainerTrial: false,
-    isEligibleForUserTrial: true,
-    isEligibleForTrainerTrial: true,
-    scheduledChange: null,
-  };
+  return <AdapterProvider adapters={adapters}>{children}</AdapterProvider>;
 }
 
 describe("HomeContainer", () => {
@@ -759,75 +675,6 @@ describe("HomeContainer", () => {
         expect(mockHomePresenterProps.current?.isLoading).toBe(false);
       });
       expect(mockHomePresenterProps.current.showSlowLoaderCaption).toBe(false);
-    });
-  });
-
-  describe("health tiles feature-gate (M10.5 Wave 2)", () => {
-    it("emits healthTilesGate=null while useMySubscription hasn't resolved", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      api.dashboard = DASHBOARD_FIXTURE;
-      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
-      // Do NOT seed api.mySubscription — getMySubscription returns a
-      // not_found ApiError so the query never resolves to a value.
-      const adapters = makeAdapters(api, storage);
-
-      renderWithTheme(
-        <Wrap adapters={adapters}>
-          <HomeContainer />
-        </Wrap>,
-      );
-
-      await waitFor(() => {
-        expect(mockHomePresenterProps.current).not.toBeNull();
-      });
-      expect(mockHomePresenterProps.current.healthTilesGate).toBeNull();
-    });
-
-    it("emits healthTilesGate={allowed:false} for a free-tier subscription", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      api.dashboard = DASHBOARD_FIXTURE;
-      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
-      api.mySubscription = makeFreeSubscription();
-      const adapters = makeAdapters(api, storage);
-
-      renderWithTheme(
-        <Wrap adapters={adapters}>
-          <HomeContainer />
-        </Wrap>,
-      );
-
-      await waitFor(() => {
-        expect(mockHomePresenterProps.current?.healthTilesGate?.allowed).toBe(
-          false,
-        );
-      });
-      // The gate ships ready-to-render props with the upgrade chain.
-      expect(
-        mockHomePresenterProps.current.healthTilesGate.gateProps.currentTier,
-      ).toBe("free");
-    });
-
-    it("emits healthTilesGate={allowed:true} for a premium subscription", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      api.dashboard = DASHBOARD_FIXTURE;
-      storage.cacheDashboard("user-1", DASHBOARD_FIXTURE);
-      api.mySubscription = makePremiumSubscription();
-      const adapters = makeAdapters(api, storage);
-
-      renderWithTheme(
-        <Wrap adapters={adapters}>
-          <HomeContainer />
-        </Wrap>,
-      );
-
-      await waitFor(() => {
-        expect(mockHomePresenterProps.current?.healthTilesGate?.allowed).toBe(
-          true,
-        );
-      });
     });
   });
 
