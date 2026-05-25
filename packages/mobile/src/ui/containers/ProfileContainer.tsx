@@ -140,9 +140,15 @@ export function ProfileContainer() {
 
   const onManageSubscription = useCallback(() => {
     // M10: push to the Subscription Management screen. The thin
-    // Expo Router wrapper at app/subscription-management.tsx renders
-    // SubscriptionManagementContainer.
-    router.push("/subscription-management" as never);
+    // Expo Router wrapper at app/(app)/subscription-management.tsx
+    // renders SubscriptionManagementContainer.
+    //
+    // CRITICAL: this MUST be the `/(app)/...` path, not a root-level
+    // `/subscription-management`. AuthGate (app/_layout.tsx:79-83)
+    // bounces signed-in users out of any route outside the (app) or
+    // (auth) groups — a root-level push would flicker the management
+    // screen for a tick then redirect straight back to Home.
+    router.push("/(app)/subscription-management" as never);
   }, [router]);
 
   const onUpgradeSubscription = useCallback(() => {
