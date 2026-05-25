@@ -17,7 +17,10 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
-import type { MySubscription } from "@/domain/models/subscription";
+import type {
+  MySubscription,
+  SubscriptionTier,
+} from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { SubscriptionManagementContainer } from "@/ui/containers/SubscriptionManagementContainer";
@@ -29,7 +32,55 @@ jest.mock("expo-router", () => ({
 
 const alertSpy = jest.spyOn(Alert, "alert");
 
-function makeAdapters(sub: MySubscription | null): {
+const BASIC_TIER: SubscriptionTier = {
+  tierName: "basic",
+  displayName: "Basic",
+  description: null,
+  priceMonthly: 7.99,
+  priceYearly: 79.99,
+  currency: "GBP",
+  features: {},
+  workoutLimit: 10,
+  aiAccess: true,
+  aiWorkoutLimit: 1,
+  gymBuddyAccess: false,
+  trainerClientLimit: null,
+  isTrainerTier: false,
+  analyticsAccess: false,
+  exportAccess: false,
+  stripePriceIdMonthly: "price_basic_m",
+  stripePriceIdYearly: "price_basic_y",
+};
+const PREMIUM_TIER: SubscriptionTier = {
+  ...BASIC_TIER,
+  tierName: "premium",
+  displayName: "Premium",
+  priceMonthly: 12.99,
+  priceYearly: 129.99,
+  workoutLimit: null,
+  gymBuddyAccess: true,
+  aiWorkoutLimit: 6,
+};
+const TRAINER_PRO_TIER: SubscriptionTier = {
+  ...BASIC_TIER,
+  tierName: "individual_trainer_pro",
+  displayName: "Individual Trainer Pro",
+  priceMonthly: 14.99,
+  priceYearly: 149.99,
+  isTrainerTier: true,
+  trainerClientLimit: 5,
+  workoutLimit: null,
+};
+const DEFAULT_TIERS: SubscriptionTier[] = [
+  BASIC_TIER,
+  PREMIUM_TIER,
+  TRAINER_PRO_TIER,
+];
+
+function makeAdapters(
+  sub: MySubscription | null,
+  tiers: SubscriptionTier[] = DEFAULT_TIERS,
+): {
   adapters: Adapters;
   api: InMemoryApiAdapter;
   netInfo: InMemoryNetInfoAdapter;
@@ -38,6 +89,7 @@ function makeAdapters(sub: MySubscription | null): {
   const auth = new InMemoryAuthAdapter();
   const netInfo = new InMemoryNetInfoAdapter();
   api.mySubscription = sub;
+  api.subscriptionTiers = tiers;
   auth.currentSession = {
     accessToken: "tok",
     refreshToken: "rtok",
@@ -122,6 +174,30 @@ afterAll(() => {
   alertSpy.mockRestore();
 });
 
+// Drives the confirmation flow: presses the picker switch for `targetTier`,
+// then taps the resolved confirmation button on the resulting Alert.
+async function pressSwitchAndConfirm(targetTier: string) {
+  await act(async () => {
+    fireEvent.press(
+      screen.getByTestId(`management-picker-switch-${targetTier}`),
+    );
+  });
+  // Container picks confirm-button text by direction: "Upgrade" for up,
+  // "Confirm" for down/cross-track. Cover both.
+  const lastAlert = alertSpy.mock.calls[alertSpy.mock.calls.length - 1];
+  const buttons = (lastAlert?.[2] ?? []) as Array<{
+    text?: string;
+    style?: string;
+    onPress?: () => void | Promise<void>;
+  }>;
+  const confirmButton =
+    buttons.find((b) => b.text === "Upgrade") ??
+    buttons.find((b) => b.text === "Confirm");
+  await act(async () => {
+    await confirmButton?.onPress?.();
+  });
+}
+
 describe("SubscriptionManagementContainer", () => {
   it("renders the management screen once data loads", async () => {
     const { adapters } = makeAdapters(BASIC_SUB);
@@ -130,14 +206,11 @@ describe("SubscriptionManagementContainer", () => {
         <SubscriptionManagementContainer />
       </Wrapper>,
     );
-    // Wait for both the title and the tier name. The query enables
-    // only after the auth context surfaces the userId, which races
-    // the initial render — so both assertions need waitFor.
     await waitFor(() => expect(screen.getByText("Basic")).toBeTruthy());
     expect(screen.getByText("Current Plan")).toBeTruthy();
   });
 
-  it("upgrade: shows confirmation alert; on confirm calls createSubscription WITHOUT paymentMethodId", async () => {
+  it("upgrade via picker: confirmation alert + on confirm calls createSubscription WITHOUT paymentMethodId", async () => {
     const { adapters, api } = makeAdapters(BASIC_SUB);
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -145,28 +218,16 @@ describe("SubscriptionManagementContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-upgrade-button")).toBeTruthy(),
+      expect(
+        screen.getByTestId("management-picker-switch-premium"),
+      ).toBeTruthy(),
     );
+    await pressSwitchAndConfirm("premium");
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-upgrade-button"));
-    });
-
-    // Confirm alert was shown
-    expect(alertSpy).toHaveBeenCalledWith(
-      "Upgrade Subscription",
-      expect.stringContaining("prorated"),
-      expect.any(Array),
-    );
-
-    // Simulate user tapping "Upgrade"
     const upgradeAlert = alertSpy.mock.calls.find(
       ([title]) => title === "Upgrade Subscription",
     );
-    const upgradeButton = upgradeAlert?.[2]?.find((b) => b.text === "Upgrade");
-    await act(async () => {
-      await upgradeButton?.onPress?.();
-    });
+    expect(upgradeAlert?.[1]).toMatch(/prorated/);
 
     expect(api.createSubscriptionCalls).toBe(1);
     expect(api.lastCreateSubscriptionInput).toEqual({
@@ -177,7 +238,7 @@ describe("SubscriptionManagementContainer", () => {
     expect(api.lastCreateSubscriptionInput?.paymentMethodId).toBeUndefined();
   });
 
-  it("downgrade: shows confirmation alert; on confirm uses tier_name='basic' + effectiveAt success alert", async () => {
+  it("downgrade via picker: confirmation + on confirm uses tier_name='basic' + scheduled-success wording", async () => {
     const { adapters, api } = makeAdapters(PREMIUM_SUB);
     api.setNextCreateSubscriptionResponse({
       changeType: "downgrade",
@@ -190,32 +251,53 @@ describe("SubscriptionManagementContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
+      expect(screen.getByTestId("management-picker-switch-basic")).toBeTruthy(),
     );
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-downgrade-button"));
-    });
+    await pressSwitchAndConfirm("basic");
+
     const downgradeAlert = alertSpy.mock.calls.find(
       ([title]) => title === "Downgrade Subscription",
     );
-    const downgradeButton = downgradeAlert?.[2]?.find(
-      (b) => b.text === "Downgrade",
-    );
-    await act(async () => {
-      await downgradeButton?.onPress?.();
-    });
+    expect(downgradeAlert?.[1]).toMatch(/end of your current billing period/);
+
     expect(api.lastCreateSubscriptionInput).toEqual({
       tierName: "basic",
       billingCycle: "monthly",
       useTrial: false,
     });
-    // Success alert shows effective date
+    // Phase 2 — downgrade success uses "Scheduled" wording, not "Success"
     await waitFor(() => {
-      const successCall = alertSpy.mock.calls.find(
-        ([title]) => title === "Success",
+      expect(alertSpy.mock.calls.some(([title]) => title === "Scheduled")).toBe(
+        true,
       );
-      expect(successCall).toBeTruthy();
     });
+  });
+
+  it("cross-track switch: premium → individual_trainer_pro fires createSubscription with trainer tier", async () => {
+    const { adapters, api } = makeAdapters(PREMIUM_SUB);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionManagementContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("management-picker-switch-individual_trainer_pro"),
+      ).toBeTruthy(),
+    );
+    await pressSwitchAndConfirm("individual_trainer_pro");
+
+    // Cross-track title uses "Switch to <displayName>"
+    expect(
+      alertSpy.mock.calls.some(
+        ([title]) =>
+          typeof title === "string" &&
+          title.startsWith("Switch to Individual Trainer Pro"),
+      ),
+    ).toBe(true);
+    expect(api.lastCreateSubscriptionInput?.tierName).toBe(
+      "individual_trainer_pro",
+    );
   });
 
   it("cancel: shows trial-aware confirmation; on confirm calls cancelSubscription", async () => {
@@ -280,20 +362,50 @@ describe("SubscriptionManagementContainer", () => {
     expect(successAlert?.[1]).toMatch(/Your subscription will end/);
   });
 
-  it("does not show upgrade for premium tier (only basic can upgrade)", async () => {
-    const { adapters } = makeAdapters(PREMIUM_SUB);
+  it("hides the cancel button when subscription is already cancelled (bug 8a guard)", async () => {
+    const cancelledSub: MySubscription = {
+      ...PREMIUM_SUB,
+      cancelledAt: "2026-05-25T14:33:31.000Z",
+    };
+    const { adapters } = makeAdapters(cancelledSub);
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <SubscriptionManagementContainer />
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
+      expect(screen.getByTestId("management-cancelled-notice")).toBeTruthy(),
     );
-    expect(screen.queryByTestId("management-upgrade-button")).toBeNull();
+    expect(screen.queryByTestId("management-cancel-button")).toBeNull();
   });
 
-  it("alerts the user when upgrade fails", async () => {
+  it("shows scheduled-change card + hides downgrade rows when a scheduled change is pending", async () => {
+    const subWithScheduled: MySubscription = {
+      ...PREMIUM_SUB,
+      scheduledChange: {
+        nextTierName: "basic",
+        nextDisplayName: "Basic",
+        effectiveAt: "2026-06-01T00:00:00.000Z",
+      },
+    };
+    const { adapters } = makeAdapters(subWithScheduled);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionManagementContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("management-scheduled-card")).toBeTruthy(),
+    );
+    // basic (£7.99) < premium (£12.99) — downgrade — hidden
+    expect(screen.queryByTestId("management-picker-row-basic")).toBeNull();
+    // trainer_pro (£14.99) > premium (£12.99) — upgrade — shown
+    expect(
+      screen.getByTestId("management-picker-row-individual_trainer_pro"),
+    ).toBeTruthy();
+  });
+
+  it("alerts the user when tier-change fails", async () => {
     const { adapters, api } = makeAdapters(BASIC_SUB);
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -301,49 +413,12 @@ describe("SubscriptionManagementContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-upgrade-button")).toBeTruthy(),
+      expect(
+        screen.getByTestId("management-picker-switch-premium"),
+      ).toBeTruthy(),
     );
     api.shouldFail = true;
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-upgrade-button"));
-    });
-    const upgradeAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Upgrade Subscription",
-    );
-    const upgradeButton = upgradeAlert?.[2]?.find((b) => b.text === "Upgrade");
-    await act(async () => {
-      await upgradeButton?.onPress?.();
-    });
-    await waitFor(() =>
-      expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
-        true,
-      ),
-    );
-  });
-
-  it("alerts the user when downgrade fails", async () => {
-    const { adapters, api } = makeAdapters(PREMIUM_SUB);
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionManagementContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
-    );
-    api.shouldFail = true;
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-downgrade-button"));
-    });
-    const downgradeAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Downgrade Subscription",
-    );
-    const downgradeButton = downgradeAlert?.[2]?.find(
-      (b) => b.text === "Downgrade",
-    );
-    await act(async () => {
-      await downgradeButton?.onPress?.();
-    });
+    await pressSwitchAndConfirm("premium");
     await waitFor(() =>
       expect(alertSpy.mock.calls.some(([title]) => title === "Error")).toBe(
         true,
@@ -381,6 +456,25 @@ describe("SubscriptionManagementContainer", () => {
     );
   });
 
+  it("uses yearly pricing path when subscription billingCycle is yearly", async () => {
+    const yearlySub: MySubscription = { ...BASIC_SUB, billingCycle: "yearly" };
+    const { adapters, api } = makeAdapters(yearlySub);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionManagementContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("management-picker-switch-premium"),
+      ).toBeTruthy(),
+    );
+    // Yearly price (£129.99/year) renders, not monthly (£12.99/month).
+    expect(screen.getByText("£129.99/year")).toBeTruthy();
+    await pressSwitchAndConfirm("premium");
+    expect(api.lastCreateSubscriptionInput?.billingCycle).toBe("yearly");
+  });
+
   it("defaults billingCycle to monthly when sub has null billingCycle", async () => {
     const subNoBilling = { ...BASIC_SUB, billingCycle: null };
     const { adapters, api } = makeAdapters(subNoBilling);
@@ -390,18 +484,11 @@ describe("SubscriptionManagementContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-upgrade-button")).toBeTruthy(),
+      expect(
+        screen.getByTestId("management-picker-switch-premium"),
+      ).toBeTruthy(),
     );
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-upgrade-button"));
-    });
-    const upgradeAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Upgrade Subscription",
-    );
-    const upgradeButton = upgradeAlert?.[2]?.find((b) => b.text === "Upgrade");
-    await act(async () => {
-      await upgradeButton?.onPress?.();
-    });
+    await pressSwitchAndConfirm("premium");
     expect(api.lastCreateSubscriptionInput?.billingCycle).toBe("monthly");
   });
 
@@ -418,30 +505,20 @@ describe("SubscriptionManagementContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
+      expect(screen.getByTestId("management-picker-switch-basic")).toBeTruthy(),
     );
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("management-downgrade-button"));
-    });
-    const downgradeAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Downgrade Subscription",
+    await pressSwitchAndConfirm("basic");
+    const scheduledAlert = alertSpy.mock.calls.find(
+      ([title]) => title === "Scheduled",
     );
-    const downgradeButton = downgradeAlert?.[2]?.find(
-      (b) => b.text === "Downgrade",
-    );
-    await act(async () => {
-      await downgradeButton?.onPress?.();
-    });
-    const successAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Success",
-    );
-    expect(successAlert?.[1]).toMatch(/end of your current billing period/);
+    expect(scheduledAlert?.[1]).toMatch(/end of your current billing period/);
   });
 
-  it("does nothing when cancel pressed but subscriptionId is null (free shape)", async () => {
-    const freeSub = {
+  it("hides picker entirely on free tier (free users go via Selection)", async () => {
+    const freeSub: MySubscription = {
       ...BASIC_SUB,
-      tierName: "free" as const,
+      tierName: "free",
+      tierDisplayName: "Free",
       subscriptionId: null,
     };
     const { adapters, api } = makeAdapters(freeSub);
@@ -450,10 +527,9 @@ describe("SubscriptionManagementContainer", () => {
         <SubscriptionManagementContainer />
       </Wrapper>,
     );
-    // No cancel button on free tier.
     await waitFor(() => expect(screen.getByText("Free")).toBeTruthy());
     expect(screen.queryByTestId("management-cancel-button")).toBeNull();
-    // Even if we somehow called cancel, no mutation should fire.
+    expect(screen.queryByTestId("management-picker-card")).toBeNull();
     expect(api.cancelSubscriptionCalls).toBe(0);
   });
 
@@ -464,7 +540,6 @@ describe("SubscriptionManagementContainer", () => {
         <SubscriptionManagementContainer />
       </Wrapper>,
     );
-    // Wait for data load so the post-loading view renders the back button.
     await waitFor(() => expect(screen.getByText("Current Plan")).toBeTruthy());
     await waitFor(() =>
       expect(screen.getByTestId("subscription-management-back")).toBeTruthy(),
@@ -473,7 +548,6 @@ describe("SubscriptionManagementContainer", () => {
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
-  // M10.5 — offline + slow-network UX
   describe("M10.5 — offline + slow-network UX", () => {
     it("renders the offline banner when netInfo reports disconnected (AC 11.1)", async () => {
       const { adapters, netInfo } = makeAdapters(BASIC_SUB);
@@ -486,11 +560,10 @@ describe("SubscriptionManagementContainer", () => {
       await waitFor(() =>
         expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
       );
-      // Cached sub data still renders.
       expect(screen.getByText("Current Plan")).toBeTruthy();
     });
 
-    it("offline + tap Upgrade → alert + no createSubscription (AC 11.2 + 11.4)", async () => {
+    it("offline + tap a picker switch → alert + no createSubscription (AC 11.2 + 11.4)", async () => {
       const { adapters, api, netInfo } = makeAdapters(BASIC_SUB);
       render(
         <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -498,47 +571,21 @@ describe("SubscriptionManagementContainer", () => {
         </Wrapper>,
       );
       await waitFor(() =>
-        expect(screen.getByTestId("management-upgrade-button")).toBeTruthy(),
+        expect(
+          screen.getByTestId("management-picker-switch-premium"),
+        ).toBeTruthy(),
       );
       await act(async () => {
         netInfo.setConnected(false);
       });
       await act(async () => {
-        fireEvent.press(screen.getByTestId("management-upgrade-button"));
+        fireEvent.press(screen.getByTestId("management-picker-switch-premium"));
       });
-      // Offline alert fired; no Upgrade Subscription confirmation alert.
       expect(
         alertSpy.mock.calls.some(([title]) => title === "You're offline"),
       ).toBe(true);
       expect(
         alertSpy.mock.calls.some(([title]) => title === "Upgrade Subscription"),
-      ).toBe(false);
-      expect(api.createSubscriptionCalls).toBe(0);
-    });
-
-    it("offline + tap Downgrade → alert + no createSubscription (AC 11.2 + 11.4)", async () => {
-      const { adapters, api, netInfo } = makeAdapters(PREMIUM_SUB);
-      render(
-        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-          <SubscriptionManagementContainer />
-        </Wrapper>,
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("management-downgrade-button")).toBeTruthy(),
-      );
-      await act(async () => {
-        netInfo.setConnected(false);
-      });
-      await act(async () => {
-        fireEvent.press(screen.getByTestId("management-downgrade-button"));
-      });
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
-      ).toBe(true);
-      expect(
-        alertSpy.mock.calls.some(
-          ([title]) => title === "Downgrade Subscription",
-        ),
       ).toBe(false);
       expect(api.createSubscriptionCalls).toBe(0);
     });

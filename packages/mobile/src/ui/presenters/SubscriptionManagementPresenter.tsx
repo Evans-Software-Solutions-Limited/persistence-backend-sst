@@ -1,4 +1,4 @@
-import React from "react";
+import { Ionicons } from "@expo/vector-icons";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -9,11 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type {
   BillingCycle,
+  ScheduledChange,
   SubscriptionStatus,
+  SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
 import { Button } from "@/ui/components/Button";
@@ -27,41 +28,71 @@ import {
 } from "@/ui/theme/subscriptionLegacyTheme";
 
 /**
- * Pure presenter for the Subscription Management screen. Ported 1:1
- * from legacy `persistence-mobile/app/subscription-management.tsx`
- * lines 22–253. The container half (lines 255–415) is split into
- * `SubscriptionManagementContainer.tsx`.
+ * Phase 1 + Phase 2 Subscription Management presenter.
+ *
+ * Phase 1 — faithful port of legacy `persistence-mobile/app/
+ * subscription-management.tsx`:
+ *   - Status badge (Active / Trial / Cancelled)
+ *   - Cancelled notice card
+ *   - Access-ends row when cancelled
+ *   - Cancel button hidden when already cancelled
+ *
+ * Phase 2 — V2 improvements beyond legacy:
+ *   - Scheduled-change card (legacy hardcoded `hasScheduledChange:
+ *     false`; V2 backend exposes it on `metadata.scheduled_change`)
+ *   - Full inline tier picker covering all tiers (legacy was
+ *     basic↔premium only). Lets a user upgrade to a trainer tier or
+ *     a trainer downgrade to a user tier without round-tripping
+ *     through the Selection screen.
+ *
+ * The boolean predicates (`hasActiveSub`, `isTrialingState`,
+ * `isCancelledButActive`, `onFreeTier`, `canCancel`) are computed in
+ * the container from `subscriptionService.ts` — single source of
+ * truth, mirrors the legacy `subscriptionUtils.ts` pattern. The
+ * presenter never re-derives them from `paymentStatus` because V2's
+ * backend never flips `payment_status` to `'cancelled'` (the signal
+ * is `cancelledAt !== null`).
  *
  * Spec: specs/11-payments-subscriptions/design.md § UI structure
- *       > Container responsibilities (Management screen)
- * Satisfies: requirements.md AC 3.1, 3.2, 3.3, 3.4, 3.5
- *
- * Smaller surface than Selection — user tiers only (basic ↔ premium).
- * Trainer tier changes route via Selection (AC 3.8).
+ * Satisfies: requirements.md AC 3.1, 3.2, 3.3, 3.4, 3.5, 3.7, 3.8, 3.9
  */
 
 export interface SubscriptionManagementPresenterProps {
   currentTier: SubscriptionTierName;
+  /** Pre-resolved display string for the current tier (falls back to tier name). */
+  currentTierDisplayName: string | null;
   paymentStatus: SubscriptionStatus | null;
-  nextBillingDate: string | null;
+  cancelledAt: string | null;
+  scheduledChange: ScheduledChange | null;
+  /** Derived from `subscriptionService.isSubscriptionActive`. */
+  hasActiveSub: boolean;
+  /** Derived from `subscriptionService.isTrialing`. */
+  isTrialingState: boolean;
+  /** Derived from `subscriptionService.isCancelledButActive`. */
+  isCancelledButActive: boolean;
+  /** Derived from `subscriptionService.isFreeTier`. */
+  onFreeTier: boolean;
   subscriptionEndsAt: string | null;
   trialEndsAt: string | null;
   billingCycle: BillingCycle | null;
-  /** When cancelled, display the access-ends date instead of next billing. */
-  displayBillingDate: string | null;
   trainerClientLimit: number | null;
+  /**
+   * Tiers shown in the picker. Container filters out the current tier
+   * and `free`; when a scheduled change is pending, only upgrades are
+   * offered (downgrades require waiting for the scheduled change to
+   * resolve or upgrading to supersede it).
+   */
+  pickerTiers: SubscriptionTier[];
   isLoading: boolean;
-  isUpgrading: boolean;
-  isDowngrading: boolean;
+  isChangingTier: boolean;
   isCancelling: boolean;
-  canUpgrade: boolean;
-  canDowngrade: boolean;
+  /** Derived from `subscriptionService.canCancelSubscription`. */
   canCancel: boolean;
-  // Offline + slow-network UX (M10.5)
+  /** True when `scheduledChange !== null`. */
+  hasScheduledChange: boolean;
   isOffline: boolean;
   isSlowLoading: boolean;
-  onUpgrade: (tier: SubscriptionTierName) => void;
-  onDowngrade: (tier: SubscriptionTierName) => void;
+  onChangeTier: (tier: SubscriptionTierName) => void;
   onCancel: () => void;
   onBack: () => void;
 }
@@ -75,9 +106,9 @@ function formatDate(dateString: string | null): string {
   });
 }
 
-function getTierDisplayName(tierName: SubscriptionTierName): string {
-  if (tierName === "free") return "Free";
-  return tierName.charAt(0).toUpperCase() + tierName.slice(1);
+function formatPrice(amount: number, cycle: BillingCycle): string {
+  const suffix = cycle === "yearly" ? "/year" : "/month";
+  return `£${amount.toFixed(2)}${suffix}`;
 }
 
 export function SubscriptionManagementPresenter(
@@ -85,26 +116,45 @@ export function SubscriptionManagementPresenter(
 ) {
   const {
     currentTier,
-    paymentStatus,
+    currentTierDisplayName,
+    cancelledAt,
+    scheduledChange,
+    hasActiveSub,
+    isTrialingState,
+    isCancelledButActive,
+    onFreeTier,
     subscriptionEndsAt,
     trialEndsAt,
     billingCycle,
-    displayBillingDate,
     trainerClientLimit,
+    pickerTiers,
     isLoading,
-    isUpgrading,
-    isDowngrading,
+    isChangingTier,
     isCancelling,
-    canUpgrade,
-    canDowngrade,
     canCancel,
+    hasScheduledChange,
     isOffline,
     isSlowLoading,
-    onUpgrade,
-    onDowngrade,
+    onChangeTier,
     onCancel,
     onBack,
   } = props;
+
+  // Status badge selection — exactly one rendered at a time. Priority:
+  //   1. Cancelled (when `cancelledAt !== null`)
+  //   2. Trial (when status is trialing AND not cancelled)
+  //   3. Active (when active AND not cancelled AND not trialing)
+  //   4. Free (no badge — user is on free tier or no sub)
+  // Mirrors legacy's badge precedence except that the cancelled
+  // signal moved from `paymentStatus === 'cancelled'` to
+  // `cancelledAt !== null`.
+  const showCancelledBadge = cancelledAt !== null;
+  const showTrialBadge = !showCancelledBadge && isTrialingState;
+  const showActiveBadge =
+    !showCancelledBadge && !showTrialBadge && hasActiveSub;
+
+  const displayedTierName = currentTierDisplayName ?? currentTier;
+  const cycle = billingCycle ?? "monthly";
 
   if (isLoading) {
     return (
@@ -147,44 +197,57 @@ export function SubscriptionManagementPresenter(
         >
           {isOffline && <OfflineBanner />}
 
-          <View style={styles.subscriptionCard}>
+          {/* Current plan card — always rendered */}
+          <View
+            style={styles.subscriptionCard}
+            testID="management-current-card"
+          >
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Current Plan</Text>
-              {paymentStatus === "cancelled" && (
-                <View style={styles.cancelledBadge}>
+              {showCancelledBadge && (
+                <View
+                  style={styles.cancelledBadge}
+                  testID="management-badge-cancelled"
+                >
                   <Text style={styles.cancelledBadgeText}>Cancelled</Text>
                 </View>
               )}
-              {paymentStatus === "active" && (
-                <View style={styles.activeBadge}>
-                  <Text style={styles.activeBadgeText}>Active</Text>
+              {showTrialBadge && (
+                <View style={styles.trialBadge} testID="management-badge-trial">
+                  <Text style={styles.trialBadgeText}>Trial</Text>
                 </View>
               )}
-              {paymentStatus === "trialing" && (
-                <View style={styles.trialBadge}>
-                  <Text style={styles.trialBadgeText}>Trial</Text>
+              {showActiveBadge && (
+                <View
+                  style={styles.activeBadge}
+                  testID="management-badge-active"
+                >
+                  <Text style={styles.activeBadgeText}>Active</Text>
                 </View>
               )}
             </View>
 
-            <Text style={styles.tierName}>
-              {getTierDisplayName(currentTier)}
-            </Text>
+            <Text style={styles.tierName}>{displayedTierName}</Text>
 
-            {paymentStatus === "cancelled" && subscriptionEndsAt && (
+            {/* Access-ends date — only when cancelled-but-still-active */}
+            {isCancelledButActive && subscriptionEndsAt && (
               <View style={styles.infoRow}>
                 <Ionicons
                   name="warning"
                   size={16}
                   color={Colors.warning.DEFAULT}
                 />
-                <Text style={styles.infoText}>
+                <Text
+                  style={styles.infoText}
+                  testID="management-access-ends-row"
+                >
                   Access ends: {formatDate(subscriptionEndsAt)}
                 </Text>
               </View>
             )}
 
-            {trialEndsAt && paymentStatus !== "cancelled" && (
+            {/* Trial end — only when trialing and not cancelled */}
+            {trialEndsAt && !showCancelledBadge && (
               <View style={styles.infoRow}>
                 <Ionicons
                   name="gift"
@@ -197,7 +260,8 @@ export function SubscriptionManagementPresenter(
               </View>
             )}
 
-            {displayBillingDate && paymentStatus !== "cancelled" && (
+            {/* Next billing — only when active and not cancelled */}
+            {subscriptionEndsAt && !showCancelledBadge && (
               <View style={styles.infoRow}>
                 <Ionicons
                   name="calendar"
@@ -205,7 +269,7 @@ export function SubscriptionManagementPresenter(
                   color={Colors.text.secondary}
                 />
                 <Text style={styles.infoText}>
-                  Next billing: {formatDate(displayBillingDate)}
+                  Next billing: {formatDate(subscriptionEndsAt)}
                 </Text>
               </View>
             )}
@@ -224,66 +288,103 @@ export function SubscriptionManagementPresenter(
               </View>
             )}
 
-            {trainerClientLimit !== null &&
-              trainerClientLimit !== undefined && (
-                <View style={styles.infoRow}>
-                  <Ionicons
-                    name="people"
-                    size={16}
-                    color={Colors.text.secondary}
-                  />
-                  <Text style={styles.infoText}>
-                    Client slots: {trainerClientLimit}
-                  </Text>
-                </View>
-              )}
+            {trainerClientLimit !== null && (
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="people"
+                  size={16}
+                  color={Colors.text.secondary}
+                />
+                <Text style={styles.infoText}>
+                  Client slots: {trainerClientLimit}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {canUpgrade && (
-            <View
-              style={[styles.actionCard, isOffline && styles.disabledOpacity]}
-            >
-              <Text style={styles.actionTitle}>Upgrade Plan</Text>
+          {/* Scheduled-change card — V2 addition, not in legacy. Shows
+              when the user has a downgrade queued for period end. */}
+          {scheduledChange && (
+            <View style={styles.actionCard} testID="management-scheduled-card">
+              <View style={styles.scheduledHeader}>
+                <Ionicons
+                  name="time"
+                  size={18}
+                  color={Colors.primary.DEFAULT}
+                />
+                <Text style={styles.actionTitle}>Plan Change Scheduled</Text>
+              </View>
               <Text style={styles.actionDescription}>
-                Upgrade to Premium for unlimited workouts and advanced features
+                Your plan will change to{" "}
+                {scheduledChange.nextDisplayName ??
+                  scheduledChange.nextTierName}{" "}
+                on {formatDate(scheduledChange.effectiveAt)}. You&apos;ll keep
+                your current plan until then.
               </Text>
-              <Button
-                label="Upgrade to Premium"
-                onPress={() => onUpgrade("premium")}
-                isDisabled={isUpgrading}
-                isLoading={isUpgrading}
-                testID="management-upgrade-button"
-              />
             </View>
           )}
 
-          {canDowngrade && (
+          {/* Tier picker — Phase 2 addition. Replaces legacy's hardcoded
+              Upgrade/Downgrade pair. Hidden entirely when on free tier
+              (free users should go through Selection for the full
+              role-toggle UX) or when cancelled (no plan changes
+              accepted while in the cancelled-but-still-active window). */}
+          {!onFreeTier && !cancelledAt && pickerTiers.length > 0 && (
             <View
               style={[styles.actionCard, isOffline && styles.disabledOpacity]}
+              testID="management-picker-card"
             >
-              <Text style={styles.actionTitle}>Downgrade Plan</Text>
+              <Text style={styles.actionTitle}>Change Plan</Text>
               <Text style={styles.actionDescription}>
-                Your subscription will change to Basic at the end of your
-                current billing period. You&apos;ll continue to have access to
-                Premium features until then.
+                {hasScheduledChange
+                  ? "You have a scheduled change pending. Upgrade to apply immediately and replace the scheduled change."
+                  : "Switch to a different plan. Upgrades take effect immediately; downgrades take effect at the end of your current billing period."}
               </Text>
-              <Button
-                label="Downgrade to Basic"
-                onPress={() => onDowngrade("basic")}
-                isDisabled={isDowngrading}
-                isLoading={isDowngrading}
-                testID="management-downgrade-button"
-              />
+              <View style={styles.pickerList}>
+                {pickerTiers.map((tier) => {
+                  const price =
+                    cycle === "yearly"
+                      ? (tier.priceYearly ?? 0)
+                      : (tier.priceMonthly ?? 0);
+                  return (
+                    <View
+                      key={tier.tierName}
+                      style={styles.pickerRow}
+                      testID={`management-picker-row-${tier.tierName}`}
+                    >
+                      <View style={styles.pickerRowText}>
+                        <Text style={styles.pickerTierName}>
+                          {tier.displayName}
+                        </Text>
+                        <Text style={styles.pickerTierPrice}>
+                          {formatPrice(price, cycle)}
+                        </Text>
+                      </View>
+                      <Button
+                        label="Switch"
+                        onPress={() => onChangeTier(tier.tierName)}
+                        isDisabled={isChangingTier}
+                        isLoading={isChangingTier}
+                        variant="secondary"
+                        testID={`management-picker-switch-${tier.tierName}`}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
 
-          {canCancel && paymentStatus !== "cancelled" && (
+          {/* Cancel section — hidden when already cancelled (legacy
+              parity) and when on free tier. */}
+          {canCancel && !cancelledAt && (
             <View
               style={[styles.actionCard, isOffline && styles.disabledOpacity]}
+              testID="management-cancel-card"
             >
               <Text style={styles.actionTitle}>Cancel Subscription</Text>
               <Text style={styles.actionDescription}>
-                {paymentStatus === "trialing"
+                {isTrialingState
                   ? "Cancel your trial to avoid being charged. You'll continue to have access until your trial period ends."
                   : "Your subscription will end at the end of your current billing period. You'll continue to have access until then."}
               </Text>
@@ -298,8 +399,13 @@ export function SubscriptionManagementPresenter(
             </View>
           )}
 
-          {paymentStatus === "cancelled" && subscriptionEndsAt && (
-            <View style={styles.actionCard}>
+          {/* Cancelled notice — replaces the cancel CTA when in the
+              cancelled-but-still-active window. Legacy parity. */}
+          {cancelledAt && subscriptionEndsAt && (
+            <View
+              style={styles.actionCard}
+              testID="management-cancelled-notice"
+            >
               <Text style={styles.actionTitle}>Subscription Cancelled</Text>
               <Text style={styles.actionDescription}>
                 Your subscription has been cancelled. You&apos;ll continue to
@@ -457,6 +563,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     ...Shadows.medium,
   },
+  scheduledHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
   actionTitle: {
     fontSize: 18,
     fontWeight: "600",
@@ -469,9 +581,33 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     lineHeight: 20,
   },
-  // M10.5 — applied conditionally on upgrade/downgrade/cancel action
-  // cards when `isOffline`. Visual cue only; the underlying Button is
-  // still tappable so the container can surface an explanatory alert.
+  // Picker layout
+  pickerList: {
+    gap: Spacing.sm,
+  },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surface.border,
+    gap: Spacing.md,
+  },
+  pickerRowText: {
+    flex: 1,
+  },
+  pickerTierName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.text.primary,
+  },
+  pickerTierPrice: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    marginTop: 2,
+  },
+  // M10.5 — applied conditionally on action cards when `isOffline`.
   disabledOpacity: {
     opacity: 0.5,
   },
