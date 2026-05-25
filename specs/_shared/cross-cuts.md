@@ -49,13 +49,13 @@ Every on-behalf write goes through a `/trainers/me/clients/:clientId/...` route.
 
 Worked examples (referenced by downstream specs; not exhaustive):
 
-| Self route | Trainer-on-behalf route | Defined in |
-| --- | --- | --- |
-| `POST /sessions` | `POST /trainers/me/clients/:clientId/sessions` | `10-trainer-features` |
-| `POST /measurements` | `POST /trainers/me/clients/:clientId/measurements` | `10-trainer-features` |
+| Self route                | Trainer-on-behalf route                                 | Defined in                                                                 |
+| ------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `POST /sessions`          | `POST /trainers/me/clients/:clientId/sessions`          | `10-trainer-features`                                                      |
+| `POST /measurements`      | `POST /trainers/me/clients/:clientId/measurements`      | `10-trainer-features`                                                      |
 | `POST /nutrition/entries` | `POST /trainers/me/clients/:clientId/nutrition/entries` | `10-trainer-features` (Tier C deferred — M8 ships only `nutrition/target`) |
-| `PUT /nutrition/targets` | `PUT /trainers/me/clients/:clientId/nutrition/target` | `10-trainer-features` § Trainer-set nutrition |
-| `POST /goals` | `POST /trainers/me/clients/:clientId/goals` | `10-trainer-features` + `06-progress-goals` |
+| `PUT /nutrition/targets`  | `PUT /trainers/me/clients/:clientId/nutrition/target`   | `10-trainer-features` § Trainer-set nutrition                              |
+| `POST /goals`             | `POST /trainers/me/clients/:clientId/goals`             | `10-trainer-features` + `06-progress-goals`                                |
 
 **Locked 2026-05-25:** GET routes are also doubled (`GET /trainers/me/clients/:clientId/sessions`, etc.). Parity with self-write routes, reusable handler patterns. An aggregate client-detail endpoint is a Tier B optimisation, not v1.
 
@@ -234,10 +234,10 @@ When `current_count` advances to a milestone, the engine inserts a `user_achieve
 
 **Locked 2026-05-25:**
 
-| Streak type | Milestone thresholds |
-| --- | --- |
-| Weekly (workout, measurement) | 1 wk, 2 wks, 4 wks (1 mo), 8 wks (~2 mo), 12 wks (~3 mo) |
-| Daily (habit, nutrition) | 7 days (1 wk), 14 days (2 wks), 28 days (4 wks), 60 days (~2 mo), 90 days (3 mo) |
+| Streak type                   | Milestone thresholds                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| Weekly (workout, measurement) | 1 wk, 2 wks, 4 wks (1 mo), 8 wks (~2 mo), 12 wks (~3 mo)                         |
+| Daily (habit, nutrition)      | 7 days (1 wk), 14 days (2 wks), 28 days (4 wks), 60 days (~2 mo), 90 days (3 mo) |
 
 Front-loads engagement in the first 3 months. Beyond 3 months, milestones intentionally stop — users still streaking after 3 months are intrinsically motivated and don't need a notification push. Adding 6-month and 1-year tiers is a v2 decision once retention data lands.
 
@@ -273,20 +273,20 @@ This shape is **identical** to the M10.5 / M10.6 contract — the mobile sync qu
 
 ## 5. Cross-feature notification taxonomy
 
-These notification event types are emitted by the three downstream specs and consumed by `09-notifications-social` (M7). When this list grows, M7's spec absorbs the additions; M7's `requirements.md` is the canonical list of *user-facing* notification surfaces.
+These notification event types are emitted by the three downstream specs and consumed by `09-notifications-social` (M7). When this list grows, M7's spec absorbs the additions; M7's `requirements.md` is the canonical list of _user-facing_ notification surfaces.
 
-| Event | Type enum | Emitter spec | Default opt-in | Deep link |
-| --- | --- | --- | --- | --- |
-| Streak milestone hit | `streak_milestone` | `06-progress-goals` | on | `/progress` |
-| Streak about to expire (last day of period, not yet satisfied) | `streak_at_risk` | `06-progress-goals` | on | `/progress` |
-| Freeze token auto-applied | `freeze_token_applied` | `06-progress-goals` | on | `/progress` |
-| Goal milestone (% of target) | `goal_milestone` | `06-progress-goals` | on | `/progress/goals/:id` |
-| Goal assigned by trainer | `goal_assigned_by_trainer` | `10-trainer-features` | on | `/progress/goals/:id` |
-| Workout assigned by trainer | `workout_assigned` (existing in DB enum) | `10-trainer-features` | on | `/workouts/:id` |
-| Workout logged on behalf | `workout_logged_on_behalf` | `10-trainer-features` | on | `/sessions/:id` |
-| Measurement logged on behalf | `measurement_logged_on_behalf` | `10-trainer-features` | on | `/progress/measurements/:id` |
-| Nutrition target set by trainer | `nutrition_target_set_by_trainer` | `10-trainer-features` | on | `/nutrition/targets` |
-| Daily nutrition target hit | `daily_nutrition_target_hit` | `13-nutrition-tracking` | off (noisy) | `/nutrition` |
+| Event                                                          | Type enum                                | Emitter spec            | Default opt-in | Deep link                    |
+| -------------------------------------------------------------- | ---------------------------------------- | ----------------------- | -------------- | ---------------------------- |
+| Streak milestone hit                                           | `streak_milestone`                       | `06-progress-goals`     | on             | `/progress`                  |
+| Streak about to expire (last day of period, not yet satisfied) | `streak_at_risk`                         | `06-progress-goals`     | on             | `/progress`                  |
+| Freeze token auto-applied                                      | `freeze_token_applied`                   | `06-progress-goals`     | on             | `/progress`                  |
+| Goal milestone (% of target)                                   | `goal_milestone`                         | `06-progress-goals`     | on             | `/progress/goals/:id`        |
+| Goal assigned by trainer                                       | `goal_assigned_by_trainer`               | `10-trainer-features`   | on             | `/progress/goals/:id`        |
+| Workout assigned by trainer                                    | `workout_assigned` (existing in DB enum) | `10-trainer-features`   | on             | `/workouts/:id`              |
+| Workout logged on behalf                                       | `workout_logged_on_behalf`               | `10-trainer-features`   | on             | `/sessions/:id`              |
+| Measurement logged on behalf                                   | `measurement_logged_on_behalf`           | `10-trainer-features`   | on             | `/progress/measurements/:id` |
+| Nutrition target set by trainer                                | `nutrition_target_set_by_trainer`        | `10-trainer-features`   | on             | `/nutrition/targets`         |
+| Daily nutrition target hit                                     | `daily_nutrition_target_hit`             | `13-nutrition-tracking` | off (noisy)    | `/nutrition`                 |
 
 **Locked 2026-05-25:** opt-in defaults per the table above — conservative-on for trainer + streak events, off for the noisiest daily-target hit. Each can be overridden in user preferences (M7 owns the preferences UI; this doc owns the default values).
 
@@ -298,15 +298,15 @@ Adding a new value to the `notification_type` DB enum is a M7 migration responsi
 
 Schema migrations originating in this doc are owned by the first milestone to need them, not by `_shared`. Recommended ordering:
 
-| Migration | Owner milestone | Notes |
-| --- | --- | --- |
-| `user_goals.assigned_by_user_id`, `target_value`, `current_value`, `unit` | M4 (Goals extensions) | Goals spec drives. Other specs read. |
-| `user_streaks`, `habit_completions`, `streak_type_enum` | M4 | Same. |
-| `workout_sessions.logged_by_user_id` | M4 | Cheap additive column; lands with Progress migration block. |
-| `body_measurements.logged_by_user_id` | M4 | Same. |
-| `nutrition_entries` (table created with `logged_by_user_id` from day 1) | M9 | Created by Nutrition spec; the column is built-in. |
-| `nutrition_targets` (table) | M9 | Owned by Nutrition spec; PT spec writes via cross-cut. |
-| `trainer_actions_audit` + `action_type_enum` | M8 | First milestone to actually populate it. M4 lands `logged_by_user_id` but does not have on-behalf endpoints yet, so audit-log writes are M8's. M4's column ships nullable so no backfill is needed when M8 lights it up. |
+| Migration                                                                 | Owner milestone       | Notes                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `user_goals.assigned_by_user_id`, `target_value`, `current_value`, `unit` | M4 (Goals extensions) | Goals spec drives. Other specs read.                                                                                                                                                                                     |
+| `user_streaks`, `habit_completions`, `streak_type_enum`                   | M4                    | Same.                                                                                                                                                                                                                    |
+| `workout_sessions.logged_by_user_id`                                      | M4                    | Cheap additive column; lands with Progress migration block.                                                                                                                                                              |
+| `body_measurements.logged_by_user_id`                                     | M4                    | Same.                                                                                                                                                                                                                    |
+| `nutrition_entries` (table created with `logged_by_user_id` from day 1)   | M9                    | Created by Nutrition spec; the column is built-in.                                                                                                                                                                       |
+| `nutrition_targets` (table)                                               | M9                    | Owned by Nutrition spec; PT spec writes via cross-cut.                                                                                                                                                                   |
+| `trainer_actions_audit` + `action_type_enum`                              | M8                    | First milestone to actually populate it. M4 lands `logged_by_user_id` but does not have on-behalf endpoints yet, so audit-log writes are M8's. M4's column ships nullable so no backfill is needed when M8 lights it up. |
 
 M4 carries the largest migration block. This is fine — M4 is mostly mobile work; the backend migration is a small surface area.
 
@@ -316,15 +316,15 @@ M4 carries the largest migration block. This is fine — M4 is mostly mobile wor
 
 All resolved 2026-05-25. Future amendments use the "Revised YYYY-MM-DD" append pattern per § Purpose.
 
-| § | Decision | Locked value |
-| --- | --- | --- |
-| 1.2 | Trainer GET routes | Doubled — every self GET has a `/trainers/me/clients/:id/...` sibling |
-| 1.4.3 | Audit retention | Forever (S3-export-and-truncate available as a v2 lever if storage grows) |
-| 1.5 | Client "request removal" affordance on on-behalf rows | No, v1 — trainer-side only |
-| 2.2 | Can client mark trainer-assigned goal inactive in-app | No — client communicates out-of-band, trainer deactivates |
-| 3.1 | Default streak granularity | Weekly for workout/measurement, daily for habit/nutrition |
-| 3.4 | Period timezone | User-local — store `profiles.timezone`, default `Europe/London` |
-| 3.5 | Freeze-token economy | 1 per 4 periods, cap 4. Holiday-mode + ad/engagement earn flagged as v2 considerations |
-| 3.6 | Milestone thresholds | Weekly: 1/2/4/8/12; Daily: 7/14/28/60/90. Fitness-themed achievement icon next to profile |
-| 4.2 | Log AI inference calls | Yes, `ai_usage_log` table |
-| 5 | Notification opt-in defaults | Conservative-on per § 5 table |
+| §     | Decision                                              | Locked value                                                                              |
+| ----- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1.2   | Trainer GET routes                                    | Doubled — every self GET has a `/trainers/me/clients/:id/...` sibling                     |
+| 1.4.3 | Audit retention                                       | Forever (S3-export-and-truncate available as a v2 lever if storage grows)                 |
+| 1.5   | Client "request removal" affordance on on-behalf rows | No, v1 — trainer-side only                                                                |
+| 2.2   | Can client mark trainer-assigned goal inactive in-app | No — client communicates out-of-band, trainer deactivates                                 |
+| 3.1   | Default streak granularity                            | Weekly for workout/measurement, daily for habit/nutrition                                 |
+| 3.4   | Period timezone                                       | User-local — store `profiles.timezone`, default `Europe/London`                           |
+| 3.5   | Freeze-token economy                                  | 1 per 4 periods, cap 4. Holiday-mode + ad/engagement earn flagged as v2 considerations    |
+| 3.6   | Milestone thresholds                                  | Weekly: 1/2/4/8/12; Daily: 7/14/28/60/90. Fitness-themed achievement icon next to profile |
+| 4.2   | Log AI inference calls                                | Yes, `ai_usage_log` table                                                                 |
+| 5     | Notification opt-in defaults                          | Conservative-on per § 5 table                                                             |
