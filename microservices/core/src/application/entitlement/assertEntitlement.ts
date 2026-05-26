@@ -65,21 +65,20 @@ export type EntitlementFeature =
   | "trainer_clients";
 
 /**
- * Spec-narrow tier-name union. Mirrors the seed catalog from
- * `supabase/migrations/004_subscriptions_and_roles.sql`. Unknown
- * tier strings collapse to `'free'` via `coerceTierName` so the wire
- * payload never carries an arbitrary string.
+ * Spec-narrow tier-name union. Reflects the simplified tier catalog
+ * (post `20260526120000_simplify_tier_model.sql`): Free + Premium for
+ * users, and three trainer tiers by business size (all carrying the
+ * former `_pro` entitlements — AI buddy etc.). The `_standard` and
+ * `basic` variants were dropped. Unknown tier strings collapse to
+ * `'free'` via `coerceTierName` so the wire payload never carries an
+ * arbitrary string.
  */
 export type SubscriptionTierName =
   | "free"
-  | "basic"
   | "premium"
-  | "individual_trainer_standard"
-  | "individual_trainer_pro"
-  | "small_business_standard"
-  | "small_business_pro"
-  | "medium_enterprise_standard"
-  | "medium_enterprise_pro";
+  | "individual_trainer"
+  | "small_business"
+  | "medium_enterprise";
 
 /**
  * Why an entitlement assertion was denied. Mobile uses this to pick the
@@ -404,14 +403,10 @@ export function coerceTierName(
 ): SubscriptionTierName {
   switch (tierName) {
     case "free":
-    case "basic":
     case "premium":
-    case "individual_trainer_standard":
-    case "individual_trainer_pro":
-    case "small_business_standard":
-    case "small_business_pro":
-    case "medium_enterprise_standard":
-    case "medium_enterprise_pro":
+    case "individual_trainer":
+    case "small_business":
+    case "medium_enterprise":
       return tierName;
     default:
       return "free";
@@ -437,12 +432,12 @@ export function normaliseRole(
 }
 
 /**
- * Pick the upgrade target for a `create_workout` deny. Cheapest tier
- * that lifts the user above the limit, picked by role:
+ * Pick the upgrade target for a `create_workout` deny. Post tier-
+ * simplification the picks are:
  *   - `user` (and `physiotherapist`, treated as user-role today)
- *     → `'basic'` (£7.99 / month, unlimited workouts).
- *   - `personal_trainer` → `'individual_trainer_standard'`
- *     (£9.99 / month, unlimited workouts).
+ *     → `'premium'` (£12.99 / month — only paid user tier).
+ *   - `personal_trainer` → `'individual_trainer'` (£14.99 / month —
+ *     smallest trainer tier).
  *   - `admin` → no upgrade target (admins shouldn't be denied; if they
  *     somehow are, the gate prompt has nothing useful to suggest).
  *
@@ -452,10 +447,10 @@ export function normaliseRole(
 export function pickUpgradeTier(
   role: "user" | "personal_trainer" | "physiotherapist" | "admin",
 ): SubscriptionTierName | null {
-  if (role === "personal_trainer") return "individual_trainer_standard";
+  if (role === "personal_trainer") return "individual_trainer";
   if (role === "admin") return null;
   // user + physiotherapist fall through to user-tier upgrade.
-  return "basic";
+  return "premium";
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────

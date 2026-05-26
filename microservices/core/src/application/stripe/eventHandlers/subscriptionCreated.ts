@@ -75,7 +75,10 @@ export async function handleSubscriptionCreated(
     return;
   }
 
-  const tierName = subscription.metadata?.tier_name ?? "basic";
+  // Fallback to 'free' (was 'basic' pre-tier-simplification — basic no
+  // longer exists). Defensive default; metadata is normally set by our
+  // outbound subscription-create path.
+  const tierName = subscription.metadata?.tier_name ?? "free";
   const billingCycle = subscription.metadata?.billing_cycle ?? "monthly";
 
   try {

@@ -21,7 +21,7 @@ function makeListChain(resolvedValue: unknown) {
 
 const fakeRow = {
   id: "tier-1",
-  tierName: "basic",
+  tierName: "premium",
   displayName: "Basic",
   description: "Limited workouts",
   priceMonthly: "9.99",

@@ -90,14 +90,18 @@ describe("handleSubscriptionCreated", () => {
     });
   });
 
-  it("falls back to 'basic' + 'monthly' when metadata.tier_name / billing_cycle are absent", async () => {
+  it("falls back to 'free' + 'monthly' when metadata.tier_name / billing_cycle are absent", async () => {
+    // Post tier-simplification (20260526120000_simplify_tier_model.sql):
+    // basic no longer exists. Defensive fallback is `free` — the most-
+    // restrictive default so an unknown tier never accidentally grants
+    // unlimited.
     await handleSubscriptionCreated(
       buildEvent({
         metadata: { supabase_user_id: "user-1" },
       } as Partial<Stripe.Subscription>),
     );
     const payload = insertMock.mock.calls[0][0];
-    expect(payload.tierName).toBe("basic");
+    expect(payload.tierName).toBe("free");
     expect(payload.billingCycle).toBe("monthly");
   });
 

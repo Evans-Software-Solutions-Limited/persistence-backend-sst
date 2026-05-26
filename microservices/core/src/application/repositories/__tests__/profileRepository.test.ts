@@ -526,12 +526,12 @@ describe("ProfileRepository.getProfilePageData", () => {
       profile: [makeProfileRow()],
       subscription: [
         {
-          tierName: "basic",
+          tierName: "premium",
           paymentStatus: "active",
           expiresAt: new Date("2026-12-31T00:00:00Z"),
           cancelledAt: null,
           isTrainerTier: false,
-          tierDbName: "basic",
+          tierDbName: "premium",
           tierFeatures: { workouts: 10 },
           workoutLimit: 10,
         },
@@ -579,19 +579,19 @@ describe("ProfileRepository.getProfilePageData", () => {
   it("prefers subscription_tiers.display_name over the title-cased tier_name (trainer-tier parity)", async () => {
     // Inspector Brad on PR #66: the title-cased tier_name diverges from
     // the seeded display_name for trainer/business tiers — e.g.
-    // 'small_business_standard' title-cases to 'Small Business Standard'
+    // 'small_business' title-cases to 'Small Business Standard'
     // but the authoritative display_name is 'Small Business Trainer
     // Standard'. Prefer the joined column when present.
     const mockDb = makeAggregateDb({
       profile: [makeProfileRow()],
       subscription: [
         {
-          tierName: "small_business_standard",
+          tierName: "small_business",
           paymentStatus: "active",
           expiresAt: new Date("2026-12-31T00:00:00Z"),
           cancelledAt: null,
           isTrainerTier: true,
-          tierDbName: "small_business_standard",
+          tierDbName: "small_business",
           tierDisplayName: "Small Business Trainer Standard",
           tierFeatures: { workouts: "unlimited" },
           workoutLimit: null,

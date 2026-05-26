@@ -129,11 +129,11 @@ describe("handleSubscriptionUpdated", () => {
       findByExternalIdMock
         .mockResolvedValueOnce({
           ...fakeRow,
-          metadata: { scheduled_downgrade: { new_tier: "basic" } },
+          metadata: { scheduled_downgrade: { new_tier: "premium" } },
         })
         .mockResolvedValueOnce({
           ...fakeRow,
-          metadata: { scheduled_downgrade: { new_tier: "basic" } },
+          metadata: { scheduled_downgrade: { new_tier: "premium" } },
         });
       await handleSubscriptionUpdated(
         buildEvent({
@@ -147,7 +147,7 @@ describe("handleSubscriptionUpdated", () => {
       expect(updateByIdMock).toHaveBeenCalledWith(
         "us_test",
         expect.objectContaining({
-          tierName: "basic",
+          tierName: "premium",
           cancelledAt: null,
           // metadata.scheduled_downgrade should be stripped on the
           // activation write.
@@ -342,7 +342,7 @@ describe("handleSubscriptionUpdated", () => {
           where: vi.fn().mockReturnValue({
             limit: vi.fn().mockResolvedValue([
               {
-                tierName: "basic",
+                tierName: "premium",
                 monthly: "price_basic_monthly",
                 yearly: "price_basic_yearly",
               },
@@ -377,7 +377,7 @@ describe("handleSubscriptionUpdated", () => {
       expect(restoreCall).toBeDefined();
       expect(restoreCall![1]).toMatchObject({
         externalSubscriptionId: "sub_old",
-        tierName: "basic",
+        tierName: "premium",
         billingCycle: "monthly",
         paymentStatus: "active",
         // Inspector Brad sweep #3 low-severity find: the basic-update

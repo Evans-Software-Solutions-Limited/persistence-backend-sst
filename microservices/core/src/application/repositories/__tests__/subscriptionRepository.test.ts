@@ -292,7 +292,7 @@ describe("SubscriptionRepository", () => {
       ).toBeNull();
       expect(
         await resolveScheduledChange({
-          scheduled_change: { next_tier_name: "basic", effective_at: "" },
+          scheduled_change: { next_tier_name: "premium", effective_at: "" },
         }),
       ).toBeNull();
       expect(
@@ -319,12 +319,12 @@ describe("SubscriptionRepository", () => {
         await import("../subscriptionRepository");
       const result = await resolveScheduledChange({
         scheduled_change: {
-          next_tier_name: "basic",
+          next_tier_name: "premium",
           effective_at: "2026-03-01T00:00:00Z",
         },
       });
       expect(result).toEqual({
-        nextTierName: "basic",
+        nextTierName: "premium",
         nextDisplayName: "Basic",
         effectiveAt: "2026-03-01T00:00:00Z",
       });
@@ -566,7 +566,7 @@ describe("SubscriptionRepository", () => {
               externalSubscriptionId: "sub_X",
               metadata: {
                 scheduled_change: {
-                  next_tier_name: "basic",
+                  next_tier_name: "premium",
                   effective_at: "2026-02-01T00:00:00.000Z",
                 },
               },
@@ -590,7 +590,7 @@ describe("SubscriptionRepository", () => {
       const repo = new SubscriptionRepository();
       const result = await repo.findForUser("user-1");
       expect(result?.scheduledChange).toEqual({
-        nextTierName: "basic",
+        nextTierName: "premium",
         nextDisplayName: "Basic",
         effectiveAt: "2026-02-01T00:00:00.000Z",
       });
@@ -751,7 +751,7 @@ describe("SubscriptionRepository", () => {
           [
             {
               subscriptionId: "us_uuid",
-              tierName: "individual_trainer_pro",
+              tierName: "individual_trainer",
               paymentStatus: null,
               billingCycle: "monthly",
               startsAt: new Date("2026-01-01"),
