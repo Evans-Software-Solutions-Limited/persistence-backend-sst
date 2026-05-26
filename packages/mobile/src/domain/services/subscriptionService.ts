@@ -97,13 +97,21 @@ export function isCancelledButActive(
 /**
  * Trial-banner derivation. Mirrors legacy `shouldShowTrialBanner`.
  *
- * - `premium` → user trial eligibility
- * - `*_pro` (trainer Pro tiers) → trainer trial eligibility
- * - any other tier → never
+ * - `premium` → user trial eligibility (7-day)
+ * - Any trainer tier (post tier-simplification — Standards dropped,
+ *   `_pro` suffix removed; check is now "is this a known trainer tier
+ *   name") → trainer trial eligibility (14-day)
+ * - `free` → never
  *
  * Returns false when eligibility data hasn't loaded yet (legacy
  * comment: "to avoid flickering").
  */
+const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
+  "individual_trainer",
+  "small_business",
+  "medium_enterprise",
+]);
+
 export function shouldShowTrialBanner(
   eligibility:
     | { isEligibleForUserTrial: boolean; isEligibleForTrainerTrial: boolean }
@@ -113,7 +121,8 @@ export function shouldShowTrialBanner(
 ): boolean {
   if (!eligibility) return false;
   if (tierName === "premium") return eligibility.isEligibleForUserTrial;
-  if (tierName.endsWith("_pro")) return eligibility.isEligibleForTrainerTrial;
+  if (TRAINER_TIER_NAMES.has(tierName))
+    return eligibility.isEligibleForTrainerTrial;
   return false;
 }
 
@@ -129,21 +138,21 @@ export function shouldShowTrialBanner(
  * Satisfies: requirements.md AC 12.3, 12.7
  */
 const USER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
+  // Post tier-simplification: Basic is gone — Premium is the only paid
+  // user tier. Free=0, Premium=1.
   free: 0,
-  basic: 1,
-  premium: 2,
+  premium: 1,
 };
 
 const TRAINER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
   // `free` doubles as the no-trainer-tier baseline — a trainer requirement
   // is not satisfied by `free`, so its rank is below any real trainer tier.
+  // Trainer tiers ranked by client-slot capacity:
+  // Individual < Small Business < Medium / Enterprise.
   free: 0,
-  individual_trainer_standard: 1,
-  individual_trainer_pro: 2,
-  small_business_standard: 1,
-  small_business_pro: 2,
-  medium_enterprise_standard: 1,
-  medium_enterprise_pro: 2,
+  individual_trainer: 1,
+  small_business: 2,
+  medium_enterprise: 3,
 };
 
 /**
@@ -159,8 +168,8 @@ const TRAINER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
  *
  *   tierSatisfies("premium", "basic")          // true  (within user track)
  *   tierSatisfies("basic",   "premium")        // false (lower)
- *   tierSatisfies("premium", "individual_trainer_pro") // false (cross-track)
- *   tierSatisfies("individual_trainer_pro", "individual_trainer_standard") // true
+ *   tierSatisfies("premium", "individual_trainer") // false (cross-track)
+ *   tierSatisfies("individual_trainer", "individual_trainer") // true
  *   tierSatisfies("free",    "basic")          // false (free satisfies nothing)
  *
  * Spec: specs/11-payments-subscriptions/design.md

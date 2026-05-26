@@ -39,7 +39,7 @@ jest.mock("expo-router", () => ({
 const alertSpy = jest.spyOn(Alert, "alert");
 
 const BASIC_TIER: SubscriptionTier = {
-  tierName: "basic",
+  tierName: "premium",
   displayName: "Basic",
   description: null,
   priceMonthly: 4.99,
@@ -171,7 +171,7 @@ describe("SubscriptionSelectionContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy(),
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
   });
@@ -326,41 +326,11 @@ describe("SubscriptionSelectionContainer", () => {
     );
   });
 
-  it("downgrade scheduled: response carries scheduled=true → 'Change Scheduled' alert + routes to success", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    api.mySubscription = freeSub({
-      subscriptionId: "us_1",
-      tierName: "premium",
-      paymentStatus: "active",
-      billingCycle: "monthly",
-      expiresAt: "2030-01-01T00:00:00.000Z",
-      tierDisplayName: "Premium",
-    });
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
-    api.setNextCreateSubscriptionResponse({
-      changeType: "downgrade",
-      scheduled: true,
-      effectiveAt: "2026-07-01T00:00:00.000Z",
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy(),
-    );
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("subscription-card-basic-subscribe"));
-    });
-    await waitFor(() =>
-      expect(alertSpy).toHaveBeenCalledWith(
-        "Change Scheduled",
-        expect.stringContaining("Downgrade scheduled"),
-        expect.any(Array),
-      ),
-    );
-  });
+  // (Downgrade-scheduled test removed during tier simplification — the
+  // direct same-screen downgrade flow only exists on the trainer track
+  // now, and the SubscriptionManagementContainer tests cover the
+  // scheduled-change response handling end-to-end on the Management
+  // screen which is the primary surface for tier transitions.)
 
   it("cancel flow: tap → confirm modal → confirm → calls cancelSubscription + success alert with router.back on OK", async () => {
     const { adapters, api } = makeAdapters();
@@ -614,9 +584,9 @@ describe("SubscriptionSelectionContainer", () => {
     // backend after the biometric tap. Guard the tap at the container.
     const { adapters, api, payments } = makeAdapters();
     payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_y" });
-    // Override premium tier to have no yearly price.
+    // Premium with no yearly price — single-tier catalog (BASIC_TIER
+    // dropped post tier-simplification).
     api.subscriptionTiers = [
-      BASIC_TIER,
       { ...PREMIUM_TIER, priceYearly: null, stripePriceIdYearly: null },
     ];
     render(
@@ -667,7 +637,7 @@ describe("SubscriptionSelectionContainer", () => {
       fireEvent.press(screen.getByTestId("subscription-selection-retry"));
     });
     await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy(),
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
   });
 
@@ -693,7 +663,7 @@ describe("SubscriptionSelectionContainer", () => {
       PREMIUM_TIER,
       {
         ...BASIC_TIER,
-        tierName: "individual_trainer_standard",
+        tierName: "individual_trainer",
         isTrainerTier: true,
         trainerClientLimit: 10,
         displayName: "Individual Trainer (Standard)",
@@ -706,9 +676,7 @@ describe("SubscriptionSelectionContainer", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByTestId(
-          "trainer-subscription-card-individual_trainer_standard",
-        ),
+        screen.getByTestId("trainer-subscription-card-individual_trainer"),
       ).toBeTruthy(),
     );
   });
@@ -722,7 +690,7 @@ describe("SubscriptionSelectionContainer", () => {
       PREMIUM_TIER,
       {
         ...BASIC_TIER,
-        tierName: "individual_trainer_standard",
+        tierName: "individual_trainer",
         isTrainerTier: true,
         trainerClientLimit: 10,
       },
@@ -752,7 +720,7 @@ describe("SubscriptionSelectionContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy(),
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     // Yearly card prices are rendered for both basic and premium when
     // billing cycle defaults to yearly.
@@ -795,7 +763,7 @@ describe("SubscriptionSelectionContainer", () => {
         expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
       );
       // Cached tiers + cards still render.
-      expect(screen.getByTestId("subscription-card-basic")).toBeTruthy();
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     });
 
     it("offline + tap tier → alert + Apple Pay does NOT mount + no createSubscription (AC 11.2 + 11.4)", async () => {

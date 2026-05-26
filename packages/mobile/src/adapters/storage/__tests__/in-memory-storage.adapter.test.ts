@@ -190,7 +190,7 @@ describe("InMemoryStorageAdapter", () => {
   describe("blocked_entitlement (M10.6)", () => {
     const verdict = {
       feature: "create_workout" as const,
-      currentTier: "basic" as const,
+      currentTier: "premium" as const,
       upgradeTo: "premium" as const,
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",

@@ -24,7 +24,7 @@ const PREMIUM: SubscriptionTier = {
 
 const TRAINER_PRO: SubscriptionTier = {
   ...PREMIUM,
-  tierName: "individual_trainer_pro",
+  tierName: "individual_trainer",
   displayName: "Individual Trainer (Pro)",
   isTrainerTier: true,
   trainerClientLimit: 10,

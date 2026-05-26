@@ -309,7 +309,7 @@ describe("SSTApiAdapter.getSubscriptionTiers (M10)", () => {
         JSON.stringify({
           data: [
             {
-              tierName: "basic",
+              tierName: "premium",
               displayName: "Basic",
               description: null,
               priceMonthly: "4.99",
@@ -338,7 +338,7 @@ describe("SSTApiAdapter.getSubscriptionTiers (M10)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(1);
-    expect(result.value[0].tierName).toBe("basic");
+    expect(result.value[0].tierName).toBe("premium");
     expect(result.value[0].priceMonthly).toBe(4.99);
     expect(result.value[0].priceYearly).toBe(49.99);
     expect(mock.mock.calls[0][0]).toBe("http://test.local/subscription-tiers");
@@ -539,7 +539,7 @@ describe("SSTApiAdapter.createSubscription (M7 / M10)", () => {
 
     const adapter = new SSTApiAdapter();
     const result = await adapter.createSubscription({
-      tierName: "basic",
+      tierName: "premium",
       billingCycle: "monthly",
       useTrial: false,
     });
@@ -552,7 +552,7 @@ describe("SSTApiAdapter.createSubscription (M7 / M10)", () => {
     const [, init] = mock.mock.calls[0];
     const body = JSON.parse((init as { body: string }).body);
     expect(body).toEqual({
-      tier_name: "basic",
+      tier_name: "premium",
       billing_cycle: "monthly",
       use_trial: false,
     });
@@ -699,7 +699,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
           code: "ENTITLEMENT_DENIED",
           error: "Subscription does not include this feature",
           feature: "create_workout",
-          current_tier: "basic",
+          current_tier: "premium",
           upgrade_to: "premium",
           upgrade_price_monthly: 14.99,
         }),
@@ -722,7 +722,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
     );
     expect(result.error.entitlement).toEqual({
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 14.99,
     });
@@ -738,7 +738,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
           error: "denied",
           feature: "ai_workout",
           current_tier: "free",
-          upgrade_to: "basic",
+          upgrade_to: "premium",
           upgrade_price_monthly: 4.99,
         }),
         { status: 402 },
@@ -780,7 +780,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
           code: "ENTITLEMENT_DENIED",
           error: "Already at top tier",
           feature: "trainer_clients",
-          current_tier: "individual_trainer_pro",
+          current_tier: "individual_trainer",
           upgrade_to: null,
           upgrade_price_monthly: null,
         }),
@@ -799,7 +799,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
     expect(result.error.code).toBe("entitlement_denied");
     expect(result.error.entitlement).toEqual({
       feature: "trainer_clients",
-      currentTier: "individual_trainer_pro",
+      currentTier: "individual_trainer",
       upgradeTo: null,
       upgradePriceMonthly: null,
     });
@@ -919,7 +919,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
           error: "denied",
           feature: "ai_workout",
           current_tier: "free",
-          upgrade_to: "basic",
+          upgrade_to: "premium",
           upgrade_price_monthly: "4.99", // wrong type — string, not number
         }),
         { status: 402 },
@@ -968,7 +968,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
             code: "ENTITLEMENT_DENIED",
             error: "test",
             feature: "create_workout",
-            current_tier: "basic",
+            current_tier: "premium",
             upgrade_to: "premium",
             upgrade_price_monthly: 14.99,
           }),
@@ -1002,7 +1002,7 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
           error: "denied",
           feature: "create_workout",
           current_tier: "free",
-          upgrade_to: "basic",
+          upgrade_to: "premium",
           upgrade_price_monthly: 4.99,
         }),
         { status: 402 },

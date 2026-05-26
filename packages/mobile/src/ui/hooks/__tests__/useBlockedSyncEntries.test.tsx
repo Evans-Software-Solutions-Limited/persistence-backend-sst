@@ -41,7 +41,7 @@ function makeAdapters(): {
 
 const VERDICT_WORKOUT: EntitlementVerdict = {
   feature: "create_workout",
-  currentTier: "basic",
+  currentTier: "premium",
   upgradeTo: "premium",
   upgradePriceMonthly: 12.99,
   blockedAt: "2026-05-24T10:00:00.000Z",
@@ -49,7 +49,7 @@ const VERDICT_WORKOUT: EntitlementVerdict = {
 
 const VERDICT_AI: EntitlementVerdict = {
   feature: "ai_workout",
-  currentTier: "basic",
+  currentTier: "premium",
   upgradeTo: "premium",
   upgradePriceMonthly: 12.99,
   blockedAt: "2026-05-24T11:00:00.000Z",

@@ -490,7 +490,7 @@ describe("processSyncQueue", () => {
             code: "ENTITLEMENT_DENIED",
             error: "Subscription does not include this feature",
             feature: "create_workout",
-            current_tier: "basic",
+            current_tier: "premium",
             upgrade_to: "premium",
             upgrade_price_monthly: 12.99,
           }),
@@ -514,7 +514,7 @@ describe("processSyncQueue", () => {
     expect(blockedEntries[0].entitlementVerdict).toEqual(
       expect.objectContaining({
         feature: "create_workout",
-        currentTier: "basic",
+        currentTier: "premium",
         upgradeTo: "premium",
         upgradePriceMonthly: 12.99,
         blockedAt: expect.any(String),
@@ -592,7 +592,7 @@ describe("processSyncQueue", () => {
           code: "ENTITLEMENT_DENIED",
           feature: "create_workout",
           current_tier: "free",
-          upgrade_to: "basic",
+          upgrade_to: "premium",
           upgrade_price_monthly: 4.99,
         }),
     });
@@ -627,7 +627,7 @@ describe("processSyncQueue", () => {
         JSON.stringify({
           code: "ENTITLEMENT_DENIED",
           feature: "create_workout",
-          current_tier: "basic",
+          current_tier: "premium",
           upgrade_to: "premium",
           upgrade_price_monthly: 12.99,
         }),

@@ -19,14 +19,10 @@ import { useBlockedSyncEntries } from "@/ui/hooks/useBlockedSyncEntries";
 
 const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
-  basic: "Basic",
   premium: "Premium",
-  individual_trainer_standard: "Individual Trainer",
-  individual_trainer_pro: "Individual Trainer (Pro)",
-  small_business_standard: "Small Business",
-  small_business_pro: "Small Business (Pro)",
-  medium_enterprise_standard: "Medium Enterprise",
-  medium_enterprise_pro: "Medium Enterprise (Pro)",
+  individual_trainer: "Individual Trainer",
+  small_business: "Small Business Trainer",
+  medium_enterprise: "Medium / Enterprise Trainer",
 };
 
 export function SyncBlockedBannerMount() {

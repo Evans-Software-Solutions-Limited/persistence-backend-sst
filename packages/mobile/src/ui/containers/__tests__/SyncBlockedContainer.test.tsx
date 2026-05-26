@@ -76,7 +76,7 @@ function signIn(auth: InMemoryAuthAdapter) {
 function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   return {
     subscriptionId: "us_1",
-    tierName: "basic",
+    tierName: "premium",
     paymentStatus: "active",
     billingCycle: "monthly",
     startsAt: "2026-01-01T00:00:00.000Z",
@@ -131,7 +131,7 @@ function enqueueAndBlock(
   const id = storage.getPendingMutations().slice(-1)[0].id;
   storage.markMutationBlocked(id, {
     feature: (verdict.feature as "create_workout") ?? "create_workout",
-    currentTier: "basic",
+    currentTier: "premium",
     upgradeTo: verdict.upgradeTo,
     upgradePriceMonthly: verdict.upgradeTo ? 12.99 : null,
     blockedAt: "2026-05-24T10:00:00.000Z",
@@ -161,7 +161,7 @@ describe("SyncBlockedContainer", () => {
     api.mySubscription = makeSub();
     enqueueAndBlock(storage, { upgradeTo: "premium" });
     enqueueAndBlock(storage, { upgradeTo: "premium" });
-    enqueueAndBlock(storage, { upgradeTo: "individual_trainer_pro" });
+    enqueueAndBlock(storage, { upgradeTo: "individual_trainer" });
 
     renderContainer(adapters, makeQueryClient());
 
@@ -169,7 +169,7 @@ describe("SyncBlockedContainer", () => {
       expect(screen.getByTestId("sync-blocked-group-premium")).toBeTruthy();
     });
     expect(
-      screen.getByTestId("sync-blocked-group-individual_trainer_pro"),
+      screen.getByTestId("sync-blocked-group-individual_trainer"),
     ).toBeTruthy();
   });
 

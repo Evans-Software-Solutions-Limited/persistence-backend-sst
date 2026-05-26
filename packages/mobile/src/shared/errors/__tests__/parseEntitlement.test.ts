@@ -8,7 +8,7 @@ describe("parseEntitlementDeniedResponseBody", () => {
     code: "ENTITLEMENT_DENIED",
     error: "Subscription does not include this feature",
     feature: "create_workout",
-    current_tier: "basic",
+    current_tier: "premium",
     upgrade_to: "premium",
     upgrade_price_monthly: 12.99,
   };
@@ -16,7 +16,7 @@ describe("parseEntitlementDeniedResponseBody", () => {
   it("parses a valid 402 body into camelCase payload", () => {
     expect(parseEntitlementDeniedResponseBody(fullBody)).toEqual({
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 12.99,
     });
@@ -31,7 +31,7 @@ describe("parseEntitlementDeniedResponseBody", () => {
       }),
     ).toEqual({
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: null,
       upgradePriceMonthly: null,
     });

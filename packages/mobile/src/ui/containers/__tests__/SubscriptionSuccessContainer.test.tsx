@@ -120,7 +120,7 @@ describe("SubscriptionSuccessContainer", () => {
         <SubscriptionSuccessContainer />
       </Wrapper>,
     );
-    // Container defaults to "basic" until the useMySubscription query
+    // Container defaults to "premium" until the useMySubscription query
     // resolves — wait for the premium copy to appear.
     await waitFor(() =>
       expect(
@@ -136,7 +136,7 @@ describe("SubscriptionSuccessContainer", () => {
   it("shows Manage Clients CTA on trainer tiers and routes appropriately", async () => {
     const trainerSub: MySubscription = {
       ...SUB_PREMIUM,
-      tierName: "individual_trainer_pro",
+      tierName: "individual_trainer",
       isTrainerTier: true,
     };
     const { adapters } = makeAdapters(trainerSub);
@@ -152,7 +152,9 @@ describe("SubscriptionSuccessContainer", () => {
     expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/clients");
   });
 
-  it("falls back to 'basic' messaging when no subscription is loaded yet", async () => {
+  it("falls back to generic messaging when no subscription is loaded yet", async () => {
+    // Post tier-simplification: defensive fallback is 'free' (basic
+    // no longer exists). The free message is the generic copy.
     const { adapters } = makeAdapters(null);
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -162,25 +164,20 @@ describe("SubscriptionSuccessContainer", () => {
     await waitFor(() =>
       expect(screen.getByText("Subscription Activated!")).toBeTruthy(),
     );
-    // Default fallback is 'basic'
-    expect(screen.getByText(/basic subscription is now active/)).toBeTruthy();
+    expect(screen.getByText(/subscription is now active/)).toBeTruthy();
   });
 });
 
 describe("getSubscriptionBenefits", () => {
-  it("returns base benefit for basic / premium", () => {
-    expect(getSubscriptionBenefits("basic")).toHaveLength(1);
+  it("returns base benefit for premium", () => {
     expect(getSubscriptionBenefits("premium")).toHaveLength(1);
   });
 
   it("adds Client Management for any trainer / business / enterprise tier", () => {
     const tiers: SubscriptionTierName[] = [
-      "individual_trainer_standard",
-      "individual_trainer_pro",
-      "small_business_standard",
-      "small_business_pro",
-      "medium_enterprise_standard",
-      "medium_enterprise_pro",
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
     ];
     for (const tier of tiers) {
       const benefits = getSubscriptionBenefits(tier);
@@ -188,8 +185,8 @@ describe("getSubscriptionBenefits", () => {
     }
   });
 
-  it("adds AI Analytics for any _pro trainer tier", () => {
-    const benefits = getSubscriptionBenefits("individual_trainer_pro");
+  it("adds AI Analytics for any trainer tier (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
+    const benefits = getSubscriptionBenefits("individual_trainer");
     expect(benefits.some((b) => b.title === "AI Analytics & Gym Buddy")).toBe(
       true,
     );
@@ -198,20 +195,14 @@ describe("getSubscriptionBenefits", () => {
 
 describe("getSuccessMessage", () => {
   it("returns trainer-specific copy for trainer tiers", () => {
-    expect(getSuccessMessage("individual_trainer_pro")).toMatch(
+    expect(getSuccessMessage("individual_trainer")).toMatch(
       /trainer subscription is now active/,
     );
-    expect(getSuccessMessage("small_business_standard")).toMatch(
-      /trainer subscription/,
-    );
+    expect(getSuccessMessage("small_business")).toMatch(/trainer subscription/);
   });
 
   it("returns premium copy for premium", () => {
     expect(getSuccessMessage("premium")).toMatch(/premium subscription/);
-  });
-
-  it("returns basic copy for basic", () => {
-    expect(getSuccessMessage("basic")).toMatch(/basic subscription/);
   });
 
   it("returns generic fallback for free", () => {

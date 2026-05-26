@@ -11,55 +11,49 @@ import {
   type SubscriptionSelectionPresenterProps,
 } from "@/ui/presenters/SubscriptionSelectionPresenter";
 
-const BASIC: SubscriptionTier = {
-  tierName: "basic",
-  displayName: "Basic",
+const PREMIUM: SubscriptionTier = {
+  tierName: "premium",
+  displayName: "Premium",
   description: null,
-  priceMonthly: 4.99,
-  priceYearly: 49.99,
+  priceMonthly: 12.99,
+  priceYearly: 129.99,
   currency: "GBP",
-  features: {},
-  workoutLimit: 10,
+  features: { gym_buddy: true, progress: true },
+  workoutLimit: null,
   aiAccess: true,
-  aiWorkoutLimit: 1,
-  gymBuddyAccess: false,
+  aiWorkoutLimit: 6,
+  gymBuddyAccess: true,
   trainerClientLimit: null,
   isTrainerTier: false,
   analyticsAccess: false,
   exportAccess: false,
-  stripePriceIdMonthly: "price_basic_m",
-  stripePriceIdYearly: "price_basic_y",
+  stripePriceIdMonthly: "price_premium_m",
+  stripePriceIdYearly: "price_premium_y",
 };
-const PREMIUM: SubscriptionTier = {
-  ...BASIC,
-  tierName: "premium",
-  displayName: "Premium",
+const INDIVIDUAL_TRAINER: SubscriptionTier = {
+  ...PREMIUM,
+  tierName: "individual_trainer",
+  displayName: "Individual Trainer",
+  isTrainerTier: true,
+  trainerClientLimit: 2,
   priceMonthly: 14.99,
   priceYearly: 149.99,
-  workoutLimit: null,
-  aiWorkoutLimit: 6,
-  gymBuddyAccess: true,
+  analyticsAccess: true,
+  exportAccess: true,
+  features: { ai_buddy: true, trainer_clients: 2 },
 };
-const TRAINER_STD: SubscriptionTier = {
-  ...BASIC,
-  tierName: "individual_trainer_standard",
-  displayName: "Individual Trainer (Standard)",
-  isTrainerTier: true,
-  trainerClientLimit: 10,
-  priceMonthly: 29,
-  priceYearly: 290,
-};
-const TRAINER_PRO: SubscriptionTier = {
-  ...TRAINER_STD,
-  tierName: "individual_trainer_pro",
-  displayName: "Individual Trainer (Pro)",
-  priceMonthly: 59,
-  priceYearly: 590,
+const SMALL_BUSINESS: SubscriptionTier = {
+  ...INDIVIDUAL_TRAINER,
+  tierName: "small_business",
+  displayName: "Small Business Trainer",
+  trainerClientLimit: 30,
+  priceMonthly: 75,
+  priceYearly: 750,
 };
 
 function defaultProps(): SubscriptionSelectionPresenterProps {
   return {
-    subscriptionTiers: [BASIC, PREMIUM, TRAINER_STD, TRAINER_PRO],
+    subscriptionTiers: [PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS],
     isLoading: false,
     errorMessage: null,
     billingCycle: "monthly",
@@ -135,12 +129,12 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("renders user tier cards (basic + premium) by default", () => {
+  it("renders the premium user tier card by default (post tier-simplification — Basic dropped)", () => {
     render(<SubscriptionSelectionPresenter {...defaultProps()} />);
-    expect(screen.getByTestId("subscription-card-basic")).toBeTruthy();
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
-    // Free is never rendered.
+    // Free and the dropped basic tier are never rendered.
     expect(screen.queryByTestId("subscription-card-free")).toBeNull();
+    expect(screen.queryByTestId("subscription-card-basic")).toBeNull();
   });
 
   it("renders trainer cards when selectedRole is 'trainer'", () => {
@@ -151,9 +145,7 @@ describe("SubscriptionSelectionPresenter — render states", () => {
       />,
     );
     expect(
-      screen.getByTestId(
-        "trainer-subscription-card-individual_trainer_standard",
-      ),
+      screen.getByTestId("trainer-subscription-card-individual_trainer"),
     ).toBeTruthy();
   });
 
@@ -161,7 +153,7 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     render(
       <SubscriptionSelectionPresenter
         {...defaultProps()}
-        subscriptionTiers={[BASIC, PREMIUM]}
+        subscriptionTiers={[PREMIUM]}
         selectedRole="trainer"
       />,
     );
@@ -195,7 +187,7 @@ describe("SubscriptionSelectionPresenter — render states", () => {
 });
 
 describe("SubscriptionSelectionPresenter — interactions", () => {
-  it("fires onTierSelect when a basic card is tapped", () => {
+  it("fires onTierSelect when the premium card is tapped", () => {
     const onTierSelect = jest.fn();
     render(
       <SubscriptionSelectionPresenter
@@ -203,8 +195,8 @@ describe("SubscriptionSelectionPresenter — interactions", () => {
         onTierSelect={onTierSelect}
       />,
     );
-    fireEvent.press(screen.getByTestId("subscription-card-basic-subscribe"));
-    expect(onTierSelect).toHaveBeenCalledWith("basic");
+    fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+    expect(onTierSelect).toHaveBeenCalledWith("premium");
   });
 
   it("fires onRoleChange when role toggle pressed (user + trainer)", () => {
@@ -268,23 +260,15 @@ describe("SubscriptionSelectionPresenter — interactions", () => {
 });
 
 describe("getFeaturesList", () => {
-  it("derives trainer features (client slots, analytics, AI Buddy on pro)", () => {
-    const features = getFeaturesList(TRAINER_PRO, true);
-    expect(features).toContain("10 client slots");
-    expect(features).toContain("AI Buddy Included");
-  });
-
-  it("falls back to ai_buddy flag when tierName doesn't end in _pro", () => {
-    const features = getFeaturesList(
-      { ...TRAINER_STD, features: { ai_buddy: true } },
-      true,
-    );
+  it("derives trainer features (client slots, analytics, AI Buddy — post tier-simplification, all trainer tiers carry the former Pro entitlements)", () => {
+    const features = getFeaturesList(INDIVIDUAL_TRAINER, true);
+    expect(features).toContain("2 client slots");
     expect(features).toContain("AI Buddy Included");
   });
 
   it("includes analytics when analyticsAccess flag is set", () => {
     const features = getFeaturesList(
-      { ...TRAINER_STD, analyticsAccess: true },
+      { ...INDIVIDUAL_TRAINER, analyticsAccess: true },
       true,
     );
     expect(features).toContain("Analytics & Reporting");
@@ -292,7 +276,7 @@ describe("getFeaturesList", () => {
 
   it("includes data export when exportAccess flag is set", () => {
     const features = getFeaturesList(
-      { ...TRAINER_STD, exportAccess: true },
+      { ...INDIVIDUAL_TRAINER, exportAccess: true },
       true,
     );
     expect(features).toContain("Data Export");
@@ -305,15 +289,9 @@ describe("getFeaturesList", () => {
     expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
   });
 
-  it("derives user-tier features for basic (10 workouts + 1 AI workout)", () => {
-    const features = getFeaturesList(BASIC, false);
-    expect(features.some((f) => f.includes("workouts per month"))).toBe(true);
-    expect(features).toContain("1 AI workout per month");
-  });
-
   it("uses features.workouts === 'unlimited' as the unlimited signal", () => {
     const features = getFeaturesList(
-      { ...BASIC, workoutLimit: 10, features: { workouts: "unlimited" } },
+      { ...PREMIUM, workoutLimit: 10, features: { workouts: "unlimited" } },
       false,
     );
     expect(features).toContain("Unlimited workouts");
@@ -321,15 +299,15 @@ describe("getFeaturesList", () => {
 
   it("uses numeric features.workouts value when present", () => {
     const features = getFeaturesList(
-      { ...BASIC, workoutLimit: 10, features: { workouts: 25 } },
+      { ...PREMIUM, workoutLimit: 10, features: { workouts: 25 } },
       false,
     );
     expect(features).toContain("25 workouts per month");
   });
 
-  it("falls back to workoutLimit when features.workouts is absent and aiWorkout label is custom", () => {
+  it("falls back to workoutLimit when features.workouts is absent — generic AI label for non-premium", () => {
     const tier = {
-      ...BASIC,
+      ...PREMIUM,
       tierName: "free" as const,
       workoutLimit: 5,
       features: { ai: true },
@@ -342,7 +320,7 @@ describe("getFeaturesList", () => {
 
   it("adds Progress tracking when features.progress is true", () => {
     const features = getFeaturesList(
-      { ...BASIC, features: { progress: true } },
+      { ...PREMIUM, features: { progress: true } },
       false,
     );
     expect(features).toContain("Progress tracking");
@@ -400,10 +378,19 @@ describe("deriveTrialEligibility", () => {
     ).toEqual({ isTrialEligible: false, trialDuration: null });
   });
 
-  it("returns 14-day trial for _pro tiers when eligible", () => {
+  it("returns 14-day trial for any trainer tier when eligible (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
     expect(
       deriveTrialEligibility({
-        tierName: "individual_trainer_pro",
+        tierName: "individual_trainer",
+        isReinstatingCurrentTier: false,
+        subscription: null,
+        isTrialEligibleUser: false,
+        isTrialEligibleTrainer: true,
+      }),
+    ).toEqual({ isTrialEligible: true, trialDuration: 14 });
+    expect(
+      deriveTrialEligibility({
+        tierName: "small_business",
         isReinstatingCurrentTier: false,
         subscription: null,
         isTrialEligibleUser: false,
@@ -412,10 +399,10 @@ describe("deriveTrialEligibility", () => {
     ).toEqual({ isTrialEligible: true, trialDuration: 14 });
   });
 
-  it("returns no-trial for non-trial tiers (basic, standard trainer tiers)", () => {
+  it("returns no-trial for the free tier", () => {
     expect(
       deriveTrialEligibility({
-        tierName: "basic",
+        tierName: "free",
         isReinstatingCurrentTier: false,
         subscription: null,
         isTrialEligibleUser: true,

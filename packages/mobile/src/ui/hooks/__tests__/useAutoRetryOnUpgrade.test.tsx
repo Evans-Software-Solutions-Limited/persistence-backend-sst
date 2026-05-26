@@ -86,7 +86,7 @@ function signIn(auth: InMemoryAuthAdapter) {
 function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   return {
     subscriptionId: "us_1",
-    tierName: "basic",
+    tierName: "premium",
     paymentStatus: "active",
     billingCycle: "monthly",
     startsAt: "2026-01-01T00:00:00.000Z",
@@ -126,7 +126,7 @@ function enqueueBlocked(
   const id = storage.getPendingMutations().slice(-1)[0].id;
   storage.markMutationBlocked(id, {
     feature: "create_workout",
-    currentTier: "basic",
+    currentTier: "premium",
     upgradeTo,
     upgradePriceMonthly: 12.99,
     blockedAt: "2026-05-24T10:00:00.000Z",
@@ -163,9 +163,10 @@ describe("useAutoRetryOnUpgrade", () => {
   });
 
   it("unblocks matching entries and triggers a flush on tier upgrade", async () => {
+    // Post tier-simplification: user-track upgrade is free → premium.
     const { adapters, storage, api, auth } = makeAdapters();
     signIn(auth);
-    api.mySubscription = makeSub({ tierName: "basic" });
+    api.mySubscription = makeSub({ tierName: "free" });
     enqueueBlocked(storage, "premium");
 
     const queryClient = makeQueryClient();
@@ -182,7 +183,7 @@ describe("useAutoRetryOnUpgrade", () => {
     // Simulate the server returning success for the re-flushed POST.
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
 
-    // Upgrade — flip the cached subscription tier and trigger a re-render.
+    // Upgrade free → premium — satisfies the verdict's required tier.
     queryClient.setQueryData(
       ["user-subscription", "u-1"],
       makeSub({ tierName: "premium" }),
@@ -195,11 +196,13 @@ describe("useAutoRetryOnUpgrade", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT unblock when the new tier doesn't satisfy the verdict's upgradeTo", async () => {
+  it("does NOT unblock when the new tier doesn't satisfy the verdict's upgradeTo (cross-track)", async () => {
+    // Cross-track: user-track tier (premium) does not satisfy a
+    // trainer-tier requirement. AC 12.7.
     const { adapters, storage, api, auth } = makeAdapters();
     signIn(auth);
     api.mySubscription = makeSub({ tierName: "free" });
-    enqueueBlocked(storage, "premium");
+    enqueueBlocked(storage, "individual_trainer");
 
     const queryClient = makeQueryClient();
     const { rerender } = renderHook(() => useAutoRetryOnUpgrade(), {
@@ -211,10 +214,11 @@ describe("useAutoRetryOnUpgrade", () => {
       ).toBeDefined(),
     );
 
-    // Free → basic. Verdict required premium → still blocked.
+    // Upgrade to premium (user track) — does NOT satisfy the
+    // trainer-track verdict requirement.
     queryClient.setQueryData(
       ["user-subscription", "u-1"],
-      makeSub({ tierName: "basic" }),
+      makeSub({ tierName: "premium" }),
     );
     rerender(undefined);
 
@@ -242,7 +246,7 @@ describe("useAutoRetryOnUpgrade", () => {
 
     queryClient.setQueryData(
       ["user-subscription", "u-1"],
-      makeSub({ tierName: "individual_trainer_pro", isTrainerTier: true }),
+      makeSub({ tierName: "individual_trainer", isTrainerTier: true }),
     );
     rerender(undefined);
 
@@ -254,7 +258,7 @@ describe("useAutoRetryOnUpgrade", () => {
   it("upgradeTo:null verdicts (already top tier) are never auto-unblocked", async () => {
     const { adapters, storage, api, auth } = makeAdapters();
     signIn(auth);
-    api.mySubscription = makeSub({ tierName: "basic" });
+    api.mySubscription = makeSub({ tierName: "premium" });
     storage.enqueueMutation({
       entityType: "workout",
       operation: "create",
@@ -265,7 +269,7 @@ describe("useAutoRetryOnUpgrade", () => {
     const id = storage.getPendingMutations()[0].id;
     storage.markMutationBlocked(id, {
       feature: "trainer_clients",
-      currentTier: "individual_trainer_pro",
+      currentTier: "individual_trainer",
       upgradeTo: null,
       upgradePriceMonthly: null,
       blockedAt: "2026-05-24T10:00:00.000Z",

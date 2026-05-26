@@ -21,7 +21,7 @@ function makeEntry(overrides: Partial<SyncQueueEntry> = {}): SyncQueueEntry {
     createdAt: "2026-05-23T10:00:00.000Z",
     entitlementVerdict: {
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",
@@ -117,7 +117,7 @@ describe("SyncBlockedPresenter", () => {
         makeEntry({
           entitlementVerdict: {
             feature: "trainer_clients",
-            currentTier: "individual_trainer_pro",
+            currentTier: "individual_trainer",
             upgradeTo: null,
             upgradePriceMonthly: null,
             blockedAt: "2026-05-24T10:00:00.000Z",

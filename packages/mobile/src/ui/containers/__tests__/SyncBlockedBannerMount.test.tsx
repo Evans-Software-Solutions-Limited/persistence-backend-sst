@@ -82,14 +82,14 @@ describe("SyncBlockedBannerMount", () => {
     const { adapters, storage } = makeAdapters();
     enqueueAndBlock(storage, {
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",
     });
     enqueueAndBlock(storage, {
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",
@@ -103,7 +103,7 @@ describe("SyncBlockedBannerMount", () => {
     const { adapters, storage } = makeAdapters();
     enqueueAndBlock(storage, {
       feature: "trainer_clients",
-      currentTier: "individual_trainer_pro",
+      currentTier: "individual_trainer",
       upgradeTo: null,
       upgradePriceMonthly: null,
       blockedAt: "2026-05-24T10:00:00.000Z",
@@ -117,7 +117,7 @@ describe("SyncBlockedBannerMount", () => {
     const { adapters, storage } = makeAdapters();
     enqueueAndBlock(storage, {
       feature: "create_workout",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: "premium",
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",

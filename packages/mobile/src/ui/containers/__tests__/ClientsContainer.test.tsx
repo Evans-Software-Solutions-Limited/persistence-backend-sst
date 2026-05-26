@@ -165,7 +165,7 @@ describe("ClientsContainer", () => {
   it("renders the M8 Coming Soon placeholder for a trainer-standard user", async () => {
     const { adapters } = makeAdapters(
       makeSub({
-        tierName: "individual_trainer_standard",
+        tierName: "individual_trainer",
         isTrainerTier: true,
         role: "personal_trainer",
         workoutLimit: null,
@@ -190,7 +190,7 @@ describe("ClientsContainer", () => {
   it("renders the M8 Coming Soon placeholder for a trainer-pro user", async () => {
     const { adapters } = makeAdapters(
       makeSub({
-        tierName: "individual_trainer_pro",
+        tierName: "individual_trainer",
         isTrainerTier: true,
         role: "personal_trainer",
         workoutLimit: null,

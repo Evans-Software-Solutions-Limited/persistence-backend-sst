@@ -50,14 +50,10 @@ const FEATURE_DISPLAY_NAMES: Record<EntitlementFeature, string> = {
 
 const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
-  basic: "Basic",
   premium: "Premium",
-  individual_trainer_standard: "Individual Trainer (Standard)",
-  individual_trainer_pro: "Individual Trainer (Pro)",
-  small_business_standard: "Small Business (Standard)",
-  small_business_pro: "Small Business (Pro)",
-  medium_enterprise_standard: "Medium Enterprise (Standard)",
-  medium_enterprise_pro: "Medium Enterprise (Pro)",
+  individual_trainer: "Individual Trainer",
+  small_business: "Small Business Trainer",
+  medium_enterprise: "Medium / Enterprise Trainer",
 };
 
 export interface SyncBlockedGroup {

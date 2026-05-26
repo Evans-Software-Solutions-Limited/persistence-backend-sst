@@ -783,10 +783,7 @@ describe("ProfileContainer", () => {
 
     it("threads trainer tiers through (typed SubscriptionTierName, not loose string)", async () => {
       const { adapters, api } = await createTestAdapters();
-      api.mySubscription = makeMySubscription(
-        "individual_trainer_pro",
-        "active",
-      );
+      api.mySubscription = makeMySubscription("individual_trainer", "active");
 
       const { getByTestId } = render(
         <TestWrapper adapters={adapters}>
@@ -796,7 +793,7 @@ describe("ProfileContainer", () => {
 
       await waitFor(() => {
         expect(getByTestId("stub-badge-tier").props.children).toBe(
-          "individual_trainer_pro",
+          "individual_trainer",
         );
       });
     });

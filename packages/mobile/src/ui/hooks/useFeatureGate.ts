@@ -106,8 +106,9 @@ const FEATURE_DISPLAY_NAMES: Record<EntitlementFeature, string> = {
 const USER_UPGRADE_CHAIN: Partial<
   Record<SubscriptionTierName, SubscriptionTierName>
 > = {
-  free: "basic",
-  basic: "premium",
+  // Post tier-simplification: Premium is the only paid user tier, so the
+  // user-track upgrade chain is just free → premium.
+  free: "premium",
 };
 
 function resolveUpgradeTarget(
@@ -221,11 +222,11 @@ export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult {
         feature,
         featureDisplayName: FEATURE_DISPLAY_NAMES[feature],
         currentTier: "free",
-        upgradeTo: "basic",
+        upgradeTo: "premium",
         upgradePriceMonthly: null,
         onUpgrade: () => {
           router.push(
-            "/(auth)/subscription-selection?tier=basic&cycle=monthly" as Href,
+            "/(auth)/subscription-selection?tier=premium&cycle=monthly" as Href,
           );
         },
       };

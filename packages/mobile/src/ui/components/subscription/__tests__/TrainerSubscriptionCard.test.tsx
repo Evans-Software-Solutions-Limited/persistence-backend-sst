@@ -3,7 +3,7 @@ import type { SubscriptionTier } from "@/domain/models/subscription";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 
 const STD: SubscriptionTier = {
-  tierName: "small_business_standard",
+  tierName: "small_business",
   displayName: "Small Business (Standard)",
   description: null,
   priceMonthly: 49,
@@ -24,7 +24,7 @@ const STD: SubscriptionTier = {
 
 const PRO: SubscriptionTier = {
   ...STD,
-  tierName: "small_business_pro",
+  tierName: "small_business",
   displayName: "Small Business (Pro)",
   priceMonthly: 99,
   priceYearly: 990,
@@ -65,9 +65,9 @@ describe("TrainerSubscriptionCard", () => {
   it("derives display name for individual_trainer family", () => {
     const trainerStd = {
       ...STD,
-      tierName: "individual_trainer_standard" as const,
+      tierName: "individual_trainer" as const,
     };
-    const trainerPro = { ...PRO, tierName: "individual_trainer_pro" as const };
+    const trainerPro = { ...PRO, tierName: "individual_trainer" as const };
     render(
       <TrainerSubscriptionCard
         standardTier={trainerStd}
@@ -83,8 +83,8 @@ describe("TrainerSubscriptionCard", () => {
   });
 
   it("derives display name for medium_enterprise as 'Medium to Enterprise'", () => {
-    const medStd = { ...STD, tierName: "medium_enterprise_standard" as const };
-    const medPro = { ...PRO, tierName: "medium_enterprise_pro" as const };
+    const medStd = { ...STD, tierName: "medium_enterprise" as const };
+    const medPro = { ...PRO, tierName: "medium_enterprise" as const };
     render(
       <TrainerSubscriptionCard
         standardTier={medStd}
@@ -177,12 +177,8 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={onPro}
       />,
     );
-    fireEvent.press(
-      screen.getByTestId("trainer-card-small_business_standard-standard"),
-    );
-    fireEvent.press(
-      screen.getByTestId("trainer-card-small_business_standard-pro"),
-    );
+    fireEvent.press(screen.getByTestId("trainer-card-small_business-standard"));
+    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
     expect(onStd).toHaveBeenCalledTimes(1);
     expect(onPro).toHaveBeenCalledTimes(1);
   });
@@ -287,13 +283,9 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.getByText("£990/year")).toBeTruthy();
     // Both columns stay tappable — the container alerts on the
     // unavailable column rather than silently swallowing taps.
-    fireEvent.press(
-      screen.getByTestId("trainer-card-small_business_standard-standard"),
-    );
+    fireEvent.press(screen.getByTestId("trainer-card-small_business-standard"));
     expect(onStandardPress).toHaveBeenCalledTimes(1);
-    fireEvent.press(
-      screen.getByTestId("trainer-card-small_business_standard-pro"),
-    );
+    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
     expect(onProPress).toHaveBeenCalledTimes(1);
   });
 

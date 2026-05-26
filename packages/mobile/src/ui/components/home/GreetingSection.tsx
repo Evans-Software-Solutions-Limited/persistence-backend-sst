@@ -18,14 +18,11 @@ interface GreetingSectionProps {
 }
 
 const tierDisplayNameMap: Record<string, string> = {
-  free: "Free User",
-  premium: "Premium User",
-  individual_trainer_standard: "Individual Trainer Standard",
-  individual_trainer_pro: "Individual Trainer Pro",
-  small_business_standard: "Small Business Standard",
-  small_business_pro: "Small Business Pro",
-  medium_enterprise_standard: "Medium Enterprise Standard",
-  medium_enterprise_pro: "Medium Enterprise Pro",
+  free: "Free",
+  premium: "Premium",
+  individual_trainer: "Individual Trainer",
+  small_business: "Small Business Trainer",
+  medium_enterprise: "Medium / Enterprise Trainer",
 };
 
 function getTimeBasedGreeting(): string {
@@ -44,7 +41,7 @@ export function GreetingSection({
 }: GreetingSectionProps) {
   const greeting = getTimeBasedGreeting();
   const tierDisplayName =
-    (subscriptionTier && tierDisplayNameMap[subscriptionTier]) || "Free User";
+    (subscriptionTier && tierDisplayNameMap[subscriptionTier]) || "Free";
 
   return (
     <View style={styles.container} testID="greeting-section">

@@ -82,39 +82,31 @@ function signIn(auth: InMemoryAuthAdapter) {
   };
 }
 
-const BASIC_TIER: SubscriptionTier = {
-  tierName: "basic",
-  displayName: "Basic",
-  description: null,
-  priceMonthly: 4.99,
-  priceYearly: 49.99,
-  currency: "GBP",
-  features: {},
-  workoutLimit: 10,
-  aiAccess: true,
-  aiWorkoutLimit: 1,
-  gymBuddyAccess: false,
-  trainerClientLimit: null,
-  isTrainerTier: false,
-  analyticsAccess: false,
-  exportAccess: false,
-  stripePriceIdMonthly: "price_basic_m",
-  stripePriceIdYearly: "price_basic_y",
-};
-
 const PREMIUM_TIER: SubscriptionTier = {
-  ...BASIC_TIER,
   tierName: "premium",
   displayName: "Premium",
-  priceMonthly: 14.99,
-  priceYearly: 149.99,
+  description: null,
+  priceMonthly: 12.99,
+  priceYearly: 129.99,
+  currency: "GBP",
+  features: { gym_buddy: true, progress: true },
   workoutLimit: null,
   aiAccess: true,
   aiWorkoutLimit: 6,
   gymBuddyAccess: true,
+  trainerClientLimit: null,
+  isTrainerTier: false,
+  analyticsAccess: false,
+  exportAccess: false,
   stripePriceIdMonthly: "price_premium_m",
   stripePriceIdYearly: "price_premium_y",
 };
+
+// BASIC_TIER alias retained for legacy test sites that still pass it
+// in the tiers array. Post tier-simplification the catalog contains
+// only Premium + 3 trainer tiers; tests should migrate to PREMIUM_TIER
+// directly but the alias keeps the fixture list non-empty.
+const BASIC_TIER: SubscriptionTier = PREMIUM_TIER;
 
 function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   return {
@@ -159,7 +151,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
   it("create_workout: basic tier with workoutLimit=10 active → allowed", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
-      makeSub({ tierName: "basic", workoutLimit: 10 }),
+      makeSub({ tierName: "premium", workoutLimit: 10 }),
     );
     expect(verdict.allowed).toBe(true);
   });
@@ -176,7 +168,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
       makeSub({
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "cancelled",
         workoutLimit: 10,
         expiresAt: new Date(Date.now() - 86_400_000).toISOString(), // -1 day
@@ -197,7 +189,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
       makeSub({
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "cancelled",
         workoutLimit: 10,
         expiresAt: new Date(Date.now() + 86_400_000).toISOString(), // +1 day
@@ -223,7 +215,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
       makeSub({
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "trialing",
         workoutLimit: 10,
       }),
@@ -235,7 +227,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "create_workout",
       makeSub({
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "past_due",
         workoutLimit: 10,
       }),
@@ -256,7 +248,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "ai_workout",
       makeSub({
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "trialing",
         aiAccess: true,
       }),
@@ -323,7 +315,7 @@ describe("computeFeatureGateVerdict (pure)", () => {
     const verdict = computeFeatureGateVerdict(
       "trainer_clients",
       makeSub({
-        tierName: "individual_trainer_pro",
+        tierName: "individual_trainer",
         isTrainerTier: true,
       }),
     );
@@ -361,11 +353,13 @@ describe("useFeatureGate hook", () => {
 
     await waitFor(() => expect(result.current.reason).toBe("tier"));
     await waitFor(() =>
-      expect(result.current.gateProps.upgradePriceMonthly).toBe(4.99),
+      // Post tier-simplification: upgrade target is premium (£12.99),
+      // not the dropped basic (£4.99).
+      expect(result.current.gateProps.upgradePriceMonthly).toBe(12.99),
     );
     expect(result.current.allowed).toBe(false);
     expect(result.current.gateProps.currentTier).toBe("free");
-    expect(result.current.gateProps.upgradeTo).toBe("basic");
+    expect(result.current.gateProps.upgradeTo).toBe("premium");
     expect(result.current.gateProps.featureDisplayName).toContain("workout");
   });
 
@@ -389,30 +383,30 @@ describe("useFeatureGate hook", () => {
   });
 
   it("gateProps.onUpgrade pushes to /(auth)/subscription-selection with tier + cycle query params", async () => {
+    // Post tier-simplification: free → premium is the only user-track
+    // upgrade. Free user hits gym_buddy gate (premium feature) → upgrade
+    // target is premium, billing cycle defaults to monthly.
     const { adapters, api, auth } = makeAdapters();
     signIn(auth);
     api.mySubscription = makeSub({
-      tierName: "basic",
+      tierName: "free",
       paymentStatus: "active",
       billingCycle: "yearly",
-      workoutLimit: 10,
-      aiAccess: true,
+      workoutLimit: 0,
+      aiAccess: false,
+      gymBuddyAccess: false,
     });
-    api.subscriptionTiers = [BASIC_TIER, PREMIUM_TIER];
+    api.subscriptionTiers = [PREMIUM_TIER];
 
     const { result } = renderHook(() => useFeatureGate("gym_buddy"), {
       wrapper: wrapper(adapters, makeQueryClient()),
     });
 
-    // Wait for sub + tier catalog to load. The hook's fallback branch
-    // (before useMySubscription resolves) returns currentTier="free"
-    // and upgradeTo="basic"; we need to observe the post-resolve state
-    // where currentTier="basic" and upgradeTo="premium".
     await waitFor(() =>
-      expect(result.current.gateProps.currentTier).toBe("basic"),
+      expect(result.current.gateProps.currentTier).toBe("free"),
     );
     await waitFor(() =>
-      expect(result.current.gateProps.upgradePriceMonthly).toBe(14.99),
+      expect(result.current.gateProps.upgradePriceMonthly).toBe(12.99),
     );
     expect(result.current.allowed).toBe(false);
     expect(result.current.gateProps.upgradeTo).toBe("premium");
@@ -438,7 +432,7 @@ describe("useFeatureGate hook", () => {
     });
 
     await waitFor(() =>
-      expect(result.current.gateProps.upgradeTo).toBe("basic"),
+      expect(result.current.gateProps.upgradeTo).toBe("premium"),
     );
 
     act(() => {
@@ -465,7 +459,7 @@ describe("useFeatureGate hook", () => {
 
     // Wait for the sub to actually resolve to premium — otherwise we
     // observe the pre-resolution fallback (currentTier="free",
-    // upgradeTo="basic") and miss the top-tier-terminal branch entirely.
+    // upgradeTo="premium") and miss the top-tier-terminal branch entirely.
     await waitFor(() =>
       expect(result.current.gateProps.currentTier).toBe("premium"),
     );
@@ -495,7 +489,7 @@ describe("useFeatureGate hook", () => {
     });
 
     await waitFor(() =>
-      expect(result.current.gateProps.upgradeTo).toBe("basic"),
+      expect(result.current.gateProps.upgradeTo).toBe("premium"),
     );
     expect(result.current.gateProps.upgradePriceMonthly).toBeNull();
   });
@@ -511,7 +505,7 @@ describe("useFeatureGate hook", () => {
       result.current.gateProps.onUpgrade();
     });
     expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush.mock.calls[0][0]).toContain("tier=basic");
+    expect(mockPush.mock.calls[0][0]).toContain("tier=premium");
     expect(mockPush.mock.calls[0][0]).toContain("cycle=monthly");
   });
 });
