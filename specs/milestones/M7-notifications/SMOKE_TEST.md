@@ -38,6 +38,7 @@ This is the review gate cited in [`BRIEF.md`](./BRIEF.md) § Success criteria an
      ```
 
 4. **Database state**: ensure the target Postgres has the M7 migration applied — `profiles.notification_preferences JSONB NOT NULL DEFAULT '{}'`:
+
    ```sql
    SELECT column_name, data_type FROM information_schema.columns
    WHERE table_name = 'profiles' AND column_name = 'notification_preferences';
@@ -45,6 +46,7 @@ This is the review gate cited in [`BRIEF.md`](./BRIEF.md) § Success criteria an
    ```
 
 5. **Test user**: a fresh user (no `user_devices` rows; `notification_preferences = '{}'`; no `notifications` rows). Reset between runs via:
+
    ```sql
    DELETE FROM user_devices WHERE user_id = '<test-user-id>';
    DELETE FROM notifications WHERE user_id = '<test-user-id>';
@@ -110,6 +112,7 @@ This is the review gate cited in [`BRIEF.md`](./BRIEF.md) § Success criteria an
 - [ ] If app is force-quit: OS-level banner with sound (iOS) / vibration (Android)
 
 **Verify the chain**:
+
 - [ ] Postgres logs (or `select * from pg_net.http_requests` if accessible) show the `pg_net.http_post` call to the Edge Function
 - [ ] Supabase Edge Function logs (`supabase functions logs send-push-notification --project-ref dfeyebgdktfteqlacmru`) show one invocation with the test payload
 - [ ] No errors from Expo Push API in the Edge Function logs

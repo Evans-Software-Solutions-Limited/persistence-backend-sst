@@ -52,18 +52,18 @@ If something feels archaic (e.g. cramped row layout) → flag as a follow-up for
 
 Before writing a single line, audit what's already in place:
 
-| Path                                                                                                       | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`packages/mobile/src/domain/ports/notifications.port.ts`](../../../packages/mobile/src/domain/ports/notifications.port.ts) | `NotificationsPort` interface with `requestPermissions`, `getPermissionStatus`, `getDevicePushToken`, `scheduleLocalNotification`, `cancelLocalNotification`. **`getDevicePushToken` exists but `ExpoNotificationsAdapter` returns `fail("not implemented in M3 — see milestone 09")`** — M7 fills it in.                                                                                                                                |
-| [`packages/mobile/src/adapters/notifications/expo-notifications.adapter.ts`](../../../packages/mobile/src/adapters/notifications/expo-notifications.adapter.ts) | Production adapter. Local notifications work end-to-end (M3 rest-timer uses it). `getDevicePushToken` is a stub returning `PUSH_NOT_IMPLEMENTED`. **M7 replaces the stub with `Notifications.getDevicePushTokenAsync({ projectId: Constants.expoConfig?.extra?.eas?.projectId })`** (the project ID lives in `app.json:103`).                                                                          |
-| [`packages/mobile/src/adapters/notifications/stub.adapter.ts`](../../../packages/mobile/src/adapters/notifications/stub.adapter.ts) | No-op adapter for tests / contexts where the SDK isn't available. Already fully tested. M7 doesn't change it.                                                                                                                                                                                                                                                                                                                                |
-| [`packages/mobile/src/ui/hooks/useNotificationPermissions.tsx`](../../../packages/mobile/src/ui/hooks/useNotificationPermissions.tsx) | Permission-prompt-on-app-load hook. Idempotent via AsyncStorage `notification_permission_requested` flag. Already wired in [`app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) via `<NotificationPermissionsBootstrap />`. **M7 does NOT touch this.**                                                                                                                                                                          |
-| [`packages/mobile/app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) — `Notifications.setNotificationHandler` (lines 29-36)         | Foreground-display config (banner + list + sound, no badge). M7 does not change this — keep banners visible in-foreground.                                                                                                                                                                                                                                                                                                                  |
-| [`packages/mobile/app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) — Android channel registration (lines 104-112) | `default` channel with MAX importance + vibration + light color. M7 does not change this.                                                                                                                                                                                                                                                                                                                                                  |
-| [`packages/mobile/app.json:83-88`](../../../packages/mobile/app.json)                                            | `expo-notifications` plugin config (icon + color). No change.                                                                                                                                                                                                                                                                                                                                                                              |
-| [`packages/mobile/src/ui/hooks/useOnlineStatus.tsx`](../../../packages/mobile/src/ui/hooks/useOnlineStatus.tsx) | M10.5's online-status hook. Reuse for the offline banner on the notifications list.                                                                                                                                                                                                                                                                                                                                                        |
-| [`packages/mobile/src/adapters/storage/sqlite.adapter.ts`](../../../packages/mobile/src/adapters/storage/sqlite.adapter.ts) | SQLite adapter with `cached_dashboard`, `cached_workouts`, `cached_profile_page`, `personal_records`, `record_responses` cache tables. M7 adds `cached_notifications` following the same pattern.                                                                                                                                                                                                                                          |
-| [`packages/mobile/src/application/commands/sync.command.ts`](../../../packages/mobile/src/application/commands/sync.command.ts) | Generic POST/PATCH/DELETE sync-queue replayer. M7's mark-read intents enqueue here.                                                                                                                                                                                                                                                                                                                                                       |
+| Path                                                                                                                                                            | What it is                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`packages/mobile/src/domain/ports/notifications.port.ts`](../../../packages/mobile/src/domain/ports/notifications.port.ts)                                     | `NotificationsPort` interface with `requestPermissions`, `getPermissionStatus`, `getDevicePushToken`, `scheduleLocalNotification`, `cancelLocalNotification`. **`getDevicePushToken` exists but `ExpoNotificationsAdapter` returns `fail("not implemented in M3 — see milestone 09")`** — M7 fills it in.                     |
+| [`packages/mobile/src/adapters/notifications/expo-notifications.adapter.ts`](../../../packages/mobile/src/adapters/notifications/expo-notifications.adapter.ts) | Production adapter. Local notifications work end-to-end (M3 rest-timer uses it). `getDevicePushToken` is a stub returning `PUSH_NOT_IMPLEMENTED`. **M7 replaces the stub with `Notifications.getDevicePushTokenAsync({ projectId: Constants.expoConfig?.extra?.eas?.projectId })`** (the project ID lives in `app.json:103`). |
+| [`packages/mobile/src/adapters/notifications/stub.adapter.ts`](../../../packages/mobile/src/adapters/notifications/stub.adapter.ts)                             | No-op adapter for tests / contexts where the SDK isn't available. Already fully tested. M7 doesn't change it.                                                                                                                                                                                                                 |
+| [`packages/mobile/src/ui/hooks/useNotificationPermissions.tsx`](../../../packages/mobile/src/ui/hooks/useNotificationPermissions.tsx)                           | Permission-prompt-on-app-load hook. Idempotent via AsyncStorage `notification_permission_requested` flag. Already wired in [`app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) via `<NotificationPermissionsBootstrap />`. **M7 does NOT touch this.**                                                              |
+| [`packages/mobile/app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) — `Notifications.setNotificationHandler` (lines 29-36)                            | Foreground-display config (banner + list + sound, no badge). M7 does not change this — keep banners visible in-foreground.                                                                                                                                                                                                    |
+| [`packages/mobile/app/_layout.tsx`](../../../packages/mobile/app/_layout.tsx) — Android channel registration (lines 104-112)                                    | `default` channel with MAX importance + vibration + light color. M7 does not change this.                                                                                                                                                                                                                                     |
+| [`packages/mobile/app.json:83-88`](../../../packages/mobile/app.json)                                                                                           | `expo-notifications` plugin config (icon + color). No change.                                                                                                                                                                                                                                                                 |
+| [`packages/mobile/src/ui/hooks/useOnlineStatus.tsx`](../../../packages/mobile/src/ui/hooks/useOnlineStatus.tsx)                                                 | M10.5's online-status hook. Reuse for the offline banner on the notifications list.                                                                                                                                                                                                                                           |
+| [`packages/mobile/src/adapters/storage/sqlite.adapter.ts`](../../../packages/mobile/src/adapters/storage/sqlite.adapter.ts)                                     | SQLite adapter with `cached_dashboard`, `cached_workouts`, `cached_profile_page`, `personal_records`, `record_responses` cache tables. M7 adds `cached_notifications` following the same pattern.                                                                                                                             |
+| [`packages/mobile/src/application/commands/sync.command.ts`](../../../packages/mobile/src/application/commands/sync.command.ts)                                 | Generic POST/PATCH/DELETE sync-queue replayer. M7's mark-read intents enqueue here.                                                                                                                                                                                                                                           |
 
 **What's NOT there yet (M7 must add):**
 
@@ -117,7 +117,7 @@ export interface AppNotification {
 }
 
 export interface NotificationData {
-  deepLink?: string;          // must start with /(app)/ or /(auth)/
+  deepLink?: string; // must start with /(app)/ or /(auth)/
   [k: string]: unknown;
 }
 
@@ -158,18 +158,26 @@ interface ApiPort {
     limit?: number;
     offset?: number;
     unreadOnly?: boolean;
-  }): Promise<Result<{ data: AppNotification[]; unreadCount: number }, ApiError>>;
+  }): Promise<
+    Result<{ data: AppNotification[]; unreadCount: number }, ApiError>
+  >;
 
   markNotificationRead(id: string): Promise<Result<AppNotification, ApiError>>;
 
   markAllNotificationsRead(): Promise<Result<{ updated: number }, ApiError>>;
 
-  getNotificationPreferences(): Promise<Result<NotificationPreferences, ApiError>>;
+  getNotificationPreferences(): Promise<
+    Result<NotificationPreferences, ApiError>
+  >;
 
-  setNotificationPreferences(prefs: NotificationPreferences): Promise<Result<NotificationPreferences, ApiError>>;
+  setNotificationPreferences(
+    prefs: NotificationPreferences,
+  ): Promise<Result<NotificationPreferences, ApiError>>;
 
   // M7 — Devices
-  registerDevice(input: DeviceRegistrationInput): Promise<Result<{ id: string; registered: true }, ApiError>>;
+  registerDevice(
+    input: DeviceRegistrationInput,
+  ): Promise<Result<{ id: string; registered: true }, ApiError>>;
 }
 ```
 
@@ -213,8 +221,14 @@ Extend `StoragePort` (`packages/mobile/src/domain/ports/storage.port.ts`):
 interface StoragePort {
   // existing...
 
-  cacheNotifications(userId: string, notifications: AppNotification[]): Promise<void>;
-  getCachedNotifications(userId: string, filters?: { unreadOnly?: boolean; limit?: number }): Promise<AppNotification[]>;
+  cacheNotifications(
+    userId: string,
+    notifications: AppNotification[],
+  ): Promise<void>;
+  getCachedNotifications(
+    userId: string,
+    filters?: { unreadOnly?: boolean; limit?: number },
+  ): Promise<AppNotification[]>;
   getCachedUnreadCount(userId: string): Promise<number>;
   markCachedNotificationRead(userId: string, id: string): Promise<void>;
   markAllCachedNotificationsRead(userId: string): Promise<void>;
@@ -253,28 +267,28 @@ Spec: [`design.md` § UI structure](../../09-notifications-social/design.md), sa
 
 Create at `packages/mobile/src/ui/components/notifications/`:
 
-| Path                              | Legacy reference (read for behaviour, not architecture)                   | Behaviour                                                                                                                                                                                                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NotificationItem.tsx`            | `persistence-mobile/components/notifications/NotificationItem.tsx`         | Pure presenter. Props: `notification`, `onPress`. Renders: type icon (mapped from `NotificationType`), title (bold if unread), message, relative timestamp ("2h"). Left-accent stripe (3pt `$primary`) for unread. Tap fires `onPress(notification)`.                  |
-| `NotificationBadge.tsx`           | `persistence-mobile/components/notifications/NotificationBadge.tsx`        | Pure presenter. Props: `count`, `onPress`. Renders a bell icon with a red dot + count overlay if `count > 0`. Caps at "99+" if legacy does. Tap fires `onPress`.                                                                                                       |
-| `NotificationPreferenceRow.tsx`   | `persistence-mobile/components/notifications/PreferenceRow.tsx` (or similar) | Pure presenter. Props: `label`, `enabled`, `onToggle`. Renders a row with a label + a `Switch`. Match legacy spacing + Tamagui patterns.                                                                                                                              |
-| `EmptyNotifications.tsx`          | (likely inline in legacy list)                                              | Empty-state component. Title "No notifications" + description "You're all caught up." Left-aligned per M0 idiom.                                                                                                                                                       |
+| Path                            | Legacy reference (read for behaviour, not architecture)                      | Behaviour                                                                                                                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NotificationItem.tsx`          | `persistence-mobile/components/notifications/NotificationItem.tsx`           | Pure presenter. Props: `notification`, `onPress`. Renders: type icon (mapped from `NotificationType`), title (bold if unread), message, relative timestamp ("2h"). Left-accent stripe (3pt `$primary`) for unread. Tap fires `onPress(notification)`. |
+| `NotificationBadge.tsx`         | `persistence-mobile/components/notifications/NotificationBadge.tsx`          | Pure presenter. Props: `count`, `onPress`. Renders a bell icon with a red dot + count overlay if `count > 0`. Caps at "99+" if legacy does. Tap fires `onPress`.                                                                                      |
+| `NotificationPreferenceRow.tsx` | `persistence-mobile/components/notifications/PreferenceRow.tsx` (or similar) | Pure presenter. Props: `label`, `enabled`, `onToggle`. Renders a row with a label + a `Switch`. Match legacy spacing + Tamagui patterns.                                                                                                              |
+| `EmptyNotifications.tsx`        | (likely inline in legacy list)                                               | Empty-state component. Title "No notifications" + description "You're all caught up." Left-aligned per M0 idiom.                                                                                                                                      |
 
 Each component has a co-located `__tests__` directory with rendering + interaction tests. Snapshot tests for unread / read / empty states.
 
 **Icon mapping** — match legacy. Per `NotificationType`:
 
-| Type                | Icon (matches legacy)                                  |
-| ------------------- | ------------------------------------------------------ |
-| `workout_assigned`  | dumbbell                                               |
-| `workout_reminder`  | clock / alarm                                          |
-| `friend_request`    | user-plus                                              |
-| `pt_request`        | user-check                                             |
-| `pt_accepted`       | user-check (filled)                                    |
-| `physio_request`    | stethoscope / first-aid                                |
-| `physio_accepted`   | stethoscope (filled)                                   |
-| `goal_milestone`    | flag / trophy                                          |
-| `trainer_feedback`  | message-square / comment                               |
+| Type               | Icon (matches legacy)    |
+| ------------------ | ------------------------ |
+| `workout_assigned` | dumbbell                 |
+| `workout_reminder` | clock / alarm            |
+| `friend_request`   | user-plus                |
+| `pt_request`       | user-check               |
+| `pt_accepted`      | user-check (filled)      |
+| `physio_request`   | stethoscope / first-aid  |
+| `physio_accepted`  | stethoscope (filled)     |
+| `goal_milestone`   | flag / trophy            |
+| `trainer_feedback` | message-square / comment |
 
 Verify each against the legacy `NotificationItem.tsx` icon map; the table above is a starting point.
 
@@ -518,20 +532,20 @@ packages/mobile/src/ui/
 
 Read each in legacy `persistence-mobile/`. Port flows + UI patterns 1:1; don't copy architecture.
 
-| Legacy file (approximate path — verify on opening)                                       | What it tells you                                                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/(tabs)/profile.tsx` or `app/notifications.tsx`                                       | Notification list screen layout — header, list, mark-all CTA placement, empty state.                                                                                                                                                                          |
-| `components/notifications/NotificationItem.tsx`                                          | Single-row layout, icon mapping per `NotificationType`, timestamp format, unread accent.                                                                                                                                                                       |
-| `components/notifications/NotificationBadge.tsx` (or similar)                            | Bell-icon + count overlay styling; cap behaviour ("99+" vs raw).                                                                                                                                                                                              |
-| `app/notification-preferences.tsx` or `app/settings/notifications.tsx`                   | Preferences screen — section list grouping, toggle styling, save indicator.                                                                                                                                                                                   |
-| `hooks/useRegisterPushNotifications.ts`                                                  | Push-token registration flow — which Expo API call (`getDevicePushTokenAsync` vs `getExpoPushTokenAsync`), idempotency, retries, error handling. **Authoritative for M7's device-registration shape.**                                                       |
-| `hooks/api/useGetNotifications.ts`                                                       | The legacy notifications query — pagination, refresh behaviour, cache key.                                                                                                                                                                                    |
-| `hooks/api/usePostMarkNotificationRead.ts`                                                | Mark-read mutation shape — does legacy do single + all separately, or share an endpoint?                                                                                                                                                                       |
-| `hooks/api/usePostNotificationPreferences.ts` or `useGetNotificationPreferences.ts`       | Preferences read/write — confirms the full-replace POST shape M7 ships.                                                                                                                                                                                       |
-| `lib/supabase/queries/notificationQueries.ts` (or similar)                                | Direct Supabase queries (replaced by V2 ApiPort methods) — useful for validation rules and edge-case handling.                                                                                                                                                |
-| `utils/dateFormatters.ts` or `utils/timestampHelpers.ts`                                  | Relative timestamp helper — port the same formula.                                                                                                                                                                                                            |
-| `app/_layout.tsx`                                                                        | Where legacy mounts the tap handler + permission prompt + token registration. Confirms wiring order.                                                                                                                                                            |
-| `eas.json` / `app.json`                                                                  | Confirm the Expo project ID + bundle ID + notification plugin config match V2's `app.json`. If a config differs (e.g. legacy uses a different `expo-notifications` icon), note in PR — don't change V2 silently.                                              |
+| Legacy file (approximate path — verify on opening)                                  | What it tells you                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/(tabs)/profile.tsx` or `app/notifications.tsx`                                 | Notification list screen layout — header, list, mark-all CTA placement, empty state.                                                                                                                             |
+| `components/notifications/NotificationItem.tsx`                                     | Single-row layout, icon mapping per `NotificationType`, timestamp format, unread accent.                                                                                                                         |
+| `components/notifications/NotificationBadge.tsx` (or similar)                       | Bell-icon + count overlay styling; cap behaviour ("99+" vs raw).                                                                                                                                                 |
+| `app/notification-preferences.tsx` or `app/settings/notifications.tsx`              | Preferences screen — section list grouping, toggle styling, save indicator.                                                                                                                                      |
+| `hooks/useRegisterPushNotifications.ts`                                             | Push-token registration flow — which Expo API call (`getDevicePushTokenAsync` vs `getExpoPushTokenAsync`), idempotency, retries, error handling. **Authoritative for M7's device-registration shape.**           |
+| `hooks/api/useGetNotifications.ts`                                                  | The legacy notifications query — pagination, refresh behaviour, cache key.                                                                                                                                       |
+| `hooks/api/usePostMarkNotificationRead.ts`                                          | Mark-read mutation shape — does legacy do single + all separately, or share an endpoint?                                                                                                                         |
+| `hooks/api/usePostNotificationPreferences.ts` or `useGetNotificationPreferences.ts` | Preferences read/write — confirms the full-replace POST shape M7 ships.                                                                                                                                          |
+| `lib/supabase/queries/notificationQueries.ts` (or similar)                          | Direct Supabase queries (replaced by V2 ApiPort methods) — useful for validation rules and edge-case handling.                                                                                                   |
+| `utils/dateFormatters.ts` or `utils/timestampHelpers.ts`                            | Relative timestamp helper — port the same formula.                                                                                                                                                               |
+| `app/_layout.tsx`                                                                   | Where legacy mounts the tap handler + permission prompt + token registration. Confirms wiring order.                                                                                                             |
+| `eas.json` / `app.json`                                                             | Confirm the Expo project ID + bundle ID + notification plugin config match V2's `app.json`. If a config differs (e.g. legacy uses a different `expo-notifications` icon), note in PR — don't change V2 silently. |
 
 **Crucial:** while reading legacy, list explicitly in PR description which files were referenced, with line ranges. Brad reviews against these in the smoke pass.
 
