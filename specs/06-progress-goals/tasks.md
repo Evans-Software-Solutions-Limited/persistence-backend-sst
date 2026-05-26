@@ -131,7 +131,7 @@ Implements STORY-008 through STORY-016. Sequenced across two milestones:
 - **Phase A (M4)** — Mobile + backend schema + endpoints owned by `06-progress-goals`. Backend lands the schema migration + the new endpoints; mobile lands the consumer-side UI on top.
 - **Phase B (M8)** — Cross-cut wiring consumed by `10-trainer-features` (trainer-assigned goals). Goals defines the column shape and attribution; PT implements the on-behalf write path. Minimal ownership here; the bulk of M8 work lives in the PT spec.
 
-Each task traces to a STORY AC and a design § B.* section.
+Each task traces to a STORY AC and a design § B.\* section.
 
 ---
 

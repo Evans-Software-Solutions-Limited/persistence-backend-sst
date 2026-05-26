@@ -384,15 +384,15 @@ assignedByUserId: uuid("assigned_by_user_id").references(() => profiles.id),
 
 **Wire format:** `current_value` is server-managed per STORY-016 AC 16.5 — the client never PATCHes it directly. Updates flow from the source-of-truth subsystem per goal_type:
 
-| `goal_type`                                               | `current_value` source                                                            |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `weekly_workout_count`                                    | Count of completed sessions in current week (on-write via `POST /sessions`)       |
-| `daily_steps`                                             | HealthKit step total for current day (write-back from mobile; see § B.4)          |
-| `daily_calories` / `daily_protein` / `daily_carbs` / `daily_fat` | Daily total from `nutrition_entries` (M9, owned by `13-nutrition-tracking`)       |
-| `body_composition`                                        | Latest `body_measurements` row's relevant field (e.g. weightKg, bodyFatPercentage)|
-| `strength_pr`                                             | Latest `personal_records` value for the linked exercise                           |
-| `habit_generic`                                           | Implicit (the existence of today's `habit_completion` is the satisfaction)        |
-| `custom`                                                  | Client-supplied via `PATCH /goals/:id { currentValue }` — only allowed for this type |
+| `goal_type`                                                      | `current_value` source                                                               |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `weekly_workout_count`                                           | Count of completed sessions in current week (on-write via `POST /sessions`)          |
+| `daily_steps`                                                    | HealthKit step total for current day (write-back from mobile; see § B.4)             |
+| `daily_calories` / `daily_protein` / `daily_carbs` / `daily_fat` | Daily total from `nutrition_entries` (M9, owned by `13-nutrition-tracking`)          |
+| `body_composition`                                               | Latest `body_measurements` row's relevant field (e.g. weightKg, bodyFatPercentage)   |
+| `strength_pr`                                                    | Latest `personal_records` value for the linked exercise                              |
+| `habit_generic`                                                  | Implicit (the existence of today's `habit_completion` is the satisfaction)           |
+| `custom`                                                         | Client-supplied via `PATCH /goals/:id { currentValue }` — only allowed for this type |
 
 ---
 
@@ -404,13 +404,13 @@ What this spec owns:
 
 1. **Which goal types create streaks automatically.** When a `user_goals` row is inserted with a `goal_type` in the table below, the goal-create handler also inserts a paired `user_streaks` row (single transaction) per cross-cuts § 3.2:
 
-   | `goal_type`                                                     | Auto-streak `streak_type` | `period`  |
-   | --------------------------------------------------------------- | ------------------------- | --------- |
-   | `weekly_workout_count`                                          | `workout_streak`          | `weekly`  |
-   | `daily_steps`                                                   | `habit_streak`            | `daily`   |
-   | `daily_calories` / `daily_protein` / `daily_carbs` / `daily_fat` | `nutrition_streak`        | `daily`   |
-   | `weekly_weigh_in`                                               | `measurement_streak`      | `weekly`  |
-   | `habit_generic`                                                 | `habit_streak`            | `daily` OR `weekly` (user-chosen at create time) |
+   | `goal_type`                                                      | Auto-streak `streak_type` | `period`                                         |
+   | ---------------------------------------------------------------- | ------------------------- | ------------------------------------------------ |
+   | `weekly_workout_count`                                           | `workout_streak`          | `weekly`                                         |
+   | `daily_steps`                                                    | `habit_streak`            | `daily`                                          |
+   | `daily_calories` / `daily_protein` / `daily_carbs` / `daily_fat` | `nutrition_streak`        | `daily`                                          |
+   | `weekly_weigh_in`                                                | `measurement_streak`      | `weekly`                                         |
+   | `habit_generic`                                                  | `habit_streak`            | `daily` OR `weekly` (user-chosen at create time) |
 
    Goal types not in this table (`strength_pr`, `body_composition`, `custom`) do NOT auto-create a streak. They are point-in-time / quantitative goals, not cadence goals.
 
@@ -587,19 +587,19 @@ Five tiers map 1:1 across weekly + daily families.
 
 Concrete seed list for `goal_types`. M4 implementation work — this section is the contract.
 
-| `name`                  | `description`                              | `category`     | `iconName`         | Has auto-streak (§ B.2) |
-| ----------------------- | ------------------------------------------ | -------------- | ------------------ | ----------------------- |
-| `strength_pr`           | Hit a personal record on a specific lift   | `strength`     | `trophy`           | No                      |
-| `weekly_workout_count`  | Train N times per week                     | `frequency`    | `calendar-check`   | Yes (workout_streak)    |
-| `daily_steps`           | Walk N steps per day                       | `activity`     | `footprints`       | Yes (habit_streak)      |
-| `daily_calories`        | Eat within N kcal per day                  | `nutrition`    | `flame`            | Yes (nutrition_streak)  |
-| `daily_protein`         | Eat N g protein per day                    | `nutrition`    | `egg`              | Yes (nutrition_streak)  |
-| `daily_carbs`           | Eat N g carbs per day                      | `nutrition`    | `wheat`            | Yes (nutrition_streak)  |
-| `daily_fat`             | Eat N g fat per day                        | `nutrition`    | `droplet`          | Yes (nutrition_streak)  |
-| `weekly_weigh_in`       | Weigh yourself N times per week            | `body`         | `scale`            | Yes (measurement_streak)|
-| `habit_generic`         | A custom daily or weekly habit             | `habit`        | `check-circle`     | Yes (habit_streak)      |
-| `body_composition`      | Reach a body-fat % or weight target        | `body`         | `target`           | No                      |
-| `custom`                | A free-form goal with manual progress      | `custom`       | `flag`             | No                      |
+| `name`                 | `description`                            | `category`  | `iconName`       | Has auto-streak (§ B.2)  |
+| ---------------------- | ---------------------------------------- | ----------- | ---------------- | ------------------------ |
+| `strength_pr`          | Hit a personal record on a specific lift | `strength`  | `trophy`         | No                       |
+| `weekly_workout_count` | Train N times per week                   | `frequency` | `calendar-check` | Yes (workout_streak)     |
+| `daily_steps`          | Walk N steps per day                     | `activity`  | `footprints`     | Yes (habit_streak)       |
+| `daily_calories`       | Eat within N kcal per day                | `nutrition` | `flame`          | Yes (nutrition_streak)   |
+| `daily_protein`        | Eat N g protein per day                  | `nutrition` | `egg`            | Yes (nutrition_streak)   |
+| `daily_carbs`          | Eat N g carbs per day                    | `nutrition` | `wheat`          | Yes (nutrition_streak)   |
+| `daily_fat`            | Eat N g fat per day                      | `nutrition` | `droplet`        | Yes (nutrition_streak)   |
+| `weekly_weigh_in`      | Weigh yourself N times per week          | `body`      | `scale`          | Yes (measurement_streak) |
+| `habit_generic`        | A custom daily or weekly habit           | `habit`     | `check-circle`   | Yes (habit_streak)       |
+| `body_composition`     | Reach a body-fat % or weight target      | `body`      | `target`         | No                       |
+| `custom`               | A free-form goal with manual progress    | `custom`    | `flag`           | No                       |
 
 Seed is idempotent (`ON CONFLICT (name) DO NOTHING`).
 
@@ -874,15 +874,14 @@ See § B.4 for the full behaviour. Body: `{ value: number; recordedFor: ISO8601 
 
 Per cross-cuts § 5, the following notifications are emitted by this spec's M4 backend:
 
-| Trigger                                                              | `notification_type`         | Emitted by                                                 |
-| -------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------- |
-| Streak `current_count` advances past a milestone threshold           | `streak_milestone`          | Streak engine on-write (cross-cuts § 3.6)                  |
-| Current day is the last day of a period AND period not yet satisfied | `streak_at_risk`            | Nightly cron at 18:00 user-local                           |
-| Nightly cron applies a freeze token                                  | `freeze_token_applied`      | Nightly cron at 02:00 UTC (cross-cuts § 3.4 + § 3.5)       |
-| `current_value` crosses ≥ 50% / ≥ 80% / ≥ 100% of `target_value`     | `goal_milestone`            | Goal-update path (whichever flow updates `current_value`)  |
-| `assigned_by_user_id` is set (a trainer assigns a goal)              | `goal_assigned_by_trainer`  | Trainer's `POST /trainers/me/clients/:id/goals` (M8 surface) |
+| Trigger                                                              | `notification_type`        | Emitted by                                                   |
+| -------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------ |
+| Streak `current_count` advances past a milestone threshold           | `streak_milestone`         | Streak engine on-write (cross-cuts § 3.6)                    |
+| Current day is the last day of a period AND period not yet satisfied | `streak_at_risk`           | Nightly cron at 18:00 user-local                             |
+| Nightly cron applies a freeze token                                  | `freeze_token_applied`     | Nightly cron at 02:00 UTC (cross-cuts § 3.4 + § 3.5)         |
+| `current_value` crosses ≥ 50% / ≥ 80% / ≥ 100% of `target_value`     | `goal_milestone`           | Goal-update path (whichever flow updates `current_value`)    |
+| `assigned_by_user_id` is set (a trainer assigns a goal)              | `goal_assigned_by_trainer` | Trainer's `POST /trainers/me/clients/:id/goals` (M8 surface) |
 
 The M7 notification-types DB enum already contains `workout_assigned` (and likely others — verify in M4 impl). M4 work that introduces NEW enum values (`streak_milestone`, `streak_at_risk`, `freeze_token_applied`, `goal_milestone`, `goal_assigned_by_trainer`) must include the enum-value migration; M7 owns the user-facing preferences surface.
 
 **Default opt-in per cross-cuts § 5:** all of the above default ON.
-
