@@ -4,9 +4,9 @@
 
 The Nutrition feature is a **net-new full-stack build**. There is no legacy mobile counterpart and no existing nutrition surface in the schema — a 2026-05-26 audit of `packages/db/src/schema.ts` confirms zero nutrition tables. The feature ships in two milestones sharing this spec folder:
 
-| Tier  | Milestone | Surface                                                                                                                                                                          | Ship status   |
-| ----- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| **A** | M9        | Manual food entry + barcode (Open Food Facts) + portion-confirm cards + daily ring + macro bars + water tracker + meal templates + offline-first sync + Apple Health write-back | Net-new in M9 |
+| Tier  | Milestone | Surface                                                                                                                                                                         | Ship status     |
+| ----- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| **A** | M9        | Manual food entry + barcode (Open Food Facts) + portion-confirm cards + daily ring + macro bars + water tracker + meal templates + offline-first sync + Apple Health write-back | Net-new in M9   |
 | **B** | M9.5      | AI photo recognition (Claude Vision) + LLM free-text estimation (Claude text) + entitlement gating + S3 photo storage + recognition cache + optional adaptive TDEE              | Net-new in M9.5 |
 
 The two-milestone split lets us ship a complete, usable nutrition product (Tier A) without the cost / latency exposure of AI inference, then layer AI on once the data-flow and UX are proven.
@@ -466,10 +466,10 @@ Rules:
 
 For STORY-017 AC 1's confidence chip:
 
-| Confidence range | Chip label | UI colour              |
-| ---------------- | ---------- | ---------------------- |
-| ≥ 0.75           | "High"     | Accent (positive)      |
-| 0.5–0.75         | "Medium"   | Neutral                |
+| Confidence range | Chip label | UI colour                                    |
+| ---------------- | ---------- | -------------------------------------------- |
+| ≥ 0.75           | "High"     | Accent (positive)                            |
+| 0.5–0.75         | "Medium"   | Neutral                                      |
 | < 0.5            | "Low"      | Warning (still loggable, but extra friction) |
 
 Low-confidence items render with a tooltip "AI is unsure — double-check the portion" inline. Never auto-log AI items; users always confirm.
@@ -658,18 +658,33 @@ export interface NutritionPort {
 
   // commands
   logFood(input: LogFoodInput): Promise<Result<NutritionEntry, NutritionError>>;
-  editEntry(id: string, input: EditEntryInput): Promise<Result<NutritionEntry, NutritionError>>;
+  editEntry(
+    id: string,
+    input: EditEntryInput,
+  ): Promise<Result<NutritionEntry, NutritionError>>;
   deleteEntry(id: string): Promise<Result<void, NutritionError>>;
   logWater(volumeMl: number): Promise<Result<WaterEntry, NutritionError>>;
   removeLastWater(): Promise<Result<void, NutritionError>>;
-  setTarget(input: SetTargetInput): Promise<Result<NutritionTarget, NutritionError>>;
-  saveMealTemplate(input: SaveTemplateInput): Promise<Result<MealTemplate, NutritionError>>;
-  replayTemplate(templateId: string): Promise<Result<NutritionEntry[], NutritionError>>;
+  setTarget(
+    input: SetTargetInput,
+  ): Promise<Result<NutritionTarget, NutritionError>>;
+  saveMealTemplate(
+    input: SaveTemplateInput,
+  ): Promise<Result<MealTemplate, NutritionError>>;
+  replayTemplate(
+    templateId: string,
+  ): Promise<Result<NutritionEntry[], NutritionError>>;
 
   // [M9.5] — gated by aiAccess on the server
-  recognizePhoto(s3Key: string): Promise<Result<RecognizedItem[], NutritionError>>;
-  estimateText(description: string): Promise<Result<RecognizedItem[], NutritionError>>;
-  presignPhotoUpload(): Promise<Result<{ s3Key: string; uploadUrl: string }, NutritionError>>;
+  recognizePhoto(
+    s3Key: string,
+  ): Promise<Result<RecognizedItem[], NutritionError>>;
+  estimateText(
+    description: string,
+  ): Promise<Result<RecognizedItem[], NutritionError>>;
+  presignPhotoUpload(): Promise<
+    Result<{ s3Key: string; uploadUrl: string }, NutritionError>
+  >;
 }
 ```
 
@@ -740,16 +755,16 @@ All commands flow through the sync queue per M3 pattern. UI receives optimistic 
 
 ### 11.6 Container / presenter split per `_agent.md § Container / Presenter`
 
-| Container                       | Presenter                          | Screen file                                         |
-| ------------------------------- | ---------------------------------- | --------------------------------------------------- |
-| `NutritionDailyContainer`       | `NutritionDailyPresenter`          | `app/(app)/(tabs)/nutrition.tsx`                    |
-| `AddFoodModalContainer`         | `AddFoodModalPresenter`            | (modal sheet, no route file)                        |
-| `BarcodeScannerContainer`       | `BarcodeScannerPresenter`          | `app/(app)/nutrition/scan.tsx`                      |
-| `PortionConfirmContainer`       | `PortionConfirmPresenter`          | (sheet within Add Food)                             |
-| `MealTemplatesContainer`        | `MealTemplatesPresenter`           | `app/(app)/nutrition/templates.tsx`                 |
-| `NutritionTargetsContainer`     | `NutritionTargetsPresenter`        | `app/(app)/nutrition/targets.tsx`                   |
-| `PhotoCaptureContainer` [M9.5]  | `PhotoCapturePresenter` [M9.5]     | `app/(app)/nutrition/photo.tsx`                     |
-| `AiCandidatesContainer` [M9.5]  | `AiCandidatesPresenter` [M9.5]     | (sheet after photo capture)                         |
+| Container                         | Presenter                         | Screen file                                                            |
+| --------------------------------- | --------------------------------- | ---------------------------------------------------------------------- |
+| `NutritionDailyContainer`         | `NutritionDailyPresenter`         | `app/(app)/(tabs)/nutrition.tsx`                                       |
+| `AddFoodModalContainer`           | `AddFoodModalPresenter`           | (modal sheet, no route file)                                           |
+| `BarcodeScannerContainer`         | `BarcodeScannerPresenter`         | `app/(app)/nutrition/scan.tsx`                                         |
+| `PortionConfirmContainer`         | `PortionConfirmPresenter`         | (sheet within Add Food)                                                |
+| `MealTemplatesContainer`          | `MealTemplatesPresenter`          | `app/(app)/nutrition/templates.tsx`                                    |
+| `NutritionTargetsContainer`       | `NutritionTargetsPresenter`       | `app/(app)/nutrition/targets.tsx`                                      |
+| `PhotoCaptureContainer` [M9.5]    | `PhotoCapturePresenter` [M9.5]    | `app/(app)/nutrition/photo.tsx`                                        |
+| `AiCandidatesContainer` [M9.5]    | `AiCandidatesPresenter` [M9.5]    | (sheet after photo capture)                                            |
 | `TrainerClientNutritionContainer` | `TrainerClientNutritionPresenter` | `app/(app)/clients/[id]/nutrition.tsx` (M8 wires; M9 ships components) |
 
 ---
@@ -760,20 +775,20 @@ Inherits the M3 sync-queue pattern wholesale; no nutrition-specific machinery be
 
 ### 12.1 Operations and offline behaviour
 
-| Operation                | Online                           | Offline                                                                                          |
-| ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Log manual food          | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Scan barcode             | Lookup OFF → portion-confirm     | Camera works locally; OFF lookup queued; user can still set portion; entry hydrates on reconnect |
-| Edit entry               | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Delete entry             | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Log water (+/-)          | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Set target               | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Save template            | Immediate                        | Optimistic; sync on reconnect                                                                    |
-| Replay template          | Immediate (all entries write)    | Optimistic for all entries; sync as a batch                                                      |
-| Search foods             | API call                         | Local cache only (last-30-days user foods)                                                       |
-| AI photo upload [M9.5]   | S3 PUT → recognize-photo         | **Blocked** — explicit error "Try again when connected"                                          |
-| AI text estimation [M9.5] | API call                        | **Blocked** — explicit error                                                                     |
-| Daily summary view       | API → cache → render             | Cache → render; "Last synced 2h ago" timestamp                                                   |
+| Operation                 | Online                        | Offline                                                                                          |
+| ------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| Log manual food           | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Scan barcode              | Lookup OFF → portion-confirm  | Camera works locally; OFF lookup queued; user can still set portion; entry hydrates on reconnect |
+| Edit entry                | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Delete entry              | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Log water (+/-)           | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Set target                | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Save template             | Immediate                     | Optimistic; sync on reconnect                                                                    |
+| Replay template           | Immediate (all entries write) | Optimistic for all entries; sync as a batch                                                      |
+| Search foods              | API call                      | Local cache only (last-30-days user foods)                                                       |
+| AI photo upload [M9.5]    | S3 PUT → recognize-photo      | **Blocked** — explicit error "Try again when connected"                                          |
+| AI text estimation [M9.5] | API call                      | **Blocked** — explicit error                                                                     |
+| Daily summary view        | API → cache → render          | Cache → render; "Last synced 2h ago" timestamp                                                   |
 
 ### 12.2 Sync conflict resolution
 
@@ -817,11 +832,13 @@ No new colour tokens beyond these; everything else reuses the design system.
 **Visual language:** generous spacing per Brad's memory ("Premium gym-app aesthetic, not generic UI"). Ring is the hero — bold, centred, animated. Macro bars are thin (4pt) to keep the ring central. Water tile sits below as a deliberate secondary surface. Entries list at the bottom is data-dense but not cramped — 56pt row height, 12pt internal padding.
 
 **Animation guidance:**
+
 - Ring fill animates with spring physics on entry (Reanimated `withSpring`, damping 14, stiffness 90, mass 1). On each new log, the ring animates from current to new fill in 350ms.
 - Water tile: +/- button taps trigger a `withSpring` water-level rise + a single haptic (`Haptics.ImpactFeedbackStyle.Light`).
 - Target-hit (STORY-003 AC 4): when calorie ring crosses 100%, a one-shot ring "pulse" animation (scale 1 → 1.05 → 1, 600ms) + success haptic.
 
 **Empty/error/loading states with personality:**
+
 - Empty (no entries today): "Time to break the fast. Log your first meal." with a single CTA pill, no stock illustration.
 - Loading (offline-cache empty): skeleton placeholders for ring + bars + entries list. Skeleton ring shows a static 0% fill.
 - Offline indicator: top-of-screen pill "Showing local — last synced 2h ago" when offline.
@@ -845,6 +862,7 @@ A bottom sheet (Tamagui `Sheet`) that opens at 80% viewport height. Tabs at the 
 **Animation:** tab switch is instant (no slide). Sheet opens with spring (350ms entry).
 
 **Empty/error/loading states:**
+
 - Search-empty (no query yet): "Search foods or scan a barcode" with the user's recent foods listed below (STORY-006 AC 1).
 - Search-no-results: "No matches in our catalogue. Try a barcode, or [Log manually]." — the "Log manually" CTA opens a manual-food sheet (STORY-001 AC 4 fallback).
 - Recent foods empty (first-time user): "Your recent foods will appear here. Log your first meal to get started."
@@ -1006,17 +1024,17 @@ When `useReducedMotion()` is true:
 
 Per `specs/_shared/cross-cuts.md § 5`, the Nutrition feature emits one event:
 
-| Event                        | Type enum                      | Default opt-in | Deep link    |
-| ---------------------------- | ------------------------------ | -------------- | ------------ |
-| Daily nutrition target hit   | `daily_nutrition_target_hit`   | **off**        | `/nutrition` |
+| Event                      | Type enum                    | Default opt-in | Deep link    |
+| -------------------------- | ---------------------------- | -------------- | ------------ |
+| Daily nutrition target hit | `daily_nutrition_target_hit` | **off**        | `/nutrition` |
 
 **Off by default** because daily target-hit fires once per day per user with a target — that's noisy across a userbase. Users who want the dopamine can opt in via the M7 preferences UI.
 
 **Trainer-side event:**
 
-| Event                                | Type enum                            | Default opt-in | Deep link               |
-| ------------------------------------ | ------------------------------------ | -------------- | ----------------------- |
-| Nutrition target set by trainer      | `nutrition_target_set_by_trainer`    | on             | `/nutrition/targets`    |
+| Event                           | Type enum                         | Default opt-in | Deep link            |
+| ------------------------------- | --------------------------------- | -------------- | -------------------- |
+| Nutrition target set by trainer | `nutrition_target_set_by_trainer` | on             | `/nutrition/targets` |
 
 This event is **emitted from the trainer endpoint** (STORY-011 AC 4) but the enum value is owned by M7's notification migration per cross-cuts § 5. M9's design.md flags the new value here; M7 absorbs it when it ships.
 
@@ -1044,13 +1062,13 @@ The mobile client never sees this key. All Claude calls happen on the Lambda; th
 
 ### 16.2 Cost model
 
-| Metric                            | Working assumption          | Source                                                                 |
-| --------------------------------- | --------------------------- | ---------------------------------------------------------------------- |
-| Claude Vision cost per photo      | ~$0.015                     | Anthropic pricing 2026-05; small image, ~500-token response             |
-| Claude text estimation cost       | ~$0.003                     | ~5× cheaper than vision (same response size, no image input)            |
-| Avg AI-tier user calls/month      | 30                          | Q5 working assumption; refined post-launch via `ai_usage_log`           |
-| Recognition-cache hit rate (text) | ≥ 30% target                | Common foods / re-queries; bound by user input diversity                |
-| Avg cost per AI-tier user/month   | ~$0.45                      | (30 × $0.015) = $0.45 with no cache; add cache, falls to ~$0.35         |
+| Metric                            | Working assumption | Source                                                          |
+| --------------------------------- | ------------------ | --------------------------------------------------------------- |
+| Claude Vision cost per photo      | ~$0.015            | Anthropic pricing 2026-05; small image, ~500-token response     |
+| Claude text estimation cost       | ~$0.003            | ~5× cheaper than vision (same response size, no image input)    |
+| Avg AI-tier user calls/month      | 30                 | Q5 working assumption; refined post-launch via `ai_usage_log`   |
+| Recognition-cache hit rate (text) | ≥ 30% target       | Common foods / re-queries; bound by user input diversity        |
+| Avg cost per AI-tier user/month   | ~$0.45             | (30 × $0.015) = $0.45 with no cache; add cache, falls to ~$0.35 |
 
 **Out of scope today** per `specs/_shared/cross-cuts.md § 4.3`:
 
@@ -1085,18 +1103,18 @@ S3 lifecycle rule: photos older than 30 days are deleted per Q8. Implement as a 
 
 Per `specs/_shared/cross-cuts.md § 6`:
 
-| Migration                                       | Milestone | Notes                                                                                                                 |
-| ----------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
-| `foods`                                         | **M9**    | Core catalogue table. Includes `pg_trgm` GIN index — verify extension available on Neon.                              |
-| `nutrition_entries` (incl. `logged_by_user_id`) | **M9**    | Cross-cut column built-in from day 1 per § 6 — no backfill when M8 lights up trainer endpoints.                        |
-| `meal_templates`                                | **M9**    |                                                                                                                       |
-| `nutrition_targets` (incl. `set_by_user_id`)    | **M9**    | Cross-cut column built-in from day 1.                                                                                  |
-| `water_entries`                                 | **M9**    |                                                                                                                       |
-| `food_cache`                                    | **M9**    | OFF proxy cache.                                                                                                       |
-| `nutrition_photos`                              | **M9.5**  |                                                                                                                       |
-| `recognition_cache`                             | **M9.5**  |                                                                                                                       |
-| `ai_usage_log`                                  | **M9.5**  | First AI feature ships this. Future AI features (workout coach) consume the same table.                                |
-| `nutrition_suggestion_dismissals`               | M9.5 if STORY-019 ships | Otherwise deferred indefinitely.                                                                                       |
+| Migration                                       | Milestone               | Notes                                                                                           |
+| ----------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `foods`                                         | **M9**                  | Core catalogue table. Includes `pg_trgm` GIN index — verify extension available on Neon.        |
+| `nutrition_entries` (incl. `logged_by_user_id`) | **M9**                  | Cross-cut column built-in from day 1 per § 6 — no backfill when M8 lights up trainer endpoints. |
+| `meal_templates`                                | **M9**                  |                                                                                                 |
+| `nutrition_targets` (incl. `set_by_user_id`)    | **M9**                  | Cross-cut column built-in from day 1.                                                           |
+| `water_entries`                                 | **M9**                  |                                                                                                 |
+| `food_cache`                                    | **M9**                  | OFF proxy cache.                                                                                |
+| `nutrition_photos`                              | **M9.5**                |                                                                                                 |
+| `recognition_cache`                             | **M9.5**                |                                                                                                 |
+| `ai_usage_log`                                  | **M9.5**                | First AI feature ships this. Future AI features (workout coach) consume the same table.         |
+| `nutrition_suggestion_dismissals`               | M9.5 if STORY-019 ships | Otherwise deferred indefinitely.                                                                |
 
 All migrations are SQL files under `packages/db/migrations/`. Idempotent (`CREATE TABLE IF NOT EXISTS`, partial unique indexes with named constraints). Tested forward + backward per `CLAUDE.md § Database & Migrations`.
 
@@ -1133,15 +1151,15 @@ Per `CLAUDE.md § Testing Rules` — 90% coverage threshold, no fake tests.
 
 ## 19. Open design decisions (flagged for Brad)
 
-| #   | Decision                                                                                                       | Default lean                                                                                | Need input?                |
-| --- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------- |
-| D1  | Use `pg_trgm` for food search or LIKE-prefix fallback?                                                         | `pg_trgm` if available on Neon; verify before M9 brief is cut                               | No — verify in M9 brief    |
-| D2  | OFF User-Agent contact email                                                                                   | `support@persistence.app` placeholder; needs a real address before launch                   | **Yes — Brad input**       |
-| D3  | STORY-019 adaptive TDEE — ship in M9.5 or defer?                                                               | Defer if M9.5 is on critical path; ship if there's slack                                    | **Yes — Brad input**       |
-| D4  | Cap entries per day (anti-abuse)                                                                               | 100 entries/day soft cap; reject 101st with `code='daily_log_full'`                          | Lean default; flag for Brad |
+| #   | Decision                                                                                                      | Default lean                                                                                | Need input?                 |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------- |
+| D1  | Use `pg_trgm` for food search or LIKE-prefix fallback?                                                        | `pg_trgm` if available on Neon; verify before M9 brief is cut                               | No — verify in M9 brief     |
+| D2  | OFF User-Agent contact email                                                                                  | `support@persistence.app` placeholder; needs a real address before launch                   | **Yes — Brad input**        |
+| D3  | STORY-019 adaptive TDEE — ship in M9.5 or defer?                                                              | Defer if M9.5 is on critical path; ship if there's slack                                    | **Yes — Brad input**        |
+| D4  | Cap entries per day (anti-abuse)                                                                              | 100 entries/day soft cap; reject 101st with `code='daily_log_full'`                         | Lean default; flag for Brad |
 | D5  | Trainer can log entries on a client's behalf (cross-cuts § 1.1 includes the column but doesn't ship endpoint) | M9 ships the column; M8 owns the `POST /trainers/me/clients/:id/nutrition/entries` endpoint | Per cross-cuts; no input    |
-| D6  | Multi-language food names (OFF returns multilingual)                                                           | M9 uses `en` only; localised names are Tier C                                                | Lean default                |
-| D7  | Cents-precision macros (e.g. 18.5g P) or integer-only                                                          | Numeric(8,2) in DB; UI renders integer-only above 10g, one decimal under 10g                | Lean default                |
+| D6  | Multi-language food names (OFF returns multilingual)                                                          | M9 uses `en` only; localised names are Tier C                                               | Lean default                |
+| D7  | Cents-precision macros (e.g. 18.5g P) or integer-only                                                         | Numeric(8,2) in DB; UI renders integer-only above 10g, one decimal under 10g                | Lean default                |
 
 ---
 
