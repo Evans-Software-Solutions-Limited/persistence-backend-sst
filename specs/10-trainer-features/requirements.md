@@ -240,4 +240,3 @@ Inspired by Everfit's check-in form pattern. Trainer designs a form (weight, pho
 - [ ] Trainer reviews via `GET /trainers/me/clients/:clientId/check-in-submissions`
 - [ ] Photo uploads use the existing storage adapter; submissions reference photo IDs not blobs
 - [ ] **Schema additions (Tier B):** `check_in_form_templates`, `check_in_submissions` — designed in M8 design.md § Check-in forms; migration owned by the Tier B implementation milestone
-
