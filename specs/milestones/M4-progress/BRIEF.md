@@ -2,7 +2,7 @@
 
 ## Why this milestone
 
-The `Progress` tab still renders `<ComingSoon />` ([`packages/mobile/app/(app)/(tabs)/progress.tsx`](../../../packages/mobile/app/(app)/(tabs)/progress.tsx)). Every other surface that hands off to it — Home's "PR of the week" card, Recent Activity row, the dashboard's `progress.personalRecordsCount` tile — implies an actual destination. M4 builds that destination.
+The `Progress` tab still renders `<ComingSoon />` ([`packages/mobile/app/(app)/(tabs)/progress.tsx`](<../../../packages/mobile/app/(app)/(tabs)/progress.tsx>)). Every other surface that hands off to it — Home's "PR of the week" card, Recent Activity row, the dashboard's `progress.personalRecordsCount` tile — implies an actual destination. M4 builds that destination.
 
 Concretely: PR carousel, last-30-days activity tile, measurement trend chart, measurement editor modal, goal list with progress bars, personal-records list grouped by exercise. Backend is mostly wired (`GET /progress/stats`, `GET /progress/records`, `GET /progress/history`, `GET /personal-records`, `GET/POST /measurements`, full `/goals` CRUD) — M4 verifies the wire shapes, fills the small gaps the mobile UI needs (PATCH/DELETE on measurements; time-range presets; goal status enum reconciliation), and ports the legacy Progress screens onto the SST + SQLite stack.
 

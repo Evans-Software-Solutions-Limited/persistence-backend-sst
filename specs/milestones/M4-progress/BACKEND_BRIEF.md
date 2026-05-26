@@ -39,6 +39,7 @@ Before any implementation commit, your first commit edits the parent spec to clo
 9. **New Phase 4c — M4 backend gap-fills**. Trace each new endpoint / handler change to a `requirements.md` AC and a `design.md` section. Use the M0 / M1 / M3 "Phase Xa / Xb" pattern.
 
 Commit message format:
+
 ```
 docs(M4): backend audit + spec updates for Progress milestone
 
@@ -172,18 +173,19 @@ Spec: [`design.md` § (new — backend agent's spec-update commit writes this)](
   - `from` — optional ISO 8601 UTC; defaults to `now - 1 year` if absent. (Frontend always sends; this is a safety default.)
   - `to` — optional ISO 8601 UTC; defaults to `now` if absent.
 - Response: `{ data: ProgressStrengthPoint[] }` ordered by `sessionCompletedAt ASC` (chronological for chart). Each point:
+
   ```typescript
   {
     sessionId: string;
-    sessionCompletedAt: string;  // ISO 8601 UTC
+    sessionCompletedAt: string; // ISO 8601 UTC
     bestSet: {
       setId: string;
       weightKg: number;
       reps: number;
-      oneRepMax: number | null;        // Epley estimate FOR CHART RENDERING ONLY (weight * (1 + reps / 30)); see note below
-      maxVolume: number;                // weight * reps
-    };
-    totalVolume: number;                // sum across all completed sets for this exercise in this session
+      oneRepMax: number | null; // Epley estimate FOR CHART RENDERING ONLY (weight * (1 + reps / 30)); see note below
+      maxVolume: number; // weight * reps
+    }
+    totalVolume: number; // sum across all completed sets for this exercise in this session
   }
   ```
 
