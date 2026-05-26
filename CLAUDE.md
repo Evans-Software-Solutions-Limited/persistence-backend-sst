@@ -11,6 +11,22 @@ Work ships via milestone-driven parallel agents. Specs are the source of truth; 
 
 See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the full M0 → M11 list, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
 
+## Migration intent (Mobile V2 — non-negotiable)
+
+The mobile V2 build (`packages/mobile`) is a **port** of the legacy mobile app at `/Users/bradleysimms-evans/Documents/projects/personal/persistence-mobile/`. It is **not** a redesign. The whole point of this migration is **under-the-hood efficiency**:
+
+- Offline-first SQLite cache (replacing direct Supabase calls)
+- SST v3 backend with explicit authorization (replacing Supabase RLS)
+- Performance work — FlashList, expo-image, animation budgets (M11)
+
+**The UI MUST match legacy exactly.** Same layouts, same component hierarchy, same affordances, same copy, same flows. The only deliberate change at port time is the V2 container/presenter seam — containers absorb the V2 data-flow deltas (ports, adapters, hooks, segment-aware navigation); presenter render output mirrors legacy 1:1.
+
+**No UI deviation from legacy is allowed without explicit user go-ahead.** If a brief, spec, or PR description says "port" without specifying legacy fidelity, assume strict fidelity and confirm before deviating. If you find yourself "improving" a screen — stop. The migration is not the place to improve the UX. `/frontend-design` polish happens only AFTER the port lands and is verified on device.
+
+**When in doubt, read the legacy.** It's at the sibling path `../persistence-mobile/` — `app/`, `components/`, `hooks/api/`, `lib/utils/`, `lib/supabase/queries/`. Cross-reference legacy before authoring a brief, before writing code, before reviewing a PR. If you cannot find the legacy reference, flag it and ask — don't invent.
+
+See `feedback_port_then_revamp.md` in memory for the full discipline rules (which axes to audit, common failure modes, how to handle briefs that contradict legacy).
+
 ## What This Repo Is
 
 Gym/fitness tracking backend. User workout logging, session management, exercise tracking, goal setting, and progress analytics. Originally built with Supabase RLS; now migrating to SST v3 with explicit backend authorization.

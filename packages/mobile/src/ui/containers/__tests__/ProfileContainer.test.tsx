@@ -686,7 +686,10 @@ describe("ProfileContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/profile/privacy");
   });
 
-  it("opens alerts for subscription + become-trainer handlers", async () => {
+  it("routes subscription + become-trainer handlers to the unified Selection screen (legacy parity)", async () => {
+    // Legacy persistence-mobile/app/(tabs)/profile.tsx:613-628 — all
+    // three CTAs route to /(auth)/subscription-selection; become-
+    // trainer passes the role param so the toggle pre-selects.
     const { adapters } = await createTestAdapters();
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -697,9 +700,16 @@ describe("ProfileContainer", () => {
       expect(getByTestId("profile-presenter-stub")).toBeTruthy();
     });
     fireEvent.press(getByTestId("stub-upgrade"));
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/subscription-selection");
+
     fireEvent.press(getByTestId("stub-manage-sub"));
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/subscription-selection");
+
     fireEvent.press(getByTestId("stub-become-trainer"));
-    expect(alertSpy).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(auth)/subscription-selection",
+      params: { role: "personal_trainer" },
+    });
   });
 
   describe("badge sourcing (M10.5 Wave 2)", () => {

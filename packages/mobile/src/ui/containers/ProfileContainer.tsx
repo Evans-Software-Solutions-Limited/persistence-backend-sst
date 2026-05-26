@@ -139,16 +139,14 @@ export function ProfileContainer() {
   const onSelectProfilePicture = avatarUpload.showAvatarSheet;
 
   const onManageSubscription = useCallback(() => {
-    // M10: push to the Subscription Management screen. The thin
-    // Expo Router wrapper at app/(app)/subscription-management.tsx
-    // renders SubscriptionManagementContainer.
-    //
-    // CRITICAL: this MUST be the `/(app)/...` path, not a root-level
-    // `/subscription-management`. AuthGate (app/_layout.tsx:79-83)
-    // bounces signed-in users out of any route outside the (app) or
-    // (auth) groups — a root-level push would flicker the management
-    // screen for a tick then redirect straight back to Home.
-    router.push("/(app)/subscription-management" as never);
+    // Legacy parity (persistence-mobile/app/(tabs)/profile.tsx:613):
+    // "Navigate to unified subscription selection screen". Manage /
+    // Upgrade / Become-Trainer all route to Selection in legacy — it
+    // IS the subscription experience (current-plan card, scheduled
+    // change display, role toggle, full tier picker, cancel modal).
+    // AuthGate exempts /(auth)/subscription-selection for signed-in
+    // users via `inPostAuthSubscriptionFlow` (app/_layout.tsx:79).
+    router.push("/(auth)/subscription-selection" as never);
   }, [router]);
 
   const onUpgradeSubscription = useCallback(() => {
@@ -159,8 +157,16 @@ export function ProfileContainer() {
   }, [router]);
 
   const onBecomeTrainer = useCallback(() => {
-    Alert.alert("Become a trainer", "Trainer onboarding lights up in M8.");
-  }, []);
+    // Legacy parity (persistence-mobile/app/(tabs)/profile.tsx:623):
+    // pushes Selection with `role: 'personal_trainer'` so the role
+    // toggle pre-selects Trainer. M8 will replace the trainer-tier
+    // post-signup product surface; the tier picker entry point is
+    // already the Selection screen.
+    router.push({
+      pathname: "/(auth)/subscription-selection",
+      params: { role: "personal_trainer" },
+    } as never);
+  }, [router]);
 
   const onEditProfile = useCallback(() => {
     router.push("/(app)/profile/edit" as never);

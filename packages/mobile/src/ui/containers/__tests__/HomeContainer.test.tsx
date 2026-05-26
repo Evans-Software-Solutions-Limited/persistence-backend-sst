@@ -397,10 +397,9 @@ describe("HomeContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w1");
   });
 
-  it("routes to /(app)/subscription-management when the manage-subscription CTA fires", async () => {
-    // Bug 7: was a stub Alert; M10 wires it to the management screen
-    // inside the (app) group so AuthGate doesn't bounce signed-in
-    // users back to home.
+  it("routes to /(auth)/subscription-selection when the manage-subscription CTA fires", async () => {
+    // Legacy parity: manage + upgrade both go to the unified Selection
+    // screen (see ProfileContainer.onManageSubscription for context).
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -418,7 +417,7 @@ describe("HomeContainer", () => {
 
     fireEvent.press(getByTestId("stub-manage-subscription"));
     expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(app)/subscription-management",
+      "/(auth)/subscription-selection",
     );
   });
 

@@ -219,10 +219,9 @@ export function HomeContainer() {
   }, [router]);
 
   const onManageSubscriptionPress = useCallback(() => {
-    // M10: paying users route to the Management screen. Path MUST be
-    // /(app)/... — AuthGate bounces signed-in users out of root-level
-    // routes. See ProfileContainer.onManageSubscription for context.
-    router.push("/(app)/subscription-management" as never);
+    // Legacy parity — see ProfileContainer.onManageSubscription.
+    // Both Manage and Upgrade route to the unified Selection screen.
+    router.push("/(auth)/subscription-selection" as never);
   }, [router]);
 
   // Push the workout-detail SCREEN at /(app)/workouts/[id]. PR #41
