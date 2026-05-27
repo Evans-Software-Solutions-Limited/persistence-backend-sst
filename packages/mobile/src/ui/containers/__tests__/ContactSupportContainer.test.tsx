@@ -241,6 +241,28 @@ describe("ContactSupportContainer", () => {
     expect(openURLSpy).toHaveBeenCalledWith(`mailto:${SUPPORT_EMAIL}`);
   });
 
+  it("falls back to an Alert when the direct-email link's openURL rejects", async () => {
+    const { adapters } = await createTestAdapters();
+    openURLSpy.mockRejectedValueOnce(new Error("no email client"));
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ContactSupportContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-email").props.children).toBe("brad@example.com");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-direct-email"));
+    });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Error",
+        `Could not open email client. Please send an email to ${SUPPORT_EMAIL}`,
+      );
+    });
+  });
+
   it("routes back when onBack fires", async () => {
     const { adapters } = await createTestAdapters();
     const { getByTestId } = render(

@@ -49,7 +49,12 @@ export function ContactSupportContainer() {
   }, [subject, message, email]);
 
   const onOpenDirectEmail = useCallback(() => {
-    void Linking.openURL(`mailto:${SUPPORT_EMAIL}`);
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {
+      Alert.alert(
+        "Error",
+        `Could not open email client. Please send an email to ${SUPPORT_EMAIL}`,
+      );
+    });
   }, []);
 
   return (
