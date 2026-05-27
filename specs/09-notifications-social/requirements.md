@@ -36,7 +36,7 @@ plus the friendships portion of STORY-005 are deferred beyond M7. See
   in as the same user, with the flag cleared, results in one
   `POST /devices/register` call that returns the SAME `id` as the
   initial registration. `SELECT COUNT(*) FROM user_devices WHERE
-  user_id = ?` is 1. Maps to SMOKE_TEST Step 2.
+user_id = ?` is 1. Maps to SMOKE_TEST Step 2.
 - **AC 1.3 — Push delivery end-to-end.** Inserting a `notifications`
   row directly via SQL causes the legacy Supabase trigger to fire the
   `send-push-notification` Edge Function which delivers a banner to

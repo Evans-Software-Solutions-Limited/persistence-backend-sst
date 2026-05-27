@@ -74,7 +74,6 @@ deferred (see Phase 7).
 
 **DEFERRED beyond M7.**
 
-
 - [ ] Create `FriendCard` presenter (name, avatar, status, actions)
 - [ ] Create `FriendListPresenter` (friends list, pending requests section)
 - [ ] Create `FriendListContainer` (fetches friends, handles actions)
@@ -86,7 +85,6 @@ deferred (see Phase 7).
 ## Phase 8: Shared Workouts
 
 **DEFERRED beyond M7.**
-
 
 - [ ] Implement friends' shared workouts feed query
 - [ ] Create "copy to my workouts" action

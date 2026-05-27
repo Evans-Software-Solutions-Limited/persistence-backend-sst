@@ -279,7 +279,7 @@ by M7:
    `user_devices` rows for the recipient and calls the
    `send-push-notification` Supabase Edge Function via
    `pg_net.http_post`, passing `(user_id, title, message, data,
-   notification_type)`.
+notification_type)`.
 4. The Edge Function reads the user's devices, formats Expo Push
    messages, and POSTs to `https://exp.host/--/api/v2/push/send`.
 5. Expo Push fans out to APNs (iOS) + FCM (Android) using credentials
