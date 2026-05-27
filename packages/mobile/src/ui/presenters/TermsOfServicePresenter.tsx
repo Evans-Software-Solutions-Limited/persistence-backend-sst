@@ -119,7 +119,7 @@ export function TermsOfServicePresenter({
             <Text style={styles.sectionTitle}>7. Contact Information</Text>
             <Text style={styles.bodyText}>
               If you have any questions about these Terms of Service, please
-              contact us at support@persistence.app
+              contact us at admin@evans-software-solutions.com
             </Text>
           </View>
         </ScrollView>

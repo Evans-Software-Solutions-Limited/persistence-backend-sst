@@ -77,6 +77,6 @@ describe("ContactSupportPresenter", () => {
       <ContactSupportPresenter {...makeProps()} />,
     );
     expect(getByText(/You can also reach us directly at/)).toBeTruthy();
-    expect(getByText("support@persistence.app")).toBeTruthy();
+    expect(getByText("admin@evans-software-solutions.com")).toBeTruthy();
   });
 });

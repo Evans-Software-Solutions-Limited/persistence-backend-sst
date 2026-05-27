@@ -11,13 +11,13 @@ import { useAuth } from "@/ui/hooks/useAuth";
  * - Email field is readonly, sourced from `session.email` (V2 equivalent
  *   of legacy `useGetUser().data?.email`).
  * - Send button validates both fields are non-empty, then opens the
- *   system mail client with `mailto:support@persistence.app`, subject +
+ *   system mail client with `mailto:admin@evans-software-solutions.com`, subject +
  *   body pre-encoded. Body prefixes with `From: <email>` so support sees
  *   who wrote in even if the user's mail client re-writes the From: header.
  * - If `Linking.openURL` rejects, we surface the same fallback Alert
  *   legacy did, naming the direct support address.
  */
-export const SUPPORT_EMAIL = "support@persistence.app";
+export const SUPPORT_EMAIL = "admin@evans-software-solutions.com";
 
 export function ContactSupportContainer() {
   const router = useRouter();

@@ -43,7 +43,7 @@ describe("PrivacyPolicyPresenter", () => {
     // The support email appears in two places (GDPR rights + Contact Us).
     // Both must surface so users have a path to exercise their rights.
     const matches = getAllByText(
-      /please\s+contact us at\s+support@persistence\.app/,
+      /please\s+contact us at\s+admin@evans-software-solutions\.com/,
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });

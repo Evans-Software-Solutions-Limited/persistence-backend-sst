@@ -127,7 +127,7 @@ export function ContactSupportPresenter({
                 onPress={onOpenDirectEmail}
                 testID="contact-support-direct-email"
               >
-                support@persistence.app
+                admin@evans-software-solutions.com
               </Text>
             </Text>
           </View>

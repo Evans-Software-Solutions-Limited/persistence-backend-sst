@@ -134,7 +134,7 @@ export function PrivacyPolicyPresenter({
             </Text>
             <Text style={styles.bodyText}>
               To exercise these rights, please contact us at
-              support@persistence.app
+              admin@evans-software-solutions.com
             </Text>
           </View>
 
@@ -181,7 +181,7 @@ export function PrivacyPolicyPresenter({
             <Text style={styles.sectionTitle}>10. Contact Us</Text>
             <Text style={styles.bodyText}>
               If you have any questions about this Privacy Policy, please
-              contact us at support@persistence.app
+              contact us at admin@evans-software-solutions.com
             </Text>
           </View>
         </ScrollView>
