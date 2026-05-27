@@ -167,8 +167,17 @@ export class NotificationRepository {
    * — the handler maps that to 404 without leaking existence.
    *
    * Idempotent: re-marking an already-read row returns the row again
-   * (the WHERE still matches; UPDATE sets the same values). The sync
-   * queue replay path depends on this.
+   * (the WHERE still matches; UPDATE sets the same values).
+   *
+   * Inspector Brad PR #81 sweep 2: the WHERE intentionally lacks an
+   * `is_read = false` filter so the sync-queue replay path stays
+   * idempotent — re-marking an already-read row must still resolve.
+   * BUT a naive `readAt: new Date()` overwrites the original
+   * read-moment on every replay, advancing the timestamp by however
+   * long the offline queue sat. Use `COALESCE(read_at, NOW())` so the
+   * first read wins and subsequent replays preserve the original
+   * timestamp — matching `markAllRead`, which filters unread at the
+   * row level.
    */
   async markRead(
     userId: string,
@@ -178,7 +187,10 @@ export class NotificationRepository {
 
     const result = await db
       .update(notifications)
-      .set({ isRead: true, readAt: new Date() })
+      .set({
+        isRead: true,
+        readAt: sql`COALESCE(${notifications.readAt}, NOW())`,
+      })
       .where(
         and(
           eq(notifications.id, notificationId),

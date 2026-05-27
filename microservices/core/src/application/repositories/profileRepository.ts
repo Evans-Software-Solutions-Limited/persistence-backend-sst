@@ -580,8 +580,18 @@ export class ProfileRepository {
    * Caller has already validated key/value shape against the
    * NotificationType union, so we trust the JSON serialise.
    *
-   * Returns `true` if the UPDATE touched a row, `false` if the profile
-   * row was missing (the handler then maps to 404).
+   * Inspector Brad PR #81 sweep 2: returns the merged JSONB column so
+   * the handler can echo an authoritative response, not just defaults
+   * filled around the request body. Mobile clients that treat the
+   * POST response as authoritative (a reasonable REST assumption)
+   * previously saw prior-`false` keys flipped back to `true` in the
+   * echoed map; the handler now reconciles against the actual stored
+   * row.
+   *
+   * Returns the merged map (a `Record<string, unknown>` — may include
+   * legacy keys not in the current `NotificationType` enum; the read
+   * path reconciles those out), or `null` if the profile row was
+   * missing (the handler then maps to 404).
    *
    * Trigger safety: `profiles.notification_preferences` is not watched
    * by any existing trigger — `update_subscription_limits_trigger`
@@ -590,7 +600,7 @@ export class ProfileRepository {
   async mergeNotificationPreferences(
     userId: string,
     partial: Partial<Record<NotificationType, boolean>>,
-  ): Promise<boolean> {
+  ): Promise<Record<string, unknown> | null> {
     const db = getDb();
     const result = await db
       .update(profiles)
@@ -599,8 +609,12 @@ export class ProfileRepository {
         updatedAt: new Date(),
       })
       .where(eq(profiles.id, userId))
-      .returning({ id: profiles.id });
+      .returning({
+        notificationPreferences: profiles.notificationPreferences,
+      });
 
-    return result.length > 0;
+    const row = result[0];
+    if (!row) return null;
+    return (row.notificationPreferences ?? {}) as Record<string, unknown>;
   }
 }

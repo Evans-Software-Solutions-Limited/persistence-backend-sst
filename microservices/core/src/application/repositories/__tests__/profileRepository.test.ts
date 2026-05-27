@@ -976,9 +976,19 @@ describe("ProfileRepository.mergeNotificationPreferences", () => {
     return out;
   }
 
-  it("returns true when the UPDATE touches a row", async () => {
+  it("returns the merged JSONB column when the UPDATE touches a row", async () => {
+    // The DB's RETURNING surfaces the post-merge state — the handler
+    // reconciles against this rather than echoing the request body.
+    const mergedFromDb = {
+      workout_reminder: false,
+      friend_request: false,
+    };
     const mockDb = {
-      update: vi.fn().mockReturnValue(makeUpdateChain([{ id: "user-1" }])),
+      update: vi
+        .fn()
+        .mockReturnValue(
+          makeUpdateChain([{ notificationPreferences: mergedFromDb }]),
+        ),
     };
     (getDb as any).mockReturnValue(mockDb);
 
@@ -988,7 +998,7 @@ describe("ProfileRepository.mergeNotificationPreferences", () => {
       workout_reminder: false,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual(mergedFromDb);
     const updateChain = mockDb.update.mock.results[0].value;
     const setPayload = updateChain.set.mock.calls[0][0];
     // notificationPreferences is now a Drizzle SQL expression doing
@@ -1005,7 +1015,7 @@ describe("ProfileRepository.mergeNotificationPreferences", () => {
     expect(setPayload.updatedAt).toBeInstanceOf(Date);
   });
 
-  it("returns false when no profile row matched", async () => {
+  it("returns null when no profile row matched", async () => {
     const mockDb = {
       update: vi.fn().mockReturnValue(makeUpdateChain([])),
     };
@@ -1017,12 +1027,18 @@ describe("ProfileRepository.mergeNotificationPreferences", () => {
       workout_reminder: true,
     });
 
-    expect(result).toBe(false);
+    expect(result).toBeNull();
   });
 
-  it("accepts an empty partial map (no-op merge)", async () => {
+  it("returns an empty object when the stored column was null but the row matched", async () => {
+    // The COALESCE in the SQL forces the merge against '{}'::jsonb if
+    // the column was null, so RETURNING never surfaces null — but
+    // defensive-code-wise the repo treats a null notificationPreferences
+    // as `{}` to give callers a stable shape.
     const mockDb = {
-      update: vi.fn().mockReturnValue(makeUpdateChain([{ id: "user-1" }])),
+      update: vi
+        .fn()
+        .mockReturnValue(makeUpdateChain([{ notificationPreferences: null }])),
     };
     (getDb as any).mockReturnValue(mockDb);
 
@@ -1030,7 +1046,22 @@ describe("ProfileRepository.mergeNotificationPreferences", () => {
     const repo = new ProfileRepository();
     const result = await repo.mergeNotificationPreferences("user-1", {});
 
-    expect(result).toBe(true);
+    expect(result).toEqual({});
+  });
+
+  it("accepts an empty partial map (no-op merge)", async () => {
+    const mockDb = {
+      update: vi
+        .fn()
+        .mockReturnValue(makeUpdateChain([{ notificationPreferences: {} }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("user-1", {});
+
+    expect(result).toEqual({});
     const updateChain = mockDb.update.mock.results[0].value;
     const setPayload = updateChain.set.mock.calls[0][0];
     const leaves = flattenSqlLeaves(setPayload.notificationPreferences);

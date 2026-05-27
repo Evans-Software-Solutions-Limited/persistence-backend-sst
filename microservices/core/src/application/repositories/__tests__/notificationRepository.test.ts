@@ -255,7 +255,13 @@ describe("NotificationRepository.markRead", () => {
     // The set payload flips isRead and stamps readAt
     const setPayload = updateChain.set.mock.calls[0][0];
     expect(setPayload.isRead).toBe(true);
-    expect(setPayload.readAt).toBeInstanceOf(Date);
+    // Inspector Brad PR #81 sweep 2: readAt is COALESCE(read_at, NOW())
+    // so idempotent replays preserve the original read-moment. It's a
+    // Drizzle SQL expression now (has a queryChunks array), not a plain Date.
+    expect(setPayload.readAt).not.toBeInstanceOf(Date);
+    expect(setPayload.readAt).toMatchObject({
+      queryChunks: expect.any(Array),
+    });
   });
 });
 

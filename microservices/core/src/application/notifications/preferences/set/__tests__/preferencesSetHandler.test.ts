@@ -41,7 +41,9 @@ vi.mock(
 describe("PreferencesSetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.mergeNotificationPreferences.mockResolvedValue(true);
+    // Default mock: the repo returns the merged JSONB; default to {} so
+    // tests that don't care about the echoed shape still resolve cleanly.
+    mocks.mergeNotificationPreferences.mockResolvedValue({});
   });
 
   const FULL_BODY = {
@@ -69,6 +71,10 @@ describe("PreferencesSetHandler", () => {
   });
 
   it("returns 200 echoing the merged map on success", async () => {
+    // Repo returns the post-merge JSONB; handler reconciles it for the
+    // response. A FULL_BODY call writes every key so the merged column
+    // equals FULL_BODY.
+    mocks.mergeNotificationPreferences.mockResolvedValueOnce(FULL_BODY);
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {
@@ -158,13 +164,22 @@ describe("PreferencesSetHandler", () => {
     );
   });
 
-  it("accepts a partial map (subset of NotificationType keys) and preserves prior keys via repo-level merge", async () => {
+  it("accepts a partial map (subset of NotificationType keys) and echoes the merged state", async () => {
     // Inspector Brad PR #81: a partial body must not silently nuke
     // prior keys. The handler forwards the partial to
     // mergeNotificationPreferences, which does an atomic JSONB || in
-    // SQL. This test pins the handler-side contract: partial in,
-    // partial out, no full-map padding added by the handler. The
-    // merge correctness itself is tested at the repo level.
+    // SQL and RETURNs the merged column.
+    //
+    // Sweep 2: the response now reflects what the repo returned, not
+    // what the request body contained. Mock the repo to surface a
+    // merged column where workout_reminder=false (from this POST) AND
+    // friend_request=false (prior stored state) coexist. Mobile must
+    // see BOTH in the echoed response — previously friend_request
+    // would have been silently flipped back to true (the default).
+    mocks.mergeNotificationPreferences.mockResolvedValueOnce({
+      workout_reminder: false,
+      friend_request: false,
+    });
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {
@@ -178,8 +193,12 @@ describe("PreferencesSetHandler", () => {
     );
     expect(response.status).toBe(200);
     const data = (await response.json()) as any;
+    // Both the request-body key AND the prior-stored key surface in
+    // the echoed response — proves the handler reads from the merged
+    // column, not the request body.
     expect(data.data.workout_reminder).toBe(false);
-    // Missing keys are filled with defaults in the echoed payload
+    expect(data.data.friend_request).toBe(false);
+    // Keys NOT in either get the default `true`.
     expect(data.data.trainer_feedback).toBe(true);
     expect(mocks.mergeNotificationPreferences).toHaveBeenCalledWith(
       "test-user-id",
@@ -231,7 +250,7 @@ describe("PreferencesSetHandler", () => {
   });
 
   it("returns 404 when the profile row is missing", async () => {
-    mocks.mergeNotificationPreferences.mockResolvedValueOnce(false);
+    mocks.mergeNotificationPreferences.mockResolvedValueOnce(null);
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {

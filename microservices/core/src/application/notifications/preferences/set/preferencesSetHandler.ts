@@ -28,13 +28,14 @@ const VALID_KEYS: ReadonlySet<string> = new Set(NOTIFICATION_TYPES);
  * in lockstep with the union; the explicit loop reads exactly the
  * stale-key + non-boolean failure modes the spec asks for.
  *
- * The response echoes the merged shape after reconcile (defaults
- * filled, unknown dropped) so the client sees a stable full map.
- * NOTE: the echo reflects the validated body merged with defaults —
- * it does NOT round-trip via a fresh read, so the echoed map for a
- * partial body is "what the caller sent + defaults", not "current
- * stored state". For an authoritative snapshot, mobile re-fetches
- * via GET /notifications/preferences.
+ * Inspector Brad PR #81 sweep 2: the response now echoes the actual
+ * merged JSONB column returned from the UPDATE, then reconciled
+ * against defaults. Previously the handler built the response from
+ * the request body alone, which silently flipped prior-`false` keys
+ * back to `true` when a partial body landed on top of stored state.
+ * Mobile clients treating the POST response as authoritative (a
+ * reasonable REST assumption) now see the correct post-merge map
+ * without a follow-up GET.
  *
  * Implements: specs/09-notifications-social/design.md
  *             § Backend endpoints > POST /notifications/preferences
@@ -75,21 +76,23 @@ export const preferencesSetHandler = new Elysia()
     // at the SQL layer). Prior keys not present in the body are
     // preserved; keys present in the body overwrite. Race-safe across
     // concurrent POSTs because the merge happens in a single UPDATE.
-    const updated = await ctx.ProfileRepository.mergeNotificationPreferences(
+    // The repo returns the merged JSONB column so we can echo an
+    // authoritative response without a follow-up SELECT.
+    const merged = await ctx.ProfileRepository.mergeNotificationPreferences(
       userId,
       validated,
     );
 
-    if (!updated) {
+    if (merged === null) {
       ctx.set.status = 404;
       return { error: "Profile not found" };
     }
 
-    // Echo the merged shape so the client sees exactly what the next
-    // GET would return. `validated` may be a partial map (the mobile
-    // preferences page may only send the changed keys' state); the
-    // reconcile fills the rest with defaults.
+    // Echo the actual post-merge state, reconciled against defaults —
+    // mobile clients can treat the response as authoritative without
+    // a follow-up GET. Unknown keys (legacy values not in the current
+    // NotificationType enum) are dropped by reconcile.
     return {
-      data: reconcileNotificationPreferences(validated),
+      data: reconcileNotificationPreferences(merged),
     };
   });
