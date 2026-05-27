@@ -94,25 +94,52 @@ const FEATURE_DISPLAY_NAMES: Record<EntitlementFeature, string> = {
 /**
  * Default upgrade-target chain for the user (non-trainer) track. The
  * mapping is intentionally a simple parent → next-tier link; the gate
- * component doesn't try to be clever about cross-track upgrades. Free
- * climbs to Basic, Basic to Premium, Premium is terminal.
+ * component doesn't try to be clever about cross-track upgrades for
+ * user-track features. Post tier-simplification: free → premium.
  *
- * Trainer tiers are terminal in this map (upgradeTo === null). A trainer
- * already on a paid tier who hits a feature gate should hit Contact
- * support, not be funnelled to a user-track upgrade. The selection
- * screen itself handles cross-track changes; the gate just nudges to
- * the *next* user-track tier.
+ * Trainer tiers are terminal in this map (upgradeTo === null) for
+ * USER-track features. Trainer-track features (trainer_clients) use
+ * the trainer-track target instead — see `resolveUpgradeTarget`.
  */
 const USER_UPGRADE_CHAIN: Partial<
   Record<SubscriptionTierName, SubscriptionTierName>
 > = {
-  free: "basic",
-  basic: "premium",
+  free: "premium",
 };
 
+/**
+ * Set of tier names that already satisfy any trainer-only feature. A
+ * user already on one of these doesn't get a CTA back to the trainer
+ * track (they'd just see the same paywall after switching).
+ */
+const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
+  "individual_trainer",
+  "small_business",
+  "medium_enterprise",
+]);
+
+/**
+ * Pick the upgrade target for a denied gate. Feature-aware so trainer-
+ * only features (e.g. `trainer_clients`) point at the cheapest trainer
+ * tier rather than the user-track next step.
+ *
+ * Inspector Brad PR #73 high-severity find — sweep #3: without this,
+ * a free user hitting `trainer_clients` saw "Upgrade to Premium",
+ * paid for Premium, returned to the same paywall (because Premium
+ * has `isTrainerTier: false`). Trainer-only features now route to
+ * `individual_trainer` (cheapest trainer tier, £14.99/mo).
+ */
 function resolveUpgradeTarget(
   currentTier: SubscriptionTierName,
+  feature: EntitlementFeature,
 ): SubscriptionTierName | null {
+  if (feature === "trainer_clients") {
+    // Already on a trainer tier? Shouldn't hit the gate; defensively
+    // return null so the prompt falls back to its "no upgrade target"
+    // copy rather than suggesting a sideways switch.
+    if (TRAINER_TIER_NAMES.has(currentTier)) return null;
+    return "individual_trainer";
+  }
   return USER_UPGRADE_CHAIN[currentTier] ?? null;
 }
 
@@ -217,15 +244,20 @@ export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult {
     // exists so the hook never returns an `allowed: true` based on a
     // missing cache.
     if (subscription === null) {
+      // Defensive fallback for the pre-cache window. Feature-aware so
+      // a trainer-only feature deny routes to a trainer tier even
+      // before the sub query resolves.
+      const fallbackUpgradeTo = resolveUpgradeTarget("free", feature);
       const fallbackProps: FeatureGatePromptProps = {
         feature,
         featureDisplayName: FEATURE_DISPLAY_NAMES[feature],
         currentTier: "free",
-        upgradeTo: "basic",
+        upgradeTo: fallbackUpgradeTo,
         upgradePriceMonthly: null,
         onUpgrade: () => {
+          if (fallbackUpgradeTo === null) return;
           router.push(
-            "/(auth)/subscription-selection?tier=basic&cycle=monthly" as Href,
+            `/(auth)/subscription-selection?tier=${fallbackUpgradeTo}&cycle=monthly` as Href,
           );
         },
       };
@@ -241,7 +273,7 @@ export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult {
       subscription,
     );
 
-    const upgradeTo = resolveUpgradeTarget(subscription.tierName);
+    const upgradeTo = resolveUpgradeTarget(subscription.tierName, feature);
     const upgradeTier = findTier(tiers, upgradeTo);
     const billingCycle: BillingCycle = subscription.billingCycle ?? "monthly";
 

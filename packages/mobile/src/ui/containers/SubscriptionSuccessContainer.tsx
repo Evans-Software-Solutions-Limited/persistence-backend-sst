@@ -43,7 +43,13 @@ export function getSubscriptionBenefits(
     });
   }
 
-  if (tier.endsWith("_pro")) {
+  // Post tier-simplification: all surviving trainer tiers carry the
+  // former Pro entitlements (AI Buddy etc.). Was `_pro` suffix-checked.
+  if (
+    tier.includes("trainer") ||
+    tier.includes("business") ||
+    tier.includes("enterprise")
+  ) {
     benefits.push({
       icon: "sparkles",
       title: "AI Analytics & Gym Buddy",
@@ -67,16 +73,16 @@ export function getSuccessMessage(tier: SubscriptionTierName): string {
   if (tier === "premium") {
     return "Your premium subscription is now active! Enjoy advanced features and personalized workout recommendations.";
   }
-  if (tier === "basic") {
-    return "Your basic subscription is now active! Start tracking your workouts and monitoring your progress.";
-  }
   return "Your subscription is now active! Enjoy all the premium features available to you.";
 }
 
 export function SubscriptionSuccessContainer() {
   const router = useRouter();
   const subQuery = useMySubscription();
-  const tierName: SubscriptionTierName = subQuery.data?.tierName ?? "basic";
+  // Post tier-simplification: 'free' is the safe defensive fallback
+  // (basic no longer exists). The success screen only mounts after a
+  // successful checkout so subscription data should always be present.
+  const tierName: SubscriptionTierName = subQuery.data?.tierName ?? "free";
   const isTrainerTier = subQuery.data?.isTrainerTier ?? false;
 
   const successMessage = useMemo(() => getSuccessMessage(tierName), [tierName]);

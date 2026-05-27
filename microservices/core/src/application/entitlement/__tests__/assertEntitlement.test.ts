@@ -62,11 +62,11 @@ const FREE_TIER_ROW = [
   { tierName: "free", workoutLimit: 3, priceMonthly: "0.00" },
 ];
 const BASIC_TIER_ROW = [
-  { tierName: "basic", workoutLimit: null, priceMonthly: "7.99" },
+  { tierName: "premium", workoutLimit: null, priceMonthly: "7.99" },
 ];
 const TRAINER_TIER_ROW = [
   {
-    tierName: "individual_trainer_standard",
+    tierName: "individual_trainer",
     workoutLimit: null,
     priceMonthly: "9.99",
   },
@@ -110,7 +110,7 @@ const CANCELLED_SUB_EXPIRED = [
 
 const PAST_DUE_SUB = [
   {
-    tierName: "basic",
+    tierName: "premium",
     paymentStatus: "past_due",
     expiresAt: null,
     workoutLimit: null,
@@ -119,7 +119,7 @@ const PAST_DUE_SUB = [
 
 const TRAINER_SUB_ACTIVE = [
   {
-    tierName: "individual_trainer_standard",
+    tierName: "individual_trainer",
     paymentStatus: "active",
     expiresAt: null,
     workoutLimit: null,
@@ -203,12 +203,12 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
       allowed: false,
       reason: "limit",
       currentTier: "free",
-      upgradeTo: "basic",
+      upgradeTo: "premium",
       upgradePriceMonthly: 7.99,
     });
   });
 
-  it("denies with reason='limit' for trainer-role users and suggests individual_trainer_standard", async () => {
+  it("denies with reason='limit' for trainer-role users and suggests individual_trainer", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_TRAINER,
@@ -224,7 +224,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
       allowed: false,
       reason: "limit",
       currentTier: "free",
-      upgradeTo: "individual_trainer_standard",
+      upgradeTo: "individual_trainer",
       upgradePriceMonthly: 9.99,
     });
   });
@@ -265,7 +265,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
     expect(verdict).toMatchObject({
       allowed: false,
       reason: "limit",
-      upgradeTo: "basic",
+      upgradeTo: "premium",
     });
   });
 
@@ -273,7 +273,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
     // Defensive case: pickUpgradeTier picks `basic`, but the catalog
     // lookup returns an empty array (someone deleted the row out of
     // band, or the catalog hasn't been seeded in this env). The verdict
-    // still reports `upgradeTo: 'basic'` so mobile can show the CTA,
+    // still reports `upgradeTo: 'premium'` so mobile can show the CTA,
     // but `upgradePriceMonthly` is null. This exercises the
     // `tier?.priceMonthly ?? null` branch.
     (getDb as any).mockReturnValue(
@@ -291,7 +291,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
       allowed: false,
       reason: "limit",
       currentTier: "free",
-      upgradeTo: "basic",
+      upgradeTo: "premium",
       upgradePriceMonthly: null,
     });
   });
@@ -391,7 +391,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
       allowed: false,
       reason: "limit",
       currentTier: "free",
-      upgradeTo: "basic",
+      upgradeTo: "premium",
       upgradePriceMonthly: 7.99,
     });
   });
@@ -426,7 +426,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
       allowed: false,
       reason: "limit",
       currentTier: "free",
-      upgradeTo: "basic",
+      upgradeTo: "premium",
       upgradePriceMonthly: 7.99,
     });
   });
@@ -485,7 +485,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     expect(verdict).toEqual({
       allowed: false,
       reason: "expired",
-      currentTier: "basic",
+      currentTier: "premium",
       upgradeTo: null,
       upgradePriceMonthly: null,
     });
@@ -494,7 +494,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
   it("denies unknown payment_status as reason='expired' (conservative default)", async () => {
     const exotic = [
       {
-        tierName: "basic",
+        tierName: "premium",
         paymentStatus: "vendor_specific_new_status_2026",
         expiresAt: null,
         workoutLimit: null,
@@ -622,14 +622,14 @@ describe("pure helpers", () => {
   describe("coerceTierName", () => {
     it.each([
       "free",
-      "basic",
       "premium",
-      "individual_trainer_standard",
-      "individual_trainer_pro",
-      "small_business_standard",
-      "small_business_pro",
-      "medium_enterprise_standard",
-      "medium_enterprise_pro",
+      "premium",
+      "individual_trainer",
+      "individual_trainer",
+      "small_business",
+      "small_business",
+      "medium_enterprise",
+      "medium_enterprise",
     ] as const)("preserves canonical tier %s", (tier) => {
       expect(coerceTierName(tier)).toBe(tier);
     });
@@ -668,15 +668,13 @@ describe("pure helpers", () => {
 
   describe("pickUpgradeTier", () => {
     it("returns basic for user-role", () => {
-      expect(pickUpgradeTier("user")).toBe("basic");
+      expect(pickUpgradeTier("user")).toBe("premium");
     });
     it("returns basic for physiotherapist", () => {
-      expect(pickUpgradeTier("physiotherapist")).toBe("basic");
+      expect(pickUpgradeTier("physiotherapist")).toBe("premium");
     });
-    it("returns individual_trainer_standard for personal_trainer", () => {
-      expect(pickUpgradeTier("personal_trainer")).toBe(
-        "individual_trainer_standard",
-      );
+    it("returns individual_trainer for personal_trainer", () => {
+      expect(pickUpgradeTier("personal_trainer")).toBe("individual_trainer");
     });
     it("returns null for admin", () => {
       expect(pickUpgradeTier("admin")).toBeNull();
@@ -708,7 +706,7 @@ describe("EntitlementError", () => {
       allowed: false as const,
       reason: "limit" as const,
       currentTier: "free" as const,
-      upgradeTo: "basic" as const,
+      upgradeTo: "premium" as const,
       upgradePriceMonthly: 7.99,
     };
     const error = new EntitlementError(verdict, "create_workout");

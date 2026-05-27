@@ -14,7 +14,7 @@ vi.mock("../../../repositories/subscriptionTiersRepository", () => ({
 function tierRow(over: Partial<Record<string, unknown>> = {}) {
   return {
     id: "tier-uuid",
-    tierName: "basic",
+    tierName: "premium",
     displayName: "Basic",
     description: "Limited workouts",
     priceMonthly: "9.99",
@@ -167,7 +167,7 @@ describe("subscriptionsTiersHandler — GET /subscription-tiers", () => {
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({
-      tierName: "basic",
+      tierName: "premium",
       displayName: "Basic",
       priceMonthly: 9.99,
       priceYearly: 95.88,
@@ -188,7 +188,7 @@ describe("subscriptionsTiersHandler — GET /subscription-tiers", () => {
     subscriptionTiersRepositoryMocks.listActive.mockResolvedValueOnce([
       tierRow({ tierName: "free", priceMonthly: "0", displayName: "Free" }),
       tierRow({
-        tierName: "basic",
+        tierName: "premium",
         priceMonthly: "9.99",
         displayName: "Basic",
       }),
@@ -205,7 +205,7 @@ describe("subscriptionsTiersHandler — GET /subscription-tiers", () => {
     const body = (await res.json()) as any;
     expect(body.data.map((t: any) => t.tierName)).toEqual([
       "free",
-      "basic",
+      "premium",
       "premium",
     ]);
     expect(body.data[0].priceMonthly).toBe(0);

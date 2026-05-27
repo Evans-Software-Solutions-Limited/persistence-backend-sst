@@ -443,7 +443,7 @@ describe("InMemoryApiAdapter", () => {
     it("getSubscriptionTiers returns the configured catalog", async () => {
       api.subscriptionTiers = [
         {
-          tierName: "basic",
+          tierName: "premium",
           displayName: "Basic",
           description: null,
           priceMonthly: 4.99,
@@ -466,7 +466,7 @@ describe("InMemoryApiAdapter", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).toHaveLength(1);
-      expect(result.value[0].tierName).toBe("basic");
+      expect(result.value[0].tierName).toBe("premium");
     });
 
     it("getSubscriptionTiers surfaces failure flag", async () => {
@@ -571,7 +571,7 @@ describe("InMemoryApiAdapter", () => {
         effectiveAt: "2026-07-01T00:00:00.000Z",
       });
       const result = await api.createSubscription({
-        tierName: "basic",
+        tierName: "premium",
         billingCycle: "monthly",
         useTrial: false,
       });

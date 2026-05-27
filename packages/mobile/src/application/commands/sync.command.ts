@@ -4,11 +4,22 @@ import type {
   RecordResponseSummaryPR,
   StoragePort,
 } from "@/domain/ports/storage.port";
+import type { EntitlementVerdict } from "@/domain/ports/sync.types";
+import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 
 export type SyncResult = {
   processed: number;
   succeeded: number;
   failed: number;
+  /**
+   * M10.6: entries the server rejected with HTTP 402 +
+   * `code: "ENTITLEMENT_DENIED"`. Captured separately from `failed`
+   * because the entry got a definitive server verdict (not a transient
+   * error) — it's now waiting on a tier upgrade or an explicit user
+   * action, not on a retry. The invariant
+   * `processed === succeeded + failed + blocked` holds.
+   */
+  blocked: number;
 };
 
 /**
@@ -58,6 +69,7 @@ export async function processSyncQueue(
   const entries = storage.getPendingMutations();
   let succeeded = 0;
   let failed = 0;
+  let blocked = 0;
 
   for (const entry of entries) {
     // Atomic claim — `markMutationInFlight` is row-conditional at the
@@ -91,6 +103,27 @@ export async function processSyncQueue(
 
       if (!response.ok) {
         const body = await response.text();
+        // M10.6: classify HTTP 402 + structured ENTITLEMENT_DENIED body
+        // as a `blocked_entitlement` outcome — distinct from a transient
+        // failure. The user's current plan doesn't cover this mutation;
+        // retrying won't help until they upgrade. Capture the verdict
+        // on the entry so the review screen + auto-retry hook can act
+        // on it, then CONTINUE the drain (one blocked entry never
+        // aborts the flush — that's the offline-batch-of-50 scenario
+        // the milestone was written for).
+        //
+        // Malformed 402 bodies fall through to the generic `failed`
+        // path on purpose — we never fabricate a verdict from a partial
+        // parse (Inspector Brad pattern: trust nothing the server
+        // didn't explicitly send).
+        if (response.status === 402) {
+          const verdict = parseEntitlementBlockedVerdict(body);
+          if (verdict !== null) {
+            storage.markMutationBlocked(entry.id, verdict);
+            blocked++;
+            continue;
+          }
+        }
         throw new Error(`HTTP ${response.status}: ${body}`);
       }
 
@@ -158,7 +191,37 @@ export async function processSyncQueue(
   // `processed` counts entries this drain actually OWNED — skipped
   // entries (claimed by a concurrent drain via the conditional
   // `markMutationInFlight`) are NOT included, since they belong to
-  // the other drain's `processed` count. This keeps the invariant
-  // `processed === succeeded + failed`.
-  return { processed: succeeded + failed, succeeded, failed };
+  // the other drain's `processed` count. With M10.6's 402 path the
+  // invariant widens to `processed === succeeded + failed + blocked`.
+  return {
+    processed: succeeded + failed + blocked,
+    succeeded,
+    failed,
+    blocked,
+  };
+}
+
+/**
+ * Translate a raw 402 response body string into an `EntitlementVerdict`
+ * suitable for `storage.markMutationBlocked`. Returns null when the
+ * body isn't a parseable JSON object, when the `code` discriminator
+ * isn't `"ENTITLEMENT_DENIED"`, or when required fields are missing /
+ * wrong-typed. Callers fall back to the generic failure path on null.
+ *
+ * `blockedAt` is stamped at the verdict-creation moment (now ISO),
+ * NOT pulled from the server — useful for "blocked X minutes ago"
+ * sort order on the review screen.
+ */
+function parseEntitlementBlockedVerdict(
+  body: string,
+): EntitlementVerdict | null {
+  const payload = parseEntitlementDeniedResponseText(body);
+  if (payload === null) return null;
+  return {
+    feature: payload.feature as EntitlementVerdict["feature"],
+    currentTier: payload.currentTier as EntitlementVerdict["currentTier"],
+    upgradeTo: payload.upgradeTo as EntitlementVerdict["upgradeTo"],
+    upgradePriceMonthly: payload.upgradePriceMonthly,
+    blockedAt: new Date().toISOString(),
+  };
 }

@@ -162,7 +162,7 @@ describe("subscriptionsMeHandler — GET /subscriptions/me", () => {
     subscriptionRepositoryMocks.findForUser.mockResolvedValueOnce({
       ...fakeMySubscription,
       scheduledChange: {
-        nextTierName: "basic",
+        nextTierName: "premium",
         nextDisplayName: "Basic",
         effectiveAt: "2026-03-01T00:00:00.000Z",
       },
@@ -171,7 +171,7 @@ describe("subscriptionsMeHandler — GET /subscriptions/me", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.scheduledChange).toEqual({
-      nextTierName: "basic",
+      nextTierName: "premium",
       nextDisplayName: "Basic",
       effectiveAt: "2026-03-01T00:00:00.000Z",
     });

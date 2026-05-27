@@ -7,8 +7,13 @@ import type {
   ProfilePageSubscription,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type {
+  SubscriptionStatus,
+  SubscriptionTierName,
+} from "@/domain/models/subscription";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
+import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 
@@ -58,6 +63,16 @@ export function ProfileContainer() {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const profilePage = useProfilePage();
+  // Source the badge from `useMySubscription` rather than the
+  // ProfilePage payload because the badge requires the typed
+  // `SubscriptionTierName` enum + the full `SubscriptionStatus` enum,
+  // and the ProfilePage shape carries `tierName: string | null` and
+  // `status: ProfilePageSubscriptionStatus | null` (the loose legacy
+  // DB shape). Both calls share the same React Query key per
+  // useMySubscription.ts, so this is a cache hit after first mount.
+  // See specs/11-payments-subscriptions/design.md § Per-screen feature-
+  // gate integration > Wave 2 Progress / Health / Profile subset.
+  const mySubscription = useMySubscription();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -124,10 +139,14 @@ export function ProfileContainer() {
   const onSelectProfilePicture = avatarUpload.showAvatarSheet;
 
   const onManageSubscription = useCallback(() => {
-    // M10: push to the Subscription Management screen. The thin
-    // Expo Router wrapper at app/subscription-management.tsx renders
-    // SubscriptionManagementContainer.
-    router.push("/subscription-management" as never);
+    // Legacy parity (persistence-mobile/app/(tabs)/profile.tsx:613):
+    // "Navigate to unified subscription selection screen". Manage /
+    // Upgrade / Become-Trainer all route to Selection in legacy — it
+    // IS the subscription experience (current-plan card, scheduled
+    // change display, role toggle, full tier picker, cancel modal).
+    // AuthGate exempts /(auth)/subscription-selection for signed-in
+    // users via `inPostAuthSubscriptionFlow` (app/_layout.tsx:79).
+    router.push("/(auth)/subscription-selection" as never);
   }, [router]);
 
   const onUpgradeSubscription = useCallback(() => {
@@ -138,8 +157,16 @@ export function ProfileContainer() {
   }, [router]);
 
   const onBecomeTrainer = useCallback(() => {
-    Alert.alert("Become a trainer", "Trainer onboarding lights up in M8.");
-  }, []);
+    // Legacy parity (persistence-mobile/app/(tabs)/profile.tsx:623):
+    // pushes Selection with `role: 'personal_trainer'` so the role
+    // toggle pre-selects Trainer. M8 will replace the trainer-tier
+    // post-signup product surface; the tier picker entry point is
+    // already the Selection screen.
+    router.push({
+      pathname: "/(auth)/subscription-selection",
+      params: { role: "personal_trainer" },
+    } as never);
+  }, [router]);
 
   const onEditProfile = useCallback(() => {
     router.push("/(app)/profile/edit" as never);
@@ -172,6 +199,18 @@ export function ProfileContainer() {
   const onPrivacyPolicy = useCallback(() => {
     router.push("/(app)/profile/privacy" as never);
   }, [router]);
+
+  // Badge slice — derived from `useMySubscription` (typed enums), NOT
+  // the ProfilePage payload. When the query hasn't resolved we emit
+  // `null` and the presenter omits the chip entirely.
+  const badge: {
+    tier: SubscriptionTierName;
+    paymentStatus: SubscriptionStatus;
+  } | null = useMemo(() => {
+    const sub = mySubscription.data;
+    if (!sub) return null;
+    return { tier: sub.tierName, paymentStatus: sub.paymentStatus };
+  }, [mySubscription.data]);
 
   // View-model derivation: collapse cached payload + auth session into
   // the props the presenter consumes. Memoised so it doesn't churn on
@@ -217,6 +256,7 @@ export function ProfileContainer() {
       isRefreshing={profilePage.isRefreshing}
       errorMessage={errorMessage}
       displayName={viewModel.displayName}
+      badge={badge}
       email={viewModel.email}
       avatarUrl={avatarUrl}
       avatarCacheKey={avatarUpload.cacheKey}

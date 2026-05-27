@@ -10,6 +10,7 @@ import {
   isSubscriptionActive,
   isTrialing,
   shouldShowTrialBanner,
+  tierSatisfies,
 } from "@/domain/services/subscriptionService";
 
 /**
@@ -67,14 +68,12 @@ describe("isFreeTier", () => {
   });
 
   it("returns false for paid tiers (basic, premium)", () => {
-    expect(isFreeTier(makeSub({ tierName: "basic" }))).toBe(false);
+    expect(isFreeTier(makeSub({ tierName: "premium" }))).toBe(false);
     expect(isFreeTier(makeSub({ tierName: "premium" }))).toBe(false);
   });
 
   it("returns false for trainer tiers", () => {
-    expect(isFreeTier(makeSub({ tierName: "individual_trainer_pro" }))).toBe(
-      false,
-    );
+    expect(isFreeTier(makeSub({ tierName: "individual_trainer" }))).toBe(false);
   });
 
   it("returns false for trialing subscriptions on paid tiers (legacy parity)", () => {
@@ -227,40 +226,30 @@ describe("shouldShowTrialBanner", () => {
     ).toBe(true);
   });
 
-  it("uses trainer-trial flag for any '_pro' tier", () => {
-    const proTiers: SubscriptionTierName[] = [
-      "individual_trainer_pro",
-      "small_business_pro",
-      "medium_enterprise_pro",
+  it("uses trainer-trial flag for any trainer tier (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
+    const trainerTiers: SubscriptionTierName[] = [
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
     ];
-    for (const tier of proTiers) {
+    for (const tier of trainerTiers) {
       expect(shouldShowTrialBanner(eligible, tier)).toBe(true);
       expect(shouldShowTrialBanner(ineligible, tier)).toBe(false);
     }
   });
 
-  it("returns false for tiers with no trial offering", () => {
+  it("returns false for the free tier (no trial offering)", () => {
     expect(shouldShowTrialBanner(eligible, "free")).toBe(false);
-    expect(shouldShowTrialBanner(eligible, "basic")).toBe(false);
-    expect(shouldShowTrialBanner(eligible, "individual_trainer_standard")).toBe(
-      false,
-    );
-    expect(shouldShowTrialBanner(eligible, "small_business_standard")).toBe(
-      false,
-    );
-    expect(shouldShowTrialBanner(eligible, "medium_enterprise_standard")).toBe(
-      false,
-    );
   });
 });
 
 describe("getSubscriptionDisplayInfo", () => {
   const tierNames: Record<string, string> = {
     free: "Free",
-    basic: "Basic",
     premium: "Premium",
-    individual_trainer_standard: "Individual Trainer (Standard)",
-    individual_trainer_pro: "Individual Trainer (Pro)",
+    individual_trainer: "Individual Trainer",
+    small_business: "Small Business Trainer",
+    medium_enterprise: "Medium / Enterprise Trainer",
   };
 
   it("returns Free-defaults for null subscription", () => {
@@ -284,45 +273,114 @@ describe("getSubscriptionDisplayInfo", () => {
   });
 
   it("falls back to the join's tierDisplayName when catalog dictionary misses", () => {
+    const sparseCatalog: Record<string, string> = { free: "Free" };
     const info = getSubscriptionDisplayInfo(
       makeSub({
-        tierName: "small_business_pro",
-        tierDisplayName: "Small Business (Pro)",
+        tierName: "small_business",
+        tierDisplayName: "Small Business Trainer",
       }),
-      tierNames, // doesn't include small_business_pro
+      sparseCatalog, // doesn't include small_business
     );
-    expect(info.currentTierDisplayName).toBe("Small Business (Pro)");
+    expect(info.currentTierDisplayName).toBe("Small Business Trainer");
   });
 
   it("surfaces scheduledChange metadata when present", () => {
     const info = getSubscriptionDisplayInfo(
       makeSub({
-        tierName: "premium",
+        tierName: "small_business",
         scheduledChange: {
-          nextTierName: "basic",
-          nextDisplayName: "Basic",
+          nextTierName: "individual_trainer",
+          nextDisplayName: "Individual Trainer",
           effectiveAt: "2026-06-01T00:00:00.000Z",
         },
       }),
       tierNames,
     );
     expect(info.hasScheduledChange).toBe(true);
-    expect(info.nextTierDisplayName).toBe("Basic");
+    expect(info.nextTierDisplayName).toBe("Individual Trainer");
     expect(info.effectiveAt).toBe("2026-06-01T00:00:00.000Z");
     expect(info.currentTierActiveUntil).toBe(FUTURE_ISO);
   });
 
   it("uses scheduledChange.nextDisplayName when catalog dictionary misses", () => {
+    const sparseCatalog: Record<string, string> = { free: "Free" };
     const info = getSubscriptionDisplayInfo(
       makeSub({
         scheduledChange: {
-          nextTierName: "small_business_standard",
-          nextDisplayName: "Small Business (Standard)",
+          nextTierName: "small_business",
+          nextDisplayName: "Small Business Trainer",
           effectiveAt: "2026-06-01T00:00:00.000Z",
         },
       }),
-      tierNames,
+      sparseCatalog,
     );
-    expect(info.nextTierDisplayName).toBe("Small Business (Standard)");
+    expect(info.nextTierDisplayName).toBe("Small Business Trainer");
+  });
+});
+
+describe("tierSatisfies (M10.6)", () => {
+  // -- User track --
+
+  it("same tier always satisfies (identity)", () => {
+    expect(tierSatisfies("premium", "premium")).toBe(true);
+    expect(tierSatisfies("premium", "premium")).toBe(true);
+    expect(tierSatisfies("free", "free")).toBe(true);
+  });
+
+  it("higher user-track tier satisfies lower user-track tier", () => {
+    expect(tierSatisfies("premium", "premium")).toBe(true);
+  });
+
+  it("lower user-track tier does NOT satisfy higher user-track tier", () => {
+    // Post tier-simplification: only free + premium remain on the user
+    // track. The only meaningful "lower does not satisfy higher" pair
+    // is free → premium.
+    expect(tierSatisfies("free", "premium")).toBe(false);
+  });
+
+  // -- Trainer track --
+
+  it("higher trainer tier satisfies lower trainer tier within the same family", () => {
+    expect(tierSatisfies("individual_trainer", "individual_trainer")).toBe(
+      true,
+    );
+    expect(tierSatisfies("small_business", "small_business")).toBe(true);
+    expect(tierSatisfies("medium_enterprise", "medium_enterprise")).toBe(true);
+  });
+
+  it("any trainer-pro satisfies any trainer-standard requirement (rank-based, cross-family)", () => {
+    // Both rank 2 vs rank 1 on the trainer track. The hook doesn't
+    // need to know whether they're individual vs small_business — a
+    // Pro tier on any family is "more entitlement" than Standard.
+    expect(tierSatisfies("small_business", "individual_trainer")).toBe(true);
+  });
+
+  // -- Track independence (AC 12.7) --
+
+  it("user-track tier does NOT satisfy trainer-track requirement", () => {
+    expect(tierSatisfies("premium", "individual_trainer")).toBe(false);
+    expect(tierSatisfies("premium", "individual_trainer")).toBe(false);
+    expect(tierSatisfies("premium", "small_business")).toBe(false);
+  });
+
+  it("trainer-track tier does NOT satisfy user-track requirement", () => {
+    expect(tierSatisfies("individual_trainer", "premium")).toBe(false);
+    expect(tierSatisfies("small_business", "premium")).toBe(false);
+  });
+
+  // -- Edge cases --
+
+  it("free does not satisfy any meaningful upgrade requirement", () => {
+    expect(tierSatisfies("free", "premium")).toBe(false);
+    expect(tierSatisfies("free", "premium")).toBe(false);
+    expect(tierSatisfies("free", "individual_trainer")).toBe(false);
+    expect(tierSatisfies("free", "individual_trainer")).toBe(false);
+  });
+
+  it("required tier of 'free' is treated defensively as 'never satisfies' (no real-world callsite)", () => {
+    // The hook never sees upgradeTo === 'free' in practice — the
+    // backend doesn't gate against free — but be defensive.
+    expect(tierSatisfies("premium", "free")).toBe(false);
+    expect(tierSatisfies("premium", "free")).toBe(false);
   });
 });

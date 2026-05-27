@@ -1,6 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
 import type { Goal } from "@/ui/components/home/GoalsSection";
 import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
 import {
@@ -213,18 +212,17 @@ export function HomeContainer() {
   );
 
   const onUpgradePress = useCallback(() => {
-    Alert.alert(
-      "Upgrade coming soon",
-      "Subscription management lights up in a later milestone.",
-    );
-  }, []);
+    // M10: free + basic tiers route through Selection (same surface
+    // used post-signup) — full role toggle + tier-comparison UI.
+    // Mirrors ProfileContainer.onUpgradeSubscription.
+    router.push("/(auth)/subscription-selection" as never);
+  }, [router]);
 
   const onManageSubscriptionPress = useCallback(() => {
-    Alert.alert(
-      "Manage subscription",
-      "Subscription management lights up in a later milestone.",
-    );
-  }, []);
+    // Legacy parity — see ProfileContainer.onManageSubscription.
+    // Both Manage and Upgrade route to the unified Selection screen.
+    router.push("/(auth)/subscription-selection" as never);
+  }, [router]);
 
   // Push the workout-detail SCREEN at /(app)/workouts/[id]. PR #41
   // converted the detail surface from an in-list popover to a real

@@ -7,9 +7,39 @@ Work ships via milestone-driven parallel agents. Specs are the source of truth; 
 - **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
 - **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
 - **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
-- **Current milestone: M0 — Integration baseline** (briefs pending). M0 closes Exercise Library wire-format drift, adds backend `POST/PATCH/DELETE /exercises`, and shifts mobile filters onto API-sourced reference data.
+- **Don't trust `specs/milestones/ROADMAP.md` for current status** — it lags merged PRs by weeks. The authoritative ledger is `~/.claude/projects/.../memory/MEMORY.md` (the `project_current_state.md` row). Cross-check with `git log --oneline -30` before assuming any milestone is "pending."
 
-See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the full M0 → M11 list, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
+See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the M0 → M11 layout, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
+
+## Migration intent (Mobile V2 — non-negotiable)
+
+The mobile V2 build (`packages/mobile`) is a **port** of the legacy mobile app at `/Users/bradleysimms-evans/Documents/projects/personal/persistence-mobile/`. It is **not** a redesign. The whole point of this migration is **under-the-hood efficiency**:
+
+- Offline-first SQLite cache (replacing direct Supabase calls)
+- SST v3 backend with explicit authorization (replacing Supabase RLS)
+- Performance work — FlashList, expo-image, animation budgets (M11)
+
+**The UI MUST match legacy exactly.** Same layouts, same component hierarchy, same affordances, same copy, same flows. The only deliberate change at port time is the V2 container/presenter seam — containers absorb the V2 data-flow deltas (ports, adapters, hooks, segment-aware navigation); presenter render output mirrors legacy 1:1.
+
+**No UI deviation from legacy is allowed without explicit user go-ahead.** If a brief, spec, or PR description says "port" without specifying legacy fidelity, assume strict fidelity and confirm before deviating. If you find yourself "improving" a screen — stop. The migration is not the place to improve the UX. `/frontend-design` polish happens only AFTER the port lands and is verified on device.
+
+**When in doubt, read the legacy.** It's at the sibling path `../persistence-mobile/` — `app/`, `components/`, `hooks/api/`, `lib/utils/`, `lib/supabase/queries/`. Cross-reference legacy before authoring a brief, before writing code, before reviewing a PR. If you cannot find the legacy reference, flag it and ask — don't invent.
+
+See `feedback_port_then_revamp.md` in memory for the full discipline rules (which axes to audit, common failure modes, how to handle briefs that contradict legacy).
+
+## Session continuity — read this first on a fresh session
+
+Brad runs many sessions across this repo and occasionally switches Claude accounts. Most context survives because it lives on disk, not in the Claude account. The few things that DON'T survive:
+
+- **MCP connectors are account-scoped on the Claude side.** Supabase, Stripe, Slack, Notion, Atlassian, Figma, etc. — each one needs the connector re-enabled in the new account's Claude Code settings. If a `mcp__*` tool errors with "connector not connected" or returns a 401, that's the first thing to check. Don't fall through to slower tools — surface the disconnect to Brad so he can re-auth in one go.
+- **The user's auto-memory survives** (it's on the local filesystem at `~/.claude/projects/-Users-bradleysimms-evans-Documents-projects-personal-persistence-backend-sst/memory/MEMORY.md`). Read it. It's the canonical state ledger — last shipped milestones, active gotchas, decisions Brad has explicitly baked in. Anything that contradicts MEMORY.md is wrong by default.
+- **CLAUDE.md (this file) and `specs/` are in the repo** — survive everything.
+- **Skills + ntfy topic + Slack channel ID are filesystem-resident** in `~/.claude/.../skills/slack-progress-updates/` — survive everything. The Slack channel ID `C0ATYL6T11V` for `#brad-claude-agents` is hardcoded.
+- **Stripe / Supabase MCP project credentials are project-scoped on the service side**, not Claude-side — they survive the account switch as long as the MCP connector itself is re-enabled.
+
+**Where things stand as of 2026-05-27:** PR #73 (`feat/m10-5-wave2-and-m10-6`) is the live PR — M10.5 Wave 2 + M10.6 sync-queue + tier simplification (drops Basic, drops Standard trainer variants, renames `_pro` → no suffix) + subscription routing rebuild. Just landed sweep #4 Inspector Brad fixes (`f0c4383`). Awaiting Brad's next `@inspector-brad` trigger. Task #22 is parked: refactor `TrainerSubscriptionCard` to single-tier shape post tier-simplification.
+
+**Don't pre-empt `@inspector-brad`.** Brad fires it himself on the PR when he wants a sweep. Don't run it speculatively.
 
 ## What This Repo Is
 

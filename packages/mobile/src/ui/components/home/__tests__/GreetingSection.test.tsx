@@ -37,12 +37,12 @@ describe("GreetingSection", () => {
         onManageSubscription={onManageSubscription}
       />,
     );
-    expect(getByText("Premium User")).toBeTruthy();
+    expect(getByText("Premium")).toBeTruthy();
     fireEvent.press(getByTestId("subscription-manage"));
     expect(onManageSubscription).toHaveBeenCalled();
   });
 
-  it("falls back to 'Free User' for unknown tier", () => {
+  it("falls back to 'Free' for unknown tier", () => {
     const { getByText } = renderWithTheme(
       <GreetingSection
         {...base}
@@ -50,7 +50,7 @@ describe("GreetingSection", () => {
         isFreeTier={false}
       />,
     );
-    expect(getByText("Free User")).toBeTruthy();
+    expect(getByText("Free")).toBeTruthy();
   });
 
   describe("time-of-day greeting", () => {

@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
+import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
@@ -35,6 +36,12 @@ export default function AppLayout() {
   // signed-in surface and unmounts cleanly on sign-out (auth boundary
   // unmounts this tree).
   useSyncWorker();
+  // M10.6: on a tier upgrade that satisfies blocked entries' verdict,
+  // unblock them and flush. Runs alongside the sync worker — they
+  // don't interact directly, but `useAutoRetryOnUpgrade` triggers its
+  // own `processSyncQueue` call so freshly-unblocked entries land
+  // without waiting for the next foreground tick.
+  useAutoRetryOnUpgrade();
 
   return (
     <ExerciseFiltersProvider>
@@ -106,6 +113,15 @@ export default function AppLayout() {
             presentation: "modal",
             headerShown: false,
           }}
+        />
+        {/*
+          M10.6 sync-blocked review screen. Pushes over the tabs (not
+          modal) so the back affordance returns to the Home tab where
+          the banner is mounted, preserving the user's mental thread.
+        */}
+        <Stack.Screen
+          name="sync-blocked"
+          options={{ title: "Blocked by your plan" }}
         />
       </Stack>
       <ActiveSessionBanner />

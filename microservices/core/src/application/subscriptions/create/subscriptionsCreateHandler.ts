@@ -405,12 +405,14 @@ export function deriveChangeType(input: {
  * (0 = no trial), and which trial flag to set on the profile after the
  * subscription writes succeed.
  *
- *   - `premium` (user tier) — 7 days, gated on `has_used_user_trial`.
- *   - `*_pro` (trainer pro tiers) — 14 days, gated on
- *     `has_used_trainer_trial`. Recognised via the
- *     `subscription_tiers.is_trainer_tier` flag rather than a name
- *     prefix sniff — the latter is what legacy did and it's fragile if
- *     a future tier doesn't fit the convention.
+ * Post tier-simplification (20260526120000_simplify_tier_model.sql):
+ *   - `premium` (only paid user tier) — 7 days, gated on
+ *     `has_used_user_trial`.
+ *   - Any trainer tier (`is_trainer_tier = true`) — 14 days, gated on
+ *     `has_used_trainer_trial`. Was `_pro`-suffix-checked when Standard
+ *     trainer tiers existed; all surviving trainer tiers carry the
+ *     former Pro entitlements (AI buddy etc.) so the suffix check is
+ *     gone.
  *   - Anything else — no trial.
  */
 function resolveTrial(
@@ -428,8 +430,7 @@ function resolveTrial(
     return { days: USER_TIER_TRIAL_DAYS, flag: "user" };
   }
 
-  const isTrainerPro = isTrainerTier && tierName.endsWith("_pro");
-  if (isTrainerPro) {
+  if (isTrainerTier) {
     if (hasUsedTrainerTrial) return { days: 0, flag: null };
     return { days: TRAINER_TIER_TRIAL_DAYS, flag: "trainer" };
   }

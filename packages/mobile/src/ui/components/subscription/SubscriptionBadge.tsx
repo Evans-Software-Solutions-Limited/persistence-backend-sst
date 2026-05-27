@@ -43,26 +43,20 @@ export interface SubscriptionBadgeProps {
   compact?: boolean;
 }
 
-type Variant = "free" | "basic" | "premium" | "trainer";
+type Variant = "free" | "premium" | "trainer";
 
 const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
-  basic: "Basic",
   premium: "Premium",
-  individual_trainer_standard: "Trainer",
-  individual_trainer_pro: "Trainer Pro",
-  small_business_standard: "Business",
-  small_business_pro: "Business Pro",
-  medium_enterprise_standard: "Enterprise",
-  medium_enterprise_pro: "Enterprise Pro",
+  individual_trainer: "Trainer",
+  small_business: "Business Trainer",
+  medium_enterprise: "Enterprise Trainer",
 };
 
 function variantFor(tier: SubscriptionTierName): Variant {
   switch (tier) {
     case "free":
       return "free";
-    case "basic":
-      return "basic";
     case "premium":
       return "premium";
     default:
@@ -77,19 +71,14 @@ const VARIANT_STYLES: Record<Variant, { background: string; text: string }> = {
     background: Colors.surface.secondary,
     text: Colors.text.secondary,
   },
-  basic: {
-    background: Colors.info.DEFAULT,
-    text: Colors.text.inverse,
-  },
   premium: {
     background: Colors.warning.DEFAULT,
     text: Colors.text.inverse,
   },
   trainer: {
-    // Trainer palette: use the warning-dark token as a stand-in for
-    // "purple-ish" since the theme tokens don't define a dedicated
-    // accent palette today. Keeps the chip distinct from free / basic
-    // / premium without introducing a new token outside M10.5 scope.
+    // Trainer palette: warning-dark stand-in for "purple-ish" — keeps
+    // the chip distinct from free / premium without introducing a new
+    // accent token outside M10.5 scope.
     background: "#7C3AED",
     text: Colors.text.inverse,
   },

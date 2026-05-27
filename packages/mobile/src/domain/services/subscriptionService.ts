@@ -97,13 +97,21 @@ export function isCancelledButActive(
 /**
  * Trial-banner derivation. Mirrors legacy `shouldShowTrialBanner`.
  *
- * - `premium` → user trial eligibility
- * - `*_pro` (trainer Pro tiers) → trainer trial eligibility
- * - any other tier → never
+ * - `premium` → user trial eligibility (7-day)
+ * - Any trainer tier (post tier-simplification — Standards dropped,
+ *   `_pro` suffix removed; check is now "is this a known trainer tier
+ *   name") → trainer trial eligibility (14-day)
+ * - `free` → never
  *
  * Returns false when eligibility data hasn't loaded yet (legacy
  * comment: "to avoid flickering").
  */
+const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
+  "individual_trainer",
+  "small_business",
+  "medium_enterprise",
+]);
+
 export function shouldShowTrialBanner(
   eligibility:
     | { isEligibleForUserTrial: boolean; isEligibleForTrainerTrial: boolean }
@@ -113,7 +121,94 @@ export function shouldShowTrialBanner(
 ): boolean {
   if (!eligibility) return false;
   if (tierName === "premium") return eligibility.isEligibleForUserTrial;
-  if (tierName.endsWith("_pro")) return eligibility.isEligibleForTrainerTrial;
+  if (TRAINER_TIER_NAMES.has(tierName))
+    return eligibility.isEligibleForTrainerTrial;
+  return false;
+}
+
+/**
+ * Numeric rank for tiers within a single track. Higher = more
+ * entitlements. Used by `tierSatisfies` to decide whether the user's
+ * current tier covers a verdict's `upgradeTo`. Cross-track comparisons
+ * are NOT supported by this rank — `tierSatisfies` short-circuits on
+ * mismatched tracks before reaching the numeric comparison.
+ *
+ * Spec: specs/11-payments-subscriptions/design.md
+ *       § Sync-queue entitlement handling (M10.6) > Tier hierarchy
+ * Satisfies: requirements.md AC 12.3, 12.7
+ */
+const USER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
+  // Post tier-simplification: Basic is gone — Premium is the only paid
+  // user tier. Free=0, Premium=1.
+  free: 0,
+  premium: 1,
+};
+
+const TRAINER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
+  // `free` doubles as the no-trainer-tier baseline — a trainer requirement
+  // is not satisfied by `free`, so its rank is below any real trainer tier.
+  // Trainer tiers ranked by client-slot capacity:
+  // Individual < Small Business < Medium / Enterprise.
+  free: 0,
+  individual_trainer: 1,
+  small_business: 2,
+  medium_enterprise: 3,
+};
+
+/**
+ * `true` when a user holding `currentTier` is also entitled to whatever
+ * `requiredTier` would grant. Track-aware: user-tier upgrades do NOT
+ * satisfy trainer-tier requirements and vice versa — the only
+ * inter-track tier is `free`, which satisfies nothing (it's just
+ * "no plan").
+ *
+ * Used by `useAutoRetryOnUpgrade` to decide which blocked entries to
+ * unblock when `useMySubscription` reports a tier change. Pure — safe
+ * to call inside React effects or as part of a reducer.
+ *
+ *   tierSatisfies("premium", "basic")          // true  (within user track)
+ *   tierSatisfies("basic",   "premium")        // false (lower)
+ *   tierSatisfies("premium", "individual_trainer") // false (cross-track)
+ *   tierSatisfies("individual_trainer", "individual_trainer") // true
+ *   tierSatisfies("free",    "basic")          // false (free satisfies nothing)
+ *
+ * Spec: specs/11-payments-subscriptions/design.md
+ *       § Sync-queue entitlement handling (M10.6) > Tier hierarchy
+ * Satisfies: requirements.md AC 12.3, 12.7
+ */
+export function tierSatisfies(
+  currentTier: SubscriptionTierName,
+  requiredTier: SubscriptionTierName,
+): boolean {
+  // Identical tier always satisfies — fast path that also covers `free`
+  // vs `free`, where neither rank table contains the row in a way that
+  // would meaningfully claim entitlement.
+  if (currentTier === requiredTier) return true;
+
+  const requiredOnUserTrack = USER_TRACK_RANK[requiredTier] !== undefined;
+  const requiredOnTrainerTrack =
+    TRAINER_TRACK_RANK[requiredTier] !== undefined && requiredTier !== "free";
+
+  if (requiredOnUserTrack && requiredTier !== "free") {
+    const currentRank = USER_TRACK_RANK[currentTier];
+    const requiredRank = USER_TRACK_RANK[requiredTier] ?? 0;
+    if (currentRank === undefined) return false;
+    return currentRank >= requiredRank;
+  }
+
+  if (requiredOnTrainerTrack) {
+    const currentRank = TRAINER_TRACK_RANK[currentTier];
+    const requiredRank = TRAINER_TRACK_RANK[requiredTier] ?? 0;
+    // A user-track tier (basic, premium) has no rank on the trainer
+    // table → never satisfies a trainer requirement (AC 12.7).
+    if (currentRank === undefined || currentRank === 0) return false;
+    return currentRank >= requiredRank;
+  }
+
+  // Required tier is `free` (or an unknown future tier) — never satisfies
+  // a meaningful upgrade. The auto-retry hook never sees `upgradeTo:
+  // "free"` in practice (the backend doesn't gate against free), but be
+  // defensive.
   return false;
 }
 

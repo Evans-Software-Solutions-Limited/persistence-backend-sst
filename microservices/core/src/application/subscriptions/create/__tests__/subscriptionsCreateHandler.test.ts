@@ -290,31 +290,41 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     });
   });
 
-  it("resolveTrial returns 14-day trainer trial only for *_pro trainer tiers when eligible", async () => {
+  it("resolveTrial returns 14-day trainer trial for any trainer tier when eligible", async () => {
+    // Post tier-simplification (20260526120000_simplify_tier_model.sql):
+    // Standard trainer tiers gone; all surviving trainer tiers carry
+    // the former Pro entitlements. Trial eligibility is keyed on
+    // `is_trainer_tier` flag, not a `_pro` suffix sniff.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
     expect(
-      resolveTrial("individual_trainer_pro", true, true, false, false),
+      resolveTrial("individual_trainer", true, true, false, false),
     ).toEqual({ days: 14, flag: "trainer" });
     // already used → 0
-    expect(
-      resolveTrial("individual_trainer_pro", true, true, false, true),
-    ).toEqual({ days: 0, flag: null });
-    // standard trainer tier (no _pro suffix) → no trial
-    expect(
-      resolveTrial("individual_trainer_standard", true, true, false, false),
-    ).toEqual({ days: 0, flag: null });
-    // is_trainer_tier flag false but name ends _pro — guard rejects
-    expect(resolveTrial("rogue_pro", false, true, false, false)).toEqual({
+    expect(resolveTrial("individual_trainer", true, true, false, true)).toEqual(
+      { days: 0, flag: null },
+    );
+    // any trainer tier — small_business + medium_enterprise — same rule
+    expect(resolveTrial("small_business", true, true, false, false)).toEqual({
+      days: 14,
+      flag: "trainer",
+    });
+    expect(resolveTrial("medium_enterprise", true, true, false, false)).toEqual(
+      { days: 14, flag: "trainer" },
+    );
+    // is_trainer_tier flag false — guard rejects
+    expect(resolveTrial("rogue_tier", false, true, false, false)).toEqual({
       days: 0,
       flag: null,
     });
   });
 
-  it("resolveTrial returns no trial for basic + non-pro trainer tiers", async () => {
+  it("resolveTrial returns no trial for free + non-trainer tiers", async () => {
+    // Post tier-simplification: only `premium` (user) and trainer tiers
+    // are trial-eligible. `free` has no Stripe sub so no trial path.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(resolveTrial("basic", false, true, false, false)).toEqual({
+    expect(resolveTrial("free", false, true, false, false)).toEqual({
       days: 0,
       flag: null,
     });

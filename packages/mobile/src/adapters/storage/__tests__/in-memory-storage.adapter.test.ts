@@ -187,6 +187,145 @@ describe("InMemoryStorageAdapter", () => {
     });
   });
 
+  describe("blocked_entitlement (M10.6)", () => {
+    const verdict = {
+      feature: "create_workout" as const,
+      currentTier: "premium" as const,
+      upgradeTo: "premium" as const,
+      upgradePriceMonthly: 12.99,
+      blockedAt: "2026-05-24T10:00:00.000Z",
+    };
+
+    function enqueueOne(): number {
+      storage.enqueueMutation({
+        entityType: "workout",
+        operation: "create",
+        payload: { name: "Over-limit" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      return storage.getPendingMutations()[0].id;
+    }
+
+    it("markMutationBlocked flips status + persists the verdict", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+
+      const blocked = storage.getBlockedEntries();
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0].id).toBe(id);
+      expect(blocked[0].status).toBe("blocked_entitlement");
+      expect(blocked[0].entitlementVerdict).toEqual(verdict);
+    });
+
+    it("blocked entries are excluded from getPendingMutations", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      expect(storage.getPendingMutations()).toHaveLength(0);
+    });
+
+    it("getSyncStats.blocked tracks the count separately from failed", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      expect(storage.getSyncStats()).toEqual({
+        pending: 0,
+        failed: 0,
+        inFlight: 0,
+        blocked: 1,
+      });
+    });
+
+    it("unblockEntries flips the row back to pending and clears the verdict", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      storage.unblockEntries([id]);
+
+      const pending = storage.getPendingMutations();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].id).toBe(id);
+      expect(pending[0].entitlementVerdict).toBeNull();
+      expect(storage.getBlockedEntries()).toHaveLength(0);
+    });
+
+    it("unblockEntries with an empty list is a no-op", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      storage.unblockEntries([]);
+      expect(storage.getBlockedEntries()).toHaveLength(1);
+    });
+
+    it("unblockEntries skips ids that aren't currently blocked (defensive)", () => {
+      const blockedId = enqueueOne();
+      const pendingId = (() => {
+        storage.enqueueMutation({
+          entityType: "session",
+          operation: "update",
+          payload: {},
+          endpoint: "/sessions/x",
+          method: "PATCH",
+        });
+        return storage.getPendingMutations()[1].id;
+      })();
+      storage.markMutationBlocked(blockedId, verdict);
+
+      // Try to "unblock" a pending id — must not touch it.
+      storage.unblockEntries([pendingId]);
+      const pending = storage.getPendingMutations();
+      expect(pending.find((p) => p.id === pendingId)).toBeDefined();
+      // And the blocked one stays blocked.
+      expect(storage.getBlockedEntries()).toHaveLength(1);
+    });
+
+    it("discardEntries deletes the rows entirely", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      storage.discardEntries([id]);
+
+      expect(storage.getBlockedEntries()).toHaveLength(0);
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      expect(storage.getSyncStats()).toEqual({
+        pending: 0,
+        failed: 0,
+        inFlight: 0,
+        blocked: 0,
+      });
+    });
+
+    it("discardEntries with an empty list is a no-op", () => {
+      const id = enqueueOne();
+      storage.markMutationBlocked(id, verdict);
+      storage.discardEntries([]);
+      expect(storage.getBlockedEntries()).toHaveLength(1);
+    });
+
+    it("markMutationBlocked on a non-existent id is a defensive no-op", () => {
+      storage.markMutationBlocked(99999, verdict);
+      expect(storage.getBlockedEntries()).toHaveLength(0);
+    });
+
+    it("getBlockedEntries returns entries in FIFO order", () => {
+      const ids: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        storage.enqueueMutation({
+          entityType: "workout",
+          operation: "create",
+          payload: {},
+          endpoint: "/workouts",
+          method: "POST",
+        });
+        ids.push(storage.getPendingMutations()[i].id);
+      }
+      ids.forEach((id, i) =>
+        storage.markMutationBlocked(id, {
+          ...verdict,
+          blockedAt: `2026-05-24T1${i}:00:00.000Z`,
+        }),
+      );
+      const blocked = storage.getBlockedEntries();
+      expect(blocked.map((b) => b.id)).toEqual(ids);
+    });
+  });
+
   describe("sync metadata", () => {
     it("stores and retrieves last synced time", () => {
       expect(storage.getLastSyncedAt("workout")).toBeNull();
@@ -219,6 +358,7 @@ describe("InMemoryStorageAdapter", () => {
         pending: 0,
         failed: 0,
         inFlight: 0,
+        blocked: 0,
       });
     });
 

@@ -88,7 +88,6 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
 import type { ReactNode } from "react";
 // eslint-disable-next-line import/first
-import { Alert } from "react-native";
 // eslint-disable-next-line import/first
 import { DASHBOARD_FIXTURE } from "@/adapters/api/__tests__/fixtures/dashboard.fixture";
 // eslint-disable-next-line import/first
@@ -398,8 +397,9 @@ describe("HomeContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w1");
   });
 
-  it("surfaces an Alert when the manage-subscription CTA fires", async () => {
-    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  it("routes to /(auth)/subscription-selection when the manage-subscription CTA fires", async () => {
+    // Legacy parity: manage + upgrade both go to the unified Selection
+    // screen (see ProfileContainer.onManageSubscription for context).
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -416,11 +416,9 @@ describe("HomeContainer", () => {
     });
 
     fireEvent.press(getByTestId("stub-manage-subscription"));
-    expect(alertSpy).toHaveBeenCalledWith(
-      "Manage subscription",
-      expect.any(String),
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(auth)/subscription-selection",
     );
-    alertSpy.mockRestore();
   });
 
   it("maps health.stepsHistory ISO dates into Date objects on the view-model", async () => {
@@ -453,8 +451,10 @@ describe("HomeContainer", () => {
     expect(mapped[1].steps).toBe(5200);
   });
 
-  it("surfaces an Alert when the upgrade CTA fires", async () => {
-    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  it("routes to /(auth)/subscription-selection when the upgrade CTA fires", async () => {
+    // Bug 7: was a stub Alert; M10 wires it to Selection (same
+    // surface as the post-signup tier picker; AuthGate's
+    // inPostAuthSubscriptionFlow exemption keeps it reachable).
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.dashboard = DASHBOARD_FIXTURE;
@@ -471,11 +471,9 @@ describe("HomeContainer", () => {
     });
 
     fireEvent.press(getByTestId("stub-upgrade"));
-    expect(alertSpy).toHaveBeenCalledWith(
-      "Upgrade coming soon",
-      expect.any(String),
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(auth)/subscription-selection",
     );
-    alertSpy.mockRestore();
   });
 
   it("provides 5 per-section animation styles", async () => {

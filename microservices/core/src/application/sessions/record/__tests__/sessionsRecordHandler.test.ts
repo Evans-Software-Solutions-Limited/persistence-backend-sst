@@ -453,7 +453,7 @@ describe("sessionsRecordHandler", () => {
         allowed: false,
         reason: "limit",
         currentTier: "free",
-        upgradeTo: "basic",
+        upgradeTo: "premium",
         upgradePriceMonthly: 7.99,
       });
 
@@ -475,7 +475,7 @@ describe("sessionsRecordHandler", () => {
         feature: "create_workout",
         reason: "limit",
         current_tier: "free",
-        upgrade_to: "basic",
+        upgrade_to: "premium",
         upgrade_price_monthly: 7.99,
       });
     });
@@ -485,7 +485,7 @@ describe("sessionsRecordHandler", () => {
         allowed: false,
         reason: "limit",
         currentTier: "free",
-        upgradeTo: "basic",
+        upgradeTo: "premium",
         upgradePriceMonthly: 7.99,
       });
       const app = await buildAppWithErrorHandler();

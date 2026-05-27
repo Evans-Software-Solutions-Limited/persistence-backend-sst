@@ -86,7 +86,7 @@ describe("useCreateSubscription", () => {
       wrapper: wrapper(adapters, queryClient),
     });
     await result.current.mutateAsync({
-      tierName: "basic",
+      tierName: "premium",
       billingCycle: "monthly",
       useTrial: false,
     });
@@ -106,14 +106,14 @@ describe("useCreateSubscription", () => {
       wrapper: wrapper(adapters, makeQueryClient()),
     });
     await result.current.mutateAsync({
-      tierName: "individual_trainer_pro",
+      tierName: "individual_trainer",
       billingCycle: "yearly",
       paymentMethodId: "pm_train",
       useTrial: true,
       platform: "ios",
     });
     expect(api.lastCreateSubscriptionInput).toEqual({
-      tierName: "individual_trainer_pro",
+      tierName: "individual_trainer",
       billingCycle: "yearly",
       paymentMethodId: "pm_train",
       useTrial: true,

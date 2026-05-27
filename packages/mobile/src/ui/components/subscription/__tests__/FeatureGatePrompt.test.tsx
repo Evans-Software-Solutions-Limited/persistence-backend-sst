@@ -27,7 +27,7 @@ describe("FeatureGatePrompt", () => {
       <FeatureGatePrompt
         feature="create_workout"
         featureDisplayName="Custom workouts beyond your monthly limit"
-        currentTier="basic"
+        currentTier="premium"
         upgradeTo="premium"
         upgradePriceMonthly={14.99}
         onUpgrade={onUpgrade}
@@ -43,7 +43,7 @@ describe("FeatureGatePrompt", () => {
       <FeatureGatePrompt
         feature="gym_buddy"
         featureDisplayName="Gym Buddy access"
-        currentTier="basic"
+        currentTier="premium"
         upgradeTo="premium"
         upgradePriceMonthly={14.99}
         onUpgrade={jest.fn()}
@@ -96,14 +96,14 @@ describe("FeatureGatePrompt", () => {
         feature="create_workout"
         featureDisplayName="Custom workouts"
         currentTier="free"
-        upgradeTo="basic"
+        upgradeTo="premium"
         upgradePriceMonthly={null}
         onUpgrade={jest.fn()}
       />,
     );
     expect(screen.getByTestId("feature-gate-upgrade-preview")).toBeTruthy();
     expect(screen.queryByText("£null/month")).toBeNull();
-    expect(screen.getByText("Upgrade to Basic")).toBeTruthy();
+    expect(screen.getByText("Upgrade to Premium")).toBeTruthy();
   });
 
   it("uses a stable testID derived from the feature name so wave 2 callers can target it", () => {
@@ -112,7 +112,7 @@ describe("FeatureGatePrompt", () => {
         feature="ai_workout"
         featureDisplayName="AI Workouts"
         currentTier="free"
-        upgradeTo="basic"
+        upgradeTo="premium"
         upgradePriceMonthly={4.99}
         onUpgrade={jest.fn()}
       />,
@@ -125,12 +125,12 @@ describe("FeatureGatePrompt", () => {
       <FeatureGatePrompt
         feature="trainer_clients"
         featureDisplayName="Trainer client management"
-        currentTier="individual_trainer_pro"
+        currentTier="individual_trainer"
         upgradeTo={null}
         upgradePriceMonthly={null}
         onUpgrade={jest.fn()}
       />,
     );
-    expect(screen.getByText("Individual Trainer (Pro)")).toBeTruthy();
+    expect(screen.getByText("Individual Trainer")).toBeTruthy();
   });
 });

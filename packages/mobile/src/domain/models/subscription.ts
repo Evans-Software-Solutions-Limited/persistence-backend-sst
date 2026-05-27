@@ -12,20 +12,17 @@
 /**
  * Eight named tiers plus `free`. The `free` tier is the default
  * starting state for any signed-in user and is never shown as a
- * buyable card (`requirements.md` AC 1.2). The remaining seven span
- * two role tracks: user (basic, premium) and trainer (three
- * sizes × Standard/Pro).
+ * buyable card (`requirements.md` AC 1.2). Post tier-simplification
+ * (20260526120000_simplify_tier_model.sql) the remaining 4 paid tiers
+ * are Premium (only paid user tier) + three trainer tiers by business
+ * size. Basic + all Standard trainer variants were dropped.
  */
 export type SubscriptionTierName =
   | "free"
-  | "basic"
   | "premium"
-  | "individual_trainer_standard"
-  | "individual_trainer_pro"
-  | "small_business_standard"
-  | "small_business_pro"
-  | "medium_enterprise_standard"
-  | "medium_enterprise_pro";
+  | "individual_trainer"
+  | "small_business"
+  | "medium_enterprise";
 
 /**
  * Profile role. Drives the auto-default on the Subscription Selection

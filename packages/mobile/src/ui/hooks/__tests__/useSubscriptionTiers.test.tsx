@@ -52,7 +52,7 @@ describe("useSubscriptionTiers", () => {
     const { adapters, api } = makeAdapters();
     api.subscriptionTiers = [
       {
-        tierName: "basic",
+        tierName: "premium",
         displayName: "Basic",
         description: null,
         priceMonthly: 4.99,
@@ -77,7 +77,7 @@ describe("useSubscriptionTiers", () => {
     expect(result.current.isLoading).toBe(true);
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data?.[0]?.tierName).toBe("basic");
+    expect(result.current.data?.[0]?.tierName).toBe("premium");
   });
 
   it("surfaces an error when the API rejects", async () => {

@@ -19,7 +19,12 @@ describe("processSyncQueue", () => {
 
   it("returns zero counts when queue is empty", async () => {
     const result = await processSyncQueue(storage, auth, "https://api.test");
-    expect(result).toEqual({ processed: 0, succeeded: 0, failed: 0 });
+    expect(result).toEqual({
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      blocked: 0,
+    });
   });
 
   it("processes pending mutations successfully", async () => {
@@ -38,7 +43,12 @@ describe("processSyncQueue", () => {
     });
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
-    expect(result).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      blocked: 0,
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       "https://api.test/workouts",
       expect.objectContaining({ method: "POST" }),
@@ -62,7 +72,12 @@ describe("processSyncQueue", () => {
     });
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
-    expect(result).toEqual({ processed: 1, succeeded: 0, failed: 1 });
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 0,
+      failed: 1,
+      blocked: 0,
+    });
 
     const stats = storage.getSyncStats();
     expect(stats.failed).toBe(1);
@@ -137,7 +152,12 @@ describe("processSyncQueue", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
-    expect(result).toEqual({ processed: 2, succeeded: 2, failed: 0 });
+    expect(result).toEqual({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      blocked: 0,
+    });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -211,7 +231,12 @@ describe("processSyncQueue", () => {
     });
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
-    expect(result).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      blocked: 0,
+    });
 
     // Cache slot populated with the augmented response.
     const cached = storage.getRecordResponse(userId);
@@ -335,7 +360,12 @@ describe("processSyncQueue", () => {
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
     // Queue entry still marked completed — server accepted the POST.
-    expect(result).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      blocked: 0,
+    });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[sync] /sessions/record"),
       expect.any(Error),
@@ -378,7 +408,12 @@ describe("processSyncQueue", () => {
     expect(mockFetch).not.toHaveBeenCalled();
     // Drain B's processed count reflects entries IT owned — 0
     // here, since Drain A owns the only entry.
-    expect(result).toEqual({ processed: 0, succeeded: 0, failed: 0 });
+    expect(result).toEqual({
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      blocked: 0,
+    });
   });
 
   it("a claimed-then-failed entry can be re-claimed on the next drain (retry path stays open)", async () => {
@@ -405,11 +440,213 @@ describe("processSyncQueue", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
     const first = await processSyncQueue(storage, auth, "https://api.test");
-    expect(first).toEqual({ processed: 1, succeeded: 0, failed: 1 });
+    expect(first).toEqual({
+      processed: 1,
+      succeeded: 0,
+      failed: 1,
+      blocked: 0,
+    });
 
     // Entry is now `failed` — second drain must pick it up again.
     const second = await processSyncQueue(storage, auth, "https://api.test");
-    expect(second).toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(second).toEqual({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      blocked: 0,
+    });
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  // -- M10.6: 402 + ENTITLEMENT_DENIED handling --
+
+  it("marks entries blocked_entitlement on 402 + ENTITLEMENT_DENIED and continues the drain (AC 12.1)", async () => {
+    // Two entries — first hits 402 with a structured entitlement body,
+    // second succeeds. The blocked entry must not abort the loop; the
+    // second POST must still fire and land.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w-blocked",
+      operation: "create",
+      payload: { name: "Over-limit workout" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "s-ok",
+      operation: "update",
+      payload: { status: "completed" },
+      endpoint: "/sessions/s-ok",
+      method: "PATCH",
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 402,
+        text: async () =>
+          JSON.stringify({
+            code: "ENTITLEMENT_DENIED",
+            error: "Subscription does not include this feature",
+            feature: "create_workout",
+            current_tier: "premium",
+            upgrade_to: "premium",
+            upgrade_price_monthly: 12.99,
+          }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result).toEqual({
+      processed: 2,
+      succeeded: 1,
+      failed: 0,
+      blocked: 1,
+    });
+
+    // The blocked entry now sits in `blocked_entitlement` with its
+    // verdict captured. It is NOT in `getPendingMutations` — the
+    // worker won't retry on the next drain.
+    const blockedEntries = storage.getBlockedEntries();
+    expect(blockedEntries).toHaveLength(1);
+    expect(blockedEntries[0].entityId).toBe("w-blocked");
+    expect(blockedEntries[0].entitlementVerdict).toEqual(
+      expect.objectContaining({
+        feature: "create_workout",
+        currentTier: "premium",
+        upgradeTo: "premium",
+        upgradePriceMonthly: 12.99,
+        blockedAt: expect.any(String),
+      }),
+    );
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getSyncStats().blocked).toBe(1);
+  });
+
+  it("falls through to the generic failed path on 402 with a malformed body (AC 12.6)", async () => {
+    // 402 status BUT the body isn't a recognisable ENTITLEMENT_DENIED
+    // envelope — we never fabricate a verdict from a partial parse.
+    // Entry must end up in `failed`, not `blocked_entitlement`.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w-1",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      text: async () => "<html>Payment Required</html>",
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 0,
+      failed: 1,
+      blocked: 0,
+    });
+    expect(storage.getBlockedEntries()).toHaveLength(0);
+    expect(storage.getSyncStats().failed).toBe(1);
+  });
+
+  it("non-402 errors are never classified as blocked_entitlement (AC 12.6)", async () => {
+    // 5xx → failed. Validation 400 → failed. None of them touch the
+    // blocked pool.
+    for (const status of [400, 500, 503]) {
+      storage.enqueueMutation({
+        entityType: "workout",
+        operation: "create",
+        payload: {},
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status,
+        text: async () => `HTTP ${status}`,
+      });
+    }
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getBlockedEntries()).toHaveLength(0);
+    expect(storage.getSyncStats().failed).toBeGreaterThan(0);
+  });
+
+  it("blocked entries are skipped on subsequent flushes (AC 12.2)", async () => {
+    storage.enqueueMutation({
+      entityType: "workout",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      text: async () =>
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          feature: "create_workout",
+          current_tier: "free",
+          upgrade_to: "premium",
+          upgrade_price_monthly: 4.99,
+        }),
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getSyncStats().blocked).toBe(1);
+
+    // Second drain — must not see the blocked entry. fetch is not
+    // called again.
+    mockFetch.mockReset();
+    const second = await processSyncQueue(storage, auth, "https://api.test");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(second).toEqual({
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      blocked: 0,
+    });
+  });
+
+  it("unblocked entry re-enters the queue and re-fires the POST (path is reversible)", async () => {
+    storage.enqueueMutation({
+      entityType: "workout",
+      operation: "create",
+      payload: {},
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      text: async () =>
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          feature: "create_workout",
+          current_tier: "premium",
+          upgrade_to: "premium",
+          upgrade_price_monthly: 12.99,
+        }),
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    const blockedEntries = storage.getBlockedEntries();
+    expect(blockedEntries).toHaveLength(1);
+
+    storage.unblockEntries([blockedEntries[0].id]);
+    expect(storage.getBlockedEntries()).toHaveLength(0);
+    expect(storage.getPendingMutations()).toHaveLength(1);
+
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result).toEqual({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      blocked: 0,
+    });
   });
 });

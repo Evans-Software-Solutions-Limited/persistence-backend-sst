@@ -139,26 +139,12 @@ export function SubscriptionSelectionPresenter(
     onPaymentMethodError,
   } = props;
 
-  // User-tier cards: basic + premium stacked vertically.
+  // User-tier cards: premium only (Basic was dropped in the tier
+  // simplification — see migration 20260526120000_simplify_tier_model
+  // and CLAUDE.md "Migration intent").
   const userTierCards = useMemo(() => {
-    const basic = subscriptionTiers.find((t) => t.tierName === "basic");
     const premium = subscriptionTiers.find((t) => t.tierName === "premium");
     const cards: React.ReactElement[] = [];
-
-    if (basic) {
-      cards.push(
-        <SubscriptionCard
-          key={basic.tierName}
-          tier={basic}
-          billingCycle={billingCycle}
-          isCurrent={currentTier === "basic"}
-          onPress={() => onTierSelect("basic")}
-          disabled={!!selectedTierForPayment || isProcessingSubscription}
-          getFeaturesList={getFeaturesList}
-          isTrainer={false}
-        />,
-      );
-    }
 
     if (premium) {
       const isPremiumCurrent = currentTier === "premium";
@@ -192,41 +178,40 @@ export function SubscriptionSelectionPresenter(
     onTierSelect,
   ]);
 
-  // Trainer-tier cards: three dual-column families.
+  // Trainer-tier cards: post tier-simplification, one tier per
+  // business size (Standard variants dropped, `_pro` suffix removed).
+  // TrainerSubscriptionCard still expects a `proTier` slot — wire the
+  // single surviving tier in via that slot and pass `standardTier: null`
+  // so the component renders as a single-tier card. M11 may revisit
+  // the component shape; for now the legacy props are preserved for
+  // backwards compatibility.
   const trainerTierCards = useMemo(() => {
-    const baseNames = [
+    const baseNames: SubscriptionTierName[] = [
       "individual_trainer",
       "small_business",
       "medium_enterprise",
-    ] as const;
+    ];
     const cards: React.ReactElement[] = [];
 
     for (const baseName of baseNames) {
-      const std = subscriptionTiers.find(
-        (t) => t.tierName === `${baseName}_standard`,
-      );
-      const pro = subscriptionTiers.find(
-        (t) => t.tierName === `${baseName}_pro`,
-      );
-
-      if (std || pro) {
-        const isStdCurrent = std ? currentTier === std.tierName : false;
-        const isProCurrent = pro ? currentTier === pro.tierName : false;
-        const showProTrialBanner =
-          hasTrialEligibilityData && isTrialEligibleTrainer && !isProCurrent;
+      const tier = subscriptionTiers.find((t) => t.tierName === baseName);
+      if (tier) {
+        const isCurrent = currentTier === tier.tierName;
+        const showTrialBanner =
+          hasTrialEligibilityData && isTrialEligibleTrainer && !isCurrent;
 
         cards.push(
           <TrainerSubscriptionCard
             key={baseName}
-            standardTier={std ?? null}
-            proTier={pro ?? null}
+            standardTier={null}
+            proTier={tier}
             billingCycle={billingCycle}
-            isStandardCurrent={isStdCurrent}
-            isProCurrent={isProCurrent}
-            showProTrialBanner={showProTrialBanner}
+            isStandardCurrent={false}
+            isProCurrent={isCurrent}
+            showProTrialBanner={showTrialBanner}
             trialBannerText="14-day free trial"
-            onStandardPress={() => std && onTierSelect(std.tierName)}
-            onProPress={() => pro && onTierSelect(pro.tierName)}
+            onStandardPress={() => {}}
+            onProPress={() => onTierSelect(tier.tierName)}
             disabled={!!selectedTierForPayment || isProcessingSubscription}
           />,
         );
@@ -523,10 +508,10 @@ export function getFeaturesList(
   if (tier.features.progress) features.push("Progress tracking");
 
   if (tier.features.ai || tier.aiAccess) {
+    // Post tier-simplification: Premium gets a quota (6/mo); trainer
+    // tiers get "AI workout generation" + the AI Buddy. Basic dropped.
     if (tier.tierName === "premium") {
       features.push("6 AI workouts per month");
-    } else if (tier.tierName === "basic") {
-      features.push("1 AI workout per month");
     } else {
       features.push("AI workout generation");
     }
@@ -597,7 +582,14 @@ export function deriveTrialEligibility(args: {
       trialDuration: isTrialEligibleUser ? 7 : null,
     };
   }
-  if (tierName.endsWith("_pro")) {
+  // Post tier-simplification: any trainer tier gets the 14-day trial
+  // (was `_pro` suffix-checked when Standard trainer tiers existed).
+  const trainerTiers: ReadonlySet<SubscriptionTierName> = new Set([
+    "individual_trainer",
+    "small_business",
+    "medium_enterprise",
+  ]);
+  if (trainerTiers.has(tierName)) {
     return {
       isTrialEligible: isTrialEligibleTrainer,
       trialDuration: isTrialEligibleTrainer ? 14 : null,
