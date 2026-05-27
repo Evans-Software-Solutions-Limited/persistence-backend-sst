@@ -126,4 +126,65 @@ describe("SyncBlockedBannerMount", () => {
     fireEvent.press(screen.getByTestId("sync-blocked-banner-review"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/sync-blocked");
   });
+
+  // Inspector Brad PR #73 sweep #4 low-severity find — the multi-track
+  // branch was promised in the block comment but never implemented;
+  // we picked the mode and advertised one track's tier even when the
+  // other track's entries couldn't be satisfied by it. Now detected.
+  it("falls back to generic copy when blocked entries span BOTH user and trainer tracks", () => {
+    const { adapters, storage } = makeAdapters();
+    // User-track entry: upgrade to premium.
+    enqueueAndBlock(storage, {
+      feature: "ai_workout",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+      blockedAt: "2026-05-24T10:00:00.000Z",
+    });
+    // Trainer-track entry: upgrade to individual_trainer.
+    enqueueAndBlock(storage, {
+      feature: "trainer_clients",
+      currentTier: "free",
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 14.99,
+      blockedAt: "2026-05-24T10:01:00.000Z",
+    });
+    renderMount(adapters);
+    expect(screen.getByTestId("sync-blocked-banner")).toBeTruthy();
+    // Generic copy — neither "Upgrade to Premium" nor "Upgrade to
+    // Individual Trainer" is honest because each one fails to satisfy
+    // the other track's entries.
+    expect(screen.getByText(/Upgrade your plan/)).toBeTruthy();
+    expect(screen.queryByText(/Upgrade to Premium/)).toBeNull();
+    expect(screen.queryByText(/Upgrade to Individual Trainer/)).toBeNull();
+  });
+
+  it("single-track multi-tier (all trainer) still picks the mode trainer tier", () => {
+    const { adapters, storage } = makeAdapters();
+    // Two entries needing individual_trainer, one needing small_business.
+    // All on the trainer track — should NOT trigger the multi-track guard.
+    enqueueAndBlock(storage, {
+      feature: "trainer_clients",
+      currentTier: "free",
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 14.99,
+      blockedAt: "2026-05-24T10:00:00.000Z",
+    });
+    enqueueAndBlock(storage, {
+      feature: "trainer_clients",
+      currentTier: "free",
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 14.99,
+      blockedAt: "2026-05-24T10:01:00.000Z",
+    });
+    enqueueAndBlock(storage, {
+      feature: "trainer_clients",
+      currentTier: "free",
+      upgradeTo: "small_business",
+      upgradePriceMonthly: 29.99,
+      blockedAt: "2026-05-24T10:02:00.000Z",
+    });
+    renderMount(adapters);
+    expect(screen.getByText(/Upgrade to Individual Trainer/)).toBeTruthy();
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import { getApiBaseUrl } from "@/adapters/api";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
@@ -49,6 +49,17 @@ export function useAutoRetryOnUpgrade(): void {
 
   const lastTierRef = useRef<SubscriptionTierName | null>(null);
   const processingRef = useRef(false);
+  // Inspector Brad PR #73 sweep #4 high-severity find — flagged when
+  // we discovered the sweep #3 fix only preserved the ref, it didn't
+  // schedule a re-check. A ref change doesn't trigger a re-render, so
+  // a transition that arrived while a previous flush was in flight
+  // was guarded out and never picked up again until the user happened
+  // to change tier a second time. `recheckTick` is the bare-minimum
+  // state cell whose only job is to force the effect to re-run after
+  // the in-flight IIFE completes. `pendingRecheckRef` flags "we had
+  // to skip a transition; please re-fire when it's safe to do so".
+  const pendingRecheckRef = useRef(false);
+  const [recheckTick, setRecheckTick] = useState(0);
 
   useEffect(() => {
     if (!userId) {
@@ -77,14 +88,18 @@ export function useAutoRetryOnUpgrade(): void {
     // body stays synchronous (we don't want to return a promise from
     // the effect — its cleanup contract is sync).
     //
-    // Inspector Brad PR #73 medium-severity find — sweep #3: don't
-    // advance `lastTierRef` until we've committed to processing.
-    // Otherwise a fast tier flip-flop (e.g. premium → individual_trainer
-    // arriving while basic→premium is still in-flight) lands here,
-    // bumps the ref to the latest tier, hits the processingRef guard
-    // and returns early — the second transition is silently dropped
-    // because no further render fires (lastTierRef === currentTier).
-    if (processingRef.current) return;
+    // Sweep #3 (now superseded by sweep #4 fix below): the ref bump
+    // was originally before the processingRef guard, so a fast tier
+    // flip-flop corrupted the ref. Sweep #3 moved it after the guard
+    // to preserve the old ref. Sweep #4 adds the missing piece —
+    // forcing a re-render in the IIFE's finally so the preserved
+    // transition actually gets processed.
+    if (processingRef.current) {
+      // Flag the missed transition so the in-flight IIFE re-fires the
+      // effect when it finishes.
+      pendingRecheckRef.current = true;
+      return;
+    }
     processingRef.current = true;
     lastTierRef.current = currentTier;
 
@@ -119,7 +134,15 @@ export function useAutoRetryOnUpgrade(): void {
         console.error("[useAutoRetryOnUpgrade] flush failed:", err);
       } finally {
         processingRef.current = false;
+        if (pendingRecheckRef.current) {
+          pendingRecheckRef.current = false;
+          // The bump value is irrelevant — only the state change
+          // matters. The effect's recheckTick dep triggers a re-run,
+          // which observes lastTierRef vs. currentTier and processes
+          // the transition we skipped earlier.
+          setRecheckTick((t) => t + 1);
+        }
       }
     })();
-  }, [userId, currentTier, storage, auth]);
+  }, [userId, currentTier, storage, auth, recheckTick]);
 }

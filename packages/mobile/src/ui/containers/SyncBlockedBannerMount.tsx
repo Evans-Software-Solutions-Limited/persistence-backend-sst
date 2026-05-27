@@ -25,6 +25,21 @@ const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   medium_enterprise: "Medium / Enterprise Trainer",
 };
 
+// Track classification for multi-track detection. A user-track upgrade
+// (free → premium) never satisfies a trainer-track requirement and
+// vice versa, so a single CTA on the banner would be misleading when
+// both tracks are represented. The review screen handles per-group
+// decisions; the banner falls back to a generic copy.
+const TRAINER_TIERS: ReadonlySet<SubscriptionTierName> = new Set([
+  "individual_trainer",
+  "small_business",
+  "medium_enterprise",
+]);
+
+function trackOf(tier: SubscriptionTierName): "trainer" | "user" {
+  return TRAINER_TIERS.has(tier) ? "trainer" : "user";
+}
+
 export function SyncBlockedBannerMount() {
   const router = useRouter();
   const blocked = useBlockedSyncEntries();
@@ -33,6 +48,11 @@ export function SyncBlockedBannerMount() {
   // When two tracks are blocked we return null so the banner falls
   // back to a generic "Upgrade your plan" CTA (the review screen
   // handles per-group decisions).
+  //
+  // Inspector Brad PR #73 sweep #4 low-severity find — the multi-track
+  // case was promised in the comment but never implemented; we picked
+  // the mode and advertised one track's tier even when the other
+  // track's entries couldn't be satisfied by it. Now detected explicitly.
   const upgradeTargetLabel = useMemo<string | null>(() => {
     if (blocked.entries.length === 0) return null;
     const counts = new Map<SubscriptionTierName, number>();
@@ -42,6 +62,16 @@ export function SyncBlockedBannerMount() {
       counts.set(target, (counts.get(target) ?? 0) + 1);
     }
     if (counts.size === 0) return null;
+
+    // Multi-track guard: if the blocked targets span BOTH the user and
+    // trainer tracks, no single label is honest. Return null so the
+    // banner shows generic copy.
+    const tracks = new Set<"trainer" | "user">();
+    for (const target of counts.keys()) {
+      tracks.add(trackOf(target));
+      if (tracks.size > 1) return null;
+    }
+
     // Mode (most-common). Tie-break by insertion order — which is
     // FIFO by `blockedAt` thanks to the hook's ordering, so the
     // earliest-blocked wins. Predictable enough for UX.

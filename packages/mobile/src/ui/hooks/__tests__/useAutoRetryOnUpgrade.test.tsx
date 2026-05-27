@@ -303,4 +303,95 @@ describe("useAutoRetryOnUpgrade", () => {
     });
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  // Inspector Brad PR #73 sweep #4 high-severity find. Sweep #3 moved
+  // lastTierRef bump after the processingRef guard so the ref stayed
+  // honest — but the effect never re-fired (ref change ≠ re-render),
+  // so a transition arriving mid-flight was silently dropped. Sweep
+  // #4 fix: bump recheckTick state in the IIFE's finally to force
+  // a re-render that processes the missed transition.
+  it("flip-flop mid-flush: second transition is recovered after the in-flight flush completes", async () => {
+    const { adapters, storage, api, auth } = makeAdapters();
+    signIn(auth);
+    api.mySubscription = makeSub({ tierName: "free" });
+
+    // Two blocked entries: one will unblock on premium, the other on
+    // individual_trainer. The fix only matters when the FIRST tier
+    // change actually triggers a flush (matching length > 0); a
+    // matching=[] early-return wouldn't keep the IIFE awaiting fetch.
+    const premiumEntryId = enqueueBlocked(storage, "premium");
+    enqueueBlocked(storage, "individual_trainer");
+
+    // Make fetch hang until we resolve it manually — simulates a real
+    // network flush mid-flight.
+    let resolveFlush:
+      | ((v: {
+          ok: true;
+          status: 200;
+          text: () => Promise<string>;
+          json: () => Promise<unknown>;
+        }) => void)
+      | null = null;
+    mockFetch.mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveFlush = res;
+        }),
+    );
+
+    const queryClient = makeQueryClient();
+    const { rerender } = renderHook(() => useAutoRetryOnUpgrade(), {
+      wrapper: wrapper(adapters, queryClient),
+    });
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData(["user-subscription", "u-1"]),
+      ).toBeDefined(),
+    );
+
+    // T1: free → premium. tierSatisfies("premium", "premium")===true, so
+    // the premium entry gets unblocked and the flush kicks off (and hangs).
+    queryClient.setQueryData(
+      ["user-subscription", "u-1"],
+      makeSub({ tierName: "premium" }),
+    );
+    rerender(undefined);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    // The premium entry was already unblocked synchronously; the trainer
+    // entry stays blocked because premium doesn't satisfy trainer-tier.
+    expect(
+      storage.getBlockedEntries().find((e) => e.id === premiumEntryId),
+    ).toBeUndefined();
+    expect(storage.getBlockedEntries()).toHaveLength(1);
+
+    // T2: premium → individual_trainer arrives WHILE the T1 flush is
+    // still hanging. Pre-fix: guarded out + lastTierRef bumped (sweep
+    // #2) OR guarded out + lastTierRef preserved but no re-fire (sweep
+    // #3). Post-sweep-#4: guarded out, pendingRecheckRef=true.
+    queryClient.setQueryData(
+      ["user-subscription", "u-1"],
+      makeSub({ tierName: "individual_trainer", isTrainerTier: true }),
+    );
+    rerender(undefined);
+
+    // Trainer entry still blocked — IIFE is still hanging on fetch.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(storage.getBlockedEntries()).toHaveLength(1);
+
+    // Resolve the in-flight flush. finally fires: processingRef=false,
+    // pendingRecheckRef===true → setRecheckTick(1) → re-render → effect
+    // re-runs → unblock the trainer entry → second flush fires.
+    resolveFlush!({
+      ok: true,
+      status: 200,
+      text: async () => "",
+      json: async () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(storage.getBlockedEntries()).toHaveLength(0);
+    });
+    // T1 flush + the recovered T2 flush = 2 fetches.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });

@@ -79,14 +79,13 @@ export class SQLiteStorageAdapter implements StoragePort {
         method TEXT NOT NULL,
         -- M10.6: 'blocked_entitlement' added to the status set. Fresh
         -- installs land the extended CHECK directly; legacy installs
-        -- keep the pre-M10.6 four-value CHECK because SQLite can't
-        -- alter a CHECK constraint in place. The migration block
-        -- below ADDs the entitlement_verdict column (column-add only,
-        -- no CHECK touched, so it's compatible) and markMutationBlocked
-        -- wraps its INSERT in try/catch, falling back to
-        -- status='failed' (with the verdict stashed in
-        -- entitlement_verdict and retry_count burned) if the legacy
-        -- CHECK rejects 'blocked_entitlement'.
+        -- (pre-M10.6) keep the four-value CHECK until the table-rebuild
+        -- migration block below runs at initialize() — it uses SQLite's
+        -- documented ALTER-emulation pattern (CREATE new + INSERT
+        -- SELECT + DROP + RENAME, all in a transaction) to relax the
+        -- CHECK in place. Post-rebuild, every install converges on this
+        -- shape and markMutationBlocked has no fallback path to worry
+        -- about.
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
         retry_count INTEGER NOT NULL DEFAULT 0,
         max_retries INTEGER NOT NULL DEFAULT 3,
@@ -100,11 +99,11 @@ export class SQLiteStorageAdapter implements StoragePort {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
-      -- M10.6 migration for installs that predate this milestone is run
-      -- via PRAGMA table_info + ALTER TABLE outside this SQL string
-      -- (see immediately after this execSync block). We can't ALTER an
-      -- existing CHECK, but we CAN add the missing entitlement_verdict
-      -- column — that's the only piece the runtime actually reads.
+      -- M10.6 migration for legacy installs (pre-M10.6 schema with the
+      -- 4-value CHECK) runs as a table rebuild in JS immediately after
+      -- this execSync block — see the sqlite_master inspection +
+      -- withTransactionSync block. Post-rebuild, every install
+      -- converges on this exact schema.
 
       -- Pre-M2 the table was a flat keyed-by-id stash with no usage in
       -- shipped code; M2 replaces it with a (user_id, type)-keyed cache
@@ -273,30 +272,104 @@ export class SQLiteStorageAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
     `);
 
-    // M10.6 migration for installs that predate this milestone. The
-    // CREATE TABLE IF NOT EXISTS above is a no-op when the table is
-    // already present, so the new `entitlement_verdict` column won't
-    // land via the fresh-install path. PRAGMA table_info enumerates
-    // columns; if our marker is missing we ALTER-ADD it.
+    // M10.6 migration for installs that predate this milestone.
     //
-    // Idempotent — repeated cold-starts see the column and skip. The
-    // SQLite CHECK constraint on `status` stays at the pre-M10.6
-    // four-value set on legacy installs (SQLite can't alter a CHECK in
-    // place and a table-rebuild would risk data loss for so little
-    // win); `markMutationBlocked` catches the resulting constraint
-    // violation and falls back to status='failed' with the verdict
-    // stashed in `entitlement_verdict` and retry_count burned so the
-    // drain stops re-attempting. Fresh installs land the full 5-value
-    // CHECK and never hit the fallback. Pre-launch acceptance — no
-    // shipped users on a legacy schema.
-    const columns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as Array<{
-      name: string;
-    }>;
-    const hasVerdictColumn = columns.some(
-      (c) => c.name === "entitlement_verdict",
-    );
-    if (!hasVerdictColumn) {
-      db.execSync(`ALTER TABLE sync_queue ADD COLUMN entitlement_verdict TEXT`);
+    // The CREATE TABLE IF NOT EXISTS above is a no-op when the table is
+    // already present, so a legacy install keeps its pre-M10.6 schema:
+    //   - status CHECK is the 4-value set (missing 'blocked_entitlement')
+    //   - entitlement_verdict column doesn't exist
+    //
+    // Pre sweep #4, we tried to patch this with a column-add + runtime
+    // try/catch in markMutationBlocked — but that stranded blocked
+    // entries in status='failed' with retry_count burned, invisible to
+    // both getBlockedEntries() and getPendingMutations(). Inspector Brad
+    // sweep #4 medium-severity find — fixed via a proper table rebuild
+    // using SQLite's documented ALTER-emulation pattern (see
+    // https://www.sqlite.org/lang_altertable.html#otheralter).
+    //
+    // Detection: inspect sqlite_master.sql for the stored CREATE TABLE
+    // statement. If it lacks 'blocked_entitlement', the table is on the
+    // pre-M10.6 CHECK and needs rebuilding. Fresh installs always have
+    // the marker (the IF NOT EXISTS landed the new schema).
+    //
+    // Rebuild is wrapped in withTransactionSync so a power-loss / crash
+    // mid-migration rolls back atomically — no half-rebuilt state. Hot
+    // read paths (markMutationBlocked, getBlockedEntries,
+    // getPendingMutations) stay clean for ALL installs post-rebuild,
+    // with zero ongoing predicate overhead.
+    const tableDef = db.getFirstSync(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='sync_queue'`,
+    ) as { sql: string } | null;
+    const needsRebuild =
+      tableDef !== null && !tableDef.sql.includes("blocked_entitlement");
+    if (needsRebuild) {
+      const sourceColumns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as {
+        name: string;
+      }[];
+      const sourceHasVerdict = sourceColumns.some(
+        (c) => c.name === "entitlement_verdict",
+      );
+      db.withTransactionSync(() => {
+        // Identical shape to the fresh-install CREATE TABLE above,
+        // including the 5-value CHECK on `status` and the
+        // entitlement_verdict column. Keep the two schemas in lockstep
+        // — if you change one, change both.
+        db.execSync(`
+          CREATE TABLE sync_queue_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT,
+            operation TEXT NOT NULL CHECK(operation IN ('create', 'update', 'delete')),
+            payload TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            method TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            max_retries INTEGER NOT NULL DEFAULT 3,
+            error_message TEXT,
+            entitlement_verdict TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+        `);
+        // Two branches because we can't reference a column on the source
+        // that may not exist (legacy-pre-M10.6 doesn't have
+        // entitlement_verdict). Both branches preserve `id` so existing
+        // in-flight refs (e.g. mid-drain) survive the rebuild.
+        if (sourceHasVerdict) {
+          db.execSync(`
+            INSERT INTO sync_queue_new (
+              id, entity_type, entity_id, operation, payload, endpoint,
+              method, status, retry_count, max_retries, error_message,
+              entitlement_verdict, created_at, updated_at
+            )
+            SELECT
+              id, entity_type, entity_id, operation, payload, endpoint,
+              method, status, retry_count, max_retries, error_message,
+              entitlement_verdict, created_at, updated_at
+            FROM sync_queue;
+          `);
+        } else {
+          db.execSync(`
+            INSERT INTO sync_queue_new (
+              id, entity_type, entity_id, operation, payload, endpoint,
+              method, status, retry_count, max_retries, error_message,
+              created_at, updated_at
+            )
+            SELECT
+              id, entity_type, entity_id, operation, payload, endpoint,
+              method, status, retry_count, max_retries, error_message,
+              created_at, updated_at
+            FROM sync_queue;
+          `);
+        }
+        db.execSync(`DROP TABLE sync_queue`);
+        db.execSync(`ALTER TABLE sync_queue_new RENAME TO sync_queue`);
+        // The original index was dropped with the old table; recreate.
+        db.execSync(
+          `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at)`,
+        );
+      });
     }
   }
 
@@ -378,57 +451,21 @@ export class SQLiteStorageAdapter implements StoragePort {
     // a distinct lifecycle state with its own data, not a sub-case of
     // failed. `retry_count` is also untouched: a tier-change unblock
     // pushes the row back to `pending` with its retry budget intact.
-    const verdictJson = JSON.stringify(verdict);
-    try {
-      db.runSync(
-        `UPDATE sync_queue
-         SET status = 'blocked_entitlement',
-             entitlement_verdict = ?,
-             updated_at = datetime('now')
-         WHERE id = ?`,
-        [verdictJson, id],
-      );
-    } catch (err) {
-      // Inspector Brad PR #73 medium-severity find — sweep #3: legacy
-      // installs predate the 5-value CHECK constraint and the ALTER
-      // block in `initialize` can only add the `entitlement_verdict`
-      // column — SQLite has no way to relax the existing CHECK in
-      // place. Writing `blocked_entitlement` here would throw and
-      // bubble up to `processSyncQueue`, which would log it as an
-      // unhandled adapter error and skip the entry without marking it
-      // anything — guaranteeing the next drain re-tries the same 402
-      // forever.
-      //
-      // Fallback: mark the entry `failed` with the verdict reason as
-      // the error message AND burn the remaining retry budget so the
-      // drain stops re-attempting. The verdict is still stashed in
-      // `entitlement_verdict` (the column DID get added by the ALTER
-      // block) so a future migration that relaxes the CHECK can
-      // re-classify these rows by reading the column.
-      //
-      // Pre-launch acceptance (per Brad 2026-05-25): no shipped users
-      // can hit this path — only the TestFlight tester is on the app
-      // and they're on a fresh install. The fallback exists as
-      // belt-and-braces so a hypothetical legacy device wouldn't
-      // hang the queue.
-      console.warn(
-        `[sqlite.adapter] markMutationBlocked CHECK fallback for id=${id}; legacy install. ${err instanceof Error ? err.message : String(err)}`,
-      );
-      db.runSync(
-        `UPDATE sync_queue
-         SET status = 'failed',
-             entitlement_verdict = ?,
-             error_message = ?,
-             retry_count = max_retries,
-             updated_at = datetime('now')
-         WHERE id = ?`,
-        [
-          verdictJson,
-          `entitlement: ${verdict.feature} requires ${verdict.upgradeTo ?? "support"}`,
-          id,
-        ],
-      );
-    }
+    //
+    // No fallback needed — the table-rebuild migration in initialize()
+    // guarantees the CHECK accepts 'blocked_entitlement' on every
+    // install. Any throw here is a genuine bug (e.g. the id doesn't
+    // exist, or the DB is corrupt) and SHOULD bubble up so
+    // processSyncQueue's catch marks the entry `failed` and the next
+    // drain can re-attempt or escalate.
+    db.runSync(
+      `UPDATE sync_queue
+       SET status = 'blocked_entitlement',
+           entitlement_verdict = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [JSON.stringify(verdict), id],
+    );
   }
 
   getBlockedEntries(): SyncQueueEntry[] {
