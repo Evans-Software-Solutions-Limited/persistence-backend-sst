@@ -53,6 +53,12 @@ import { subscriptionsCreateHandler } from "./application/subscriptions/create/s
 import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
 import { subscriptionsTiersHandler } from "./application/subscriptions/tiers/subscriptionsTiersHandler";
 import { subscriptionsMeHandler } from "./application/subscriptions/me/subscriptionsMeHandler";
+import { notificationsListHandler } from "./application/notifications/list/notificationsListHandler";
+import { notificationsUpdateAllHandler } from "./application/notifications/updateAll/notificationsUpdateAllHandler";
+import { notificationsUpdateHandler } from "./application/notifications/update/notificationsUpdateHandler";
+import { preferencesGetHandler } from "./application/notifications/preferences/get/preferencesGetHandler";
+import { preferencesSetHandler } from "./application/notifications/preferences/set/preferencesSetHandler";
+import { devicesRegisterHandler } from "./application/devices/register/devicesRegisterHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -107,7 +113,18 @@ const app = new Elysia()
   .use(subscriptionsTiersHandler)
   .use(subscriptionsMeHandler)
   .use(subscriptionsCreateHandler)
-  .use(subscriptionsCancelHandler);
+  .use(subscriptionsCancelHandler)
+  // M7 — notifications. `notificationsUpdateAllHandler` MUST be
+  // registered BEFORE `notificationsUpdateHandler` so the literal
+  // PATCH /notifications/all isn't captured as `:id = "all"` by the
+  // single-row handler. Regression test:
+  // application/notifications/updateAll/__tests__/notificationsUpdateAllHandler.test.ts
+  .use(notificationsListHandler)
+  .use(notificationsUpdateAllHandler)
+  .use(notificationsUpdateHandler)
+  .use(preferencesGetHandler)
+  .use(preferencesSetHandler)
+  .use(devicesRegisterHandler);
 
 export type CoreApi = typeof app;
 

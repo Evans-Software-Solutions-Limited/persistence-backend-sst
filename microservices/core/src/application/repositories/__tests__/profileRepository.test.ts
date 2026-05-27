@@ -742,3 +742,331 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.subscription.status).toBe("cancelled");
   });
 });
+
+describe("defaultNotificationPreferences", () => {
+  it("returns every NotificationType key mapped to true", async () => {
+    const { defaultNotificationPreferences } =
+      await import("../profileRepository");
+    const result = defaultNotificationPreferences();
+    expect(result).toEqual({
+      workout_assigned: true,
+      friend_request: true,
+      pt_request: true,
+      pt_accepted: true,
+      physio_request: true,
+      physio_accepted: true,
+      workout_reminder: true,
+      goal_milestone: true,
+      trainer_feedback: true,
+    });
+  });
+
+  it("returns a fresh object so callers can mutate without poisoning", async () => {
+    const { defaultNotificationPreferences } =
+      await import("../profileRepository");
+    const first = defaultNotificationPreferences();
+    first.workout_reminder = false;
+    const second = defaultNotificationPreferences();
+    expect(second.workout_reminder).toBe(true);
+  });
+});
+
+describe("reconcileNotificationPreferences", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns all-defaults when stored is null", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences(null);
+    expect(result.workout_assigned).toBe(true);
+    expect(result.trainer_feedback).toBe(true);
+  });
+
+  it("returns all-defaults when stored is undefined", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences(undefined);
+    expect(result.workout_assigned).toBe(true);
+  });
+
+  it("returns all-defaults when stored is empty object", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences({});
+    expect(result.workout_reminder).toBe(true);
+  });
+
+  it("overrides defaults with explicit false values", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences({
+      workout_reminder: false,
+      friend_request: false,
+    });
+    expect(result.workout_reminder).toBe(false);
+    expect(result.friend_request).toBe(false);
+    expect(result.goal_milestone).toBe(true);
+  });
+
+  it("drops unknown keys (legacy values no longer in the enum)", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences({
+      workout_reminder: false,
+      legacy_unknown_key: true,
+    } as Record<string, unknown>);
+    expect("legacy_unknown_key" in result).toBe(false);
+    expect(result.workout_reminder).toBe(false);
+  });
+
+  it("ignores non-boolean values, applies defaults for those keys", async () => {
+    const { reconcileNotificationPreferences } =
+      await import("../profileRepository");
+    const result = reconcileNotificationPreferences({
+      workout_reminder: "yes" as unknown as boolean,
+      friend_request: 0 as unknown as boolean,
+      pt_request: null as unknown as boolean,
+    });
+    // Non-boolean values fall through → defaults apply
+    expect(result.workout_reminder).toBe(true);
+    expect(result.friend_request).toBe(true);
+    expect(result.pt_request).toBe(true);
+  });
+});
+
+describe("ProfileRepository.getNotificationPreferences", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeSelectChain(resolvedValue: unknown) {
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(resolvedValue),
+        }),
+      }),
+    };
+  }
+
+  it("returns defaults when notification_preferences column is empty", async () => {
+    const mockDb = {
+      select: vi
+        .fn()
+        .mockReturnValue(makeSelectChain([{ notificationPreferences: {} }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getNotificationPreferences("user-1");
+
+    expect(result).toEqual({
+      workout_assigned: true,
+      friend_request: true,
+      pt_request: true,
+      pt_accepted: true,
+      physio_request: true,
+      physio_accepted: true,
+      workout_reminder: true,
+      goal_milestone: true,
+      trainer_feedback: true,
+    });
+  });
+
+  it("merges stored overrides over defaults", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue(
+        makeSelectChain([
+          {
+            notificationPreferences: {
+              workout_reminder: false,
+              goal_milestone: false,
+            },
+          },
+        ]),
+      ),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getNotificationPreferences("user-1");
+
+    expect((result as Record<string, boolean>).workout_reminder).toBe(false);
+    expect((result as Record<string, boolean>).goal_milestone).toBe(false);
+    expect((result as Record<string, boolean>).trainer_feedback).toBe(true);
+  });
+
+  it("returns the sentinel when no profile row exists", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue(makeSelectChain([])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository, NOTIFICATION_PREFERENCES_PROFILE_MISSING } =
+      await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getNotificationPreferences("missing-user");
+
+    expect(result).toBe(NOTIFICATION_PREFERENCES_PROFILE_MISSING);
+  });
+
+  it("treats null JSONB column the same as empty (returns defaults)", async () => {
+    const mockDb = {
+      select: vi
+        .fn()
+        .mockReturnValue(makeSelectChain([{ notificationPreferences: null }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getNotificationPreferences("user-1");
+
+    expect((result as Record<string, boolean>).workout_assigned).toBe(true);
+  });
+});
+
+describe("ProfileRepository.mergeNotificationPreferences", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeUpdateChain(resolvedValue: unknown) {
+    const returning = vi.fn().mockResolvedValue(resolvedValue);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    return { set };
+  }
+
+  /**
+   * Flatten Drizzle's `queryChunks` recursively (each chunk can be a
+   * string, a nested SQL with its own queryChunks, a Param object
+   * carrying `value`, or a PgColumn with circular table refs). Returns
+   * all leaf strings + Param values; column refs are skipped to avoid
+   * the circular-structure traversal.
+   */
+  function flattenSqlLeaves(node: unknown, out: unknown[] = []): unknown[] {
+    if (node === null || node === undefined) return out;
+    if (typeof node === "string" || typeof node === "number") {
+      out.push(node);
+      return out;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) flattenSqlLeaves(item, out);
+      return out;
+    }
+    if (typeof node === "object") {
+      const obj = node as Record<string, unknown>;
+      if ("value" in obj && !("table" in obj)) {
+        // Param-shaped object (carries `value`, no table back-ref)
+        out.push(obj.value);
+        return out;
+      }
+      if ("queryChunks" in obj) {
+        flattenSqlLeaves(obj.queryChunks, out);
+        return out;
+      }
+      // Column / Table refs — skip to avoid circular traversal.
+      return out;
+    }
+    return out;
+  }
+
+  it("returns the merged JSONB column when the UPDATE touches a row", async () => {
+    // The DB's RETURNING surfaces the post-merge state — the handler
+    // reconciles against this rather than echoing the request body.
+    const mergedFromDb = {
+      workout_reminder: false,
+      friend_request: false,
+    };
+    const mockDb = {
+      update: vi
+        .fn()
+        .mockReturnValue(
+          makeUpdateChain([{ notificationPreferences: mergedFromDb }]),
+        ),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("user-1", {
+      workout_reminder: false,
+    });
+
+    expect(result).toEqual(mergedFromDb);
+    const updateChain = mockDb.update.mock.results[0].value;
+    const setPayload = updateChain.set.mock.calls[0][0];
+    // notificationPreferences is now a Drizzle SQL expression doing
+    // atomic JSONB merge — verify the JSON-serialised partial is bound
+    // as a parameter (the SQL fragments themselves are Drizzle-internal
+    // shapes that don't surface as plain strings here).
+    const leaves = flattenSqlLeaves(setPayload.notificationPreferences);
+    expect(leaves).toContain(JSON.stringify({ workout_reminder: false }));
+    // It must NOT be a plain object literal — that would be the old
+    // full-replace bug.
+    expect(setPayload.notificationPreferences).not.toMatchObject({
+      workout_reminder: false,
+    });
+    expect(setPayload.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("returns null when no profile row matched", async () => {
+    const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain([])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("missing-user", {
+      workout_reminder: true,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns an empty object when the stored column was null but the row matched", async () => {
+    // The COALESCE in the SQL forces the merge against '{}'::jsonb if
+    // the column was null, so RETURNING never surfaces null — but
+    // defensive-code-wise the repo treats a null notificationPreferences
+    // as `{}` to give callers a stable shape.
+    const mockDb = {
+      update: vi
+        .fn()
+        .mockReturnValue(makeUpdateChain([{ notificationPreferences: null }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("user-1", {});
+
+    expect(result).toEqual({});
+  });
+
+  it("accepts an empty partial map (no-op merge)", async () => {
+    const mockDb = {
+      update: vi
+        .fn()
+        .mockReturnValue(makeUpdateChain([{ notificationPreferences: {} }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("user-1", {});
+
+    expect(result).toEqual({});
+    const updateChain = mockDb.update.mock.results[0].value;
+    const setPayload = updateChain.set.mock.calls[0][0];
+    const leaves = flattenSqlLeaves(setPayload.notificationPreferences);
+    // Empty body still serialises into the bind so the SQL is valid;
+    // the JSONB || with `{}` is a no-op on the stored column.
+    expect(leaves).toContain("{}");
+  });
+});

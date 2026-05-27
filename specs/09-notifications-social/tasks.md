@@ -44,10 +44,20 @@ Parent milestones:
 
 ## Phase 5: API — Notification & Friendship Endpoints
 
+**M7 scope** — notification endpoints only. Friendship endpoints
+deferred (see Phase 7).
+
 - [ ] Extend `ApiPort` with notification methods (list, mark read)
-- [ ] Extend `ApiPort` with friendship methods (list, send request, accept, decline, remove, block)
-- [ ] Implement in SST API adapter
-- [ ] Write tests
+- [ ] Backend: `POST /devices/register` — device-token upsert (M7)
+- [ ] Backend: `GET /notifications` — list with `limit/offset/unreadOnly` + `unreadCount` (M7)
+- [ ] Backend: `PATCH /notifications/:id` — single mark-read, ownership-folded WHERE (M7)
+- [ ] Backend: `PATCH /notifications/all` — bulk mark-read, idempotent (M7)
+- [ ] Backend: `GET /notifications/preferences` — read JSONB on `profiles` (M7)
+- [ ] Backend: `POST /notifications/preferences` — full-replace write (M7)
+- [ ] Migration: `profiles.notification_preferences JSONB NOT NULL DEFAULT '{}'::jsonb` (M7)
+- [ ] DEFERRED: Extend `ApiPort` with friendship methods (list, send request, accept, decline, remove, block)
+- [ ] DEFERRED: Implement friendships in SST API adapter
+- [ ] Write tests (M7 — handler + repository, ≥90% coverage on changed files)
 
 ## Phase 6: UI — Notification Centre
 
@@ -62,6 +72,8 @@ Parent milestones:
 
 ## Phase 7: UI — Friendships
 
+**DEFERRED beyond M7.**
+
 - [ ] Create `FriendCard` presenter (name, avatar, status, actions)
 - [ ] Create `FriendListPresenter` (friends list, pending requests section)
 - [ ] Create `FriendListContainer` (fetches friends, handles actions)
@@ -71,6 +83,8 @@ Parent milestones:
 - [ ] Write tests
 
 ## Phase 8: Shared Workouts
+
+**DEFERRED beyond M7.**
 
 - [ ] Implement friends' shared workouts feed query
 - [ ] Create "copy to my workouts" action

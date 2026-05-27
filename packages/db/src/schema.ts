@@ -232,6 +232,26 @@ export const profiles = pgTable("profiles", {
   hasUsedUserTrial: boolean("has_used_user_trial").default(false),
   hasUsedTrainerTrial: boolean("has_used_trainer_trial").default(false),
   primaryGoalId: uuid("primary_goal_id").references(() => goalTypes.id),
+  /**
+   * Per-type notification preference map. Stored as JSONB on the profile
+   * row to avoid a separate table for what is in practice a tiny,
+   * low-frequency payload. Empty object (`{}`) is the default and reads
+   * back as "all enabled" once the read handler applies defaults. Unknown
+   * keys in the JSONB are dropped on the way out by the handler.
+   *
+   * Migration:
+   *   supabase/migrations/20260527000000_m7_notification_preferences.sql
+   *
+   * Brad confirmed JSONB-on-profiles (option B) over a separate
+   * `notification_preferences` table — matches the legacy app's pattern of
+   * keeping user prefs on the profile row + one additive migration vs a
+   * new table + RLS policies. See
+   * specs/09-notifications-social/design.md § Notification preferences.
+   */
+  notificationPreferences: jsonb("notification_preferences")
+    .notNull()
+    .$type<Record<string, boolean>>()
+    .default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
