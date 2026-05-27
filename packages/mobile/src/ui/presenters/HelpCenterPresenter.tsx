@@ -1,0 +1,188 @@
+import React from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  BorderRadius,
+  Colors,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/ui/theme/profileLegacyTheme";
+
+/**
+ * Help Center — pure presenter. FAQ list + Contact Support CTA ported
+ * verbatim from `persistence-mobile/app/help-center.tsx`. Five Q+A pairs
+ * are inlined as the FAQ_ITEMS constant — same content, same order.
+ */
+
+type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+export const FAQ_ITEMS: readonly FaqItem[] = [
+  {
+    question: "How do I create a workout?",
+    answer:
+      'Go to the Workouts tab and tap the "+" button. You can add exercises, set reps and sets, and customize your workout.',
+  },
+  {
+    question: "How do I track my progress?",
+    answer:
+      "Your progress is automatically tracked when you complete workouts. View your stats, personal records, and body measurements in the Progress tab.",
+  },
+  {
+    question: "Can I connect with a personal trainer?",
+    answer:
+      "Yes! You can connect with a personal trainer through the app. They can assign workouts and track your progress.",
+  },
+  {
+    question: "How do I sync my health data?",
+    answer:
+      "Go to Profile > Health Data to connect your Apple Health or Google Fit account. This allows us to sync steps, calories, and other health metrics.",
+  },
+  {
+    question: "How do I change my subscription?",
+    answer:
+      'Go to Profile > Subscription and tap "Manage Subscription" to upgrade, downgrade, or cancel your subscription.',
+  },
+];
+
+export type HelpCenterPresenterProps = {
+  onBack: () => void;
+  onContactSupport: () => void;
+};
+
+export function HelpCenterPresenter({
+  onBack,
+  onContactSupport,
+}: HelpCenterPresenterProps) {
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={onBack}
+            testID="help-center-back"
+            hitSlop={8}
+          >
+            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Help Center</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <ScrollView style={styles.content} testID="help-center-scroll">
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+            {FAQ_ITEMS.map((item, index) => (
+              <View
+                key={index}
+                style={styles.faqItem}
+                testID={`help-center-faq-${index}`}
+              >
+                <Text style={styles.faqQuestion}>{item.question}</Text>
+                <Text style={styles.faqAnswer}>{item.answer}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Need More Help?</Text>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={onContactSupport}
+              testID="help-center-contact-support"
+            >
+              <Ionicons
+                name="mail-outline"
+                size={20}
+                color={Colors.primary.DEFAULT}
+              />
+              <Text style={styles.actionButtonText}>Contact Support</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={Colors.text.secondary}
+              />
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: Colors.background.primary,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background.primary,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface.border,
+  },
+  headerTitle: {
+    ...Typography.h3,
+  },
+  headerSpacer: {
+    width: 24,
+  },
+  content: {
+    flex: 1,
+    padding: Spacing.md,
+  },
+  section: {
+    marginBottom: Spacing.xl,
+  },
+  sectionTitle: {
+    ...Typography.h3,
+    marginBottom: Spacing.md,
+  },
+  faqItem: {
+    backgroundColor: Colors.surface.primary,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    ...Shadows.small,
+  },
+  faqQuestion: {
+    ...Typography.body1,
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+  },
+  faqAnswer: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+  },
+  actionButton: {
+    backgroundColor: Colors.surface.primary,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    ...Shadows.small,
+  },
+  actionButtonText: {
+    ...Typography.body1,
+    flex: 1,
+  },
+});
