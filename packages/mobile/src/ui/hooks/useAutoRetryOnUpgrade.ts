@@ -72,13 +72,21 @@ export function useAutoRetryOnUpgrade(): void {
     if (lastTierRef.current === currentTier) return;
 
     const prevTier = lastTierRef.current;
-    lastTierRef.current = currentTier;
 
     // The actual unblock/flush. Wrapped in an IIFE so the useEffect
     // body stays synchronous (we don't want to return a promise from
     // the effect — its cleanup contract is sync).
+    //
+    // Inspector Brad PR #73 medium-severity find — sweep #3: don't
+    // advance `lastTierRef` until we've committed to processing.
+    // Otherwise a fast tier flip-flop (e.g. premium → individual_trainer
+    // arriving while basic→premium is still in-flight) lands here,
+    // bumps the ref to the latest tier, hits the processingRef guard
+    // and returns early — the second transition is silently dropped
+    // because no further render fires (lastTierRef === currentTier).
     if (processingRef.current) return;
     processingRef.current = true;
+    lastTierRef.current = currentTier;
 
     void (async () => {
       try {

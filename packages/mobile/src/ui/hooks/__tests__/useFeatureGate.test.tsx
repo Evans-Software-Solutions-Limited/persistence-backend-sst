@@ -508,4 +508,66 @@ describe("useFeatureGate hook", () => {
     expect(mockPush.mock.calls[0][0]).toContain("tier=premium");
     expect(mockPush.mock.calls[0][0]).toContain("cycle=monthly");
   });
+
+  // Inspector Brad PR #73 high-severity find — sweep #3. Pre-fix, a free
+  // user denied on `trainer_clients` saw upgradeTo="premium", paid £12.99,
+  // came back to the SAME paywall (because Premium has isTrainerTier=false).
+  // Fix made resolveUpgradeTarget feature-aware so trainer-only features
+  // route to the cheapest trainer tier (individual_trainer).
+  it("trainer_clients on a free user routes upgrade to individual_trainer, not premium", async () => {
+    const { adapters, api, auth } = makeAdapters();
+    signIn(auth);
+    api.mySubscription = makeSub(); // free tier
+    api.subscriptionTiers = [PREMIUM_TIER];
+
+    const { result } = renderHook(() => useFeatureGate("trainer_clients"), {
+      wrapper: wrapper(adapters, makeQueryClient()),
+    });
+
+    await waitFor(() =>
+      expect(result.current.gateProps.currentTier).toBe("free"),
+    );
+    expect(result.current.allowed).toBe(false);
+    expect(result.current.gateProps.upgradeTo).toBe("individual_trainer");
+
+    act(() => {
+      result.current.gateProps.onUpgrade();
+    });
+    expect(mockPush.mock.calls[0][0]).toContain("tier=individual_trainer");
+  });
+
+  it("trainer_clients fallback (pre-cache) also routes to individual_trainer, not premium", () => {
+    const { adapters } = makeAdapters();
+    const { result } = renderHook(() => useFeatureGate("trainer_clients"), {
+      wrapper: wrapper(adapters, makeQueryClient()),
+    });
+    expect(result.current.gateProps.upgradeTo).toBe("individual_trainer");
+    act(() => {
+      result.current.gateProps.onUpgrade();
+    });
+    expect(mockPush.mock.calls[0][0]).toContain("tier=individual_trainer");
+  });
+
+  it("trainer_clients on a user already on a trainer tier returns upgradeTo=null (no sideways switch)", async () => {
+    const { adapters, api, auth } = makeAdapters();
+    signIn(auth);
+    // Contrived: trainer tier but isTrainerTier flag flipped false. In
+    // practice a trainer tier always has isTrainerTier=true so this branch
+    // is defensive; the assertion proves we don't suggest a sideways switch
+    // to another trainer tier when they're already on one.
+    api.mySubscription = makeSub({
+      tierName: "small_business",
+      isTrainerTier: false,
+    });
+    api.subscriptionTiers = [PREMIUM_TIER];
+
+    const { result } = renderHook(() => useFeatureGate("trainer_clients"), {
+      wrapper: wrapper(adapters, makeQueryClient()),
+    });
+
+    await waitFor(() =>
+      expect(result.current.gateProps.currentTier).toBe("small_business"),
+    );
+    expect(result.current.gateProps.upgradeTo).toBeNull();
+  });
 });

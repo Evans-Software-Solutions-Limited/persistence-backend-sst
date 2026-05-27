@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import { useRouter, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import type {
   BillingCycle,
   SubscriptionTierName,
@@ -67,6 +67,28 @@ export function SubscriptionSelectionContainer() {
   const { payments, netInfo } = useAdapters();
   const isOnline = useOnlineStatus();
 
+  // Deep-link params from upstream call sites (useFeatureGate,
+  // SyncBlockedContainer, ProfileContainer.onBecomeTrainer). Inspector
+  // Brad PR #73 medium-severity find — sweep #3: these were being
+  // pushed by every caller but the Selection screen never read them,
+  // so the "pre-applied" promise was a no-op. Now honoured:
+  //   - `tier` (any SubscriptionTierName) seeds the role toggle when
+  //     it's a trainer tier and pre-applies the billing cycle.
+  //   - `cycle` ("monthly" | "yearly") overrides the cycle default.
+  //   - `role` ("personal_trainer") seeds the role toggle (legacy
+  //     `become-trainer` call site).
+  const searchParams = useLocalSearchParams<{
+    tier?: string;
+    cycle?: string;
+    role?: string;
+  }>();
+  const initialTierParam = searchParams.tier;
+  const initialCycleParam =
+    searchParams.cycle === "yearly" || searchParams.cycle === "monthly"
+      ? (searchParams.cycle as BillingCycle)
+      : null;
+  const initialRoleParam = searchParams.role;
+
   const tiersQuery = useSubscriptionTiers();
   const subQuery = useMySubscription();
   const createSubscriptionMutation = useCreateSubscription();
@@ -93,12 +115,25 @@ export function SubscriptionSelectionContainer() {
   const subscriptionData = subQuery.data ?? null;
   const role = subscriptionData?.role;
 
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const [selectedRole, setSelectedRole] = useState<Role>(
-    role === "personal_trainer" || role === "physiotherapist"
+  // Deep-link tier param routes to trainer role when it's a trainer tier;
+  // otherwise falls through to the profile role / default. This way a
+  // free user deep-linking with `?tier=individual_trainer` lands on the
+  // trainer toggle without an extra tap.
+  const tierParamImpliesTrainer =
+    initialTierParam === "individual_trainer" ||
+    initialTierParam === "small_business" ||
+    initialTierParam === "medium_enterprise";
+  const initialRole: Role =
+    initialRoleParam === "personal_trainer" || tierParamImpliesTrainer
       ? "trainer"
-      : "user",
+      : role === "personal_trainer" || role === "physiotherapist"
+        ? "trainer"
+        : "user";
+
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(
+    initialCycleParam ?? "monthly",
   );
+  const [selectedRole, setSelectedRole] = useState<Role>(initialRole);
   const [selectedTierForPayment, setSelectedTierForPayment] =
     useState<SubscriptionTierName | null>(null);
   const [isProcessingSubscription, setIsProcessingSubscription] =
@@ -107,22 +142,30 @@ export function SubscriptionSelectionContainer() {
     useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  // Sync selectedRole when the loaded sub-data's role surfaces.
+  // Sync selectedRole when the loaded sub-data's role surfaces. Deep-
+  // link role/tier params take precedence — if the user explicitly
+  // asked for a trainer tier via URL, don't override on cache resolve.
   useEffect(() => {
+    if (initialRoleParam === "personal_trainer" || tierParamImpliesTrainer) {
+      return; // Honour the deep link.
+    }
     setSelectedRole(
       role === "personal_trainer" || role === "physiotherapist"
         ? "trainer"
         : "user",
     );
-  }, [role]);
+  }, [role, initialRoleParam, tierParamImpliesTrainer]);
 
   // Default the billing cycle to the user's current sub's cycle, if any.
+  // Deep-link `cycle` param takes precedence — if the user explicitly
+  // requested a cycle, don't overwrite when their existing sub resolves.
   const currentBillingCycle = subscriptionData?.billingCycle ?? null;
   useEffect(() => {
+    if (initialCycleParam !== null) return; // Honour the deep link.
     if (currentBillingCycle === "monthly" || currentBillingCycle === "yearly") {
       setBillingCycle(currentBillingCycle);
     }
-  }, [currentBillingCycle]);
+  }, [currentBillingCycle, initialCycleParam]);
 
   // Reset selectedTier on role-toggle change — prevents an in-flight
   // sheet on the wrong role surface.

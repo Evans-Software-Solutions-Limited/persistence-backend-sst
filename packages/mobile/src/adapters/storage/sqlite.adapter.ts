@@ -78,13 +78,15 @@ export class SQLiteStorageAdapter implements StoragePort {
         endpoint TEXT NOT NULL,
         method TEXT NOT NULL,
         -- M10.6: 'blocked_entitlement' added to the status set. Fresh
-        -- installs land the extended CHECK directly; existing installs
-        -- migrate via the column-add + CHECK-relaxation block below
-        -- (SQLite can't alter CHECK constraints in place — we tolerate
-        -- the legacy check by storing the new status only when the
-        -- column-add succeeded, and the runtime guard in
-        -- markMutationBlocked falls back to 'failed' if the CHECK
-        -- rejects).
+        -- installs land the extended CHECK directly; legacy installs
+        -- keep the pre-M10.6 four-value CHECK because SQLite can't
+        -- alter a CHECK constraint in place. The migration block
+        -- below ADDs the entitlement_verdict column (column-add only,
+        -- no CHECK touched, so it's compatible) and markMutationBlocked
+        -- wraps its INSERT in try/catch, falling back to
+        -- status='failed' (with the verdict stashed in
+        -- entitlement_verdict and retry_count burned) if the legacy
+        -- CHECK rejects 'blocked_entitlement'.
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
         retry_count INTEGER NOT NULL DEFAULT 0,
         max_retries INTEGER NOT NULL DEFAULT 3,
@@ -278,10 +280,15 @@ export class SQLiteStorageAdapter implements StoragePort {
     // columns; if our marker is missing we ALTER-ADD it.
     //
     // Idempotent — repeated cold-starts see the column and skip. The
-    // SQLite CHECK constraint on `status` is the pre-M10.6 four-value
-    // set on migrated installs; markMutationBlocked tolerates the
-    // rejection by re-trying as `failed` (rare path — pre-launch users
-    // aren't expected). Fresh installs land the full 5-value CHECK.
+    // SQLite CHECK constraint on `status` stays at the pre-M10.6
+    // four-value set on legacy installs (SQLite can't alter a CHECK in
+    // place and a table-rebuild would risk data loss for so little
+    // win); `markMutationBlocked` catches the resulting constraint
+    // violation and falls back to status='failed' with the verdict
+    // stashed in `entitlement_verdict` and retry_count burned so the
+    // drain stops re-attempting. Fresh installs land the full 5-value
+    // CHECK and never hit the fallback. Pre-launch acceptance — no
+    // shipped users on a legacy schema.
     const columns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as Array<{
       name: string;
     }>;
@@ -371,14 +378,57 @@ export class SQLiteStorageAdapter implements StoragePort {
     // a distinct lifecycle state with its own data, not a sub-case of
     // failed. `retry_count` is also untouched: a tier-change unblock
     // pushes the row back to `pending` with its retry budget intact.
-    db.runSync(
-      `UPDATE sync_queue
-       SET status = 'blocked_entitlement',
-           entitlement_verdict = ?,
-           updated_at = datetime('now')
-       WHERE id = ?`,
-      [JSON.stringify(verdict), id],
-    );
+    const verdictJson = JSON.stringify(verdict);
+    try {
+      db.runSync(
+        `UPDATE sync_queue
+         SET status = 'blocked_entitlement',
+             entitlement_verdict = ?,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+        [verdictJson, id],
+      );
+    } catch (err) {
+      // Inspector Brad PR #73 medium-severity find — sweep #3: legacy
+      // installs predate the 5-value CHECK constraint and the ALTER
+      // block in `initialize` can only add the `entitlement_verdict`
+      // column — SQLite has no way to relax the existing CHECK in
+      // place. Writing `blocked_entitlement` here would throw and
+      // bubble up to `processSyncQueue`, which would log it as an
+      // unhandled adapter error and skip the entry without marking it
+      // anything — guaranteeing the next drain re-tries the same 402
+      // forever.
+      //
+      // Fallback: mark the entry `failed` with the verdict reason as
+      // the error message AND burn the remaining retry budget so the
+      // drain stops re-attempting. The verdict is still stashed in
+      // `entitlement_verdict` (the column DID get added by the ALTER
+      // block) so a future migration that relaxes the CHECK can
+      // re-classify these rows by reading the column.
+      //
+      // Pre-launch acceptance (per Brad 2026-05-25): no shipped users
+      // can hit this path — only the TestFlight tester is on the app
+      // and they're on a fresh install. The fallback exists as
+      // belt-and-braces so a hypothetical legacy device wouldn't
+      // hang the queue.
+      console.warn(
+        `[sqlite.adapter] markMutationBlocked CHECK fallback for id=${id}; legacy install. ${err instanceof Error ? err.message : String(err)}`,
+      );
+      db.runSync(
+        `UPDATE sync_queue
+         SET status = 'failed',
+             entitlement_verdict = ?,
+             error_message = ?,
+             retry_count = max_retries,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+        [
+          verdictJson,
+          `entitlement: ${verdict.feature} requires ${verdict.upgradeTo ?? "support"}`,
+          id,
+        ],
+      );
+    }
   }
 
   getBlockedEntries(): SyncQueueEntry[] {

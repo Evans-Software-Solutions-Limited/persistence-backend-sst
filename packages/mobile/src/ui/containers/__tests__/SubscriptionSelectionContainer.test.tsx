@@ -34,6 +34,11 @@ const mockPush = jest.fn();
 const mockBack = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, back: mockBack, replace: jest.fn() }),
+  // PR #73 sweep #3: container now reads deep-link query params
+  // (tier/cycle/role) from useLocalSearchParams. Tests don't deep-link
+  // — empty object is the right default. Individual tests that exercise
+  // the deep-link path override this via jest.doMock or jest.resetModules.
+  useLocalSearchParams: () => ({}),
 }));
 
 const alertSpy = jest.spyOn(Alert, "alert");

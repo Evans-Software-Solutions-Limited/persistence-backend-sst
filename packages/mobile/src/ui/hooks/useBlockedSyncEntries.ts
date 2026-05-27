@@ -78,12 +78,23 @@ export function useBlockedSyncEntries(): BlockedEntriesSummary {
   const [summary, setSummary] = useState<BlockedEntriesSummary>(EMPTY_SUMMARY);
 
   const read = useCallback(() => {
-    const entries = storage.getBlockedEntries();
+    const rawEntries = storage.getBlockedEntries();
     const byFeature: Partial<Record<EntitlementFeature, number>> = {};
     let earliest: string | null = null;
+    // Inspector Brad PR #73 low-severity find — sweep #3: filter to
+    // entries with valid verdicts BEFORE counting `total`. The review
+    // screen and banner both skip verdict-less rows; the count must
+    // match what the user can actually see / discard, otherwise the
+    // banner says "5 items" while only 4 cards render on
+    // /sync-blocked (and the missing one is un-discardable from the
+    // UI). Verdict-less rows are rare — only possible on legacy
+    // installs where the column ALTER landed but parseEntitlement-
+    // Verdict failed at decode time. Returning them in `entries` for
+    // downstream consumers who may want to expose a Discard path
+    // later; for now they're filtered to keep the count honest.
+    const entries = rawEntries.filter((entry) => entry.entitlementVerdict);
     for (const entry of entries) {
-      const verdict = entry.entitlementVerdict;
-      if (!verdict) continue;
+      const verdict = entry.entitlementVerdict!;
       const feature = verdict.feature;
       byFeature[feature] = (byFeature[feature] ?? 0) + 1;
       if (earliest === null || verdict.blockedAt < earliest) {

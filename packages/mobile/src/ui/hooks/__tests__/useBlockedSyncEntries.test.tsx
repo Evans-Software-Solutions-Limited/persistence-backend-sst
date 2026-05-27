@@ -148,4 +148,37 @@ describe("useBlockedSyncEntries", () => {
   it("exposes the polling interval constant so tests + ops can reason about cadence", () => {
     expect(BLOCKED_SYNC_POLL_INTERVAL_MS).toBe(30_000);
   });
+
+  // Inspector Brad PR #73 low-severity find — sweep #3. Pre-fix, a
+  // verdict-less row (legacy install: column ALTER landed but verdict
+  // failed to decode) was counted in `total` but rendered nothing on the
+  // review screen, so the banner said "5 items" while only 4 cards
+  // showed up. Fix filters total + byFeature + earliest to verdict-only
+  // rows so the count matches what the user can actually act on.
+  it("excludes verdict-less rows from total + byFeature + earliest", () => {
+    const { adapters, storage } = makeAdapters();
+    enqueueAndBlock(storage, VERDICT_WORKOUT);
+
+    // Inject a verdict-less blocked row by stubbing getBlockedEntries on
+    // the same adapter — simulates a legacy decode failure that left the
+    // row at status='blocked_entitlement' but with entitlementVerdict=null.
+    const valid = storage.getBlockedEntries()[0];
+    jest.spyOn(storage, "getBlockedEntries").mockReturnValue([
+      valid,
+      {
+        ...valid,
+        id: valid.id + 1,
+        entitlementVerdict: null,
+      },
+    ]);
+
+    const { result } = renderHook(() => useBlockedSyncEntries(), {
+      wrapper: wrapper(adapters),
+    });
+    // Only the verdict-bearing row is counted.
+    expect(result.current.total).toBe(1);
+    expect(result.current.byFeature).toEqual({ create_workout: 1 });
+    expect(result.current.entries).toHaveLength(1);
+    expect(result.current.earliestBlockedAt).toBe(VERDICT_WORKOUT.blockedAt);
+  });
 });
