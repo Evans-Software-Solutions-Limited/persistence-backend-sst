@@ -14,9 +14,13 @@ import {
 const VALID_KEYS: ReadonlySet<string> = new Set(NOTIFICATION_TYPES);
 
 /**
- * POST /notifications/preferences — full-replace the caller's
- * preference map. NOT a partial merge — whatever the body holds (keyed
- * to NotificationType, booleans only) becomes the persisted map.
+ * POST /notifications/preferences — merge the caller's partial map
+ * into the persisted preferences. Inspector Brad PR #81: a full-
+ * replace implementation silently nukes prior keys when a follow-up
+ * partial body arrives, because the read path defaults missing keys
+ * to `true`. The repository now uses an atomic JSONB `||` merge so
+ * partial bodies preserve previously-stored keys, and full bodies
+ * still work (every key overwrites).
  *
  * Validation is hand-rolled rather than via Elysia's `t.Object` because
  * the keys are a dynamic union — `t.Object({ workout_assigned: t.Boolean(), ... })`
@@ -24,9 +28,13 @@ const VALID_KEYS: ReadonlySet<string> = new Set(NOTIFICATION_TYPES);
  * in lockstep with the union; the explicit loop reads exactly the
  * stale-key + non-boolean failure modes the spec asks for.
  *
- * Stored value is the validated map; the response echoes the merged
- * shape (defaults filled, unknown dropped) so the client sees exactly
- * what a follow-up GET would return.
+ * The response echoes the merged shape after reconcile (defaults
+ * filled, unknown dropped) so the client sees a stable full map.
+ * NOTE: the echo reflects the validated body merged with defaults —
+ * it does NOT round-trip via a fresh read, so the echoed map for a
+ * partial body is "what the caller sent + defaults", not "current
+ * stored state". For an authoritative snapshot, mobile re-fetches
+ * via GET /notifications/preferences.
  *
  * Implements: specs/09-notifications-social/design.md
  *             § Backend endpoints > POST /notifications/preferences
@@ -63,10 +71,11 @@ export const preferencesSetHandler = new Elysia()
       validated[key as NotificationType] = value;
     }
 
-    // Persist the validated subset verbatim. The read path will
-    // reconcile against the defaults next time — we don't need to
-    // expand the stored shape here.
-    const updated = await ctx.ProfileRepository.setNotificationPreferences(
+    // Merge the validated subset into the stored map (atomic JSONB ||
+    // at the SQL layer). Prior keys not present in the body are
+    // preserved; keys present in the body overwrite. Race-safe across
+    // concurrent POSTs because the merge happens in a single UPDATE.
+    const updated = await ctx.ProfileRepository.mergeNotificationPreferences(
       userId,
       validated,
     );

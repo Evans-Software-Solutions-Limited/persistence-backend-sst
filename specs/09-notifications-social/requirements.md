@@ -56,9 +56,11 @@ user_id = ?` is 1. Maps to SMOKE_TEST Step 2.
   no error toast. Maps to SMOKE_TEST Step 14.
 - **AC 1.7 — Preferences round-trip.** `GET /notifications/preferences`
   returns the user's full map with defaults filled for missing keys.
-  `POST /notifications/preferences` with a full map persists into
-  `profiles.notification_preferences` JSONB. Toggling and re-reading
-  reflects the new value. Maps to SMOKE_TEST Step 10.
+  `POST /notifications/preferences` merges the body (partial or full)
+  into `profiles.notification_preferences` JSONB atomically — keys
+  present in the body overwrite, keys absent are preserved from prior
+  state. Toggling a single key and re-reading reflects the new value
+  without nuking other keys. Maps to SMOKE_TEST Step 10.
 - **AC 1.8 — Preferences validation.** `POST` with an unknown key OR
   a non-boolean value returns 400. Maps to SMOKE_TEST quality-gate
   block.

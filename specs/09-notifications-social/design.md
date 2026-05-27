@@ -211,16 +211,27 @@ Empty / missing keys default to `true` (notifications enabled). See
 
 ### `POST /notifications/preferences`
 
-Replace the user's preference map. Full-replace semantics (NOT partial
-merge) — the body IS the new map.
+Merge the body into the user's preference map. Atomic JSONB `||` at
+the SQL layer — keys present in the body overwrite, keys absent are
+preserved from prior state. Both partial and full bodies are valid.
+
+Inspector Brad PR #81 background: an earlier full-replace
+implementation silently nuked prior keys when a follow-up partial
+body arrived (the read path defaults missing keys to `true`, so the
+loss only surfaced on the next mutation). PATCH-style merge in SQL
+fixes it without forcing the client to send a full map on every
+toggle, and is race-safe across concurrent POSTs.
 
 - **Method:** `POST`
 - **Path:** `/notifications/preferences`
 - **Auth:** required.
-- **Body:** `Record<NotificationType, boolean>` — keys must be a subset
-  of `NotificationType`; values must be booleans.
+- **Body:** `Partial<Record<NotificationType, boolean>>` — keys must
+  be a subset of `NotificationType`; values must be booleans. Missing
+  keys are preserved from the stored state.
 - **Response 200:** `{ data: Record<NotificationType, boolean> }` —
-  echoes the stored map after default-fill.
+  echoes the validated body filled with defaults for missing keys.
+  Mobile re-fetches GET /notifications/preferences for the
+  authoritative post-merge snapshot.
 - **Response 400:** unknown key OR non-boolean value.
 
 ## Notification preferences

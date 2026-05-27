@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { setNotificationPreferences: vi.fn() };
+const mocks = { mergeNotificationPreferences: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -41,7 +41,7 @@ vi.mock(
 describe("PreferencesSetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.setNotificationPreferences.mockResolvedValue(true);
+    mocks.mergeNotificationPreferences.mockResolvedValue(true);
   });
 
   const FULL_BODY = {
@@ -102,7 +102,7 @@ describe("PreferencesSetHandler", () => {
       }),
     );
     expect(response.status).toBe(400);
-    expect(mocks.setNotificationPreferences).not.toHaveBeenCalled();
+    expect(mocks.mergeNotificationPreferences).not.toHaveBeenCalled();
   });
 
   it("rejects non-boolean values with 400", async () => {
@@ -120,7 +120,7 @@ describe("PreferencesSetHandler", () => {
       }),
     );
     expect(response.status).toBe(400);
-    expect(mocks.setNotificationPreferences).not.toHaveBeenCalled();
+    expect(mocks.mergeNotificationPreferences).not.toHaveBeenCalled();
   });
 
   it("rejects array bodies with 400", async () => {
@@ -136,10 +136,10 @@ describe("PreferencesSetHandler", () => {
       }),
     );
     expect(response.status).toBe(400);
-    expect(mocks.setNotificationPreferences).not.toHaveBeenCalled();
+    expect(mocks.mergeNotificationPreferences).not.toHaveBeenCalled();
   });
 
-  it("accepts empty body {} and writes the empty map (reads back as defaults)", async () => {
+  it("accepts empty body {} and passes a no-op merge through to the repo", async () => {
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {
@@ -152,13 +152,19 @@ describe("PreferencesSetHandler", () => {
       }),
     );
     expect(response.status).toBe(200);
-    expect(mocks.setNotificationPreferences).toHaveBeenCalledWith(
+    expect(mocks.mergeNotificationPreferences).toHaveBeenCalledWith(
       "test-user-id",
       {},
     );
   });
 
-  it("accepts a partial map (subset of NotificationType keys)", async () => {
+  it("accepts a partial map (subset of NotificationType keys) and preserves prior keys via repo-level merge", async () => {
+    // Inspector Brad PR #81: a partial body must not silently nuke
+    // prior keys. The handler forwards the partial to
+    // mergeNotificationPreferences, which does an atomic JSONB || in
+    // SQL. This test pins the handler-side contract: partial in,
+    // partial out, no full-map padding added by the handler. The
+    // merge correctness itself is tested at the repo level.
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {
@@ -175,14 +181,57 @@ describe("PreferencesSetHandler", () => {
     expect(data.data.workout_reminder).toBe(false);
     // Missing keys are filled with defaults in the echoed payload
     expect(data.data.trainer_feedback).toBe(true);
-    expect(mocks.setNotificationPreferences).toHaveBeenCalledWith(
+    expect(mocks.mergeNotificationPreferences).toHaveBeenCalledWith(
       "test-user-id",
       { workout_reminder: false },
     );
   });
 
+  it("two sequential partial POSTs each forward their own delta (repo merges atomically)", async () => {
+    // Inspector Brad PR #81 regression guard: the original bug was
+    // that the second partial POST overwrote the stored map, losing
+    // the first POST's keys on the next GET. Under the new contract,
+    // the handler forwards each partial unchanged to the repo; the
+    // repo's JSONB || merges them atomically. Pin both handler calls
+    // pass through verbatim.
+    const { preferencesSetHandler } = await import("../preferencesSetHandler");
+
+    await preferencesSetHandler.handle(
+      new Request("http://localhost/notifications/preferences", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workout_reminder: false }),
+      }),
+    );
+    await preferencesSetHandler.handle(
+      new Request("http://localhost/notifications/preferences", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ friend_request: false }),
+      }),
+    );
+
+    expect(mocks.mergeNotificationPreferences).toHaveBeenCalledTimes(2);
+    expect(mocks.mergeNotificationPreferences).toHaveBeenNthCalledWith(
+      1,
+      "test-user-id",
+      { workout_reminder: false },
+    );
+    expect(mocks.mergeNotificationPreferences).toHaveBeenNthCalledWith(
+      2,
+      "test-user-id",
+      { friend_request: false },
+    );
+  });
+
   it("returns 404 when the profile row is missing", async () => {
-    mocks.setNotificationPreferences.mockResolvedValueOnce(false);
+    mocks.mergeNotificationPreferences.mockResolvedValueOnce(false);
     const { preferencesSetHandler } = await import("../preferencesSetHandler");
     const response = await preferencesSetHandler.handle(
       new Request("http://localhost/notifications/preferences", {
@@ -209,7 +258,7 @@ describe("PreferencesSetHandler", () => {
         body: JSON.stringify({ workout_reminder: false }),
       }),
     );
-    expect(mocks.setNotificationPreferences).toHaveBeenCalledWith(
+    expect(mocks.mergeNotificationPreferences).toHaveBeenCalledWith(
       "test-user-id",
       { workout_reminder: false },
     );

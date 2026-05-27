@@ -930,7 +930,7 @@ describe("ProfileRepository.getNotificationPreferences", () => {
   });
 });
 
-describe("ProfileRepository.setNotificationPreferences", () => {
+describe("ProfileRepository.mergeNotificationPreferences", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -942,6 +942,40 @@ describe("ProfileRepository.setNotificationPreferences", () => {
     return { set };
   }
 
+  /**
+   * Flatten Drizzle's `queryChunks` recursively (each chunk can be a
+   * string, a nested SQL with its own queryChunks, a Param object
+   * carrying `value`, or a PgColumn with circular table refs). Returns
+   * all leaf strings + Param values; column refs are skipped to avoid
+   * the circular-structure traversal.
+   */
+  function flattenSqlLeaves(node: unknown, out: unknown[] = []): unknown[] {
+    if (node === null || node === undefined) return out;
+    if (typeof node === "string" || typeof node === "number") {
+      out.push(node);
+      return out;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) flattenSqlLeaves(item, out);
+      return out;
+    }
+    if (typeof node === "object") {
+      const obj = node as Record<string, unknown>;
+      if ("value" in obj && !("table" in obj)) {
+        // Param-shaped object (carries `value`, no table back-ref)
+        out.push(obj.value);
+        return out;
+      }
+      if ("queryChunks" in obj) {
+        flattenSqlLeaves(obj.queryChunks, out);
+        return out;
+      }
+      // Column / Table refs — skip to avoid circular traversal.
+      return out;
+    }
+    return out;
+  }
+
   it("returns true when the UPDATE touches a row", async () => {
     const mockDb = {
       update: vi.fn().mockReturnValue(makeUpdateChain([{ id: "user-1" }])),
@@ -950,22 +984,24 @@ describe("ProfileRepository.setNotificationPreferences", () => {
 
     const { ProfileRepository } = await import("../profileRepository");
     const repo = new ProfileRepository();
-    const result = await repo.setNotificationPreferences("user-1", {
-      workout_assigned: true,
-      friend_request: true,
-      pt_request: true,
-      pt_accepted: true,
-      physio_request: true,
-      physio_accepted: true,
+    const result = await repo.mergeNotificationPreferences("user-1", {
       workout_reminder: false,
-      goal_milestone: true,
-      trainer_feedback: true,
     });
 
     expect(result).toBe(true);
     const updateChain = mockDb.update.mock.results[0].value;
     const setPayload = updateChain.set.mock.calls[0][0];
-    expect(setPayload.notificationPreferences.workout_reminder).toBe(false);
+    // notificationPreferences is now a Drizzle SQL expression doing
+    // atomic JSONB merge — verify the JSON-serialised partial is bound
+    // as a parameter (the SQL fragments themselves are Drizzle-internal
+    // shapes that don't surface as plain strings here).
+    const leaves = flattenSqlLeaves(setPayload.notificationPreferences);
+    expect(leaves).toContain(JSON.stringify({ workout_reminder: false }));
+    // It must NOT be a plain object literal — that would be the old
+    // full-replace bug.
+    expect(setPayload.notificationPreferences).not.toMatchObject({
+      workout_reminder: false,
+    });
     expect(setPayload.updatedAt).toBeInstanceOf(Date);
   });
 
@@ -977,18 +1013,29 @@ describe("ProfileRepository.setNotificationPreferences", () => {
 
     const { ProfileRepository } = await import("../profileRepository");
     const repo = new ProfileRepository();
-    const result = await repo.setNotificationPreferences("missing-user", {
-      workout_assigned: true,
-      friend_request: true,
-      pt_request: true,
-      pt_accepted: true,
-      physio_request: true,
-      physio_accepted: true,
+    const result = await repo.mergeNotificationPreferences("missing-user", {
       workout_reminder: true,
-      goal_milestone: true,
-      trainer_feedback: true,
     });
 
     expect(result).toBe(false);
+  });
+
+  it("accepts an empty partial map (no-op merge)", async () => {
+    const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain([{ id: "user-1" }])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.mergeNotificationPreferences("user-1", {});
+
+    expect(result).toBe(true);
+    const updateChain = mockDb.update.mock.results[0].value;
+    const setPayload = updateChain.set.mock.calls[0][0];
+    const leaves = flattenSqlLeaves(setPayload.notificationPreferences);
+    // Empty body still serialises into the bind so the SQL is valid;
+    // the JSONB || with `{}` is a no-op on the stored column.
+    expect(leaves).toContain("{}");
   });
 });

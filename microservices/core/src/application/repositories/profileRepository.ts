@@ -564,10 +564,21 @@ export class ProfileRepository {
   }
 
   /**
-   * Full-replace the user's notification preferences. Caller has
-   * already validated key/value shape against the NotificationType
-   * union — the repository writes the map verbatim and lets the
-   * downstream read reconcile.
+   * Merge a partial preferences map into the user's stored notification
+   * preferences. Atomic at the SQL layer via Postgres JSONB `||`:
+   * stored keys missing from `partial` are preserved; keys present in
+   * `partial` overwrite. An empty `partial` is a no-op (other than
+   * bumping `updatedAt`).
+   *
+   * This is PATCH semantics under a POST endpoint — Inspector Brad on
+   * PR #81 flagged that the previous full-replace implementation
+   * silently nuked prior keys when a follow-up partial body arrived,
+   * because the read path defaults missing keys to `true`. Atomic
+   * merge fixes that without forcing the mobile client to send a full
+   * map on every toggle, and is race-safe across concurrent POSTs.
+   *
+   * Caller has already validated key/value shape against the
+   * NotificationType union, so we trust the JSON serialise.
    *
    * Returns `true` if the UPDATE touched a row, `false` if the profile
    * row was missing (the handler then maps to 404).
@@ -576,15 +587,15 @@ export class ProfileRepository {
    * by any existing trigger — `update_subscription_limits_trigger`
    * keys off subscription columns only. Confirmed safe.
    */
-  async setNotificationPreferences(
+  async mergeNotificationPreferences(
     userId: string,
-    prefs: Record<NotificationType, boolean>,
+    partial: Partial<Record<NotificationType, boolean>>,
   ): Promise<boolean> {
     const db = getDb();
     const result = await db
       .update(profiles)
       .set({
-        notificationPreferences: prefs,
+        notificationPreferences: sql`COALESCE(${profiles.notificationPreferences}, '{}'::jsonb) || ${JSON.stringify(partial)}::jsonb`,
         updatedAt: new Date(),
       })
       .where(eq(profiles.id, userId))
