@@ -16,6 +16,64 @@ import {
   type SubscriptionRow,
   type SubscriptionStatus,
 } from "./dashboardRepository";
+import {
+  NOTIFICATION_TYPES,
+  type NotificationType,
+} from "./notificationRepository";
+
+/**
+ * Sentinel returned by `getNotificationPreferences` when no profile row
+ * exists for the user — the handler maps to 404. Distinct from "row
+ * exists but column is empty" (which yields the defaults map).
+ */
+export const NOTIFICATION_PREFERENCES_PROFILE_MISSING = Symbol(
+  "ProfileRepository.notificationPreferencesProfileMissing",
+);
+
+/**
+ * Default notification-preferences map. Every NotificationType key maps
+ * to `true` — opt-out, not opt-in. Synthesised by the read handler when
+ * `profiles.notification_preferences` is `{}` or missing a key.
+ *
+ * Returns a fresh object each call so callers can mutate without
+ * poisoning a shared singleton.
+ */
+export function defaultNotificationPreferences(): Record<
+  NotificationType,
+  boolean
+> {
+  const result = {} as Record<NotificationType, boolean>;
+  for (const key of NOTIFICATION_TYPES) {
+    result[key] = true;
+  }
+  return result;
+}
+
+/**
+ * Pure: merge a stored JSONB blob with the defaults, dropping any
+ * unknown keys (legacy values no longer in the current NotificationType
+ * enum) and any non-boolean values.
+ *
+ *   stored = null | {}                       → all defaults
+ *   stored = { workout_reminder: false }     → defaults + that override
+ *   stored = { legacy_key: true }            → unknown dropped, defaults applied
+ *   stored = { workout_reminder: "yes" }     → ignored (non-boolean), defaults applied
+ *
+ * Exported for unit testing without seeding the DB.
+ */
+export function reconcileNotificationPreferences(
+  stored: Record<string, unknown> | null | undefined,
+): Record<NotificationType, boolean> {
+  const defaults = defaultNotificationPreferences();
+  if (stored === null || stored === undefined) return defaults;
+  for (const key of NOTIFICATION_TYPES) {
+    const value = stored[key];
+    if (typeof value === "boolean") {
+      defaults[key] = value;
+    }
+  }
+  return defaults;
+}
 
 /**
  * Wire shape for the profile page's profile slice. Fields are normalised
@@ -471,5 +529,67 @@ export class ProfileRepository {
         avatarUrl: row.trainerAvatarUrl ?? null,
       },
     }));
+  }
+
+  /**
+   * Read the user's notification preferences map, applying defaults
+   * for missing keys and dropping any stale/unknown keys still
+   * persisted in the JSONB column. Returns the
+   * `NOTIFICATION_PREFERENCES_PROFILE_MISSING` sentinel when the
+   * profile row itself doesn't exist (handler maps to 404).
+   *
+   * Spec: specs/09-notifications-social/design.md
+   *       § Backend endpoints > GET /notifications/preferences.
+   */
+  async getNotificationPreferences(
+    userId: string,
+  ): Promise<
+    | Record<NotificationType, boolean>
+    | typeof NOTIFICATION_PREFERENCES_PROFILE_MISSING
+  > {
+    const db = getDb();
+    const rows = await db
+      .select({
+        notificationPreferences: profiles.notificationPreferences,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return NOTIFICATION_PREFERENCES_PROFILE_MISSING;
+    return reconcileNotificationPreferences(
+      row.notificationPreferences as Record<string, unknown> | null,
+    );
+  }
+
+  /**
+   * Full-replace the user's notification preferences. Caller has
+   * already validated key/value shape against the NotificationType
+   * union — the repository writes the map verbatim and lets the
+   * downstream read reconcile.
+   *
+   * Returns `true` if the UPDATE touched a row, `false` if the profile
+   * row was missing (the handler then maps to 404).
+   *
+   * Trigger safety: `profiles.notification_preferences` is not watched
+   * by any existing trigger — `update_subscription_limits_trigger`
+   * keys off subscription columns only. Confirmed safe.
+   */
+  async setNotificationPreferences(
+    userId: string,
+    prefs: Record<NotificationType, boolean>,
+  ): Promise<boolean> {
+    const db = getDb();
+    const result = await db
+      .update(profiles)
+      .set({
+        notificationPreferences: prefs,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.id, userId))
+      .returning({ id: profiles.id });
+
+    return result.length > 0;
   }
 }
