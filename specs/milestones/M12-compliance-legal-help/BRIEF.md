@@ -14,17 +14,17 @@ No standalone Kiro spec — these screens are static content/legal copy. Brief i
 
 Five legacy screens → five V2 route files. Container/presenter split applied where it earns its keep (privacy settings has state), thin route shell elsewhere.
 
-| Legacy file (`persistence-mobile/app/`) | V2 destination | Backend dep |
-|---|---|---|
-| `privacy-policy.tsx` | `packages/mobile/app/(app)/profile/privacy.tsx` | None — static |
-| `terms-of-service.tsx` | `packages/mobile/app/(app)/profile/terms.tsx` | None — static |
-| `help-center.tsx` | `packages/mobile/app/(app)/profile/help.tsx` | None — static FAQ |
-| `contact-support.tsx` | `packages/mobile/app/(app)/profile/contact.tsx` | Reads `session.email` from `useAuth`; `mailto:` link |
-| `privacy-settings.tsx` | `packages/mobile/app/(app)/profile/privacy-settings.tsx` | Existing PATCH `/profile` (`isProfilePublic` only — see PORT-GAP below) |
+| Legacy file (`persistence-mobile/app/`) | V2 destination                                           | Backend dep                                                             |
+| --------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `privacy-policy.tsx`                    | `packages/mobile/app/(app)/profile/privacy.tsx`          | None — static                                                           |
+| `terms-of-service.tsx`                  | `packages/mobile/app/(app)/profile/terms.tsx`            | None — static                                                           |
+| `help-center.tsx`                       | `packages/mobile/app/(app)/profile/help.tsx`             | None — static FAQ                                                       |
+| `contact-support.tsx`                   | `packages/mobile/app/(app)/profile/contact.tsx`          | Reads `session.email` from `useAuth`; `mailto:` link                    |
+| `privacy-settings.tsx`                  | `packages/mobile/app/(app)/profile/privacy-settings.tsx` | Existing PATCH `/profile` (`isProfilePublic` only — see PORT-GAP below) |
 
 Routes land at `/(app)/profile/{help,contact,terms,privacy}` — matching the paths the existing ProfileContainer already pushes to. NB: the brief's example V2 destinations (`/(app)/privacy-policy.tsx` etc.) would conflict with the wired-up paths, so we follow the container's existing routes.
 
-Privacy Settings is **not** in the Profile menu in legacy (only deeplink-reachable). M12 adds it under the existing "Privacy Policy" row as a sibling entry to make the visibility toggle discoverable for App Store reviewers — flagged as a deliberate addition tied to App Store readiness, not a UI redesign.
+Privacy Settings is **not** in the Profile menu in legacy (only deeplink-reachable via `lib/utils/deeplinkParser.ts:53`). M12 preserves that — the route ships but is not added to the Profile menu. Strict 1:1 port discipline: legacy's menu structure stays unchanged in V2. If App Store reviewers want a discoverable visibility toggle, the existing `EditProfilePresenter` "Public Profile" switch already covers the same `isProfilePublic` field and is wired into Edit Profile — duplication of UX would itself be a redesign deviation.
 
 ## Non-goals
 
@@ -36,7 +36,7 @@ Privacy Settings is **not** in the Profile menu in legacy (only deeplink-reachab
 ## Success criteria
 
 1. All four wired-up Profile menu entries (Help Center / Contact Support / Terms of Service / Privacy Policy) navigate to their respective screens and the back arrow returns to Profile.
-2. Privacy Settings reachable from the Support menu, Private/Public toggle round-trips through `PATCH /profile` and persists after re-open.
+2. Privacy Settings reachable via direct route push to `/(app)/profile/privacy-settings` (matching legacy's deeplink-only access). Private/Public toggle round-trips through `PATCH /profile` and persists after re-open.
 3. Contact Support opens the email client with `mailto:support@persistence.app`, subject + body pre-filled, sender email taken from `session.email`. Error branch (no email client) surfaces an Alert that names the support address.
 4. Help Center FAQ entries copied verbatim from legacy (5 Q+A pairs); "Contact Support" CTA at the bottom navigates to the contact screen.
 5. Privacy Policy and Terms of Service render the full legacy copy verbatim (10 + 7 sections respectively), including the "Last Updated: January 2025" line.
