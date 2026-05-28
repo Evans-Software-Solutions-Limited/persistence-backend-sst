@@ -60,7 +60,7 @@ packages/mobile/
 
 ## Backend audit
 
-Per locked decision #11 and STORY-010. Splits the M4 backend surface into what's already shipped (PR #77 spec extension lays the groundwork; full M4 mobile work is the brief in `specs/milestones/M4-progress/`) vs what's net new for this rewrite.
+Per locked decision #11 and STORY-010. Splits the M4 backend surface into what's already shipped (PR #77 spec extension lays the groundwork; the prior M4 milestone brief previously lived at `specs/milestones/M4-progress/` — that folder is deleted as of the design-port rewrite PR, git history is canonical) vs what's net new for this rewrite.
 
 ### Already exists in V2 / specced in PR #77 cross-cuts integration
 
@@ -115,9 +115,14 @@ CREATE TABLE user_streaks (
   freeze_tokens     integer NOT NULL DEFAULT 0,
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','broken','paused')),
   created_at        timestamptz DEFAULT now(),
-  updated_at        timestamptz DEFAULT now(),
-  UNIQUE (user_id, source_goal_id) WHERE source_goal_id IS NOT NULL
+  updated_at        timestamptz DEFAULT now()
 );
+-- Partial uniqueness is not valid inline in CREATE TABLE (Postgres restricts
+-- WHERE clauses to indexes). Implements cross-cuts § 3.2's "one user_streak
+-- per source_goal_id" constraint for non-NULL source_goal_id rows.
+CREATE UNIQUE INDEX user_streaks_user_source_goal_uq
+  ON user_streaks (user_id, source_goal_id)
+  WHERE source_goal_id IS NOT NULL;
 CREATE INDEX user_streaks_user_status ON user_streaks (user_id, status);
 ```
 
@@ -129,9 +134,12 @@ CREATE TABLE habit_completions (
   user_id         uuid NOT NULL REFERENCES profiles(id),
   goal_id         uuid NOT NULL REFERENCES user_goals(id),
   completed_at    timestamptz NOT NULL,
-  value           numeric,
-  UNIQUE (user_id, goal_id, date_trunc('day', completed_at))
+  value           numeric
 );
+-- Inline UNIQUE constraints can't carry expressions; lift to an expression
+-- index. Implements cross-cuts § 3.3's "one completion per user/goal/day".
+CREATE UNIQUE INDEX habit_completions_user_goal_day_uq
+  ON habit_completions (user_id, goal_id, (date_trunc('day', completed_at)));
 CREATE INDEX habit_completions_user_goal_ts ON habit_completions (user_id, goal_id, completed_at DESC);
 ```
 
