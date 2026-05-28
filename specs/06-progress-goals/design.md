@@ -406,17 +406,23 @@ On reconnect, the server-side engine reconciles + the cache refreshes. If client
 
 Per cross-cuts § 6:
 
-1. **M4 (this spec) ships:**
+1. **M4 (this spec) ships as schema migrations:**
    - `user_goals.assigned_by_user_id` (nullable, for trainer-assigned goals per cross-cuts § 2)
    - `user_goals.target_value`, `current_value`, `unit` (extension for goal progress)
    - `user_streaks` table + `streak_type_enum`
    - `habit_completions` table
    - `workout_sessions.logged_by_user_id` (nullable, populated by M8 later)
    - `body_measurements.logged_by_user_id` (nullable, populated by M8 later)
-   - `personal_records` table (if not already shipped per PR #77 scope — audit before adding)
-   - `user_achievements` table
 
-Migrations land as one block in the first M4 PR.
+2. **NOT shipped as schema migrations — both tables already exist on the live schema (per the reconciled "Already exists in V2" audit at § Backend audit):**
+   - `personal_records` — `packages/db/src/schema.ts:492`. Existing `(id, user_id, exercise_id, record_type, value, set_id, achieved_at)` shape is what this spec reads + writes.
+   - `user_achievements` — `packages/db/src/schema.ts:550`. Existing FK-to-`achievements` shape is what this spec reads + writes.
+   - Running `CREATE TABLE` on either fails with `relation already exists` — do not include them in the M4 migration block.
+
+3. **M4 also ships as a data migration (not schema):**
+   - Seed rows in the existing `achievements` lookup table for every (streak type × tier) in cross-cuts § 3.6. Each row: `category='streak'`, `requirements` JSONB `{ streak_type, threshold }`. Idempotent upsert by `name`. The streak engine looks up `achievement_id` by JSONB equality on insertion to `user_achievements`.
+
+Schema migrations land as one block in the first M4 PR. The achievements seed lands in the same PR as a separate data-migration file (so rollback can target just the seed).
 
 ---
 

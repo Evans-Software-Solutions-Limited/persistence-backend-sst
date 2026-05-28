@@ -113,6 +113,40 @@ export function ProfileDrawerContainer() {
 Per `extra.jsx:7–108`.
 
 ```ts
+import type { SubscriptionTierName } from "~/domain/models/subscription";
+
+// Maps the live SubscriptionTierName union (free | premium | individual_trainer |
+// small_business | medium_enterprise) to the drawer's badge label. Returns null
+// for free tier — caller skips rendering the badge.
+function tierBadge(tier: SubscriptionTierName): string | null {
+  switch (tier) {
+    case "free":
+      return null;
+    case "premium":
+      return "PREMIUM";
+    case "individual_trainer":
+    case "small_business":
+    case "medium_enterprise":
+      return "TRAINER";
+  }
+}
+
+// Pill tone for the same. Trainer tiers use violet; premium uses gold.
+function tierPillTone(
+  tier: SubscriptionTierName,
+): "gold" | "trainer" | "neutral" {
+  switch (tier) {
+    case "free":
+      return "neutral";
+    case "premium":
+      return "gold";
+    case "individual_trainer":
+    case "small_business":
+    case "medium_enterprise":
+      return "trainer";
+  }
+}
+
 type ProfileDrawerProps = {
   visible: boolean;
   onClose: () => void;
@@ -123,8 +157,12 @@ type ProfileDrawerProps = {
     age?: number;
     weightKg?: number;
   };
+  // Aligned to packages/mobile/src/domain/models/subscription.ts SubscriptionTierName.
+  // "basic" was dropped during M10.5 tier simplification (CLAUDE.md: drops Basic,
+  // drops Standard trainer variants, renames _pro → no suffix). The three trainer
+  // variants are surfaced to the badge as the literal "trainer" via tierBadge() below.
   subscription?: {
-    tier: "basic" | "premium" | "trainer";
+    tier: SubscriptionTierName; // imported from ~/domain/models/subscription
     inTrial: boolean;
     expiresAt?: Date;
     planDescription: string;
@@ -163,12 +201,12 @@ Render structure:
         {profile.email}
       </Text>
       <Row gap={6} mt={6}>
-        {subscription.tier === "premium" && (
-          <Pill tone="gold" size="xs">
-            PREMIUM
+        {subscription && tierBadge(subscription.tier) && (
+          <Pill tone={tierPillTone(subscription.tier)} size="xs">
+            {tierBadge(subscription.tier)}
           </Pill>
         )}
-        {subscription.inTrial && (
+        {subscription?.inTrial && (
           <Pill tone="ember" size="xs">
             7-DAY TRIAL
           </Pill>
@@ -225,11 +263,8 @@ Render structure:
       <Row alignItems="center" justifyContent="space-between">
         <Stack>
           <Row gap={6} alignItems="center" mb={4}>
-            <Pill
-              tone={subscription.tier === "premium" ? "gold" : "neutral"}
-              size="xs"
-            >
-              {subscription.tier.toUpperCase()}
+            <Pill tone={tierPillTone(subscription.tier)} size="xs">
+              {tierBadge(subscription.tier) ?? "FREE"}
             </Pill>
             {subscription.expiresAt && (
               <Text variant="body" color="$text3" size={11}>

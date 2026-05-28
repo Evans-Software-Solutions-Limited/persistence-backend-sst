@@ -375,10 +375,20 @@ Failure → 402 + `{ code: 'ENTITLEMENT_DENIED', entitlement: 'aiAccess', messag
 
 Per cross-cuts § 5:
 
-| Trigger                         | Event                             | Default opt-in                        |
-| ------------------------------- | --------------------------------- | ------------------------------------- |
-| Daily nutrition target hit      | `daily_nutrition_target_hit`      | **off** (noisy)                       |
-| Nutrition target set by trainer | `nutrition_target_set_by_trainer` | on (emitted by `10-trainer-features`) |
+| Trigger                         | Event                             | Enum status                                     | Default opt-in                        |
+| ------------------------------- | --------------------------------- | ----------------------------------------------- | ------------------------------------- |
+| Daily nutrition target hit      | `daily_nutrition_target_hit`      | **NEW — needs ALTER TYPE**                      | **off** (noisy)                       |
+| Nutrition target set by trainer | `nutrition_target_set_by_trainer` | Owned by `10-trainer-features` ALTER TYPE block | on (emitted by `10-trainer-features`) |
+
+**Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** `daily_nutrition_target_hit` is NOT in the live `notification_type` enum at `packages/db/src/schema.ts:139`. The first M9 backend PR that emits it MUST coordinate a companion migration owned by `09-notifications-social`:
+
+```sql
+ALTER TYPE notification_type ADD VALUE 'daily_nutrition_target_hit';
+```
+
+Without this migration sequenced BEFORE the nightly target-hit cron ships, the first `INSERT INTO notifications` for this type fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new type to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).
+
+`nutrition_target_set_by_trainer` is emitted by `10-trainer-features` and that spec owns its `ALTER TYPE` line; this spec just relies on the value existing by the time M8 ships.
 
 M7 owns delivery.
 

@@ -254,22 +254,27 @@ import { ExerciseListContainer } from "./ExerciseListContainer";
 import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 export function TrainHubContainer() {
-  const [segment, setSegment] = useTrainSegment();
+  // Zustand selectors — see useTrainSegment definition below.
+  const segment = useTrainSegment((s) => s.segment);
+  const setSegment = useTrainSegment((s) => s.setSegment);
+  const pendingCreate = useTrainSegment((s) => s.pendingCreate);
+  const clearPendingCreate = useTrainSegment((s) => s.clearPendingCreate);
+
   // CreateExerciseSheet is mounted locally rather than navigated to —
   // 04-workout-management § Sheet mount-point deletes (app)/exercises/create.tsx
   // and replaces the full-screen route with this bottom-sheet pattern.
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
   // Legacy /exercises/create deep-links surface here via the redirect map below
-  // (Phase 2 → 6-month shim). When the redirect fires, it sets the segment to
-  // 'Exercises' + drops a one-shot flag on the train-segment store; this effect
-  // reads + clears the flag to open the sheet.
+  // (Phase 2 → 6-month shim). The redirect calls
+  // useTrainSegment.getState().setPendingCreate(true) — this effect reads + clears
+  // the flag once the hub mounts.
   useEffect(() => {
-    if (useTrainSegment.getState().pendingCreate) {
+    if (pendingCreate) {
       setCreateSheetOpen(true);
-      useTrainSegment.getState().clearPendingCreate();
+      clearPendingCreate();
     }
-  }, []);
+  }, [pendingCreate, clearPendingCreate]);
 
   return (
     <Stack>
@@ -316,31 +321,48 @@ export function TrainHubContainer() {
 }
 ```
 
-`useTrainSegment` is a thin hook around AsyncStorage:
+`useTrainSegment` is a Zustand store — gives us `.getState()` for the deep-link redirect to set `pendingCreate` without subscribing, and idiomatic selector reads inside React components. Matches the V2 state-primitive pattern (`useUserMode`, `useDrawer`, the active-workout slice).
 
 ```ts
 // packages/mobile/src/ui/hooks/useTrainSegment.ts
+import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+type TrainSegment = "Workouts" | "Exercises";
+
+type TrainSegmentState = {
+  segment: TrainSegment;
+  pendingCreate: boolean; // one-shot flag set by /exercises/create deep-link redirect
+  hydrated: boolean;
+  setSegment: (next: TrainSegment) => void;
+  setPendingCreate: (next: boolean) => void;
+  clearPendingCreate: () => void;
+};
+
 const KEY = "persistence.train.segment";
 
-export function useTrainSegment(): [
-  "Workouts" | "Exercises",
-  (next: "Workouts" | "Exercises") => void,
-] {
-  const [segment, setSegment] = useState<"Workouts" | "Exercises">("Workouts");
-
-  useEffect(() => {
-    AsyncStorage.getItem(KEY).then((v) => {
-      if (v === "Workouts" || v === "Exercises") setSegment(v);
-    });
-  }, []);
-
-  const update = useCallback((next: "Workouts" | "Exercises") => {
-    setSegment(next);
+export const useTrainSegment = create<TrainSegmentState>((set) => ({
+  segment: "Workouts",
+  pendingCreate: false,
+  hydrated: false,
+  setSegment: (next) => {
+    set({ segment: next });
     AsyncStorage.setItem(KEY, next).catch(() => {});
-  }, []);
+  },
+  setPendingCreate: (next) => set({ pendingCreate: next }),
+  clearPendingCreate: () => set({ pendingCreate: false }),
+}));
 
-  return [segment, update];
-}
+// Hydrate the persisted segment value on first import.
+AsyncStorage.getItem(KEY)
+  .then((v) => {
+    if (v === "Workouts" || v === "Exercises") {
+      useTrainSegment.setState({ segment: v, hydrated: true });
+    } else {
+      useTrainSegment.setState({ hydrated: true });
+    }
+  })
+  .catch(() => useTrainSegment.setState({ hydrated: true }));
 ```
 
 The container's children (`WorkoutsListContainer`, `ExerciseListContainer`) are existing V2 containers that get re-pointed under the hub. Their internals are owned by `04-workout-management`.

@@ -233,10 +233,28 @@ Every screen's container wraps its return in `<ErrorBoundary>` per:
 // packages/mobile/src/ui/components/ErrorBoundary.tsx
 import * as Sentry from "@sentry/react-native";
 
-class ErrorBoundary extends React.Component {
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    Sentry.captureException(error, { contexts: { react: info } });
+type ErrorBoundaryProps = { children: React.ReactNode };
+type ErrorBoundaryState = { hasError: boolean };
+
+class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  // React asks every error boundary for the next state via this static method
+  // when a descendant throws. Without it, `state.hasError` never flips and the
+  // fallback never renders — the original error keeps propagating to the root.
+  static getDerivedStateFromError(_error: Error): ErrorBoundaryState {
+    return { hasError: true };
   }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    Sentry.captureException(error, { contexts: { react: { ...info } } });
+  }
+
+  reset = () => this.setState({ hasError: false });
+
   render() {
     if (this.state.hasError) {
       return <ErrorFallback onRetry={this.reset} />;
@@ -245,6 +263,8 @@ class ErrorBoundary extends React.Component {
   }
 }
 ```
+
+Three mandatory class members: `state` initialiser (otherwise `this.state` is undefined and the first render throws on `this.state.hasError`); `static getDerivedStateFromError` (React's contract for boundary state transition on child throw); `reset` arrow method (referenced by `<ErrorFallback onRetry={...}>` — without it the retry button is a no-op).
 
 `<ErrorFallback>` uses `<Card>` + `<Btn>` per `01-design-system` for the fallback UI.
 
