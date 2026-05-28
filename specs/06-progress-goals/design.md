@@ -339,7 +339,7 @@ type BodyTrendProps = {
 
 Weight card: stat header + SVG sparkline with area-fill gradient + last-point dot. Body fat card: stat header + bar chart with `$primaryDim` fill + `$primary` top border.
 
-SVG dimensions: 320 × 80 viewBox. Path computed from series via `d = pts.map([x, y], i => i === 0 ? \`M ${x} ${y}\` : \`L ${x} ${y}\`).join(' ')`.
+SVG dimensions: 320 × 80 viewBox. Path computed from series via `d = pts.map(([x, y], i) => i === 0 ? \`M ${x} ${y}\` : \`L ${x} ${y}\`).join(' ')`(each`pts`entry is a`[x, y]` tuple — destructure inside the callback).
 
 For future-proofing the chart library swap (e.g. `victory-native`): the SVG path computation is wrapped in a `computePath(series, dims): string` pure function — easy to replace.
 
@@ -424,12 +424,22 @@ Migrations land as one block in the first M4 PR.
 
 Per cross-cuts § 5. This spec emits:
 
-| Trigger                                          | Event                  | Default opt-in |
-| ------------------------------------------------ | ---------------------- | -------------- |
-| Streak milestone hit                             | `streak_milestone`     | on             |
-| Streak about to expire (last day, not satisfied) | `streak_at_risk`       | on             |
-| Freeze token auto-applied                        | `freeze_token_applied` | on             |
-| Goal milestone (% of target reached)             | `goal_milestone`       | on             |
+| Trigger                                          | Event                  | Default opt-in | Enum status                |
+| ------------------------------------------------ | ---------------------- | -------------- | -------------------------- |
+| Streak milestone hit                             | `streak_milestone`     | on             | **NEW — needs ALTER TYPE** |
+| Streak about to expire (last day, not satisfied) | `streak_at_risk`       | on             | **NEW — needs ALTER TYPE** |
+| Freeze token auto-applied                        | `freeze_token_applied` | on             | **NEW — needs ALTER TYPE** |
+| Goal milestone (% of target reached)             | `goal_milestone`       | on             | Existing (`schema.ts:147`) |
+
+**Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** The live `notification_type` Postgres enum at `packages/db/src/schema.ts:139` includes `'workout_assigned','friend_request','pt_request','pt_accepted','physio_request','physio_accepted','workout_reminder','goal_milestone','trainer_feedback'`. Three of the four triggers above introduce NEW values. The first M4 PR that emits any of these MUST coordinate a companion migration owned by `09-notifications-social`:
+
+```sql
+ALTER TYPE notification_type ADD VALUE 'streak_milestone';
+ALTER TYPE notification_type ADD VALUE 'streak_at_risk';
+ALTER TYPE notification_type ADD VALUE 'freeze_token_applied';
+```
+
+Without this migration sequenced BEFORE the streak engine ships, the first `INSERT INTO notifications` for any of the three new types fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new types to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).
 
 Implementation: emit via M7-defined notification dispatcher. M7 (`09-notifications-social`) owns delivery + rendering.
 

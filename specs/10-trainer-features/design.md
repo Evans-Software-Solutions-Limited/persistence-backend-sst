@@ -377,14 +377,27 @@ When trainer taps "Log session for client" on Client Detail → Workouts tab:
 
 Per cross-cuts § 5, this spec emits:
 
-| Trigger                                                 | Event                              |
-| ------------------------------------------------------- | ---------------------------------- |
-| Trainer assigns goal                                    | `goal_assigned_by_trainer`         |
-| Trainer assigns workout                                 | `workout_assigned` (existing enum) |
-| Trainer logs workout on behalf                          | `workout_logged_on_behalf`         |
-| Trainer logs measurement on behalf                      | `measurement_logged_on_behalf`     |
-| Trainer sets nutrition target                           | `nutrition_target_set_by_trainer`  |
-| (Tier C / M9.5+) Trainer logs nutrition entry on behalf | `nutrition_entry_logged_on_behalf` |
+| Trigger                                                 | Event                              | Enum status                |
+| ------------------------------------------------------- | ---------------------------------- | -------------------------- |
+| Trainer assigns goal                                    | `goal_assigned_by_trainer`         | **NEW — needs ALTER TYPE** |
+| Trainer assigns workout                                 | `workout_assigned`                 | Existing (`schema.ts:140`) |
+| Trainer logs workout on behalf                          | `workout_logged_on_behalf`         | **NEW — needs ALTER TYPE** |
+| Trainer logs measurement on behalf                      | `measurement_logged_on_behalf`     | **NEW — needs ALTER TYPE** |
+| Trainer sets nutrition target                           | `nutrition_target_set_by_trainer`  | **NEW — needs ALTER TYPE** |
+| (Tier C / M9.5+) Trainer logs nutrition entry on behalf | `nutrition_entry_logged_on_behalf` | **NEW — needs ALTER TYPE** |
+
+**Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** The live `notification_type` Postgres enum at `packages/db/src/schema.ts:139` includes `workout_assigned` but none of the other five values. The first M8 backend PR that emits any of these MUST coordinate a companion migration owned by `09-notifications-social`:
+
+```sql
+ALTER TYPE notification_type ADD VALUE 'goal_assigned_by_trainer';
+ALTER TYPE notification_type ADD VALUE 'workout_logged_on_behalf';
+ALTER TYPE notification_type ADD VALUE 'measurement_logged_on_behalf';
+ALTER TYPE notification_type ADD VALUE 'nutrition_target_set_by_trainer';
+-- M9.5 cut (deferred until trainer-nutrition-on-behalf ships):
+ALTER TYPE notification_type ADD VALUE 'nutrition_entry_logged_on_behalf';
+```
+
+Without the migration sequenced BEFORE the on-behalf handlers ship, the first `INSERT INTO notifications` for any new type fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new types to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).
 
 M7 (`09-notifications-social`) owns delivery + rendering.
 

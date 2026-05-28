@@ -536,9 +536,9 @@ type ExerciseDetailResponse = {
       rpe?: number;
     }>; // last 10 sets, most recent first
     personalRecords: Array<{
-      // user's PRs for THIS exercise
-      repTarget: 1 | 3 | 5 | 10;
-      weightKg: number;
+      // user's PRs for THIS exercise — shape matches schema.ts:492 personalRecords table
+      recordType: "1rm" | "3rm" | "5rm" | "10rm" | "max_weight" | "max_volume"; // record_type_enum subset surfaced here
+      value: number; // decimal(10,2) per schema; kg for weight types, kg×reps for max_volume
       achievedAt: string;
     }>;
   };
@@ -551,12 +551,37 @@ Handler in `microservices/core/src/application/exercises/handlers/get-exercise.t
 
 1. Authenticate request (already required).
 2. Fetch the exercise row (existing logic).
-3. If user is authenticated, run two parallel queries:
-   - `SELECT session_id, logged_at, reps, weight_kg, rpe FROM exercise_logs WHERE user_id = ? AND exercise_id = ? ORDER BY logged_at DESC LIMIT 10`
-   - `SELECT rep_target, weight, achieved_at FROM personal_records WHERE user_id = ? AND exercise_id = ?`
+3. If user is authenticated, run two parallel queries against the live schema (no `exercise_logs` table exists — per-set history lives in `exercise_sets` joined to `session_exercises` joined to `workout_sessions`):
+
+   ```sql
+   -- Recent sets (last 10 across the user's history for this exercise)
+   SELECT
+     ws.id        AS session_id,
+     es.completed_at AS logged_at,
+     es.reps,
+     es.weight_kg,
+     es.rpe
+   FROM exercise_sets es
+   JOIN session_exercises se ON se.id = es.session_exercise_id
+   JOIN workout_sessions  ws ON ws.id = se.session_id
+   WHERE ws.user_id = $1
+     AND se.exercise_id = $2
+     AND es.completed_at IS NOT NULL
+   ORDER BY es.completed_at DESC
+   LIMIT 10;
+
+   -- Personal records (aligned to schema.ts:492 shape — record_type_enum + value)
+   SELECT record_type, value, achieved_at
+   FROM personal_records
+   WHERE user_id = $1
+     AND exercise_id = $2
+     AND record_type IN ('1rm','3rm','5rm','10rm','max_weight','max_volume')
+   ORDER BY achieved_at DESC;
+   ```
+
 4. Merge into response under `userHistory`.
 
-`personal_records` table comes from `06-progress-goals § Database migrations` — this extension lands AFTER the M4 backend ships (06's tasks).
+`personal_records` table already exists at `packages/db/src/schema.ts:492` per `06-progress-goals` reconciliation. This extension just consumes it — no new migration.
 
 ### Frontend consumption
 

@@ -251,10 +251,10 @@ import { Segmented, HeaderBar, IconBtn } from "~/ui/components/foundation";
 import { IconSearch, IconPlus } from "~/ui/components/icons";
 import { WorkoutsListContainer } from "./WorkoutsListContainer";
 import { ExerciseListContainer } from "./ExerciseListContainer";
-import { useSegment } from "~/ui/hooks/useTrainSegment";
+import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 export function TrainHubContainer() {
-  const [segment, setSegment] = useSegment();
+  const [segment, setSegment] = useTrainSegment();
   return (
     <Stack>
       <HeaderBar

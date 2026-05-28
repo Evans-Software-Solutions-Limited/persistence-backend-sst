@@ -81,45 +81,9 @@ CREATE TABLE foods (
   created_at      timestamptz DEFAULT now()
 );
 
-CREATE TABLE nutrition_entries (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           uuid NOT NULL REFERENCES profiles(id),
-  food_id           uuid REFERENCES foods(id),                    -- nullable if logging a custom one-off
-  recipe_id         uuid REFERENCES recipes(id),                  -- nullable
-  meal_id           uuid REFERENCES meals(id),                    -- nullable
-  meal_slot         text NOT NULL CHECK (meal_slot IN ('breakfast','lunch','snack','dinner')),
-  servings          numeric NOT NULL,
-  kcal              numeric NOT NULL,                              -- denormalised for fast reads
-  protein_g         numeric NOT NULL,
-  carbs_g           numeric NOT NULL,
-  fat_g             numeric NOT NULL,
-  logged_at         timestamptz NOT NULL,
-  logged_by_user_id uuid REFERENCES profiles(id),                 -- per cross-cuts § 1.1 — populated by M9.5+ trainer on-behalf
-  ai_estimated      boolean NOT NULL DEFAULT false,
-  ai_confidence     numeric                                        -- 0..1, populated when ai_estimated
-);
-CREATE INDEX nutrition_entries_user_date ON nutrition_entries (user_id, logged_at DESC);
-CREATE INDEX nutrition_entries_user_slot_date ON nutrition_entries (user_id, meal_slot, logged_at DESC);
-
-CREATE TABLE nutrition_targets (
-  user_id           uuid PRIMARY KEY REFERENCES profiles(id),
-  daily_kcal        numeric NOT NULL,
-  protein_g         numeric NOT NULL,
-  carbs_g           numeric NOT NULL,
-  fat_g             numeric NOT NULL,
-  water_cups        integer NOT NULL DEFAULT 8,
-  preset            text DEFAULT 'custom',
-  set_by_user_id    uuid REFERENCES profiles(id),                 -- per cross-cuts § 1.5 — trainer attribution
-  updated_at        timestamptz DEFAULT now()
-);
-
-CREATE TABLE water_log (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         uuid NOT NULL REFERENCES profiles(id),
-  cups            integer NOT NULL,
-  logged_date     date NOT NULL,
-  UNIQUE (user_id, logged_date)
-);
+-- Ordering matters: nutrition_entries references recipes + meals, so those must
+-- exist before nutrition_entries is created. Postgres has no forward-declaration
+-- for FKs at CREATE TABLE time — REFERENCES requires the target table to exist.
 
 CREATE TABLE recipes (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -166,6 +130,46 @@ CREATE TABLE meal_items (
   recipe_id     uuid REFERENCES recipes(id),
   servings      numeric NOT NULL,
   sort_order    integer NOT NULL
+);
+
+CREATE TABLE nutrition_entries (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           uuid NOT NULL REFERENCES profiles(id),
+  food_id           uuid REFERENCES foods(id),                    -- nullable if logging a custom one-off
+  recipe_id         uuid REFERENCES recipes(id),                  -- nullable
+  meal_id           uuid REFERENCES meals(id),                    -- nullable
+  meal_slot         text NOT NULL CHECK (meal_slot IN ('breakfast','lunch','snack','dinner')),
+  servings          numeric NOT NULL,
+  kcal              numeric NOT NULL,                              -- denormalised for fast reads
+  protein_g         numeric NOT NULL,
+  carbs_g           numeric NOT NULL,
+  fat_g             numeric NOT NULL,
+  logged_at         timestamptz NOT NULL,
+  logged_by_user_id uuid REFERENCES profiles(id),                 -- per cross-cuts § 1.1 — populated by M9.5+ trainer on-behalf
+  ai_estimated      boolean NOT NULL DEFAULT false,
+  ai_confidence     numeric                                        -- 0..1, populated when ai_estimated
+);
+CREATE INDEX nutrition_entries_user_date ON nutrition_entries (user_id, logged_at DESC);
+CREATE INDEX nutrition_entries_user_slot_date ON nutrition_entries (user_id, meal_slot, logged_at DESC);
+
+CREATE TABLE nutrition_targets (
+  user_id           uuid PRIMARY KEY REFERENCES profiles(id),
+  daily_kcal        numeric NOT NULL,
+  protein_g         numeric NOT NULL,
+  carbs_g           numeric NOT NULL,
+  fat_g             numeric NOT NULL,
+  water_cups        integer NOT NULL DEFAULT 8,
+  preset            text DEFAULT 'custom',
+  set_by_user_id    uuid REFERENCES profiles(id),                 -- per cross-cuts § 1.5 — trainer attribution
+  updated_at        timestamptz DEFAULT now()
+);
+
+CREATE TABLE water_log (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         uuid NOT NULL REFERENCES profiles(id),
+  cups            integer NOT NULL,
+  logged_date     date NOT NULL,
+  UNIQUE (user_id, logged_date)
 );
 
 CREATE TABLE ai_usage_log (

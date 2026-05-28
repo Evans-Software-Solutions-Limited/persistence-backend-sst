@@ -158,9 +158,11 @@ Sentry.init({
 
 ### SST Lambda init
 
+Use `@sentry/aws-serverless` (the v8 successor to the legacy `@sentry/serverless`, with first-class AWS Lambda support). `@sentry/node` does NOT export an `AWSLambda` namespace — the `Sentry.AWSLambda.wrapHandler(...)` shape only existed in `@sentry/serverless` v7 and moved to `@sentry/aws-serverless` in v8. Importing from `@sentry/node` directly will crash every Lambda cold start with `TypeError: Cannot read properties of undefined (reading 'wrapHandler')`.
+
 ```ts
 // microservices/core/src/infra/observability/sentry.ts
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@sentry/aws-serverless";
 import { Resource } from "sst";
 
 Sentry.init({
@@ -172,33 +174,56 @@ Sentry.init({
 export function wrapHandler<TArgs extends unknown[], TResult>(
   handler: (...args: TArgs) => Promise<TResult>,
 ): (...args: TArgs) => Promise<TResult> {
-  return Sentry.AWSLambda.wrapHandler(handler, {});
+  return Sentry.wrapHandler(handler);
 }
 ```
+
+`@sentry/aws-serverless` depends on `@sentry/node` internally; no need to add `@sentry/node` to the dep list separately.
 
 Every Lambda entry point wraps its handler with `wrapHandler` (codemod across `microservices/core/src/api/`).
 
 ### Source maps
 
-EAS build step uploads source maps via the Sentry CLI:
+EAS build uploads source maps via the **`@sentry/react-native/expo` config plugin** — wired into `app.config.ts`, not `eas.json`. `postPublish` is a Classic-Expo (`expo publish`) hook that `eas-cli` silently ignores; using it means source maps never reach Sentry and every prod stack trace renders as unmapped JS bundle gibberish.
 
-```yaml
-# eas.json (production profile)
-build:
-  production:
-    env:
-      SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN}
-    distribution: store
-    autoIncrement: true
-    extends: base
-    cache:
-      key: production
-    postPublish:
-      - file: sentry-expo/upload-sourcemaps
-        config:
-          organization: persistence
-          project: mobile
+```ts
+// app.config.ts
+import { ExpoConfig, ConfigContext } from "expo/config";
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  name: "Persistence",
+  slug: "persistence",
+  plugins: [
+    [
+      "@sentry/react-native/expo",
+      {
+        organization: "persistence",
+        project: "mobile",
+        // SENTRY_AUTH_TOKEN read from EAS env per profile
+      },
+    ],
+    // ... other plugins
+  ],
+});
 ```
+
+EAS env binding per profile:
+
+```jsonc
+// eas.json
+{
+  "build": {
+    "production": {
+      "env": {
+        "SENTRY_AUTH_TOKEN": "...", // bound via `eas secret:create` not committed
+      },
+    },
+  },
+}
+```
+
+The plugin handles source-map upload during the EAS build's metro bundle step. No `postPublish` hook, no manual CLI step. Verify post-build: every Sentry event from the production binary shows symbolicated stack frames in the Sentry dashboard.
 
 ### Error boundaries
 
