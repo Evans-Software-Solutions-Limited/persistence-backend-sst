@@ -435,7 +435,11 @@ When a downstream spec emits a NEW notification type, the migration lands HERE (
 
 ```sql
 -- microservices/core/migrations/YYYYMMDDHHMMSS_add_notification_type_X.sql
-ALTER TYPE notification_type ADD VALUE 'new_type_name';
+-- `IF NOT EXISTS` keeps the migration idempotent — repo convention matches
+-- supabase/migrations/20260512090238_m3_record_type_max_volume.sql which uses
+-- the same guard. Re-running locally / in CI / on staging will no-op rather
+-- than failing with `enum label already exists`.
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'new_type_name';
 ```
 
 Required companion changes:

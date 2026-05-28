@@ -383,7 +383,7 @@ Per cross-cuts § 5:
 **Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** `daily_nutrition_target_hit` is NOT in the live `notification_type` enum at `packages/db/src/schema.ts:139`. The first M9 backend PR that emits it MUST coordinate a companion migration owned by `09-notifications-social`:
 
 ```sql
-ALTER TYPE notification_type ADD VALUE 'daily_nutrition_target_hit';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'daily_nutrition_target_hit';
 ```
 
 Without this migration sequenced BEFORE the nightly target-hit cron ships, the first `INSERT INTO notifications` for this type fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new type to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).

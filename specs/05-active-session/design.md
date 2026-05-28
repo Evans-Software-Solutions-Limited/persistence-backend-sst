@@ -472,6 +472,11 @@ Long-press triggers the end-confirm dialog (via the overlay's `setConfirmEnd(tru
 
 ```tsx
 // packages/mobile/src/ui/containers/ActiveSessionContainer.tsx
+import { router } from "expo-router";
+import { useActiveWorkout } from "~/state/active-workout";
+// (additional hook imports — useLogSet / useDeleteSet / useSwapExerciseInSession /
+//  useRestTimer / useEndSession / useRestTimerState — elided for brevity)
+
 export function ActiveSessionContainer() {
   const workout = useActiveWorkout((s) => s.workout);
   const sessionId = useActiveWorkout((s) => s.sessionId);

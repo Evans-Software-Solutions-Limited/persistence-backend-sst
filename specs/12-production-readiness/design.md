@@ -324,16 +324,27 @@ cd ios && pod install
 
 ### Product IDs
 
-Defined in App Store Connect + mirrored in `app.config.ts`:
+Defined in App Store Connect + mirrored in `app.config.ts`. Apple IAP sells a **subset** of `SubscriptionTierName` (`packages/mobile/src/domain/models/subscription.ts:20`) — only the two consumer-shaped tiers (`premium` + `individual_trainer`). The two business-shaped trainer tiers (`small_business` + `medium_enterprise`) require invoicing, multi-seat management, tax IDs, and admin dashboards that Apple IAP does not support, so they remain web-only via the Stripe flow shipped in M10.
 
 ```ts
 export const IAP_PRODUCT_IDS = {
   premium_monthly: "app.persistence.premium.monthly",
   premium_annual: "app.persistence.premium.annual",
-  trainer_monthly: "app.persistence.trainer.monthly",
-  trainer_annual: "app.persistence.trainer.annual",
+  trainer_individual_monthly: "app.persistence.trainer.individual.monthly",
+  trainer_individual_annual: "app.persistence.trainer.individual.annual",
 } as const;
+
+// Maps an IAP product purchase back to the SubscriptionTierName for entitlement grant.
+// receipt → tier
+function productIdToTier(productId: string): SubscriptionTierName {
+  if (productId.startsWith("app.persistence.premium.")) return "premium";
+  if (productId.startsWith("app.persistence.trainer.individual."))
+    return "individual_trainer";
+  throw new Error(`Unknown IAP productId: ${productId}`);
+}
 ```
+
+**iOS paywall for business-tier ineligible flows.** When a user on iOS attempts to upgrade to `small_business` or `medium_enterprise` (e.g. via a coach-mode prompt or an admin invite), the paywall renders a "Subscribe at persistence.app to manage clients" CTA with a `Linking.openURL` to the marketing site rather than attempting an IAP purchase. Per `requirements.md` STORY-008 AC 8.6 (App Store Guideline §3.1.1 compliance), the CTA copy avoids "click here to subscribe at our website" wording — instead it frames the action as "Manage your team" / "Upgrade your business plan" and lets the user follow the URL on their own.
 
 ### Purchase flow
 

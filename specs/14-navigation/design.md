@@ -247,10 +247,16 @@ Sub-routes under `(app)/workouts/`, `(app)/exercises/`, `(app)/session/`, `(app)
 
 ```tsx
 // packages/mobile/src/ui/containers/TrainHubContainer.tsx
-import { Segmented, HeaderBar, IconBtn } from "~/ui/components/foundation";
-import { IconSearch, IconPlus } from "~/ui/components/icons";
+import { useEffect, useState } from "react";
+import { Stack } from "expo-router";
+import { Btn, HeaderBar, IconBtn, Segmented } from "~/ui/components/foundation";
+import { IconPlus, IconSearch } from "~/ui/components/icons";
 import { WorkoutsListContainer } from "./WorkoutsListContainer";
 import { ExerciseListContainer } from "./ExerciseListContainer";
+import { CreateExerciseSheetContainer } from "./CreateExerciseSheetContainer";
+import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
+// `openSearch` referenced below at the search IconBtn is a placeholder —
+// real handler wired in 04 STORY-007 (open the search sheet over Train > Exercises).
 import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 export function TrainHubContainer() {
@@ -478,11 +484,22 @@ const LEGACY_REDIRECTS: Record<string, () => void> = {
 };
 
 useEffect(() => {
-  const sub = Linking.addEventListener("url", ({ url }) => {
+  const handle = (url: string) => {
     const { pathname } = new URL(url);
     const handler = LEGACY_REDIRECTS[pathname];
     if (handler) handler();
+  };
+  // Cold-launch deep link (app was closed; opened via push tap or shared URL).
+  // Linking.getInitialURL returns the URL that started the app — addEventListener
+  // does NOT fire for that one, only for URLs received while running. Without
+  // this branch, push notifications that deep-link to /workouts /exercises/create
+  // /profile / etc. on a cold start would land on expo-router's 404 instead of
+  // the redirected destination.
+  Linking.getInitialURL().then((url) => {
+    if (url) handle(url);
   });
+  // Hot URL events (foreground / background return).
+  const sub = Linking.addEventListener("url", ({ url }) => handle(url));
   return () => sub.remove();
 }, []);
 ```

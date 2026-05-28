@@ -446,9 +446,9 @@ Per cross-cuts § 5. This spec emits:
 **Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** The live `notification_type` Postgres enum at `packages/db/src/schema.ts:139` includes `'workout_assigned','friend_request','pt_request','pt_accepted','physio_request','physio_accepted','workout_reminder','goal_milestone','trainer_feedback'`. Three of the four triggers above introduce NEW values. The first M4 PR that emits any of these MUST coordinate a companion migration owned by `09-notifications-social`:
 
 ```sql
-ALTER TYPE notification_type ADD VALUE 'streak_milestone';
-ALTER TYPE notification_type ADD VALUE 'streak_at_risk';
-ALTER TYPE notification_type ADD VALUE 'freeze_token_applied';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'streak_milestone';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'streak_at_risk';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'freeze_token_applied';
 ```
 
 Without this migration sequenced BEFORE the streak engine ships, the first `INSERT INTO notifications` for any of the three new types fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new types to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).

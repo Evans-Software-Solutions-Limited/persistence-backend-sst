@@ -389,12 +389,12 @@ Per cross-cuts § 5, this spec emits:
 **Enum-extension requirement (per cross-cuts § 5 + `09-notifications-social § Backend — enum-extension contract`).** The live `notification_type` Postgres enum at `packages/db/src/schema.ts:139` includes `workout_assigned` but none of the other five values. The first M8 backend PR that emits any of these MUST coordinate a companion migration owned by `09-notifications-social`:
 
 ```sql
-ALTER TYPE notification_type ADD VALUE 'goal_assigned_by_trainer';
-ALTER TYPE notification_type ADD VALUE 'workout_logged_on_behalf';
-ALTER TYPE notification_type ADD VALUE 'measurement_logged_on_behalf';
-ALTER TYPE notification_type ADD VALUE 'nutrition_target_set_by_trainer';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'goal_assigned_by_trainer';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'workout_logged_on_behalf';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'measurement_logged_on_behalf';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'nutrition_target_set_by_trainer';
 -- M9.5 cut (deferred until trainer-nutrition-on-behalf ships):
-ALTER TYPE notification_type ADD VALUE 'nutrition_entry_logged_on_behalf';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'nutrition_entry_logged_on_behalf';
 ```
 
 Without the migration sequenced BEFORE the on-behalf handlers ship, the first `INSERT INTO notifications` for any new type fails at runtime with `invalid input value for enum notification_type`. Per the cross-cuts § 5 procedure, the same PR also appends the new types to the cross-cuts taxonomy table (already done in PR #76) + extends `09-notifications-social/design.md § Frontend — domain models` `NotificationType` union (already done).

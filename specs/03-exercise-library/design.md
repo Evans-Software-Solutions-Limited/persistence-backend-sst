@@ -600,4 +600,4 @@ Scope when picked up (small follow-up PR, can land independently after `04` ship
 
 ### Migration block
 
-None. The endpoint extension reads from existing tables (`exercise_logs` from M3; `personal_records` from M4).
+None. The endpoint extension reads from existing tables (`exercise_sets` joined to `session_exercises` joined to `workout_sessions` — per the corrected SQL above; per-set history doesn't live in any `exercise_logs` table) and `personal_records` (shape per `schema.ts:492`, no new migration).
