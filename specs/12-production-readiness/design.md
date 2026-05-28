@@ -372,25 +372,57 @@ export async function purchaseSubscription(productId: string) {
 // microservices/core/src/application/subscriptions/handlers/ios-receipt.ts
 import { wrapHandler } from "../../infra/observability/sentry";
 
-export const handler = wrapHandler(async (event) => {
-  const { receipt, productId } = JSON.parse(event.body);
-  const verification = await verifyAppleReceipt(receipt);
-  if (!verification.valid)
+export const handler = wrapHandler(
+  withAuth(async (event, ctx) => {
+    // ctx.userId is the JWT-authenticated user. Apple receipts do NOT carry
+    // the app's userId — Apple has no notion of who is signed in to our app.
+    // Granting to verification.userId (which doesn't exist on the verifier
+    // response) would either resolve to `undefined` or silently grant to the
+    // wrong account. Worse: without `withAuth`, any caller could replay a
+    // valid receipt against any account. The userId MUST come from the
+    // request context.
+    const { receipt, productId } = JSON.parse(event.body);
+
+    const verification = await verifyAppleReceipt(receipt);
+    if (!verification.valid)
+      return {
+        statusCode: 402,
+        body: JSON.stringify({ error: "invalid_receipt" }),
+      };
+
+    // Audit binding: Apple receipts carry an optional `appAccountToken` set
+    // at purchase time (by the client passing a UUID into RNIap.requestSubscription).
+    // We can set it to ctx.userId at purchase + assert it matches here so
+    // receipt → user is independently auditable.
+    if (
+      verification.appAccountToken &&
+      verification.appAccountToken !== ctx.userId
+    ) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ error: "receipt_account_mismatch" }),
+      };
+    }
+
+    await grantEntitlement(
+      ctx.userId,
+      productIdToTier(productId),
+      verification.expiresAt,
+      {
+        source: "ios_iap",
+        originalTransactionId: verification.originalTransactionId,
+      },
+    );
+
     return {
-      statusCode: 402,
-      body: JSON.stringify({ error: "invalid_receipt" }),
+      statusCode: 200,
+      body: JSON.stringify({ entitlement: "granted" }),
     };
-
-  // Grant entitlement matching the productId
-  await grantEntitlement(
-    verification.userId,
-    productId,
-    verification.expiresAt,
-  );
-
-  return { statusCode: 200, body: JSON.stringify({ entitlement: "granted" }) };
-});
+  }),
+);
 ```
+
+`withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated to pass `appAccountToken: ctx.userId` so the binding is set at purchase time.
 
 ### Stripe gating on iOS
 

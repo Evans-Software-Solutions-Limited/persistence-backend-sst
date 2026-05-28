@@ -248,7 +248,7 @@ Sub-routes under `(app)/workouts/`, `(app)/exercises/`, `(app)/session/`, `(app)
 ```tsx
 // packages/mobile/src/ui/containers/TrainHubContainer.tsx
 import { useEffect, useState } from "react";
-import { Stack } from "expo-router";
+import { View } from "react-native";
 import { Btn, HeaderBar, IconBtn, Segmented } from "~/ui/components/foundation";
 import { IconPlus, IconSearch } from "~/ui/components/icons";
 import { WorkoutsListContainer } from "./WorkoutsListContainer";
@@ -257,7 +257,6 @@ import { CreateExerciseSheetContainer } from "./CreateExerciseSheetContainer";
 import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 // `openSearch` referenced below at the search IconBtn is a placeholder —
 // real handler wired in 04 STORY-007 (open the search sheet over Train > Exercises).
-import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 export function TrainHubContainer() {
   // Zustand selectors — see useTrainSegment definition below.
@@ -282,8 +281,11 @@ export function TrainHubContainer() {
     }
   }, [pendingCreate, clearPendingCreate]);
 
+  // NOTE: <View> from react-native, not <Stack> from expo-router. expo-router
+  // Stack is a navigator (only renders <Stack.Screen> children); using it as a
+  // layout container here would discard the body.
   return (
-    <Stack>
+    <View style={{ flex: 1 }}>
       <HeaderBar
         large
         eyebrow="TRAIN"
@@ -312,6 +314,7 @@ export function TrainHubContainer() {
         visible={createSheetOpen}
         onClose={() => setCreateSheetOpen(false)}
       />
+      {/* Sheet rendered last so the modal layer sits above the body content. */}
       <Segmented
         options={["Workouts", "Exercises"]}
         value={segment}

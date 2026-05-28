@@ -187,64 +187,101 @@ type ProfileDrawerProps = {
 Render structure:
 
 ```tsx
-<BottomSheet visible={visible} onClose={onClose} height="default">
-  {/* Identity block — extra.jsx:30–41 */}
-  <Row gap={14} mb={16}>
-    <Avatar
-      initials={profile.initials}
-      size={56}
-      tone="primary"
-      badge={mode === "coach" ? "COACH" : undefined}
-    />
-    <Stack flex={1}>
-      <Text variant="h1">{profile.name}</Text>
-      <Text variant="body" color="$text3" size={12}>
-        {profile.email}
-      </Text>
-      <Row gap={6} mt={6}>
-        {subscription && tierBadge(subscription.tier) && (
-          <Pill tone={tierPillTone(subscription.tier)} size="xs">
-            {tierBadge(subscription.tier)}
-          </Pill>
-        )}
-        {subscription?.inTrial && (
-          <Pill tone="ember" size="xs">
-            7-DAY TRIAL
-          </Pill>
-        )}
+// Render-time skeleton when profile hasn't resolved yet (first paint or 4xx-then-empty).
+// Avatar gets initials "–", name + email render as skeleton blocks via DrawerRow's
+// existing `loading` prop from 01-design-system STORY-004 AC 4.6.
+if (!profile) {
+  return (
+    <BottomSheet visible={visible} onClose={onClose} height="default">
+      <Row gap={14} mb={16}>
+        <Avatar initials="–" size={56} tone="primary" />
+        <Stack flex={1}>
+          <Text variant="h1" color="$text3">
+            Loading…
+          </Text>
+        </Stack>
+        <IconBtn icon={<IconX size={16} />} tone="ghost" onPress={onClose} />
       </Row>
-    </Stack>
-    <IconBtn icon={<IconX size={16} />} tone="ghost" onPress={onClose} />
-  </Row>
+    </BottomSheet>
+  );
+}
 
-  {/* Mode-switch card */}
-  {isTrainerEligible && (
-    <ModeSwitchCardPresenter
-      mode={mode}
-      clientCount={clientCount}
-      onSwitch={onSwitchMode}
-    />
-  )}
+// Helper: join non-empty fragments with separators. Keeps "undefined · undefinedkg"
+// out of the sub label when optional profile fields aren't filled in yet.
+const profileDetailsSub = (p: NonNullable<typeof profile>) =>
+  [
+    p.name,
+    p.age != null ? String(p.age) : null,
+    p.weightKg != null ? `${p.weightKg}kg` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-  {/* Account section */}
-  <DrawerSection title="Account">
-    <DrawerRow
-      icon={<IconUser size={16} />}
-      title="Profile details"
-      sub={`${profile.name} · ${profile.age} · ${profile.weightKg}kg`}
-      onPress={onOpenProfile}
-    />
-    <DrawerRow
-      icon={<IconMedal size={16} />}
-      title="Achievements"
-      sub={`${achievementsCount} of 12 unlocked`}
-      trailing={
-        <Pill tone="gold" size="xs">
-          {achievementsCount}
-        </Pill>
-      }
-      onPress={onOpenAchievements}
-    />
+return (
+  <BottomSheet visible={visible} onClose={onClose} height="default">
+    {/* Identity block — extra.jsx:30–41 */}
+    <Row gap={14} mb={16}>
+      <Avatar
+        initials={profile.initials}
+        size={56}
+        tone="primary"
+        badge={mode === "coach" ? "COACH" : undefined}
+      />
+      <Stack flex={1}>
+        <Text variant="h1">{profile.name}</Text>
+        <Text variant="body" color="$text3" size={12}>
+          {profile.email}
+        </Text>
+        <Row gap={6} mt={6}>
+          {subscription && tierBadge(subscription.tier) && (
+            <Pill tone={tierPillTone(subscription.tier)} size="xs">
+              {tierBadge(subscription.tier)}
+            </Pill>
+          )}
+          {subscription?.inTrial && (
+            <Pill tone="ember" size="xs">
+              7-DAY TRIAL
+            </Pill>
+          )}
+        </Row>
+      </Stack>
+      <IconBtn icon={<IconX size={16} />} tone="ghost" onPress={onClose} />
+    </Row>
+
+    {/* Mode-switch card */}
+    {isTrainerEligible && (
+      <ModeSwitchCardPresenter
+        mode={mode}
+        clientCount={clientCount}
+        onSwitch={onSwitchMode}
+      />
+    )}
+
+    {/* Account section */}
+    <DrawerSection title="Account">
+      <DrawerRow
+        icon={<IconUser size={16} />}
+        title="Profile details"
+        sub={profileDetailsSub(profile)}
+        onPress={onOpenProfile}
+      />
+      <DrawerRow
+        icon={<IconMedal size={16} />}
+        title="Achievements"
+        sub={
+          achievementsCount != null
+            ? `${achievementsCount} of 12 unlocked`
+            : "—"
+        }
+        trailing={
+          achievementsCount != null ? (
+            <Pill tone="gold" size="xs">
+              {achievementsCount}
+            </Pill>
+          ) : undefined
+        }
+        onPress={onOpenAchievements}
+      />
     <DrawerRow
       icon={<IconHealth size={16} />}
       title="Health & integrations"

@@ -237,7 +237,7 @@ type HomeProps = {
   coachPeek?: { clientCount: number; needAttention: number; newPRs: number };
 
   onOpenWorkout: (workoutId: string) => void;
-  onOpenTab: (tab: "train" | "fuel" | "you" | "progress") => void;
+  onOpenTab: (tab: "train" | "fuel" | "you") => void; // `progress` deleted per 14-navigation § route-migration; content moved into `you`
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
   onLogWater: () => void;
