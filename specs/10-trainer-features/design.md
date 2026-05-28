@@ -222,7 +222,7 @@ trainer_client_notes
 
 **Spec aligns to existing shape — no new table.** The richer existing shape (`note_type`, `title`, `content`, `is_private`, `session_id`) is preserved and exposed:
 
-- `note_type` — drives the Notes section's tone-tinted left border in `<ClientDetailPresenter>` (`progress` → success, `injury` → ember, `milestone` → gold, `concern` → warning, `general` → neutral).
+- `note_type` — drives the Notes section's tone-tinted left border in `<ClientDetailPresenter>`. `<Card accent>` and `<Pill tone>` unions (01 § Card / § Pill) don't include `"warning"`, so the five `note_type_enum` values map onto the available tones as: `progress` → `success`, `injury` → `ember`, `milestone` → `gold`, `concern` → `ember` (urgency-without-failure — matches sweep-4 fix for `streak_at_risk` in `09-notifications-social`), `general` → no accent (renders as a default `<Card>` with no left-border tint).
 - `title` + `content` — the spec's earlier `body` field is split. Title shows in the row preview, content in the detail sheet.
 - `is_private` — `true` notes never leave the trainer's device-tied view; `false` notes may surface in trainer-to-trainer handover flows when the relationship transfers (post-launch).
 - `session_id` — when a note is anchored to a specific session (e.g. "Felt good on the heavy 5×5 today"), links back to the session row for context.

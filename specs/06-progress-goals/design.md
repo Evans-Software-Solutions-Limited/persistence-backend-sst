@@ -280,9 +280,15 @@ return <HabitsGridPresenter habits={habits.data} onToggle={(goalId, date) => tog
 
 // Presenter
 type HabitsGridProps = {
-  habits: { id: string; label: string; tone: PillTone; days: boolean[] }[];   // days array length 7, today is last
+  habits: { id: string; label: string; tone: HabitTileTone; days: boolean[] }[];   // days array length 7, today is last
   onToggle: (goalId: string, date: Date) => void;
 };
+
+// Re-exported from 01-design-system to keep <HabitsGrid> aligned with <HabitTile>:
+//   HabitTileTone = "primary" | "gold" | "trainer" | "ember" | "success"
+// Narrower than PillTone (which includes "neutral" and "error"). The container
+// (HabitsGridContainer) is responsible for mapping any goal-level tone hint
+// to a value in this 5-element subset before constructing each habit row.
 ```
 
 Each cell renders as `<HabitTile>` (from `01-design-system`) with the appropriate state.

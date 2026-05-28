@@ -181,7 +181,7 @@ Per `library.jsx:145–165`. `<Card>` with 3pt left-border in tone derived from 
 Level values are the lowercase enum members from `exerciseDifficultyEnum` (`schema.ts:31`); render-side capitalisation happens in the pill label, not on the union member.
 
 ```ts
-import type { CardAccent } from "~/ui/components/Card"; // see 01-design-system
+import type { CardAccent } from "~/ui/components/foundation/Card"; // see 01-design-system (Card.tsx lives under components/foundation/)
 
 type ExerciseLevel = "beginner" | "intermediate" | "advanced" | "expert";
 
@@ -299,25 +299,52 @@ export function CreateExerciseSheetContainer({ visible, onClose }) {
 
 ### Sheet mount-point
 
-Mounted inside `<TrainHubContainer>` from `14-navigation`:
+Mounted inside `<TrainHubContainer>` from `14-navigation`. The full container (including the Zustand-selector hook reads + the `pendingCreate` deep-link effect) is canonical in `14-navigation/design.md § Train hub`; the snippet below mirrors only the parts relevant to the sheet so this spec stays self-contained. **Do not duplicate the canonical definition — `14-navigation` owns it.**
 
 ```tsx
 function TrainHubContainer() {
-  const [segment, setSegment] = useTrainSegment();
+  const segment = useTrainSegment((s) => s.segment); // see 14-navigation for full hook contract
+  const setSegment = useTrainSegment((s) => s.setSegment);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // (pendingCreate effect for /exercises/create deep-link redirect lives in 14)
+
   return (
     <>
       <HeaderBar
         large
         eyebrow="TRAIN"
-        title={segment === 'Workouts' ? 'Workouts' : 'Exercises'}
-        trailing={segment === 'Exercises'
-          ? <Btn size="sm" variant="soft" tone="primary" icon={<IconPlus/>} onPress={() => setSheetOpen(true)}>Create</Btn>
-          : <IconBtn icon={<IconSearch size={18}/>} tone="ghost" onPress={…} />}
+        title={segment === "Workouts" ? "Workouts" : "Exercises"}
+        trailing={
+          segment === "Exercises" ? (
+            <Btn
+              size="sm"
+              variant="soft"
+              tone="primary"
+              icon={<IconPlus />}
+              onPress={() => setSheetOpen(true)}
+            >
+              Create
+            </Btn>
+          ) : (
+            <IconBtn icon={<IconSearch size={18} />} tone="ghost" onPress={…} />
+          )
+        }
       />
-      <Segmented options={['Workouts','Exercises']} value={segment} onChange={setSegment} />
-      {segment === 'Workouts' ? <WorkoutsListContainer/> : <ExerciseListContainer/>}
-      <CreateExerciseSheetContainer visible={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <Segmented
+        options={["Workouts", "Exercises"]}
+        value={segment}
+        onChange={setSegment}
+      />
+      {segment === "Workouts" ? (
+        <WorkoutsListContainer />
+      ) : (
+        <ExerciseListContainer />
+      )}
+      <CreateExerciseSheetContainer
+        visible={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+      />
     </>
   );
 }

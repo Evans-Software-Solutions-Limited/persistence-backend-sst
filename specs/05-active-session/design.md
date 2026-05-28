@@ -155,6 +155,7 @@ useEffect(() => {
 
 ```tsx
 // packages/mobile/src/ui/containers/ActiveWorkoutOverlay.tsx
+import { useEffect } from "react";
 import { useActiveWorkout } from "~/state/active-workout";
 import { ActiveSessionContainer } from "./ActiveSessionContainer";
 import { ActiveWorkoutBarPresenter } from "~/ui/presenters/ActiveWorkoutBarPresenter";
@@ -164,6 +165,19 @@ export function ActiveWorkoutOverlay() {
   const expanded = useActiveWorkout((s) => s.expanded);
   const elapsedSeconds = useActiveWorkout((s) => s.elapsedSeconds);
   const expand = useActiveWorkout((s) => s.expand);
+  const tick = useActiveWorkout((s) => s.tick);
+
+  // The tick interval lives at the OVERLAY layer, not inside
+  // <ActiveSessionContainer>. The overlay stays mounted for the entire session
+  // (whether expanded or minimised), so the timer keeps advancing while the bar
+  // is showing. The container only mounts when expanded — if the interval lived
+  // there, minimising would unmount the container, clear the interval, and the
+  // ActiveWorkoutBar would render a frozen clock until re-expanded.
+  useEffect(() => {
+    if (!workout) return;
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [workout, tick]);
 
   if (!workout) return null;
 
@@ -478,10 +492,9 @@ export function ActiveSessionContainer() {
   const { mutateAsync: endSession } = useEndSession();
   const restTimer = useRestTimerState();
 
-  useEffect(() => {
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // NOTE: the tick interval intentionally lives in <ActiveWorkoutOverlay> (see
+  // § Overlay state machine), NOT here. This container unmounts on minimise,
+  // so a tick interval inside it would freeze the bar's clock until re-expand.
 
   if (!workout || !sessionId) return null;
 

@@ -443,6 +443,7 @@ import { Linking } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDrawer } from "~/state/drawer";
+import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 const LEGACY_REDIRECTS: Record<string, () => void> = {
   "/workouts": () => {

@@ -36,6 +36,7 @@ Drawer mounts at the `(app)/_layout.tsx` level (per `14-navigation` STORY-004 AC
 ## `<ProfileDrawerContainer>` plumbing
 
 ```tsx
+import { router } from "expo-router";
 import { useDrawer } from "~/state/drawer";
 import { useUserMode } from "~/state/user-mode";
 import {
