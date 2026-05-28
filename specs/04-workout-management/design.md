@@ -1,265 +1,470 @@
-# 04 — Workout Management: Technical Design
+# 04 — Workout Management: Design
 
-## Domain Model
+> **Spec rewritten from scratch on 2026-05-27.** Pairs with `requirements.md` (same date).
 
-```typescript
-// src/domain/models/workout.ts (mobile) / mirrors backend response shapes
-export interface Workout {
-  id: string;
+---
+
+## Architecture overview
+
+The data layer is unchanged from V2. The presentation layer rewires through new primitives + relocates under the Train hub. File map:
+
+```
+packages/mobile/
+├── app/(app)/
+│   ├── (tabs)/
+│   │   └── train.tsx                    ← TrainHubContainer (owned by 14-navigation)
+│   ├── workouts/
+│   │   ├── create.tsx                   ← WorkoutCreatorContainer (preserved)
+│   │   └── [id]/
+│   │       ├── index.tsx                ← WorkoutDetailContainer (preserved)
+│   │       └── edit.tsx                 ← WorkoutEditorContainer (preserved)
+│   └── exercises/
+│       ├── [id].tsx                     ← ExerciseDetailContainer (preserved)
+│       ├── [id]/edit.tsx                ← ExerciseEditorContainer (preserved)
+│       ├── create.tsx                   ← DELETED — replaced by CreateExerciseSheet
+│       └── filters/                     ← preserved
+└── src/
+    ├── application/
+    │   ├── workouts/                    ← unchanged (90% coverage preserved)
+    │   └── exercises/                   ← unchanged
+    ├── domain/{models,ports}            ← unchanged
+    ├── adapters/{api,storage}           ← unchanged (SQLite cache + sync queue)
+    └── ui/
+        ├── containers/
+        │   ├── WorkoutsListContainer.tsx        ← rewired under Train segment
+        │   ├── ExerciseListContainer.tsx        ← rewired under Train segment
+        │   ├── WorkoutDetailContainer.tsx       ← unchanged plumbing, presenter updated
+        │   ├── WorkoutCreatorContainer.tsx      ← unchanged plumbing
+        │   ├── WorkoutEditorContainer.tsx       ← unchanged plumbing
+        │   ├── CreateExerciseSheetContainer.tsx ← NEW
+        │   └── ExerciseEditorContainer.tsx      ← unchanged plumbing
+        └── presenters/
+            ├── WorkoutsListPresenter.tsx
+            ├── ExerciseListPresenter.tsx
+            ├── WorkoutDetailPresenter.tsx
+            ├── WorkoutCreatorPresenter.tsx
+            ├── WorkoutEditorPresenter.tsx
+            ├── CreateExerciseSheetPresenter.tsx   ← NEW
+            └── ExerciseEditorPresenter.tsx
+```
+
+---
+
+## `<WorkoutsListPresenter>` rewrite
+
+Per `library.jsx:4–47`. Props match the existing V2 presenter — internals rewired through new primitives.
+
+```ts
+type WorkoutsListProps = {
+  mine: Workout[];
+  assigned: Workout[];
+  defaults: Workout[];
+  isLoading: boolean;
+  error: Error | null;
+  workoutLimit?: { used: number; limit: number };
+  onCreate: () => void;
+  onOpen: (workoutId: string) => void;
+  onStart: (workoutId: string) => void;
+  onRefresh: () => Promise<void>;
+};
+```
+
+Layout:
+
+```tsx
+<ScrollView refreshControl={…}>
+  <Btn full variant="filled" tone="primary" size="lg" icon={<IconPlus/>} onPress={onCreate}>
+    Create Workout
+  </Btn>
+
+  {workoutLimit && <WorkoutLimitIndicator used={…} limit={…} />}
+
+  <Section title="My Workouts" sub={`${mine.length} created · ${assigned.length} assigned`}>
+    <Card pad={0} radius={14}>
+      {mine.map((w, i) => <WorkoutRow key={w.id} workout={w} isLast={i === mine.length - 1} onPress={…} onStart={…} />)}
+    </Card>
+  </Section>
+
+  <Section title="Assigned" sub={`${assigned.length} from coach`}>
+    <Card pad={0} radius={14}>{assigned.map(…)}</Card>
+  </Section>
+
+  <Section title="Templates" sub={`${defaults.length} ready-to-use`}>
+    <Card pad={0} radius={14}>{defaults.map(…)}</Card>
+  </Section>
+</ScrollView>
+```
+
+### `<WorkoutRow>` — new spec-local composite
+
+Per `library.jsx:64–82`. Lives in `packages/mobile/src/ui/components/workouts/WorkoutRow/` (domain-specific, not a `01-design-system` foundation/composite).
+
+```ts
+type WorkoutRowProps = {
+  workout: Workout;
+  isLast: boolean;
+  onPress: () => void;
+  onStart: () => void;
+};
+```
+
+Layout: 40×40 toned icon tile (`<IconDumbbell size={20}/>`) + name + meta + `<IconBtn size={32} icon={<IconPlay size={12}/>} tone="primary" onPress={onStart}/>`. Tone derived from `workout.tags[0]` or workout colour preference; defaults to `$primary`. Meta line: `{mins}m · {ex} exercises · <Pill tone={tone} size="xs">{badge}</Pill>`. Bottom border `$border` unless `isLast`.
+
+---
+
+## `<ExerciseListPresenter>` rewrite
+
+Per `library.jsx:88–166`. Props:
+
+```ts
+type ExerciseListProps = {
+  exercises: Exercise[];
+  isLoading: boolean;
+  error: Error | null;
+  searchQuery: string;
+  activeFilter: string;
+  onSearch: (q: string) => void;
+  onFilterChange: (f: string) => void;
+  onOpenFilterMenu: () => void;
+  onOpen: (exerciseId: string) => void;
+  onCreate: () => void; // opens the CreateExerciseSheet
+  onRefresh: () => Promise<void>;
+};
+```
+
+Layout:
+
+```tsx
+<View>
+  <SearchBar
+    value={searchQuery}
+    onChangeText={onSearch}
+    placeholder={`Search ${exercises.length} exercises`}
+  />
+
+  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <IconBtn
+      icon={<IconFilter size={14} />}
+      size={32}
+      tone="neutral"
+      onPress={onOpenFilterMenu}
+    />
+    {FILTER_CHIPS.map((label) => (
+      <FilterChip
+        key={label}
+        active={activeFilter === label}
+        onPress={() => onFilterChange(label)}
+      >
+        {label}
+      </FilterChip>
+    ))}
+  </ScrollView>
+
+  <FlashList
+    data={filteredExercises}
+    renderItem={({ item }) => (
+      <ExerciseCard exercise={item} onPress={() => onOpen(item.id)} />
+    )}
+    estimatedItemSize={108}
+  />
+</View>
+```
+
+### `<FilterChip>` — new spec-local composite
+
+Per `library.jsx:131–142`. Pill-shaped pressable, `$surface2` default, `$primary` fill + `$primaryInk` fg when active. 32pt height, 14pt horizontal padding.
+
+### `<ExerciseCard>` — new spec-local composite
+
+Per `library.jsx:145–165`. `<Card>` with 3pt left-border in tone derived from primary muscle. Header row: name + level pill (tone derived: Beginner → success, Intermediate → gold, Advanced → error). Body: short description. Footer: primary muscle pill + neutral pills for tags.
+
+```ts
+function levelToTone(
+  level: "Beginner" | "Intermediate" | "Advanced",
+): PillTone {
+  return level === "Beginner"
+    ? "success"
+    : level === "Intermediate"
+      ? "gold"
+      : "error";
+}
+
+function muscleToTone(muscle: string): CardAccent {
+  switch (muscle.toLowerCase()) {
+    case "chest":
+      return "primary";
+    case "back":
+      return "gold";
+    case "legs":
+      return "ember";
+    case "shoulders":
+      return "primary";
+    case "arms":
+      return "gold";
+    case "core":
+      return "success";
+    case "cardio":
+      return "trainer";
+    default:
+      return "primary";
+  }
+}
+```
+
+---
+
+## `<CreateExerciseSheetPresenter>` — new sheet
+
+Replaces V2's full-screen `(app)/exercises/create.tsx`. Per `create-exercise.jsx:19–203`.
+
+```ts
+type CreateExerciseSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (input: NewExerciseInput) => Promise<void>;
+};
+
+type NewExerciseInput = {
   name: string;
-  description: string | null;
-  createdBy: string; // FK → profiles.id; never injectable from request body
-  visibility: WorkoutVisibility;
-  estimatedDurationMinutes: number; // not null, default 30 in DB
-  exercises: WorkoutExercise[]; // populated by GET /workouts/:id and GET /workouts list
-  createdAt: string;
-  updatedAt: string;
-}
+  primaryMuscle: string;
+  secondaryMuscles: string[];
+  equipment: string;
+  level: "Beginner" | "Intermediate" | "Advanced";
+  instructions?: string;
+  photoUrl?: string;
+};
 
-export interface WorkoutExercise {
-  id: string;
-  exerciseId: string;
-  sortOrder: number;
-  supersetGroup: number | null; // null = standalone; same int = same superset
-  targetSets: number | null;
-  targetRepsMin: number; // not null, default 1
-  targetRepsMax: number; // not null, default 1
-  targetDurationSeconds: number | null;
-  restSeconds: number | null; // default 90 in DB
-  notes: string | null;
-  // Joined exercise metadata (present on GET /workouts/:id, optional on list)
-  exercise?: {
-    id: string;
-    name: string;
-    category: string;
-    difficultyLevel: string;
-    videoUrl: string | null;
-    thumbnailUrl: string | null;
-  } | null;
-}
+const MUSCLES = [
+  "Chest",
+  "Back",
+  "Legs",
+  "Shoulders",
+  "Arms",
+  "Core",
+  "Cardio",
+];
+const EQUIPMENT_OPTIONS = [
+  "Barbell",
+  "Dumbbell",
+  "Machine",
+  "Cable",
+  "Bodyweight",
+  "Kettlebell",
+  "Band",
+];
+```
 
-export type WorkoutVisibility = "private" | "friends" | "public";
+Sheet sections (from `create-exercise.jsx`):
 
-export interface CreateWorkoutInput {
-  name: string;
-  description?: string;
-  visibility?: WorkoutVisibility;
-  estimatedDurationMinutes?: number;
-  exercises: CreateWorkoutExerciseInput[]; // M2: required, atomic
-}
+1. **Name input** — text input, required, autoFocus, `$surface2` bg, 10pt radius.
+2. **Photo placeholder** — dashed-border 16:7 aspect button with `<IconCamera>` + label.
+3. **Primary muscle** — radio chips (`$primary` active fill, `$primaryDim` inactive border).
+4. **Secondary muscles** — multi-select chips (active = `$primary` border + `$primaryDim` bg + `<IconCheck>` prefix).
+5. **Equipment** — radio chips (`$gold` accent when selected).
+6. **Level** — 3-column radio grid with per-tier tones.
+7. **Instructions textarea** — multiline, min 88pt, optional.
+8. **Preview chip** — gradient `$primaryDim`→`$surface2`, live PRIMARY + EQUIPMENT + LEVEL + first 2 secondaries + overflow.
+9. **Footer** — Cancel (outline, flex 1) + Save (filled, flex 2). Save disabled until `name.trim()` is non-empty. After successful save: button text → "Saved ✓" for 700ms, then sheet closes.
 
-export interface CreateWorkoutExerciseInput {
-  exerciseId: string;
-  sortOrder: number;
-  supersetGroup?: number;
-  targetSets?: number;
-  targetRepsMin?: number; // default 1
-  targetRepsMax?: number; // default 1
-  targetDurationSeconds?: number;
-  restSeconds?: number; // default 90
-  notes?: string;
-}
+### Container
 
-export interface UpdateWorkoutInput {
-  name?: string;
-  description?: string;
-  visibility?: WorkoutVisibility;
-  estimatedDurationMinutes?: number;
-  // When `exercises` is provided, the backend treats it as a FULL REPLACEMENT
-  // of the workout's exercise list — existing junction rows are deleted and
-  // the supplied array is inserted atomically. Omit to update metadata only.
-  exercises?: CreateWorkoutExerciseInput[];
+```ts
+// CreateExerciseSheetContainer.tsx
+export function CreateExerciseSheetContainer({ visible, onClose }) {
+  const { mutateAsync: createExercise } = useCreateExercise();   // existing V2 mutation
+  return (
+    <CreateExerciseSheetPresenter
+      visible={visible}
+      onClose={onClose}
+      onSave={async (input) => {
+        await createExercise(input);   // queues offline if needed
+        onClose();
+      }}
+    />
+  );
 }
 ```
 
-The schema mirrors `packages/db/src/schema.ts` exactly — `workouts` table + `workout_exercises` junction. Supersets are represented via the integer `supersetGroup` column on `workout_exercises`; there is **no separate `workout_supersets` table**. Two exercises share a superset iff they have equal non-null `supersetGroup` within the same workout.
+### Sheet mount-point
 
-## API Contract (M2 backend)
+Mounted inside `<TrainHubContainer>` from `14-navigation`:
 
-All routes live under `/workouts` on the core Elysia API. Auth via Supabase JWT in the `Authorization` header → `requireAuth` middleware. `userId` is derived from the JWT sub claim and is **never** read from the request body.
-
-### `GET /workouts` — list
-
-**Query params:**
-
-- `type?: "mine" | "assigned" | "default"` — default `mine`
-- `limit?: number` — default 20
-- `offset?: number` — default 0
-
-**Response:** `{ data: Workout[], meta: { pagination: { limit, offset, total }, quota?: { used: number, limit: number | null } } }`
-
-`meta.quota` is included **only when `type=mine`**. `used` = count of workouts where `createdBy = userId`. `limit` = `subscriptions.workoutLimit` for the user, or `null` if unlimited / no subscription row. `meta.pagination.total` is the row count for the query before limit/offset.
-
-Each `Workout` in the list includes its full `exercises[]` array with joined `exercise` metadata. The list is read-heavy (~20 workouts × ~6 exercises each = ~120 junction rows joined to exercises) but avoids N+1 on the list screen — a single round-trip renders the entire list with `WorkoutCard` summaries.
-
-**Filter semantics:**
-
-- `mine` — `workouts.createdBy = userId`. Returns all visibilities (you see your own private workouts).
-- `assigned` — workouts referenced by `workout_assignments` rows where `clientId = userId`. Returns regardless of workout visibility (an assigned workout is intended to be visible to its assignee).
-- `default` — `workouts.visibility = 'public'` AND `createdBy IS NULL OR createdBy != userId` (excludes your own public workouts; those show under `mine`).
-
-### `GET /workouts/:id` — detail
-
-**Response:** `{ data: Workout }` or `404` when the workout doesn't exist or the user lacks visibility access.
-
-Visibility access rules:
-
-- Owner (`createdBy = userId`) — always allowed.
-- `visibility = 'public'` — allowed.
-- `visibility = 'friends'` — allowed iff a row exists in `friendships` with `(userId, ownerId)` or `(ownerId, userId)` and `status = 'accepted'`.
-- `visibility = 'private'` — only owner.
-
-### `POST /workouts` — create with nested exercises (atomic)
-
-**Body:** `CreateWorkoutInput` (see types above). `name` required + non-empty. `exercises` optional but if present must be a non-empty array; M2 frontend always sends ≥1.
-
-The handler runs the workout insert + the multi-row `workout_exercises` insert in a single Drizzle transaction. On any insert failure, both roll back. Returns `201 { data: Workout }` with the full nested exercises array (re-fetched within the transaction).
-
-### `PATCH /workouts/:id` — partial update; nested-exercise full-replacement
-
-**Body:** `UpdateWorkoutInput` (see types above).
-
-When `exercises` is present in the body, the handler runs in a single transaction: delete all `workout_exercises` rows for `workoutId = id`, insert the new array, return the full updated workout. When `exercises` is absent, only the metadata fields (`name` / `description` / `visibility` / `estimatedDurationMinutes`) are updated.
-
-Full-replacement is intentional. The legacy edit form submits the desired final state of the exercise list; client-side diffing into add/update/delete operations adds complexity without buying anything for the M2 use cases. Returns `200 { data: Workout }`.
-
-Authorization: only the owner (`createdBy = userId`) can PATCH. Non-owners get `404` (not `403`) — leaking ownership is unnecessary.
-
-### `DELETE /workouts/:id`
-
-Soft-delete is **not** in M2. The current `delete` is a hard delete; the FK cascade on `workout_exercises.workoutId` cleans up junction rows. Sessions have `onDelete: 'set null'` on `workoutId`, so historical sessions are preserved without their template reference. STORY-005's "soft delete" AC is downgraded to a tasks.md follow-up — workouts that have been performed should arguably be soft-deleted to preserve session lineage, but that wires into M4 progress and is out of scope here.
-
-Authorization: owner-only. Non-owners get `404`. Returns `204` on success.
-
-### Single vs double envelope
-
-- `GET /workouts` (list) — **double envelope**: `{ data: [...], meta: {...} }`. Same pattern as M0 `/exercises`.
-- `GET /workouts/:id`, `POST`, `PATCH` — **single envelope**: `{ data: {...} }`. Same pattern as M1 `/dashboard`.
-- `DELETE` — `204` no body.
-
-The mobile adapter `requestEnvelope<T>` unwraps one `data` layer for single-envelope endpoints; list endpoints use `requestPaginatedEnvelope<T>` which handles both. M2 must not double-wrap on the backend or double-unwrap on the frontend.
-
-## Domain Services
-
-```typescript
-// src/domain/services/workoutService.ts (mobile)
-export function validateWorkout(
-  input: CreateWorkoutInput,
-): Result<void, ValidationError[]>;
-export function calculateEstimatedDuration(
-  exercises: WorkoutExercise[],
-): number;
-export function reorderExercises(
-  exercises: WorkoutExercise[],
-  fromIndex: number,
-  toIndex: number,
-): WorkoutExercise[];
-export function groupAsSuperSet(
-  exercises: WorkoutExercise[],
-  exerciseIds: string[],
-): WorkoutExercise[];
-export function ungroupSuperSet(
-  exercises: WorkoutExercise[],
-  supersetGroup: number,
-): WorkoutExercise[];
-export function propagateSupersetSharedFields(
-  exercises: WorkoutExercise[],
-  supersetGroup: number,
-  shared: Pick<WorkoutExercise, "targetSets" | "restSeconds">,
-): WorkoutExercise[];
+```tsx
+function TrainHubContainer() {
+  const [segment, setSegment] = useTrainSegment();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  return (
+    <>
+      <HeaderBar
+        large
+        eyebrow="TRAIN"
+        title={segment === 'Workouts' ? 'Workouts' : 'Exercises'}
+        trailing={segment === 'Exercises'
+          ? <Btn size="sm" variant="soft" tone="primary" icon={<IconPlus/>} onPress={() => setSheetOpen(true)}>Create</Btn>
+          : <IconBtn icon={<IconSearch size={18}/>} tone="ghost" onPress={…} />}
+      />
+      <Segmented options={['Workouts','Exercises']} value={segment} onChange={setSegment} />
+      {segment === 'Workouts' ? <WorkoutsListContainer/> : <ExerciseListContainer/>}
+      <CreateExerciseSheetContainer visible={sheetOpen} onClose={() => setSheetOpen(false)} />
+    </>
+  );
+}
 ```
 
-`propagateSupersetSharedFields` is M2-new — when the user edits `targetSets` or `restSeconds` on the lead exercise of a superset, the change must propagate to all peers in the same group. Pure function; runs on every edit in `WorkoutEditorContainer` reducer.
+---
 
-## Port Extensions
+## `<WorkoutDetailPresenter>` rewrite
 
-```typescript
-// ApiPort additions (M2 — replaces M1 stubs)
-getWorkouts(params?: { type?: WorkoutListType; limit?: number; offset?: number }):
-  Promise<Result<{ workouts: Workout[]; quota?: WorkoutQuota }, ApiError>>;
-getWorkout(id: string): Promise<Result<Workout, ApiError>>;
-createWorkout(data: CreateWorkoutInput): Promise<Result<Workout, ApiError>>;
-updateWorkout(id: string, data: UpdateWorkoutInput): Promise<Result<Workout, ApiError>>;
-deleteWorkout(id: string): Promise<Result<void, ApiError>>;
+V2 already has this as a full-screen modal route (PR #41). Rewrite is shell-only.
 
-// StoragePort additions (M2)
-getCachedWorkouts(userId: string, type: WorkoutListType): Promise<Workout[]>;
-cacheWorkouts(userId: string, type: WorkoutListType, workouts: Workout[]): Promise<void>;
-getCachedWorkout(userId: string, id: string): Promise<Workout | null>;
-cacheWorkout(userId: string, workout: Workout): Promise<void>;
-removeCachedWorkout(userId: string, id: string): Promise<void>;
-getWorkoutsCacheAge(userId: string, type: WorkoutListType): Promise<number | null>;
+```ts
+type WorkoutDetailProps = {
+  workout: Workout; // includes nested exercises[]
+  isOwner: boolean;
+  isLoading: boolean;
+  error: Error | null;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onStartSession: () => void;
+};
 ```
 
-## SQLite cache shape
+Layout:
 
-Two new tables in the mobile SQLite schema, scoped by `userId` and `type`:
+- `<HeaderBar>` compact with leading close `<IconBtn icon={<IconX/>}/>` + centred workout name + trailing Edit `<IconBtn icon={<IconEdit/>}/>` (owner only).
+- Body: optional description (`$body.md` `$text2`), exercise list (each item: superset bracket on left side + exercise name + set/rep target + rest), Start CTA at the bottom (`<Btn variant="filled" tone="primary" size="lg" full>Start Workout</Btn>`).
+- Each exercise row tap → `(app)/exercises/[id].tsx`.
 
-```sql
-CREATE TABLE IF NOT EXISTS cached_workouts (
-  user_id TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('mine', 'assigned', 'default')),
-  payload TEXT NOT NULL,    -- JSON-serialized Workout[]
-  quota TEXT,               -- JSON-serialized WorkoutQuota | null (only set for type='mine')
-  synced_at INTEGER NOT NULL,
-  PRIMARY KEY (user_id, type)
-);
+Container (`WorkoutDetailContainer`) unchanged — same `useGetWorkoutById`, `useDeleteWorkout`, `useStartSession`.
 
-CREATE TABLE IF NOT EXISTS cached_workout_detail (
-  user_id TEXT NOT NULL,
-  workout_id TEXT NOT NULL,
-  payload TEXT NOT NULL,    -- JSON-serialized Workout (with full exercises)
-  synced_at INTEGER NOT NULL,
-  PRIMARY KEY (user_id, workout_id)
-);
+---
+
+## `<WorkoutCreatorPresenter>` + `<WorkoutEditorPresenter>` rewrite
+
+V2's existing form structure preserved. Shell-only changes:
+
+- Header → `<HeaderBar>` compact with leading close + trailing Save IconBtn.
+- Field labels + inputs styled per new tokens (`$surface2` bg, `$border` 1pt, `$md` radius, `$body.md` text).
+- `<AddExercisePopover>` preserved (already a `<BottomSheet>`-style popover in V2).
+- `<ExerciseConfigCard>` preserved with internal styling refresh through new primitives.
+- Submit button → `<Btn variant="filled" tone="primary" size="lg" full>Save Workout</Btn>`.
+
+No behavioural changes — same validation, same submit, same propagation logic for superset shared fields.
+
+---
+
+## `<ExerciseDetailPresenter>` rewrite
+
+V2 already has it. Shell-only update:
+
+- Header: `<HeaderBar>` compact with close + Edit (owner only).
+- Body: photo (if present), description, primary + secondary muscles section, equipment section, instructions section, related-exercises section.
+- All `<View>` cards → `<Card>`. All ad-hoc badges → `<Pill>`. All Ionicons → Lucide.
+
+Container unchanged.
+
+---
+
+## `<ExerciseEditorPresenter>` rewrite
+
+V2 already has it. Same field set as the Create Exercise sheet (per STORY-008) but rendered full-screen. Shell-only update + ensures the field components are shared with the sheet (a `<ExerciseFormFields>` shared internal component that both the sheet and the editor compose against).
+
+```ts
+// packages/mobile/src/ui/components/exercises/ExerciseFormFields.tsx
+type ExerciseFormFieldsProps = {
+  value: NewExerciseInput;
+  onChange: (next: NewExerciseInput) => void;
+  showsPhoto?: boolean; // sheet shows compact; editor shows full
+};
 ```
 
-`WORKOUTS_LIST_STALE_AFTER_MS = 5 * 60 * 1000` (5 min, matches dashboard TTL — workouts list shifts when a session completes or a PT assigns).
+Both `<CreateExerciseSheetPresenter>` and `<ExerciseEditorPresenter>` import + render this component. Avoids field-state duplication.
 
-## UI Components (mobile)
+---
 
-```
-containers/WorkoutsListContainer.tsx          # Tabs, search, popover state
-presenters/WorkoutsListPresenter.tsx          # Three-section list, pull-to-refresh
-containers/WorkoutCreatorContainer.tsx        # Form state, exercise picker
-presenters/WorkoutCreatorPresenter.tsx        # Form UI
-containers/WorkoutEditorContainer.tsx         # Same form, async-loaded
-presenters/WorkoutEditorPresenter.tsx         # Same form UI
+## Backend impact
 
-# Section / item components — ported verbatim from persistence-mobile/components/workouts/
-ui/components/workouts/WorkoutCard/           # List item, with start/edit/delete
-ui/components/workouts/WorkoutSection/        # Expandable section header + body
-ui/components/workouts/WorkoutPopover/        # Modal detail view
-ui/components/workouts/WorkoutLimitIndicator/ # Quota CTA
-ui/components/workouts/QuickActions/          # Top action bar
-ui/components/workouts/AddExercisePopover/    # Bottom-sheet picker (creator + editor)
-ui/components/workouts/AddExerciseList/       # Multi-select list inside picker
-ui/components/workouts/ExerciseDetailsModal/  # Drill-in detail inside picker
-ui/components/workouts/ExerciseConfigCard/    # Per-exercise form card with superset visuals
-ui/theme/workoutsLegacyTheme.ts               # V2 compat shim — extends homeLegacyTheme
-```
+**None.**
 
-The picker re-uses the **M0 `ExerciseListContainer`** under the hood — it already filters / paginates against `GET /exercises` and is reference-list-aware. M2 wraps it in a multi-select sheet with two CTAs ("Add as exercises" / "Add as superset").
+All consumed endpoints exist in V2:
 
-## Offline Strategy
+| Method | Path             |
+| ------ | ---------------- |
+| GET    | `/workouts`      |
+| GET    | `/workouts/:id`  |
+| POST   | `/workouts`      |
+| PUT    | `/workouts/:id`  |
+| DELETE | `/workouts/:id`  |
+| GET    | `/exercises`     |
+| GET    | `/exercises/:id` |
+| POST   | `/exercises`     |
+| PUT    | `/exercises/:id` |
+| DELETE | `/exercises/:id` |
 
-- **Reads cache-first with 5-minute TTL.** Same pattern as M1 dashboard.
-- **Writes are queued through `SyncQueuePort`.** Each create/update/delete becomes a queued mutation. M0 proved this for exercises; M2 extends to workouts. The sync worker replays in order; conflicts are server-wins (last-write-wins). Server-issued IDs replace client-issued temp UUIDs on successful POST.
-- **Optimistic UI on writes.** Form submit returns immediately with the local cached row; user proceeds. If the queued sync fails after retries, a banner surfaces in the Workouts tab with a retry CTA.
+No migrations. No new ports. No sync-queue handler changes.
 
-## Visibility & access control
+---
 
-Implemented in `WorkoutRepository.getById` (already shipped). M2 verifies under test:
+## Offline-first preservation
 
-- Owner sees private / friends / public.
-- Friend sees `friends` (bidirectional `friendships.status = 'accepted'`).
-- Stranger sees only `public`.
-- Non-owner gets `404` on PATCH / DELETE attempts (not `403`).
+All flows continue to use the V2 architecture:
 
-## Out of scope (deferred)
+1. **Reads** — SQLite cache hydrated on launch; UI renders from cache; background refetch from API; cache updates trigger re-render.
+2. **Writes** — mutation enqueued to sync queue + optimistic local cache update; sync engine flushes when online; conflicts last-write-wins (server authoritative).
+3. **Create exercise via sheet** — uses the same `useCreateExercise()` mutation as the deleted full-screen route. Mutation path is unchanged.
 
-- **Active session navigation.** "Start workout" CTAs render but route to a coming-soon stub. Real wiring is M3.
-- **Drag-and-drop reorder.** Legacy doesn't have it. STORY-002's drag-and-drop AC is reclassified as M11 polish.
-- **Soft-delete on workouts that have sessions.** STORY-005 hard-deletes; sessions retain `workoutId IS NULL` via FK `set null`. Soft-delete is a tasks.md follow-up.
-- **Workout programs.** `workout_programs` / `program_workouts` exist in schema but no M2 surface touches them. M8 (Trainer features) revisits.
-- **Workout assignments writes.** M2 reads from `workout_assignments` for the Assigned tab; M8 adds the trainer-side write surface.
+No new sync-queue action types. The presentation layer change is opaque to the application + adapter layers.
+
+---
+
+## Testing strategy
+
+### Unit tests (coverage preserved)
+
+- `application/workouts/**` — 90% preserved.
+- `application/exercises/**` — same.
+
+### New presenter tests
+
+- `WorkoutsListPresenter` — three sections render, empty state per section, quota indicator when `workoutLimit !== undefined`, refresh control wiring.
+- `ExerciseListPresenter` — filter chip toggling, search input wiring, FlashList render, empty filter result.
+- `CreateExerciseSheetPresenter` — every field interaction, Save disabled until name non-empty, Save fires mutation, "Saved ✓" affirmation for 700ms.
+- `WorkoutDetailPresenter` — Edit IconBtn hidden for non-owners, Start CTA wires `onStartSession`, superset bracket renders for grouped exercises.
+
+### New component tests
+
+- `WorkoutRow` — props → render, `onPress` + `onStart` separate; tone derivation from `workout.tags[0]`.
+- `FilterChip` — active/inactive visuals.
+- `ExerciseCard` — tone derivation from primary muscle + level → pill tone mapping.
+- `ExerciseFormFields` — shared form component used by both sheet + editor; all field interactions covered.
+
+### Integration tests
+
+- `TrainHubContainer` with `InMemoryApiAdapter` seeded with workouts + exercises; toggle segment; tap Create Workout → assert navigation; tap +Create on Exercises → assert sheet opens; submit sheet → assert mutation + cache update.
+- Offline submit: in-memory adapter throws; assert mutation queued + UI optimistic + sync engine retries on reconnect.
+
+### Visual regression
+
+- Side-by-side screenshots: `<WorkoutsListPresenter>` vs `library.jsx`, `<ExerciseListPresenter>` vs same, `<CreateExerciseSheetPresenter>` vs `create-exercise.jsx`.
+
+### Coverage
+
+90% lines/branches/functions/statements.
+
+---
+
+## Risks + mitigations
+
+| Risk                                                                                  | Mitigation                                                                                                                                    |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Removing `(app)/exercises/create.tsx` breaks deep links                               | Add redirect in `14-navigation` STORY-007 deep-link map: `/exercises/create` → open Train > Exercises + open CreateExerciseSheet.             |
+| Form state in the sheet is large; sheet might lag                                     | Use `react-hook-form` per `_agent.md` § Forms recommendation. Per-field re-renders only.                                                      |
+| BottomSheet 88% height + keyboard + many fields cause layout issues on small screens  | Validate during sheet PR. Sheet content uses `ScrollView keyboardShouldPersistTaps="handled"`. Same pattern as M9 fuel sheets.                |
+| Migration of full-screen create to sheet might confuse users                          | "Saved ✓" affirmation gives strong feedback. The `+Create` placement in Train > Exercises header is more discoverable than V2's old location. |
+| Tone derivation from primary muscle is arbitrary                                      | Mapping table committed in `design.md § <ExerciseCard>`. If owner feedback differs, revise via "**Revised YYYY-MM-DD:**".                     |
+| Some sub-routes under `(app)/workouts/[id]/edit.tsx` could conflict with new patterns | Validated against existing V2 file tree — no conflicts.                                                                                       |
+
+---
+
+_End of `04-workout-management/design.md` · 2026-05-27 (rewritten from scratch)_

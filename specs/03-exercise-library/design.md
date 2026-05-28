@@ -500,3 +500,79 @@ A dedicated PR — split backend + frontend — scoped around three concepts:
 - **Reference-list driven filters vs. search** — today the modal filters on `muscle_groups[]` and `equipment[]` as hard AND constraints. Keyword search runs over the full `name/description/instructions`. Keep them orthogonal or merge (search narrows _within_ filters)? Legacy did the latter; likely correct.
 
 See `tasks.md` § Phase 9 for the work breakdown.
+
+---
+
+## Revised 2026-05-28 — Exercise detail user-history extension (absorbs former M5 backend scope)
+
+The former `M5-exercise-detail-creator` milestone was deleted on 2026-05-28 — its frontend scope is now fully owned by `04-workout-management § STORY-006/007/008` (Create Exercise as bottom-sheet, Exercise Detail, Exercise Edit). The remaining backend extension lives here.
+
+### Endpoint addition
+
+`GET /exercises/:id` extended with a per-user history slice. Existing response shape preserved — new fields are additive:
+
+```ts
+type ExerciseDetailResponse = {
+  // existing fields preserved verbatim
+  id: string;
+  name: string;
+  primaryMuscle: string;
+  secondaryMuscles: string[];
+  equipment: string;
+  level: "Beginner" | "Intermediate" | "Advanced";
+  description: string;
+  instructions?: string;
+  photoUrl?: string;
+  createdBy: string;
+  createdAt: string;
+
+  // NEW — per-user history (computed when authenticated user requests)
+  userHistory?: {
+    recentSets: Array<{
+      sessionId: string;
+      loggedAt: string; // ISO timestamp
+      reps: number;
+      weightKg: number;
+      rpe?: number;
+    }>; // last 10 sets, most recent first
+    personalRecords: Array<{
+      // user's PRs for THIS exercise
+      repTarget: 1 | 3 | 5 | 10;
+      weightKg: number;
+      achievedAt: string;
+    }>;
+  };
+};
+```
+
+### Implementation
+
+Handler in `microservices/core/src/application/exercises/handlers/get-exercise.ts`:
+
+1. Authenticate request (already required).
+2. Fetch the exercise row (existing logic).
+3. If user is authenticated, run two parallel queries:
+   - `SELECT session_id, logged_at, reps, weight_kg, rpe FROM exercise_logs WHERE user_id = ? AND exercise_id = ? ORDER BY logged_at DESC LIMIT 10`
+   - `SELECT rep_target, weight, achieved_at FROM personal_records WHERE user_id = ? AND exercise_id = ?`
+4. Merge into response under `userHistory`.
+
+`personal_records` table comes from `06-progress-goals § Database migrations` — this extension lands AFTER the M4 backend ships (06's tasks).
+
+### Frontend consumption
+
+`04-workout-management § STORY-007` Exercise Detail screen renders `userHistory.recentSets` as a "Recent sets" section + `userHistory.personalRecords` as a PR strip at the top. The implementing PR adds an AC to `04-workout-management/requirements.md` STORY-007 covering this consumption.
+
+### `POST /exercises/classify` AI feature — legacy port
+
+The former M5 brief also mentioned a `POST /exercises/classify` for AI auto-classification (suggest primary muscle + equipment from name + description). **This is a legacy port — the classification path is already supported in the legacy backend, so the V2 work is wiring the existing capability into the new Create Exercise sheet (`04-workout-management § STORY-006`).**
+
+Scope when picked up (small follow-up PR, can land independently after `04` ships):
+
+1. Backend handler at `microservices/core/src/application/exercises/handlers/classify.ts` calls the existing legacy classification service.
+2. Gate per cross-cuts § 4 — `assertEntitlement(userId, 'aiAccess')` first; logs to `ai_usage_log`.
+3. Frontend hook `useClassifyExercise()` consumed in `<CreateExerciseSheetPresenter>` (`04-workout-management`). Add a "Suggest" Btn next to the muscle + equipment chip rows that calls the hook with the current name + description; results pre-populate the radio selections.
+4. Spec amendment via "Revised YYYY-MM-DD" append on both `03-exercise-library/design.md` (endpoint shape locked in) and `04-workout-management/requirements.md` (new AC under STORY-006 covering the Suggest CTA).
+
+### Migration block
+
+None. The endpoint extension reads from existing tables (`exercise_logs` from M3; `personal_records` from M4).
