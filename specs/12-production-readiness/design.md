@@ -206,7 +206,7 @@ Every screen's container wraps its return in `<ErrorBoundary>` per:
 
 ```tsx
 // packages/mobile/src/ui/components/ErrorBoundary.tsx
-import { Sentry } from "@sentry/react-native";
+import * as Sentry from "@sentry/react-native";
 
 class ErrorBoundary extends React.Component {
   componentDidCatch(error: Error, info: ErrorInfo) {

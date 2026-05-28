@@ -149,80 +149,94 @@ Failure to write the audit row → entire transaction rolls back → handler ret
 
 ## Backend — programs
 
-New tables:
+Existing tables in `packages/db/src/schema.ts` cover the program structure end-to-end:
+
+| Table (Drizzle name → SQL name)               | Shape                                                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `workoutPrograms` → `workout_programs` (:647) | `(id, name, description, total_weeks, created_by FK → profiles, is_public, created_at, updated_at)`                       |
+| `programWeeks` → `program_weeks` (:660)       | `(id, program_id FK → workout_programs, week_number, name, description, created_at)` + `UNIQUE (program_id, week_number)` |
+| `programWorkouts` → `program_workouts` (:677) | `(id, program_week_id FK → program_weeks, workout_id FK → workouts, day_of_week, sort_order, created_at)`                 |
+
+**Spec aligns to existing shape — no new program/week/day tables.** Day-of-week is encoded on `program_workouts.day_of_week` (integer 1–7) instead of a separate `program_days` table; rest days are represented as the absence of a `program_workouts` row for that day.
+
+One net-new table is required for trainer client-assignment tracking — there is no existing `program_assignments` analogue in the schema:
 
 ```sql
-CREATE TABLE programs (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  trainer_id      uuid NOT NULL REFERENCES profiles(id),
-  name            text NOT NULL,
-  description     text,
-  weeks_count     integer NOT NULL,
-  days_per_week   integer NOT NULL,
-  accent_tone     text DEFAULT 'primary',
-  created_at      timestamptz DEFAULT now(),
-  updated_at      timestamptz DEFAULT now()
-);
-
-CREATE TABLE program_weeks (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  program_id      uuid NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
-  week_number     integer NOT NULL,
-  notes           text,
-  UNIQUE (program_id, week_number)
-);
-
-CREATE TABLE program_days (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  program_week_id   uuid NOT NULL REFERENCES program_weeks(id) ON DELETE CASCADE,
-  day_number        integer NOT NULL,
-  workout_id        uuid REFERENCES workouts(id),     -- nullable for rest days
-  is_rest           boolean NOT NULL DEFAULT false,
-  UNIQUE (program_week_id, day_number)
-);
-
 CREATE TABLE program_assignments (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  program_id      uuid NOT NULL REFERENCES programs(id),
+  program_id      uuid NOT NULL REFERENCES workout_programs(id) ON DELETE CASCADE,
   client_id       uuid NOT NULL REFERENCES profiles(id),
+  assigned_by     uuid NOT NULL REFERENCES profiles(id),                          -- the trainer; cross-cuts § 1.4 audit also fires
   started_at      date NOT NULL,
   current_week    integer NOT NULL DEFAULT 1,
-  status          text NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','paused','cancelled')),
-  UNIQUE (program_id, client_id)
+  status          assignment_status NOT NULL DEFAULT 'assigned',                  -- reuses existing assignmentStatusEnum (assigned/started/completed/skipped) per schema.ts:97
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX program_assignments_program_client_uq ON program_assignments (program_id, client_id);
+CREATE INDEX program_assignments_client_status ON program_assignments (client_id, status);
+```
+
+Existing `assignmentStatusEnum` (`assigned`/`started`/`completed`/`skipped`) covers the four states the prototype's Programs screen needs; no new enum required.
+
+Optional UI-only column on `workout_programs` (not required for v1; flag in implementation PR if the design's `accent_tone` chrome is needed at backend level rather than client-side):
+
+```sql
+-- Optional follow-up if a server-side accent override is wanted; otherwise
+-- the client derives accent from the program's index in the trainer's list.
+-- ALTER TABLE workout_programs ADD COLUMN accent_tone text DEFAULT 'primary';
 ```
 
 Endpoints:
 
-| Method | Path                                                                 |
-| ------ | -------------------------------------------------------------------- |
-| GET    | `/trainers/me/programs`                                              |
-| POST   | `/trainers/me/programs`                                              |
-| GET    | `/trainers/me/programs/:id`                                          |
-| PUT    | `/trainers/me/programs/:id`                                          |
-| DELETE | `/trainers/me/programs/:id`                                          |
-| POST   | `/trainers/me/programs/:id/assign` (body: `{ clientId, startedAt }`) |
-| POST   | `/trainers/me/programs/:id/days` (bulk-upsert week+day structure)    |
+| Method | Path                                                                                                             |
+| ------ | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/trainers/me/programs`                                                                                          |
+| POST   | `/trainers/me/programs`                                                                                          |
+| GET    | `/trainers/me/programs/:id`                                                                                      |
+| PUT    | `/trainers/me/programs/:id`                                                                                      |
+| DELETE | `/trainers/me/programs/:id`                                                                                      |
+| POST   | `/trainers/me/programs/:id/assign` (body: `{ clientId, startedAt }`) — creates `program_assignments` row + audit |
+| POST   | `/trainers/me/programs/:id/structure` (bulk-upsert `program_weeks` + `program_workouts` rows for week 1..N)      |
 
 ---
 
 ## Backend — trainer notes
 
-New table:
+Existing table `trainerClientNotes` → `trainer_client_notes` (`packages/db/src/schema.ts:908`):
 
-```sql
-CREATE TABLE trainer_client_notes (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  trainer_id      uuid NOT NULL REFERENCES profiles(id),
-  client_id       uuid NOT NULL REFERENCES profiles(id),
-  body            text NOT NULL,
-  created_at      timestamptz DEFAULT now(),
-  updated_at      timestamptz DEFAULT now()
-);
-CREATE INDEX trainer_client_notes_trainer_client ON trainer_client_notes (trainer_id, client_id, created_at DESC);
+```
+trainer_client_notes
+  id            uuid PK
+  trainer_id    uuid NOT NULL FK → profiles
+  client_id     uuid NOT NULL FK → profiles
+  note_type     note_type_enum DEFAULT 'progress'   -- values: progress | injury | milestone | concern | general
+  title         text NOT NULL
+  content       text NOT NULL
+  is_private    boolean DEFAULT false
+  session_id    uuid FK → workout_sessions ON DELETE SET NULL
+  created_at    timestamptz DEFAULT now()
+  updated_at    timestamptz DEFAULT now()
+  UNIQUE INDEX trainer_client_notes_trainer_client_fk (trainer_id, client_id)
 ```
 
-Endpoints per the catalog above. **Client never sees these.** Visibility enforced by `WHERE trainer_id = self.id` in every read.
+**Spec aligns to existing shape — no new table.** The richer existing shape (`note_type`, `title`, `content`, `is_private`, `session_id`) is preserved and exposed:
+
+- `note_type` — drives the Notes section's tone-tinted left border in `<ClientDetailPresenter>` (`progress` → success, `injury` → ember, `milestone` → gold, `concern` → warning, `general` → neutral).
+- `title` + `content` — the spec's earlier `body` field is split. Title shows in the row preview, content in the detail sheet.
+- `is_private` — `true` notes never leave the trainer's device-tied view; `false` notes may surface in trainer-to-trainer handover flows when the relationship transfers (post-launch).
+- `session_id` — when a note is anchored to a specific session (e.g. "Felt good on the heavy 5×5 today"), links back to the session row for context.
+
+**Existing `UNIQUE (trainer_id, client_id)` constraint is incorrect for "many notes per relationship".** It enforces one-note-per-trainer-client-pair, which contradicts the cross-cuts § 1.4 audit pattern (`client_note_added` event fires multiple times per relationship). **M8 implementation MUST drop the unique constraint and replace with a non-unique index optimised for the per-client timeline read:**
+
+```sql
+-- M8 first migration:
+DROP INDEX trainer_client_notes_trainer_client_fk;
+CREATE INDEX trainer_client_notes_trainer_client_created_idx
+  ON trainer_client_notes (trainer_id, client_id, created_at DESC);
+```
+
+Visibility enforced by `WHERE trainer_id = self.id` in every read. Client never sees these.
 
 ---
 
