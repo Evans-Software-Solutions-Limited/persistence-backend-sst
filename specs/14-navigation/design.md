@@ -325,7 +325,7 @@ export function TrainHubContainer() {
       ) : (
         <ExerciseListContainer />
       )}
-    </Stack>
+    </View>
   );
 }
 ```
@@ -486,26 +486,34 @@ const LEGACY_REDIRECTS: Record<string, () => void> = {
   },
 };
 
-useEffect(() => {
-  const handle = (url: string) => {
-    const { pathname } = new URL(url);
-    const handler = LEGACY_REDIRECTS[pathname];
-    if (handler) handler();
-  };
-  // Cold-launch deep link (app was closed; opened via push tap or shared URL).
-  // Linking.getInitialURL returns the URL that started the app — addEventListener
-  // does NOT fire for that one, only for URLs received while running. Without
-  // this branch, push notifications that deep-link to /workouts /exercises/create
-  // /profile / etc. on a cold start would land on expo-router's 404 instead of
-  // the redirected destination.
-  Linking.getInitialURL().then((url) => {
-    if (url) handle(url);
-  });
-  // Hot URL events (foreground / background return).
-  const sub = Linking.addEventListener("url", ({ url }) => handle(url));
-  return () => sub.remove();
-}, []);
+// React enforces Rules of Hooks at runtime — useEffect MUST live inside a
+// function component, not at module top level. Extract the redirect handler
+// into a no-render component and mount it from RootLayout.
+export function LegacyRedirects() {
+  useEffect(() => {
+    const handle = (url: string) => {
+      const { pathname } = new URL(url);
+      const handler = LEGACY_REDIRECTS[pathname];
+      if (handler) handler();
+    };
+    // Cold-launch deep link (app was closed; opened via push tap or shared URL).
+    // Linking.getInitialURL returns the URL that started the app —
+    // addEventListener does NOT fire for that one, only for URLs received while
+    // running. Without this branch, push notifications that deep-link to
+    // /workouts /exercises/create /profile / etc. on a cold start would land on
+    // expo-router's 404 instead of the redirected destination.
+    Linking.getInitialURL().then((url) => {
+      if (url) handle(url);
+    });
+    // Hot URL events (foreground / background return).
+    const sub = Linking.addEventListener("url", ({ url }) => handle(url));
+    return () => sub.remove();
+  }, []);
+  return null;
+}
 ```
+
+`<LegacyRedirects/>` is mounted once inside `RootLayout` (see § Mode-state slice's `app/_layout.tsx` example above) alongside the `useUserMode.rehydrate()` effect — both run on first render of the root, both at root scope.
 
 Lifespan: 6 months from the Phase 2 nav-restructure ship date. Phase 5 cleanup (`12-production-readiness`) removes the map.
 

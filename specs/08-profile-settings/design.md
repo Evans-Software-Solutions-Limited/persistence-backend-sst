@@ -295,29 +295,34 @@ return (
     />
   </DrawerSection>
 
-  {/* Subscription section — extra.jsx:78–91 */}
-  <DrawerSection title="Subscription">
-    <Card pad={14} radius={12} surface={1} onPress={onOpenSubscription}>
-      <Row alignItems="center" justifyContent="space-between">
-        <Stack>
-          <Row gap={6} alignItems="center" mb={4}>
-            <Pill tone={tierPillTone(subscription.tier)} size="xs">
-              {tierBadge(subscription.tier) ?? "FREE"}
-            </Pill>
-            {subscription.expiresAt && (
-              <Text variant="body" color="$text3" size={11}>
-                Ends {fmtDate(subscription.expiresAt)}
-              </Text>
-            )}
-          </Row>
-          <Text variant="body" color="$text2" size={13}>
-            {subscription.planDescription}
-          </Text>
-        </Stack>
-        <IconChevronR size={16} color="$text3" />
-      </Row>
-    </Card>
-  </DrawerSection>
+  {/* Subscription section — extra.jsx:78–91. Wrapped in `{subscription && …}`
+      so the section disappears entirely when useGetUserSubscription hasn't
+      resolved yet (independent of useGetUserProfile) or returned no row. The
+      identity-block Pills at the top already use the same guard pattern. */}
+  {subscription && (
+    <DrawerSection title="Subscription">
+      <Card pad={14} radius={12} surface={1} onPress={onOpenSubscription}>
+        <Row alignItems="center" justifyContent="space-between">
+          <Stack>
+            <Row gap={6} alignItems="center" mb={4}>
+              <Pill tone={tierPillTone(subscription.tier)} size="xs">
+                {tierBadge(subscription.tier) ?? "FREE"}
+              </Pill>
+              {subscription.expiresAt && (
+                <Text variant="body" color="$text3" size={11}>
+                  Ends {fmtDate(subscription.expiresAt)}
+                </Text>
+              )}
+            </Row>
+            <Text variant="body" color="$text2" size={13}>
+              {subscription.planDescription}
+            </Text>
+          </Stack>
+          <IconChevronR size={16} color="$text3" />
+        </Row>
+      </Card>
+    </DrawerSection>
+  )}
 
   <DrawerSection title="Preferences">
     <DrawerRow

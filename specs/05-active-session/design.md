@@ -366,7 +366,7 @@ Header row: 28×28 icon tile + name + "{N} sets × {min}-{max} reps" + swap Icon
     style={inputStyle}
   />
   <TextInput value={weight} … />
-  <IconBtn icon={<IconX size={12}/>} size={20} tone="ghost" color="$error" onPress={onDelete}/>
+  <IconBtn icon={<IconX size={12}/>} size={20} tone="error" onPress={onDelete}/>
 </Row>
 ```
 

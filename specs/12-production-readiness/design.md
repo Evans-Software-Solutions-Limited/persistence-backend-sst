@@ -351,13 +351,25 @@ function productIdToTier(productId: string): SubscriptionTierName {
 ```ts
 // packages/mobile/src/adapters/payments/ios-iap.adapter.ts
 import * as RNIap from "react-native-iap";
+import { useAuthUser } from "~/state/auth-user";
 
 export async function purchaseSubscription(productId: string) {
   await RNIap.initConnection();
   const products = await RNIap.getSubscriptions({ skus: [productId] });
   if (products.length === 0) throw new Error("Product not found");
 
-  const purchase = await RNIap.requestSubscription({ sku: productId });
+  // appAccountToken binds the receipt to the signed-in app user at purchase
+  // time. The backend handler (below) asserts
+  // verification.appAccountToken === ctx.userId as defence-in-depth on top
+  // of the JWT auth — without this parameter the backend check is dead code.
+  // `ctx.userId` is a backend concept; mobile-side we read the auth'd user
+  // from the existing useAuthUser Zustand slice (V2 pattern).
+  const appAccountToken = useAuthUser.getState().userId;
+
+  const purchase = await RNIap.requestSubscription({
+    sku: productId,
+    appAccountToken,
+  });
   // Send receipt to backend for verification + entitlement grant
   await api.post("/subscriptions/ios-receipt", {
     receipt: purchase.transactionReceipt,
@@ -371,6 +383,10 @@ export async function purchaseSubscription(productId: string) {
 ```ts
 // microservices/core/src/application/subscriptions/handlers/ios-receipt.ts
 import { wrapHandler } from "../../infra/observability/sentry";
+import { withAuth } from "../../infra/auth/withAuth";
+import { verifyAppleReceipt } from "../verification/apple";
+import { grantEntitlement } from "../entitlements/grant";
+import { productIdToTier } from "../iap/productIds";
 
 export const handler = wrapHandler(
   withAuth(async (event, ctx) => {
@@ -422,7 +438,7 @@ export const handler = wrapHandler(
 );
 ```
 
-`withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated to pass `appAccountToken: ctx.userId` so the binding is set at purchase time.
+`withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated above to pass `appAccountToken: useAuthUser.getState().userId` so the binding is set at purchase time (Apple stores this UUID on the receipt; the verifier returns it for the backend cross-check).
 
 ### Stripe gating on iOS
 

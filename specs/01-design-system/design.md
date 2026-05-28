@@ -197,17 +197,27 @@ type PillProps = {
 ### 4. `<IconBtn>` — `ui.jsx:255–275`
 
 ```ts
+type IconBtnTone =
+  | "neutral"
+  | "ghost"
+  | "primary"
+  | "gold"
+  | "trainer"
+  | "ember"
+  | "success"
+  | "error";
+
 type IconBtnProps = {
   icon: ReactNode;
   onPress?: () => void;
-  tone?: "neutral" | "primary" | "gold" | "ghost"; // default 'neutral'
+  tone?: IconBtnTone; // default 'neutral'. Matches <Btn>'s tone palette so screen authors don't need an ad-hoc `color?` escape hatch (e.g. delete-set IconBtn in 05 uses tone="error").
   size?: number; // default 36
   active?: boolean;
   accessibilityLabel?: string;
 };
 ```
 
-`event.stopPropagation()` baked into `onPress` handler. No `onPress` → renders as `<View>` (nested-pressable-safe).
+`event.stopPropagation()` baked into `onPress` handler. No `onPress` → renders as `<View>` (nested-pressable-safe). `tone` widening matches the sweep-4 `<Card accent>` extension to the full `<Btn>` palette — same rationale: any domain-derived tone (`muscleToTone` in 04, `noteTypeToTone` in 10, etc.) can be passed to `<IconBtn>` without coercion.
 
 ### 5. `<Avatar>` — `ui.jsx:205–234`
 
