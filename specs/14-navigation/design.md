@@ -255,6 +255,22 @@ import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 export function TrainHubContainer() {
   const [segment, setSegment] = useTrainSegment();
+  // CreateExerciseSheet is mounted locally rather than navigated to —
+  // 04-workout-management § Sheet mount-point deletes (app)/exercises/create.tsx
+  // and replaces the full-screen route with this bottom-sheet pattern.
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+
+  // Legacy /exercises/create deep-links surface here via the redirect map below
+  // (Phase 2 → 6-month shim). When the redirect fires, it sets the segment to
+  // 'Exercises' + drops a one-shot flag on the train-segment store; this effect
+  // reads + clears the flag to open the sheet.
+  useEffect(() => {
+    if (useTrainSegment.getState().pendingCreate) {
+      setCreateSheetOpen(true);
+      useTrainSegment.getState().clearPendingCreate();
+    }
+  }, []);
+
   return (
     <Stack>
       <HeaderBar
@@ -268,7 +284,7 @@ export function TrainHubContainer() {
               tone="primary"
               size="sm"
               icon={<IconPlus size={14} />}
-              onPress={() => router.push("/exercises/create")}
+              onPress={() => setCreateSheetOpen(true)}
             >
               Create
             </Btn>
@@ -280,6 +296,10 @@ export function TrainHubContainer() {
             />
           )
         }
+      />
+      <CreateExerciseSheetContainer
+        visible={createSheetOpen}
+        onClose={() => setCreateSheetOpen(false)}
       />
       <Segmented
         options={["Workouts", "Exercises"]}
@@ -413,6 +433,18 @@ const LEGACY_REDIRECTS: Record<string, () => void> = {
     AsyncStorage.setItem("persistence.train.segment", "Exercises").catch(
       () => {},
     );
+    router.replace("/(app)/(tabs)/train");
+  },
+  // Promised by 04-workout-management § STORY-007 (full-screen
+  // (app)/exercises/create.tsx removed; Train hub mounts the sheet instead).
+  // Sets the segment to Exercises + flags the train-segment store with a
+  // one-shot `pendingCreate` boolean; <TrainHubContainer>'s mount-time effect
+  // reads + clears the flag to open <CreateExerciseSheetContainer>.
+  "/exercises/create": () => {
+    AsyncStorage.setItem("persistence.train.segment", "Exercises").catch(
+      () => {},
+    );
+    useTrainSegment.getState().setPendingCreate(true);
     router.replace("/(app)/(tabs)/train");
   },
   "/progress": () => router.replace("/(app)/(tabs)/you"),

@@ -519,7 +519,7 @@ type ExerciseDetailResponse = {
   primaryMuscle: string;
   secondaryMuscles: string[];
   equipment: string;
-  level: "Beginner" | "Intermediate" | "Advanced";
+  level: "beginner" | "intermediate" | "advanced" | "expert"; // matches exerciseDifficultyEnum (schema.ts:31)
   description: string;
   instructions?: string;
   photoUrl?: string;

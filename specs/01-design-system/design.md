@@ -127,17 +127,28 @@ Each primitive ports its `~/Downloads/handoff/design-source/ui.jsx` (or `tab-bar
 ### 1. `<Card>` — `ui.jsx:7–25`
 
 ```ts
+// Re-export for downstream specs (referenced by 04 muscleToTone, 09 NotificationRow border, etc.)
+export type CardAccent =
+  | "primary"
+  | "gold"
+  | "trainer"
+  | "ember"
+  | "success"
+  | "error";
+
 type CardProps = {
   surface?: 0 | 1 | 2; // 0=$surface, 1=$surface2 (default), 2=$surface3
   pad?: number; // default 16
   radius?: number; // default 14
   glow?: "primary" | "gold" | "trainer";
-  accent?: "primary" | "gold" | "trainer"; // tints border with $<accent>Dim
+  accent?: CardAccent; // tints border with $<accent>Dim — full 6-tone palette matching <Btn>
   onPress?: () => void;
   children: ReactNode;
   style?: ViewStyle;
 };
 ```
+
+Accent matches the full `<Btn>` tone palette so any spec that derives a tone from domain data (e.g. `muscleToTone` in `04-workout-management`, programme accent in `10-trainer-features`) can pass the same union to `<Card accent>` without a coercion step. `glow` stays narrower (`primary | gold | trainer`) because the glow ring is a stronger visual treatment reserved for the three primary brand accents.
 
 With `onPress`: `<Pressable>` with default press feedback. Without: `<View>`. `glow` adds `0 0 0 1px $<glow>Dim, 0 8px 24px $<glow>Glow`.
 

@@ -198,7 +198,7 @@ Layout: 36×36 icon tile (tone derived from `type`) + title (`$display.h3`) + bo
 function notificationIcon(type: NotificationType): { icon: ReactNode; tone: PillTone } {
   switch (type) {
     case 'streak_milestone':                return { icon: <IconFlame/>, tone: 'ember' };
-    case 'streak_at_risk':                  return { icon: <IconBell/>, tone: 'warning' };
+    case 'streak_at_risk':                  return { icon: <IconBell/>, tone: 'gold' };       // <Pill> tone union has no 'warning' — gold matches the urgency-without-failure semantic
     case 'freeze_token_applied':            return { icon: <IconDroplet/>, tone: 'primary' };
     case 'goal_milestone':                  return { icon: <IconTarget/>, tone: 'primary' };
     case 'goal_assigned_by_trainer':        return { icon: <IconTarget/>, tone: 'trainer' };

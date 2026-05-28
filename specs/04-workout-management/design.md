@@ -176,17 +176,29 @@ Per `library.jsx:131–142`. Pill-shaped pressable, `$surface2` default, `$prima
 
 ### `<ExerciseCard>` — new spec-local composite
 
-Per `library.jsx:145–165`. `<Card>` with 3pt left-border in tone derived from primary muscle. Header row: name + level pill (tone derived: Beginner → success, Intermediate → gold, Advanced → error). Body: short description. Footer: primary muscle pill + neutral pills for tags.
+Per `library.jsx:145–165`. `<Card>` with 3pt left-border in tone derived from primary muscle. Header row: name + level pill (tone derived: beginner → success, intermediate → gold, advanced → error, expert → error). Body: short description. Footer: primary muscle pill + neutral pills for tags.
+
+Level values are the lowercase enum members from `exerciseDifficultyEnum` (`schema.ts:31`); render-side capitalisation happens in the pill label, not on the union member.
 
 ```ts
-function levelToTone(
-  level: "Beginner" | "Intermediate" | "Advanced",
-): PillTone {
-  return level === "Beginner"
-    ? "success"
-    : level === "Intermediate"
-      ? "gold"
-      : "error";
+import type { CardAccent } from "~/ui/components/Card"; // see 01-design-system
+
+type ExerciseLevel = "beginner" | "intermediate" | "advanced" | "expert";
+
+function levelToTone(level: ExerciseLevel): PillTone {
+  switch (level) {
+    case "beginner":
+      return "success";
+    case "intermediate":
+      return "gold";
+    case "advanced":
+    case "expert":
+      return "error";
+  }
+}
+
+function levelLabel(level: ExerciseLevel): string {
+  return level[0].toUpperCase() + level.slice(1); // "Beginner", etc. for the pill label only
 }
 
 function muscleToTone(muscle: string): CardAccent {
@@ -229,7 +241,7 @@ type NewExerciseInput = {
   primaryMuscle: string;
   secondaryMuscles: string[];
   equipment: string;
-  level: "Beginner" | "Intermediate" | "Advanced";
+  level: ExerciseLevel; // "beginner" | "intermediate" | "advanced" | "expert" — matches exerciseDifficultyEnum (schema.ts:31). UI radio labels capitalise via levelLabel(); the union value posted to /exercises must be lowercase or the backend rejects with `invalid input value for enum exercise_difficulty`.
   instructions?: string;
   photoUrl?: string;
 };
