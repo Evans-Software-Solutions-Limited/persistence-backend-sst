@@ -1,5 +1,6 @@
 import { View } from "@tamagui/core";
 import { Stack } from "expo-router";
+import { useState } from "react";
 import { ScrollView } from "react-native";
 
 import { Btn } from "@/ui/components/foundation/Btn";
@@ -10,6 +11,7 @@ import { ClientRow } from "@/ui/components/composite/ClientRow";
 import { HabitTile } from "@/ui/components/composite/HabitTile";
 import { PRCard } from "@/ui/components/composite/PRCard";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
+import { SearchBar } from "@/ui/components/composite/SearchBar";
 import { Section } from "@/ui/components/composite/Section";
 import { SummaryChip } from "@/ui/components/composite/SummaryChip";
 import { WorkoutCarouselCard } from "@/ui/components/composite/WorkoutCarouselCard";
@@ -30,6 +32,7 @@ import { Text } from "@/ui/components/Text";
  * each composite lands in its own PR.
  */
 export default function CompositesDevRoute() {
+  const [search, setSearch] = useState("");
   return (
     <>
       <Stack.Screen options={{ title: "Composites" }} />
@@ -275,6 +278,17 @@ export default function CompositesDevRoute() {
               />
               <HabitTile state="locked" tone="trainer" label="Future" />
             </View>
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              SEARCH BAR (40pt input + leading icon)
+            </Text>
+            <SearchBar
+              placeholder="Search exercises"
+              value={search}
+              onChangeText={setSearch}
+            />
           </View>
         </View>
       </Screen>

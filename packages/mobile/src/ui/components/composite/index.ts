@@ -22,3 +22,5 @@ export {
 export type { WorkoutCarouselCardProps } from "./WorkoutCarouselCard";
 export { HabitTile, habitTilePressStyle } from "./HabitTile";
 export type { HabitTileProps, HabitState, HabitTone } from "./HabitTile";
+export { SearchBar } from "./SearchBar";
+export type { SearchBarProps } from "./SearchBar";
