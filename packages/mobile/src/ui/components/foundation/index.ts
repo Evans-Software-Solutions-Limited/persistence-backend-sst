@@ -7,5 +7,7 @@ export { Card } from "./Card";
 export type { CardProps, CardAccent, CardGlow } from "./Card";
 export { Btn } from "./Btn";
 export type { BtnProps, BtnVariant, BtnTone, BtnSize } from "./Btn";
+export { Pill } from "./Pill";
+export type { PillProps, PillSize } from "./Pill";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
