@@ -17,5 +17,7 @@ export { Bar } from "./Bar";
 export type { BarProps } from "./Bar";
 export { Ring, MultiRing } from "./Ring";
 export type { RingProps, MultiRingProps, MultiRingSpec } from "./Ring";
+export { Stat } from "./Stat";
+export type { StatProps, StatTone, StatSize, StatAlign } from "./Stat";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
