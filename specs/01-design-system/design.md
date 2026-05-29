@@ -820,4 +820,23 @@ STORY-003 AC 3.6 + design.md § Foundation primitives #12 + tasks.md T-1.3.12 sp
 
 ---
 
-_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5)_
+## Revised 2026-05-29: codemod scope — token-resolvable positions only
+
+design.md § Codemod's replacement table maps legacy hex/rgba strings to Tamagui token references (`#00D4FF` → `$primary`, `rgba(0,212,255,A)` → `$primaryDim`/`$primaryGlow`, …). Implementation surfaced a correctness blocker: most legacy hex literals under `src/ui/**` do **not** live in Tamagui-resolvable positions. They live in:
+
+1. **`StyleSheet.create({...})` bodies** (e.g. `ActiveSessionBanner` `color: "#fff"`) — plain React Native styles. Tamagui tokens (`$text`) are not resolved by RN's StyleSheet; the literal `"$text"` would render as an invalid colour (invisible / fallback text).
+2. **Component colour props that take concrete colours** — `<LinearGradient colors={["rgba(0,212,255,0.08)", …]}>` (SignInPresenter ambient glows), `<Ionicons color="#fff">`, lucide `color="#0A0B12"`. These components read the raw string, not the Tamagui theme, so a token string breaks them.
+
+Blindly applying the table across these contexts would red the build/visual gate — violating the quality-gate-green-at-every-step rule.
+
+**Decision.** The codemod tokenises hex **only in token-resolvable positions** and skips the rest:
+
+- **Skipped JSX attributes** (value is a concrete colour for a non-Tamagui consumer): `fill`, `stroke` (already specced, icon-owned), plus `color`, `colors`, `tintColor`, `placeholderTextColor`, `shadowColor`, and any `*Color` attribute. Screen authors' Tamagui `<View backgroundColor="$x">` style props still tokenise (those use token names already, not hex).
+- **Skipped `StyleSheet.create(...)` object bodies** — RN StyleSheet literals stay concrete.
+- **Skipped all `__tests__/**`** (not just `__tests__/fixtures/**`) — rewriting hex inside test assertions / props breaks the tests (e.g. `SimpleLineGraph.test.tsx` asserts `toContain("#00D4FF")`). The original `__tests__/fixtures/**` exclusion is widened to the whole `__tests__` tree, matching the documented "leave test snapshots/fixtures alone" intent.
+
+Net effect: the codemod tokenises the genuinely-tokenisable hex (object-literal string values outside StyleSheet/skip-attr/test contexts) and leaves concrete-colour-consumer literals in place. The residual legacy hex in RN-StyleSheet / gradient / icon-colour positions is retired by the owning screen specs when they port those screens to Tamagui primitives (the same "owning spec finishes the port" principle as the adoption sweep). The CI `no-raw-hex-colors` lint rule (AC 6.4) therefore allow-lists the four `*LegacyTheme` files **and** the legacy-screen RN-StyleSheet/gradient positions until their owning spec ports them; it still blocks *new* hex in token-resolvable positions.
+
+---
+
+_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5; codemod token-resolvable scope)_
