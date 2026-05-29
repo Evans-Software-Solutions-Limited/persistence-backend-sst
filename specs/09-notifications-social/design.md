@@ -1,340 +1,487 @@
-# 09 — Notifications & Social: Technical Design
+# 09 — Notifications & Social: Design
 
-## Domain Models
+> **Spec rewritten from scratch on 2026-05-28.** Pairs with `requirements.md`.
 
-```typescript
-// src/domain/models/notification.ts
-export interface AppNotification {
+---
+
+## Architecture overview
+
+Backend already shipped (PR #81). This spec adds the mobile frontend + an ongoing migration ownership for new notification types.
+
+```
+microservices/core/src/application/notifications/    ← already shipped per PR #81
+├── handlers/
+│   ├── register-device.ts
+│   ├── list-notifications.ts
+│   ├── mark-read.ts
+│   ├── mark-all-read.ts
+│   ├── get-preferences.ts
+│   └── post-preferences.ts
+└── services/
+    └── merge-preferences.ts                    ← mergeNotificationPreferences (atomic JSONB ||)
+
+packages/mobile/
+├── app/(app)/
+│   ├── (tabs)/
+│   │   └── index.tsx                          ← <HomeHeader> with bell mount-point (06)
+│   ├── notifications.tsx                       ← NEW route
+│   └── profile/
+│       └── notifications.tsx                   ← NEW route
+└── src/
+    ├── application/
+    │   └── notifications/                     ← NEW domain layer
+    │       ├── commands/
+    │       │   ├── mark-read.command.ts
+    │       │   ├── mark-all-read.command.ts
+    │       │   └── update-preferences.command.ts
+    │       └── queries/
+    │           ├── list-notifications.query.ts
+    │           ├── unread-count.query.ts
+    │           └── preferences.query.ts
+    ├── domain/
+    │   ├── models/
+    │   │   ├── notification.ts
+    │   │   └── notification-preferences.ts
+    │   └── ports/api.port.ts                  ← extensions
+    ├── adapters/
+    │   ├── api/notifications.adapter.ts
+    │   ├── storage/notifications.sqlite.ts    ← cache (100-row LRU)
+    │   └── notifications/expo-notifications.adapter.ts  ← push registration + listener
+    └── ui/
+        ├── containers/
+        │   ├── NotificationsListContainer.tsx
+        │   ├── NotificationPreferencesContainer.tsx
+        │   └── HomeBellContainer.tsx          ← mounts inside HomeHeader from 06
+        └── presenters/
+            ├── NotificationsListPresenter.tsx
+            ├── NotificationPreferencesPresenter.tsx
+            ├── NotificationRowPresenter.tsx
+            └── HomeBellPresenter.tsx
+```
+
+---
+
+## Backend reference — already shipped (PR #81)
+
+| Method | Path                              | Behaviour                                                                                                      |
+| ------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------- | --- | --------------------------------------------------------- |
+| POST   | `/devices/register`               | Body `{ token: string; platform: 'ios' \| 'android' }`. Idempotent upsert by `(user_id, platform)`.            |
+| GET    | `/notifications?cursor=&limit=20` | List, ordered `created_at desc`. Returns `{ rows: Notification[]; nextCursor?: string; unreadCount: number }`. |
+| PATCH  | `/notifications/:id`              | Mark read. Uses `COALESCE(read_at, NOW())` so sync-queue replay preserves original moment.                     |
+| PATCH  | `/notifications/all`              | Mark all read.                                                                                                 |
+| GET    | `/notifications/preferences`      | Returns the `profiles.notification_preferences` JSONB column.                                                  |
+| POST   | `/notifications/preferences`      | Body is a partial preferences object. Merges via `mergeNotificationPreferences` (`notification_preferences     |     | $newPartial`). Returns the merged column via `RETURNING`. |
+
+Spec for these endpoints is already in `09-notifications-social/design.md` (pre-rewrite) — the rewrite preserves the contract; PRs against the new spec must cite the existing handler files at `microservices/core/src/application/notifications/`.
+
+**Notification table** (shipped):
+
+```sql
+notifications (
+  id              uuid PK
+  user_id         uuid FK profiles
+  type            notification_type ENUM
+  title           text
+  body            text
+  data            jsonb       -- includes deepLink + type-specific payload
+  read_at         timestamptz NULL
+  created_at      timestamptz default now()
+)
+```
+
+---
+
+## Frontend — domain models
+
+```ts
+type NotificationType =
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "freeze_token_applied"
+  | "goal_milestone"
+  | "goal_assigned_by_trainer"
+  | "workout_assigned"
+  | "workout_logged_on_behalf"
+  | "measurement_logged_on_behalf"
+  | "nutrition_target_set_by_trainer"
+  | "nutrition_entry_logged_on_behalf" // M9.5+
+  | "daily_nutrition_target_hit";
+
+type Notification = {
   id: string;
-  userId: string;
   type: NotificationType;
   title: string;
-  message: string | null;
-  data: NotificationData;
-  isRead: boolean;
-  readAt: string | null;
-  relatedEntityType: string | null;
-  relatedEntityId: string | null;
-  createdAt: string;
-}
+  body: string;
+  deepLink: string;
+  data: Record<string, unknown>;
+  readAt: Date | null;
+  createdAt: Date;
+};
 
-/**
- * Reconciled to match the DB enum (`packages/db/src/schema.ts:139-149`),
- * which is the source of truth. The mobile `NotificationType` mirrors
- * this exactly — no drift permitted. Adding a new type requires (1) a
- * Drizzle/SQL migration extending the enum and (2) a follow-up update
- * here + in mobile.
- */
-export type NotificationType =
-  | "workout_assigned"
-  | "friend_request"
-  | "pt_request"
-  | "pt_accepted"
-  | "physio_request"
-  | "physio_accepted"
-  | "workout_reminder"
-  | "goal_milestone"
-  | "trainer_feedback";
-
-export interface NotificationData {
-  /**
-   * Single optional deep-link field — see § Deep Linking. When absent,
-   * tapping the notification opens the in-app list without navigating
-   * to a target screen.
-   */
-  deepLink?: string;
-  // Forward-compat: additional opaque keys are permitted but the only
-  // contract-bearing one is `deepLink`. Clients MUST ignore unknown keys.
-  [k: string]: unknown;
-}
-
-// src/domain/models/friendship.ts (DEFERRED beyond M7)
-export interface Friendship {
-  id: string;
-  requesterId: string;
-  addresseeId: string;
-  status: FriendshipStatus;
-  requesterName: string;
-  addresseeName: string;
-  createdAt: string;
-}
-
-export type FriendshipStatus = "pending" | "accepted" | "blocked";
+type NotificationPreferences = Partial<Record<NotificationType, boolean>>;
 ```
 
-## Notifications Port (mobile)
+Source-of-truth enum: `_shared/cross-cuts.md § 5` table. Adding a new type means a coordinated update to both the cross-cuts table + this domain enum + a Drizzle migration extending the Postgres `notification_type` enum.
 
-```typescript
-// src/domain/ports/notifications.port.ts
-export interface NotificationsPort {
-  requestPermissions(): Promise<
-    Result<"granted" | "denied", NotificationError>
-  >;
-  getPermissionStatus(): Promise<"granted" | "denied" | "not_determined">;
-  registerPushToken(token: string): Promise<Result<void, NotificationError>>;
-  scheduleLocalNotification(notification: LocalNotification): Promise<string>; // returns notification ID
-  cancelLocalNotification(id: string): Promise<void>;
-  getDevicePushToken(): Promise<Result<string, NotificationError>>;
+---
+
+## Frontend — `<NotificationsListPresenter>`
+
+```ts
+type NotificationsListProps = {
+  groups: {
+    label: "Today" | "Yesterday" | "This Week" | "Older";
+    notifications: Notification[];
+  }[];
+  unreadCount: number;
+  isLoading: boolean;
+  error: Error | null;
+  onTap: (notif: Notification) => void;
+  onMarkAllRead: () => void;
+  onRefresh: () => Promise<void>;
+  onLoadMore?: () => void; // pagination
+};
+```
+
+Layout:
+
+```tsx
+<Stack flex={1} bg="$bg">
+  <HeaderBar
+    large
+    title="Notifications"
+    eyebrow={`${unreadCount} UNREAD`}
+    trailing={
+      <IconBtn
+        icon={<IconCheck size={18} />}
+        tone="ghost"
+        onPress={onMarkAllRead}
+      />
+    }
+  />
+  <FlashList
+    data={flattenedRowsWithSectionHeaders(groups)}
+    renderItem={({ item }) =>
+      item.type === "section" ? (
+        <Section title={item.label} />
+      ) : (
+        <NotificationRowPresenter
+          notification={item.notification}
+          onPress={() => onTap(item.notification)}
+        />
+      )
+    }
+    refreshControl={
+      <RefreshControl refreshing={isLoading} onRefresh={onRefresh} />
+    }
+    estimatedItemSize={64}
+    onEndReached={onLoadMore}
+    onEndReachedThreshold={0.5}
+  />
+</Stack>
+```
+
+---
+
+## `<NotificationRowPresenter>` — spec-local composite
+
+```ts
+type NotificationRowProps = {
+  notification: Notification;
+  onPress: () => void;
+};
+```
+
+Layout: 36×36 icon tile (tone derived from `type`) + title (`$display.h3`) + body (`$body.md`, 2 lines max with ellipsis) + relative time (`$mono` 11pt) + trailing chevron. Unread → `$primaryDim` background. Icon mapping:
+
+```ts
+function notificationIcon(type: NotificationType): { icon: ReactNode; tone: PillTone } {
+  switch (type) {
+    case 'streak_milestone':                return { icon: <IconFlame/>, tone: 'ember' };
+    case 'streak_at_risk':                  return { icon: <IconBell/>, tone: 'gold' };       // <Pill> tone union has no 'warning' — gold matches the urgency-without-failure semantic
+    case 'freeze_token_applied':            return { icon: <IconDroplet/>, tone: 'primary' };
+    case 'goal_milestone':                  return { icon: <IconTarget/>, tone: 'primary' };
+    case 'goal_assigned_by_trainer':        return { icon: <IconTarget/>, tone: 'trainer' };
+    case 'workout_assigned':                return { icon: <IconDumbbell/>, tone: 'trainer' };
+    case 'workout_logged_on_behalf':        return { icon: <IconDumbbell/>, tone: 'trainer' };
+    case 'measurement_logged_on_behalf':    return { icon: <IconChart/>, tone: 'trainer' };
+    case 'nutrition_target_set_by_trainer': return { icon: <IconApple/>, tone: 'trainer' };
+    case 'nutrition_entry_logged_on_behalf':return { icon: <IconApple/>, tone: 'trainer' };
+    case 'daily_nutrition_target_hit':      return { icon: <IconApple/>, tone: 'success' };
+  }
 }
 ```
 
-## UI Components
+Lives at `packages/mobile/src/ui/components/notifications/NotificationRow/`.
 
+---
+
+## Frontend — `<NotificationPreferencesPresenter>`
+
+```ts
+type NotificationPreferencesProps = {
+  preferences: NotificationPreferences;
+  onToggle: (type: NotificationType, enabled: boolean) => Promise<void>;
+};
 ```
-containers/NotificationListContainer.tsx    # Fetches notifications
-presenters/NotificationListPresenter.tsx    # Notification list
-components/NotificationBadge.tsx            # Unread count
-components/NotificationItem.tsx             # Single notification row
-# Friend-related components — DEFERRED beyond M7.
-```
 
-## Backend endpoints
+Layout: scrollable list of `<Section>`s by category. Each section contains `<DrawerRow>`s (from `01-design-system`) with a Switch in the trailing slot.
 
-All endpoints are mounted on the `@persistence/core` Elysia app. Auth is
-Supabase JWT validated by `requireAuth`; `userId` is read from
-`getUser(ctx).sub` and is the only acceptable source. Bodies never carry
-user identity. Mutations fold ownership into the WHERE clause (M2
-learning #14).
+Category groupings:
 
-### `POST /devices/register`
-
-Upsert a push device for the authenticated user. Mirrors the legacy
-`register_device_token` SQL function
-(`supabase/migrations/007_trainer_invitations_and_push_notifications.sql:521-580`)
-but as an explicit SST handler that reads `userId` from the JWT, never
-from the request body.
-
-- **Method:** `POST`
-- **Path:** `/devices/register`
-- **Auth:** required.
-- **Body:**
-  ```typescript
+```ts
+const CATEGORIES: { title: string; types: NotificationType[] }[] = [
   {
-    deviceToken: string;            // Expo push token, opaque
-    platform: "ios" | "android" | "web";
-    deviceInfo?: {
-      deviceName?: string;
-      osVersion?: string;
-      appVersion?: string;
-      modelName?: string;
-    };
-  }
-  ```
-- **Response 200:** `{ data: { id: string, registered: true } }`
-- **Response 400:** validation error (missing `deviceToken`, invalid
-  `platform`).
-- **Response 401:** missing or invalid JWT.
-
-Idempotency: the unique index `user_devices_user_token_idx` keyed on
-`(user_id, device_token)` makes the underlying
-`INSERT … ON CONFLICT DO UPDATE` UPSERT idempotent. Re-registering the
-same token returns the same `id` and flips `is_active` back to `true`.
-
-### `GET /notifications`
-
-List the user's notifications, ordered by `created_at DESC`.
-
-- **Method:** `GET`
-- **Path:** `/notifications`
-- **Auth:** required.
-- **Query params:**
-  ```typescript
+    title: "Streaks & Achievements",
+    types: ["streak_milestone", "streak_at_risk", "freeze_token_applied"],
+  },
+  { title: "Goals", types: ["goal_milestone", "goal_assigned_by_trainer"] },
   {
-    limit?: number;       // default 50, clamped to 1..100
-    offset?: number;      // default 0
-    unreadOnly?: boolean; // default false
-  }
-  ```
-- **Response 200:**
-  ```typescript
-  {
-    data: AppNotification[];
-    unreadCount: number;  // total unread for the user, NOT just this page
-  }
-  ```
+    title: "Trainer actions",
+    types: [
+      "workout_assigned",
+      "workout_logged_on_behalf",
+      "measurement_logged_on_behalf",
+      "nutrition_target_set_by_trainer",
+      "nutrition_entry_logged_on_behalf",
+    ],
+  },
+  { title: "Nutrition", types: ["daily_nutrition_target_hit"] },
+];
 
-`unreadCount` powers the bell-icon badge without a second round-trip.
-
-### `PATCH /notifications/:id`
-
-Mark a single notification as read. Idempotent.
-
-- **Method:** `PATCH`
-- **Path:** `/notifications/:id`
-- **Auth:** required.
-- **Body:** `{ isRead: true }`
-- **Response 200:** `{ data: AppNotification }` (the updated row).
-- **Response 404:** not found OR not owned by the caller (existence
-  is not leaked across users).
-
-Ownership is folded into the mutation's `WHERE` clause — single round
-trip, race-free, same 404 for "doesn't exist" and "not yours". Replaying
-the mutation from the offline sync queue against an already-read row is
-a no-op that still returns 200.
-
-### `PATCH /notifications/all`
-
-Mark every unread notification for the user as read.
-
-- **Method:** `PATCH`
-- **Path:** `/notifications/all`
-- **Auth:** required.
-- **Body:** `{}`
-- **Response 200:** `{ data: { updated: number } }` — count of rows
-  newly flipped from `is_read = false` to `is_read = true`.
-
-Idempotent: a second call returns `{ updated: 0 }`.
-
-**Routing note:** `/notifications/all` MUST be registered before
-`/notifications/:id` in `api.ts`. Elysia routes top-down and the literal
-`all` would otherwise be captured as `:id = "all"`. There's a regression
-test for this.
-
-### `GET /notifications/preferences`
-
-Read the user's per-type notification preference map.
-
-- **Method:** `GET`
-- **Path:** `/notifications/preferences`
-- **Auth:** required.
-- **Response 200:**
-  ```typescript
-  {
-    data: Record<NotificationType, boolean>;
-  }
-  ```
-- **Response 404:** profile row missing (defensive — shouldn't fire in
-  steady state since `handle_new_user` populates `profiles` at sign-up).
-
-Empty / missing keys default to `true` (notifications enabled). See
-§ Notification preferences for the storage contract.
-
-### `POST /notifications/preferences`
-
-Merge the body into the user's preference map. Atomic JSONB `||` at
-the SQL layer — keys present in the body overwrite, keys absent are
-preserved from prior state. Both partial and full bodies are valid.
-
-Inspector Brad PR #81 background: an earlier full-replace
-implementation silently nuked prior keys when a follow-up partial
-body arrived (the read path defaults missing keys to `true`, so the
-loss only surfaced on the next mutation). PATCH-style merge in SQL
-fixes it without forcing the client to send a full map on every
-toggle, and is race-safe across concurrent POSTs.
-
-- **Method:** `POST`
-- **Path:** `/notifications/preferences`
-- **Auth:** required.
-- **Body:** `Partial<Record<NotificationType, boolean>>` — keys must
-  be a subset of `NotificationType`; values must be booleans. Missing
-  keys are preserved from the stored state.
-- **Response 200:** `{ data: Record<NotificationType, boolean> }` —
-  echoes the validated body filled with defaults for missing keys.
-  Mobile re-fetches GET /notifications/preferences for the
-  authoritative post-merge snapshot.
-- **Response 400:** unknown key OR non-boolean value.
-
-## Notification preferences
-
-**Storage:** JSONB column `profiles.notification_preferences` of type
-`Record<NotificationType, boolean>`. NOT NULL, DEFAULT `'{}'::jsonb`. The
-`{}` default reads back as "all-true" after the handler applies defaults.
-
-**Rationale (option B over a separate table):** Brad's call — small,
-low-frequency payload; matches the legacy app's pattern of keeping user
-prefs on the profile row; one additive migration vs a new table + RLS
-policies. Surfaced for review in the PR — flag here if a future use case
-needs row-level granularity that a JSONB column can't serve cleanly.
-
-**Migration:** additive (`ADD COLUMN IF NOT EXISTS … JSONB NOT NULL
-DEFAULT '{}'::jsonb`). See
-`supabase/migrations/<timestamp>_m7_notification_preferences.sql`.
-
-**Default shape (synthesised by the read handler when the column is `{}`):**
-
-```typescript
-{
-  workout_assigned: true,
-  friend_request: true,
-  pt_request: true,
-  pt_accepted: true,
-  physio_request: true,
-  physio_accepted: true,
-  workout_reminder: true,
+const DEFAULT_OPT_IN: NotificationPreferences = {
+  streak_milestone: true,
+  streak_at_risk: true,
+  freeze_token_applied: true,
   goal_milestone: true,
-  trainer_feedback: true,
+  goal_assigned_by_trainer: true,
+  workout_assigned: true,
+  workout_logged_on_behalf: true,
+  measurement_logged_on_behalf: true,
+  nutrition_target_set_by_trainer: true,
+  nutrition_entry_logged_on_behalf: true,
+  daily_nutrition_target_hit: false, // noisy — opt-in off per cross-cuts § 5
+};
+```
+
+Toggle handler:
+
+```ts
+const onToggle = async (type: NotificationType, enabled: boolean) => {
+  // Optimistic local update
+  setPreferences((prev) => ({ ...prev, [type]: enabled }));
+  // POST partial-merge payload
+  const merged = await updatePreferences({ [type]: enabled });
+  // Server returns the full merged column via RETURNING
+  setPreferences(merged);
+};
+```
+
+---
+
+## Frontend — `<HomeBellPresenter>` + container
+
+Mounts inside `<HomeHeader>` (per `06-progress-goals` STORY-002). The Home spec exposes a `leading` slot for the bell:
+
+```tsx
+// inside HomePresenter
+<HomeHeader
+  date={date}
+  user={user}
+  bell={<HomeBellContainer />} // mounted here
+  avatar={<Avatar onPress={openDrawer} />}
+/>
+```
+
+`<HomeBellContainer>`:
+
+```tsx
+export function HomeBellContainer() {
+  const { data: { unreadCount = 0 } = {} } = useGetUnreadCount();
+  return (
+    <HomeBellPresenter
+      unreadCount={unreadCount}
+      onPress={() => router.push("/(app)/notifications")}
+    />
+  );
 }
 ```
 
-**Stale-key handling:** the read handler drops keys not present in the
-current `NotificationType` enum. Stored stale keys persist in the JSONB
-until the next write — they're harmless because the read handler is the
-contract surface and never surfaces them.
+`<HomeBellPresenter>`:
 
-**Trigger safety:** writing to `profiles.notification_preferences` does
-NOT fire `update_subscription_limits_trigger` (which watches subscription
-columns only). No cross-cutting side effects.
-
-## Push delivery
-
-SST handlers do NOT send pushes directly. The delivery pipe is owned by
-the legacy Supabase project (`dfeyebgdktfteqlacmru`) and stays untouched
-by M7:
-
-1. A row is INSERTed into `notifications` (legacy RPCs today; M8 will
-   add SST-driven inserts later).
-2. The Postgres trigger `notification_push_trigger`
-   (`supabase/migrations/010_trigger_push_notifications.sql`) fires
-   `AFTER INSERT`.
-3. The trigger function `trigger_push_notification` looks up active
-   `user_devices` rows for the recipient and calls the
-   `send-push-notification` Supabase Edge Function via
-   `pg_net.http_post`, passing `(user_id, title, message, data,
-notification_type)`.
-4. The Edge Function reads the user's devices, formats Expo Push
-   messages, and POSTs to `https://exp.host/--/api/v2/push/send`.
-5. Expo Push fans out to APNs (iOS) + FCM (Android) using credentials
-   stored under Expo project `255d542d-8dae-43c9-8d98-d9a3a325a470`.
-
-M7's backend handlers ensure `user_devices` rows are written from SST
-when the V2 app signs in — closing the loop so V2 device tokens land in
-the table the trigger reads.
-
-## Push Token Flow (mobile)
-
-1. App requests notification permissions (`expo-notifications`).
-2. Gets Expo push token via `Notifications.getDevicePushTokenAsync()`.
-3. Registers token with SST API (`POST /devices/register`).
-4. Backend upserts on `(userId, deviceToken)`.
-5. On a future notification INSERT, the legacy Supabase trigger picks
-   the device up and sends the push (see § Push delivery).
-
-## Local Notifications
-
-Rest timer and workout reminders use `expo-notifications` local
-scheduling — no server involved. This works offline and without push
-permissions on some platforms. Owned by M3; M7 leaves the surface alone.
-
-## Deep Linking
-
-Notifications carry an optional deep-link field on `data`:
-
-```typescript
-data.deepLink: string | undefined
+```tsx
+function HomeBellPresenter({ unreadCount, onPress }) {
+  return (
+    <View position="relative">
+      <IconBtn icon={<IconBell size={18} />} tone="ghost" onPress={onPress} />
+      {unreadCount > 0 && (
+        <View
+          position="absolute"
+          top={-2}
+          right={-2}
+          minWidth={16}
+          h={16}
+          px={4}
+          borderRadius={8}
+          bg="$ember"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Text variant="mono" size={9} weight={700} color="$bg">
+            {unreadCount > 9 ? "9+" : String(unreadCount)}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 ```
 
-`deepLink` is an Expo Router path. Mobile rejects anything that doesn't
-start with `/(app)/` or `/(auth)/` (e.g. external `http://…` URLs are
-ignored) — see `isValidDeepLink` in the mobile codebase.
+---
 
-Examples:
+## Push notification listener
 
-```jsonc
-{ "deepLink": "/(app)/(tabs)/profile" }
-{ "deepLink": "/(app)/session?sessionId=abc" }
-{ "deepLink": "/(app)/(tabs)/workouts" }
+```ts
+// adapters/notifications/expo-notifications.adapter.ts
+import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
+
+export async function registerDeviceToken(userId: string) {
+  const permission = await Notifications.requestPermissionsAsync();
+  if (!permission.granted) return null;
+
+  const tokenResult = await Notifications.getDevicePushTokenAsync();
+  const token = tokenResult.data;
+  await api.post("/devices/register", {
+    token,
+    platform: Platform.OS as "ios" | "android",
+  });
+  return token;
+}
+
+export function setupListeners() {
+  // Notification received while app is foregrounded
+  const receivedSub = Notifications.addNotificationReceivedListener((notif) => {
+    // Refresh unread count cache
+    queryClient.invalidateQueries(["notifications", "unread-count"]);
+    queryClient.invalidateQueries(["notifications", "list"]);
+  });
+
+  // Notification tapped (cold-start or background)
+  const responseSub = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      const deepLink = response.notification.request.content.data?.deepLink as
+        | string
+        | undefined;
+      if (deepLink) router.push(deepLink as any);
+    },
+  );
+
+  return () => {
+    receivedSub.remove();
+    responseSub.remove();
+  };
+}
 ```
 
-No legacy free-form `{ screen, id }` shape — one field, type-safe.
-Notifications without `deepLink` simply mark-read on tap without
-navigating away.
+Wired in `app/_layout.tsx`:
+
+```tsx
+useEffect(() => {
+  if (!session) return;
+  registerDeviceToken(session.userId).catch(console.error);
+  const cleanup = setupListeners();
+  return cleanup;
+}, [session]);
+```
+
+---
+
+## Offline behaviour
+
+| Action                     | Behaviour                                                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List notifications         | Reads from SQLite cache (100-row LRU). Background refetch + pull-to-refresh.                                                                                         |
+| Mark read / Mark all read  | Optimistic local update + sync queue write. `markRead` mutation respects PR #81 sweep 2: server uses `COALESCE(read_at, NOW())` so replay preserves original moment. |
+| Update preferences         | Optimistic. Queue. Server responds with merged column via `RETURNING` — local cache reset to that on flush.                                                          |
+| Device-token registration  | Online-only. Retries on next foreground if it failed.                                                                                                                |
+| Push receipt while offline | Push won't arrive (it's a server-side delivery channel). On next reconnect + foreground, GET refresh picks up the missed notifications.                              |
+
+---
+
+## SQLite cache schema
+
+```sql
+CREATE TABLE IF NOT EXISTS cached_notifications (
+  id              TEXT PRIMARY KEY,
+  type            TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  body            TEXT NOT NULL,
+  deep_link       TEXT NOT NULL,
+  data_json       TEXT NOT NULL,
+  read_at         TEXT,                -- ISO string or null
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX cached_notifications_created_idx ON cached_notifications (created_at DESC);
+```
+
+LRU enforcement: after every write, prune rows beyond row 100 (`ORDER BY created_at DESC LIMIT 100, -1`).
+
+---
+
+## Backend — enum-extension contract
+
+When a downstream spec emits a NEW notification type, the migration lands HERE (per locked decision #10):
+
+```sql
+-- microservices/core/migrations/YYYYMMDDHHMMSS_add_notification_type_X.sql
+-- `IF NOT EXISTS` keeps the migration idempotent — repo convention matches
+-- supabase/migrations/20260512090238_m3_record_type_max_volume.sql which uses
+-- the same guard. Re-running locally / in CI / on staging will no-op rather
+-- than failing with `enum label already exists`.
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'new_type_name';
+```
+
+Required companion changes:
+
+1. Append row to `_shared/cross-cuts.md § 5` table with default opt-in + deep link.
+2. Append entry to this spec's `NotificationType` union + `CATEGORIES` constant + `notificationIcon` switch.
+3. Open a single PR titled `chore(notifications): register {new_type_name} event type` containing all three.
+
+---
+
+## Testing strategy
+
+### Unit tests
+
+- `<NotificationRowPresenter>` — every notification type renders the correct icon/tone.
+- `<NotificationPreferencesPresenter>` — toggle invocation + optimistic UI + post-flush sync.
+- `<HomeBellPresenter>` — badge count visibility, `9+` overflow, hidden when zero.
+- `mergeNotificationPreferences` semantics (already covered by PR #81 tests; reference here).
+
+### Integration tests
+
+- Cold-start with seeded SQLite → list renders offline → reconnect → background refresh updates rows.
+- Tap notification → mark-read fires + deep-link navigates.
+- Preferences toggle offline → queue → reconnect → assert server merge + cache reset.
+- Push receipt simulation (`Notifications.scheduleNotificationAsync` test) → tap → deep-link dispatch.
+
+### Coverage
+
+90% per `_agent.md`.
+
+---
+
+## Risks + mitigations
+
+| Risk                                                                                                    | Mitigation                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Push permission denial blocks all notifications                                                         | Preferences screen surfaces "Notifications are off in iOS Settings — tap to open Settings" banner when `Notifications.getPermissionsAsync().granted === false`. |
+| Unread count drifts from server (stale local cache)                                                     | `useGetUnreadCount` uses staleTime: 30s — refreshes on focus + on receive listener. Server-wins on every refresh.                                               |
+| Adding a notification type to one location but not all three (cross-cuts table, this spec, migration)   | Locked decision #10 enforces a single PR shipping all three. PR review check.                                                                                   |
+| Deep-link routes change in `14-navigation` (redirect map) — old notifications still reference old paths | `14-navigation` redirect map (preserved for 6 months) handles this transparently.                                                                               |
+| Push payload bloat — `data` JSONB can grow over time                                                    | Keep `data` to type-specific identifiers + the deepLink. Heavy content (rendered text) lives in `title` + `body`.                                               |
+
+---
+
+_End of `09-notifications-social/design.md` · 2026-05-28 (rewritten from scratch)_

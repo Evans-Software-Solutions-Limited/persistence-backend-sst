@@ -1,76 +1,55 @@
 # 08 — Profile & Settings: Tasks
 
-## Current state (2026-04-19)
+> **Spec rewritten from scratch on 2026-05-27.** Prior tasks preserved in git history.
 
-**Shipped: ~2 of ~40 tasks complete. Minimum viable skeleton.**
+---
 
-What's there:
+## Phase 08.1 — ProfileDrawer presenter + container (1 PR)
 
-- **Backend** — `GET /profiles/me` and `PATCH /profiles/me` handlers exist at `microservices/core/src/application/profiles/`. No avatar upload endpoint yet.
-- **Mobile** — `ProfileContainer` exists but currently only exposes `signOut` + email from session. `ProfilePresenter` and a presenter test exist. `(tabs)/profile.tsx` renders the container. No editor, no preferences, no settings, no session history, no account actions.
+- [ ] **T-08.1.1** Author `<DrawerSection>` spec-local composite. Implements requirements STORY-002 + 004 + 005 + 006.
+- [ ] **T-08.1.2** Author `<ProfileDrawerPresenter>` per `design.md`. Identity block + sections + sign-out row. Implements STORY-001 + 002 + 004 + 005 + 006 + 007.
+- [ ] **T-08.1.3** Author `<ProfileDrawerContainer>` wiring all hooks per `design.md § Plumbing`.
+- [ ] **T-08.1.4** Verify mount-point integration from `14-navigation` (drawer mounts at `(app)/_layout.tsx`).
+- [ ] **T-08.1.5** Unit tests cover every section render, drawer open/close, all row onPress handlers.
 
-Parent milestone: **M6 Profile + Edit profile** — expands `ProfileContainer` to legacy parity (stats, subscription badge, menu links, trainer promo banner conditional on role), adds `EditProfileContainer` + presenter, adds avatar picker via `expo-image-picker`. Backend brief verifies `GET/PATCH /profile` and adds `POST /profile/avatar` (multipart) if missing. Settings / preferences / history are likely to slide into later milestones or stay deferred until M11 polish.
+## Phase 08.2 — ModeSwitchCard + sign-out confirm (1 PR)
 
-## Phase 1: Domain
+- [ ] **T-08.2.1** Author `<ModeSwitchCardPresenter>` per `design.md`. Implements STORY-003 ACs.
+- [ ] **T-08.2.2** Author `<SignOutConfirmDialog>` per `design.md`. Implements STORY-007 ACs 7.1–7.3.
+- [ ] **T-08.2.3** Mode-switch flow: tap Switch → close drawer → call `useUserMode().switchTo()`. Tab bar accent + spec swap (handled by 14).
+- [ ] **T-08.2.4** Sign-out flow: tap row → confirm modal → call `useSignOut()` → navigate to `(auth)/sign-in`.
 
-- [ ] Create `UserProfile`, `UserRole`, `FitnessLevel` models
-- [ ] Create `AppPreferences`, `NotificationPreferences` models
-- [ ] Define default preferences values
-- [ ] Write tests for preference defaults and validation
+## Phase 08.3 — Sub-page shell refreshes (1 PR)
 
-## Phase 2: Ports & Adapters
+- [ ] **T-08.3.1** `<EditProfilePresenter>` shell refresh — `<HeaderBar>` + form fields with new tokens + `<Btn>` Save. Implements STORY-008 AC 8.1.
+- [ ] **T-08.3.2** `<PrivacySettingsPresenter>` shell refresh. AC 8.2 + 8.3.
+- [ ] **T-08.3.3** `<HelpCenterPresenter>` shell refresh. AC 8.4.
+- [ ] **T-08.3.4** `<ContactSupportPresenter>` shell refresh. AC 8.5.
+- [ ] **T-08.3.5** `<TermsOfServicePresenter>` + `<PrivacyPolicyPresenter>` shell refresh. AC 8.6.
 
-- [ ] Extend `ApiPort` with profile CRUD and session history
-- [ ] Extend `StoragePort` with profile cache, preferences, session history
-- [ ] Implement preferences in AsyncStorage adapter
-- [ ] Implement profile cache in SQLite
-- [ ] Write adapter tests
+## Phase 08.4 — Cleanup + verification
 
-## Phase 3: Application Layer
+- [ ] **T-08.4.1** Run `01-design-system § Codemod` against new files.
+- [ ] **T-08.4.2** `bun run typecheck`, `bun run lint`, `bun run build`, `bun run test:unit` — all green.
+- [ ] **T-08.4.3** 90% coverage on touched files.
+- [ ] **T-08.4.4** Manual e2e:
+  - Tap avatar from Home → drawer opens with cached profile + subscription + achievements.
+  - Trainer user → mode-switch card visible → tap Switch → drawer closes → tab bar shifts violet + COACH dot appears → user lands on Coach Home.
+  - Tap each drawer row → assert correct sub-page push.
+  - Sign-out: tap → confirm → navigate to sign-in. Local cache cleared.
+  - Offline: drawer renders from cache; sign-out disabled with toast.
 
-- [ ] Create `GetProfileQuery` (cache-first, background refresh)
-- [ ] Create `UpdateProfileCommand` (save local, queue sync)
-- [ ] Create `GetPreferencesQuery` (from AsyncStorage)
-- [ ] Create `UpdatePreferencesCommand` (to AsyncStorage)
-- [ ] Create `GetSessionHistoryQuery` (paginated, cache-first)
-- [ ] Create `DeleteAccountCommand` (requires confirmation, calls API)
-- [ ] Write tests
+---
 
-## Phase 4: UI — Profile
+## Acceptance gate (profile drawer phase complete)
 
-- [ ] Create `ProfilePresenter` (display name, email, role, avatar, fitness info)
-- [ ] Create `ProfileContainer` (fetches profile)
-- [ ] Create `ProfileEditorPresenter` (edit form: name, avatar, fitness level, equipment, accessibility)
-- [ ] Create `ProfileEditorContainer` (form state, validation, save)
-- [ ] Create `EquipmentPicker` component (multi-select grid)
-- [ ] Create `FitnessLevelPicker` component (radio-style selector)
-- [ ] Create screens: `app/(app)/(tabs)/profile.tsx`, `app/(app)/edit-profile.tsx`
-- [ ] Write tests
+- [ ] All 4 phases above shipped as PRs.
+- [ ] Drawer is the only profile surface — Profile tab is gone (per 14).
+- [ ] Mode-switch end-to-end flow works for trainer users.
+- [ ] All sub-pages refreshed with new chrome.
+- [ ] No backend changes.
+- [ ] Offline rendering verified.
 
-## Phase 5: UI — Settings
+---
 
-- [ ] Create `PreferenceToggle` component (label, description, toggle/selector)
-- [ ] Create `SettingsPresenter` (theme, units, rest timer, notifications, account actions)
-- [ ] Create `SettingsContainer` (reads/writes preferences)
-- [ ] Create screen: `app/(app)/settings.tsx`
-- [ ] Write tests
-
-## Phase 6: UI — Session History
-
-- [ ] Create `SessionHistoryPresenter` (list of past sessions, date filter)
-- [ ] Create `SessionHistoryDetailPresenter` (single session: exercises, sets, summary)
-- [ ] Create `SessionHistoryContainer` (fetches, paginates)
-- [ ] Create screens: `app/(app)/history/index.tsx`, `app/(app)/history/[id].tsx`
-- [ ] Write tests
-
-## Phase 7: Account Actions
-
-- [ ] Implement change password flow (calls Supabase auth)
-- [ ] Implement delete account with confirmation dialog
-- [ ] Add links to privacy policy, terms, help centre
-- [ ] Write tests
-
-## Phase 8: Quality Gates
-
-- [ ] All profile/settings tests pass with 90% coverage
-- [ ] Quality gates pass
+_End of `08-profile-settings/tasks.md` · 2026-05-27 (rewritten from scratch)_

@@ -500,3 +500,104 @@ A dedicated PR — split backend + frontend — scoped around three concepts:
 - **Reference-list driven filters vs. search** — today the modal filters on `muscle_groups[]` and `equipment[]` as hard AND constraints. Keyword search runs over the full `name/description/instructions`. Keep them orthogonal or merge (search narrows _within_ filters)? Legacy did the latter; likely correct.
 
 See `tasks.md` § Phase 9 for the work breakdown.
+
+---
+
+## Revised 2026-05-28 — Exercise detail user-history extension (absorbs former M5 backend scope)
+
+The former `M5-exercise-detail-creator` milestone was deleted on 2026-05-28 — its frontend scope is now fully owned by `04-workout-management § STORY-006/007/008` (Create Exercise as bottom-sheet, Exercise Detail, Exercise Edit). The remaining backend extension lives here.
+
+### Endpoint addition
+
+`GET /exercises/:id` extended with a per-user history slice. Existing response shape preserved — new fields are additive:
+
+```ts
+type ExerciseDetailResponse = {
+  // existing fields preserved verbatim
+  id: string;
+  name: string;
+  primaryMuscle: string;
+  secondaryMuscles: string[];
+  equipment: string;
+  level: "beginner" | "intermediate" | "advanced" | "expert"; // matches exerciseDifficultyEnum (schema.ts:31)
+  description: string;
+  instructions?: string;
+  photoUrl?: string;
+  createdBy: string;
+  createdAt: string;
+
+  // NEW — per-user history (computed when authenticated user requests)
+  userHistory?: {
+    recentSets: Array<{
+      sessionId: string;
+      loggedAt: string; // ISO timestamp
+      reps: number;
+      weightKg: number;
+      rpe?: number;
+    }>; // last 10 sets, most recent first
+    personalRecords: Array<{
+      // user's PRs for THIS exercise — shape matches schema.ts:492 personalRecords table
+      recordType: "1rm" | "3rm" | "5rm" | "10rm" | "max_weight" | "max_volume"; // record_type_enum subset surfaced here
+      value: number; // decimal(10,2) per schema; kg for weight types, kg×reps for max_volume
+      achievedAt: string;
+    }>;
+  };
+};
+```
+
+### Implementation
+
+Handler in `microservices/core/src/application/exercises/handlers/get-exercise.ts`:
+
+1. Authenticate request (already required).
+2. Fetch the exercise row (existing logic).
+3. If user is authenticated, run two parallel queries against the live schema (no `exercise_logs` table exists — per-set history lives in `exercise_sets` joined to `session_exercises` joined to `workout_sessions`):
+
+   ```sql
+   -- Recent sets (last 10 across the user's history for this exercise)
+   SELECT
+     ws.id        AS session_id,
+     es.completed_at AS logged_at,
+     es.reps,
+     es.weight_kg,
+     es.rpe
+   FROM exercise_sets es
+   JOIN session_exercises se ON se.id = es.session_exercise_id
+   JOIN workout_sessions  ws ON ws.id = se.session_id
+   WHERE ws.user_id = $1
+     AND se.exercise_id = $2
+     AND es.completed_at IS NOT NULL
+   ORDER BY es.completed_at DESC
+   LIMIT 10;
+
+   -- Personal records (aligned to schema.ts:492 shape — record_type_enum + value)
+   SELECT record_type, value, achieved_at
+   FROM personal_records
+   WHERE user_id = $1
+     AND exercise_id = $2
+     AND record_type IN ('1rm','3rm','5rm','10rm','max_weight','max_volume')
+   ORDER BY achieved_at DESC;
+   ```
+
+4. Merge into response under `userHistory`.
+
+`personal_records` table already exists at `packages/db/src/schema.ts:492` per `06-progress-goals` reconciliation. This extension just consumes it — no new migration.
+
+### Frontend consumption
+
+`04-workout-management § STORY-007` Exercise Detail screen renders `userHistory.recentSets` as a "Recent sets" section + `userHistory.personalRecords` as a PR strip at the top. The implementing PR adds an AC to `04-workout-management/requirements.md` STORY-007 covering this consumption.
+
+### `POST /exercises/classify` AI feature — legacy port
+
+The former M5 brief also mentioned a `POST /exercises/classify` for AI auto-classification (suggest primary muscle + equipment from name + description). **This is a legacy port — the classification path is already supported in the legacy backend, so the V2 work is wiring the existing capability into the new Create Exercise sheet (`04-workout-management § STORY-006`).**
+
+Scope when picked up (small follow-up PR, can land independently after `04` ships):
+
+1. Backend handler at `microservices/core/src/application/exercises/handlers/classify.ts` calls the existing legacy classification service.
+2. Gate per cross-cuts § 4 — `assertEntitlement(userId, 'aiAccess')` first; logs to `ai_usage_log`.
+3. Frontend hook `useClassifyExercise()` consumed in `<CreateExerciseSheetPresenter>` (`04-workout-management`). Add a "Suggest" Btn next to the muscle + equipment chip rows that calls the hook with the current name + description; results pre-populate the radio selections.
+4. Spec amendment via "Revised YYYY-MM-DD" append on both `03-exercise-library/design.md` (endpoint shape locked in) and `04-workout-management/requirements.md` (new AC under STORY-006 covering the Suggest CTA).
+
+### Migration block
+
+None. The endpoint extension reads from existing tables (`exercise_sets` joined to `session_exercises` joined to `workout_sessions` — per the corrected SQL above; per-set history doesn't live in any `exercise_logs` table) and `personal_records` (shape per `schema.ts:492`, no new migration).

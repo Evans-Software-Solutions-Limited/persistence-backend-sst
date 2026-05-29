@@ -1,122 +1,72 @@
 # 04 — Workout Management: Tasks
 
-## Current state (2026-04-28)
+> **Spec rewritten from scratch on 2026-05-27.** Prior tasks preserved in git history. This list scopes the design-package port for the workout management surfaces.
 
-**Shipped: 0 of ~50 M2-scoped tasks complete. Backend has metadata-only CRUD; mobile is a `<ComingSoon>` stub.**
+---
 
-What's there:
+## Phase 04.1 — WorkoutsList rewrite (1 PR)
 
-- **Backend** — `GET /workouts`, `GET /workouts/:id`, `POST /workouts`, `PATCH /workouts/:id`, `DELETE /workouts/:id` handlers exist at `microservices/core/src/application/workouts/`. Ownership-scoped via JWT. Wire format gaps audited against legacy expectations (see `specs/milestones/M2-workouts/BACKEND_BRIEF.md`):
-  - `getById` response missing `supersetGroup` field on the exercises array — fix.
-  - `POST /workouts` accepts metadata only — extend to accept nested `exercises[]` and run as a single transaction.
-  - `PATCH /workouts/:id` accepts metadata only — extend to accept full-replacement `exercises[]` and run as a single transaction.
-  - List response missing `meta.quota` for `type=mine`; missing `meta.pagination.total`.
-  - List response missing nested `exercises[]` per workout (legacy WorkoutCard needs it).
-  - Test gaps: no two-user isolation case on list / get / update / delete; no friends-visibility positive path; no nested-exercise mutation tests; no superset assertion.
-- **Mobile `ApiPort`** declares `getWorkouts / getWorkout / createWorkout / updateWorkout / deleteWorkout` against the M2-incomplete shape (`CreateWorkoutInput` has no `exercises` field). M2 mobile updates the port + adapter to match the new wire-format.
-- **`(tabs)/workouts.tsx`** currently renders `<ComingSoon />`.
+- [ ] **T-04.1.1** Author `<WorkoutRow>` composite in `packages/mobile/src/ui/components/workouts/WorkoutRow/`. Tests + smoke route. Implements `requirements.md` STORY-001 AC 1.2.
+- [ ] **T-04.1.2** Rewrite `<WorkoutsListPresenter>` to use `<Section>` + `<Card>` + `<WorkoutRow>` + `<Btn>` per `design.md`. Implements STORY-001 ACs.
+- [ ] **T-04.1.3** Rewire `<WorkoutsListContainer>` to mount under `<TrainHubContainer>`'s Workouts segment. Closes STORY-001 AC 1.5.
+- [ ] **T-04.1.4** Update presenter tests for the new structure (three sections, empty state, quota indicator).
+- [ ] **T-04.1.5** Visual regression screenshots vs `library.jsx`.
 
-Nothing else is built: no domain model, no `StoragePort` workout methods, no SQLite cache tables, no commands/queries, no containers/presenters, no superset logic, no exercise-picker sheet, no quota indicator.
+## Phase 04.2 — ExerciseList rewrite (1 PR)
 
-Parent milestone: **M2 Workouts (list + create + edit)**. Briefs: [`../milestones/M2-workouts/`](../milestones/M2-workouts/).
+- [ ] **T-04.2.1** Author `<FilterChip>` + `<ExerciseCard>` composites in `packages/mobile/src/ui/components/exercises/`. Tests + smoke route. Implements STORY-005 AC 5.5.
+- [ ] **T-04.2.2** Rewrite `<ExerciseListPresenter>` to use `<SearchBar>` (from `01-design-system`) + horizontally-scrolling chip row + `FlashList` of `<ExerciseCard>`. Implements STORY-005 ACs.
+- [ ] **T-04.2.3** Rewire `<ExerciseListContainer>` to mount under `<TrainHubContainer>`'s Exercises segment.
+- [ ] **T-04.2.4** Preserve filter sub-routes at `(app)/exercises/filters/*`.
 
-## Phase 1: Spec alignment + parent-spec updates (M2 commit 1)
+## Phase 04.3 — CreateExerciseSheet (1 PR)
 
-- [x] Audit legacy `app/(tabs)/workouts.tsx`, `workout-creator.tsx`, `workout-editor.tsx` (done 2026-04-28)
-- [x] Audit V2 backend `workouts/` handlers + repository against legacy (done 2026-04-28)
-- [x] Update `design.md` with corrected domain model (`targetRepsMin/Max`, `targetDurationSeconds`, `supersetGroup`), API contract section, SQLite cache shape, offline strategy
-- [x] Update `requirements.md` with STORY-001..009 ACs covering tabs / search / quota / superset propagation / dirty-form discard / two-user isolation
-- [x] Mark this `tasks.md` with M2 vs M11 vs M3 vs M8 boundaries
+- [ ] **T-04.3.1** Author `<ExerciseFormFields>` shared internal component covering name + photo + primary muscle + secondary muscles + equipment + level + instructions. Used by both sheet and full-screen editor. Implements STORY-006 + STORY-008 ACs.
+- [ ] **T-04.3.2** Author `<CreateExerciseSheetPresenter>` per `design.md § CreateExerciseSheetPresenter`. Uses `<BottomSheet>` + `<ExerciseFormFields>` + footer Cancel/Save. Implements STORY-006 ACs.
+- [ ] **T-04.3.3** Author `<CreateExerciseSheetContainer>` wiring `useCreateExercise()` (existing V2 mutation).
+- [ ] **T-04.3.4** Mount the sheet inside `<TrainHubContainer>` (per `design.md`). Closes STORY-006 AC 6.1.
+- [ ] **T-04.3.5** Delete `app/(app)/exercises/create.tsx`. Add deep-link redirect to `14-navigation`'s map. Closes STORY-006 AC 6.6.
+- [ ] **T-04.3.6** "Saved ✓" affirmation for 700ms after successful save before sheet closes. Closes STORY-006 AC 6.5.
+- [ ] **T-04.3.7** Form state via `react-hook-form`. Save button disabled until name is non-empty.
 
-## Phase 2: Backend domain + repository (M2 backend PR)
+## Phase 04.4 — WorkoutDetail rewrite (1 PR)
 
-- [ ] Add `supersetGroup` to `WorkoutWithExercises.exercises[]` response type and select clause in `WorkoutRepository.getById`
-- [ ] Extend `WorkoutRepository.list` to include `exercises[]` per workout (single grouped query joining `workout_exercises` + `exercises`)
-- [ ] Extend `WorkoutRepository.list` to return total count for `meta.pagination.total`
-- [ ] Add `WorkoutRepository.getQuota(userId)` returning `{ used, limit }` (count own workouts + read `subscriptions.workoutLimit`)
-- [ ] Refactor `WorkoutRepository.create` → `createWithExercises(userId, data)` running both inserts in one Drizzle transaction
-- [ ] Refactor `WorkoutRepository.update` → support optional `exercises` full-replacement in a transaction
-- [ ] Update `default` filter to exclude user's own public workouts (`createdBy != userId`)
+- [ ] **T-04.4.1** Rewrite `<WorkoutDetailPresenter>` shell to use `<HeaderBar>` + `<Card>` + `<Btn>` + new tokens per `design.md`. Implements STORY-003 ACs.
+- [ ] **T-04.4.2** Superset bracket render — vertical bar on the left of grouped exercise rows, `$primary` tinted.
+- [ ] **T-04.4.3** Update presenter tests (Edit IconBtn hidden for non-owners; Start CTA wires `onStartSession`).
+- [ ] **T-04.4.4** Visual regression vs the prototype's workout-detail equivalent (no dedicated prototype screen — match V2's PR #41 shape with new chrome).
 
-## Phase 3: Backend handlers + tests (M2 backend PR)
+## Phase 04.5 — WorkoutCreator + WorkoutEditor rewrite (1 PR)
 
-- [ ] Update list handler envelope to `{ data, meta: { pagination, quota? } }`; quota only present when `type=mine`
-- [ ] Update create handler request body schema (Elysia `t.Object`) to accept nested `exercises` array
-- [ ] Update update handler request body schema to accept optional `exercises` array
-- [ ] Add two-user isolation tests on every handler (list / get / update / delete)
-- [ ] Add friends-visibility positive-path test on get
-- [ ] Add nested-exercise mutation tests on create + update (including superset round-trip)
-- [ ] Add quota envelope test on list
-- [ ] All handlers + repository at ≥90% coverage on every metric
+- [ ] **T-04.5.1** Rewrite both presenter shells with new tokens + `<HeaderBar>` + `<Card>` + `<Btn>`. Implements STORY-002 + STORY-004 ACs.
+- [ ] **T-04.5.2** `<ExerciseConfigCard>` internal styling refresh through new primitives (preserves behaviour).
+- [ ] **T-04.5.3** `<AddExercisePopover>` internal styling refresh (already a sheet-style popover in V2).
+- [ ] **T-04.5.4** Validation + dirty-form-back-nav prompt + offline submit (preserved from V2).
 
-## Phase 4: Mobile domain + ports + adapters (M2 mobile PR)
+## Phase 04.6 — ExerciseDetail + ExerciseEditor rewrite (1 PR)
 
-- [ ] Create `Workout`, `WorkoutExercise`, `WorkoutVisibility`, `WorkoutListType`, `WorkoutQuota` domain models in `packages/mobile/src/domain/models/workout.ts`
-- [ ] Update `ApiPort` workout method signatures (replace M1 stubs) — `getWorkouts` returns `{ workouts, quota? }`; `createWorkout` / `updateWorkout` accept nested exercises
-- [ ] Extend `StoragePort` with workout cache methods (list scoped by `type`, detail scoped by `id`)
-- [ ] Implement workout methods in `SSTApiAdapter` (parse double-envelope on list, single on detail)
-- [ ] Implement `cached_workouts` + `cached_workout_detail` SQLite tables + cache methods
-- [ ] Implement workout methods in `InMemoryApiAdapter` for tests
-- [ ] Wire workout writes through `SyncQueuePort` (create / update / delete enqueue intents)
+- [ ] **T-04.6.1** Rewrite `<ExerciseDetailPresenter>` shell. Implements STORY-007 ACs.
+- [ ] **T-04.6.2** Rewrite `<ExerciseEditorPresenter>` shell to compose `<ExerciseFormFields>` (shared with sheet from T-04.3.1). Full-screen layout. Implements STORY-008 ACs.
 
-## Phase 5: Mobile application layer (M2 mobile PR)
+## Phase 04.7 — Cleanup + verification
 
-- [ ] Implement `validateWorkout`, `calculateEstimatedDuration`, `reorderExercises`, `groupAsSuperSet`, `ungroupSuperSet`, `propagateSupersetSharedFields` pure functions + tests
-- [ ] Create `getWorkoutsQuery` (cache-first, background refresh, 5-min TTL) — runs three parallel calls (mine / assigned / default) under one hook
-- [ ] Create `getWorkoutQuery` (single workout by ID)
-- [ ] Create `createWorkoutCommand` (validate + queue + optimistic local cache)
-- [ ] Create `updateWorkoutCommand`
-- [ ] Create `deleteWorkoutCommand`
-- [ ] Implement `useWorkouts` hook (mirrors `useDashboard` shape — cache-first, in-flight ref keyed on userId, stale-closure guards on session-scoped writes)
-- [ ] Implement `useWorkout(id)` hook for the popover detail
+- [ ] **T-04.7.1** Run `01-design-system § Codemod` against new files to scrub any residual hex literals.
+- [ ] **T-04.7.2** Verify `useStartSession` integration with `05-active-session` (gate: T-04.4.1 + 05 spec landing). Manual smoke: tap Start from workout detail → land in active session.
+- [ ] **T-04.7.3** `bun run typecheck`, `bun run lint`, `bun run build`, `bun run test:unit` — all green.
+- [ ] **T-04.7.4** 90% coverage on touched files. Application layer coverage preserved.
+- [ ] **T-04.7.5** Manual e2e: athlete user navigates Train > Workouts → creates a new workout (online) → goes offline → creates another → reconnects → assert sync. Switch to Train > Exercises → creates an exercise via sheet → assert appears in Mine filter.
 
-## Phase 6: Mobile UI port — list (M2 mobile PR)
+---
 
-- [ ] Port `WorkoutCard` from legacy verbatim (theme shim only)
-- [ ] Port `WorkoutSection` from legacy verbatim
-- [ ] Port `WorkoutPopover` from legacy verbatim
-- [ ] Port `WorkoutLimitIndicator` from legacy verbatim
-- [ ] Port `QuickActions` from legacy verbatim
-- [ ] Create `workoutsLegacyTheme.ts` extending `homeLegacyTheme.ts` with any missing tokens
-- [ ] Create `WorkoutsListContainer` mirroring `HomeContainer`'s 3-memo pipeline
-- [ ] Create `WorkoutsListPresenter` (search, three sections, pull-to-refresh, popover, quota indicator)
-- [ ] Replace `(tabs)/workouts.tsx` `<ComingSoon />` with `<WorkoutsListContainer />`
-- [ ] Tests: container view-model derivation, empty states, search filter, pull-to-refresh, two-user cache isolation
+## Acceptance gate (workout management phase complete)
 
-## Phase 7: Mobile UI port — creator + editor (M2 mobile PR)
+- [ ] All 7 phases above shipped as PRs.
+- [ ] No backend changes (confirmed by `git diff main microservices/` being empty for this spec's PRs).
+- [ ] Train hub renders both segments end-to-end without regressions.
+- [ ] Existing V2 `useStartSession`, `useGetWorkoutById`, `useGetExercises`, `useCreateExercise`, etc. hooks all still callable with the same signatures.
+- [ ] Offline-first behaviour preserved — manual e2e in T-04.7.5 passes.
+- [ ] CI green; 90% coverage on touched files; application layer coverage unchanged.
 
-- [ ] Port `AddExercisePopover` (the bottom sheet) from legacy verbatim, but wrap M0's `ExerciseListContainer` instead of legacy hooks
-- [ ] Port `AddExerciseList` + `AddExerciseListItem` (multi-select)
-- [ ] Port `ExerciseDetailsModal` (drill-in detail inside picker)
-- [ ] Port `ExerciseConfigCard` from legacy verbatim (per-exercise card with superset visual grouping)
-- [ ] Create `WorkoutCreatorContainer` (form state via reducer; validates on submit)
-- [ ] Create `WorkoutCreatorPresenter` (form layout from legacy `workout-creator.tsx`)
-- [ ] Create `WorkoutEditorContainer` (async-loaded form state; dirty flag; submit fires PATCH)
-- [ ] Create `WorkoutEditorPresenter` (re-uses creator presenter where layout matches)
-- [ ] Wire navigation: `Create` CTA → `/workouts/create`; `Edit` CTA → `/workouts/[id]/edit`
-- [ ] Add discard-changes confirmation on dirty back-nav
-- [ ] Tests: form validation, exercise add / remove / regroup, superset propagation, dirty flag, optimistic UI
+---
 
-## Phase 8: Smoke + quality gates (M2 both PRs)
-
-- [ ] All workout backend tests pass with 90% coverage on every changed file
-- [ ] All workout mobile tests pass with 90% coverage on every changed file
-- [ ] `bun run prettier:check`, `typecheck`, `lint`, `build`, `test:unit` all clean on both branches
-- [ ] Smoke test (`SMOKE_TEST.md`) passes against `bun run dev` + iOS simulator end-to-end
-
-## Phase 9 (deferred): drag-and-drop reorder
-
-Originally listed under STORY-002 but legacy doesn't ship explicit drag-and-drop. **Deferred to M11 polish.** When implemented:
-
-- [ ] Wrap exercise rows in `react-native-draggable-flatlist`
-- [ ] Onboarding tooltip on first edit
-- [ ] Visual cue on drag (lift + shadow)
-
-## Phase 10 (deferred): soft-delete on workouts that have sessions
-
-Hard delete keeps `workouts.id` referenced by `workout_sessions.workoutId` via FK `set null`. Sessions retain their data but lose template lineage. For M4 progress analytics it'd be useful to keep template names / structures available even after deletion.
-
-- [ ] Add `deleted_at` (timestamp) to `workouts` schema (migration)
-- [ ] List + get filter `deleted_at IS NULL`
-- [ ] DELETE handler sets `deleted_at = now()` instead of issuing SQL DELETE
-- [ ] Add admin/internal endpoint to hard-purge soft-deleted rows older than N days
+_End of `04-workout-management/tasks.md` · 2026-05-27 (rewritten from scratch)_

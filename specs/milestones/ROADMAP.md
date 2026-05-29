@@ -1,145 +1,140 @@
 # Persistence V2 — Milestone Roadmap
 
-High-level milestone list for the Persistence V2 build. Each milestone ships on two parallel branches off `main` (one backend, one frontend), each as its own PR, both gated on an e2e smoke test against `bun run dev` before merge.
+> **Scope sign-off: 2026-05-28.** After the May 2026 design-package port + the cleanup pass, this roadmap is the final scoping artifact for future agents. Every shipped milestone has its folder deleted (git history is canonical). Every open workstream lives in a rewritten `specs/0N-*/` triplet — no milestone-level briefs remain. Agents work from `tasks.md` inside each spec.
+>
+> If a piece of work doesn't have a spec section to cite, that's a spec-update commit first. See [`../_agent.md`](../_agent.md) § Spec-first discipline.
 
-See [`../README.md`](../README.md) for the feature-spec index and [`../_agent.md`](../_agent.md) for the execution model.
+---
 
-## Spec-first discipline — applies to every milestone
+## How to use this roadmap
 
-Before any implementation commit on a milestone branch, the parent feature spec(s) must cover everything the milestone will build. If they don't, the first commits on each branch are **spec updates** — extending `design.md` with new architecture, appending new ACs to `requirements.md`, marking M<N> scope in `tasks.md`. Only then do implementation commits start, each citing the spec sections they implement.
+1. **Section 1 — Shipped.** What's live in `main`. Reference only.
+2. **Section 2 — Active workstream.** The design-system port. Ten ready spec triplets, executed against `tasks.md` per spec. Phase ordering preserved.
+3. **Section 3 — Spec slot status.** Per-slot state for the 15 numbered slots + `_shared/`.
+4. **Section 4 — Scope boundaries.** What's deliberately not on this roadmap.
 
-This applies identically to M0, M1, M2, …, M11. See [`../_agent.md`](../_agent.md) § Spec-first discipline (Kiro) for the full rules and [`M0-integration-baseline/HANDOVER.md`](./M0-integration-baseline/HANDOVER.md) for the commit-trace template.
+There is no "open milestones" section any more — everything alive is in Section 2.
 
-## Status key
+---
 
-- `not started` — no brief authored yet
-- `briefs authored` — `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, `SMOKE_TEST.md` exist; agents not yet kicked off
-- `spec updates in flight` — agents are extending parent spec(s) to cover milestone scope
-- `implementation in flight` — spec updates merged, implementation commits in progress
-- `shipped` — both PRs merged, smoke test passed, relevant `tasks.md` checkboxes ticked
+## Spec-first discipline
 
-## Milestones
+Before any implementation commit, the parent feature spec(s) must cover the work. If they don't, the first commits are **spec updates** — extending `design.md`, appending ACs to `requirements.md`, marking scope in `tasks.md`. Then implementation commits cite the sections they implement.
 
-### M0 — Integration baseline
+When a primitive / endpoint / behaviour is discovered missing mid-implementation, the resolution is always: pause work → spec amendment (revised-date append) → resume against the updated spec. Never silently expand scope.
 
-**Purpose:** close Exercise Library wire-format drift, add missing `POST/PATCH/DELETE /exercises` backend handlers, shift mobile filter UI onto API-sourced reference lists (muscle groups, equipment, categories). Unblocks everything downstream.
+See [`../_agent.md`](../_agent.md) for full rules. See [`../README.md`](../README.md) for the feature-spec index.
 
-- **Status:** shipped (2026-04-22)
-- **Parent spec:** [03-exercise-library](../03-exercise-library/) (closes Phases 5–8 gaps + drift)
-- **Brief:** [`M0-integration-baseline/BRIEF.md`](./M0-integration-baseline/BRIEF.md)
-- **Merged PRs:** #29 (process), #30 (backend writes + filter), #31 (frontend), #32 (Supabase alignment), #33 (global error handler)
-- **Post-ship gates:** 507 mobile + 356 core tests; 98.17% / 97.43% line coverage; typecheck + lint + prettier clean
-- **Deferred:** Phase 9 (offline search & sort) scoped in `03-exercise-library/{design,tasks}.md` as own PR, not yet milestone-owned. Likely slots between M3 and M11.
+---
 
-### M1 — Home / dashboard (incl. HealthKit)
+## Section 1 — Shipped
 
-**Purpose:** port legacy home dashboard and ship real `ExpoHealthKitAdapter` (iOS) + Android stub + simulator-mock fallback.
+Folders deleted; git is canonical.
 
-- **Status:** not started
-- **Parent specs:** [06-progress-goals](../06-progress-goals/) (dashboard section), [07-health-integration](../07-health-integration/)
-- **Brief:** [`M1-home-dashboard/BRIEF.md`](./M1-home-dashboard/BRIEF.md)
+| Milestone                         | What shipped                                                                | Merged PRs     | Shipped                 |
+| --------------------------------- | --------------------------------------------------------------------------- | -------------- | ----------------------- |
+| **M0 Integration baseline**       | Exercise library wire-format + backend writes + filter sourcing             | #29–#33        | 2026-04-22              |
+| **M1 Home + iOS HealthKit**       | Home dashboard + ExpoHealthKitAdapter (iOS) + Android stub                  | (pre-#67)      | ~2026-04                |
+| **M2 Workouts CRUD**              | Workouts list/creator/editor + supersets + sync queue                       | (pre-#67)      | ~2026-04                |
+| **M3 Active session**             | Set logger + rest timer + recovery + summary + exact-rep PR detection       | (pre-#67)      | ~2026-04                |
+| **M6 Profile + Edit**             | Profile tab + edit + avatar upload                                          | #67, #68       | 2026-05-17 / 2026-05-19 |
+| **M10 Stripe subscriptions**      | Stripe screens + backend reads (catalog + entitlement + POST extensions)    | #69, #70, #71  | 2026-05-22 / 2026-05-24 |
+| **M10.5 Entitlement Wave 1**      | `assertEntitlement` + feature-gate primitives + offline UX                  | #72            | 2026-05-24              |
+| **M10.5 Entitlement Wave 2**      | Per-screen gate integration (workouts / progress / trainer placeholders)    | #73            | 2026-05-27              |
+| **M10.6 Sync-queue entitlement**  | Mobile sync catches 402 + `blocked_entitlement` + auto-retry on tier change | #73 (combined) | 2026-05-27              |
+| **M7 Notifications backend**      | 6 endpoints + JSONB preferences + atomic merge + COALESCE read semantics    | #81            | 2026-05-27              |
+| **M12 Compliance / legal / help** | Privacy, terms, help, contact, privacy-settings ported 1:1                  | #80            | 2026-05-27              |
 
-### M2 — Workouts (list + create + edit)
+11 milestone-tracked deliveries shipped. Plus spec authoring PRs (#74–#79) and the design-port spec rewrites on 2026-05-27/28 (this session — not yet committed; will land via one or more chore PRs).
 
-**Purpose:** port workouts list, creator, editor; supersets; nested exercise handling; sync queue wiring.
+---
 
-- **Status:** not started
-- **Parent spec:** [04-workout-management](../04-workout-management/)
-- **Brief:** [`M2-workouts/BRIEF.md`](./M2-workouts/BRIEF.md)
+## Section 2 — Active workstream: design-system port
 
-### M3 — Active session (offline-critical)
+Authoritative reference: [`../../docs/design-port-audit.md`](../../docs/design-port-audit.md).
 
-**Purpose:** offline-first set logger + rest timer + session recovery. Every set persists to SQLite first.
+Goal: port the May 2026 prototype + design package into V2. Ten specs rewritten from scratch on 2026-05-27/28 to absorb the design package. **No milestone-level briefs are authored** — the rewritten spec triplets are the execution contract. Each spec's `tasks.md` is phased into PRs.
 
-- **Status:** not started
-- **Parent spec:** [05-active-session](../05-active-session/)
-- **Brief:** [`M3-active-session/BRIEF.md`](./M3-active-session/BRIEF.md)
+### Phase ordering
 
-### M4 — Progress
+```
+01-design-system        (tokens + 22 primitives + codemod + adoption sweep)
+        ↓
+14-navigation           (Option 3 nav + useUserMode + ProfileDrawer mount + Train hub + ComingSoon Fuel)
+        ↓
+08-profile-settings     (ProfileDrawer body + mode-switch card + sub-page shell refreshes)
+        ↓
+04-workout-management   ┐
+05-active-session       ├── fan-out in parallel (each independent under the new IA)
+06-progress-goals       │   incl. Home (per audit option A)
+                        ┘
+        ↓
+09-notifications-social (mobile frontend — backend already shipped per #81)
+        ↓
+10-trainer-features     (Coach mode + on-behalf + audit + programs + notes)
+        ↓
+13-nutrition-tracking   (Fuel M9 Tier A + M9.5 Tier B AI-gated)
+        ↓
+12-production-readiness (LegacyTheme deletion + a11y + perf + Sentry + EAS + Apple IAP + App Store)
+```
 
-**Purpose:** PR carousel, stat tiles, trend chart, measurement list + editor.
+Plus one small append to `03-exercise-library` (per Section 3 below) — `GET /exercises/:id` user-history extension, scheduled to land in the M4 backend window so it can read from `personal_records` table once that ships.
 
-- **Status:** not started
-- **Parent spec:** [06-progress-goals](../06-progress-goals/)
-- **Brief:** [`M4-progress/BRIEF.md`](./M4-progress/BRIEF.md)
+### Phase status (2026-05-28)
 
-### M5 — Exercise detail + creator
+| Spec                      | Status                                            | Owns                                                                     | Key gates                                                  |
+| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `01-design-system`        | **ready**                                         | 22 primitives, tokens, fonts, codemod, adoption sweep                    | Foundation for every downstream spec                       |
+| `14-navigation`           | **ready**                                         | Option 3 nav, `useUserMode`, drawer mount, Train hub, deep-link redirect | Unlocks 08 + 04 + 05 + 06 + 10                             |
+| `08-profile-settings`     | **ready**                                         | ProfileDrawer body, mode-switch, sub-page refreshes                      | Unlocks mode-switching end-to-end                          |
+| `04-workout-management`   | **ready**                                         | Workouts list/detail/create/edit, CreateExercise as bottom-sheet         | Train hub content                                          |
+| `05-active-session`       | **ready**                                         | Active session rebuild + minimise overlay + Summary + Rating             | Companion to 04                                            |
+| `06-progress-goals`       | **ready** (includes Home)                         | Home + You/Progress + M4 backend (streaks/habits/PRs)                    | Big M4 backend migration block                             |
+| `09-notifications-social` | **ready** (mobile frontend only; backend per #81) | List + preferences + bell badge + push registration + deep-link dispatch | New event types added via cross-cuts + this spec ownership |
+| `10-trainer-features`     | **ready**                                         | Coach mode, on-behalf, audit log, programs, notes, attribution badges    | Implements cross-cuts §1, §2, §4 fully                     |
+| `13-nutrition-tracking`   | **ready**                                         | Fuel M9 Tier A + M9.5 Tier B (AI gated on `aiAccess`)                    | New domain; gates on M10.5 entitlement helper              |
+| `12-production-readiness` | **ready** (terminal)                              | LegacyTheme retire, a11y, perf, Sentry, EAS, Apple IAP, App Store        | Everything else first                                      |
 
-**Purpose:** close Phases 5–6 of the Exercise Library spec. Detail screen with per-user history; creator using API-driven reference lists (requires M0).
+Each spec's `tasks.md` lists its phases + per-PR scope. Implementation picks a phase + opens PRs against the spec.
 
-- **Status:** not started
-- **Parent spec:** [03-exercise-library](../03-exercise-library/) (Phases 5–6)
-- **Brief:** [`M5-exercise-detail-creator/BRIEF.md`](./M5-exercise-detail-creator/BRIEF.md)
+---
 
-### M6 — Profile + Edit profile
+## Section 3 — Spec slot status
 
-**Purpose:** expand `ProfileContainer` to legacy parity; add `EditProfileContainer`; avatar picker.
+| Slot                        | State                     | Notes                                                                                                                                                                                                                                                         |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-guardrails`             | untouched                 | Process / quality gates; not feature-bearing.                                                                                                                                                                                                                 |
+| `01-design-system`          | rewritten 2026-05-27      | Foundation.                                                                                                                                                                                                                                                   |
+| `02-auth-flow`              | untouched                 | Auth screens not in design-port scope; refresh deferred to a post-launch design pass.                                                                                                                                                                         |
+| `03-exercise-library`       | revised-append 2026-05-28 | Existing spec preserved; one "Revised 2026-05-28" append at the end of `design.md` covers the `GET /exercises/:id` user-history extension absorbed from the former M5 milestone. Implementation lands in the M4 backend window once `personal_records` ships. |
+| `04-workout-management`     | rewritten 2026-05-27      | Train hub content. Absorbed M5 frontend scope (Exercise create sheet, detail, edit).                                                                                                                                                                          |
+| `05-active-session`         | rewritten 2026-05-27      | Active session rebuild + minimise overlay.                                                                                                                                                                                                                    |
+| `06-progress-goals`         | rewritten 2026-05-27      | Includes Home (audit option A).                                                                                                                                                                                                                               |
+| `07-health-integration`     | untouched                 | HealthKit adapter shipped per M1; design-port doesn't change the adapter.                                                                                                                                                                                     |
+| `08-profile-settings`       | rewritten 2026-05-27      | ProfileDrawer + sub-page refreshes.                                                                                                                                                                                                                           |
+| `09-notifications-social`   | rewritten 2026-05-28      | Mobile frontend; backend shipped per #81.                                                                                                                                                                                                                     |
+| `10-trainer-features`       | rewritten 2026-05-27      | Coach mode + cross-cuts implementation.                                                                                                                                                                                                                       |
+| `11-payments-subscriptions` | untouched                 | M10/M10.5/M10.6 shipped against this spec; iOS IAP work picks it up in `12-production-readiness`.                                                                                                                                                             |
+| `12-production-readiness`   | rewritten 2026-05-28      | Terminal polish + App Store readiness. Absorbed all M11 scope.                                                                                                                                                                                                |
+| `13-nutrition-tracking`     | rewritten 2026-05-27      | Fuel M9 + M9.5.                                                                                                                                                                                                                                               |
+| `14-navigation`             | new 2026-05-27            | Option 3 nav + state primitives.                                                                                                                                                                                                                              |
+| `_shared/cross-cuts.md`     | locked 2026-05-25         | Untouched. Referenced by 06 + 10 + 13.                                                                                                                                                                                                                        |
 
-- **Status:** not started
-- **Parent spec:** [08-profile-settings](../08-profile-settings/)
-- **Brief:** [`M6-profile/BRIEF.md`](./M6-profile/BRIEF.md)
+**Summary:** 10 rewritten/new + 1 revised-append + 5 untouched (`00`, `02`, `03 untouched body`, `07`, `11`) + 1 locked (`_shared`). All in scope is documented; no orphaned milestones.
 
-### M7 — Notifications
+---
 
-**Purpose:** full notifications surface on both sides — list, preferences, device-token registration, deep linking.
+## Section 4 — Scope boundaries (deliberately not on this roadmap)
 
-- **Status:** not started
-- **Parent spec:** [09-notifications-social](../09-notifications-social/) (notifications portion — social deferred beyond M7)
-- **Brief:** [`M7-notifications/BRIEF.md`](./M7-notifications/BRIEF.md)
+- **Design-port milestone briefs** — not authored. The rewritten spec triplets are the execution contract; each `tasks.md` is the phased work plan. Future agents pick a phase per spec, open PRs, cite spec sections in commits.
+- **Light theme** — out of scope for v1. Multiple specs explicitly defer this. v2 consideration.
+- **Localisation** — English-only for v1.
+- **AI-classify exercise feature (former M5 mention)** — **not** post-launch new; the classification path is already supported by the legacy backend. V2 work is a small port wiring the existing capability into the `04-workout-management` Create Exercise sheet, gated per cross-cuts § 4. Scoped in `03-exercise-library/design.md § Revised 2026-05-28 > POST /exercises/classify`. Can land as an independent follow-up PR once `04` ships.
+- **Social features (friends, feed, comments)** — `09-notifications-social` keeps the slot name but social is post-launch.
+- **Onboarding redesign** — `02-auth-flow` untouched in this port. Polish-pass only in `12-production-readiness`.
+- **Marketing site** — `apps/web/` marketing site separate from this roadmap. Privacy policy export is owned in `12-production-readiness` STORY-009.
+- **A/B testing infrastructure** — post-launch.
 
-### M8 — Trainer features (role-gated)
+---
 
-**Purpose:** PT/physio client management, invites, workout assignments. 6th `Clients` tab conditional on role.
-
-- **Status:** not started
-- **Parent spec:** [10-trainer-features](../10-trainer-features/)
-- **Brief:** [`M8-trainer-features/BRIEF.md`](./M8-trainer-features/BRIEF.md)
-
-### M9 — Nutrition tracking (NEW feature)
-
-**Purpose:** net-new full-stack feature (meals, macros, calories, water, daily targets). Not in legacy app — needs its own requirements + design pass before this milestone's briefs are authored.
-
-- **Status:** not started (requirements + design pending)
-- **Parent spec:** [13-nutrition-tracking](../13-nutrition-tracking/) (stub; requirements pass scheduled pre-M9)
-- **Brief:** [`M9-nutrition/BRIEF.md`](./M9-nutrition/BRIEF.md)
-
-### M10.6 — Sync-queue entitlement re-check
-
-**Purpose:** close the offline-then-flush abuse path. Mobile sync engine catches 402 + ENTITLEMENT_DENIED responses, marks the entries `blocked_entitlement` with the server's verdict captured, and surfaces them via a banner + review screen. Tier change auto-retries previously-blocked entries; manual discard path also available. Backend already correct from M10.5; M10.6 is mobile-only.
-
-- **Status:** briefs authored (2026-05-24); spawn after M10.5 Wave 1 merges
-- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — STORY-012 + new "Sync-queue entitlement handling (M10.6)" design section
-- **Brief:** [`M10-6-sync-queue-entitlement/BRIEF.md`](./M10-6-sync-queue-entitlement/BRIEF.md)
-- **Agent brief:** [`MOBILE_BRIEF.md`](./M10-6-sync-queue-entitlement/MOBILE_BRIEF.md) (single agent)
-- **Smoke test:** [`SMOKE_TEST.md`](./M10-6-sync-queue-entitlement/SMOKE_TEST.md)
-
-### M10.5 — Entitlement hardening + feature gates + offline UX
-
-**Purpose:** server-side `assertEntitlement` helper + apply to workout creation + session record paths. Mobile feature-gate primitives (`useFeatureGate`, `FeatureGatePrompt`, `SubscriptionBadge`). Offline UX on the subscription screens (online-status indicator, mutation pre-flight, slow-network "still working…", 3DS network-drop recovery). Brad call: no client-side grace windows — `expiresAt` trusted as-is, server enforces.
-
-- **Status:** briefs authored (2026-05-24); Wave 1 spawning
-- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — extended with STORY-009/010/011 + new "Entitlement enforcement (M10.5)" design section
-- **Brief:** [`M10-5-entitlement-hardening/BRIEF.md`](./M10-5-entitlement-hardening/BRIEF.md)
-- **Wave 1 agent briefs:** [`BACKEND_BRIEF.md`](./M10-5-entitlement-hardening/BACKEND_BRIEF.md) · [`MOBILE_PRIMITIVES_BRIEF.md`](./M10-5-entitlement-hardening/MOBILE_PRIMITIVES_BRIEF.md) · [`MOBILE_OFFLINE_UX_BRIEF.md`](./M10-5-entitlement-hardening/MOBILE_OFFLINE_UX_BRIEF.md)
-- **Smoke test:** [`SMOKE_TEST.md`](./M10-5-entitlement-hardening/SMOKE_TEST.md)
-- **Wave 2 (deferred):** per-screen feature-gate integration across exercise library, progress, profile, trainer placeholders. Briefs authored after Wave 1 merges.
-
-### M10 — Subscriptions & payments (Stripe)
-
-**Purpose:** mobile port of legacy buy/cancel/upgrade/downgrade screens against the SST API + Stripe surface shipped in PRs #69 + #70. Adds backend reads (`GET /subscription-tiers`, `GET /subscriptions/me`) and `POST /subscriptions` response/request extensions. Apple Pay only (matches legacy + App Store IAP policy).
-
-- **Status:** briefs authored (2026-05-23)
-- **Parent spec:** [11-payments-subscriptions](../11-payments-subscriptions/) — rewritten 2026-05-23 to match shipped + M10 scope
-- **Brief:** [`M10-subscriptions/BRIEF.md`](./M10-subscriptions/BRIEF.md)
-- **Backend brief:** [`M10-subscriptions/BACKEND_BRIEF.md`](./M10-subscriptions/BACKEND_BRIEF.md)
-- **Frontend brief:** [`M10-subscriptions/FRONTEND_BRIEF.md`](./M10-subscriptions/FRONTEND_BRIEF.md)
-- **Smoke test:** [`M10-subscriptions/SMOKE_TEST.md`](./M10-subscriptions/SMOKE_TEST.md)
-- **Deferred to follow-up:** feature gates (`FeatureGatePrompt` + per-screen integration), Google Pay, Stripe Customer Portal, reconcile cron, helper unification — see parent `tasks.md` § Deferred phases
-
-### M11 — Polish
-
-**Purpose:** `/frontend-design` pass across the whole app for cohesion; perf audit; accessibility; nav redesign decision; EAS build config; Sentry; release checklist.
-
-- **Status:** not started
-- **Parent spec:** [12-production-readiness](../12-production-readiness/)
-- **Brief:** [`M11-polish/BRIEF.md`](./M11-polish/BRIEF.md)
+_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off)_
