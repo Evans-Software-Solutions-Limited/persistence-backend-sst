@@ -238,15 +238,25 @@ type CreateExerciseSheetProps = {
 
 type NewExerciseInput = {
   name: string;
-  primaryMuscle: string;
-  secondaryMuscles: string[];
-  equipment: string;
+  primaryMuscleLabel: MuscleLabel; // UI-display label, mapped to MuscleGroup[] at the container boundary (see § Conversion layer)
+  secondaryMuscleLabels: MuscleLabel[]; // 0..N labels, mapped to MuscleGroup[]
+  equipmentLabel: EquipmentLabel; // UI label → EquipmentType (single → array of length 1)
   level: ExerciseLevel; // "beginner" | "intermediate" | "advanced" | "expert" — matches exerciseDifficultyEnum (schema.ts:31). UI radio labels capitalise via levelLabel(); the union value posted to /exercises must be lowercase or the backend rejects with `invalid input value for enum exercise_difficulty`.
+  category: ExerciseCategory; // REQUIRED by CreateExerciseInput — defaults to "strength" unless primaryMuscleLabel === "Cardio" (see conversion)
   instructions?: string;
-  photoUrl?: string;
+  photoUrl?: string; // mapped to `thumbnailUrl` at the container boundary
 };
 
-const MUSCLES = [
+// UI-display labels (coarse, matches the create-exercise.jsx mock):
+type MuscleLabel =
+  | "Chest"
+  | "Back"
+  | "Legs"
+  | "Shoulders"
+  | "Arms"
+  | "Core"
+  | "Cardio";
+const MUSCLES: MuscleLabel[] = [
   "Chest",
   "Back",
   "Legs",
@@ -255,7 +265,16 @@ const MUSCLES = [
   "Core",
   "Cardio",
 ];
-const EQUIPMENT_OPTIONS = [
+
+type EquipmentLabel =
+  | "Barbell"
+  | "Dumbbell"
+  | "Machine"
+  | "Cable"
+  | "Bodyweight"
+  | "Kettlebell"
+  | "Band";
+const EQUIPMENT_OPTIONS: EquipmentLabel[] = [
   "Barbell",
   "Dumbbell",
   "Machine",
@@ -265,6 +284,67 @@ const EQUIPMENT_OPTIONS = [
   "Band",
 ];
 ```
+
+### Conversion layer — UI labels → domain `CreateExerciseInput`
+
+The presenter collects coarse, capitalised UI labels (`"Legs"`, `"Arms"`, `"Cardio"`, etc.) because that's what the prototype's `create-exercise.jsx` renders. The domain model in `packages/mobile/src/domain/models/exercise.ts:220` (`CreateExerciseInput`) is granular, lowercase, and array-shaped:
+
+```ts
+type CreateExerciseInput = {
+  name: string;
+  description?: string;
+  instructions?: string;
+  category: ExerciseCategory; // "strength" | "cardio" | "flexibility" | …
+  difficulty: ExerciseDifficulty; // "beginner" | "intermediate" | "advanced" | "expert"
+  primaryMuscleGroups: MuscleGroup[]; // granular: "biceps" | "triceps" | "quadriceps" | …
+  secondaryMuscleGroups?: MuscleGroup[];
+  equipment: EquipmentType[]; // lowercase: "barbell" | "dumbbell" | "machine" | …
+  videoUrl?: string;
+  thumbnailUrl?: string;
+};
+```
+
+The CreateExerciseSheetContainer maps `NewExerciseInput` → `CreateExerciseInput` before calling `useCreateExercise()`. Conversion rules:
+
+```ts
+const MUSCLE_LABEL_TO_GROUPS: Record<MuscleLabel, MuscleGroup[]> = {
+  Chest: ["chest"],
+  Back: ["back", "lats"],
+  Legs: ["quadriceps", "hamstrings", "glutes", "calves"], // coarse "Legs" maps to all four
+  Shoulders: ["shoulders", "traps"],
+  Arms: ["biceps", "triceps", "forearms"], // coarse "Arms" → three groups
+  Core: ["core"],
+  Cardio: [], // Cardio is a category, not a muscle — empty array + sets category="cardio"
+};
+
+const EQUIPMENT_LABEL_TO_ENUM: Record<EquipmentLabel, EquipmentType> = {
+  Barbell: "barbell",
+  Dumbbell: "dumbbell",
+  Machine: "machine",
+  Cable: "cable",
+  Bodyweight: "bodyweight",
+  Kettlebell: "kettlebell",
+  Band: "resistance_band",
+};
+
+function toCreateExerciseInput(input: NewExerciseInput): CreateExerciseInput {
+  const isCardio = input.primaryMuscleLabel === "Cardio";
+  return {
+    name: input.name,
+    instructions: input.instructions,
+    category: isCardio ? "cardio" : input.category, // Cardio label forces category
+    difficulty: input.level,
+    primaryMuscleGroups: MUSCLE_LABEL_TO_GROUPS[input.primaryMuscleLabel],
+    secondaryMuscleGroups: input.secondaryMuscleLabels.flatMap(
+      (l) => MUSCLE_LABEL_TO_GROUPS[l],
+    ),
+    equipment: [EQUIPMENT_LABEL_TO_ENUM[input.equipmentLabel]],
+    thumbnailUrl: input.photoUrl,
+  };
+}
+```
+
+The container then calls `await createExercise(toCreateExerciseInput(input))`. Mapping is one-way (UI → domain); when the same exercise is later read for editing, the granular muscle list is preserved as-is (a finer-grained list than the picker can express — that's fine for v1; granular edit UI is post-launch).
 
 Sheet sections (from `create-exercise.jsx`):
 
@@ -283,13 +363,15 @@ Sheet sections (from `create-exercise.jsx`):
 ```ts
 // CreateExerciseSheetContainer.tsx
 export function CreateExerciseSheetContainer({ visible, onClose }) {
-  const { mutateAsync: createExercise } = useCreateExercise();   // existing V2 mutation
+  const { mutateAsync: createExercise } = useCreateExercise(); // existing V2 mutation
   return (
     <CreateExerciseSheetPresenter
       visible={visible}
       onClose={onClose}
       onSave={async (input) => {
-        await createExercise(input);   // queues offline if needed
+        // Convert UI labels → domain enums at the container boundary.
+        // See § Conversion layer above for the mapping rules.
+        await createExercise(toCreateExerciseInput(input));
         onClose();
       }}
     />

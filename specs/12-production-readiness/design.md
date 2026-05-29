@@ -552,33 +552,41 @@ CREATE UNIQUE INDEX entitlements_source_txn_uq
   ON entitlements (source, original_transaction_id);
 ```
 
-**Required implementation** — single statement, `INSERT … ON CONFLICT` so the atomicity comes from Postgres, not from application code:
+**Required implementation** — single statement, `INSERT … ON CONFLICT` so the atomicity comes from Postgres, not from application code. **The `DO UPDATE` must always fire** — using `WHERE` to filter the update produces zero `RETURNING` rows on the cross-user case (the very case the contract exists to detect), which would either crash the helper or fall through to a silent grant. Instead, gate the update via `CASE` inside the `SET` clause so the row gets a no-op self-update on cross-user replay; that keeps `RETURNING` emitting one row in every branch and preserves the legitimate owner's data:
 
 ```sql
 INSERT INTO entitlements (user_id, tier, expires_at, source, original_transaction_id)
 VALUES ($userId, $tier, $expiresAt, $source, $originalTransactionId)
 ON CONFLICT (source, original_transaction_id) DO UPDATE
-  SET tier       = excluded.tier,
-      expires_at = excluded.expires_at
-  WHERE entitlements.user_id = excluded.user_id  -- only update if same user owns the txn
+  -- CASE guards: only overwrite when the row's user_id matches the request.
+  -- Cross-user replay → both SET expressions evaluate to the existing column
+  -- value (self-no-op), so the legitimate owner's tier/expires_at are
+  -- preserved AND the statement still produces a RETURNING row.
+  SET tier       = CASE WHEN entitlements.user_id = excluded.user_id
+                        THEN excluded.tier
+                        ELSE entitlements.tier END,
+      expires_at = CASE WHEN entitlements.user_id = excluded.user_id
+                        THEN excluded.expires_at
+                        ELSE entitlements.expires_at END
 RETURNING
   user_id,
-  (xmax = 0)                                    AS inserted,        -- true on first grant
-  (xmax <> 0 AND user_id = $userId)              AS renewed,         -- true on same-user re-submit
-  (user_id <> $userId)                           AS owned_by_other_user;
+  (xmax = 0)                          AS inserted,            -- true on first grant
+  (xmax <> 0 AND user_id = $userId)   AS renewed,             -- true on same-user re-submit
+  (xmax <> 0 AND user_id <> $userId)  AS owned_by_other_user; -- true on cross-user replay
 ```
 
-Result-mapping rules (one row always returned):
+Result-mapping rules (one row ALWAYS returned — no zero-row case):
 
 - `inserted` = `true` → return `{ status: "granted", userId }`
 - `renewed` = `true` → return `{ status: "renewed", userId }`
-- `owned_by_other_user` = `true` → return `{ status: "owned_by_other_user", ownerUserId: row.user_id }` (the row stays unchanged because the `WHERE` clause on `DO UPDATE` skipped the write)
+- `owned_by_other_user` = `true` → return `{ status: "owned_by_other_user", ownerUserId: row.user_id }` (the SET clause's CASE expressions self-no-op, so the legitimate owner's row data stays exactly as it was; `row.user_id` is the original owner's id)
 
 **Why this shape**:
 
 1. `INSERT … ON CONFLICT … RETURNING` is one statement → no TOCTOU race between SELECT and INSERT. Two concurrent requests with the same `(source, original_transaction_id)` will serialise: the first wins the insert, the second hits the ON CONFLICT branch.
-2. The `WHERE entitlements.user_id = excluded.user_id` predicate on `DO UPDATE` is the ownership assertion — it ONLY updates when the requesting user already owns the txn, so a different-user replay leaves the row intact and `owned_by_other_user` resolves true.
-3. `xmax` is Postgres's transaction-system field — `xmax = 0` means the row was newly inserted by this statement; otherwise it was hit by the ON CONFLICT branch (update or skip).
+2. The CASE expressions inside `SET` are the ownership assertion — for same-user submissions they overwrite with the new tier/expires_at; for cross-user replays they overwrite each column with its current value (Postgres still records the row as updated and emits a `RETURNING` row, but the data is identical to before).
+3. **Do not use `WHERE` on `DO UPDATE`** — Postgres only emits `RETURNING` rows when the statement actually inserts or updates. A `WHERE` that filters the update out emits zero rows, which makes `owned_by_other_user` undetectable.
+4. `xmax` is Postgres's transaction-system field — `xmax = 0` means the row was newly inserted by this statement; otherwise it was hit by the ON CONFLICT branch.
 
 **Source-matching note**: the lookup uses the **input's** `metadata.source`, NOT a hard-coded `"ios_iap"`. The signature accepts both `"ios_iap"` and `"stripe"`; the UNIQUE index is `(source, original_transaction_id)` so each source has its own namespace of transaction IDs. A Stripe call MUST match Stripe rows, not iOS rows.
 

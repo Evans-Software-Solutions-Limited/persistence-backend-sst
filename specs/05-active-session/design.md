@@ -203,7 +203,11 @@ export default function AppLayout() {
   return (
     <>
       <Stack>{…}</Stack>
-      {drawerOpen && <ProfileDrawerContainer/>}
+      {/* ProfileDrawerContainer is ALWAYS mounted — see 14-navigation
+          § <ProfileDrawer> mount-point for the rationale (the BottomSheet's
+          `visible` prop drives the 250ms slide; a conditional gate would
+          unmount the tree before the exit animation can play). */}
+      <ProfileDrawerContainer/>
       <ActiveWorkoutOverlay/>
     </>
   );

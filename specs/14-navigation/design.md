@@ -46,6 +46,11 @@ type UserMode = (typeof VALID_MODES)[number];
 interface UserModeState {
   mode: UserMode;
   isTrainerEligible: boolean;
+  // True once `setEligibility` has been called at least once — i.e. the
+  // subscription cache has resolved. Gates the invariant watchdog so a
+  // default-`false` `isTrainerEligible` (pre-network) can't be mistaken for
+  // a confirmed-`false` (post-network) and demote a legitimate trainer.
+  isEligibilityKnown: boolean;
   switchTo: (next: UserMode) => Promise<void>;
   setEligibility: (eligible: boolean) => void;
   rehydrate: () => Promise<void>;
@@ -54,6 +59,7 @@ interface UserModeState {
 export const useUserMode = create<UserModeState>((set, get) => ({
   mode: "athlete",
   isTrainerEligible: false,
+  isEligibilityKnown: false,
 
   switchTo: async (next) => {
     const { isTrainerEligible } = get();
@@ -69,7 +75,10 @@ export const useUserMode = create<UserModeState>((set, get) => ({
 
   setEligibility: (eligible) => {
     const { mode } = get();
-    set({ isTrainerEligible: eligible });
+    // `isEligibilityKnown: true` marks the subscription cache as resolved —
+    // gates the invariant watchdog so it doesn't react to the default-false
+    // before the network answer comes in.
+    set({ isTrainerEligible: eligible, isEligibilityKnown: true });
     // Force fall-back to athlete if eligibility lost while in coach mode.
     if (!eligible && mode === "coach") {
       set({ mode: "athlete" });
@@ -81,22 +90,16 @@ export const useUserMode = create<UserModeState>((set, get) => ({
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored && (VALID_MODES as readonly string[]).includes(stored)) {
-        // Eligibility check at rehydrate, NOT only at setEligibility. The two
-        // effects race on cold launch: subQuery can resolve to
-        // `isTrainerTier: false` before rehydrate runs, at which point
-        // `setEligibility(false)` checks `mode === 'coach'` against the
-        // default `'athlete'` and skips the safety branch. Then rehydrate
-        // restores `'coach'` from disk and the user lands in coach mode
-        // without eligibility. Re-assert the invariant here.
-        const { isTrainerEligible } = get();
-        const next: UserMode =
-          stored === "coach" && !isTrainerEligible
-            ? "athlete"
-            : (stored as UserMode);
-        set({ mode: next });
-        if (next !== stored) {
-          AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
-        }
+        // Restore the persisted mode verbatim — DO NOT consult
+        // isTrainerEligible here. On cold launch, AsyncStorage.getItem
+        // (~ms) almost always resolves before useGetUserSubscription
+        // (100–1000ms network), so `isTrainerEligible` is still the
+        // default `false` regardless of the user's real subscription
+        // status. Branching on it would demote legitimate trainers to
+        // athlete + persist the demotion to disk (worse failure mode
+        // than the original race). The invariant watchdog in RootLayout
+        // handles eligibility enforcement once the network resolves.
+        set({ mode: stored as UserMode });
       }
     } catch (err) {
       console.warn("[user-mode] rehydrate failed", err);
@@ -127,20 +130,21 @@ export default function RootLayout() {
     }
   }, [subQuery.data?.isTrainerTier]);
 
-  // Invariant watchdog: belt-and-braces defence on top of the per-action
-  // guards in setEligibility + rehydrate. If both effects fire in either
-  // order and somehow leave the user in `mode === 'coach'` without
-  // eligibility (race, partial AsyncStorage failure, network restore that
-  // flips isTrainerTier), this effect re-asserts the invariant. Idempotent —
-  // running repeatedly is a no-op when the invariant holds. switchTo
-  // handles the disk write internally + only gates eligibility on coach
-  // switches, so switchTo("athlete") is always safe.
+  // Invariant watchdog: re-asserts the invariant once the network has
+  // resolved. The `isEligibilityKnown` gate is critical — without it the
+  // effect fires on mount with the default `isTrainerEligible: false` and
+  // demotes legitimate trainers to athlete the instant rehydrate restores
+  // their `coach` mode (the network-says-true answer hasn't arrived yet).
+  // Idempotent — running repeatedly is a no-op when the invariant holds.
+  // switchTo handles the disk write internally + only gates eligibility on
+  // coach switches, so switchTo("athlete") is always safe.
+  const isEligibilityKnown = useUserMode((s) => s.isEligibilityKnown);
   const switchTo = useUserMode((s) => s.switchTo);
   useEffect(() => {
-    if (mode === "coach" && !isTrainerEligible) {
+    if (isEligibilityKnown && mode === "coach" && !isTrainerEligible) {
       switchTo("athlete");
     }
-  }, [mode, isTrainerEligible, switchTo]);
+  }, [mode, isTrainerEligible, isEligibilityKnown, switchTo]);
 
   // <LegacyRedirects/> (defined below in § Deep-link redirect map) MUST be a
   // SIBLING of <Stack>, not a child. expo-router's <Stack> renders only
