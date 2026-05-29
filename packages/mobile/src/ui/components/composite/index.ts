@@ -11,3 +11,5 @@ export { RingLegend } from "./RingLegend";
 export type { RingLegendProps } from "./RingLegend";
 export { PRCard } from "./PRCard";
 export type { PRCardProps } from "./PRCard";
+export { SummaryChip } from "./SummaryChip";
+export type { SummaryChipProps } from "./SummaryChip";

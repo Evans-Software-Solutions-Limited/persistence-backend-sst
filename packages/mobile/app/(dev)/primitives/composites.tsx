@@ -8,6 +8,7 @@ import { MicroPill } from "@/ui/components/composite/MicroPill";
 import { PRCard } from "@/ui/components/composite/PRCard";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
+import { SummaryChip } from "@/ui/components/composite/SummaryChip";
 import {
   IconBolt,
   IconDroplet,
@@ -161,6 +162,17 @@ export default function CompositesDevRoute() {
               achievedAt={new Date()}
               loading
             />
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              SUMMARY CHIP (Trainer Clients summary row)
+            </Text>
+            <View flexDirection="row" gap="$sm">
+              <SummaryChip count={8} label="Active" tone="success" />
+              <SummaryChip count={3} label="Need attention" tone="ember" />
+              <SummaryChip count={2} label="New PRs" tone="gold" />
+            </View>
           </View>
         </View>
       </Screen>
