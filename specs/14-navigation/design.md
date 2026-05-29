@@ -81,7 +81,22 @@ export const useUserMode = create<UserModeState>((set, get) => ({
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored && (VALID_MODES as readonly string[]).includes(stored)) {
-        set({ mode: stored as UserMode });
+        // Eligibility check at rehydrate, NOT only at setEligibility. The two
+        // effects race on cold launch: subQuery can resolve to
+        // `isTrainerTier: false` before rehydrate runs, at which point
+        // `setEligibility(false)` checks `mode === 'coach'` against the
+        // default `'athlete'` and skips the safety branch. Then rehydrate
+        // restores `'coach'` from disk and the user lands in coach mode
+        // without eligibility. Re-assert the invariant here.
+        const { isTrainerEligible } = get();
+        const next: UserMode =
+          stored === "coach" && !isTrainerEligible
+            ? "athlete"
+            : (stored as UserMode);
+        set({ mode: next });
+        if (next !== stored) {
+          AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn("[user-mode] rehydrate failed", err);
@@ -99,6 +114,8 @@ export default function RootLayout() {
   const subQuery = useGetUserSubscription();
   const setEligibility = useUserMode((s) => s.setEligibility);
   const rehydrate = useUserMode((s) => s.rehydrate);
+  const mode = useUserMode((s) => s.mode);
+  const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
 
   useEffect(() => {
     rehydrate();
@@ -109,6 +126,21 @@ export default function RootLayout() {
       setEligibility(subQuery.data.isTrainerTier ?? false);
     }
   }, [subQuery.data?.isTrainerTier]);
+
+  // Invariant watchdog: belt-and-braces defence on top of the per-action
+  // guards in setEligibility + rehydrate. If both effects fire in either
+  // order and somehow leave the user in `mode === 'coach'` without
+  // eligibility (race, partial AsyncStorage failure, network restore that
+  // flips isTrainerTier), this effect re-asserts the invariant. Idempotent —
+  // running repeatedly is a no-op when the invariant holds. switchTo
+  // handles the disk write internally + only gates eligibility on coach
+  // switches, so switchTo("athlete") is always safe.
+  const switchTo = useUserMode((s) => s.switchTo);
+  useEffect(() => {
+    if (mode === "coach" && !isTrainerEligible) {
+      switchTo("athlete");
+    }
+  }, [mode, isTrainerEligible, switchTo]);
 
   // <LegacyRedirects/> (defined below in § Deep-link redirect map) MUST be a
   // SIBLING of <Stack>, not a child. expo-router's <Stack> renders only
@@ -365,16 +397,25 @@ export const useTrainSegment = create<TrainSegmentState>((set) => ({
   pendingCreate: false,
   hydrated: false,
   setSegment: (next) => {
-    set({ segment: next });
+    // Flip `hydrated: true` here so a late-resolving module-load hydration
+    // can't clobber this write. Cold-launch deep links can fire setSegment
+    // before AsyncStorage.getItem resolves; without this guard the late
+    // .then() callback would overwrite the deep-link write with the prior
+    // session's value.
+    set({ segment: next, hydrated: true });
     AsyncStorage.setItem(KEY, next).catch(() => {});
   },
   setPendingCreate: (next) => set({ pendingCreate: next }),
   clearPendingCreate: () => set({ pendingCreate: false }),
 }));
 
-// Hydrate the persisted segment value on first import.
+// Hydrate the persisted segment value on first import — but only if no
+// setter has already written. Cold-launch deep-link redirects can fire
+// setSegment before this resolves; without the guard the late disk-read
+// would clobber the deep-link's segment write.
 AsyncStorage.getItem(KEY)
   .then((v) => {
+    if (useTrainSegment.getState().hydrated) return; // setSegment already won the race
     if (v === "Workouts" || v === "Exercises") {
       useTrainSegment.setState({ segment: v, hydrated: true });
     } else {

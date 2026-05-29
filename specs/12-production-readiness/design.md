@@ -527,7 +527,9 @@ async function verifyAppleReceipt(
 
 #### `grantEntitlement` ownership contract
 
-The grant helper at `microservices/core/src/application/entitlements/grant.ts` performs an atomic upsert keyed on `(source, originalTransactionId)` and asserts ownership. Required shape:
+The grant helper at `microservices/core/src/application/entitlements/grant.ts` performs an **atomic** upsert keyed on `(source, original_transaction_id)` and asserts ownership at the DB layer. "Atomic" here means a single SQL statement with a uniqueness constraint — never a SELECT-then-INSERT pattern, which is TOCTOU-unsafe and would let two concurrent requests with the same `originalTransactionId` both insert (defeating the defence-in-depth entirely).
+
+Required shape:
 
 ```ts
 type GrantResult =
@@ -543,14 +545,44 @@ async function grantEntitlement(
 ): Promise<GrantResult>;
 ```
 
-Implementation contract:
+**Required schema constraint** (M11 migration):
 
-1. Look up any existing entitlement row where `metadata.source === "ios_iap"` AND `metadata.originalTransactionId === input.originalTransactionId`.
-2. If found AND `existing.userId === userId` → update `tier` + `expiresAt`, return `{ status: "renewed", … }`.
-3. If found AND `existing.userId !== userId` → return `{ status: "owned_by_other_user", ownerUserId: existing.userId }` WITHOUT mutating the row. Handler 403s.
-4. If not found → insert new row, return `{ status: "granted", … }`.
+```sql
+CREATE UNIQUE INDEX entitlements_source_txn_uq
+  ON entitlements (source, original_transaction_id);
+```
 
-The (source, originalTransactionId) uniqueness pair is the defence against legitimate-purchase-replayed-by-different-user. Apple's `original_transaction_id` is stable across renewals + restores, so this uniqueness constraint pins the receipt to its first-granting user for the lifetime of the subscription. Combined with the `appAccountToken` check at the handler, the attack surface for IAP receipt replay is now closed at two independent layers.
+**Required implementation** — single statement, `INSERT … ON CONFLICT` so the atomicity comes from Postgres, not from application code:
+
+```sql
+INSERT INTO entitlements (user_id, tier, expires_at, source, original_transaction_id)
+VALUES ($userId, $tier, $expiresAt, $source, $originalTransactionId)
+ON CONFLICT (source, original_transaction_id) DO UPDATE
+  SET tier       = excluded.tier,
+      expires_at = excluded.expires_at
+  WHERE entitlements.user_id = excluded.user_id  -- only update if same user owns the txn
+RETURNING
+  user_id,
+  (xmax = 0)                                    AS inserted,        -- true on first grant
+  (xmax <> 0 AND user_id = $userId)              AS renewed,         -- true on same-user re-submit
+  (user_id <> $userId)                           AS owned_by_other_user;
+```
+
+Result-mapping rules (one row always returned):
+
+- `inserted` = `true` → return `{ status: "granted", userId }`
+- `renewed` = `true` → return `{ status: "renewed", userId }`
+- `owned_by_other_user` = `true` → return `{ status: "owned_by_other_user", ownerUserId: row.user_id }` (the row stays unchanged because the `WHERE` clause on `DO UPDATE` skipped the write)
+
+**Why this shape**:
+
+1. `INSERT … ON CONFLICT … RETURNING` is one statement → no TOCTOU race between SELECT and INSERT. Two concurrent requests with the same `(source, original_transaction_id)` will serialise: the first wins the insert, the second hits the ON CONFLICT branch.
+2. The `WHERE entitlements.user_id = excluded.user_id` predicate on `DO UPDATE` is the ownership assertion — it ONLY updates when the requesting user already owns the txn, so a different-user replay leaves the row intact and `owned_by_other_user` resolves true.
+3. `xmax` is Postgres's transaction-system field — `xmax = 0` means the row was newly inserted by this statement; otherwise it was hit by the ON CONFLICT branch (update or skip).
+
+**Source-matching note**: the lookup uses the **input's** `metadata.source`, NOT a hard-coded `"ios_iap"`. The signature accepts both `"ios_iap"` and `"stripe"`; the UNIQUE index is `(source, original_transaction_id)` so each source has its own namespace of transaction IDs. A Stripe call MUST match Stripe rows, not iOS rows.
+
+The `(source, original_transaction_id)` uniqueness pair is the defence against legitimate-purchase-replayed-by-different-user. Apple's `original_transaction_id` is stable across renewals + restores, so this uniqueness constraint pins the receipt to its first-granting user for the lifetime of the subscription. Combined with the `appAccountToken` check at the handler, the attack surface for IAP receipt replay is now closed at two independent layers — one in the handler (fail-closed appAccountToken), one in the database (atomic ON CONFLICT).
 
 ### Stripe gating on iOS
 
