@@ -28,5 +28,7 @@ export type {
 } from "./Segmented";
 export { TabBar } from "./TabBar";
 export type { TabBarProps, TabSpec, TabBarMode, TabBarIcon } from "./TabBar";
+export { HeaderBar } from "./HeaderBar";
+export type { HeaderBarProps } from "./HeaderBar";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
