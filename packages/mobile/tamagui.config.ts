@@ -1,9 +1,9 @@
 import { createAnimations } from "@tamagui/animations-react-native";
 import { createTamagui } from "@tamagui/core";
 
+import { bodyFont, displayFont, monoFont } from "./src/ui/theme/fonts";
 import { themes } from "./src/ui/theme/themes";
 import { tokens } from "./src/ui/theme/tokens";
-import { bodyFont, headingFont } from "./src/ui/theme/typography";
 
 const animations = createAnimations({
   fast: {
@@ -30,8 +30,14 @@ const config = createTamagui({
   tokens,
   themes,
   fonts: {
+    // New design-system families (01-design-system STORY-002).
+    display: displayFont,
     body: bodyFont,
-    heading: headingFont,
+    mono: monoFont,
+    // Legacy alias: existing screens reference `$heading`. Point it at the
+    // Geist display font so they pick up the refreshed typeface unchanged.
+    // Retired alongside the adoption sweep / M11 Polish.
+    heading: displayFont,
   },
   animations,
   defaultFont: "body",

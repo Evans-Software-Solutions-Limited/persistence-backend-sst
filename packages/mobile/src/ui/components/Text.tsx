@@ -1,5 +1,9 @@
 import { styled, Text as TamaguiText } from "@tamagui/core";
 
+// React Native's `fontVariant` figure-style control. Geist Mono ships a
+// slashed zero as its default glyph, so tabular-nums is all we apply here.
+const STAT_FONT_VARIANT: ["tabular-nums"] = ["tabular-nums"];
+
 export const Text = styled(TamaguiText, {
   color: "$color",
   fontFamily: "$body",
@@ -53,6 +57,31 @@ export const Text = styled(TamaguiText, {
         fontSize: 14,
         lineHeight: 20,
         fontWeight: "500",
+      },
+      // ── Numeric stat variants (01-design-system STORY-002 AC 2.3) ──
+      // ALWAYS render in Geist Mono with tabular figures + slashed zero so
+      // numbers don't visually bounce on update and zeros are unambiguous.
+      // Sizes mirror the <Stat> primitive: md 20 / lg 28 / xl 40.
+      "stat-md": {
+        fontFamily: "$mono",
+        fontSize: 20,
+        lineHeight: 24,
+        fontWeight: "600",
+        fontVariant: STAT_FONT_VARIANT,
+      },
+      "stat-lg": {
+        fontFamily: "$mono",
+        fontSize: 28,
+        lineHeight: 32,
+        fontWeight: "600",
+        fontVariant: STAT_FONT_VARIANT,
+      },
+      "stat-xl": {
+        fontFamily: "$mono",
+        fontSize: 40,
+        lineHeight: 44,
+        fontWeight: "700",
+        fontVariant: STAT_FONT_VARIANT,
       },
     },
     secondary: {

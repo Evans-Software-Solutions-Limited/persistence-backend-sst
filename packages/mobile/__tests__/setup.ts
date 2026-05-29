@@ -126,6 +126,17 @@ jest.mock("@/ui/components/workouts/SemiCircleSlider", () => {
   };
 });
 
+// Mock expo-font — the native font loader isn't available in Jest. The app's
+// ThemeProvider gates first paint on `useFonts(...)` returning loaded=true
+// (01-design-system STORY-002). Returning [true, null] lets every test tree
+// that mounts the provider render immediately with the (mocked) Geist faces.
+jest.mock("expo-font", () => ({
+  __esModule: true,
+  useFonts: jest.fn(() => [true, null]),
+  loadAsync: jest.fn(async () => undefined),
+  isLoaded: jest.fn(() => true),
+}));
+
 // Mock react-native-svg (native module, not available in Jest).
 // lucide-react-native imports this as a namespace (`import * as NativeSvg`)
 // and renders `NativeSvg.Svg` + PascalCased child tags (Path, Circle, Line,
