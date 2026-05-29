@@ -3,3 +3,5 @@
 
 export { Section } from "./Section";
 export type { SectionProps } from "./Section";
+export { DrawerRow } from "./DrawerRow";
+export type { DrawerRowProps } from "./DrawerRow";

@@ -2,7 +2,10 @@ import { View } from "@tamagui/core";
 import { Stack } from "expo-router";
 
 import { Btn } from "@/ui/components/foundation/Btn";
+import { Pill } from "@/ui/components/foundation/Pill";
+import { DrawerRow } from "@/ui/components/composite/DrawerRow";
 import { Section } from "@/ui/components/composite/Section";
+import { IconSettings, IconUser, iconDefaults } from "@/ui/components/icons";
 import { Screen } from "@/ui/components/Screen";
 import { Text } from "@/ui/components/Text";
 
@@ -37,6 +40,36 @@ export default function CompositesDevRoute() {
             >
               <Text variant="body">Section body content goes here.</Text>
             </Section>
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              DRAWER ROW
+            </Text>
+            <DrawerRow
+              icon={
+                <IconUser {...iconDefaults({ size: 18 })} color="#C2C2CE" />
+              }
+              title="Profile details"
+              sub="Name, email, photo"
+              onPress={() => undefined}
+            />
+            <DrawerRow
+              icon={
+                <IconSettings {...iconDefaults({ size: 18 })} color="#C2C2CE" />
+              }
+              title="Achievements"
+              trailing={<Pill tone="gold">12</Pill>}
+              onPress={() => undefined}
+            />
+            <DrawerRow
+              icon={
+                <IconUser {...iconDefaults({ size: 18 })} color="#C2C2CE" />
+              }
+              title="Loading row"
+              sub="placeholder"
+              loading
+            />
           </View>
         </View>
       </Screen>
