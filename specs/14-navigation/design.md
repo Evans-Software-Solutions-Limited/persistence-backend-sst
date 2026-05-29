@@ -411,7 +411,12 @@ export default function AppLayout() {
         />
         … (existing sub-route stack entries preserved)
       </Stack>
-      {drawerOpen && <ProfileDrawerContainer />}
+      {/* ProfileDrawerContainer is ALWAYS mounted — its internal <BottomSheet>
+          uses the `visible` prop (forwarded by the container, sourced from
+          useDrawer((s) => s.open)) to drive its own 250ms slide-in/out
+          animation. Conditionally mounting on `drawerOpen` would unmount the
+          tree the instant the user dismisses, killing the slide-down exit. */}
+      <ProfileDrawerContainer />
       <ActiveWorkoutOverlay /> {/* owned by 05-active-session */}
     </>
   );
@@ -465,27 +470,28 @@ import { useDrawer } from "~/state/drawer";
 import { useTrainSegment } from "~/ui/hooks/useTrainSegment";
 
 const LEGACY_REDIRECTS: Record<string, () => void> = {
+  // Use useTrainSegment.getState().setSegment(...) — NOT a raw AsyncStorage write.
+  // The setter updates BOTH the in-memory Zustand store AND disk in one call;
+  // a raw AsyncStorage.setItem only takes effect on next cold launch, leaving
+  // the in-memory `segment` stale. Tapping /workouts while the last segment
+  // was "Exercises" would otherwise land the user on Train with Exercises
+  // still visible. Same shape for all three Train-redirecting entries.
   "/workouts": () => {
-    AsyncStorage.setItem("persistence.train.segment", "Workouts").catch(
-      () => {},
-    );
+    useTrainSegment.getState().setSegment("Workouts");
     router.replace("/(app)/(tabs)/train");
   },
   "/exercises": () => {
-    AsyncStorage.setItem("persistence.train.segment", "Exercises").catch(
-      () => {},
-    );
+    useTrainSegment.getState().setSegment("Exercises");
     router.replace("/(app)/(tabs)/train");
   },
   // Promised by 04-workout-management § STORY-007 (full-screen
   // (app)/exercises/create.tsx removed; Train hub mounts the sheet instead).
-  // Sets the segment to Exercises + flags the train-segment store with a
-  // one-shot `pendingCreate` boolean; <TrainHubContainer>'s mount-time effect
-  // reads + clears the flag to open <CreateExerciseSheetContainer>.
+  // Sets the segment to Exercises (in memory + on disk) + flags the
+  // train-segment store with a one-shot `pendingCreate` boolean;
+  // <TrainHubContainer>'s mount-time effect reads + clears the flag to open
+  // <CreateExerciseSheetContainer>.
   "/exercises/create": () => {
-    AsyncStorage.setItem("persistence.train.segment", "Exercises").catch(
-      () => {},
-    );
+    useTrainSegment.getState().setSegment("Exercises");
     useTrainSegment.getState().setPendingCreate(true);
     router.replace("/(app)/(tabs)/train");
   },

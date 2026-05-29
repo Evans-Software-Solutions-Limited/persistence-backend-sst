@@ -449,12 +449,17 @@ export const handler = wrapHandler(
       };
     }
 
-    // Audit binding: Apple receipts carry an optional `appAccountToken` set
-    // at purchase time (by the client passing a UUID into RNIap.requestSubscription).
-    // We can set it to ctx.userId at purchase + assert it matches here so
-    // receipt → user is independently auditable.
+    // Audit binding: Apple receipts carry an `appAccountToken` set at
+    // purchase time (V2 client passes `appAccountToken: userId`). REQUIRED —
+    // the previous `verification.appAccountToken && …` short-circuit was
+    // fail-open: any receipt without the token (sandbox/TestFlight receipts
+    // not set up to pass it, future code paths that forget to, any third-
+    // party receipt an attacker can lay hands on) would skip the check and
+    // grant the entitlement to whichever JWT submitted the receipt. Fail
+    // CLOSED — a missing appAccountToken is treated identically to a
+    // mismatched one.
     if (
-      verification.appAccountToken &&
+      !verification.appAccountToken ||
       verification.appAccountToken !== ctx.userId
     ) {
       return {
@@ -463,8 +468,13 @@ export const handler = wrapHandler(
       };
     }
 
-    // Use the RECEIPT-derived productId for the tier grant — never the body's.
-    await grantEntitlement(
+    // originalTransactionId uniqueness: bind it to ctx.userId at first grant
+    // and 403 if a different user later submits the same originalTransactionId.
+    // Defence-in-depth on top of the appAccountToken check — covers the case
+    // where a legitimate purchase later gets replayed by a different user
+    // (e.g. account-shared receipt leak). grantEntitlement performs this
+    // upsert + ownership assertion atomically; see § Entitlement grant contract.
+    const ownership = await grantEntitlement(
       ctx.userId,
       productIdToTier(verification.productId),
       verification.expiresAt,
@@ -473,6 +483,14 @@ export const handler = wrapHandler(
         originalTransactionId: verification.originalTransactionId,
       },
     );
+    if (ownership.status === "owned_by_other_user") {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          error: "transaction_owned_by_other_user",
+        }),
+      };
+    }
 
     return {
       statusCode: 200,
@@ -506,6 +524,33 @@ async function verifyAppleReceipt(
 ```
 
 `productId` is the load-bearing field that closes the tier-upgrade attack (see comment block in the handler). Apple's response includes a `product_id` on each `latest_receipt_info[]` entry; the verifier picks the latest unexpired entry's `product_id` and returns it.
+
+#### `grantEntitlement` ownership contract
+
+The grant helper at `microservices/core/src/application/entitlements/grant.ts` performs an atomic upsert keyed on `(source, originalTransactionId)` and asserts ownership. Required shape:
+
+```ts
+type GrantResult =
+  | { status: "granted"; userId: string }
+  | { status: "renewed"; userId: string } // same user re-submits the same originalTransactionId
+  | { status: "owned_by_other_user"; ownerUserId: string }; // 403 from handler
+
+async function grantEntitlement(
+  userId: string,
+  tier: SubscriptionTierName,
+  expiresAt: Date,
+  metadata: { source: "ios_iap" | "stripe"; originalTransactionId: string },
+): Promise<GrantResult>;
+```
+
+Implementation contract:
+
+1. Look up any existing entitlement row where `metadata.source === "ios_iap"` AND `metadata.originalTransactionId === input.originalTransactionId`.
+2. If found AND `existing.userId === userId` → update `tier` + `expiresAt`, return `{ status: "renewed", … }`.
+3. If found AND `existing.userId !== userId` → return `{ status: "owned_by_other_user", ownerUserId: existing.userId }` WITHOUT mutating the row. Handler 403s.
+4. If not found → insert new row, return `{ status: "granted", … }`.
+
+The (source, originalTransactionId) uniqueness pair is the defence against legitimate-purchase-replayed-by-different-user. Apple's `original_transaction_id` is stable across renewals + restores, so this uniqueness constraint pins the receipt to its first-granting user for the lifetime of the subscription. Combined with the `appAccountToken` check at the handler, the attack surface for IAP receipt replay is now closed at two independent layers.
 
 ### Stripe gating on iOS
 
