@@ -9,5 +9,7 @@ export { Btn } from "./Btn";
 export type { BtnProps, BtnVariant, BtnTone, BtnSize } from "./Btn";
 export { Pill } from "./Pill";
 export type { PillProps, PillSize } from "./Pill";
+export { IconBtn, iconBtnForeground } from "./IconBtn";
+export type { IconBtnProps, IconBtnTone } from "./IconBtn";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
