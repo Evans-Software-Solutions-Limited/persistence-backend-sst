@@ -15,3 +15,8 @@ export { SummaryChip } from "./SummaryChip";
 export type { SummaryChipProps } from "./SummaryChip";
 export { ClientRow, clientRowPressStyle } from "./ClientRow";
 export type { ClientRowProps, ClientStatus } from "./ClientRow";
+export {
+  WorkoutCarouselCard,
+  workoutCarouselCardPressStyle,
+} from "./WorkoutCarouselCard";
+export type { WorkoutCarouselCardProps } from "./WorkoutCarouselCard";

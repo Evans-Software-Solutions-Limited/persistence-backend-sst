@@ -1,5 +1,6 @@
 import { View } from "@tamagui/core";
 import { Stack } from "expo-router";
+import { ScrollView } from "react-native";
 
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
@@ -10,6 +11,7 @@ import { ClientRow } from "@/ui/components/composite/ClientRow";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
 import { SummaryChip } from "@/ui/components/composite/SummaryChip";
+import { WorkoutCarouselCard } from "@/ui/components/composite/WorkoutCarouselCard";
 import {
   IconBolt,
   IconDroplet,
@@ -207,6 +209,38 @@ export default function CompositesDevRoute() {
               onPress={() => undefined}
             />
             <ClientRow avatar={{ initials: "LD" }} name="Loading" loading />
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              WORKOUT CAROUSEL CARD (260pt fixed, primary highlight)
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View flexDirection="row" gap="$sm">
+                <WorkoutCarouselCard
+                  title="Push Day"
+                  mins={45}
+                  sub="Chest, shoulders, triceps — 6 exercises"
+                  chips={["Push", "Hypertrophy"]}
+                  primary
+                  onPress={() => undefined}
+                />
+                <WorkoutCarouselCard
+                  title="Pull Day"
+                  mins={50}
+                  sub="Back, biceps — 7 exercises"
+                  chips={["Pull"]}
+                  onPress={() => undefined}
+                />
+                <WorkoutCarouselCard
+                  title="Loading"
+                  mins={0}
+                  sub=""
+                  chips={[]}
+                  loading
+                />
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Screen>
