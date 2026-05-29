@@ -409,14 +409,26 @@ import { productIdToTier } from "../iap/productIds";
 
 export const handler = wrapHandler(
   withAuth(async (event, ctx) => {
-    // ctx.userId is the JWT-authenticated user. Apple receipts do NOT carry
-    // the app's userId — Apple has no notion of who is signed in to our app.
-    // Granting to verification.userId (which doesn't exist on the verifier
-    // response) would either resolve to `undefined` or silently grant to the
-    // wrong account. Worse: without `withAuth`, any caller could replay a
-    // valid receipt against any account. The userId MUST come from the
-    // request context.
-    const { receipt, productId } = JSON.parse(event.body);
+    // Trust boundary: BOTH userId AND productId MUST come from a trusted
+    // source, not the request body.
+    //
+    // - userId: from ctx (Supabase JWT). Apple receipts have no notion of
+    //   the app's signed-in user. Granting based on a body-supplied or
+    //   verifier-implied userId would let any caller replay a valid receipt
+    //   against any account.
+    //
+    // - productId: from `verification.productId` (Apple's signed
+    //   `latest_receipt_info[0].product_id`). The body's productId is
+    //   either redundant (already implied by the receipt) or — if trusted
+    //   — the foothold for a tier-upgrade attack: a user buys the cheapest
+    //   SKU (premium_monthly), then POSTs `{ receipt: <their valid premium
+    //   receipt>, productId: "app.persistence.trainer.individual.annual" }`.
+    //   Receipt verifies, appAccountToken matches, and the spec would grant
+    //   the most expensive tier for the price of the cheapest. We require
+    //   `body.productId === verification.productId` as a defence-in-depth
+    //   assertion (also catches client bugs sending wrong productIds), and
+    //   then use `verification.productId` for the tier lookup.
+    const { receipt, productId: claimedProductId } = JSON.parse(event.body);
 
     const verification = await verifyAppleReceipt(receipt);
     if (!verification.valid)
@@ -424,6 +436,18 @@ export const handler = wrapHandler(
         statusCode: 402,
         body: JSON.stringify({ error: "invalid_receipt" }),
       };
+
+    // Tier-upgrade defence: cross-check the body's claim against the signed receipt.
+    if (verification.productId !== claimedProductId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          error: "product_id_mismatch",
+          message:
+            "Body productId does not match the productId Apple signed into the receipt.",
+        }),
+      };
+    }
 
     // Audit binding: Apple receipts carry an optional `appAccountToken` set
     // at purchase time (by the client passing a UUID into RNIap.requestSubscription).
@@ -439,9 +463,10 @@ export const handler = wrapHandler(
       };
     }
 
+    // Use the RECEIPT-derived productId for the tier grant — never the body's.
     await grantEntitlement(
       ctx.userId,
-      productIdToTier(productId),
+      productIdToTier(verification.productId),
       verification.expiresAt,
       {
         source: "ios_iap",
@@ -458,6 +483,29 @@ export const handler = wrapHandler(
 ```
 
 `withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated above to pass `appAccountToken: userId` (where `userId` flows from the component's `useAuth().session?.userId` through the adapter parameter), so the binding is set at purchase time (Apple stores this UUID on the receipt; the verifier returns it for the backend cross-check).
+
+#### `verifyAppleReceipt` return shape
+
+The helper at `microservices/core/src/application/verification/apple.ts` must surface every signed field this handler relies on. Concretely:
+
+```ts
+type AppleReceiptVerification = {
+  valid: boolean;
+  // From the latest unexpired entry of `latest_receipt_info` returned by
+  // Apple's verifyReceipt endpoint. NEVER trust client-supplied values for
+  // any of these — they're the foothold for tier-upgrade + replay attacks.
+  productId: string; // Apple-signed product_id of the active subscription
+  originalTransactionId: string; // stable purchase identity across renewals
+  expiresAt: Date; // expires_date_ms from Apple's response
+  appAccountToken?: string; // optional UUID the client passed at purchase time
+};
+
+async function verifyAppleReceipt(
+  receipt: string,
+): Promise<AppleReceiptVerification>;
+```
+
+`productId` is the load-bearing field that closes the tier-upgrade attack (see comment block in the handler). Apple's response includes a `product_id` on each `latest_receipt_info[]` entry; the verifier picks the latest unexpired entry's `product_id` and returns it.
 
 ### Stripe gating on iOS
 
