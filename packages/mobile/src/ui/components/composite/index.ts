@@ -9,3 +9,5 @@ export { MicroPill } from "./MicroPill";
 export type { MicroPillProps } from "./MicroPill";
 export { RingLegend } from "./RingLegend";
 export type { RingLegendProps } from "./RingLegend";
+export { PRCard } from "./PRCard";
+export type { PRCardProps } from "./PRCard";

@@ -5,6 +5,7 @@ import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { DrawerRow } from "@/ui/components/composite/DrawerRow";
 import { MicroPill } from "@/ui/components/composite/MicroPill";
+import { PRCard } from "@/ui/components/composite/PRCard";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
 import {
@@ -140,6 +141,25 @@ export default function CompositesDevRoute() {
               value="1,820"
               sub="kcal"
               pct={0.88}
+            />
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              PR CARD (gold-tinted, medal)
+            </Text>
+            <PRCard
+              exerciseName="Bench Press"
+              newValue="120 KG × 5"
+              previousValue="115 KG × 5"
+              delta={{ value: 5, unit: "kg" }}
+              achievedAt={new Date()}
+            />
+            <PRCard
+              exerciseName="Deadlift"
+              newValue="200 KG × 1"
+              achievedAt={new Date()}
+              loading
             />
           </View>
         </View>
