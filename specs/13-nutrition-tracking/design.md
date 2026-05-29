@@ -208,7 +208,7 @@ Migrations land in M9 Tier A PR. `ai_usage_log` lands with M9 even though it's u
 | POST   | `/foods`                             | User creates a custom food                                                                                          |
 | GET    | `/recipes`                           | User's recipes                                                                                                      |
 | POST   | `/recipes`                           | Create recipe (manual)                                                                                              |
-| POST   | `/recipes/import`                    | Import from URL (server scrapes)                                                                                    |
+| POST   | `/recipes/import`                    | Import from URL (server scrapes — SSRF-hardened, see § Recipe-import SSRF guards)                                   |
 | GET    | `/recipes/:id`, `PUT`, `DELETE`      | CRUD                                                                                                                |
 | GET    | `/meals`, `POST`, `PUT`, `DELETE`    | CRUD                                                                                                                |
 
@@ -225,6 +225,100 @@ All AI endpoints:
 1. First line: `await assertEntitlement(ctx.userId, 'aiAccess')`. On denial → 402 + `ENTITLEMENT_DENIED` payload per cross-cuts § 4.1.
 2. Log to `ai_usage_log` per § 4.2.
 3. Return structured response.
+
+---
+
+## Recipe-import SSRF guards
+
+`POST /recipes/import` accepts a user-supplied URL and has the Lambda fetch it server-side. Naive `fetch(body.url)` ships an open SSRF vector — Lambda VPC connectivity reaches AWS instance metadata, internal-VPC services, and link-local addresses; an attacker submits `http://169.254.169.254/latest/meta-data/iam/security-credentials/<role>` and the response returns IAM role credentials. Trust boundary same shape as the iOS receipt handler (§ `12-production-readiness`) — the URL is user-controlled input that drives a network hop, so every guard must be explicit, not assumed.
+
+**Required guards** (every one must be present; failing any returns 400):
+
+1. **Scheme allowlist** — accept only `http:` and `https:`. Reject `file:`, `gopher:`, `data:`, `ftp:`, `dict:`, anything else.
+
+2. **DNS resolution + private-range rejection** — before any network hop, resolve the hostname to its A and AAAA records. Reject if ANY resolved address falls in any of:
+   - IPv4 RFC1918: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+   - IPv4 loopback: `127.0.0.0/8`
+   - IPv4 link-local: `169.254.0.0/16` (covers AWS instance metadata `169.254.169.254`)
+   - IPv4 reserved: `0.0.0.0/8`, `100.64.0.0/10` (CGNAT), `192.0.0.0/24`, `192.0.2.0/24`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`
+   - IPv6 loopback: `::1/128`
+   - IPv6 link-local: `fe80::/10`
+   - IPv6 ULA: `fc00::/7`
+   - IPv6 mapped-IPv4: `::ffff:0:0/96` (re-evaluate the embedded IPv4 against the rules above)
+
+3. **Redirect handling** — follow at most 3 redirects. **Re-run the DNS + IP check on every hop** — an attacker can host `https://attacker.com/recipe` that returns `302 Location: http://169.254.169.254/...`. The fetch library's default redirect handling does NOT re-check the destination; this MUST be implemented as a manual loop (`fetch` with `redirect: 'manual'`, follow the `Location` header explicitly, re-validate, re-fetch).
+
+4. **Response caps** — `AbortSignal.timeout(10000)` (10s wall-clock), max response body 2 MiB (stream + abort on overrun). Recipes are HTML pages, not multi-MB binaries.
+
+5. **Content-Type allowlist** — accept only `text/html` and `application/ld+json` (Schema.org microdata). Reject everything else — no need to parse `application/octet-stream` or `text/plain` for recipe scraping.
+
+6. **Outbound proxy / network ACL (defence-in-depth at infra layer)** — the SST stack should route this Lambda's outbound traffic through a NAT gateway with an explicit egress allowlist OR a security-group rule that blocks `169.254.0.0/16` + RFC1918 destinations at the network layer. Belt-and-braces — application guards 1–5 are primary, the network-layer block is the safety net for any future code-path that forgets to call the validator.
+
+Helper shape:
+
+```ts
+// microservices/core/src/application/recipes/services/url-fetch.ts
+const ALLOWED_SCHEMES = new Set(["http:", "https:"]);
+const ALLOWED_CONTENT_TYPES = ["text/html", "application/ld+json"];
+const MAX_REDIRECTS = 3;
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const TIMEOUT_MS = 10_000;
+
+export async function safeRecipeFetch(
+  rawUrl: string,
+): Promise<{ html: string; finalUrl: string }> {
+  let currentUrl = new URL(rawUrl); // throws on malformed input → caller 400s
+  if (!ALLOWED_SCHEMES.has(currentUrl.protocol)) {
+    throw new BadRequestError("scheme_not_allowed");
+  }
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    await assertHostnameIsPublic(currentUrl.hostname); // throws on private-range hit
+    const res = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: { Accept: ALLOWED_CONTENT_TYPES.join(", ") },
+    });
+
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) throw new BadRequestError("redirect_without_location");
+      currentUrl = new URL(loc, currentUrl); // resolve relative redirects
+      if (!ALLOWED_SCHEMES.has(currentUrl.protocol)) {
+        throw new BadRequestError("scheme_not_allowed_after_redirect");
+      }
+      continue;
+    }
+
+    if (!res.ok) throw new BadRequestError("upstream_status_" + res.status);
+
+    const ct = res.headers.get("content-type")?.split(";")[0].trim();
+    if (!ct || !ALLOWED_CONTENT_TYPES.includes(ct)) {
+      throw new BadRequestError("content_type_not_allowed");
+    }
+
+    // Streamed read with byte cap — fail on overrun instead of buffering full body.
+    const html = await readCapped(res.body, MAX_BODY_BYTES);
+    return { html, finalUrl: currentUrl.toString() };
+  }
+  throw new BadRequestError("too_many_redirects");
+}
+
+async function assertHostnameIsPublic(hostname: string): Promise<void> {
+  const addrs = await dns.promises.lookup(hostname, { all: true });
+  for (const { address, family } of addrs) {
+    if (isPrivateIp(address, family)) {
+      throw new BadRequestError("hostname_resolves_to_private_address");
+    }
+  }
+}
+```
+
+`isPrivateIp(address, family)` covers the CIDR set listed in guard #2. `readCapped(stream, n)` is a streamed reader that aborts the response when the running byte count exceeds `n`.
+
+The handler at `application/recipes/handlers/import.ts` calls `safeRecipeFetch(body.url)` as the first step (before any parsing); the existing recipe-extraction logic operates on the resulting `html` only. Tests cover every reject branch (`scheme_not_allowed`, every private CIDR, redirect-to-private, oversized body, timeout, disallowed Content-Type).
+
+**TOCTOU note**: a sophisticated DNS-rebinding attack can change the A record between `assertHostnameIsPublic` and the `fetch`. The standard mitigation is to resolve once + fetch by IP literal + set `Host` header to the original hostname — but `fetch` in Node doesn't expose that cleanly, and the realistic threat model (DNS-rebinding requires attacker-controlled DNS with short TTL + the Lambda VPC re-resolving) is marginal vs the cost of a custom socket layer. M9 ships with the resolve-then-fetch pattern; if DNS-rebinding gets exploited the follow-up is a `fetch-by-resolved-IP` patch.
 
 ---
 
@@ -418,15 +512,16 @@ M7 owns delivery.
 
 ## Risks + mitigations
 
-| Risk                                                                                                                     | Mitigation                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Open Food Facts barcode DB has gaps                                                                                      | Allow user-created `foods` row when barcode not found; user fills macros manually. Source = 'user'.                      |
-| Barcode scanner perf on Android                                                                                          | Use `react-native-vision-camera-v3-barcode-scanner`. Validate during sheet PR.                                           |
-| LLM cost spikes on high-volume Tier B users                                                                              | `ai_usage_log` writes per call; future quota tier can throttle without schema change.                                    |
-| Recipe URL scraper breaks on non-Schema.org sites                                                                        | Fall back to LLM-based extraction with user confirmation step. Mark as `source = 'ai_extracted'`.                        |
-| Macro target ± 10% tolerance for streak may be too tight / too loose                                                     | Hardcoded in v1; revisit based on user data. Tolerance editable per-user as v2 if needed.                                |
-| `nutrition_targets.set_by_user_id` cross-cut with `10-trainer-features` requires both specs to agree on the column shape | Locked in cross-cuts § 1.5 + § 2.1 patterns. Migration block owned by THIS spec (M9 ships the column at table creation). |
-| Macro autobalance UX in Fuel Targets — sliders that auto-rebalance can confuse users                                     | Use 3-input pattern (% for each macro) + warning chip when sum ≠ 100; not auto-adjust.                                   |
+| Risk                                                                                                                                                                    | Mitigation                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open Food Facts barcode DB has gaps                                                                                                                                     | Allow user-created `foods` row when barcode not found; user fills macros manually. Source = 'user'.                                                                                                                                                                                                                                                                        |
+| Barcode scanner perf on Android                                                                                                                                         | Use `react-native-vision-camera-v3-barcode-scanner`. Validate during sheet PR.                                                                                                                                                                                                                                                                                             |
+| LLM cost spikes on high-volume Tier B users                                                                                                                             | `ai_usage_log` writes per call; future quota tier can throttle without schema change.                                                                                                                                                                                                                                                                                      |
+| Recipe URL scraper breaks on non-Schema.org sites                                                                                                                       | Fall back to LLM-based extraction with user confirmation step. Mark as `source = 'ai_extracted'`.                                                                                                                                                                                                                                                                          |
+| **SSRF via user-supplied recipe-import URL** (Lambda fetches `http://169.254.169.254/...` → IAM role creds; internal-VPC services reachable; redirect-to-private space) | Hardened per § "Recipe-import SSRF guards": scheme allowlist, DNS+CIDR rejection covering RFC1918 / loopback / link-local / IPv6 ULA, per-hop re-validation on redirects, 10s timeout + 2 MiB body cap, Content-Type allowlist, network-layer egress block as defence-in-depth. Trust-boundary treatment parity with the iOS receipt handler in `12-production-readiness`. |
+| Macro target ± 10% tolerance for streak may be too tight / too loose                                                                                                    | Hardcoded in v1; revisit based on user data. Tolerance editable per-user as v2 if needed.                                                                                                                                                                                                                                                                                  |
+| `nutrition_targets.set_by_user_id` cross-cut with `10-trainer-features` requires both specs to agree on the column shape                                                | Locked in cross-cuts § 1.5 + § 2.1 patterns. Migration block owned by THIS spec (M9 ships the column at table creation).                                                                                                                                                                                                                                                   |
+| Macro autobalance UX in Fuel Targets — sliders that auto-rebalance can confuse users                                                                                    | Use 3-input pattern (% for each macro) + warning chip when sum ≠ 100; not auto-adjust.                                                                                                                                                                                                                                                                                     |
 
 ---
 
