@@ -27,7 +27,11 @@ jest.mock("react-native-reanimated", () => {
     withTiming: (val: number) => val,
     withDelay: (_delay: number, val: number) => val,
     withRepeat: (val: number) => val,
+    cancelAnimation: () => undefined,
     interpolate: (val: number) => val,
+    // Bar/Ring (01-design-system) call useReducedMotion to bypass the fill
+    // animation; default to false in tests so the animated path is exercised.
+    useReducedMotion: () => false,
     Extrapolation: { CLAMP: "clamp" },
     Easing: {
       linear: "linear",
@@ -36,6 +40,7 @@ jest.mock("react-native-reanimated", () => {
       out: () => "easeOut",
       in: () => "easeIn",
       inOut: () => "easeInOut",
+      bezier: () => ({ factory: () => "bezier" }),
     },
     FadeIn: {
       duration: () => ({ duration: () => ({}) }),
