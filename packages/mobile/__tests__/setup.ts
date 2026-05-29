@@ -142,6 +142,50 @@ jest.mock("expo-font", () => ({
   isLoaded: jest.fn(() => true),
 }));
 
+// Mock @gorhom/bottom-sheet (01-design-system <BottomSheet> primitive). The
+// real package pulls native gesture/reanimated bindings; in Jest we render a
+// plain View tree so the sheet's header + children mount and can be asserted.
+jest.mock("@gorhom/bottom-sheet", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const passthrough = (testIdFallback?: string) =>
+    function MockSheetPart(props: Record<string, unknown>) {
+      return React.createElement(
+        View,
+        { testID: (props.testID as string) ?? testIdFallback },
+        props.children as React.ReactNode,
+      );
+    };
+  const GorhomBottomSheet = React.forwardRef(
+    (props: Record<string, unknown>, _ref: unknown) => {
+      const backdropComponent = props.backdropComponent;
+      const backdrop =
+        typeof backdropComponent === "function"
+          ? backdropComponent({ animatedIndex: { value: 0 }, style: {} })
+          : null;
+      return React.createElement(
+        View,
+        { testID: "gorhom-bottom-sheet" },
+        backdrop,
+        props.children as React.ReactNode,
+      );
+    },
+  );
+  return {
+    __esModule: true,
+    default: GorhomBottomSheet,
+    BottomSheetModal: GorhomBottomSheet,
+    BottomSheetModalProvider: passthrough(),
+    BottomSheetView: passthrough(),
+    BottomSheetScrollView: passthrough(),
+    BottomSheetBackdrop: passthrough("gorhom-backdrop"),
+    BottomSheetTextInput: passthrough(),
+    BottomSheetHandle: passthrough(),
+    useBottomSheet: () => ({ expand: jest.fn(), close: jest.fn() }),
+    useBottomSheetModal: () => ({ dismiss: jest.fn() }),
+  };
+});
+
 // Mock react-native-svg (native module, not available in Jest).
 // lucide-react-native imports this as a namespace (`import * as NativeSvg`)
 // and renders `NativeSvg.Svg` + PascalCased child tags (Path, Circle, Line,

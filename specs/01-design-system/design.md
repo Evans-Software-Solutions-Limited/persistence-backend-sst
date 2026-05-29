@@ -812,4 +812,12 @@ The icon mapping table above (and the migration plan it mirrors) was authored ag
 
 ---
 
-_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames)_
+## Revised 2026-05-29: `@gorhom/bottom-sheet` v5 (not v4)
+
+STORY-003 AC 3.6 + design.md § Foundation primitives #12 + tasks.md T-1.3.12 specify `@gorhom/bottom-sheet` **v4**. Implementation surfaced an incompatibility: v4 predates Reanimated-4 support, and this repo runs `react-native-reanimated@4.2.1` (+ `react-native-gesture-handler@2.31.1`, Expo SDK 55). The risk was already pre-flagged in design.md § Risks ("@gorhom/bottom-sheet v4 Expo SDK 53 quirks → fallback to Tamagui Sheet").
+
+**Decision.** Use `@gorhom/bottom-sheet@5` (latest 5.2.x). Verified against the npm registry: v5 peer-declares `react-native-reanimated: ">=3.16.0 || >=4.0.0-"` and `react-native-gesture-handler: ">=2.16.1"`, both satisfied by our stack. The v4→v5 API surface the `<BottomSheet>` primitive relies on (`BottomSheet`/`BottomSheetModal`, `snapPoints`, `BottomSheetBackdrop`, `BottomSheetView`/`BottomSheetScrollView`, `enablePanDownToClose`) is unchanged. The Tamagui-Sheet fallback in the risk table is therefore not needed. The primitive's documented props (`visible`, `onClose`, `title`, `eyebrow`, `accent`, `height: 'peek' | 'default' | number`, scrolling children with a fixed header) are preserved exactly.
+
+---
+
+_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5)_
