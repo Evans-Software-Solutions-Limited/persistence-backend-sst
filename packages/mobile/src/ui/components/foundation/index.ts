@@ -26,5 +26,7 @@ export type {
   SegmentedAccent,
   SegmentedSize,
 } from "./Segmented";
+export { TabBar } from "./TabBar";
+export type { TabBarProps, TabSpec, TabBarMode, TabBarIcon } from "./TabBar";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
