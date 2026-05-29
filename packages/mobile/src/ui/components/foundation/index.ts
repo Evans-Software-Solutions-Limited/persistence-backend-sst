@@ -19,5 +19,12 @@ export { Ring, MultiRing } from "./Ring";
 export type { RingProps, MultiRingProps, MultiRingSpec } from "./Ring";
 export { Stat } from "./Stat";
 export type { StatProps, StatTone, StatSize, StatAlign } from "./Stat";
+export { Segmented } from "./Segmented";
+export type {
+  SegmentedProps,
+  SegmentedOption,
+  SegmentedAccent,
+  SegmentedSize,
+} from "./Segmented";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
