@@ -49,8 +49,8 @@
 
 ## Phase 14.7 — Deep-link redirect map (1 PR)
 
-- [ ] **T-14.7.1** Add `LEGACY_REDIRECTS` in `app/_layout.tsx` per `design.md § Deep-link redirect map`. Implements STORY-007 ACs.
-- [ ] **T-14.7.2** Wire `Linking.addEventListener('url', …)` handler.
+- [ ] **T-14.7.1** Add `LEGACY_REDIRECTS` map + `LegacyRedirects()` component in `app/_layout.tsx` per `design.md § Deep-link redirect map`. **Mount `<LegacyRedirects/>` as a sibling of `<Stack>` inside `RootLayout`** — not a child (expo-router's `<Stack>` renders only `<Stack.Screen>` children). Implements STORY-007 ACs.
+- [ ] **T-14.7.2** Wire both `Linking.getInitialURL()` (cold-launch deep link) AND `Linking.addEventListener('url', …)` (hot URL events) inside the `LegacyRedirects()` `useEffect`.
 - [ ] **T-14.7.3** Integration tests cover each redirect entry. Closes STORY-007 AC 7.1.
 - [ ] **T-14.7.4** Add comment block at the top of the redirect map: `// REMOVE: <date + 6 months>` so Phase 5 cleanup catches it.
 

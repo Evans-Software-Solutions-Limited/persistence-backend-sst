@@ -231,6 +231,7 @@ Every screen's container wraps its return in `<ErrorBoundary>` per:
 
 ```tsx
 // packages/mobile/src/ui/components/ErrorBoundary.tsx
+import * as React from "react";
 import * as Sentry from "@sentry/react-native";
 
 type ErrorBoundaryProps = { children: React.ReactNode };
@@ -351,31 +352,49 @@ function productIdToTier(productId: string): SubscriptionTierName {
 ```ts
 // packages/mobile/src/adapters/payments/ios-iap.adapter.ts
 import * as RNIap from "react-native-iap";
-import { useAuthUser } from "~/state/auth-user";
 
-export async function purchaseSubscription(productId: string) {
+/**
+ * appAccountToken binds the receipt to the signed-in app user at purchase
+ * time. The backend handler (below) asserts
+ * verification.appAccountToken === ctx.userId as defence-in-depth on top of
+ * the JWT auth — without this parameter the backend check is dead code.
+ *
+ * userId is passed in by the caller (the IOSIAPFlow component reads it via
+ * `useAuth().session?.userId` and threads it through). V2's auth lives in
+ * `packages/mobile/src/ui/hooks/useAuth.tsx` as a React hook, NOT a Zustand
+ * store — Rules of Hooks forbid calling it from this top-level async
+ * function, so the parameter passes through the component boundary.
+ */
+export async function purchaseSubscription(
+  productId: string,
+  userId: string,
+): Promise<void> {
+  if (!userId) throw new Error("Not signed in");
   await RNIap.initConnection();
   const products = await RNIap.getSubscriptions({ skus: [productId] });
   if (products.length === 0) throw new Error("Product not found");
 
-  // appAccountToken binds the receipt to the signed-in app user at purchase
-  // time. The backend handler (below) asserts
-  // verification.appAccountToken === ctx.userId as defence-in-depth on top
-  // of the JWT auth — without this parameter the backend check is dead code.
-  // `ctx.userId` is a backend concept; mobile-side we read the auth'd user
-  // from the existing useAuthUser Zustand slice (V2 pattern).
-  const appAccountToken = useAuthUser.getState().userId;
-
   const purchase = await RNIap.requestSubscription({
     sku: productId,
-    appAccountToken,
+    appAccountToken: userId,
   });
-  // Send receipt to backend for verification + entitlement grant
+
+  // Send receipt to backend for verification + entitlement grant.
   await api.post("/subscriptions/ios-receipt", {
     receipt: purchase.transactionReceipt,
     productId,
   });
 }
+```
+
+Caller pattern in `<IOSIAPFlow>` (a component, so `useAuth()` is allowed):
+
+```tsx
+const { session } = useAuth();
+const onSubscribe = async (productId: string) => {
+  if (!session?.userId) return; // gated upstream by the auth wrapper anyway
+  await purchaseSubscription(productId, session.userId);
+};
 ```
 
 ### Backend receipt verification
@@ -438,7 +457,7 @@ export const handler = wrapHandler(
 );
 ```
 
-`withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated above to pass `appAccountToken: useAuthUser.getState().userId` so the binding is set at purchase time (Apple stores this UUID on the receipt; the verifier returns it for the backend cross-check).
+`withAuth` is the existing auth-middleware wrapper used by every other authenticated handler in `microservices/core/src/application/**/handlers/*.ts`. The `ctx.userId` it surfaces is the Supabase JWT subject from `event.headers.authorization` — same source as every other write endpoint. Mobile-side, `RNIap.requestSubscription` is updated above to pass `appAccountToken: userId` (where `userId` flows from the component's `useAuth().session?.userId` through the adapter parameter), so the binding is set at purchase time (Apple stores this UUID on the receipt; the verifier returns it for the backend cross-check).
 
 ### Stripe gating on iOS
 

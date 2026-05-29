@@ -110,7 +110,17 @@ export default function RootLayout() {
     }
   }, [subQuery.data?.isTrainerTier]);
 
-  return <Stack>…</Stack>;
+  // <LegacyRedirects/> (defined below in § Deep-link redirect map) MUST be a
+  // SIBLING of <Stack>, not a child. expo-router's <Stack> renders only
+  // <Stack.Screen> children, so dropping <LegacyRedirects/> inside it would
+  // silently not render and every cold-start legacy deep link would land on
+  // the 404 instead of redirecting.
+  return (
+    <>
+      <Stack>…</Stack>
+      <LegacyRedirects />
+    </>
+  );
 }
 ```
 
@@ -513,7 +523,7 @@ export function LegacyRedirects() {
 }
 ```
 
-`<LegacyRedirects/>` is mounted once inside `RootLayout` (see § Mode-state slice's `app/_layout.tsx` example above) alongside the `useUserMode.rehydrate()` effect — both run on first render of the root, both at root scope.
+`<LegacyRedirects/>` is mounted once inside `RootLayout` as a sibling of `<Stack>` (see § Mode-state slice's `app/_layout.tsx` example above — the `return (<><Stack>…</Stack><LegacyRedirects/></>)` block). Both `LegacyRedirects` and `useUserMode.rehydrate()` run on first render of the root, both at root scope. `tasks.md` T-14.7.1 must call out the mount, not just the map definition.
 
 Lifespan: 6 months from the Phase 2 nav-restructure ship date. Phase 5 cleanup (`12-production-readiness`) removes the map.
 
