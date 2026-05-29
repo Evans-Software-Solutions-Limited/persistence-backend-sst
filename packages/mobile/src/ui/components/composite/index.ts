@@ -7,3 +7,5 @@ export { DrawerRow } from "./DrawerRow";
 export type { DrawerRowProps } from "./DrawerRow";
 export { MicroPill } from "./MicroPill";
 export type { MicroPillProps } from "./MicroPill";
+export { RingLegend } from "./RingLegend";
+export type { RingLegendProps } from "./RingLegend";

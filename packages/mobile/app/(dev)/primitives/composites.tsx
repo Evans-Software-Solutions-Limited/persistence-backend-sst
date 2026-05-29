@@ -5,6 +5,7 @@ import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { DrawerRow } from "@/ui/components/composite/DrawerRow";
 import { MicroPill } from "@/ui/components/composite/MicroPill";
+import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
 import {
   IconBolt,
@@ -113,6 +114,33 @@ export default function CompositesDevRoute() {
                 }
               />
             </View>
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              RING LEGEND (TodayHero legend column)
+            </Text>
+            <RingLegend
+              color="#22D3EE"
+              label="Move"
+              value="540"
+              sub="cal"
+              pct={0.74}
+            />
+            <RingLegend
+              color="#FB923C"
+              label="Train"
+              value="12.4k"
+              sub="kg"
+              pct={0.42}
+            />
+            <RingLegend
+              color="#F5C518"
+              label="Fuel"
+              value="1,820"
+              sub="kcal"
+              pct={0.88}
+            />
           </View>
         </View>
       </Screen>
