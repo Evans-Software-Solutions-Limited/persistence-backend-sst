@@ -529,7 +529,9 @@ async function verifyAppleReceipt(
 
 Live `user_subscriptions` columns this contract touches: `(id, user_id, tier_name, payment_status, expires_at, external_subscription_id, billing_cycle, metadata jsonb, created_at, updated_at)` + the existing partial unique index `user_subscriptions_active_unique ON (user_id) WHERE payment_status IN ('active','pending')` (one active sub per user).
 
-The grant helper performs an **atomic** upsert keyed on `external_subscription_id` and asserts ownership at the DB layer. "Atomic" means a single SQL statement with a uniqueness constraint — never a SELECT-then-INSERT, which is TOCTOU-unsafe.
+The grant helper asserts ownership at the DB layer and is **atomic**: one transaction whose first action is a `SELECT … FOR UPDATE` ownership gate, so no row owned by `$userId` is ever mutated before the cross-user replay check passes. "Atomic" here permits either a single `INSERT … ON CONFLICT` statement OR a `FOR UPDATE`-gated transaction — the forbidden shape is an **unguarded** SELECT-then-INSERT (no row lock, no uniqueness constraint), which is the TOCTOU-unsafe one. This grant needs the transaction form because it touches TWO rows under TWO unique constraints (the IAP row keyed on `external_subscription_id`, and a possible pre-existing active row under `user_subscriptions_active_unique`), which a single ON CONFLICT statement can't express — ON CONFLICT targets exactly one constraint.
+
+**Critical ordering invariant:** on `owned_by_other_user`, the transaction `ROLLBACK`s and NO row owned by `$userId` has been mutated. The ownership check is the FIRST thing inside the transaction; superseding the caller's prior active row happens ONLY in the `granted` branch, after ownership is confirmed safe. (An earlier draft superseded first then checked — that let an attacker submitting User A's `original_transaction_id` as User B cancel User B's own subscription before the 403. Corrected per Inspector Brad sweep 18.)
 
 Required shape:
 
@@ -558,53 +560,71 @@ CREATE UNIQUE INDEX user_subscriptions_external_sub_uq
   WHERE external_subscription_id IS NOT NULL;
 ```
 
-**Required implementation** — single statement, `INSERT … ON CONFLICT` so the atomicity comes from Postgres, not application code. **The `DO UPDATE` must always fire** — a `WHERE` filter produces zero `RETURNING` rows on the cross-user case (the very case the contract exists to detect). Gate via `CASE` inside `SET` so the row gets a self-no-op update on cross-user replay; `RETURNING` then emits one row in every branch and the legitimate owner's data is preserved:
+**Required implementation** — a single transaction, ownership gate first:
 
 ```sql
+BEGIN;
+
+-- 1. Ownership gate. Lock the row for this external txn id if one exists.
+--    FOR UPDATE serialises concurrent submissions of the same id — the second
+--    request blocks here until the first commits, then sees the committed row.
+SELECT id, user_id, payment_status
+  INTO existing
+  FROM user_subscriptions
+  WHERE external_subscription_id = $originalTransactionId
+  FOR UPDATE;
+
+-- 2. Cross-user replay → abort WITHOUT mutating anything the caller owns.
+IF existing.user_id IS NOT NULL AND existing.user_id <> $userId THEN
+  ROLLBACK;
+  RETURN ('owned_by_other_user', existing.user_id);
+END IF;
+
+-- 3. Renewal: same user, row already exists → UPDATE in place (reuses the row's
+--    PK, so neither unique index is touched — same pattern subscriptionsCreate
+--    Handler uses for Stripe renewals, schema.ts handler L670-676).
+IF existing.id IS NOT NULL THEN
+  UPDATE user_subscriptions
+    SET tier_name = $tierName, expires_at = $expiresAt,
+        payment_status = 'active', updated_at = now()
+    WHERE id = existing.id;
+  COMMIT;
+  RETURN ('renewed', $userId);
+END IF;
+
+-- 4. First IAP grant for this user. Ownership is now confirmed safe (no row
+--    for this external id, or it's the caller's). ONLY NOW supersede any OTHER
+--    active row (e.g. an existing Stripe sub) so user_subscriptions_active_unique
+--    isn't violated by the insert.
+UPDATE user_subscriptions
+  SET payment_status = 'cancelled', updated_at = now()
+  WHERE user_id = $userId AND payment_status IN ('active','pending');
+
 INSERT INTO user_subscriptions
   (user_id, tier_name, payment_status, expires_at, external_subscription_id, metadata)
-VALUES
-  ($userId, $tierName, 'active', $expiresAt, $originalTransactionId,
-   jsonb_build_object('source', 'ios_iap'))
-ON CONFLICT (external_subscription_id) WHERE external_subscription_id IS NOT NULL
-DO UPDATE
-  -- CASE guards: only overwrite when the existing row's user_id matches the
-  -- request. Cross-user replay → each SET expression evaluates to the existing
-  -- column value (self-no-op), preserving the legitimate owner's row AND
-  -- keeping the statement an UPDATE so RETURNING emits a row.
-  SET tier_name      = CASE WHEN user_subscriptions.user_id = excluded.user_id
-                            THEN excluded.tier_name
-                            ELSE user_subscriptions.tier_name END,
-      expires_at     = CASE WHEN user_subscriptions.user_id = excluded.user_id
-                            THEN excluded.expires_at
-                            ELSE user_subscriptions.expires_at END,
-      payment_status = CASE WHEN user_subscriptions.user_id = excluded.user_id
-                            THEN 'active'
-                            ELSE user_subscriptions.payment_status END,
-      updated_at     = now()
-RETURNING
-  user_id,
-  (xmax = 0)                          AS inserted,            -- first grant
-  (xmax <> 0 AND user_id = $userId)   AS renewed,             -- same-user re-submit
-  (xmax <> 0 AND user_id <> $userId)  AS owned_by_other_user; -- cross-user replay
+  VALUES ($userId, $tierName, 'active', $expiresAt, $originalTransactionId,
+          jsonb_build_object('source','ios_iap'));
+COMMIT;
+RETURN ('granted', $userId);
 ```
 
-Result-mapping rules (one row ALWAYS returned):
+Result-mapping rules:
 
-- `inserted` = `true` → `{ status: "granted", userId }`
-- `renewed` = `true` → `{ status: "renewed", userId }`
-- `owned_by_other_user` = `true` → `{ status: "owned_by_other_user", ownerUserId: row.user_id }` (CASE self-no-op left the owner's row untouched; `row.user_id` is the original owner)
+- branch 4 → `{ status: "granted", userId }`
+- branch 3 → `{ status: "renewed", userId }`
+- branch 2 → `{ status: "owned_by_other_user", ownerUserId: existing.user_id }` — **transaction rolled back, nothing the caller owns was mutated**
 
-**Interaction with `user_subscriptions_active_unique`** (one-active-per-user): on first IAP grant for a user who already has an active Stripe sub, the existing partial-unique index would be violated. The handler resolves this the same way `subscriptionsCreateHandler` does today — supersede the prior active row (set its `payment_status = 'cancelled'`) inside the same transaction before the IAP upsert. A user ends with exactly one active subscription regardless of provider. (Cross-provider migration UX — "you already subscribe via web" — is a product decision flagged for the M11 IAP brief, not a v1 spec concern.)
+**Concurrent first-grant race** (two requests, same brand-new `external_subscription_id`, no row to lock at step 1): both pass the gate, both reach step 4's INSERT, the second raises `unique_violation` on `user_subscriptions_external_sub_uq`. The helper catches `unique_violation` and re-runs the whole transaction from step 1 — now the row exists, so the retry resolves to `renewed` (same user) or `owned_by_other_user` (different user). One bounded retry; the row lock makes the second attempt deterministic.
 
 **Why this shape**:
 
-1. `INSERT … ON CONFLICT … RETURNING` is one statement → no TOCTOU race. Concurrent requests with the same `external_subscription_id` serialise: first wins the insert, second hits ON CONFLICT.
-2. CASE-inside-SET is the ownership assertion: same-user → overwrite; cross-user → self-no-op (row recorded as updated, data unchanged, RETURNING still emits).
-3. **Do not use `WHERE` on `DO UPDATE`** — Postgres only emits `RETURNING` rows when the statement actually writes; a filtered-out update emits zero rows, making `owned_by_other_user` undetectable.
-4. `xmax = 0` ⇒ newly inserted; otherwise ON CONFLICT branch.
+1. **Ownership gate first** — the `SELECT … FOR UPDATE` runs before any write, so the `owned_by_other_user` rollback path mutates nothing the caller owns. No supersede-before-check DoS window.
+2. **`FOR UPDATE` row lock** is the serialisation primitive for the common case (row already exists): a concurrent same-id submission blocks on the lock until the first transaction commits, then reads the committed row and resolves deterministically.
+3. **Unique index `user_subscriptions_external_sub_uq`** is the serialisation primitive for the first-grant race (no row to lock yet): the second concurrent INSERT raises `unique_violation`, the helper retries once from the gate, and the retry now finds the row.
+4. **Renewal UPDATEs in place** (branch 3) — reuses the existing row's PK, touching neither unique index, mirroring how `subscriptionsCreateHandler` handles Stripe renewals (it explicitly UPDATEs rather than insert-a-second-row to avoid the active-unique collision).
+5. **Supersede is gated to branch 4** — the cancel-prior-active-row write happens only after ownership is confirmed safe AND only when inserting a genuinely new sub, so a replay or a renewal never cancels anything.
 
-Apple's `original_transaction_id` is stable across renewals + restores, so the UNIQUE on `external_subscription_id` pins the receipt to its first-granting user for the subscription's lifetime. Combined with the handler's fail-closed `appAccountToken` check, IAP receipt replay is closed at two independent layers — handler (token) + database (atomic ON CONFLICT on the real table).
+Apple's `original_transaction_id` is stable across renewals + restores, so the UNIQUE on `external_subscription_id` pins the receipt to its first-granting user for the subscription's lifetime. Combined with the handler's fail-closed `appAccountToken` check, IAP receipt replay is closed at two independent layers — handler (token) + database (ownership-gated transaction on the real `user_subscriptions` table).
 
 ### Stripe gating on iOS
 
