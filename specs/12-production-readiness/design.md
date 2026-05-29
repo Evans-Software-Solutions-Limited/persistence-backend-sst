@@ -545,7 +545,7 @@ async function grantEntitlement(
 ): Promise<GrantResult>;
 ```
 
-**Required schema constraint** (M11 migration):
+**Required schema constraint** (owned by this spec — see `tasks.md` T-12.13 below):
 
 ```sql
 CREATE UNIQUE INDEX entitlements_source_txn_uq

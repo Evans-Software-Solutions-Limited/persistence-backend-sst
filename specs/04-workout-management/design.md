@@ -201,25 +201,46 @@ function levelLabel(level: ExerciseLevel): string {
   return level[0].toUpperCase() + level.slice(1); // "Beginner", etc. for the pill label only
 }
 
-function muscleToTone(muscle: string): CardAccent {
-  switch (muscle.toLowerCase()) {
-    case "chest":
-      return "primary";
-    case "back":
-      return "gold";
-    case "legs":
-      return "ember";
-    case "shoulders":
-      return "primary";
-    case "arms":
-      return "gold";
-    case "core":
-      return "success";
-    case "cardio":
-      return "trainer";
-    default:
-      return "primary";
-  }
+// `<ExerciseCard>` is called with the GRANULAR domain MuscleGroup enum values
+// (per schema.ts muscle_groups + the conversion layer below) — NOT the coarse
+// UI labels from MUSCLES. The granular set has no "legs" / "arms" / "cardio"
+// member, so a switch on those values would dead-code three of the seven
+// branches. Map granular → tone via the inverse of MUSCLE_LABEL_TO_GROUPS:
+// each granular muscle resolves back to the coarse label that owns it, then
+// to the same tone the picker chip would have used.
+const MUSCLE_GROUP_TO_TONE: Record<MuscleGroup, CardAccent> = {
+  // Chest → primary
+  chest: "primary",
+  // Back / Lats → gold (matches the "Back" picker label)
+  back: "gold",
+  lats: "gold",
+  // Legs → ember (matches the "Legs" picker label expansion)
+  quadriceps: "ember",
+  hamstrings: "ember",
+  glutes: "ember",
+  calves: "ember",
+  // Shoulders / Traps → primary (matches the "Shoulders" picker label expansion)
+  shoulders: "primary",
+  traps: "primary",
+  // Arms → gold (matches the "Arms" picker label expansion)
+  biceps: "gold",
+  triceps: "gold",
+  forearms: "gold",
+  // Core → success
+  core: "success",
+  // Hip / Adductor / Abductor — no picker-label equivalent (no "Hips" chip); fall back to primary
+  hip_flexors: "primary",
+  abductors: "primary",
+  adductors: "primary",
+};
+
+function muscleToTone(muscle: MuscleGroup | undefined): CardAccent {
+  // Cardio exercises produce `primaryMuscleGroups: []` per the Conversion layer
+  // (Cardio is a category, not a muscle), so the caller passes `undefined`
+  // when reading the first element. Default to "trainer" so the cardio card
+  // still gets a distinctive tint without a muscle to derive from.
+  if (!muscle) return "trainer";
+  return MUSCLE_GROUP_TO_TONE[muscle] ?? "primary";
 }
 ```
 

@@ -95,11 +95,19 @@
 - [ ] **T-12.12.2** Play Store submission via `eas submit --profile production --platform android`.
 - [ ] **T-12.12.3** Monitor review queue + respond to any reviewer questions.
 
+## Phase 12.13 — Entitlements uniqueness migration (1 PR — load-bearing for iOS IAP)
+
+Owned by this spec (the `M11-polish` slot is deleted as of the design-port rewrite, so this migration's owner is the spec that defines the constraint's contract — i.e. this one). Lands BEFORE Phase 12.9 (iOS IAP integration) because the `grantEntitlement` ON CONFLICT path documented in `design.md § grantEntitlement ownership contract` depends on the index being present in production.
+
+- [ ] **T-12.13.1** Drizzle migration: add `entitlements.original_transaction_id text` column + `entitlements.source text NOT NULL DEFAULT 'stripe'` column if they don't already exist (audit `packages/db/src/schema.ts` first). Backfill `'stripe'` for existing rows.
+- [ ] **T-12.13.2** Drizzle migration: `CREATE UNIQUE INDEX entitlements_source_txn_uq ON entitlements (source, original_transaction_id);`. This is the load-bearing DB-level half of the receipt-replay defence — the ON CONFLICT path silently never fires without it. Verify via integration test that two concurrent inserts with the same `(source, original_transaction_id)` from different users return distinct GrantResult statuses (one `granted`, one `owned_by_other_user`).
+- [ ] **T-12.13.3** Test coverage for `grantEntitlement` — three branches: `granted` (first insert), `renewed` (same user re-submits), `owned_by_other_user` (cross-user replay). Each test asserts RETURNING emits exactly one row.
+
 ---
 
 ## Acceptance gate (production readiness phase complete)
 
-- [ ] All 12 phases shipped as PRs.
+- [ ] All 13 phases shipped as PRs.
 - [ ] App Store + Play Store submissions accepted (or in review pending acceptance).
 - [ ] Sentry observability live with PII scrubbing verified.
 - [ ] Reduced-motion contract honoured by every primitive.

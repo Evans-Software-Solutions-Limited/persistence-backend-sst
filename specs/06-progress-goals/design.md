@@ -419,6 +419,38 @@ Per cross-cuts § 6:
    - `habit_completions` table
    - `workout_sessions.logged_by_user_id` (nullable, populated by M8 later)
    - `body_measurements.logged_by_user_id` (nullable, populated by M8 later)
+   - `weekly_volume_per_user` materialised aggregation table — populated by the 03:00 UTC cron + on-session-complete backup-recompute path (per § Backend audit § Net-new and `tasks.md` T-06.4.2). Without this table the cron's `INSERT … weekly_volume_per_user` fails with `relation does not exist` and `GET /users/me/weekly-volume` has nothing to read from.
+
+     ```sql
+     CREATE TABLE weekly_volume_per_user (
+       id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id     uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+       week_start  date NOT NULL,                  -- Monday 00:00 user-local (cron computes per profiles.timezone per cross-cuts § 3.4)
+       volume_kg   numeric NOT NULL DEFAULT 0,     -- total weight × reps across all sessions in the week
+       session_count integer NOT NULL DEFAULT 0,
+       computed_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (user_id, week_start)
+     );
+     CREATE INDEX weekly_volume_per_user_user_week ON weekly_volume_per_user (user_id, week_start DESC);
+     ```
+
+   - `volume_by_muscle_per_user` materialised aggregation table — same cron, broken down by muscle group for the You/Progress § VolumeStats horizontal bar chart.
+
+     ```sql
+     CREATE TABLE volume_by_muscle_per_user (
+       id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id      uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+       window_start date NOT NULL,                 -- aligns to the request window (month/quarter/year per ?window= param)
+       window_kind  text NOT NULL CHECK (window_kind IN ('month','quarter','year','lifetime')),
+       muscle_group text NOT NULL,                 -- references schema.ts muscle_groups.name (lowercase enum value)
+       volume_kg    numeric NOT NULL DEFAULT 0,
+       computed_at  timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (user_id, window_start, window_kind, muscle_group)
+     );
+     CREATE INDEX volume_by_muscle_per_user_user_window ON volume_by_muscle_per_user (user_id, window_kind, window_start DESC);
+     ```
+
+     Cron writes idempotently via `INSERT … ON CONFLICT (user_id, window_start, window_kind, muscle_group) DO UPDATE SET volume_kg = EXCLUDED.volume_kg, computed_at = now()` so the recompute path can re-run without duplicating rows.
 
 2. **NOT shipped as schema migrations — both tables already exist on the live schema (per the reconciled "Already exists in V2" audit at § Backend audit):**
    - `personal_records` — `packages/db/src/schema.ts:492`. Existing `(id, user_id, exercise_id, record_type, value, set_id, achieved_at)` shape is what this spec reads + writes.
