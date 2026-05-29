@@ -13,3 +13,5 @@ export { PRCard } from "./PRCard";
 export type { PRCardProps } from "./PRCard";
 export { SummaryChip } from "./SummaryChip";
 export type { SummaryChipProps } from "./SummaryChip";
+export { ClientRow, clientRowPressStyle } from "./ClientRow";
+export type { ClientRowProps, ClientStatus } from "./ClientRow";

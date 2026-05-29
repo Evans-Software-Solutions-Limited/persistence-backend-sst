@@ -6,6 +6,7 @@ import { Pill } from "@/ui/components/foundation/Pill";
 import { DrawerRow } from "@/ui/components/composite/DrawerRow";
 import { MicroPill } from "@/ui/components/composite/MicroPill";
 import { PRCard } from "@/ui/components/composite/PRCard";
+import { ClientRow } from "@/ui/components/composite/ClientRow";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
 import { SummaryChip } from "@/ui/components/composite/SummaryChip";
@@ -173,6 +174,39 @@ export default function CompositesDevRoute() {
               <SummaryChip count={3} label="Need attention" tone="ember" />
               <SummaryChip count={2} label="New PRs" tone="gold" />
             </View>
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              CLIENT ROW (Trainer Clients list)
+            </Text>
+            <ClientRow
+              avatar={{ initials: "JD", tone: "primary" }}
+              name="Jane Doe"
+              status="pr"
+              tags="Hypertrophy"
+              lastSeen="2 days"
+              adherence={92}
+              onPress={() => undefined}
+            />
+            <ClientRow
+              avatar={{ initials: "MS", tone: "gold" }}
+              name="Mark Smith"
+              status="attention"
+              tags="Strength"
+              lastSeen="5 days"
+              adherence={64}
+              onPress={() => undefined}
+            />
+            <ClientRow
+              avatar={{ initials: "AB" }}
+              name="Alex Brown"
+              status="missed"
+              adherence={38}
+              isLast
+              onPress={() => undefined}
+            />
+            <ClientRow avatar={{ initials: "LD" }} name="Loading" loading />
           </View>
         </View>
       </Screen>
