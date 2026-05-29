@@ -4,8 +4,16 @@ import { Stack } from "expo-router";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { DrawerRow } from "@/ui/components/composite/DrawerRow";
+import { MicroPill } from "@/ui/components/composite/MicroPill";
 import { Section } from "@/ui/components/composite/Section";
-import { IconSettings, IconUser, iconDefaults } from "@/ui/components/icons";
+import {
+  IconBolt,
+  IconDroplet,
+  IconFlame,
+  IconSettings,
+  IconUser,
+  iconDefaults,
+} from "@/ui/components/icons";
 import { Screen } from "@/ui/components/Screen";
 import { Text } from "@/ui/components/Text";
 
@@ -70,6 +78,41 @@ export default function CompositesDevRoute() {
               sub="placeholder"
               loading
             />
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              MICRO PILL (TodayHero 4-up row)
+            </Text>
+            <View flexDirection="row" gap="$sm">
+              <MicroPill
+                tone="primary"
+                value="12"
+                label="Streak"
+                icon={
+                  <IconFlame {...iconDefaults({ size: 16 })} color="#22D3EE" />
+                }
+              />
+              <MicroPill
+                tone="ember"
+                value="2.4L"
+                label="Water"
+                icon={
+                  <IconDroplet
+                    {...iconDefaults({ size: 16 })}
+                    color="#FB923C"
+                  />
+                }
+              />
+              <MicroPill
+                tone="gold"
+                value="14.2"
+                label="Strain"
+                icon={
+                  <IconBolt {...iconDefaults({ size: 16 })} color="#F5C518" />
+                }
+              />
+            </View>
           </View>
         </View>
       </Screen>
