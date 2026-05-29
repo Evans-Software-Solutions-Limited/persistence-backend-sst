@@ -126,18 +126,46 @@ jest.mock("@/ui/components/workouts/SemiCircleSlider", () => {
   };
 });
 
-// Mock react-native-svg (native module, not available in Jest)
+// Mock react-native-svg (native module, not available in Jest).
+// lucide-react-native imports this as a namespace (`import * as NativeSvg`)
+// and renders `NativeSvg.Svg` + PascalCased child tags (Path, Circle, Line,
+// Polyline, Polygon, Rect, Ellipse, G, …). A Proxy can't be used here because
+// Jest/babel's `_interopRequireWildcard` copies own-enumerable keys, which a
+// Proxy doesn't expose — so the namespace must be a plain object that names
+// every element lucide (and our own SVG components) may touch.
 jest.mock("react-native-svg", () => {
   const { View } = require("react-native");
-  return {
-    __esModule: true,
-    default: View, // Svg
-    Svg: View,
-    Path: View,
-    Circle: View,
-    Rect: View,
-    G: View,
-  };
+  const elements = [
+    "Svg",
+    "Path",
+    "Circle",
+    "Ellipse",
+    "Line",
+    "Polyline",
+    "Polygon",
+    "Rect",
+    "G",
+    "Text",
+    "TSpan",
+    "TextPath",
+    "Defs",
+    "Use",
+    "Symbol",
+    "Image",
+    "ClipPath",
+    "Mask",
+    "Marker",
+    "Pattern",
+    "LinearGradient",
+    "RadialGradient",
+    "Stop",
+    "ForeignObject",
+  ];
+  const mock: Record<string, unknown> = { __esModule: true, default: View };
+  for (const name of elements) {
+    mock[name] = View;
+  }
+  return mock;
 });
 
 // Mock expo-linear-gradient (native module, not available in Jest)

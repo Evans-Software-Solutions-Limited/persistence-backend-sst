@@ -796,4 +796,20 @@ Composites additionally:
 
 ---
 
-_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch)_
+## Revised 2026-05-29: Lucide 1.x icon renames
+
+The icon mapping table above (and the migration plan it mirrors) was authored against an older Lucide release. The SDK-55-compatible `lucide-react-native@1.17.0` (verified as the genuine published latest — SLSA provenance + OIDC trusted-publisher attestation, maintainer Eric Fennis, `lucide-icons/lucide` repo) renamed five icons and dropped the old-name aliases:
+
+| Prototype alias (stable) | Old Lucide name | Lucide 1.x export |
+| ------------------------ | --------------- | ----------------- |
+| `IconHome`               | `Home`          | `House`           |
+| `IconChart`              | `BarChart3`     | `ChartColumn`     |
+| `IconMore`               | `MoreHorizontal`| `Ellipsis`        |
+| `IconMore_v`             | `MoreVertical`  | `EllipsisVertical`|
+| `IconFilter`             | `Filter`        | `ListFilter`      |
+
+**Decision.** The prototype-facing `IconXxx` aliases are the contract downstream specs consume, so they stay byte-for-byte identical to the design.md table (`IconHome`, `IconChart`, `IconMore`, `IconMore_v`, `IconFilter`). Only the underlying Lucide import is updated to the 1.x export name. `icons.ts` therefore reads e.g. `import { House as IconHome } from "lucide-react-native"`. The visual result matches the prototype (these are the same glyphs, renamed upstream). All other 43 mappings are unchanged.
+
+---
+
+_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames)_
