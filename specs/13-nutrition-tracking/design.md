@@ -248,7 +248,7 @@ All AI endpoints:
 
 3. **Redirect handling** — follow at most 3 redirects. **Re-run the DNS + IP check on every hop** — an attacker can host `https://attacker.com/recipe` that returns `302 Location: http://169.254.169.254/...`. The fetch library's default redirect handling does NOT re-check the destination; this MUST be implemented as a manual loop (`fetch` with `redirect: 'manual'`, follow the `Location` header explicitly, re-validate, re-fetch).
 
-4. **Response caps** — `AbortSignal.timeout(10000)` (10s wall-clock), max response body 2 MiB (stream + abort on overrun). Recipes are HTML pages, not multi-MB binaries.
+4. **Response caps** — a single `AbortSignal.timeout(10000)` created ONCE outside the redirect loop (10s wall-clock across all hops + DNS + body streaming — NOT per-hop, or three slow redirects = ~40s past the API Gateway 29s ceiling), max response body 2 MiB (stream + abort on overrun). Recipes are HTML pages, not multi-MB binaries.
 
 5. **Content-Type allowlist** — accept only `text/html` and `application/ld+json` (Schema.org microdata). Reject everything else — no need to parse `application/octet-stream` or `text/plain` for recipe scraping.
 
@@ -272,11 +272,18 @@ export async function safeRecipeFetch(
     throw new BadRequestError("scheme_not_allowed");
   }
 
+  // ONE budget for the whole fetch path — created outside the loop. A per-hop
+  // AbortSignal.timeout would give each of up to MAX_REDIRECTS+1 hops a fresh
+  // 10s, letting a slow-loris chain hold the Lambda for ~40s + untimed DNS +
+  // body streaming — past the 29s API Gateway ceiling. The single deadline
+  // caps total wall-clock (fetch + redirect hops) at TIMEOUT_MS.
+  const deadline = AbortSignal.timeout(TIMEOUT_MS);
+
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     await assertHostnameIsPublic(currentUrl.hostname); // throws on private-range hit
     const res = await fetch(currentUrl, {
       redirect: "manual",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: deadline,
       headers: { Accept: ALLOWED_CONTENT_TYPES.join(", ") },
     });
 

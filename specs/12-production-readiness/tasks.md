@@ -95,13 +95,15 @@
 - [ ] **T-12.12.2** Play Store submission via `eas submit --profile production --platform android`.
 - [ ] **T-12.12.3** Monitor review queue + respond to any reviewer questions.
 
-## Phase 12.13 — Entitlements uniqueness migration (1 PR — load-bearing for iOS IAP)
+## Phase 12.13 — `user_subscriptions` IAP uniqueness migration (1 PR — load-bearing for iOS IAP)
 
-Owned by this spec (the `M11-polish` slot is deleted as of the design-port rewrite, so this migration's owner is the spec that defines the constraint's contract — i.e. this one). Lands BEFORE Phase 12.9 (iOS IAP integration) because the `grantEntitlement` ON CONFLICT path documented in `design.md § grantEntitlement ownership contract` depends on the index being present in production.
+Owned by this spec (the `M11-polish` slot is deleted as of the design-port rewrite, so this migration's owner is the spec that defines the constraint's contract — i.e. this one). Lands BEFORE Phase 12.9 (iOS IAP integration) because the `grantIosSubscription` ON CONFLICT path documented in `design.md § grantEntitlement ownership contract` depends on the index being present in production.
 
-- [ ] **T-12.13.1** Drizzle migration: add `entitlements.original_transaction_id text` column + `entitlements.source text NOT NULL DEFAULT 'stripe'` column if they don't already exist (audit `packages/db/src/schema.ts` first). Backfill `'stripe'` for existing rows.
-- [ ] **T-12.13.2** Drizzle migration: `CREATE UNIQUE INDEX entitlements_source_txn_uq ON entitlements (source, original_transaction_id);`. This is the load-bearing DB-level half of the receipt-replay defence — the ON CONFLICT path silently never fires without it. Verify via integration test that two concurrent inserts with the same `(source, original_transaction_id)` from different users return distinct GrantResult statuses (one `granted`, one `owned_by_other_user`).
-- [ ] **T-12.13.3** Test coverage for `grantEntitlement` — three branches: `granted` (first insert), `renewed` (same user re-submits), `owned_by_other_user` (cross-user replay). Each test asserts RETURNING emits exactly one row.
+**No new table.** The grant writes to the existing `user_subscriptions` table (`packages/db/src/schema.ts:293`) — the same table `assertEntitlement` reads and the Stripe flow writes. Apple's `original_transaction_id` is stored in the existing `external_subscription_id` column (parallel to the Stripe subscription id already stored there). Earlier drafts referenced a fictional `entitlements` table — corrected per Inspector Brad sweep 17.
+
+- [ ] **T-12.13.1** Audit `packages/db/src/schema.ts` `userSubscriptions` — `external_subscription_id`, `tier_name`, `payment_status`, `expires_at`, `metadata` already exist (no column additions needed). Confirm no migration is required beyond the index below.
+- [ ] **T-12.13.2** Drizzle migration: `CREATE UNIQUE INDEX user_subscriptions_external_sub_uq ON user_subscriptions (external_subscription_id) WHERE external_subscription_id IS NOT NULL;` (partial — the column is nullable for legacy/manual rows). This is the load-bearing DB-level half of the receipt-replay defence — the `grantIosSubscription` ON CONFLICT path silently never fires without it. Verify via integration test that two concurrent grants with the same `external_subscription_id` from different users return distinct GrantResult statuses (one `granted`, one `owned_by_other_user`).
+- [ ] **T-12.13.3** Author `grantIosSubscription` at `microservices/core/src/application/subscriptions/grantIosSubscription.ts` per `design.md § grantEntitlement ownership contract`. Test coverage — three branches: `granted` (first insert), `renewed` (same user re-submits), `owned_by_other_user` (cross-user replay). Each test asserts RETURNING emits exactly one row. Plus: a test that an IAP grant for a user with a pre-existing active Stripe sub supersedes the Stripe row (sets `payment_status = 'cancelled'`) inside the same transaction so `user_subscriptions_active_unique` isn't violated.
 
 ---
 
