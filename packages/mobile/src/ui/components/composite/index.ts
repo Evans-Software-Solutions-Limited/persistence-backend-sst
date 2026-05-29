@@ -20,3 +20,5 @@ export {
   workoutCarouselCardPressStyle,
 } from "./WorkoutCarouselCard";
 export type { WorkoutCarouselCardProps } from "./WorkoutCarouselCard";
+export { HabitTile, habitTilePressStyle } from "./HabitTile";
+export type { HabitTileProps, HabitState, HabitTone } from "./HabitTile";

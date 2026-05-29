@@ -6,8 +6,9 @@ import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { DrawerRow } from "@/ui/components/composite/DrawerRow";
 import { MicroPill } from "@/ui/components/composite/MicroPill";
-import { PRCard } from "@/ui/components/composite/PRCard";
 import { ClientRow } from "@/ui/components/composite/ClientRow";
+import { HabitTile } from "@/ui/components/composite/HabitTile";
+import { PRCard } from "@/ui/components/composite/PRCard";
 import { RingLegend } from "@/ui/components/composite/RingLegend";
 import { Section } from "@/ui/components/composite/Section";
 import { SummaryChip } from "@/ui/components/composite/SummaryChip";
@@ -241,6 +242,39 @@ export default function CompositesDevRoute() {
                 />
               </View>
             </ScrollView>
+          </View>
+
+          <View gap="$sm">
+            <Text variant="caption" muted>
+              HABIT TILE (done / today / missed / locked)
+            </Text>
+            <View flexDirection="row" gap="$sm" alignItems="center">
+              <HabitTile
+                state="done"
+                tone="primary"
+                label="Workout"
+                onPress={() => undefined}
+              />
+              <HabitTile
+                state="done"
+                tone="gold"
+                label="Protein"
+                onPress={() => undefined}
+              />
+              <HabitTile
+                state="today"
+                tone="primary"
+                label="Water"
+                onPress={() => undefined}
+              />
+              <HabitTile
+                state="missed"
+                tone="success"
+                label="Sleep"
+                onPress={() => undefined}
+              />
+              <HabitTile state="locked" tone="trainer" label="Future" />
+            </View>
           </View>
         </View>
       </Screen>
