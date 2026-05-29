@@ -15,5 +15,7 @@ export { Avatar } from "./Avatar";
 export type { AvatarProps, AvatarTone, AvatarDot } from "./Avatar";
 export { Bar } from "./Bar";
 export type { BarProps } from "./Bar";
+export { Ring, MultiRing } from "./Ring";
+export type { RingProps, MultiRingProps, MultiRingSpec } from "./Ring";
 export { toneTokens, TONE_TOKENS } from "./tones";
 export type { Tone, PillTone } from "./tones";
