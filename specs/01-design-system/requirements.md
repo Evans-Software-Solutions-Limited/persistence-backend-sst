@@ -221,4 +221,18 @@ Deletion of `colorPalette` and the legacy numeric keys is folded into the same M
 
 ---
 
-_End of `01-design-system/requirements.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (token coexistence)_
+## Revised 2026-05-29: adoption strategy — theme-bridge first, shell-swap second (STORY-007)
+
+STORY-007 frames adoption as a component-shell sweep (`<TouchableOpacity>` → `<Btn>`, inline card `<View>` → `<Card>`, …). Implementation surfaced that this is the wrong primary lever for the **colour** dimension, and the codemod dry-run proved it: the legacy screens are React-Native `StyleSheet`-based and read **all** their colours through four `*LegacyTheme` shims, every one of which re-exports a single `Colors` object from `homeLegacyTheme.ts`. Swapping shells one-by-one is high-churn, high-risk, leaves the surrounding StyleSheet colours stale, and produces exactly the "transitional clunkiness" AC 7.4 reluctantly accepts.
+
+**Decision — two-lever adoption, theme-bridge first:**
+
+1. **Theme-bridge (primary, this spec).** Re-point `homeLegacyTheme.Colors` (+ the `electric` / `glow` shadow accent) from the legacy `colorPalette.*` values to the **new handoff palette** concrete values (`$primary #22D3EE`, the `$bg`/`$surface`/`$text` ramps, the refreshed semantic tones). The schema keys are unchanged (`Colors.primary.DEFAULT`, `Colors.text.secondary`, …), so **every** legacy screen that imports any `*LegacyTheme` instantly renders the refreshed brand — the cyan shift, warm-cool surface ramp, and cooler semantic tones — with **zero screen-file edits, zero layout change, and no transitional clunkiness**. This is the truest reading of AC 6.3 ("codemod the LegacyTheme internals to token references") and of STORY-007's intent ("screens benefit from the new design system as it lands"), executed at the value layer where RN StyleSheet can actually consume it.
+
+2. **Shell-swap (secondary, incremental).** The component-shell replacement (Ionicons → Lucide, button-like → `<Btn>`, etc.) remains valuable for the **structural / iconographic** dimension and proceeds per-directory as originally specced (the legal/support/settings presenter batch already landed). It is no longer the colour-adoption mechanism, so it carries far less risk.
+
+Net effect: the design-system colour refresh reaches 100% of legacy screens immediately via one file, while structural primitive adoption proceeds incrementally and safely. The four `*LegacyTheme` files still aren't deleted (M11 Polish owns that); their internals now resolve to the new palette.
+
+---
+
+_End of `01-design-system/requirements.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (token coexistence; theme-bridge adoption)_
