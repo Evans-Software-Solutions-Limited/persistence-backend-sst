@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { IconBack, IconMail } from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -16,6 +16,10 @@ import {
   Spacing,
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
+
+// [01-design-system adoption sweep 2026-05-29]
+// Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
+// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Contact Support — pure presenter. Mailto form ported verbatim from
@@ -54,7 +58,7 @@ export function ContactSupportPresenter({
             testID="contact-support-back"
             hitSlop={8}
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <IconBack size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Contact Support</Text>
           <View style={styles.headerSpacer} />
@@ -111,11 +115,7 @@ export function ContactSupportPresenter({
             onPress={onSend}
             testID="contact-support-send"
           >
-            <Ionicons
-              name="mail-outline"
-              size={20}
-              color={Colors.text.primary}
-            />
+            <IconMail size={20} color={Colors.text.primary} />
             <Text style={styles.sendButtonText}>Send Message</Text>
           </TouchableOpacity>
 

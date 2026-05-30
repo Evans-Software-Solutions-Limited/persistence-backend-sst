@@ -6,9 +6,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { IconBack } from "@/ui/components/icons";
 import { Colors, Spacing, Typography } from "@/ui/theme/profileLegacyTheme";
+
+// [01-design-system adoption sweep 2026-05-29]
+// Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
+// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Terms of Service — pure presenter. Layout + copy ported verbatim from
@@ -31,7 +35,7 @@ export function TermsOfServicePresenter({
             testID="terms-of-service-back"
             hitSlop={8}
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <IconBack size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Terms of Service</Text>
           <View style={styles.headerSpacer} />

@@ -810,6 +810,23 @@ The icon mapping table above (and the migration plan it mirrors) was authored ag
 
 **Decision.** The prototype-facing `IconXxx` aliases are the contract downstream specs consume, so they stay byte-for-byte identical to the design.md table (`IconHome`, `IconChart`, `IconMore`, `IconMore_v`, `IconFilter`). Only the underlying Lucide import is updated to the 1.x export name. `icons.ts` therefore reads e.g. `import { House as IconHome } from "lucide-react-native"`. The visual result matches the prototype (these are the same glyphs, renamed upstream). All other 43 mappings are unchanged.
 
+### Vocabulary extension (same date)
+
+The STORY-007 adoption sweep surfaced eight common legacy Ionicons with no entry in the original 48-icon mapping table — most critically `trash-outline` (used in ~8 set-row / card components). Per STORY-004 AC 4.7's "stop-and-flag, extend the spec, then proceed" principle (applied to the icon vocabulary), these are **added** to `icons.ts` rather than left as `TODO(01-design-system)` skips, since the icon module is owned by this spec and each has an obvious Lucide equivalent:
+
+| Added alias     | Lucide 1.x export | Covers Ionicons |
+| --------------- | ----------------- | --------------- |
+| `IconTrash`     | `Trash2`          | `trash-outline` / `trash` |
+| `IconLock`      | `Lock`            | `lock-closed` / `lock-closed-outline` |
+| `IconList`      | `List`            | `list` |
+| `IconChevronUp` | `ChevronUp`       | `chevron-up` |
+| `IconWarning`   | `TriangleAlert`   | `warning` |
+| `IconAlert`     | `CircleAlert`     | `alert-circle` |
+| `IconMail`      | `Mail`            | `mail-outline` |
+| `IconClock`     | `Clock`           | `time-outline` |
+
+These unblock the bulk of the icon sweep. Remaining unmapped Ionicons (`cloud-offline-outline`, `battery-charging`, `library-outline`, `options-outline`, `help-circle-outline`) stay as `TODO(01-design-system)` skips for their owning specs (AC 7.6) — they're low-frequency and lack a clean 1:1 Lucide match.
+
 ---
 
 ## Revised 2026-05-29: `@gorhom/bottom-sheet` v5 (not v4)

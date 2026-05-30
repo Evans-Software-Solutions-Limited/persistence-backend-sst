@@ -195,8 +195,19 @@ jest.mock("@gorhom/bottom-sheet", () => {
 // every element lucide (and our own SVG components) may touch.
 jest.mock("react-native-svg", () => {
   const { View } = require("react-native");
+  const React = require("react");
+  // The Svg root maps lucide's `data-testid` onto RN `testID` so icon testIDs
+  // stay queryable after the Ionicons -> lucide adoption sweep.
+  const Svg = (props: Record<string, unknown>) => {
+    const dataTestId = props["data-testid"];
+    const testID = (props.testID ?? dataTestId) as string | undefined;
+    return React.createElement(
+      View,
+      { testID },
+      props.children as React.ReactNode,
+    );
+  };
   const elements = [
-    "Svg",
     "Path",
     "Circle",
     "Ellipse",
@@ -221,7 +232,11 @@ jest.mock("react-native-svg", () => {
     "Stop",
     "ForeignObject",
   ];
-  const mock: Record<string, unknown> = { __esModule: true, default: View };
+  const mock: Record<string, unknown> = {
+    __esModule: true,
+    default: Svg,
+    Svg,
+  };
   for (const name of elements) {
     mock[name] = View;
   }
