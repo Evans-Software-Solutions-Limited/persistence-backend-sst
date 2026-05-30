@@ -27,10 +27,17 @@ import jscodeshift from "jscodeshift";
 
 // ─── Replacement table (design.md § Codemod) ──────────────────────────
 
-/** Exact case-insensitive string → token replacements. */
+/** Exact case-insensitive string → token replacements.
+ *
+ * The bare word-colour `"white"` is intentionally NOT included: `resolveToken`
+ * is position-agnostic, so a `"white"` arm would rewrite any string literal
+ * `"white"` the walk doesn't explicitly skip (accessibilityLabel, placeholder,
+ * a plain `const tag = "white"`, …) into `"$text"`, which RN can't parse
+ * (PR #83 review fix). Hex forms (`#FFFFFF`/`#FFF`) are unambiguous colours and
+ * cover the real cases; word-colours must be hex'd by hand first. */
 export const HEX_REPLACEMENTS: { match: string[]; token: string }[] = [
   { match: ["#00D4FF"], token: "$primary" },
-  { match: ["#FFFFFF", "#FFF", "white"], token: "$text" },
+  { match: ["#FFFFFF", "#FFF"], token: "$text" },
   { match: ["#FFD700", "#FFC700"], token: "$gold" },
   { match: ["#0A0A0F", "#0A0B12", "#0B0B12"], token: "$bg" },
 ];
@@ -41,8 +48,12 @@ const PRIMARY_RGB = { r: 0, g: 212, b: 255 };
 const DIM_ALPHA_CEILING = 0.2;
 
 /** JSX attribute names whose hex values are concrete colours for a non-Tamagui
- * consumer (SVG, LinearGradient, Ionicons, RN style props that don't resolve
- * Tamagui tokens). Any attribute ending in "Color" is also skipped. */
+ * consumer (SVG, LinearGradient, Ionicons/ActivityIndicator, RN style props
+ * that don't resolve Tamagui tokens). This set deliberately mirrors the
+ * `no-raw-hex-colors` ESLint rule so the codemod and the lint rule describe
+ * the same world: generic Tamagui style props (`backgroundColor`,
+ * `borderColor`) are NOT skipped — those are exactly where a token belongs,
+ * and the lint rule flags raw hex there (PR #83 review fix). */
 const SKIP_JSX_ATTRS = new Set([
   "fill",
   "stroke",
@@ -50,10 +61,15 @@ const SKIP_JSX_ATTRS = new Set([
   "colors",
   "tintColor",
   "placeholderTextColor",
+  "shadowColor",
+  "borderTopColor",
+  "borderBottomColor",
+  "borderLeftColor",
+  "borderRightColor",
 ]);
 
 function isSkippedJsxAttr(name: string): boolean {
-  return SKIP_JSX_ATTRS.has(name) || /Color$/.test(name);
+  return SKIP_JSX_ATTRS.has(name);
 }
 
 /**
@@ -172,6 +188,20 @@ export function transformSource(source: string): TransformResult {
       .find(j.StringLiteral)
       .forEach((s) => skipNodes.add(s.node));
   });
+  // Object-property colour keys that hold concrete colours for non-Tamagui
+  // consumers (tone-maps feeding icon/indicator colour, ink-on-solid, RN
+  // style objects). Skipping these stops the codemod tokenising e.g. the
+  // `TONE_HEX` concrete-colour bridge map in foundation/tones.ts.
+  const CONCRETE_COLOUR_KEYS = new Set([
+    "fg",
+    "bg",
+    "ink",
+    "base",
+    "dim",
+    "glow",
+    "bright",
+    "depth",
+  ]);
   root.find(j.ObjectProperty).forEach((p) => {
     const key = p.node.key;
     const keyName =
@@ -180,7 +210,7 @@ export function transformSource(source: string): TransformResult {
         : key.type === "StringLiteral"
           ? key.value
           : null;
-    if (keyName === "fg" || keyName === "bg") {
+    if (typeof keyName === "string" && CONCRETE_COLOUR_KEYS.has(keyName)) {
       const value = p.node.value;
       if (value.type === "StringLiteral") skipNodes.add(value);
       j(p.get("value"))

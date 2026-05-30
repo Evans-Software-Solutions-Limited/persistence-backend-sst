@@ -7,7 +7,7 @@ import GorhomBottomSheet, {
 import { Text, View } from "@tamagui/core";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 
-import { toneTokens } from "./tones";
+import { toneHex, toneTokens } from "./tones";
 
 /**
  * <BottomSheet> — slide-up modal for inline flows (Scan, Snap, Quick add,
@@ -41,9 +41,17 @@ function resolveSnap(height: BottomSheetHeight): string {
   return `${Math.min(100, Math.max(10, height))}%`;
 }
 
-function accentColor(accent?: BottomSheetAccent): string {
+/** Accent as a Tamagui token — for the eyebrow <Text> (resolves the theme). */
+function accentToken(accent?: BottomSheetAccent): string {
   if (!accent) return "$text3";
   return toneTokens(accent).base;
+}
+
+/** Accent as a concrete colour — for the gorhom drag-handle (plain RN, no
+ * Tamagui token resolution). */
+function accentHex(accent?: BottomSheetAccent): string {
+  if (!accent) return "rgba(255,255,255,0.16)";
+  return toneHex(accent).base;
 }
 
 export function BottomSheet({
@@ -95,9 +103,7 @@ export function BottomSheet({
       onClose={onClose}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={{
-        backgroundColor: accent
-          ? accentColor(accent)
-          : "rgba(255,255,255,0.16)",
+        backgroundColor: accentHex(accent),
         width: 40,
         height: 4,
       }}
@@ -124,7 +130,7 @@ export function BottomSheet({
                 fontWeight="600"
                 letterSpacing={1.7}
                 textTransform="uppercase"
-                color={accentColor(accent)}
+                color={accentToken(accent)}
                 marginBottom={4}
               >
                 {eyebrow}

@@ -11,7 +11,7 @@ import {
   Pressable,
 } from "react-native";
 
-import { type Tone, toneTokens } from "./tones";
+import { type Tone, NEUTRAL_HEX, toneHex, toneTokens } from "./tones";
 
 /**
  * <IconBtn> — circular icon button for header / floating / row actions.
@@ -45,15 +45,31 @@ function resolveTone(tone: IconBtnTone): {
   fg: string;
   bg: string;
   border: string;
+  fgHex: string;
 } {
   if (tone === "neutral") {
-    return { fg: "$text2", bg: "$surface2", border: "$border" };
+    return {
+      fg: "$text2",
+      bg: "$surface2",
+      border: "$border",
+      fgHex: NEUTRAL_HEX.text2,
+    };
   }
   if (tone === "ghost") {
-    return { fg: "$text2", bg: "transparent", border: "transparent" };
+    return {
+      fg: "$text2",
+      bg: "transparent",
+      border: "transparent",
+      fgHex: NEUTRAL_HEX.text2,
+    };
   }
   const t = toneTokens(tone as Tone);
-  return { fg: t.base, bg: t.dim, border: t.dim };
+  return {
+    fg: t.base,
+    bg: t.dim,
+    border: t.dim,
+    fgHex: toneHex(tone as Tone).base,
+  };
 }
 
 export function IconBtn({
@@ -69,17 +85,22 @@ export function IconBtn({
 }: IconBtnProps) {
   const resolved = resolveTone(tone);
   const bg = active ? "$primaryDim" : resolved.bg;
-  const fg = active ? "$primary" : resolved.fg;
   const border = active ? "$primaryDim" : resolved.border;
+  // Concrete hex for the icon glyph — lucide/react-native-svg can't resolve a
+  // Tamagui `$token` string, so the tint must be a real colour value.
+  const fgHex = active ? NEUTRAL_HEX.primary : resolved.fgHex;
 
-  // Inject the resolved foreground onto the icon (lucide icons take `color`),
-  // unless the caller already set an explicit colour. Mirrors the prototype's
-  // CSS `color` inheritance.
+  // Inject the resolved foreground onto the icon. `iconDefaults()` sets
+  // `color: "currentColor"` (a placeholder SVG can't inherit from at the Svg
+  // root), so we override that; an explicit concrete colour from the caller is
+  // preserved.
+  const iconColor = (icon as { props?: { color?: unknown } })?.props?.color;
+  const callerSetConcreteColor =
+    typeof iconColor === "string" && iconColor !== "currentColor";
   const tintedIcon =
-    isValidElement(icon) &&
-    (icon.props as { color?: unknown }).color === undefined
+    isValidElement(icon) && !callerSetConcreteColor
       ? cloneElement(icon as ReactElement<{ color?: string }>, {
-          color: fg,
+          color: fgHex,
         })
       : icon;
 
@@ -140,8 +161,9 @@ export function IconBtn({
   );
 }
 
-/** The resolved foreground token for a tone — primitives use this to colour the icon. */
+/** The resolved foreground colour (concrete hex) for a tone — primitives use
+ * this to colour an icon glyph passed to a non-Tamagui (SVG) consumer. */
 export function iconBtnForeground(tone: IconBtnTone, active = false): string {
-  if (active) return "$primary";
-  return resolveTone(tone).fg;
+  if (active) return NEUTRAL_HEX.primary;
+  return resolveTone(tone).fgHex;
 }

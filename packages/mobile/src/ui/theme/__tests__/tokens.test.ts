@@ -129,8 +129,21 @@ describe("createTokens combined surface", () => {
     expect(val(radius, "pill")).toBe(9999);
   });
 
-  it("keeps legacy size.md (44) resolvable for un-swept screens", () => {
-    expect(val(size, "md")).toBe(44);
+  it("size scale matches the space scale (no legacy shadowing — PR #83 fix)", () => {
+    // The legacy numeric size overrides were removed so the size group's
+    // xs/sm/md/lg/xl/2xl/3xl resolve to the handoff values (same as space),
+    // never the old 20/32/44/56/... scale.
+    expect(val(size, "xs")).toBe(4);
+    expect(val(size, "sm")).toBe(8);
+    expect(val(size, "md")).toBe(12);
+    expect(val(size, "lg")).toBe(20);
+    expect(val(size, "2xl")).toBe(32);
+    expect(val(size, "xs")).toBe(val(space, "xs"));
+    expect(val(size, "sm")).toBe(val(space, "sm"));
+    expect(val(size, "md")).toBe(val(space, "md"));
+  });
+
+  it("keeps the size.true touch-target alias (44) for un-swept screens", () => {
     expect(val(size, "true")).toBe(44);
   });
 

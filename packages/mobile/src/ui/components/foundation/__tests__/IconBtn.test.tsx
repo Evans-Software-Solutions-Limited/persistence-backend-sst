@@ -16,6 +16,10 @@ const TONES: IconBtnTone[] = [
 ];
 
 const icon = <View testID="the-icon" />;
+/** An icon that reads its injected `color` prop, like a lucide icon does. */
+const ColorProbe = (props: { color?: string }) => (
+  <View testID="color-probe" accessibilityLabel={props.color} />
+);
 
 describe("IconBtn", () => {
   it("renders the icon", () => {
@@ -23,6 +27,42 @@ describe("IconBtn", () => {
       <IconBtn icon={icon} testID="ib" />,
     );
     expect(getByTestId("the-icon")).toBeTruthy();
+  });
+
+  it("injects a concrete-hex tone colour onto the icon, overriding iconDefaults' currentColor (PR #83 Lead 1)", () => {
+    // Caller passes the iconDefaults-style placeholder; IconBtn must override it
+    // with a real colour SVG can render — not a token, not 'currentColor'.
+    const { getByTestId } = renderWithTheme(
+      <IconBtn
+        tone="primary"
+        icon={<ColorProbe color="currentColor" />}
+        testID="ib"
+      />,
+    );
+    expect(getByTestId("color-probe").props.accessibilityLabel).toBe("#22D3EE");
+  });
+
+  it("injects the active primary hex regardless of tone", () => {
+    const { getByTestId } = renderWithTheme(
+      <IconBtn
+        tone="gold"
+        active
+        icon={<ColorProbe color="currentColor" />}
+        testID="ib"
+      />,
+    );
+    expect(getByTestId("color-probe").props.accessibilityLabel).toBe("#22D3EE");
+  });
+
+  it("preserves an explicit concrete colour the caller set on the icon", () => {
+    const { getByTestId } = renderWithTheme(
+      <IconBtn
+        tone="primary"
+        icon={<ColorProbe color="#FF0000" />}
+        testID="ib"
+      />,
+    );
+    expect(getByTestId("color-probe").props.accessibilityLabel).toBe("#FF0000");
   });
 
   it("renders as a non-pressable View when no onPress (nest-safe)", () => {
@@ -109,14 +149,14 @@ describe("IconBtn", () => {
 });
 
 describe("iconBtnForeground", () => {
-  it("returns $primary when active regardless of tone", () => {
-    expect(iconBtnForeground("gold", true)).toBe("$primary");
+  it("returns the concrete primary hex when active regardless of tone", () => {
+    expect(iconBtnForeground("gold", true)).toBe("#22D3EE");
   });
 
-  it("returns the tone foreground when resting", () => {
-    expect(iconBtnForeground("neutral")).toBe("$text2");
-    expect(iconBtnForeground("ghost")).toBe("$text2");
-    expect(iconBtnForeground("primary")).toBe("$primary");
-    expect(iconBtnForeground("gold")).toBe("$gold");
+  it("returns the tone foreground as concrete hex when resting", () => {
+    expect(iconBtnForeground("neutral")).toBe("#C2C2CE");
+    expect(iconBtnForeground("ghost")).toBe("#C2C2CE");
+    expect(iconBtnForeground("primary")).toBe("#22D3EE");
+    expect(iconBtnForeground("gold")).toBe("#F5C518");
   });
 });

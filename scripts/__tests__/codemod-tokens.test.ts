@@ -24,10 +24,11 @@ describe("resolveToken — replacement table (STORY-006 AC 6.2)", () => {
     expect(resolveToken("#00d4ff")).toBe("$primary"); // case-insensitive
   });
 
-  it("maps white forms to $text", () => {
+  it("maps white hex forms to $text (bare 'white' word is NOT replaced)", () => {
     expect(resolveToken("#FFFFFF")).toBe("$text");
     expect(resolveToken("#FFF")).toBe("$text");
-    expect(resolveToken("white")).toBe("$text");
+    // bare word-colour intentionally not handled — too risky position-agnostic
+    expect(resolveToken("white")).toBeNull();
   });
 
   it("maps gold forms to $gold", () => {
@@ -97,13 +98,22 @@ describe("transformSource — AST behaviour + edge cases", () => {
     expect(replacements).toBe(0);
   });
 
-  it("leaves hex in color / *Color / colors props alone (concrete-colour consumers)", () => {
+  it("leaves hex in concrete-colour-consumer props alone (fill/stroke/color/colors/shadowColor)", () => {
     const src = `const C = () => <View color="#00D4FF" shadowColor="#FFFFFF" />;`;
     expect(transformSource(src).replacements).toBe(0);
     const grad = `const G = () => <LinearGradient colors={["rgba(0,212,255,0.08)", "#00D4FF"]} />;`;
     expect(transformSource(grad).replacements).toBe(0);
     const icon = `const I = () => <Ionicons color="#fff" />;`;
     expect(transformSource(icon).replacements).toBe(0);
+  });
+
+  it("DOES rewrite Tamagui style props backgroundColor / borderColor (matches the lint rule — PR #83 fix)", () => {
+    const bg = `const C = () => <View backgroundColor="#00D4FF" />;`;
+    expect(transformSource(bg).replacements).toBe(1);
+    expect(transformSource(bg).output).toContain('"$primary"');
+    const border = `const C = () => <View borderColor="#0A0B12" />;`;
+    expect(transformSource(border).replacements).toBe(1);
+    expect(transformSource(border).output).toContain('"$bg"');
   });
 
   it("leaves hex inside StyleSheet.create bodies alone (RN styles)", () => {
@@ -123,8 +133,8 @@ describe("transformSource — AST behaviour + edge cases", () => {
     expect(transformSource(src).replacements).toBe(0);
   });
 
-  it("skips fg / bg tone-map property hex (consumed as icon/indicator colour)", () => {
-    const src = `const tones = { expert: { fg: "#00D4FF", bg: "rgba(0,212,255,0.12)" } };`;
+  it("skips fg / bg / ink tone-map property hex (consumed as icon/indicator colour)", () => {
+    const src = `const tones = { expert: { fg: "#00D4FF", bg: "rgba(0,212,255,0.12)", ink: "#0A0B12" } };`;
     expect(transformSource(src).replacements).toBe(0);
   });
 

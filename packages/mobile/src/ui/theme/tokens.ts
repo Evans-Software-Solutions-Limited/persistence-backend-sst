@@ -269,10 +269,17 @@ export const colorPalette = {
 } as const;
 
 /**
- * Legacy numeric space/size/radius/zIndex keys (bare-keyed) that existing
- * components reference (`$base`, `$md`, `$lg`, `$full`, `$0`, `true`, …).
- * Merged into `createTokens` below alongside the handoff scale so both
- * resolve. Retired in M11 Polish once the adoption sweep removes consumers.
+ * Legacy numeric space/radius/zIndex keys (bare-keyed) that existing
+ * components reference (`$base`, `$full`, `$0`, `true`, …). Merged into
+ * `createTokens` below alongside the handoff scale. Retired in M11 Polish
+ * once the adoption sweep removes consumers.
+ *
+ * NOTE (PR #83 review): the size group intentionally does NOT re-add the
+ * numeric scale (`xs/sm/md/lg/xl/2xl/3xl`). The handoff `size` group already
+ * provides those (via `...space`), and re-adding the legacy values here would
+ * silently shadow the handoff scale (e.g. `size.sm` 8 → 32). No component
+ * references those keys as a `size`-group dimension (verified), so only the
+ * touch-target back-compat aliases (`true`/`0`) are kept.
  */
 const legacySpace = {
   0: 0,
@@ -281,13 +288,6 @@ const legacySpace = {
 
 const legacySize = {
   0: 0,
-  xs: 20,
-  sm: 32,
-  md: 44,
-  lg: 56,
-  xl: 64,
-  "2xl": 80,
-  "3xl": 96,
   true: 44,
 } as const;
 
@@ -309,13 +309,12 @@ const legacyZIndex = {
 // COMBINED EXPORT
 // ════════════════════════════════════════════════════════════
 //
-// Handoff tokens are canonical; legacy keys are merged additively. The two
-// surfaces don't collide on numeric keys: handoff space/radius keys are
-// distinct names (`$pill` vs legacy `$full`), and the only shared name —
-// `size.md` — keeps the legacy size value (44) because `size` spreads
-// `legacySize` last. Size in the design system is expressed via
-// `$touchTarget` (44), so no design-system primitive references `$md` as a
-// dimension.
+// Handoff tokens are canonical; legacy keys are merged additively. The size
+// group keeps ONLY the handoff scale (xs/sm/md/lg/xl/2xl/3xl from `...space`,
+// plus `$touchTarget` etc.) — the legacy numeric overrides were removed so
+// `size.sm` etc. match the handoff scale and don't diverge from `space.sm`
+// (PR #83 review fix). Dimensions in the design system use `$touchTarget` or
+// numeric props; spacing uses the `space` group.
 export const tokens = createTokens({
   color: { ...color, ...colorPalette },
   space: { ...space, ...legacySpace },
