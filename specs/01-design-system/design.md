@@ -800,13 +800,13 @@ Composites additionally:
 
 The icon mapping table above (and the migration plan it mirrors) was authored against an older Lucide release. The SDK-55-compatible `lucide-react-native@1.17.0` (verified as the genuine published latest — SLSA provenance + OIDC trusted-publisher attestation, maintainer Eric Fennis, `lucide-icons/lucide` repo) renamed five icons and dropped the old-name aliases:
 
-| Prototype alias (stable) | Old Lucide name | Lucide 1.x export |
-| ------------------------ | --------------- | ----------------- |
-| `IconHome`               | `Home`          | `House`           |
-| `IconChart`              | `BarChart3`     | `ChartColumn`     |
-| `IconMore`               | `MoreHorizontal`| `Ellipsis`        |
-| `IconMore_v`             | `MoreVertical`  | `EllipsisVertical`|
-| `IconFilter`             | `Filter`        | `ListFilter`      |
+| Prototype alias (stable) | Old Lucide name  | Lucide 1.x export  |
+| ------------------------ | ---------------- | ------------------ |
+| `IconHome`               | `Home`           | `House`            |
+| `IconChart`              | `BarChart3`      | `ChartColumn`      |
+| `IconMore`               | `MoreHorizontal` | `Ellipsis`         |
+| `IconMore_v`             | `MoreVertical`   | `EllipsisVertical` |
+| `IconFilter`             | `Filter`         | `ListFilter`       |
 
 **Decision.** The prototype-facing `IconXxx` aliases are the contract downstream specs consume, so they stay byte-for-byte identical to the design.md table (`IconHome`, `IconChart`, `IconMore`, `IconMore_v`, `IconFilter`). Only the underlying Lucide import is updated to the 1.x export name. `icons.ts` therefore reads e.g. `import { House as IconHome } from "lucide-react-native"`. The visual result matches the prototype (these are the same glyphs, renamed upstream). All other 43 mappings are unchanged.
 
@@ -814,16 +814,16 @@ The icon mapping table above (and the migration plan it mirrors) was authored ag
 
 The STORY-007 adoption sweep surfaced eight common legacy Ionicons with no entry in the original 48-icon mapping table — most critically `trash-outline` (used in ~8 set-row / card components). Per STORY-004 AC 4.7's "stop-and-flag, extend the spec, then proceed" principle (applied to the icon vocabulary), these are **added** to `icons.ts` rather than left as `TODO(01-design-system)` skips, since the icon module is owned by this spec and each has an obvious Lucide equivalent:
 
-| Added alias     | Lucide 1.x export | Covers Ionicons |
-| --------------- | ----------------- | --------------- |
-| `IconTrash`     | `Trash2`          | `trash-outline` / `trash` |
+| Added alias     | Lucide 1.x export | Covers Ionicons                       |
+| --------------- | ----------------- | ------------------------------------- |
+| `IconTrash`     | `Trash2`          | `trash-outline` / `trash`             |
 | `IconLock`      | `Lock`            | `lock-closed` / `lock-closed-outline` |
-| `IconList`      | `List`            | `list` |
-| `IconChevronUp` | `ChevronUp`       | `chevron-up` |
-| `IconWarning`   | `TriangleAlert`   | `warning` |
-| `IconAlert`     | `CircleAlert`     | `alert-circle` |
-| `IconMail`      | `Mail`            | `mail-outline` |
-| `IconClock`     | `Clock`           | `time-outline` |
+| `IconList`      | `List`            | `list`                                |
+| `IconChevronUp` | `ChevronUp`       | `chevron-up`                          |
+| `IconWarning`   | `TriangleAlert`   | `warning`                             |
+| `IconAlert`     | `CircleAlert`     | `alert-circle`                        |
+| `IconMail`      | `Mail`            | `mail-outline`                        |
+| `IconClock`     | `Clock`           | `time-outline`                        |
 
 These unblock the bulk of the icon sweep. Remaining unmapped Ionicons (`cloud-offline-outline`, `battery-charging`, `library-outline`, `options-outline`, `help-circle-outline`) stay as `TODO(01-design-system)` skips for their owning specs (AC 7.6) — they're low-frequency and lack a clean 1:1 Lucide match.
 
@@ -850,9 +850,9 @@ Blindly applying the table across these contexts would red the build/visual gate
 
 - **Skipped JSX attributes** (value is a concrete colour for a non-Tamagui consumer): `fill`, `stroke` (already specced, icon-owned), plus `color`, `colors`, `tintColor`, `placeholderTextColor`, `shadowColor`, and any `*Color` attribute. Screen authors' Tamagui `<View backgroundColor="$x">` style props still tokenise (those use token names already, not hex).
 - **Skipped `StyleSheet.create(...)` object bodies** — RN StyleSheet literals stay concrete.
-- **Skipped all `__tests__/**`** (not just `__tests__/fixtures/**`) — rewriting hex inside test assertions / props breaks the tests (e.g. `SimpleLineGraph.test.tsx` asserts `toContain("#00D4FF")`). The original `__tests__/fixtures/**` exclusion is widened to the whole `__tests__` tree, matching the documented "leave test snapshots/fixtures alone" intent.
+- **Skipped all `**tests**/**`** (not just `**tests**/fixtures/**`) — rewriting hex inside test assertions / props breaks the tests (e.g. `SimpleLineGraph.test.tsx`asserts`toContain("#00D4FF")`). The original `**tests**/fixtures/**`exclusion is widened to the whole`**tests**` tree, matching the documented "leave test snapshots/fixtures alone" intent.
 
-Net effect: the codemod tokenises the genuinely-tokenisable hex (object-literal string values outside StyleSheet/skip-attr/test contexts) and leaves concrete-colour-consumer literals in place. The residual legacy hex in RN-StyleSheet / gradient / icon-colour positions is retired by the owning screen specs when they port those screens to Tamagui primitives (the same "owning spec finishes the port" principle as the adoption sweep). The CI `no-raw-hex-colors` lint rule (AC 6.4) therefore allow-lists the four `*LegacyTheme` files **and** the legacy-screen RN-StyleSheet/gradient positions until their owning spec ports them; it still blocks *new* hex in token-resolvable positions.
+Net effect: the codemod tokenises the genuinely-tokenisable hex (object-literal string values outside StyleSheet/skip-attr/test contexts) and leaves concrete-colour-consumer literals in place. The residual legacy hex in RN-StyleSheet / gradient / icon-colour positions is retired by the owning screen specs when they port those screens to Tamagui primitives (the same "owning spec finishes the port" principle as the adoption sweep). The CI `no-raw-hex-colors` lint rule (AC 6.4) therefore allow-lists the four `*LegacyTheme` files **and** the legacy-screen RN-StyleSheet/gradient positions until their owning spec ports them; it still blocks _new_ hex in token-resolvable positions.
 
 ---
 

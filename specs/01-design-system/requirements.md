@@ -207,13 +207,13 @@ None. All ten foundation decisions are locked at the top of this spec. Open ques
 
 - The pre-existing `tokens.ts` also exports a `colorPalette` const (numbered scale: `primary500`, `neutral1000`, …) consumed as plain JavaScript by six in-tree files (`ErrorBoundary`, `PLogoDrawLoader`, `HomePresenter`, `ActiveSessionBanner`, `homeLegacyTheme`, `themes.ts`) and the existing `space`/`size`/`radius`/`zIndex` numeric scales the current components reference (`$base`, `$md`, `$lg`, `$full`, …).
 - The handoff `tokens.tamagui.ts` does **not** define `colorPalette`, omits the legacy `$full`/`$0`/`true` keys, and redefines `size.md` (44 → 12 via `...space`).
-- The codemod that retires those legacy references (STORY-006 / Phase 1.6) lands *after* the token PR (Phase 1.1). A pure replace-in-place would red the gate between 1.1 and 1.6.
+- The codemod that retires those legacy references (STORY-006 / Phase 1.6) lands _after_ the token PR (Phase 1.1). A pure replace-in-place would red the gate between 1.1 and 1.6.
 
 **Decision (owner rule "LegacyTheme files stay — codemod their internals; deletion is 12-production-readiness", applied to the token export).** `tokens.ts` carries the **handoff token surface verbatim** as the canonical export (`color`, `space`, `size`, `radius`, `zIndex`, `fonts`, `shadow` — values + inline contrast notes copied exactly from `~/Downloads/handoff/tokens.tamagui.ts`). The legacy `colorPalette` const and the legacy numeric `space`/`size`/`radius` keys are **preserved additively** in the same module (merged into the `createTokens` call) until the codemod + adoption sweep retire their consumers. Net effect:
 
 - Every handoff token (`$bg`, `$surface`–`$surface5`, `$text`–`$text5`, `$border`–`$border3`, `$primary` family, `$gold` family, `$accentTrainer` family, `$ember`, `$success`, `$warning`, `$error`, `$info`, the touch-target / tab-bar / header sizes, the radius + z-index ramps) resolves exactly as the prototype intends.
 - Legacy `colorPalette` + legacy numeric keys keep resolving so existing screens render unchanged.
-- The six colliding **theme** keys (`primary`, `surface`, `success`, `warning`, `error`, `info`) in `themes.ts` are re-pointed to the new palette values — this *is* the intended "token refresh" (e.g. `$primary` shifts `#00D4FF` → `#22D3EE`), applied at the theme layer so no screen edit is required.
+- The six colliding **theme** keys (`primary`, `surface`, `success`, `warning`, `error`, `info`) in `themes.ts` are re-pointed to the new palette values — this _is_ the intended "token refresh" (e.g. `$primary` shifts `#00D4FF` → `#22D3EE`), applied at the theme layer so no screen edit is required.
 
 Deletion of `colorPalette` and the legacy numeric keys is folded into the same M11 Polish cleanup as the `*LegacyTheme` files (`12-production-readiness`), once the codemod + adoption sweep have removed every consumer.
 
