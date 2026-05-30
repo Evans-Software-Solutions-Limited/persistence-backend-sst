@@ -71,6 +71,12 @@ type BadgeProps = {
   testID?: string;
 };
 
+/**
+ * @deprecated Legacy badge. New screen work should use the design-system
+ * primitive `@/ui/components/foundation/Pill` (7 tones × 3 sizes, filled
+ * variant, no-wrap dense-row contract). Retired in M11 Polish
+ * (12-production-readiness).
+ */
 export function Badge({
   label,
   variant = "default",

@@ -118,6 +118,11 @@ type ButtonProps = {
   testID?: string;
 };
 
+/**
+ * @deprecated Legacy button. New screen work should use the design-system
+ * primitive `@/ui/components/foundation/Btn` (variant × tone × size matrix,
+ * icon slot, 44pt floor, a11y). Retired in M11 Polish (12-production-readiness).
+ */
 export function Button({
   label,
   onPress,
