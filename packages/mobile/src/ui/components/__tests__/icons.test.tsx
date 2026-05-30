@@ -65,6 +65,15 @@ const EXPECTED_ICON_NAMES = [
   "IconBack",
   "IconNote",
   "IconTag",
+  // Vocabulary extension (2026-05-29) — unblocks the STORY-007 adoption sweep.
+  "IconTrash",
+  "IconLock",
+  "IconList",
+  "IconChevronUp",
+  "IconWarning",
+  "IconAlert",
+  "IconMail",
+  "IconClock",
 ] as const;
 
 describe("icons module", () => {
