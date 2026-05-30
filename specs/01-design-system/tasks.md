@@ -87,9 +87,9 @@ Each PR visits one directory under `packages/mobile/src/ui/{presenters, componen
 
 ## Phase 1.9 — A11y audit pass (1 PR)
 
-- [ ] **T-1.9.1** Automated a11y smoke check (custom assertion via `@testing-library/react-native`) on every primitive's pressable variants. Implements STORY-005 AC 5.5.
-- [ ] **T-1.9.2** Manual VoiceOver / TalkBack walk-through of `/dev/primitives/*` — every pressable announces its label.
-- [ ] **T-1.9.3** Touch-target audit: assert every interactive primitive defaults `minHeight: 44` (or 36 with documented dense-row context). Closes STORY-005 AC 5.3.
+- [x] **T-1.9.1** Automated a11y smoke check (custom assertion via `@testing-library/react-native`) on every primitive's pressable variants. Implements STORY-005 AC 5.5. _Shipped: `packages/mobile/src/ui/components/__tests__/a11y-audit.test.tsx` — asserts role + non-empty label + 44pt effective touch target across every pressable foundation + composite primitive._
+- [ ] **T-1.9.2** Manual VoiceOver / TalkBack walk-through of `/dev/primitives/*` — every pressable announces its label. _Checklist authored at `A11Y_WALKTHROUGH.md` for the on-device reviewer pass (not runnable in CI)._
+- [x] **T-1.9.3** Touch-target audit: assert every interactive primitive defaults `minHeight: 44` (or 36 with documented dense-row context). Closes STORY-005 AC 5.3. _Shipped: IconBtn/Avatar/HabitTile keep their compact visual size + gain `hitSlop` to reach the 44pt effective floor; Btn md/lg use minHeight 44/52; Btn sm is the documented 36pt dense-row exception._
 
 ---
 

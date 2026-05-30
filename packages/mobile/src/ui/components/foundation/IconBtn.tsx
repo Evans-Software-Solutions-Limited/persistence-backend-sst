@@ -122,6 +122,9 @@ export function IconBtn({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled, selected: active, ...accessibilityState }}
+      // Expand the effective touch target to the 44pt floor (Apple HIG) when
+      // the visual diameter is smaller — keeps the 36pt look, 44pt tap area.
+      hitSlop={Math.max(0, Math.ceil((44 - size) / 2))}
       onPress={(event) => {
         // Don't let the tap bubble to a parent row Pressable.
         event?.stopPropagation?.();

@@ -153,6 +153,9 @@ export function Avatar({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      // Expand the effective touch target to the 44pt floor when the avatar is
+      // smaller (default 36) — keeps the visual size, meets Apple HIG.
+      hitSlop={Math.max(0, Math.ceil((44 - size) / 2))}
       style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       {inner}

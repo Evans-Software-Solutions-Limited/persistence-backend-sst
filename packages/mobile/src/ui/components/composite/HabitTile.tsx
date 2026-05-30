@@ -97,6 +97,8 @@ export function HabitTile({
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
       accessibilityState={{ selected: isDone }}
+      // 36x36 cell + 4pt slop on each edge = 44pt effective touch target.
+      hitSlop={4}
       style={habitTilePressStyle}
     >
       {cell}
