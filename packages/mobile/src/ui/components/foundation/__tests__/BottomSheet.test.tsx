@@ -55,14 +55,22 @@ describe("BottomSheet", () => {
     expect(getByText(`body-${accent}`)).toBeTruthy();
   });
 
-  it.each(["peek", "default", 90] as const)("renders height %s", (height) => {
-    const { getByText } = renderWithTheme(
-      <BottomSheet visible onClose={() => undefined} height={height} title="H">
-        <Text>{`h-${height}`}</Text>
-      </BottomSheet>,
-    );
-    expect(getByText(`h-${height}`)).toBeTruthy();
-  });
+  it.each(["peek", "default", "tall", 90] as const)(
+    "renders height %s",
+    (height) => {
+      const { getByText } = renderWithTheme(
+        <BottomSheet
+          visible
+          onClose={() => undefined}
+          height={height}
+          title="H"
+        >
+          <Text>{`h-${height}`}</Text>
+        </BottomSheet>,
+      );
+      expect(getByText(`h-${height}`)).toBeTruthy();
+    },
+  );
 
   it("renders a header-less sheet (children only)", () => {
     const { getByText } = renderWithTheme(

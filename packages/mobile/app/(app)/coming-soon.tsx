@@ -42,9 +42,22 @@ const COPY = {
       "Custom exercise creation from the workout picker arrives in milestone M5.",
   },
   subscription: {
-    icon: "lock-closed-outline" as const,
-    title: "Upgrade Subscription",
-    description: "Tier selection + Stripe checkout arrive in milestone M10.",
+    icon: "card-outline" as const,
+    title: "Manage Subscription",
+    description:
+      "Subscription management moves into the profile drawer in an upcoming release.",
+  },
+  health: {
+    icon: "heart-outline" as const,
+    title: "Health & Integrations",
+    description:
+      "Health-app connections surface here once 07-health-integration ships its profile screen.",
+  },
+  notifications: {
+    icon: "notifications-outline" as const,
+    title: "Notifications",
+    description:
+      "Notification preferences arrive with 09-notifications-social.",
   },
   default: {
     icon: "construct-outline" as const,

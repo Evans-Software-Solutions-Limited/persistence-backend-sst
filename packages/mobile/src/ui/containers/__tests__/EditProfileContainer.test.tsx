@@ -68,6 +68,7 @@ function makeProfilePagePayload(
       avatarUrl: null,
       role: "user",
       fitnessLevel: "intermediate",
+      dateOfBirth: null,
       heightCm: null,
       weightKg: null,
       preferredUnits: "metric",

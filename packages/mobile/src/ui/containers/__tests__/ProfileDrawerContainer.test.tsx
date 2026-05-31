@@ -1,102 +1,205 @@
+import { act } from "@testing-library/react-native";
+
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 /**
- * ProfileDrawerContainer (mount-point) tests.
+ * ProfileDrawerContainer tests — the 08-profile-settings composition.
  *
- * Spec: specs/14-navigation/design.md § <ProfileDrawer> mount-point
- *       specs/14-navigation/requirements.md STORY-004 (AC 4.2, 4.3)
- * Closes: specs/14-navigation/tasks.md T-14.5.1
+ * Spec: specs/08-profile-settings/design.md § <ProfileDrawerContainer>
+ *       + § Revised 2026-05-31 § G (real-hook plumbing)
+ *       specs/08-profile-settings/requirements.md STORY-001/004/007
  *
- * The drawer BODY is owned by 08-profile-settings; this suite asserts the
- * mount-point wiring only: the sheet's `visible` tracks useDrawer().open, and
- * the sheet's `onClose` is wired to useDrawer().closeDrawer.
- *
- * The <BottomSheet> foundation primitive is mocked to a capture component so
- * we can assert on the exact props the container hands it (visible + onClose)
- * and invoke onClose directly — proving the close affordance is wired rather
- * than just re-testing the zustand slice. (Per CLAUDE.md "no fake tests".)
+ * The container is the only place the real hooks are wired, so we mock the
+ * hooks to capture the props handed to <ProfileDrawerPresenter> and assert
+ * the wiring (visible tracks useDrawer().open, profile/subscription mapping,
+ * row navigation closes the drawer + pushes the right route, sign-out).
+ * The presenter itself is mocked to a capture component (its rendering is
+ * covered by ProfileDrawerPresenter.test.tsx).
  */
 
-type CapturedSheetProps = {
+type CapturedProps = Record<string, unknown> & {
   visible: boolean;
   onClose: () => void;
-  eyebrow?: string;
-  title?: string;
 };
-let lastSheetProps: CapturedSheetProps | null = null;
+let lastProps: CapturedProps | null = null;
 
-jest.mock("@/ui/components/foundation", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { View } = require("react-native");
-  return {
-    BottomSheet: (props: CapturedSheetProps & { children?: unknown }) => {
-      lastSheetProps = {
-        visible: props.visible,
-        onClose: props.onClose,
-        eyebrow: props.eyebrow,
-        title: props.title,
-      };
-      // Only render children when visible, mirroring the real primitive's
-      // "nothing in the tree until opened" behaviour closely enough for the
-      // body-presence assertions below.
-      return props.visible
-        ? React.createElement(
-            View,
-            { testID: "profile-drawer" },
-            props.children as React.ReactNode,
-          )
-        : null;
-    },
-  };
-});
+jest.mock("@/ui/presenters/ProfileDrawerPresenter", () => ({
+  ProfileDrawerPresenter: (props: CapturedProps) => {
+    lastProps = props;
+    return null;
+  },
+}));
 
-// eslint-disable-next-line import/first
-import { act } from "@testing-library/react-native";
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({
+  router: { push: (p: string) => mockPush(p) },
+}));
+
+const mockSwitchMode = jest.fn();
+jest.mock("@/ui/hooks/useModeSwitch", () => ({
+  useModeSwitch: () => ({ switchMode: mockSwitchMode }),
+}));
+
+const mockSignOut = jest.fn().mockResolvedValue(undefined);
+jest.mock("@/ui/hooks/useAuth", () => ({
+  useAuth: () => ({ signOut: mockSignOut }),
+}));
+
+let mockProfilePayload: unknown = {
+  profile: {
+    fullName: "Bradley Evans",
+    email: "brad@example.com",
+    dateOfBirth: "1990-01-15",
+    weightKg: 79.8,
+  },
+};
+jest.mock("@/ui/hooks/useProfilePage", () => ({
+  useProfilePage: () => ({ payload: mockProfilePayload }),
+}));
+
+let mockSubscription: unknown = {
+  tierName: "premium",
+  trialEndsAt: null,
+  expiresAt: "2026-06-01T00:00:00.000Z",
+  tierDescription: "Unlimited workouts · AI coach · Macros",
+  tierDisplayName: "Premium",
+};
+jest.mock("@/ui/hooks/useMySubscription", () => ({
+  useMySubscription: () => ({ data: mockSubscription }),
+}));
+
+let mockHealth = {
+  isAvailable: true,
+  permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
+};
+jest.mock("@/ui/hooks/useHealthData", () => ({
+  useHealthData: () => mockHealth,
+}));
+
 // eslint-disable-next-line import/first
 import { useDrawer } from "@/state/drawer";
+// eslint-disable-next-line import/first
+import { useUserMode } from "@/state/user-mode";
 // eslint-disable-next-line import/first
 import { ProfileDrawerContainer } from "@/ui/containers/ProfileDrawerContainer";
 
 beforeEach(() => {
-  lastSheetProps = null;
+  lastProps = null;
+  mockPush.mockClear();
+  mockSwitchMode.mockClear();
+  mockSignOut.mockClear();
   useDrawer.setState({ open: false });
+  useUserMode.setState({ mode: "athlete", isTrainerEligible: false });
 });
 
 describe("ProfileDrawerContainer", () => {
-  it("renders the placeholder body + PROFILE/Account header props when open", () => {
-    useDrawer.setState({ open: true });
-    const { getByText } = renderWithTheme(<ProfileDrawerContainer />);
-    // Body (children) renders through the mocked sheet.
-    expect(getByText(/Your profile, subscription/)).toBeTruthy();
-    // Header eyebrow + title are handed to the sheet as props.
-    expect(lastSheetProps?.eyebrow).toBe("PROFILE");
-    expect(lastSheetProps?.title).toBe("Account");
-  });
-
-  it("drives the sheet's `visible` prop from useDrawer().open", () => {
-    // Closed → sheet receives visible=false.
+  it("drives the presenter's visible prop from useDrawer().open", () => {
     renderWithTheme(<ProfileDrawerContainer />);
-    expect(lastSheetProps?.visible).toBe(false);
+    expect(lastProps?.visible).toBe(false);
 
-    // Open → re-render hands visible=true.
-    useDrawer.setState({ open: true });
-    renderWithTheme(<ProfileDrawerContainer />);
-    expect(lastSheetProps?.visible).toBe(true);
-  });
-
-  it("wires the sheet's onClose to useDrawer().closeDrawer", () => {
-    useDrawer.setState({ open: true });
-    renderWithTheme(<ProfileDrawerContainer />);
-
-    // Invoke the exact onClose the container handed the sheet (this is what a
-    // backdrop tap / pan-down dismiss triggers). If the container passed a
-    // no-op or omitted onClose, the slice would stay open and this fails.
-    expect(lastSheetProps?.onClose).toEqual(expect.any(Function));
     act(() => {
-      lastSheetProps?.onClose();
+      useDrawer.setState({ open: true });
     });
-    expect(useDrawer.getState().open).toBe(false);
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.visible).toBe(true);
+  });
+
+  it("maps the live profile payload (name/email/initials/age/weight)", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profile).toMatchObject({
+      name: "Bradley Evans",
+      email: "brad@example.com",
+      initials: "BE",
+      weightKg: 79.8,
+    });
+    // age is derived from dateOfBirth (a number, not stored).
+    expect(typeof (lastProps?.profile as { age: unknown }).age).toBe("number");
+  });
+
+  it("maps the live subscription (tier/inTrial/expiresAt/description)", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.subscription).toMatchObject({
+      tier: "premium",
+      inTrial: false,
+      planDescription: "Unlimited workouts · AI coach · Macros",
+    });
+    expect(
+      (lastProps?.subscription as { expiresAt: Date }).expiresAt,
+    ).toBeInstanceOf(Date);
+  });
+
+  it("derives healthConnected from granted permissions", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.healthConnected).toBe(true);
+  });
+
+  it("forwards mode + eligibility from useUserMode", () => {
+    useUserMode.setState({ mode: "coach", isTrainerEligible: true });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.mode).toBe("coach");
+    expect(lastProps?.isTrainerEligible).toBe(true);
+  });
+
+  it("stubs achievements + client counts (06 / 10 not shipped)", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.achievementsCount).toBeUndefined();
+    expect(lastProps?.clientCount).toBeUndefined();
+  });
+
+  it("each row handler closes the drawer then pushes its route", () => {
+    useDrawer.setState({ open: true });
+    renderWithTheme(<ProfileDrawerContainer />);
+
+    const cases: [string, string][] = [
+      ["onOpenProfile", "/(app)/profile/edit"],
+      ["onOpenAchievements", "/(app)/achievements"],
+      ["onOpenHealth", "/(app)/coming-soon?feature=health"],
+      ["onOpenSubscription", "/(app)/coming-soon?feature=subscription"],
+      ["onOpenNotifications", "/(app)/coming-soon?feature=notifications"],
+      ["onOpenSettings", "/(app)/profile/privacy"],
+    ];
+
+    for (const [handler, route] of cases) {
+      act(() => {
+        useDrawer.setState({ open: true });
+      });
+      mockPush.mockClear();
+      act(() => {
+        (lastProps?.[handler] as () => void)();
+      });
+      expect(useDrawer.getState().open).toBe(false);
+      expect(mockPush).toHaveBeenCalledWith(route);
+    }
+  });
+
+  it("onSwitchMode delegates to useModeSwitch().switchMode", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    act(() => {
+      (lastProps?.onSwitchMode as (n: string) => void)("coach");
+    });
+    expect(mockSwitchMode).toHaveBeenCalledWith("coach");
+  });
+
+  it("onSignOut calls useAuth().signOut", async () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    await act(async () => {
+      await (lastProps?.onSignOut as () => Promise<void>)();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes profile=undefined while the cache hasn't resolved", () => {
+    mockProfilePayload = undefined;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profile).toBeUndefined();
+    // restore for other tests
+    mockProfilePayload = {
+      profile: {
+        fullName: "Bradley Evans",
+        email: "brad@example.com",
+        dateOfBirth: "1990-01-15",
+        weightKg: 79.8,
+      },
+    };
   });
 });
