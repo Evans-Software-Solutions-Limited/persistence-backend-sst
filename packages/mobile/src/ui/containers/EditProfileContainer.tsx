@@ -53,6 +53,7 @@ function asFitnessLevel(
 type Snapshot = {
   fullName: string;
   fitnessLevel: EditProfileFitnessLevel;
+  dateOfBirth: string;
   isProfilePublic: boolean;
 };
 
@@ -68,6 +69,7 @@ export function EditProfileContainer() {
     return {
       fullName: p.fullName ?? "",
       fitnessLevel: asFitnessLevel(p.fitnessLevel),
+      dateOfBirth: p.dateOfBirth ?? "",
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -75,17 +77,15 @@ export function EditProfileContainer() {
   const [fullName, setFullName] = useState("");
   const [fitnessLevel, setFitnessLevel] =
     useState<EditProfileFitnessLevel>("beginner");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  // Seed form state from the cached payload once it's available. The
-  // hook hydrates synchronously from SQLite on mount, so in the common
-  // path (user comes from Profile tab) this runs on the first render
-  // and the user never sees the spinner.
   useEffect(() => {
     if (!initial || hydrated) return;
     setFullName(initial.fullName);
     setFitnessLevel(initial.fitnessLevel);
+    setDateOfBirth(initial.dateOfBirth);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -98,9 +98,17 @@ export function EditProfileContainer() {
     return (
       fullName !== initial.fullName ||
       fitnessLevel !== initial.fitnessLevel ||
+      dateOfBirth !== initial.dateOfBirth ||
       isProfilePublic !== initial.isProfilePublic
     );
-  }, [initial, hydrated, fullName, fitnessLevel, isProfilePublic]);
+  }, [
+    initial,
+    hydrated,
+    fullName,
+    fitnessLevel,
+    dateOfBirth,
+    isProfilePublic,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
@@ -131,6 +139,13 @@ export function EditProfileContainer() {
         // initial snapshot's same collapsed value, so a user who never
         // picked a level naturally diffs to no-change here.
         body.fitnessLevel = fitnessLevel;
+      }
+      if (dateOfBirth !== initial.dateOfBirth) {
+        // Empty string clears DOB (send null); otherwise send the raw
+        // YYYY-MM-DD string. Backend stores it as text; age is derived
+        // client-side (STORY-010 — never persist a computed age).
+        const trimmedDob = dateOfBirth.trim();
+        body.dateOfBirth = trimmedDob.length > 0 ? trimmedDob : null;
       }
       if (isProfilePublic !== initial.isProfilePublic) {
         body.isProfilePublic = isProfilePublic;
@@ -168,6 +183,7 @@ export function EditProfileContainer() {
     initial,
     fullName,
     fitnessLevel,
+    dateOfBirth,
     isProfilePublic,
   ]);
 
@@ -194,12 +210,14 @@ export function EditProfileContainer() {
     <EditProfilePresenter
       fullName={fullName}
       fitnessLevel={fitnessLevel}
+      dateOfBirth={dateOfBirth}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
       errorMessage={errorMessage}
       onFullNameChange={setFullName}
       onFitnessLevelChange={setFitnessLevel}
+      onDateOfBirthChange={setDateOfBirth}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

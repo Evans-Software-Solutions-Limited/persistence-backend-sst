@@ -11,12 +11,14 @@ function makeProps(
   return {
     fullName: "Brad Simms",
     fitnessLevel: "intermediate",
+    dateOfBirth: "1990-01-15",
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
     errorMessage: null,
     onFullNameChange: jest.fn(),
     onFitnessLevelChange: jest.fn(),
+    onDateOfBirthChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
     onBack: jest.fn(),
@@ -66,6 +68,16 @@ describe("EditProfilePresenter", () => {
     );
     fireEvent.changeText(getByTestId("edit-profile-full-name"), "New Name");
     expect(onFullNameChange).toHaveBeenCalledWith("New Name");
+  });
+
+  it("renders the DOB field and fires onDateOfBirthChange (STORY-010)", () => {
+    const onDateOfBirthChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ onDateOfBirthChange })} />,
+    );
+    expect(getByTestId("edit-profile-dob").props.value).toBe("1990-01-15");
+    fireEvent.changeText(getByTestId("edit-profile-dob"), "1992-02-29");
+    expect(onDateOfBirthChange).toHaveBeenCalledWith("1992-02-29");
   });
 
   it("fires onFitnessLevelChange when a different level is tapped", () => {
