@@ -36,5 +36,11 @@ export type {
   BottomSheetAccent,
   BottomSheetHeight,
 } from "./BottomSheet";
-export { toneTokens, TONE_TOKENS } from "./tones";
+export {
+  toneTokens,
+  TONE_TOKENS,
+  toneHex,
+  TONE_HEX,
+  NEUTRAL_HEX,
+} from "./tones";
 export type { Tone, PillTone } from "./tones";

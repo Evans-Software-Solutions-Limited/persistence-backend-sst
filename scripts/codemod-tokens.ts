@@ -189,10 +189,13 @@ export function transformSource(source: string): TransformResult {
       .forEach((s) => skipNodes.add(s.node));
   });
   // Object-property colour keys that hold concrete colours for non-Tamagui
-  // consumers (tone-maps feeding icon/indicator colour, ink-on-solid, RN
-  // style objects). Skipping these stops the codemod tokenising e.g. the
-  // `TONE_HEX` concrete-colour bridge map in foundation/tones.ts.
+  // consumers. Kept in lockstep with the `no-raw-hex-colors` ESLint rule's
+  // CONCRETE_COLOUR_KEYS so the codemod and lint rule describe the same world
+  // (PR #83 review): the SKIP_JSX_ATTRS names (RN inline styles use them as
+  // keys — e.g. `style={{ shadowColor: "#fff" }}`) PLUS the tone-map keys
+  // (fg/bg/ink/base/dim/glow/bright/depth, e.g. the TONE_HEX bridge map).
   const CONCRETE_COLOUR_KEYS = new Set([
+    ...SKIP_JSX_ATTRS,
     "fg",
     "bg",
     "ink",

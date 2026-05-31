@@ -32,6 +32,24 @@ const SKIP_JSX_ATTRS = new Set([
   "borderRightColor",
 ]);
 
+// Object-property keys that hold a concrete colour for a non-Tamagui consumer
+// (RN inline styles use the SKIP_JSX_ATTRS names as keys; tone-maps use
+// fg/bg/ink/base/dim/glow/bright/depth). This set is kept in lockstep with the
+// codemod's CONCRETE_COLOUR_KEYS so the lint rule and codemod describe the same
+// world (PR #83 review): a hex in any of these positions is a concrete colour,
+// not a tokenisable Tamagui style prop.
+const TONE_MAP_KEYS = [
+  "fg",
+  "bg",
+  "ink",
+  "base",
+  "dim",
+  "glow",
+  "bright",
+  "depth",
+];
+const CONCRETE_COLOUR_KEYS = new Set([...SKIP_JSX_ATTRS, ...TONE_MAP_KEYS]);
+
 function isSkippedJsxAttrName(name) {
   // Only the explicit set above is exempt. Generic Tamagui style props like
   // `backgroundColor` / `borderColor` are NOT exempt — those are exactly where
@@ -85,11 +103,7 @@ function inSkippedPosition(node, ancestors) {
           : a.key.type === "Literal"
             ? a.key.value
             : null;
-      if (
-        keyName === "fg" ||
-        keyName === "bg" ||
-        (typeof keyName === "string" && SKIP_JSX_ATTRS.has(keyName))
-      ) {
+      if (typeof keyName === "string" && CONCRETE_COLOUR_KEYS.has(keyName)) {
         return true;
       }
     }

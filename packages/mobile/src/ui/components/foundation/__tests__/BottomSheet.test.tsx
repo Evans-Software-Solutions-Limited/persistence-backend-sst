@@ -72,4 +72,24 @@ describe("BottomSheet", () => {
     );
     expect(getByText("just body")).toBeTruthy();
   });
+
+  it("keeps the sheet mounted across a parent-driven visible:true->false so it animates DOWN (PR #83 Lead 6)", () => {
+    // Open, then flip visible to false via re-render. The sheet must NOT
+    // unmount synchronously (which would null the ref and snap shut) — it stays
+    // mounted at index=-1 so gorhom's close() animation can run.
+    const { rerender, queryByTestId } = renderWithTheme(
+      <BottomSheet visible onClose={() => undefined} testID="sheet">
+        <Text>body</Text>
+      </BottomSheet>,
+    );
+    expect(queryByTestId("gorhom-bottom-sheet")).toBeTruthy();
+    rerender(
+      <BottomSheet visible={false} onClose={() => undefined} testID="sheet">
+        <Text>body</Text>
+      </BottomSheet>,
+    );
+    // Still mounted after the close request (drives close() animation rather
+    // than an instant unmount).
+    expect(queryByTestId("gorhom-bottom-sheet")).toBeTruthy();
+  });
 });

@@ -77,8 +77,10 @@ describe("parseLegacyPrimaryRgba", () => {
 });
 
 describe("transformSource — AST behaviour + edge cases", () => {
-  it("replaces a hex string literal in a style object", () => {
-    const src = `const s = { color: "#00D4FF" };`;
+  it("replaces a hex string literal in a tokenisable style object key", () => {
+    // `tint` is not a concrete-colour-consumer key, so it's a tokenisable
+    // position (unlike `color`/`shadowColor`/`fg`, which are skipped).
+    const src = `const s = { tint: "#00D4FF" };`;
     const { output, replacements } = transformSource(src);
     expect(replacements).toBe(1);
     expect(output).toContain('"$primary"');
@@ -86,7 +88,7 @@ describe("transformSource — AST behaviour + edge cases", () => {
   });
 
   it("leaves hex inside comments alone", () => {
-    const src = `// brand is #00D4FF\nconst s = { color: "#123456" };`;
+    const src = `// brand is #00D4FF\nconst s = { tint: "#123456" };`;
     const { output, replacements } = transformSource(src);
     expect(replacements).toBe(0);
     expect(output).toContain("#00D4FF"); // comment untouched
@@ -135,6 +137,14 @@ describe("transformSource — AST behaviour + edge cases", () => {
 
   it("skips fg / bg / ink tone-map property hex (consumed as icon/indicator colour)", () => {
     const src = `const tones = { expert: { fg: "#00D4FF", bg: "rgba(0,212,255,0.12)", ink: "#0A0B12" } };`;
+    expect(transformSource(src).replacements).toBe(0);
+  });
+
+  it("skips concrete-consumer object keys (shadowColor) — matches the lint rule (PR #83 Lead 7)", () => {
+    // RN inline style: `style={{ shadowColor: "#FFFFFF" }}` is a concrete-colour
+    // position the lint rule also skips. The codemod must not rewrite it to a
+    // Tamagui token that RN can't resolve.
+    const src = `const s = { shadowColor: "#FFFFFF", tintColor: "#00D4FF" };`;
     expect(transformSource(src).replacements).toBe(0);
   });
 

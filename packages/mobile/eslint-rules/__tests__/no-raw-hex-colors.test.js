@@ -25,6 +25,10 @@ ruleTester.run("no-raw-hex-colors", rule, {
     `const s = StyleSheet.create({ t: { color: "#fff" } });`,
     `function ink() { return "#0A0B12"; }`,
     `const tones = { a: { fg: "#00D4FF", bg: "#0A0B12" } };`,
+    // tone-map + RN-style concrete-colour object keys are skipped (lockstep
+    // with the codemod's CONCRETE_COLOUR_KEYS — PR #83 Lead 7)
+    `const t = { ink: "#0A0B12", base: "#22D3EE" };`,
+    `const s = { shadowColor: "#FFFFFF", tintColor: "#00D4FF" };`,
     `const textColor = "#FFFFFF";`,
     `const x = { shadowColor: "#000000" };`,
     // non-colour strings

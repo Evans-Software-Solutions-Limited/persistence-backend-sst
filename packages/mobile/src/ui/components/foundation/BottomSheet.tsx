@@ -5,7 +5,14 @@ import GorhomBottomSheet, {
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Text, View } from "@tamagui/core";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { toneHex, toneTokens } from "./tones";
 
@@ -67,8 +74,17 @@ export function BottomSheet({
   const ref = useRef<GorhomBottomSheet>(null);
   const snapPoints = useMemo(() => [resolveSnap(height)], [height]);
 
+  // Render the sheet once it has been opened at least once, then keep it
+  // mounted so a parent-driven close (`setVisible(false)`) animates DOWN via
+  // `ref.current.close()` instead of unmounting synchronously (which would
+  // null the ref before the close call and snap the sheet shut). gorhom holds
+  // the closed sheet at `index = -1`; `onAnimate` clears `mounted` only after
+  // the close settles, dropping the machinery from the tree (PR #83 review).
+  const [mounted, setMounted] = useState(visible);
+
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       ref.current?.expand();
     } else {
       ref.current?.close();
@@ -88,16 +104,28 @@ export function BottomSheet({
     [],
   );
 
-  // Don't mount the sheet machinery at all while closed — keeps the tree light
-  // and avoids a flash of the sheet on first render.
-  if (!visible) {
+  // Once the close animation settles on the closed index (-1), drop the sheet
+  // from the tree to keep it light. gorhom fires onAnimate(from, to) at the
+  // start of the transition; we wait for the change handler below.
+  const handleChange = useCallback(
+    (index: number) => {
+      if (index === -1 && !visible) {
+        setMounted(false);
+      }
+    },
+    [visible],
+  );
+
+  // Never been opened → render nothing (no flash, light tree).
+  if (!mounted) {
     return null;
   }
 
   return (
     <GorhomBottomSheet
       ref={ref}
-      index={0}
+      index={visible ? 0 : -1}
+      onChange={handleChange}
       snapPoints={snapPoints}
       enablePanDownToClose
       onClose={onClose}
