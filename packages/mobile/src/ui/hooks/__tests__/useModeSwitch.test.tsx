@@ -76,14 +76,16 @@ describe("useModeSwitch", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)/fuel");
   });
 
-  it("defaults the active route to index when none is supplied", async () => {
+  it("defaults the active route to the tabs index (directory route) when none is supplied", async () => {
     const { result } = renderHook(() => useModeSwitch());
 
     await act(async () => {
       await result.current.switchMode("coach");
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)/index");
+    // The shared "index" tab resolves to the tabs directory route, not a
+    // `/index` child (Expo Router convention; matches AuthGate / Success).
+    expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)");
   });
 
   it("ineligible coach switch is a no-op: drawer stays, no navigation", async () => {

@@ -26,6 +26,10 @@
 4. Switch the segment to **Exercises** → title becomes `Exercises`, the
    top-right action becomes a **Create** button, the exercises list shows.
    _(STORY-005 AC 5.3–5.6)_
+   4a. On the Exercises segment, tap the filter button → adjust any axis → tap
+   **Show N exercises**. The modal dismisses and lands back on the Train hub's
+   **Exercises** segment with the filter applied (not on a dead route).
+   _(review #93 — `exercises/filters/_layout.tsx` dismissTo repointed at Train)_
 5. Kill + relaunch the app → Train opens on **Exercises** (the last segment
    persisted). _(STORY-005 AC 5.2)_
 6. Tap **Fuel** → `ComingSoon` placeholder. _(STORY-006)_

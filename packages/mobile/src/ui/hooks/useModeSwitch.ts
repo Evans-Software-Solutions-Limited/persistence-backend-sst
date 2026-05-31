@@ -78,9 +78,15 @@ export function useModeSwitch(): UseModeSwitch {
       //    spec swap). Await so the navigate below runs after the store write.
       await switchTo(next);
 
-      // 3. Land on the equivalent tab in the new mode.
+      // 3. Land on the equivalent tab in the new mode. The shared "index"
+      //    tab resolves to the tabs DIRECTORY route `/(app)/(tabs)` — Expo
+      //    Router treats `index.tsx` as that directory, not a child named
+      //    "index", so `/(app)/(tabs)/index` resolves inconsistently. Match
+      //    the convention used everywhere else (AuthGate, SubscriptionSuccess).
       const target = equivalentTab(activeRoute, next);
-      router.navigate(`/(app)/(tabs)/${target}` as never);
+      const path =
+        target === "index" ? "/(app)/(tabs)" : `/(app)/(tabs)/${target}`;
+      router.navigate(path as never);
     },
     [switchTo, isTrainerEligible, closeDrawer],
   );

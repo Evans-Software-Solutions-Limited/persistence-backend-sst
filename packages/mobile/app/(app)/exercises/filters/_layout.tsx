@@ -11,6 +11,7 @@ import {
   ExerciseFiltersPendingProvider,
   useExerciseFiltersPending,
 } from "../../../../src/ui/hooks/useExerciseFiltersPending";
+import { useTrainSegment } from "../../../../src/ui/hooks/useTrainSegment";
 import { colorPalette } from "../../../../src/ui/theme";
 
 /**
@@ -98,6 +99,11 @@ function FiltersLayoutInner() {
     // regardless of which axis screen they were on when they tapped
     // Apply.
     //
+    // Under the Option 3 IA the standalone Exercises tab is gone — the
+    // exercises list lives inside the Train hub's Exercises segment. Seed
+    // the segment so the user lands on Exercises (not Workouts), then
+    // dismiss to the Train hub.
+    //
     // Why not `back()` or `dismissAll()`:
     //   - `router.back()` only pops ONE screen. From an axis detail
     //     screen (muscles / equipment / difficulty / created-by) it
@@ -111,7 +117,8 @@ function FiltersLayoutInner() {
     //
     // `dismissTo(href)` dismisses modals + pops screens until landing
     // at the target route. Robust regardless of nesting depth.
-    router.dismissTo("/(app)/(tabs)/exercises");
+    useTrainSegment.getState().setSegment("Exercises");
+    router.dismissTo("/(app)/(tabs)/train");
   }, [applied, pending, router]);
 
   // Live match count for the Apply button. Uses the same merge helper as the
