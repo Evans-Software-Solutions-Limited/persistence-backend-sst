@@ -107,6 +107,8 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 // eslint-disable-next-line import/first
 import { HomeContainer } from "@/ui/containers/HomeContainer";
 // eslint-disable-next-line import/first
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+// eslint-disable-next-line import/first
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 jest.setTimeout(15_000);
@@ -206,6 +208,7 @@ describe("HomeContainer", () => {
     mockRouterPush.mockClear();
     mockHomePresenterProps.current = null;
     mockHomePresenterRenders.length = 0;
+    useTrainSegment.setState({ segment: "Workouts", pendingCreate: false });
   });
 
   it("passes the dashboard fixture into the presenter view-model", async () => {
@@ -364,13 +367,14 @@ describe("HomeContainer", () => {
     });
 
     fireEvent.press(getByTestId("stub-view-all-workouts"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/workouts");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/train");
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
 
     fireEvent.press(getByTestId("stub-view-all-progress"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/progress");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/you");
 
     fireEvent.press(getByTestId("stub-activity"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/workouts");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/train");
 
     await act(async () => {
       fireEvent.press(getByTestId("stub-connect"));

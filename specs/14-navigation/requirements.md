@@ -114,6 +114,8 @@ The prototype is gospel for visual + IA decisions. `01-design-system`'s `<TabBar
 
 ### STORY-007: As a user, I want deep links from the legacy app to land on the right new route so my existing widgets / notifications / Universal Links keep working
 
+> **Revised 2026-05-31 (deferred):** This story is a 6-month backward-compat shim for the OLD app's `persistence://` deep links (widgets / push / Universal Links). V2 has **no released users**, so there are no legacy deep links in the wild — the shim has nothing to translate yet, and building a dated removal shim now is dead code. **Deferred, not cancelled.** The ACs below stay the contract; they're re-scoped to land with the first real consumer — `09-notifications-social` (push payloads with route names, AC 7.3) or the first public/TestFlight release needing Universal Link continuity, whichever comes first. The `design.md § Deep-link redirect map` design is preserved verbatim. The `useTrainSegment` setters + `pendingCreate` one-shot the map depends on already shipped in Phase 14.1/14.3. See `tasks.md` Phase 14.7 note.
+
 **Acceptance Criteria:**
 
 - 7.1 [ ] Deep-link redirect map added to `packages/mobile/app/_layout.tsx`:

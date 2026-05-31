@@ -9,6 +9,7 @@ import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 
 /**
  * Foreground-display behaviour for local notifications fired by the
@@ -55,6 +56,23 @@ Notifications.setNotificationHandler({
  */
 function NotificationPermissionsBootstrap() {
   useNotificationPermissions(true);
+  return null;
+}
+
+/**
+ * Bridges the subscription cache into the `useUserMode` slice +
+ * rehydrates the persisted mode + runs the eligibility invariant
+ * watchdog. Mounted as a sibling to `AuthGate` (same level as
+ * `NotificationPermissionsBootstrap`) because mode-eligibility and auth
+ * are independent concerns — keep the coupling visible at the layout
+ * level. `useMySubscription` self-gates on a resolved `userId`, so this
+ * no-ops until the user is signed in.
+ *
+ * Spec: specs/14-navigation/design.md § Eligibility wiring
+ *       specs/14-navigation/requirements.md STORY-003 (AC 3.2, 3.3, 3.5)
+ */
+function UserModeBootstrap() {
+  useUserModeEligibility();
   return null;
 }
 
@@ -142,6 +160,7 @@ export default function RootLayout() {
         >
           <AppProviders>
             <NotificationPermissionsBootstrap />
+            <UserModeBootstrap />
             <AuthGate />
           </AppProviders>
         </StripeProvider>
