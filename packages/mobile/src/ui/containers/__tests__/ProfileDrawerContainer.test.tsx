@@ -202,4 +202,93 @@ describe("ProfileDrawerContainer", () => {
       },
     };
   });
+
+  it("maps null profile fields to safe fallbacks", () => {
+    mockProfilePayload = {
+      profile: {
+        fullName: null,
+        email: null,
+        dateOfBirth: null,
+        weightKg: null,
+      },
+    };
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profile).toMatchObject({
+      name: "",
+      email: "",
+      initials: "–",
+      age: null,
+      weightKg: undefined,
+    });
+    mockProfilePayload = {
+      profile: {
+        fullName: "Bradley Evans",
+        email: "brad@example.com",
+        dateOfBirth: "1990-01-15",
+        weightKg: 79.8,
+      },
+    };
+  });
+
+  it("derives inTrial=true from a future trialEndsAt + no expiry", () => {
+    mockSubscription = {
+      tierName: "premium",
+      trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
+      expiresAt: null,
+      tierDescription: null,
+      tierDisplayName: "Premium",
+    };
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.subscription).toMatchObject({
+      inTrial: true,
+      // tierDescription null → falls back to tierDisplayName.
+      planDescription: "Premium",
+    });
+    expect(
+      (lastProps?.subscription as { expiresAt?: Date }).expiresAt,
+    ).toBeUndefined();
+    mockSubscription = {
+      tierName: "premium",
+      trialEndsAt: null,
+      expiresAt: "2026-06-01T00:00:00.000Z",
+      tierDescription: "Unlimited workouts · AI coach · Macros",
+      tierDisplayName: "Premium",
+    };
+  });
+
+  it("passes subscription=undefined while it hasn't resolved", () => {
+    mockSubscription = undefined;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.subscription).toBeUndefined();
+    mockSubscription = {
+      tierName: "premium",
+      trialEndsAt: null,
+      expiresAt: "2026-06-01T00:00:00.000Z",
+      tierDescription: "Unlimited workouts · AI coach · Macros",
+      tierDisplayName: "Premium",
+    };
+  });
+
+  it("healthConnected is false when no permission is granted", () => {
+    mockHealth = {
+      isAvailable: true,
+      permissionStatus: { steps: "not_determined", bodyWeight: "denied" },
+    };
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.healthConnected).toBe(false);
+    mockHealth = {
+      isAvailable: true,
+      permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
+    };
+  });
+
+  it("onSignOut swallows a sign-out failure without throwing", async () => {
+    mockSignOut.mockRejectedValueOnce(new Error("offline"));
+    renderWithTheme(<ProfileDrawerContainer />);
+    await act(async () => {
+      await (lastProps?.onSignOut as () => Promise<void>)();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    // Drawer stays open on failure (closeDrawer only runs on success).
+  });
 });

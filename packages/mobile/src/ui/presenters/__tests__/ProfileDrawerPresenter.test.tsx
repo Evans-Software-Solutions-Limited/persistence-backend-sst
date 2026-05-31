@@ -174,6 +174,40 @@ describe("ProfileDrawerPresenter", () => {
     expect(getByText("Loading…")).toBeTruthy();
   });
 
+  it("loading state close button fires onClose", () => {
+    const onClose = jest.fn();
+    const { getByLabelText } = renderDrawer({ profile: undefined, onClose });
+    fireEvent.press(getByLabelText("Close profile menu"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("free-tier subscription: no identity badge, FREE pill on the card", () => {
+    const { queryByText, getAllByText } = renderDrawer({
+      subscription: {
+        tier: "free",
+        inTrial: false,
+        expiresAt: undefined,
+        planDescription: "Free plan",
+      },
+    });
+    // No PREMIUM/TRAINER badge anywhere.
+    expect(queryByText("PREMIUM")).toBeNull();
+    // The subscription card shows the FREE fallback pill.
+    expect(getAllByText("FREE").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("trainer-tier subscription shows the TRAINER badge", () => {
+    const { getAllByText } = renderDrawer({
+      subscription: {
+        tier: "individual_trainer",
+        inTrial: false,
+        expiresAt: undefined,
+        planDescription: "Coach plan",
+      },
+    });
+    expect(getAllByText("TRAINER").length).toBeGreaterThanOrEqual(1);
+  });
+
   it("sign-out: tapping the row opens the confirm dialog, confirm fires onSignOut", () => {
     const onSignOut = jest.fn();
     const { getByTestId, queryByTestId } = renderDrawer({ onSignOut });

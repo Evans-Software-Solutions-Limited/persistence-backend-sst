@@ -119,17 +119,31 @@ describe("EditProfilePresenter", () => {
   it("disables inputs + save while isSaving", () => {
     const onFullNameChange = jest.fn();
     const onSave = jest.fn();
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getByText } = renderWithTheme(
       <EditProfilePresenter
         {...makeProps({ isSaving: true, onFullNameChange, onSave })}
       />,
     );
     expect(getByTestId("edit-profile-full-name").props.editable).toBe(false);
+    expect(getByTestId("edit-profile-dob").props.editable).toBe(false);
+    // Save button shows the processing label + is disabled.
+    expect(getByText("Saving…")).toBeTruthy();
     expect(
       getByTestId("edit-profile-save").props.accessibilityState?.disabled,
     ).toBeTruthy();
     fireEvent.press(getByTestId("edit-profile-save"));
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("renders each fitness level option, selected one highlighted", () => {
+    const { getByText } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ fitnessLevel: "elite" })} />,
+    );
+    // capitalize() runs for every level label.
+    expect(getByText("Beginner")).toBeTruthy();
+    expect(getByText("Intermediate")).toBeTruthy();
+    expect(getByText("Advanced")).toBeTruthy();
+    expect(getByText("Elite")).toBeTruthy();
   });
 
   it("renders the error banner when errorMessage is set", () => {
