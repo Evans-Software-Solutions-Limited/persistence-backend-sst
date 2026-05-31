@@ -25,6 +25,13 @@ export interface TrainSegmentState {
   setSegment: (next: TrainSegment) => void;
   setPendingCreate: (next: boolean) => void;
   clearPendingCreate: () => void;
+  /**
+   * Return the slice to its signed-out defaults and clear the persisted key.
+   * Called from `useAuth.signOut()` so the Train segment + the one-shot
+   * `pendingCreate` flag can't bleed into the next account on this device
+   * (the KEY is device-global, not user-scoped). Mirrors `useUserMode.reset`.
+   */
+  reset: () => void;
 }
 
 const KEY = "persistence.train.segment";
@@ -48,6 +55,13 @@ export const useTrainSegment = create<TrainSegmentState>((set) => ({
   },
   setPendingCreate: (next) => set({ pendingCreate: next }),
   clearPendingCreate: () => set({ pendingCreate: false }),
+  reset: () => {
+    // Back to signed-out defaults + drop the persisted key. `hydrated: true`
+    // so the next account's module-load hydration (if it re-runs) doesn't
+    // resurrect the prior segment. Disk clear is best-effort (fire-and-forget).
+    set({ segment: "Workouts", pendingCreate: false, hydrated: true });
+    AsyncStorage.removeItem(KEY).catch(() => undefined);
+  },
 }));
 
 // Hydrate the persisted segment value on first import — but only if no

@@ -14,13 +14,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const mockGetItem = AsyncStorage.getItem as jest.Mock;
 const mockSetItem = AsyncStorage.setItem as jest.Mock;
+const mockRemoveItem = AsyncStorage.removeItem as jest.Mock;
 
 const KEY = "persistence.train.segment";
 
 beforeEach(() => {
   mockGetItem.mockReset();
   mockSetItem.mockReset();
+  mockRemoveItem.mockReset();
   mockSetItem.mockResolvedValue(undefined);
+  mockRemoveItem.mockResolvedValue(undefined);
 });
 
 /**
@@ -135,5 +138,30 @@ describe("useTrainSegment", () => {
 
     expect(useTrainSegment.getState().hydrated).toBe(true);
     expect(useTrainSegment.getState().segment).toBe("Workouts");
+  });
+
+  it("reset() clears segment + pendingCreate + drops the persisted key", async () => {
+    mockGetItem.mockResolvedValue(null);
+    const { useTrainSegment } = await loadFresh();
+    useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+
+    useTrainSegment.getState().reset();
+
+    const s = useTrainSegment.getState();
+    expect(s.segment).toBe("Workouts");
+    expect(s.pendingCreate).toBe(false);
+    expect(mockRemoveItem).toHaveBeenCalledWith(KEY);
+  });
+
+  it("reset() swallows a failed key removal (best-effort persist)", async () => {
+    mockGetItem.mockResolvedValue(null);
+    const { useTrainSegment } = await loadFresh();
+    mockRemoveItem.mockRejectedValueOnce(new Error("disk gone"));
+    useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+
+    expect(() => useTrainSegment.getState().reset()).not.toThrow();
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    // Let the rejected removeItem promise settle so the .catch runs.
+    await Promise.resolve();
   });
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useAdapters } from "./useAdapters";
 
 export type AuthState = {
@@ -144,6 +145,10 @@ export function useAuth(): AuthState {
     // this device (PR #93 review). In-memory reset is synchronous; the
     // disk clear inside reset() is best-effort.
     useUserMode.getState().reset();
+    // Same device-global-key reasoning for the Train hub segment + its
+    // one-shot pendingCreate flag — clear both so A's last segment (and any
+    // pending create-exercise redirect) don't surface for account B.
+    useTrainSegment.getState().reset();
   }, [auth, storage]);
 
   const resetPassword = useCallback(

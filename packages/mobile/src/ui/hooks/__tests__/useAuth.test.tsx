@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
 import { useUserMode } from "@/state/user-mode";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -116,6 +117,7 @@ describe("useAuth", () => {
         isTrainerEligible: true,
         isEligibilityKnown: true,
       });
+      useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
     });
 
     await act(async () => {
@@ -128,6 +130,9 @@ describe("useAuth", () => {
     expect(s.mode).toBe("athlete");
     expect(s.isTrainerEligible).toBe(false);
     expect(s.isEligibilityKnown).toBe(false);
+    // Same for the Train segment + the one-shot pendingCreate flag.
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 
   it("throws and sets error when sign-in fails", async () => {
