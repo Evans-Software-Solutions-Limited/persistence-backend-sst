@@ -72,3 +72,25 @@
   redirect steps here.
 - ProfileDrawer body content (identity / subscription / preferences) — owned
   by `08-profile-settings`; this gate only checks the drawer opens/closes.
+
+## Known transitional issues (top safe-area inset)
+
+Setting `headerShown: false` in `(tabs)/_layout.tsx` (Phase 14.4 — the Option 3
+design uses the design-system `<HeaderBar>`, not Expo's native header) removed
+the native header bar that previously supplied the **top** safe-area spacing.
+Screen content now starts under the status bar / notch until each screen reads
+`useSafeAreaInsets().top` itself. STORY-008 scopes only the **bottom** inset
+(tab bar vs. home indicator) to this spec; the top inset is per-screen.
+
+Two cases, two owners:
+
+1. **Home / You** — `06-progress-goals` stubs today; `06` rebuilds them with
+   `<HeaderBar>` and will apply `insets.top` then. No action here.
+2. **Train hub header** — this is permanent `14-navigation` code, so nothing
+   downstream sweeps it up. The `<HeaderBar>` primitive (01-design-system)
+   currently uses a flat `paddingTop` and doesn't consume `insets.top`.
+   **Follow-up:** either have `<HeaderBar>` opt into the top inset (a small
+   `01-design-system` amendment — preferred, fixes every consumer at once) or
+   wrap the Train hub header in a `SafeAreaView`/`insets.top` padding. Deferred
+   by owner decision (2026-05-31, no released users); cosmetic only. Track as a
+   `14-navigation` / `01-design-system` follow-up before first release.
