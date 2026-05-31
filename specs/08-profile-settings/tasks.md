@@ -53,3 +53,48 @@
 ---
 
 _End of `08-profile-settings/tasks.md` · 2026-05-27 (rewritten from scratch)_
+
+---
+
+## Revised 2026-05-31: reconciled task plan
+
+> Pairs with `design.md § Revised 2026-05-31` + `requirements.md § Revised 2026-05-31`. The original 4 phases assumed aspirational hooks + no backend. The deltas below adjust scope; original phases still apply except where superseded. One consolidated PR off `main` (`feat/08-profile-settings`), fix-forward — per the `14-navigation` lesson that stacked per-phase PRs caused rebase churn with the bot reviewer.
+
+### Phase 08.0 — Spec-first commits (land FIRST)
+
+- [ ] **T-08.0.1** `01-design-system` `<BottomSheet>` gains `tall` (88%) height. (design.md + tasks.md T-1.3.12 amended; primitive code + `resolveSnap` + test.)
+- [ ] **T-08.0.2** This spec triplet's `Revised 2026-05-31` amendments committed (this file + design.md + requirements.md).
+
+### Phase 08.B — DOB backend slice (STORY-010; backend-first, gated)
+
+- [ ] **T-08.B.1** Migration: `profiles.date_of_birth DATE NULL`.
+- [ ] **T-08.B.2** Extend `GET /profile/page` aggregation + `PATCH /profile` body to read/write `dateOfBirth`; surface on the `ProfilePageProfile` wire shape.
+- [ ] **T-08.B.3** Mobile domain: add `dateOfBirth: string | null` to `ProfilePageProfile` + `ApiProfile`.
+- [ ] **T-08.B.4** `computeAge(dateOfBirth, now?)` pure util in `shared/utils` + `initialsOf(fullName)` util, both unit-tested (leap-year + birthday boundary; null cases).
+- [ ] _If the backend slice can't land in the 08 window, ship the drawer with `name · weight` (age omitted) and complete this phase as an immediate follow-up — `profileDetailsSub` handles both states with no drawer change._
+
+### Phase 08.1 delta (presenter + container)
+
+- Build the container against the **real** hooks per `design.md § G` (`useProfilePage`, `useMySubscription`, `useHealthData`, `useAuth().signOut`), NOT the aspirational `useGet*` names.
+- Import `<DrawerRow>` from `@/ui/components/composite` (not `foundation`).
+- Drawer passes `height="tall"`.
+- Add `health` + `notifications` copy keys to `app/(app)/coming-soon.tsx`'s feature map.
+
+### Phase 08.2 delta (mode-switch + sign-out)
+
+- `ModeSwitchCardPresenter` stays pure; container wires `onSwitch → useModeSwitch().switchMode`. Do NOT re-implement close→switch→remap (the hook owns it; T-08.2.3 is satisfied by delegating).
+- Sign-out confirm calls `useAuth().signOut` directly (no `useSignOut` mutation hook exists).
+
+### Phase 08.3 delta (sub-page refreshes)
+
+- Only the six shipped routes (`edit`, `privacy`, `privacy-settings`, `help`, `contact`, `terms`) are refreshed — do NOT create `notifications`/`health` sub-routes (owned by 09 / 07).
+- `EditProfilePresenter` gains the DOB picker (T-08.B + STORY-010 AC 10.3).
+- Apply `insets.top` to each sub-page `<HeaderBar>` (SMOKE_TEST top-inset known-issue); prefer the `01-design-system` `<HeaderBar>` inset amendment if it lands.
+
+### Quality gate (per `14` precedent — sandbox PTY note)
+
+Per-package, not turbo: `npx tsc --noEmit && npx expo lint && npx jest --coverage` (run in `packages/mobile`). 90% coverage on changed files. New persisted state (if any) wires a `reset()` into `useAuth.signOut()` (cross-account bleed precedent). Commit via `git commit -F <file>`. Tab/index navigation uses `/(app)/(tabs)` (not `/index`).
+
+---
+
+_Revised 2026-05-31 — reconciled against shipped `main`; adds DOB backend phase + hook/route corrections._

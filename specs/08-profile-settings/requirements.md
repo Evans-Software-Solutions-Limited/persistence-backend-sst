@@ -163,3 +163,47 @@ None. All 10 decisions locked.
 ---
 
 _End of `08-profile-settings/requirements.md` · 2026-05-27 (rewritten from scratch)_
+
+---
+
+## Revised 2026-05-31: implementation reconciliation
+
+> Pairs with `design.md § Revised 2026-05-31`. Locked decisions above are preserved as the record; the deltas below supersede them where noted. Authored as the spec-first commit on `feat/08-profile-settings`.
+
+### Locked-decision deltas
+
+| #   | Original                              | Revised 2026-05-31                                                                                                                                                                                                                              |
+| --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2   | Drawer max height 88% (`peek` 60% reserved) | **Satisfiable now.** `<BottomSheet>` shipped with `peek` (60%) / `default` (78%) only. `01-design-system § Revised 2026-05-31` adds a `tall` (88%) height; the drawer uses `height="tall"`. 88% intent preserved.                          |
+| —   | **Backend impact: None** (mobile-only) | **UNLOCKED for the DOB addition only** (owner decision 2026-05-31). To render `age` in STORY-004 AC 4.1, `date_of_birth` is added to the `profiles` table + `/profile/page` + `PATCH /profile`. `08` is no longer strictly mobile-only; this shifts it within the ROADMAP fan-out. All other backend surfaces remain unchanged. |
+| 9   | Achievements count from `useGetAchievements()` | Hook doesn't exist yet (`06`, not shipped). Row renders **without** a live count/pill until `06` lands; `// TODO(06-progress-goals)`.                                                                                                  |
+| 10  | Health row reads `useGetHealthConnections()` | No such hook. Status dot derives from `useHealthData()` (`isAvailable` + granted permission). Row routes to `coming-soon?feature=health` until `07` ships a sub-route.                                                                |
+
+### AC deltas
+
+- **STORY-004 AC 4.1 (Profile details sub)** — was "{name} · {age} · {weight}". `age` is **derived from a new `dateOfBirth`** field (store DOB, compute age; never persist age). Renders `name · age · weight` once DOB is set, gracefully `name · weight` until then. See `design.md § C`.
+- **STORY-004 AC 4.1 (Achievements row)** — pushes to `/(app)/achievements` (06 creates the route); trailing `<Pill>` + "N of M" sub are **omitted until `06` ships** the achievements hook.
+- **STORY-004 AC 4.1 (Health row)** — pushes to `coming-soon?feature=health` (not `/(app)/profile/health`, which doesn't exist).
+- **STORY-005 AC 5.2 (Subscription card)** — pushes to `coming-soon?feature=subscription` (the `subscription-management` route was never created; this is the existing V2 pattern).
+- **STORY-006 (Notifications row)** — pushes to `coming-soon?feature=notifications` until `09` ships.
+- **STORY-003 (Mode-switch CTA)** — the close→switch→tab-remap sequence is owned by the shipped `useModeSwitch()` hook (`14-navigation`); the card calls it rather than re-implementing close+switch. AC 3.5 satisfied via that hook.
+
+### New requirement
+
+### STORY-010: As a user, I want my age shown in my profile, so the drawer's profile-details line is complete
+
+**Acceptance Criteria:**
+
+- 10.1 [ ] `date_of_birth` (nullable DATE) is added to the `profiles` table and surfaced as `dateOfBirth: string | null` (ISO date) on the `/profile/page` payload + accepted by `PATCH /profile`.
+- 10.2 [ ] A pure `computeAge(dateOfBirth, now?)` util returns whole years (null when DOB unset); unit-tested for leap-year + pre/post-birthday boundaries.
+- 10.3 [ ] `EditProfilePresenter` (08.3) gains a DOB picker; saving writes `dateOfBirth` via `api.updateProfile`.
+- 10.4 [ ] The drawer's Profile-details sub renders the derived age when DOB is set, and omits it gracefully when null.
+- 10.5 [ ] Age is never stored — only DOB is persisted; age is always derived at render.
+
+### Dependency-table delta
+
+- **Depends on (new):** the core/profile backend service — `date_of_birth` column + `/profile/page` + `PATCH /profile` extension (STORY-010). This is the single backend dependency that unlocks `08` from being purely mobile-only.
+
+---
+
+_Revised 2026-05-31 — reconciled against shipped `main` (#83 + #93); DOB backend addition unlocked by owner decision._
