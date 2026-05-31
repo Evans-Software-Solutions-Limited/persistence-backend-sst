@@ -1,73 +1,76 @@
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { PRCard } from "../PRCard";
 
-const ACHIEVED = new Date("2026-05-20T10:00:00Z");
-
 describe("PRCard", () => {
-  it("renders exercise name + new value", () => {
+  it("renders the NEW PR badge, lift name, value + unit", () => {
     const { getByText } = renderWithTheme(
       <PRCard
         exerciseName="Bench Press"
-        newValue="120 KG × 5"
-        achievedAt={ACHIEVED}
+        value="85"
+        unit="kg"
+        date="2 days ago"
       />,
     );
+    expect(getByText("NEW PR")).toBeTruthy();
     expect(getByText("Bench Press")).toBeTruthy();
-    expect(getByText("120 KG × 5")).toBeTruthy();
+    expect(getByText("85")).toBeTruthy();
+    expect(getByText("kg")).toBeTruthy();
   });
 
-  it("renders the previous value struck through", () => {
+  it("renders a signed delta when supplied", () => {
     const { getByText } = renderWithTheme(
       <PRCard
         exerciseName="Squat"
-        newValue="140 KG × 3"
-        previousValue="130 KG × 3"
-        achievedAt={ACHIEVED}
+        value="120"
+        unit="kg"
+        delta="+2.5"
+        date="5 days ago"
       />,
     );
-    const prev = getByText("130 KG × 3");
-    const flat = Array.isArray(prev.props.style)
-      ? Object.assign({}, ...prev.props.style)
-      : prev.props.style;
-    expect(flat.textDecorationLine).toBe("line-through");
+    expect(getByText("+2.5")).toBeTruthy();
   });
 
-  it("renders a delta with a ▲ prefix", () => {
-    const { getByText } = renderWithTheme(
-      <PRCard
-        exerciseName="Deadlift"
-        newValue="200 KG"
-        delta={{ value: 10, unit: "kg" }}
-        achievedAt={ACHIEVED}
-      />,
+  it("omits the delta when not supplied", () => {
+    const { queryByText } = renderWithTheme(
+      <PRCard exerciseName="Row" value="80" unit="kg" date="1 week ago" />,
     );
-    expect(getByText("▲ 10kg")).toBeTruthy();
+    // no delta node — only value/unit render in the value row
+    expect(queryByText(/^\+/)).toBeNull();
   });
 
-  it("renders the achieved date (en-GB short)", () => {
+  it("renders the relative date string", () => {
     const { getByText } = renderWithTheme(
-      <PRCard exerciseName="Row" newValue="80 KG" achievedAt={ACHIEVED} />,
+      <PRCard exerciseName="Row" value="80" unit="kg" date="1 week ago" />,
     );
-    expect(getByText("20 May")).toBeTruthy();
+    expect(getByText("1 week ago")).toBeTruthy();
   });
 
-  it("renders skeleton blocks when loading", () => {
+  it("accepts a numeric value", () => {
+    const { getByText } = renderWithTheme(
+      <PRCard exerciseName="OHP" value={55} unit="kg" date="2w" />,
+    );
+    expect(getByText("55")).toBeTruthy();
+  });
+
+  it("renders skeleton blocks when loading (no content)", () => {
     const { getByTestId, queryByText } = renderWithTheme(
       <PRCard
         exerciseName="Bench Press"
-        newValue="120 KG × 5"
-        achievedAt={ACHIEVED}
+        value="85"
+        unit="kg"
+        date="2 days ago"
         loading
         testID="pr"
       />,
     );
     expect(getByTestId("pr-skeleton")).toBeTruthy();
     expect(queryByText("Bench Press")).toBeNull();
+    expect(queryByText("NEW PR")).toBeNull();
   });
 
   it("renders a loading card without a testID", () => {
     const { queryByTestId, queryByText } = renderWithTheme(
-      <PRCard exerciseName="X" newValue="1" achievedAt={ACHIEVED} loading />,
+      <PRCard exerciseName="X" value="1" unit="kg" date="now" loading />,
     );
     expect(queryByText("X")).toBeNull();
     expect(queryByTestId("pr-skeleton")).toBeNull();
@@ -77,8 +80,9 @@ describe("PRCard", () => {
     const { getByTestId } = renderWithTheme(
       <PRCard
         exerciseName="Bench Press"
-        newValue="120 KG × 5"
-        achievedAt={ACHIEVED}
+        value="85"
+        unit="kg"
+        date="2 days ago"
         testID="pr"
       />,
     );

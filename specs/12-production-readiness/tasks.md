@@ -11,6 +11,7 @@
 - [ ] **T-12.1.3** Delete `homeLegacyTheme.ts`, `workoutsLegacyTheme.ts`, `subscriptionLegacyTheme.ts`, `profileLegacyTheme.ts`.
 - [ ] **T-12.1.4** Remove `*LegacyTheme` allow-list entry from the `no-raw-hex-colors` ESLint rule.
 - [ ] **T-12.1.5** Verify `bun run typecheck` passes. Screenshots before/after per touched screen.
+- [ ] **T-12.1.6** Retire the `01-design-system` dev-only inventory routes once they've served their purpose: delete `app/(dev)/primitives/*`, `app/(dev)/fonts.tsx`, and `app/(dev)/_layout.tsx` (the whole `(dev)` group if nothing else lives there). They are `__DEV__`-gated so they never shipped in a production binary, but the source should be removed at retirement so the route tree + component inventory don't drift from reality. Verify `bun run typecheck` + a dev-build boot still pass after removal.
 
 ## Phase 12.2 — Reduced-motion contract (1 PR)
 

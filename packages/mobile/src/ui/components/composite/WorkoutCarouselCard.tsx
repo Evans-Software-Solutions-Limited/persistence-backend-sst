@@ -3,7 +3,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Pressable } from "react-native";
 
 import { Pill } from "../foundation/Pill";
-import { IconPlay, iconDefaults } from "../icons";
+import { NEUTRAL_HEX } from "../foundation/tones";
+import { IconPlay, IconTimer } from "../icons";
 import { Skeleton } from "../Skeleton";
 
 /**
@@ -22,7 +23,8 @@ export type WorkoutCarouselCardProps = {
   mins: number;
   sub: string;
   chips: string[];
-  /** Promoted first-of-list variant: cyan gradient + primary-dim border. */
+  /** Promoted first-of-list variant: $primaryDim border emphasis. (The cyan
+   * gradient tint renders on every tile — design.md 2026-05-31 override.) */
   primary?: boolean;
   onPress?: () => void;
   loading?: boolean;
@@ -56,18 +58,34 @@ export function WorkoutCarouselCard({
       borderWidth={1}
       borderColor={borderColor}
       padding={16}
-      overflow="hidden"
-      backgroundColor={primary ? "transparent" : "$surface2"}
+      backgroundColor="$surface2"
       minHeight={44}
     >
-      {primary ? (
-        <LinearGradient
-          colors={["rgba(34,211,238,0.08)", "#1A1D29"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-        />
-      ) : null}
+      {/* Faint cyan tint over the solid surface-2 base. The prototype's
+          `linear-gradient(135deg, rgba(34,211,238,0.08), surface-2 60%)` is an
+          8% cyan wash fading into the card colour — translated as cyan →
+          TRANSPARENT (same hue fading to nothing) so the blend never passes
+          through a muddy mid-band the way a direct cyan→surface-2 lerp does.
+          Product override (design.md 2026-05-31): the gradient renders on
+          EVERY tile, not just the promoted one — `primary` now only drives the
+          border emphasis. The gradient carries its OWN borderRadius (rather
+          than the card using overflow:hidden to clip it) so the parent doesn't
+          clip the play button's glow (iOS clips child shadows under
+          overflow:hidden). */}
+      <LinearGradient
+        colors={["rgba(34,211,238,0.08)", "rgba(34,211,238,0)"]}
+        locations={[0, 0.6]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 16,
+        }}
+      />
 
       {loading ? (
         <View gap={10}>
@@ -107,13 +125,24 @@ export function WorkoutCarouselCard({
               alignItems="center"
               justifyContent="center"
               style={{
-                shadowColor: "rgba(34,211,238,0.22)",
-                shadowOpacity: 1,
-                shadowRadius: 16,
+                // Prototype: `box-shadow: 0 0 16px var(--primary-glow)`.
+                // iOS renders shadows far denser than a CSS blur (the blur
+                // disperses colour; iOS fills the silhouette then blurs), so a
+                // literal radius-16 @ 0.22 reads as a harsh neon ring on a 34pt
+                // disc. Translated to a softer equivalent: solid cyan, low
+                // opacity, ~half the radius — a gentle halo, not a beacon.
+                shadowColor: "#22D3EE",
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
                 shadowOffset: { width: 0, height: 0 },
               }}
             >
-              <IconPlay {...iconDefaults({ size: 14 })} color="#0A0B12" />
+              <IconPlay
+                size={14}
+                color="#0A0B12"
+                fill="#0A0B12"
+                strokeWidth={1.75}
+              />
             </View>
           </View>
 
@@ -128,9 +157,34 @@ export function WorkoutCarouselCard({
           </Text>
 
           <View flexDirection="row" alignItems="center" gap={6} flexWrap="wrap">
-            <Pill tone="neutral" size="xs">
-              {`${mins}M`}
-            </Pill>
+            {/* Timer pill — icon + label as flex siblings (the Pill primitive
+                wraps children in a single <Text>, which can't host an SVG
+                glyph), so the timer chip is built inline to match the
+                prototype's `<IconTimer/> {mins}M` row. */}
+            <View
+              flexDirection="row"
+              alignItems="center"
+              gap={4}
+              alignSelf="flex-start"
+              borderRadius={9999}
+              paddingVertical={2}
+              paddingHorizontal={6}
+              backgroundColor="$surface3"
+              borderColor="$border2"
+              borderWidth={1}
+            >
+              <IconTimer size={11} strokeWidth={2} color={NEUTRAL_HEX.text2} />
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={9.5}
+                letterSpacing={0.95}
+                textTransform="uppercase"
+                color="$text2"
+              >
+                {`${mins}M`}
+              </Text>
+            </View>
             {chips.map((c) => (
               <Pill key={c} tone="neutral" size="xs">
                 {c}

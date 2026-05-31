@@ -154,21 +154,33 @@ export default function CompositesDevRoute() {
 
           <View gap="$sm">
             <Text variant="caption" muted>
-              PR CARD (gold-tinted, medal)
+              PR CARD (180pt gold carousel tile, medal watermark)
             </Text>
-            <PRCard
-              exerciseName="Bench Press"
-              newValue="120 KG × 5"
-              previousValue="115 KG × 5"
-              delta={{ value: 5, unit: "kg" }}
-              achievedAt={new Date()}
-            />
-            <PRCard
-              exerciseName="Deadlift"
-              newValue="200 KG × 1"
-              achievedAt={new Date()}
-              loading
-            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View flexDirection="row" gap="$sm">
+                <PRCard
+                  exerciseName="Bench Press"
+                  value="85"
+                  unit="kg"
+                  delta="+5"
+                  date="2 days ago"
+                />
+                <PRCard
+                  exerciseName="Squat"
+                  value="120"
+                  unit="kg"
+                  delta="+2.5"
+                  date="5 days ago"
+                />
+                <PRCard
+                  exerciseName="Deadlift"
+                  value="200"
+                  unit="kg"
+                  date="1 week ago"
+                  loading
+                />
+              </View>
+            </ScrollView>
           </View>
 
           <View gap="$sm">

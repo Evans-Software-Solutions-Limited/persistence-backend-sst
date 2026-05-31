@@ -68,6 +68,12 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inAppGroup = segments[0] === "(app)";
+    // TEMP(01-design-system): the `(dev)` route group hosts the
+    // /dev/primitives design-system inventory. AuthGate would otherwise bounce
+    // a signed-in user straight back to `(app)` the moment they open it (the
+    // "flash back to Home" symptom). Treat it as an allowed group so the
+    // inventory is reachable. DELETE alongside the Home-screen button.
+    const inDevGroup = segments[0] === "(dev)";
     // M10: subscription-selection + success live under (auth) because
     // they're rendered post-sign-up before the user has reached the
     // app. AuthGate must NOT bounce signed-in users out of those
@@ -78,7 +84,7 @@ function AuthGate() {
       inAuthGroup &&
       (segmentName === "subscription-selection" || segmentName === "success");
 
-    if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
+    if (session && !inAppGroup && !inPostAuthSubscriptionFlow && !inDevGroup) {
       // Signed in but not in app and not in the post-sign-up flow —
       // go to app. `/(app)/(tabs)` resolves to the tab navigator's
       // first tab (home).

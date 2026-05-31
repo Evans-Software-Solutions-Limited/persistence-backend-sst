@@ -67,15 +67,21 @@ export function Card({
       ? toneTokens(glow).dim
       : "$border";
 
-  // RN can't render the handoff's layered box-shadow; approximate the glow
-  // with a coloured shadow (iOS) + elevation (Android).
+  // Shadow — matches the prototype's Card exactly (ui.jsx):
+  //   glow:    `0 0 0 1px ${glow}-dim, 0 8px 24px ${glow}-glow`
+  //   no glow: `--shadow-card` (0 8px 24px rgba(0,0,0,0.4) + inset highlight)
+  // Both are the SAME `0 8px 24px` directional drop — only the colour differs.
+  // The `0 0 0 1px ${glow}-dim` ring is the border (set above via `glow`'s dim
+  // tone), so here we only emit the coloured drop. shadowColor carries the
+  // glow token's native alpha (gold 0.20 / primary·trainer 0.22) — a subtle
+  // lift, NOT the radial neon halo a previous build shipped.
   const glowStyle: ViewStyle = glow
     ? {
-        shadowColor: toneShadowColor(glow),
-        shadowOpacity: 0.35,
+        shadowColor: GLOW_SHADOW[glow],
+        shadowOpacity: 1,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 8 },
-        elevation: 8,
+        elevation: 6,
       }
     : {
         shadowColor: "rgba(0,0,0,0.4)",
@@ -127,14 +133,11 @@ export function Card({
   );
 }
 
-/** Resolve a glow tone to a concrete rgba shadow colour (RN shadowColor needs a real colour, not a token). */
-function toneShadowColor(glow: CardGlow): string {
-  switch (glow) {
-    case "primary":
-      return "rgba(34,211,238,0.35)";
-    case "gold":
-      return "rgba(245,197,24,0.30)";
-    case "trainer":
-      return "rgba(167,139,250,0.30)";
-  }
-}
+/** Glow tone → the prototype's `--${glow}-glow` rgba (alpha baked in: gold
+ * 0.20, primary/trainer 0.22). Used directly as the coloured drop-shadow
+ * colour with shadowOpacity 1, so the rendered alpha matches the prototype. */
+const GLOW_SHADOW: Record<CardGlow, string> = {
+  primary: "rgba(34,211,238,0.22)",
+  gold: "rgba(245,197,24,0.20)",
+  trainer: "rgba(167,139,250,0.22)",
+};

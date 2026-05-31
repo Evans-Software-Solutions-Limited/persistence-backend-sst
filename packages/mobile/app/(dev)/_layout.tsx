@@ -1,14 +1,14 @@
-import { Redirect, Stack } from "expo-router";
+import { Stack } from "expo-router";
 
 /**
  * Dev-only route group. Hosts the `/dev/primitives/*` + `/dev/fonts` smoke
  * routes (01-design-system STORY-002 AC 2.5, STORY-003 AC 3.9, STORY-009).
- * Gated behind `__DEV__` so the inventory routes never ship in a production
- * build — a release build redirects straight back to the app root.
+ *
+ * TEMP(01-design-system): the `__DEV__` redirect gate is removed for the
+ * on-device design-system review so the inventory is reachable from any build.
+ * RESTORE the gate (or delete the whole `(dev)` group per
+ * 12-production-readiness T-12.1.6) before merging.
  */
 export default function DevLayout() {
-  if (!__DEV__) {
-    return <Redirect href="/" />;
-  }
   return <Stack screenOptions={{ headerShown: true }} />;
 }

@@ -429,6 +429,30 @@ type PRCardProps = {
 
 `<Card>` with `$goldDim` border + gold glow. `<IconMedal>` 18pt `$gold` top-right. Exercise name `$display.md`, `newValue` `$mono` 18pt, `previousValue` strikethrough `$text3` 12pt, delta `$mono` 11pt with `▲` prefix in `$success`.
 
+> **Revised 2026-05-31 (PRCard prototype correction).** The contract above was synthesised from the design-system standalone's 220pt gold "stat card" demo, which is NOT the PR carousel tile. The PR card in the live prototype (`home.jsx › PRCarousel`, pinned in `docs/Persistence - Card Components (Corrected).html`) is a **180pt fixed-width horizontal-scroll carousel tile**, not a full-width glow card. Corrected contract — build to THIS:
+>
+> ```ts
+> type PRCardProps = {
+>   exerciseName: string; // lift name
+>   value: string | number; // weight, e.g. "85"
+>   unit: string; // e.g. "kg"
+>   delta?: string; // pre-formatted signed delta, e.g. "+5"
+>   date: string; // pre-formatted relative date, e.g. "2 days ago"
+>   loading?: boolean;
+>   testID?: string;
+> };
+> ```
+>
+> - **Tile:** fixed width **180**, radius **16**, pad **14**, `position:relative; overflow:hidden`. NOT pressable (carousel display tile).
+> - **Fill:** `linear-gradient(135deg, $goldDim 0%, $surface2 80%)` (LinearGradient, locations [0, 0.8]). Flat **1px `$goldDim`** border. **No glow, no shadow** — the gradient is the treatment.
+> - **Medal watermark:** `<IconMedal size={70}>` concrete gold (`#F5C518`), absolute `top:-10 right:-10`, `opacity:0.18`, behind content.
+> - **Badge:** `<Pill tone="gold" size="xs">NEW PR</Pill>` at the top.
+> - **Lift:** `$display` 600 / 18pt `$text`, `marginTop:10`.
+> - **Value row** (baseline, gap 4): value `$mono` 500 / 20pt `$gold`; unit `$mono` 12pt `$text3`; delta `$mono` 11pt `$success` `marginLeft:4`.
+> - **Date:** `$body` 11pt `$text3`, `marginTop:4`.
+>
+> Splitting `value`/`unit` (vs the old combined `newValue`) is required to colour the weight gold and the unit `$text3` on a shared baseline. `previousValue`/strikethrough and the `▲`-prefixed delta object are dropped — the prototype shows a plain signed delta string. The Session Summary PR row and the Progress `PRHistory` list-row are a DIFFERENT shape (full-width medal-tile rows) owned by their screens, not this carousel tile.
+
 ### 6. `<SummaryChip>` — `extra.jsx:243`
 
 ```ts
@@ -482,6 +506,10 @@ type WorkoutCarouselCardProps = {
 ```
 
 Fixed-width 260pt, 16pt padding, `$xl` radius (16). Default bg `$surface2`. `primary: true`: bg `linear-gradient(135deg, $primaryDim 0%, $surface2 60%)`, border `$primaryDim`. Header row: title `$display.h2` left + 34pt round play CTA (`$primary` bg, `$bg` fg, glow) right. Body: sub `$text2` 12.5pt min-height 36pt. Footer: timer pill + chip pills (`$xs` size, `neutral` tone).
+
+> **Revised 2026-05-31 (timer-pill icon).** Per the prototype (`home.jsx › WorkoutCard`, pinned in `docs/Persistence - Card Components (Corrected).html`) the first footer pill is `<Pill tone="neutral" size="xs"><IconTimer size={11} strokeWidth={2}/> {mins}M</Pill>` — i.e. it leads with an `IconTimer` glyph (concrete `$text2` hex, not a token, since the icon is an SVG consumer), then the `{mins}M` label. Our build shipped the timer pill text-only; add the icon. Everything else (260pt, gradient on `primary` only, 34pt glowing play disc, sub `minHeight:36`) already matches.
+
+> **Revised 2026-05-31 (gradient on all tiles — product override).** Product decision (Bradley, on-device review) **deviates from the prototype**: the cyan `$primaryDim → transparent` gradient tint now renders on **every** WorkoutCarouselCard, not just the promoted first tile. The prototype + the corrected card sheet reserve the gradient for the first/active tile only (flat `$surface2` for the rest) — this override applies it universally because it reads better in the app. The `primary` prop is retained but now only drives the **border** emphasis (`$primaryDim` border on the promoted tile, `$border` on the rest); the gradient is unconditional. The play-disc glow was also softened from the literal `0 0 16px @0.22` to `radius 8 @ 0.20` because iOS renders shadows denser than a CSS blur (a literal translation read as a neon ring on the 34pt disc).
 
 ### 9. `<HabitTile>` — `home.jsx:227 (inside HabitsGrid)`
 
