@@ -50,7 +50,10 @@ export function SignOutConfirmDialog({
         testID={`${testID}-backdrop`}
       >
         {/* Inner card swallows the press so a tap inside doesn't cancel. */}
-        <Pressable onPress={() => undefined} style={{ width: "100%", maxWidth: 400 }}>
+        <Pressable
+          onPress={() => undefined}
+          style={{ width: "100%", maxWidth: 400 }}
+        >
           <View
             backgroundColor="$surface"
             borderColor="$border2"

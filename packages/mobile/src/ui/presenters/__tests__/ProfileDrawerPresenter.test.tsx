@@ -46,7 +46,9 @@ const baseProps: ProfileDrawerPresenterProps = {
 };
 
 function renderDrawer(overrides: Partial<ProfileDrawerPresenterProps> = {}) {
-  return renderWithTheme(<ProfileDrawerPresenter {...baseProps} {...overrides} />);
+  return renderWithTheme(
+    <ProfileDrawerPresenter {...baseProps} {...overrides} />,
+  );
 }
 
 describe("tierBadge / tierPillTone", () => {
@@ -147,9 +149,7 @@ describe("ProfileDrawerPresenter", () => {
     const { queryByTestId, rerender } = renderDrawer({ healthConnected: true });
     expect(queryByTestId("health-connected-dot")).toBeTruthy();
 
-    rerender(
-      <ProfileDrawerPresenter {...baseProps} healthConnected={false} />,
-    );
+    rerender(<ProfileDrawerPresenter {...baseProps} healthConnected={false} />);
     expect(queryByTestId("health-connected-dot")).toBeNull();
   });
 

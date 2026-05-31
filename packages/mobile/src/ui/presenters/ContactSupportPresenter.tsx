@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";

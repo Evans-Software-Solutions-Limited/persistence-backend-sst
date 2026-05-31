@@ -101,14 +101,7 @@ export function EditProfileContainer() {
       dateOfBirth !== initial.dateOfBirth ||
       isProfilePublic !== initial.isProfilePublic
     );
-  }, [
-    initial,
-    hydrated,
-    fullName,
-    fitnessLevel,
-    dateOfBirth,
-    isProfilePublic,
-  ]);
+  }, [initial, hydrated, fullName, fitnessLevel, dateOfBirth, isProfilePublic]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;

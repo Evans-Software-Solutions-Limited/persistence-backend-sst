@@ -180,12 +180,7 @@ export function EditProfilePresenter({
               editable={!isSaving}
               testID="edit-profile-dob"
             />
-            <Text
-              fontFamily="$body"
-              fontSize={11}
-              color="$text3"
-              marginTop={4}
-            >
+            <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
               Used to show your age on your profile.
             </Text>
           </View>

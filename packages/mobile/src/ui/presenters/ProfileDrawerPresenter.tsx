@@ -155,7 +155,12 @@ export function ProfileDrawerPresenter({
   if (!profile) {
     return (
       <BottomSheet visible={visible} onClose={onClose} height="tall">
-        <View flexDirection="row" alignItems="center" gap={14} marginBottom={16}>
+        <View
+          flexDirection="row"
+          alignItems="center"
+          gap={14}
+          marginBottom={16}
+        >
           <Avatar initials="–" size={56} tone="primary" />
           <View flex={1}>
             <Text
@@ -361,12 +366,22 @@ export function ProfileDrawerPresenter({
           justifyContent: "center",
         })}
       >
-        <View flexDirection="row" alignItems="center" justifyContent="center" gap={8}>
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="center"
+          gap={8}
+        >
           <IconLogout
             {...iconDefaults({ size: 14 })}
             color={toneHex("error").base}
           />
-          <Text fontFamily="$display" fontWeight="600" fontSize={13} color="$error">
+          <Text
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={13}
+            color="$error"
+          >
             Sign out
           </Text>
         </View>

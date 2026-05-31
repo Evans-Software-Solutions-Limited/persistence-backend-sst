@@ -42,6 +42,8 @@ describe("computeAge", () => {
   });
 
   it("returns null for a future DOB", () => {
-    expect(computeAge("2030-01-01", new Date("2026-05-31T12:00:00Z"))).toBeNull();
+    expect(
+      computeAge("2030-01-01", new Date("2026-05-31T12:00:00Z")),
+    ).toBeNull();
   });
 });
