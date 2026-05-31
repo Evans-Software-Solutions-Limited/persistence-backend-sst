@@ -38,6 +38,14 @@ const SKIP_JSX_ATTRS = new Set([
 // codemod's CONCRETE_COLOUR_KEYS so the lint rule and codemod describe the same
 // world (PR #83 review): a hex in any of these positions is a concrete colour,
 // not a tokenisable Tamagui style prop.
+//
+// `backgroundColor` / `borderColor` are included here *as object keys* but NOT
+// in SKIP_JSX_ATTRS: as a JSX attribute they resolve a Tamagui token (so a raw
+// hex there is flagged), but as an object key (`style={{ backgroundColor:
+// "#fff" }}` — a plain RN/StyleSheet style object) RN can't tokenise them, so a
+// concrete hex is legal and must not be flagged (PR #83 Lead A). The codemod
+// mirrors this exactly: it rewrites the attribute form, skips the object-key
+// form.
 const TONE_MAP_KEYS = [
   "fg",
   "bg",
@@ -47,6 +55,8 @@ const TONE_MAP_KEYS = [
   "glow",
   "bright",
   "depth",
+  "backgroundColor",
+  "borderColor",
 ];
 const CONCRETE_COLOUR_KEYS = new Set([...SKIP_JSX_ATTRS, ...TONE_MAP_KEYS]);
 
@@ -55,6 +65,30 @@ function isSkippedJsxAttrName(name) {
   // `backgroundColor` / `borderColor` are NOT exempt — those are exactly where
   // a token belongs, so the rule must flag raw hex there.
   return SKIP_JSX_ATTRS.has(name);
+}
+
+/**
+ * True when `expr` flows `literal` *straight out* unchanged — directly, or
+ * only through expression wrappers (conditional / logical / sequence) that
+ * pass the value through without crossing JSX, a call, an object, or an array.
+ * Shared by the return-statement and arrow-concise-body skips so both describe
+ * the same "the literal is the resolved value" shape (PR #83 Leads 9 + C).
+ */
+function flowsStraightOut(expr, literal) {
+  return (
+    expr === literal ||
+    (expr &&
+      expr.type === "ConditionalExpression" &&
+      (flowsStraightOut(expr.consequent, literal) ||
+        flowsStraightOut(expr.alternate, literal))) ||
+    (expr &&
+      expr.type === "LogicalExpression" &&
+      (flowsStraightOut(expr.left, literal) ||
+        flowsStraightOut(expr.right, literal))) ||
+    (expr &&
+      expr.type === "SequenceExpression" &&
+      expr.expressions.some((e) => flowsStraightOut(e, literal)))
+  );
 }
 
 /** Walk ancestors to decide whether this literal is in a skipped position. */
@@ -93,19 +127,26 @@ function inSkippedPosition(node, ancestors) {
     // NOT exempt the literal — that's the standard React render shape and would
     // silently allow raw hex in `backgroundColor` / `borderColor` (PR #83
     // Lead 9). Mirrors the codemod's collectStraightReturnLiterals narrowing.
-    if (a.type === "ReturnStatement" && a.argument === child) {
-      const wrapsLiteral = (n) =>
-        n === node ||
-        (n &&
-          n.type === "ConditionalExpression" &&
-          (wrapsLiteral(n.consequent) || wrapsLiteral(n.alternate))) ||
-        (n &&
-          n.type === "LogicalExpression" &&
-          (wrapsLiteral(n.left) || wrapsLiteral(n.right))) ||
-        (n &&
-          n.type === "SequenceExpression" &&
-          n.expressions.some(wrapsLiteral));
-      if (wrapsLiteral(child)) return true;
+    if (
+      a.type === "ReturnStatement" &&
+      a.argument === child &&
+      flowsStraightOut(child, node)
+    ) {
+      return true;
+    }
+
+    // Arrow concise body (`const ink = () => "#0A0B12"`) — the expression twin
+    // of a block-body `return "#..."`, same colour-resolver shape but no
+    // ReturnStatement node. Apply the identical straight-out narrowing so the
+    // two are treated alike, while `() => <View backgroundColor="#hex" />` (the
+    // render shape) stays flagged because flowsStraightOut doesn't cross JSX
+    // (PR #83 Lead C). Mirrors the codemod's ArrowFunctionExpression pass.
+    if (
+      a.type === "ArrowFunctionExpression" &&
+      a.body === child &&
+      flowsStraightOut(child, node)
+    ) {
+      return true;
     }
 
     // { fg: "#...", bg: "#...", shadowColor: "#...", color: "#...", ... } —
@@ -121,7 +162,14 @@ function inSkippedPosition(node, ancestors) {
           : a.key.type === "Literal"
             ? a.key.value
             : null;
-      if (typeof keyName === "string" && CONCRETE_COLOUR_KEYS.has(keyName)) {
+      // Explicit concrete-colour keys, OR any `*Color`-suffixed key (e.g.
+      // `lightColor` / `activeColor` — a concrete-colour position the same way
+      // a `*Color` variable is). Mirrors the codemod's object-key skip so the
+      // two describe the same world (PR #83 Lead D).
+      if (
+        typeof keyName === "string" &&
+        (CONCRETE_COLOUR_KEYS.has(keyName) || /color$/i.test(keyName))
+      ) {
         return true;
       }
     }

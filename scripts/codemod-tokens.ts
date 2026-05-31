@@ -232,12 +232,37 @@ export function transformSource(source: string): TransformResult {
     if (!arg) return;
     collectStraightReturnLiterals(arg, skipNodes);
   });
+  // Arrow concise bodies (`const ink = () => "#0A0B12"`) are the expression
+  // twin of a block-body `return "#0A0B12"` — same concrete-colour-resolver
+  // shape, but with no ReturnStatement node, so the pass above misses them.
+  // Apply the identical straight-out narrowing: a concise body that *is* the
+  // colour string (or flows it straight out via conditional/logical/etc.) is
+  // skipped, while `() => <View backgroundColor="#hex" />` (the render shape)
+  // stays rewritable because collectStraightReturnLiterals doesn't cross JSX
+  // (PR #83 Lead C).
+  root.find(j.ArrowFunctionExpression).forEach((p) => {
+    const body = p.node.body;
+    // A BlockStatement body routes through the ReturnStatement pass already;
+    // only the concise-expression body needs handling here.
+    if (body && body.type !== "BlockStatement") {
+      collectStraightReturnLiterals(body, skipNodes);
+    }
+  });
   // Object-property colour keys that hold concrete colours for non-Tamagui
   // consumers. Kept in lockstep with the `no-raw-hex-colors` ESLint rule's
   // CONCRETE_COLOUR_KEYS so the codemod and lint rule describe the same world
   // (PR #83 review): the SKIP_JSX_ATTRS names (RN inline styles use them as
   // keys — e.g. `style={{ shadowColor: "#fff" }}`) PLUS the tone-map keys
-  // (fg/bg/ink/base/dim/glow/bright/depth, e.g. the TONE_HEX bridge map).
+  // (fg/bg/ink/base/dim/glow/bright/depth, e.g. the TONE_HEX bridge map) PLUS
+  // `backgroundColor` / `borderColor` *as object keys*.
+  //
+  // The last group is deliberately NOT in SKIP_JSX_ATTRS: as a JSX *attribute*
+  // (`<View backgroundColor="#fff" />`) those resolve a Tamagui token and must
+  // be rewritten, but as an object *key* (`style={{ backgroundColor: "#fff" }}`
+  // or any plain RN/StyleSheet style object) they're a concrete-colour position
+  // RN can't tokenise — rewriting them to `$primary` breaks the style at
+  // runtime (PR #83 Lead A). The JSX-attribute pass above keeps the prop form
+  // rewritable; only the object-key form is skipped here.
   const CONCRETE_COLOUR_KEYS = new Set([
     ...SKIP_JSX_ATTRS,
     "fg",
@@ -248,6 +273,8 @@ export function transformSource(source: string): TransformResult {
     "glow",
     "bright",
     "depth",
+    "backgroundColor",
+    "borderColor",
   ]);
   root.find(j.ObjectProperty).forEach((p) => {
     const key = p.node.key;
@@ -257,7 +284,16 @@ export function transformSource(source: string): TransformResult {
         : key.type === "StringLiteral"
           ? key.value
           : null;
-    if (typeof keyName === "string" && CONCRETE_COLOUR_KEYS.has(keyName)) {
+    // A `*Color`-suffixed object key (e.g. `{ lightColor: "#0C111A" }`,
+    // `{ activeColor: "#22D3EE" }`) is a concrete-colour position the same way
+    // a `*Color`-suffixed *variable* is — it feeds a non-Tamagui consumer
+    // (notification channel, icon `color`, RN style). The variable-declarator
+    // pass below already skips the `const xColor = "#..."` form; this matches
+    // it for the object-key form so the two are consistent (PR #83 Lead D).
+    const isConcreteKey =
+      typeof keyName === "string" &&
+      (CONCRETE_COLOUR_KEYS.has(keyName) || /color$/i.test(keyName));
+    if (isConcreteKey) {
       const value = p.node.value;
       if (value.type === "StringLiteral") skipNodes.add(value);
       j(p.get("value"))
@@ -311,13 +347,33 @@ const EXCLUDE_DIR_SEGMENTS = [
   // test assertions / props breaks the tests (revised 2026-05-29).
   `${path.sep}__tests__${path.sep}`,
   `${path.sep}node_modules${path.sep}`,
+  // Kept in lockstep with eslint.config.js's no-raw-hex-colors exemptions
+  // (PR #83 Lead B): the design-system primitives are the deliberate RN/SVG
+  // colour bridge — they hold concrete hex constants for contexts a Tamagui
+  // token can't reach (SVG stroke, LinearGradient stops, gorhom style props,
+  // RN shadowColor). The lint rule exempts these dirs; the codemod must not
+  // rewrite their concrete colours into unresolvable `$token` strings either.
+  `${path.sep}components${path.sep}foundation${path.sep}`,
+  `${path.sep}components${path.sep}composite${path.sep}`,
+];
+
+// Specific legacy-screen files the lint rule allow-lists (concrete RN-StyleSheet
+// / gradient hex owned by a downstream port spec). Mirrored here so an `--apply`
+// run can't rewrite them out from under that spec (PR #83 Lead B).
+const EXCLUDE_FILE_SUFFIXES = [
+  `${path.sep}components${path.sep}home${path.sep}WorkoutCard.tsx`,
+  `${path.sep}components${path.sep}subscription${path.sep}SubscriptionBadge.tsx`,
+  `${path.sep}components${path.sep}workouts${path.sep}WorkoutCard${path.sep}styles.ts`,
 ];
 
 export function isExcluded(filePath: string): boolean {
   const normalised = filePath.includes(path.sep)
     ? filePath
     : filePath.split("/").join(path.sep);
-  return EXCLUDE_DIR_SEGMENTS.some((seg) => normalised.includes(seg));
+  return (
+    EXCLUDE_DIR_SEGMENTS.some((seg) => normalised.includes(seg)) ||
+    EXCLUDE_FILE_SUFFIXES.some((suffix) => normalised.endsWith(suffix))
+  );
 }
 
 function isTarget(filePath: string): boolean {

@@ -25,6 +25,10 @@ ruleTester.run("no-raw-hex-colors", rule, {
     `const s = StyleSheet.create({ t: { color: "#fff" } });`,
     `function ink() { return "#0A0B12"; }`,
     `function pick(x) { return x ? "#0A0B12" : "#00D4FF"; }`,
+    // arrow concise-body colour resolver — twin of `return "#..."`, skipped
+    // the same way (PR #83 Lead C)
+    `const ink = () => "#0A0B12";`,
+    `const pick = (x) => (x ? "#0A0B12" : "#00D4FF");`,
     `const tones = { a: { fg: "#00D4FF", bg: "#0A0B12" } };`,
     // tone-map + RN-style concrete-colour object keys are skipped (lockstep
     // with the codemod's CONCRETE_COLOUR_KEYS — PR #83 Lead 7)
@@ -32,6 +36,14 @@ ruleTester.run("no-raw-hex-colors", rule, {
     `const s = { shadowColor: "#FFFFFF", tintColor: "#00D4FF" };`,
     `const textColor = "#FFFFFF";`,
     `const x = { shadowColor: "#000000" };`,
+    // backgroundColor / borderColor as object KEYS (RN style objects, not
+    // Tamagui props) are concrete-colour positions → skipped (PR #83 Lead A)
+    `const C = () => <View style={{ backgroundColor: "#00D4FF", borderColor: "#0A0B12" }} />;`,
+    `const styles = { card: { backgroundColor: "#00D4FF" } };`,
+    // *Color-suffixed object keys (lightColor / activeColor) → skipped, same as
+    // *Color variables (PR #83 Lead D)
+    `const ch = { lightColor: "#00D4FF" };`,
+    `const s2 = { activeColor: "#0A0B12" };`,
     // non-colour strings
     `const id = "#section-anchor";`,
   ],
@@ -58,6 +70,18 @@ ruleTester.run("no-raw-hex-colors", rule, {
     {
       code: `function C() { return (<View><Inner borderColor="#1A1D29" /></View>); }`,
       errors: [{ messageId: "rawHex" }],
+    },
+    // Arrow returning JSX is the render shape, NOT a colour resolver — the
+    // concise-body skip must not over-exempt it (PR #83 Lead C).
+    {
+      code: `const Card = () => <View backgroundColor="#0E7490" />;`,
+      errors: [{ messageId: "rawHex" }],
+    },
+    // backgroundColor as a JSX ATTRIBUTE still resolves a token → flagged, even
+    // though the object-KEY form is skipped (PR #83 Lead A).
+    {
+      code: `const C = () => <View backgroundColor="#0A0B12" borderColor="#22D3EE" />;`,
+      errors: [{ messageId: "rawHex" }, { messageId: "rawHex" }],
     },
   ],
 });

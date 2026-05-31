@@ -148,6 +148,42 @@ describe("transformSource — AST behaviour + edge cases", () => {
     expect(output).toContain('"$bg"');
   });
 
+  it("skips an arrow concise-body colour resolver (twin of return '#...' — PR #83 Lead C)", () => {
+    expect(transformSource(`const ink = () => "#00D4FF";`).replacements).toBe(
+      0,
+    );
+    // wrapped in a conditional that still flows straight out → skipped
+    expect(
+      transformSource(`const ink = (x) => (x ? "#0A0B12" : "#00D4FF");`)
+        .replacements,
+    ).toBe(0);
+  });
+
+  it("STILL rewrites hex in an arrow returning JSX (render shape, not a resolver — PR #83 Lead C)", () => {
+    const src = `const C = () => <View backgroundColor="#00D4FF" />;`;
+    expect(transformSource(src).replacements).toBe(1);
+    expect(transformSource(src).output).toContain('"$primary"');
+  });
+
+  it("skips backgroundColor / borderColor as object KEYS (RN style objects, not Tamagui props — PR #83 Lead A)", () => {
+    // `style={{ backgroundColor: "#..." }}` is a plain RN style object — RN
+    // can't resolve a Tamagui token there. The JSX-attribute form is still
+    // rewritten (asserted above); only the object-key form is skipped.
+    const inline = `const C = () => <View style={{ backgroundColor: "#00D4FF", borderColor: "#0A0B12" }} />;`;
+    expect(transformSource(inline).replacements).toBe(0);
+    const constObj = `const styles = { card: { backgroundColor: "#00D4FF" } };`;
+    expect(transformSource(constObj).replacements).toBe(0);
+  });
+
+  it("skips *Color-suffixed object keys (lightColor / activeColor — concrete-colour consumers, PR #83 Lead D)", () => {
+    expect(
+      transformSource(`const ch = { lightColor: "#00D4FF" };`).replacements,
+    ).toBe(0);
+    expect(
+      transformSource(`const s = { activeColor: "#0A0B12" };`).replacements,
+    ).toBe(0);
+  });
+
   it("skips fg / bg / ink tone-map property hex (consumed as icon/indicator colour)", () => {
     const src = `const tones = { expert: { fg: "#00D4FF", bg: "rgba(0,212,255,0.12)", ink: "#0A0B12" } };`;
     expect(transformSource(src).replacements).toBe(0);
@@ -206,6 +242,35 @@ describe("isExcluded", () => {
     expect(isExcluded("packages/mobile/src/ui/components/Card.tsx")).toBe(
       false,
     );
+  });
+
+  it("excludes the foundation + composite primitive dirs (RN/SVG colour bridge — lockstep with lint, PR #83 Lead B)", () => {
+    expect(
+      isExcluded("packages/mobile/src/ui/components/foundation/Bar.tsx"),
+    ).toBe(true);
+    expect(
+      isExcluded("packages/mobile/src/ui/components/composite/HabitTile.tsx"),
+    ).toBe(true);
+  });
+
+  it("excludes the lint-allow-listed legacy-screen files (PR #83 Lead B)", () => {
+    expect(
+      isExcluded("packages/mobile/src/ui/components/home/WorkoutCard.tsx"),
+    ).toBe(true);
+    expect(
+      isExcluded(
+        "packages/mobile/src/ui/components/subscription/SubscriptionBadge.tsx",
+      ),
+    ).toBe(true);
+    expect(
+      isExcluded(
+        "packages/mobile/src/ui/components/workouts/WorkoutCard/styles.ts",
+      ),
+    ).toBe(true);
+    // a different file in the same `home` dir is NOT blanket-excluded
+    expect(
+      isExcluded("packages/mobile/src/ui/components/home/SimpleLineGraph.tsx"),
+    ).toBe(false);
   });
 });
 
