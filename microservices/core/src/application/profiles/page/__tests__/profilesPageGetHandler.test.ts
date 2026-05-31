@@ -47,6 +47,7 @@ const FULL_PAYLOAD = {
     avatarUrl: null,
     role: "user" as const,
     fitnessLevel: "intermediate" as const,
+    dateOfBirth: "1990-01-15",
     heightCm: 180,
     weightKg: 75,
     preferredUnits: "metric" as const,
