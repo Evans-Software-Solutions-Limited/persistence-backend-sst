@@ -1,16 +1,19 @@
 /**
- * Tabs layout visibility tests (M10.5 Wave 2 — m105-gates-trainer).
+ * Tabs layout route-registration tests.
  *
- * The Clients tab is the 6th tab and is conditional on the user being
- * on a trainer tier (`useMySubscription().data.isTrainerTier === true`).
- * The route file itself is always registered — visibility is gated via
- * Expo Router's `href: null` mechanism — so the post-payment Success
- * screen's "Manage Clients" CTA still resolves for non-trainer users
- * (they land on `ClientsContainer`'s `FeatureGatePrompt`).
+ * Phase 14.3 (14-navigation) restructured the tab route set from the legacy
+ * 6 tabs (index / progress / workouts / exercises / clients / profile) to the
+ * Option 3 IA: index / train / fuel / you (+ coach-only clients / programs).
  *
- * Spec: specs/11-payments-subscriptions/design.md
- *       § Per-screen feature-gate integration (Wave 2)
- * Satisfies: specs/11-payments-subscriptions/requirements.md AC 4.6, 6.1
+ * This transitional layout still uses the legacy Ionicons rendering and keeps
+ * the M10.5 Wave 2 trainer-tier gate on Clients (programs is hidden until
+ * Phase 14.4 wires mode-driven visibility). Phase 14.4 rewrites the layout to
+ * the mode-aware `<TabBar>` primitive + adds the athlete/coach component test
+ * (T-14.4.4).
+ *
+ * Spec: specs/14-navigation/design.md § <TabsLayout> + § Route registration
+ *       specs/14-navigation/requirements.md STORY-001, STORY-002 (AC 2.6)
+ *       specs/11-payments-subscriptions/design.md § Per-screen gate (Wave 2)
  */
 
 // Capture every `<Tabs.Screen>` mounted under `<Tabs>` so we can
@@ -85,25 +88,36 @@ function renderLayout() {
   render(<TabsLayout />);
 }
 
-describe("TabsLayout — Clients tab visibility (M10.5 Wave 2)", () => {
-  it("registers all six tab screens regardless of subscription tier", () => {
-    // The route stays registered so deep links + the Success screen's
-    // "Manage Clients" CTA can navigate to /(tabs)/clients regardless
-    // of tier. Visibility is governed by `options.href`, not by
-    // omitting the screen.
+describe("TabsLayout — Option 3 route registration (14-navigation Phase 14.3)", () => {
+  it("registers exactly the Option 3 tab route set", () => {
+    // The route set is the new 4-tab athlete IA + the two coach-only routes
+    // (registered so deep links + programmatic navigation resolve; their
+    // visibility is gated). Legacy progress / workouts / exercises / profile
+    // are gone — folded into you / train / drawer respectively.
     mockUseMySubscription.mockReturnValue({ data: undefined });
     renderLayout();
     const names = capturedScreens.map((s) => s.name).sort();
     expect(names).toEqual(
-      [
-        "index",
-        "progress",
-        "workouts",
-        "exercises",
-        "clients",
-        "profile",
-      ].sort(),
+      ["index", "train", "fuel", "you", "clients", "programs"].sort(),
     );
+  });
+
+  it("does not register any legacy tab routes", () => {
+    mockUseMySubscription.mockReturnValue({ data: undefined });
+    renderLayout();
+    const names = capturedScreens.map((s) => s.name);
+    for (const legacy of ["progress", "workouts", "exercises", "profile"]) {
+      expect(names).not.toContain(legacy);
+    }
+  });
+
+  it("hides the Programs tab (coach-only) regardless of tier", () => {
+    mockUseMySubscription.mockReturnValue({
+      data: { isTrainerTier: true, tierName: "individual_trainer" },
+    });
+    renderLayout();
+    const programs = capturedScreens.find((s) => s.name === "programs");
+    expect(programs?.href).toBeNull();
   });
 
   it("hides the Clients tab (href: null) for a free-tier user", () => {
@@ -124,19 +138,15 @@ describe("TabsLayout — Clients tab visibility (M10.5 Wave 2)", () => {
   });
 
   it("hides the Clients tab while the subscription cache is still resolving (data undefined)", () => {
-    // Defensive default avoids a flash-then-disappear on first launch
-    // for non-trainer users; trainer users see the tab on the next
-    // focus after `useMySubscription` resolves — acceptable lag per
-    // the brief.
     mockUseMySubscription.mockReturnValue({ data: undefined });
     renderLayout();
     const clients = capturedScreens.find((s) => s.name === "clients");
     expect(clients?.href).toBeNull();
   });
 
-  it("shows the Clients tab (href: undefined → default route) for a trainer-pro user", () => {
+  it("shows the Clients tab (href: undefined → default route) for a trainer-tier user", () => {
     mockUseMySubscription.mockReturnValue({
-      data: { isTrainerTier: true, tierName: "individual_trainer_pro" },
+      data: { isTrainerTier: true, tierName: "individual_trainer" },
     });
     renderLayout();
     const clients = capturedScreens.find((s) => s.name === "clients");
@@ -146,27 +156,12 @@ describe("TabsLayout — Clients tab visibility (M10.5 Wave 2)", () => {
     expect(clients?.href).toBeUndefined();
   });
 
-  it("shows the Clients tab for a trainer-standard user", () => {
-    mockUseMySubscription.mockReturnValue({
-      data: {
-        isTrainerTier: true,
-        tierName: "individual_trainer_standard",
-      },
-    });
-    renderLayout();
-    const clients = capturedScreens.find((s) => s.name === "clients");
-    expect(clients?.href).toBeUndefined();
-  });
-
-  it("non-Clients tabs are never hidden by the gate (regression cover)", () => {
-    // Sanity: changing trainer status must not perturb the other
-    // five tabs' visibility. The Clients gate is targeted, not
-    // global.
+  it("the four athlete tabs are always visible (never href: null)", () => {
     mockUseMySubscription.mockReturnValue({ data: { isTrainerTier: false } });
     renderLayout();
-    const others = capturedScreens.filter((s) => s.name !== "clients");
-    for (const screen of others) {
-      expect(screen.href).toBeUndefined();
+    for (const name of ["index", "train", "fuel", "you"]) {
+      const screen = capturedScreens.find((s) => s.name === name);
+      expect(screen?.href).toBeUndefined();
     }
   });
 });

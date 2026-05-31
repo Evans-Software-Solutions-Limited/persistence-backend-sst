@@ -17,10 +17,23 @@ type TabIconProps = {
 };
 
 /**
- * Tab icon with a primary-coloured top indicator bar (2pt × 24pt) that
- * shows only on the active tab. The indicator is the tab bar's signature
- * moment — most apps settle for colour-only feedback. It sits above the
- * icon (absolutely positioned) so it doesn't affect layout height.
+ * Transitional Option 3 tab layout — registers the new 4-tab IA
+ * (Home / Train / Fuel / You + coach-only Clients / Programs) using the
+ * legacy Ionicons `TabIcon` rendering so the app stays bootable.
+ *
+ * Phase 14.4 rewrites this to the mode-aware `<TabBar>` foundation
+ * primitive driven by `useUserMode`, removing this `TabIcon` helper +
+ * the 24×2pt indicator. This PR (14.3) only restructures the ROUTE SET.
+ *
+ * Spec: specs/14-navigation/design.md § <TabsLayout> + § Route registration
+ *       specs/14-navigation/requirements.md STORY-001, STORY-002
+ *       specs/14-navigation/tasks.md T-14.3.* (route slots)
+ *
+ * Route registration pattern: all six tab routes stay registered as
+ * `<Tabs.Screen>` regardless of mode. Coach-only routes (clients, programs)
+ * are hidden via `href: null` here and surfaced by mode in 14.4. Until 14.4
+ * lands, Clients keeps the M10.5 Wave 2 trainer-tier gate so the route stays
+ * reachable for the post-payment "Manage Clients" CTA.
  */
 function TabIcon({
   focused,
@@ -54,24 +67,12 @@ function TabIcon({
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  // Let the bar grow naturally with the safe-area bottom inset rather than
-  // hardcoding 84pt. Phones without a home indicator get ~72pt; phones with
-  // one get ~94pt — both feel right for their device.
   const tabBarHeight = 60 + insets.bottom;
 
-  // M10.5 Wave 2 — Clients tab visibility. Only trainer-tier users see
-  // the 6th tab. We pass `href: null` (rather than skipping the
-  // <Tabs.Screen> entirely) so the route file `clients.tsx` stays
-  // registered and the post-payment Success screen's "Manage Clients"
-  // CTA can `router.replace('/(app)/(tabs)/clients')` regardless. For
-  // non-trainer users, the route still mounts on direct navigation and
-  // `ClientsContainer` shows the `FeatureGatePrompt`.
-  //
-  // While the subscription cache is still resolving we default to
-  // hiding the tab (`isTrainerTier === false`) to avoid a brief
-  // flash-then-disappear on first launch. Trainer users see the tab
-  // reappear on the next focus once `useMySubscription` resolves —
-  // acceptable lag per the brief.
+  // Coach-only routes (clients, programs) are registered but hidden in this
+  // transitional layout. Clients keeps the M10.5 Wave 2 trainer-tier gate so
+  // the post-payment Success "Manage Clients" CTA still resolves; 14.4
+  // replaces both with mode-driven visibility.
   const subQuery = useMySubscription();
   const isTrainerTier = subQuery.data?.isTrainerTier ?? false;
 
@@ -104,28 +105,17 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Home",
+          headerShown: false,
           tabBarIcon: (p) => (
             <TabIcon {...p} focusedName="home" unfocusedName="home-outline" />
           ),
         }}
       />
       <Tabs.Screen
-        name="progress"
+        name="train"
         options={{
-          title: "Progress",
-          tabBarIcon: (p) => (
-            <TabIcon
-              {...p}
-              focusedName="trending-up"
-              unfocusedName="trending-up-outline"
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="workouts"
-        options={{
-          title: "Workouts",
+          title: "Train",
+          headerShown: false,
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
@@ -135,24 +125,30 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {/*
-        `exercises` here refers to the flat `exercises.tsx` file in this
-        directory — the browse tab. Its detail / creator / filters sub-routes
-        live at `app/(app)/exercises/*` (sibling of this `(tabs)` group), NOT
-        under a nested `exercises/` directory here. That positioning makes
-        them push OVER the tab bar instead of rendering inside it. See
-        `app/(app)/_layout.tsx` for the full tree.
-      */}
       <Tabs.Screen
-        name="exercises"
+        name="fuel"
         options={{
-          title: "Exercises",
+          title: "Fuel",
           headerShown: false,
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
-              focusedName="albums"
-              unfocusedName="albums-outline"
+              focusedName="restaurant"
+              unfocusedName="restaurant-outline"
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="you"
+        options={{
+          title: "You",
+          headerShown: false,
+          tabBarIcon: (p) => (
+            <TabIcon
+              {...p}
+              focusedName="stats-chart"
+              unfocusedName="stats-chart-outline"
             />
           ),
         }}
@@ -161,10 +157,8 @@ export default function TabsLayout() {
         name="clients"
         options={{
           title: "Clients",
-          // M10.5 Wave 2 — `href: null` hides the tab icon for non-
-          // trainer users while keeping the route registered (so the
-          // Success screen's "Manage Clients" CTA still resolves).
-          // Setting `href` to `undefined` makes the tab visible.
+          // M10.5 Wave 2 gate preserved transitionally; 14.4 swaps to
+          // coach-mode visibility.
           href: isTrainerTier ? undefined : null,
           tabBarIcon: (p) => (
             <TabIcon
@@ -176,14 +170,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="programs"
         options={{
-          title: "Profile",
+          title: "Programs",
+          // Coach-mode only — hidden until 14.4 wires mode-driven visibility.
+          href: null,
           tabBarIcon: (p) => (
             <TabIcon
               {...p}
-              focusedName="person-circle"
-              unfocusedName="person-circle-outline"
+              focusedName="albums"
+              unfocusedName="albums-outline"
             />
           ),
         }}
