@@ -89,7 +89,14 @@ import { TamaguiProvider } from "@tamagui/core";
 // eslint-disable-next-line import/first
 import config from "../../tamagui.config";
 // eslint-disable-next-line import/first
-import TabsLayout from "../(app)/(tabs)/_layout";
+import TabsLayout, {
+  ACTIVE_WORKOUT_BAR_GAP,
+  ATHLETE_TABS,
+  NavTabBar,
+  TAB_BAR_BOTTOM_GAP,
+  TAB_BAR_CONTENT_HEIGHT,
+  tabBarHeight,
+} from "../(app)/(tabs)/_layout";
 
 const safeAreaMetrics = {
   frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -187,5 +194,53 @@ describe("TabsLayout — visible tab spec (STORY-009 AC 9.3)", () => {
     mockMode.mockReturnValue("athlete");
     const athlete = renderLayout();
     expect(athlete.queryByTestId("tabbar-coach-dot")).toBeNull();
+  });
+});
+
+describe("tab-bar safe-area contract (Phase 14.8)", () => {
+  it("tabBarHeight = content (60) + inset + gap (8)", () => {
+    expect(tabBarHeight(0)).toBe(TAB_BAR_CONTENT_HEIGHT + TAB_BAR_BOTTOM_GAP);
+    expect(tabBarHeight(34)).toBe(
+      TAB_BAR_CONTENT_HEIGHT + 34 + TAB_BAR_BOTTOM_GAP,
+    );
+  });
+
+  it("exposes the documented contract constants for 05-active-session", () => {
+    expect(TAB_BAR_CONTENT_HEIGHT).toBe(60);
+    expect(TAB_BAR_BOTTOM_GAP).toBe(8);
+    expect(ACTIVE_WORKOUT_BAR_GAP).toBe(12);
+  });
+
+  function renderNavTabBar(insetBottom: number) {
+    const props = {
+      state: { index: 0, routeNames: ["index", "you", "train", "fuel"] },
+      navigation: { navigate: jest.fn() },
+    } as never;
+    return render(
+      <SafeAreaProvider
+        initialMetrics={{
+          frame: { x: 0, y: 0, width: 390, height: 844 },
+          insets: { top: 44, left: 0, right: 0, bottom: insetBottom },
+        }}
+      >
+        <TamaguiProvider config={config} defaultTheme="dark">
+          <NavTabBar props={props} tabs={ATHLETE_TABS} mode="athlete" />
+        </TamaguiProvider>
+      </SafeAreaProvider>,
+    );
+  }
+
+  it("pads the tab bar by insets.bottom + 8 on a home-indicator device", () => {
+    const { getByTestId } = renderNavTabBar(34);
+    const safeArea = getByTestId("nav-tab-bar-safe-area");
+    expect(safeArea.props.style.paddingBottom).toBe(34 + TAB_BAR_BOTTOM_GAP);
+    expect(getByTestId("nav-tab-bar")).toBeTruthy();
+  });
+
+  it("pads naturally (no artificial inflation) on a no-home-indicator device", () => {
+    const { getByTestId } = renderNavTabBar(0);
+    const safeArea = getByTestId("nav-tab-bar-safe-area");
+    // bottom inset 0 → just the float gap, no inflation.
+    expect(safeArea.props.style.paddingBottom).toBe(TAB_BAR_BOTTOM_GAP);
   });
 });

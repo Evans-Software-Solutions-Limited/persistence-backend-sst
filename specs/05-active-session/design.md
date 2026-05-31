@@ -470,6 +470,13 @@ Layout: floating absolute pill at `bottom: tabBarHeight + 12`. Pulsing primary d
 
 Long-press triggers the end-confirm dialog (via the overlay's `setConfirmEnd(true)`).
 
+> **Revised 2026-05-31 (tab-bar-height contract from `14-navigation` Phase 14.8, T-14.8.2):** the `tabBarHeight + 12` figure above is now a concrete, importable contract. `14-navigation` owns the tab-bar mount (`app/(app)/(tabs)/_layout.tsx`) and exports:
+>
+> - `tabBarHeight(insetBottom: number): number` → `TAB_BAR_CONTENT_HEIGHT (60) + insetBottom + TAB_BAR_BOTTOM_GAP (8)`
+> - `ACTIVE_WORKOUT_BAR_GAP = 12`
+>
+> The minimised bar positions itself at `bottom: tabBarHeight(insets.bottom) + ACTIVE_WORKOUT_BAR_GAP`, reading `insets.bottom` from `useSafeAreaInsets()`. This keeps the bar floating clear of the tab bar on every device (home-indicator and not) without `05` hard-coding the tab-bar geometry. Import from the tabs layout module (`app/(app)/(tabs)/_layout`); `14-navigation` keeps these in lockstep with the actual mount padding (`paddingBottom = insets.bottom + 8`). When the active-workout overlay is **expanded**, the tab bar is covered by the overlay; on **minimise** the tab bar re-shows and the bar sits above it. Positioning implementation lives in this spec (`05`); `14-navigation` owns only the contract values.
+
 ---
 
 ## `<ActiveSessionContainer>` plumbing

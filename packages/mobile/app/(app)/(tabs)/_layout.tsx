@@ -62,9 +62,31 @@ export const COACH_TABS: TabSpec[] = [
 ];
 
 /**
+ * Tab-bar layout contract (consumed by 05-active-session for the
+ * <ActiveWorkoutBar> minimised-bar positioning — T-14.8.2).
+ *
+ * The visual <TabBar> content is ~60pt tall; the mount adds the safe-area
+ * bottom inset + an 8pt gap so the bar floats clear of the home indicator
+ * (AC 8.1). The minimised ActiveWorkoutBar floats at `tabBarHeight(insets) +
+ * ACTIVE_WORKOUT_BAR_GAP` so it sits above the tab bar without overlapping it.
+ */
+export const TAB_BAR_CONTENT_HEIGHT = 60;
+export const TAB_BAR_BOTTOM_GAP = 8;
+/** Gap between the tab bar top edge and the minimised ActiveWorkoutBar. */
+export const ACTIVE_WORKOUT_BAR_GAP = 12;
+
+/** Total tab-bar height including the safe-area bottom inset + float gap. */
+export function tabBarHeight(insetBottom: number): number {
+  return TAB_BAR_CONTENT_HEIGHT + insetBottom + TAB_BAR_BOTTOM_GAP;
+}
+
+/**
  * Custom tab-bar mount. Maps the active Expo Router route name to the
  * primitive's `active` id and forwards taps to `navigation.navigate`. Renders
- * the foundation <TabBar> inside a safe-area-padded container.
+ * the foundation <TabBar> inside a safe-area-padded container that floats the
+ * bar clear of the home indicator (paddingBottom = insets.bottom + 8, AC 8.1).
+ * On devices without a home indicator (insets.bottom === 0) the bar pads
+ * naturally without artificial inflation (AC 8.3).
  */
 export function NavTabBar({
   props,
@@ -79,7 +101,10 @@ export function NavTabBar({
   const activeRoute = props.state.routeNames[props.state.index];
 
   return (
-    <View style={{ paddingBottom: insets.bottom }}>
+    <View
+      testID="nav-tab-bar-safe-area"
+      style={{ paddingBottom: insets.bottom + TAB_BAR_BOTTOM_GAP }}
+    >
       <TabBar
         tabs={tabs}
         active={activeRoute}
