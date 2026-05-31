@@ -87,8 +87,26 @@ function inSkippedPosition(node, ancestors) {
       return true;
     }
 
-    // return "#..."
-    if (a.type === "ReturnStatement") return true;
+    // return "#..." — ONLY when the literal is *directly* the returned value,
+    // or wrapped in a Conditional/Logical/Sequence expression that still flows
+    // it straight out. A JSX subtree between the literal and the return must
+    // NOT exempt the literal — that's the standard React render shape and would
+    // silently allow raw hex in `backgroundColor` / `borderColor` (PR #83
+    // Lead 9). Mirrors the codemod's collectStraightReturnLiterals narrowing.
+    if (a.type === "ReturnStatement" && a.argument === child) {
+      const wrapsLiteral = (n) =>
+        n === node ||
+        (n &&
+          n.type === "ConditionalExpression" &&
+          (wrapsLiteral(n.consequent) || wrapsLiteral(n.alternate))) ||
+        (n &&
+          n.type === "LogicalExpression" &&
+          (wrapsLiteral(n.left) || wrapsLiteral(n.right))) ||
+        (n &&
+          n.type === "SequenceExpression" &&
+          n.expressions.some(wrapsLiteral));
+      if (wrapsLiteral(child)) return true;
+    }
 
     // { fg: "#...", bg: "#...", shadowColor: "#...", color: "#...", ... } —
     // object-property colour keys consumed by RN styles / concrete consumers.

@@ -115,6 +115,50 @@ export function parseLegacyPrimaryRgba(
   return { alpha };
 }
 
+/**
+ * Add every StringLiteral that is the value *flowing straight out* of a return
+ * argument to `skip` — directly, or only through expression wrappers that pass
+ * the value through unchanged (conditional / logical / sequence / parenthesised
+ * / TS `as` casts). Crucially it does NOT descend into JSX, calls, objects, or
+ * arrays — so `return <View backgroundColor="#hex" />` is left rewritable
+ * (PR #83 Lead 10). Mirrors the lint rule's return-skip narrowing.
+ */
+function collectStraightReturnLiterals(
+  node: unknown,
+  skip: Set<unknown>,
+): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as { type: string; [k: string]: unknown };
+  switch (n.type) {
+    case "StringLiteral":
+      skip.add(n);
+      return;
+    case "ConditionalExpression":
+      collectStraightReturnLiterals(n.consequent, skip);
+      collectStraightReturnLiterals(n.alternate, skip);
+      return;
+    case "LogicalExpression":
+      collectStraightReturnLiterals(n.left, skip);
+      collectStraightReturnLiterals(n.right, skip);
+      return;
+    case "SequenceExpression":
+      for (const e of (n.expressions as unknown[]) ?? []) {
+        collectStraightReturnLiterals(e, skip);
+      }
+      return;
+    case "ParenthesizedExpression":
+    case "TSAsExpression":
+    case "TSNonNullExpression":
+    case "TSSatisfiesExpression":
+      collectStraightReturnLiterals(n.expression, skip);
+      return;
+    default:
+      // Any other wrapper (JSX, CallExpression, ObjectExpression, …) does NOT
+      // flow the literal straight out — leave it rewritable.
+      return;
+  }
+}
+
 // ─── AST transform ────────────────────────────────────────────────────
 
 export type TransformResult = {
@@ -176,17 +220,17 @@ export function transformSource(source: string): TransformResult {
   // maps) via a variable or function rather than a direct Tamagui style prop.
   // The AST can't trace that flow, so we skip the structural shapes that, in
   // this codebase, always feed a concrete-colour consumer:
-  //   - `return "#..."` (e.g. resolveInk(tone) -> icon color)
-  //   - object properties keyed `fg` / `bg` (tone-map entries consumed as
-  //     icon/indicator colours)
+  //   - `return "#..."` (e.g. resolveInk(tone) -> icon color) — ONLY when the
+  //     literal is *directly* the returned value (or wrapped in a
+  //     conditional/logical/sequence/paren that still flows it straight out).
+  //     A JSX subtree between the `return` and the literal must NOT exempt it —
+  //     that's the standard React render shape and would silently skip raw hex
+  //     in `backgroundColor` / `borderColor` (PR #83 Lead 10).
+  //   - object properties keyed by a concrete-colour key (see below).
   root.find(j.ReturnStatement).forEach((p) => {
     const arg = p.node.argument;
     if (!arg) return;
-    // The argument may itself be the string literal, or contain literals.
-    if (arg.type === "StringLiteral") skipNodes.add(arg);
-    j(p.get("argument"))
-      .find(j.StringLiteral)
-      .forEach((s) => skipNodes.add(s.node));
+    collectStraightReturnLiterals(arg, skipNodes);
   });
   // Object-property colour keys that hold concrete colours for non-Tamagui
   // consumers. Kept in lockstep with the `no-raw-hex-colors` ESLint rule's

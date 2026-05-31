@@ -135,6 +135,19 @@ describe("transformSource — AST behaviour + edge cases", () => {
     expect(transformSource(src).replacements).toBe(0);
   });
 
+  it("skips a direct return wrapped in a conditional (still flows straight out)", () => {
+    const src = `function ink(x) { return x ? "#0A0B12" : "#00D4FF"; }`;
+    expect(transformSource(src).replacements).toBe(0);
+  });
+
+  it("STILL rewrites hex in a block-body return's JSX (not the standard render shape exemption — PR #83 Lead 10)", () => {
+    const src = `function Card() { return <View backgroundColor="#00D4FF" borderColor="#0A0B12" />; }`;
+    const { replacements, output } = transformSource(src);
+    expect(replacements).toBe(2);
+    expect(output).toContain('"$primary"');
+    expect(output).toContain('"$bg"');
+  });
+
   it("skips fg / bg / ink tone-map property hex (consumed as icon/indicator colour)", () => {
     const src = `const tones = { expert: { fg: "#00D4FF", bg: "rgba(0,212,255,0.12)", ink: "#0A0B12" } };`;
     expect(transformSource(src).replacements).toBe(0);

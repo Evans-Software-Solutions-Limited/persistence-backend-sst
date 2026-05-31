@@ -24,6 +24,7 @@ ruleTester.run("no-raw-hex-colors", rule, {
     `const G = () => <LinearGradient colors={["#22D3EE", "#0E7490"]} />;`,
     `const s = StyleSheet.create({ t: { color: "#fff" } });`,
     `function ink() { return "#0A0B12"; }`,
+    `function pick(x) { return x ? "#0A0B12" : "#00D4FF"; }`,
     `const tones = { a: { fg: "#00D4FF", bg: "#0A0B12" } };`,
     // tone-map + RN-style concrete-colour object keys are skipped (lockstep
     // with the codemod's CONCRETE_COLOUR_KEYS — PR #83 Lead 7)
@@ -45,6 +46,17 @@ ruleTester.run("no-raw-hex-colors", rule, {
     },
     {
       code: `const s = { tint: "#00D4FF" };`,
+      errors: [{ messageId: "rawHex" }],
+    },
+    // Block-body return (standard React render shape) MUST still be flagged —
+    // the return-skip narrowing only exempts a literal returned straight out,
+    // not hex in a returned JSX subtree (PR #83 Lead 9).
+    {
+      code: `function C() { return <View backgroundColor="#22D3EE" />; }`,
+      errors: [{ messageId: "rawHex" }],
+    },
+    {
+      code: `function C() { return (<View><Inner borderColor="#1A1D29" /></View>); }`,
       errors: [{ messageId: "rawHex" }],
     },
   ],
