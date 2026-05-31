@@ -9,6 +9,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
@@ -94,6 +95,7 @@ jest.mock("expo-router", () => {
 describe("WorkoutsListContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useTrainSegment.setState({ segment: "Workouts", pendingCreate: false });
   });
 
   afterEach(() => {
@@ -289,7 +291,8 @@ describe("WorkoutsListContainer", () => {
     );
 
     fireEvent.press(await findByText("Browse Exercises"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/exercises");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/train");
+    expect(useTrainSegment.getState().segment).toBe("Exercises");
   });
 
   it("edit button routes to the editor modal", async () => {

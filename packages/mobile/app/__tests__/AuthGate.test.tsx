@@ -44,6 +44,18 @@ jest.mock("../../src/ui/hooks/useNotificationPermissions", () => ({
     mockUseNotificationPermissions(enabled),
 }));
 
+// Mock useUserModeEligibility — the real hook calls useMySubscription,
+// which calls useAdapters/useAuth and throws without an AdapterProvider +
+// QueryClientProvider in scope. AppProviders is mocked to a pass-through
+// above, so there's no provider to feed it. Replace with a `jest.fn()` so
+// we can assert the UserModeBootstrap mounts it without the provider
+// plumbing (its own behaviour is covered in
+// src/ui/hooks/__tests__/useUserModeEligibility.test.tsx).
+const mockUseUserModeEligibility = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/useUserModeEligibility", () => ({
+  useUserModeEligibility: () => mockUseUserModeEligibility(),
+}));
+
 // eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -265,5 +277,20 @@ describe("NotificationPermissionsBootstrap (prompt-on-app-load)", () => {
     render(<RootLayout />);
 
     expect(mockUseNotificationPermissions).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("UserModeBootstrap (mode-eligibility wiring)", () => {
+  it("invokes `useUserModeEligibility()` on mount", () => {
+    // Phase 14.2 — bridges the subscription cache into useUserMode +
+    // rehydrates persisted mode + runs the eligibility watchdog.
+    // Mounted as a sibling of AuthGate inside AppProviders.
+    mockUseUserModeEligibility.mockClear();
+    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    expect(mockUseUserModeEligibility).toHaveBeenCalled();
   });
 });

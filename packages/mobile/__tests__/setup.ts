@@ -3,11 +3,12 @@
 
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
-  const { View } = require("react-native");
+  const { View, Text } = require("react-native");
   return {
     __esModule: true,
     default: {
       View,
+      Text,
       createAnimatedComponent: (component: unknown) => component,
     },
     useSharedValue: (init: unknown) => ({ value: init }),
@@ -29,6 +30,14 @@ jest.mock("react-native-reanimated", () => {
     withRepeat: (val: number) => val,
     cancelAnimation: () => undefined,
     interpolate: (val: number) => val,
+    // <TabBar> (14-navigation Phase 14.6) interpolates the active accent
+    // colour between $primary and $accentTrainer. In tests return the first
+    // output stop so the rendered colour is deterministic.
+    interpolateColor: (
+      _val: number,
+      _input: readonly number[],
+      output: readonly string[],
+    ) => output[0],
     // Bar/Ring (01-design-system) call useReducedMotion to bypass the fill
     // animation; default to false in tests so the animated path is exercised.
     useReducedMotion: () => false,

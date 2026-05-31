@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
+import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
@@ -124,6 +125,18 @@ export default function AppLayout() {
           options={{ title: "Blocked by your plan" }}
         />
       </Stack>
+      {/*
+        ProfileDrawerContainer is ALWAYS mounted (sibling of the Stack) — its
+        internal <BottomSheet> uses the `visible` prop (sourced from
+        useDrawer().open) to drive its own slide-in/out animation.
+        Conditionally mounting on `open` would unmount the tree the instant
+        the user dismisses, killing the slide-down exit. The avatar in every
+        screen header opens it via useDrawer().openDrawer.
+
+        Spec: specs/14-navigation/design.md § <ProfileDrawer> mount-point
+              specs/14-navigation/tasks.md T-14.5.1
+      */}
+      <ProfileDrawerContainer />
       <ActiveSessionBanner />
     </ExerciseFiltersProvider>
   );

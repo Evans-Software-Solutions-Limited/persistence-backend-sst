@@ -21,6 +21,7 @@ import type {
 } from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { useUserMode } from "@/state/user-mode";
 import {
   SubscriptionSuccessContainer,
   getSubscriptionBenefits,
@@ -110,6 +111,11 @@ const SUB_PREMIUM: MySubscription = {
 
 beforeEach(() => {
   mockReplace.mockReset();
+  useUserMode.setState({
+    mode: "athlete",
+    isTrainerEligible: false,
+    isEligibilityKnown: false,
+  });
 });
 
 describe("SubscriptionSuccessContainer", () => {
@@ -149,7 +155,15 @@ describe("SubscriptionSuccessContainer", () => {
       expect(screen.getByTestId("success-manage-clients")).toBeTruthy(),
     );
     fireEvent.press(screen.getByTestId("success-manage-clients"));
-    expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/clients");
+    // Under Option 3 the Clients tab is only visible in coach mode, so the
+    // CTA must enter coach mode (eligible + switched) BEFORE navigating —
+    // otherwise the just-paid trainer lands on a hidden tab. The navigate is
+    // awaited via switchTo().finally, so assert via waitFor.
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/clients"),
+    );
+    expect(useUserMode.getState().isTrainerEligible).toBe(true);
+    expect(useUserMode.getState().mode).toBe("coach");
   });
 
   it("falls back to generic messaging when no subscription is loaded yet", async () => {

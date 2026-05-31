@@ -12,6 +12,7 @@ import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useStableMockHistory } from "@/ui/hooks/useStableMockHistory";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 
 /**
  * Home-tab container. Follows the 3-memo pipeline established in M0:
@@ -61,6 +62,9 @@ export function HomeContainer() {
   const { session } = useAuth();
   const dashboard = useDashboard();
   const health = useHealthData();
+  // Repoint legacy intra-app navigation onto the Option 3 IA (14-navigation):
+  // the old `workouts` / `progress` tabs were folded into Train / You.
+  const setTrainSegment = useTrainSegment((s) => s.setSegment);
 
   // Memo #1: cachedPayload slice the view-model derives from.
   const cachedPayload = useMemo(() => dashboard.payload, [dashboard.payload]);
@@ -246,11 +250,14 @@ export function HomeContainer() {
   );
 
   const onViewAllWorkoutsPress = useCallback(() => {
-    router.push("/(app)/(tabs)/workouts");
-  }, [router]);
+    // Workouts folded into the Train hub's Workouts segment (Option 3 IA).
+    setTrainSegment("Workouts");
+    router.push("/(app)/(tabs)/train");
+  }, [router, setTrainSegment]);
 
   const onViewAllProgressPress = useCallback(() => {
-    router.push("/(app)/(tabs)/progress");
+    // Progress folded into the You tab (Option 3 IA).
+    router.push("/(app)/(tabs)/you");
   }, [router]);
 
   const healthRequestPermissions = health.requestPermissions;
@@ -262,9 +269,11 @@ export function HomeContainer() {
 
   const onActivityPress = useCallback(
     (_sessionId: string) => {
-      router.push("/(app)/(tabs)/workouts");
+      // Recent-activity rows lead back into the Train hub's Workouts segment.
+      setTrainSegment("Workouts");
+      router.push("/(app)/(tabs)/train");
     },
-    [router],
+    [router, setTrainSegment],
   );
 
   // Per Brad's review: a successful payload that comes back with a

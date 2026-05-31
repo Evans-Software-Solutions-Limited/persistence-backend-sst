@@ -2,6 +2,8 @@ import { renderHook, act, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
+import { useUserMode } from "@/state/user-mode";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -92,6 +94,45 @@ describe("useAuth", () => {
       await result.current.signOut();
     });
     expect(result.current.session).toBeNull();
+  });
+
+  it("resets the user-mode slice on sign-out (no cross-account bleed)", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.signIn("trainer@example.com", "password");
+    });
+    // Simulate trainer A having switched into coach mode.
+    act(() => {
+      useUserMode.setState({
+        mode: "coach",
+        isTrainerEligible: true,
+        isEligibilityKnown: true,
+      });
+      useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+    });
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    // The next account on this device must start as a fresh athlete — the
+    // device-global persisted mode key must not bleed across accounts.
+    const s = useUserMode.getState();
+    expect(s.mode).toBe("athlete");
+    expect(s.isTrainerEligible).toBe(false);
+    expect(s.isEligibilityKnown).toBe(false);
+    // Same for the Train segment + the one-shot pendingCreate flag.
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 
   it("throws and sets error when sign-in fails", async () => {

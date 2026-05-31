@@ -1,6 +1,15 @@
 import { Text, View } from "@tamagui/core";
 import type { ComponentType } from "react";
+import { useEffect } from "react";
 import { Pressable } from "react-native";
+import Animated, {
+  Easing,
+  interpolateColor,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 /**
  * <TabBar> — bottom tab bar, accent recolours the active state.
@@ -8,9 +17,12 @@ import { Pressable } from "react-native";
  * Implements 01-design-system/design.md § Foundation primitives #10 +
  * STORY-003 AC 3.8.
  *
- * This PR ships the prop-driven primitive only. The navigation tree, the
- * useUserMode slice, safe-area-inset composition, and deep-link redirects are
- * owned by 14-navigation (per requirements.md Out-of-scope).
+ * Revised 2026-05-31 (14-navigation Phase 14.6, T-14.6.2): the active-tab
+ * accent (pill + label + icon) now ANIMATES between $primary (athlete) and
+ * $accentTrainer (coach) over 200ms (cubic-bezier 0.2,0.7,0.2,1) when `mode`
+ * changes, rather than swapping instantly. Honours the OS reduce-motion
+ * setting (jumps to the final colour). See
+ * 01-design-system/design.md § "10. <TabBar>" Revised 2026-05-31.
  */
 
 /** Minimal shape of a Lucide icon component (size/color/strokeWidth props). */
@@ -38,29 +50,66 @@ export type TabBarProps = {
   testID?: string;
 };
 
-// Concrete accent colours per mode (active tint + glow shadow colour).
-const ACCENT = {
-  athlete: { color: "$primary", glow: "rgba(34,211,238,0.22)" },
-  coach: { color: "$accentTrainer", glow: "rgba(167,139,250,0.22)" },
+// Concrete accent colours per mode (active tint). Animated consumers
+// (Animated.View / Animated.Text) can't resolve Tamagui `$tokens`, so the
+// interpolation runs over the resolved hex values.
+const ACCENT_HEX = { athlete: "#22D3EE", coach: "#A78BFA" } as const;
+const ACCENT_GLOW = {
+  athlete: "rgba(34,211,238,0.22)",
+  coach: "rgba(167,139,250,0.22)",
 } as const;
-
 const INACTIVE = "#8A8A98"; // $text3 — icons take a concrete colour string.
-const ACTIVE_HEX = { athlete: "#22D3EE", coach: "#A78BFA" } as const;
+
+// 0 = athlete, 1 = coach. The shared value animates between them so every
+// active-tab accent interpolation reads a single driver.
+const MODE_PROGRESS = { athlete: 0, coach: 1 } as const;
+const ACCENT_DURATION_MS = 200;
+
+const AnimatedText = Animated.Text;
 
 function TabBtn({
   tab,
   active,
   onPress,
   mode,
+  progress,
 }: {
   tab: TabSpec;
   active: boolean;
   onPress: () => void;
   mode: TabBarMode;
+  /** Shared value: 0 (athlete) → 1 (coach). */
+  progress: { value: number };
 }) {
   const Icon = tab.icon;
-  const accent = ACCENT[mode];
-  const iconColor = active ? ACTIVE_HEX[mode] : INACTIVE;
+  // Icon glyph colour is a direct mode swap (the spec animates the pill +
+  // label; the icon recolours with the mode). Inactive icons stay $text3.
+  const iconColor = active ? ACCENT_HEX[mode] : INACTIVE;
+
+  // Active-tab accent interpolations (athlete cyan → coach violet). Inactive
+  // tabs stay $text3 and don't animate.
+  const pillStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      progress.value,
+      [0, 1],
+      [ACCENT_HEX.athlete, ACCENT_HEX.coach],
+    ),
+    shadowColor: interpolateColor(
+      progress.value,
+      [0, 1],
+      [ACCENT_GLOW.athlete, ACCENT_GLOW.coach],
+    ),
+  }));
+
+  const labelStyle = useAnimatedStyle(() => ({
+    color: active
+      ? interpolateColor(
+          progress.value,
+          [0, 1],
+          [ACCENT_HEX.athlete, ACCENT_HEX.coach],
+        )
+      : INACTIVE,
+  }));
 
   return (
     <Pressable
@@ -83,20 +132,21 @@ function TabBtn({
         minHeight={44}
       >
         {active ? (
-          <View
+          <Animated.View
             testID={`tabbar-tab-${tab.id}-pill`}
-            position="absolute"
-            top={4}
-            width={30}
-            height={4}
-            borderRadius={2}
-            backgroundColor={accent.color}
-            style={{
-              shadowColor: accent.glow,
-              shadowOpacity: 1,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 0 },
-            }}
+            style={[
+              {
+                position: "absolute",
+                top: 4,
+                width: 30,
+                height: 4,
+                borderRadius: 2,
+                shadowOpacity: 1,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 0 },
+              },
+              pillStyle,
+            ]}
           />
         ) : null}
 
@@ -104,15 +154,19 @@ function TabBtn({
           <Icon size={22} color={iconColor} strokeWidth={active ? 2 : 1.75} />
         </View>
 
-        <Text
-          fontFamily="$display"
-          fontSize={10}
-          letterSpacing={0.2}
-          fontWeight={active ? "600" : "500"}
-          color={active ? accent.color : "$text3"}
+        <AnimatedText
+          style={[
+            {
+              fontFamily: "Geist",
+              fontSize: 10,
+              letterSpacing: 0.2,
+              fontWeight: active ? "600" : "500",
+            },
+            labelStyle,
+          ]}
         >
           {tab.label}
-        </Text>
+        </AnimatedText>
 
         {tab.badge ? (
           <View
@@ -150,6 +204,24 @@ export function TabBar({
   mode = "athlete",
   testID,
 }: TabBarProps) {
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(MODE_PROGRESS[mode]);
+
+  // Animate the accent driver when the mode flips (cyan ↔ violet, 200ms). On
+  // reduce-motion, jump straight to the target so the colour is correct
+  // without the transition. Closes 14-navigation STORY-003 AC 3.7.
+  useEffect(() => {
+    const target = MODE_PROGRESS[mode];
+    if (reduceMotion) {
+      progress.value = target;
+      return;
+    }
+    progress.value = withTiming(target, {
+      duration: ACCENT_DURATION_MS,
+      easing: Easing.bezier(0.2, 0.7, 0.2, 1),
+    });
+  }, [mode, reduceMotion, progress]);
+
   return (
     <View
       testID={testID}
@@ -203,6 +275,7 @@ export function TabBar({
           active={active === tab.id}
           onPress={() => onChange(tab.id)}
           mode={mode}
+          progress={progress}
         />
       ))}
     </View>

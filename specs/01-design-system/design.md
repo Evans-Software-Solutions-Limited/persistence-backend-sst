@@ -321,6 +321,8 @@ type TabBarProps = {
 
 Detailed nav composition in `14-navigation`.
 
+> **Revised 2026-05-31 (requested by `14-navigation` Phase 14.6, T-14.6.2):** the active-tab accent (pill background + glow + label colour) now **animates** between `$primary` (athlete) and `$accentTrainer` (coach) over **200ms**, easing `cubic-bezier(0.2, 0.7, 0.2, 1)`, when `mode` changes — rather than swapping instantly. Implemented with Reanimated 3: a `useSharedValue` driver (0 = athlete, 1 = coach) updated via `withTiming` on `mode` change, consumed by `useAnimatedStyle` + `interpolateColor` on the pill and an `Animated.Text` label. The OS reduce-motion setting (`useReducedMotion`) bypasses the transition and jumps to the target colour (mirrors `<Bar>`/`<Ring>` AC 3.5). The active-tab **icon** glyph recolours directly with the mode (not animated) — the spec scopes the transition to pill + label. This closes `14-navigation` STORY-003 AC 3.7 (atomic cyan→violet over 200ms, no flash of the wrong tabs). Prop signature is unchanged; the animation is internal to the primitive.
+
 ### 11. `<HeaderBar>` — `ui.jsx:180–200`
 
 ```ts
