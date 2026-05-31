@@ -95,7 +95,13 @@ export function TrainHubContainer() {
         <Segmented
           options={["Workouts", "Exercises"]}
           value={segment}
-          onChange={(next) => setSegment(next as "Workouts" | "Exercises")}
+          onChange={(next) => {
+            // Narrow rather than cast — if the option set ever drifts, an
+            // unrecognised value is ignored instead of silently coercing.
+            if (next === "Workouts" || next === "Exercises") {
+              setSegment(next);
+            }
+          }}
           testID="train-segment"
         />
       </View>

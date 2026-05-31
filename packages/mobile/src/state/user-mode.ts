@@ -50,8 +50,18 @@ export const useUserMode = create<UserModeState>((set, get) => ({
       );
       return;
     }
+    // The in-memory mode change is the user-visible effect and has already
+    // applied above; persistence is best-effort. Swallow a disk failure
+    // (full disk, RN bridge tear-down on background, permission revoke) with a
+    // warning rather than letting it escape — both documented callers (the
+    // Phase 14.2 invariant watchdog and the drawer mode-switch button) invoke
+    // switchTo fire-and-forget, so an uncaught rejection would surface as a
+    // "Possible Unhandled Promise Rejection". Matches setEligibility's forced
+    // fall-back + useTrainSegment.setSegment, which swallow the same failure.
     set({ mode: next });
-    await AsyncStorage.setItem(STORAGE_KEY, next);
+    await AsyncStorage.setItem(STORAGE_KEY, next).catch((err) => {
+      console.warn("[user-mode] switchTo persist failed", err);
+    });
   },
 
   setEligibility: (eligible) => {

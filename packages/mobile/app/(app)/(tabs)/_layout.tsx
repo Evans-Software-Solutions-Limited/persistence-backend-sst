@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
+import { useEffect } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -99,6 +100,35 @@ export function NavTabBar({
 }) {
   const insets = useSafeAreaInsets();
   const activeRoute = props.state.routeNames[props.state.index];
+  const activeInTabs = tabs.some((t) => t.id === activeRoute);
+
+  // Stranded-route guard: when the mode flips (e.g. the eligibility watchdog
+  // demotes coach→athlete while the user is on /clients or /programs), the
+  // focused route may no longer exist in the new mode's tab set. Expo Router
+  // does NOT auto-redirect away from a now-`href: null` route, so the user
+  // would be parked on a hidden screen with nothing highlighted in the bar.
+  // Redirect to Home (index) when that happens. (14-navigation review #87.)
+  useEffect(() => {
+    if (!activeInTabs) {
+      props.navigation.navigate("index");
+    }
+  }, [activeInTabs, props.navigation]);
+
+  // React Navigation custom-tabBar contract: emit `tabPress` (cancellable)
+  // before navigating so screens can register scroll-to-top / stack-reset
+  // listeners, and skip the navigate when re-tapping the focused tab.
+  const handleChange = (id: string) => {
+    const route = props.state.routes.find((r) => r.name === id);
+    if (!route) return;
+    const event = props.navigation.emit({
+      type: "tabPress",
+      target: route.key,
+      canPreventDefault: true,
+    });
+    if (id !== activeRoute && !event.defaultPrevented) {
+      props.navigation.navigate(id);
+    }
+  };
 
   return (
     <View
@@ -109,7 +139,7 @@ export function NavTabBar({
         tabs={tabs}
         active={activeRoute}
         mode={mode}
-        onChange={(id) => props.navigation.navigate(id)}
+        onChange={handleChange}
         testID="nav-tab-bar"
       />
     </View>

@@ -6,6 +6,7 @@ import type { Workout } from "@/domain/models/workout";
 import { tokenizeSearch } from "@/domain/services/exercise.service";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
 
@@ -28,6 +29,7 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
+  const setTrainSegment = useTrainSegment((s) => s.setSegment);
 
   // Re-read the cache whenever the tab regains focus. Mutations from
   // the modal stack (`/workouts/create`, `/workouts/[id]/edit`) write
@@ -127,8 +129,13 @@ export function WorkoutsListContainer() {
   }, []);
 
   const onBrowseExercises = useCallback(() => {
-    router.push("/(app)/(tabs)/exercises" as never);
-  }, []);
+    // The workouts list renders inside the Train hub (Workouts segment).
+    // "Browse exercises" flips the hub to its Exercises segment; the
+    // router.push is a no-op when already on Train but keeps the handler
+    // correct if the list is ever mounted standalone (Option 3 IA).
+    setTrainSegment("Exercises");
+    router.push("/(app)/(tabs)/train" as never);
+  }, [setTrainSegment]);
 
   // M3: Quick Start (Story-009) is intentionally NOT surfaced on the
   // workouts page — legacy never had this CTA and we're keeping

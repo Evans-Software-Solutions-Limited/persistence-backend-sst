@@ -49,9 +49,15 @@ export function useUserModeEligibility(): void {
     if (subQuery.data) {
       setEligibility(subQuery.data.isTrainerTier ?? false);
     }
-    // Depend on the primitive `isTrainerTier`, not the object identity, so
-    // the effect only re-runs when the trainer-tier verdict actually flips.
-  }, [isTrainerTier, subQuery.data, setEligibility]);
+    // Depend on the primitive `isTrainerTier`, not `subQuery.data`'s object
+    // identity — React Query hands back a fresh `data` reference on every
+    // refetch (~2min staleTime + refetch-on-focus/reconnect), so keying on the
+    // object would re-fire on every refetch. `setEligibility` is idempotent so
+    // that'd be harmless, but keying on the primitive matches design.md's
+    // `[subQuery.data?.isTrainerTier]` sample + the optimisation this comment
+    // describes. `subQuery.data` is read inside but intentionally NOT a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTrainerTier, setEligibility]);
 
   // 3. Invariant watchdog — re-assert once the network has resolved.
   useEffect(() => {

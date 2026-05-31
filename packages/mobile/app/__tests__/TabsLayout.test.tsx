@@ -81,7 +81,7 @@ jest.mock("../../src/state/user-mode", () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { render, within } from "@testing-library/react-native";
+import { fireEvent, render, within } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
 import { SafeAreaProvider } from "react-native-safe-area-context";
 // eslint-disable-next-line import/first
@@ -92,6 +92,7 @@ import config from "../../tamagui.config";
 import TabsLayout, {
   ACTIVE_WORKOUT_BAR_GAP,
   ATHLETE_TABS,
+  COACH_TABS,
   NavTabBar,
   TAB_BAR_BOTTOM_GAP,
   TAB_BAR_CONTENT_HEIGHT,
@@ -242,5 +243,119 @@ describe("tab-bar safe-area contract (Phase 14.8)", () => {
     const safeArea = getByTestId("nav-tab-bar-safe-area");
     // bottom inset 0 → just the float gap, no inflation.
     expect(safeArea.props.style.paddingBottom).toBe(TAB_BAR_BOTTOM_GAP);
+  });
+});
+
+describe("NavTabBar — tabPress contract + stranded-route guard (review #87)", () => {
+  type NavMock = {
+    navigate: jest.Mock;
+    emit: jest.Mock;
+  };
+
+  function renderNavTabBar({
+    activeIndex,
+    routeNames,
+    tabs,
+    mode,
+    emitResult = { defaultPrevented: false },
+  }: {
+    activeIndex: number;
+    routeNames: string[];
+    tabs: typeof ATHLETE_TABS;
+    mode: "athlete" | "coach";
+    emitResult?: { defaultPrevented: boolean };
+  }) {
+    const navigation: NavMock = {
+      navigate: jest.fn(),
+      emit: jest.fn(() => emitResult),
+    };
+    const props = {
+      state: {
+        index: activeIndex,
+        routeNames,
+        routes: routeNames.map((name) => ({ name, key: `${name}-key` })),
+      },
+      navigation,
+    } as never;
+    const utils = render(
+      <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+        <TamaguiProvider config={config} defaultTheme="dark">
+          <NavTabBar props={props} tabs={tabs} mode={mode} />
+        </TamaguiProvider>
+      </SafeAreaProvider>,
+    );
+    return { ...utils, navigation };
+  }
+
+  const ATHLETE_ROUTES = [
+    "index",
+    "you",
+    "train",
+    "fuel",
+    "clients",
+    "programs",
+  ];
+
+  it("emits a cancellable tabPress then navigates on tapping a non-focused tab", () => {
+    const { getByTestId, navigation } = renderNavTabBar({
+      activeIndex: 0, // index
+      routeNames: ATHLETE_ROUTES,
+      tabs: ATHLETE_TABS,
+      mode: "athlete",
+    });
+    fireEvent.press(getByTestId("tabbar-tab-train"));
+    expect(navigation.emit).toHaveBeenCalledWith({
+      type: "tabPress",
+      target: "train-key",
+      canPreventDefault: true,
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith("train");
+  });
+
+  it("does NOT navigate when tabPress is defaultPrevented", () => {
+    const { getByTestId, navigation } = renderNavTabBar({
+      activeIndex: 0,
+      routeNames: ATHLETE_ROUTES,
+      tabs: ATHLETE_TABS,
+      mode: "athlete",
+      emitResult: { defaultPrevented: true },
+    });
+    fireEvent.press(getByTestId("tabbar-tab-train"));
+    expect(navigation.emit).toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("re-tapping the focused tab emits but does not navigate", () => {
+    const { getByTestId, navigation } = renderNavTabBar({
+      activeIndex: 0, // index is focused
+      routeNames: ATHLETE_ROUTES,
+      tabs: ATHLETE_TABS,
+      mode: "athlete",
+    });
+    fireEvent.press(getByTestId("tabbar-tab-index"));
+    expect(navigation.emit).toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("redirects to index when the focused route is filtered out by the active mode", () => {
+    // Watchdog demoted coach→athlete while parked on /clients: clients is no
+    // longer in ATHLETE_TABS, so the guard redirects to Home.
+    const { navigation } = renderNavTabBar({
+      activeIndex: 4, // clients
+      routeNames: ATHLETE_ROUTES,
+      tabs: ATHLETE_TABS,
+      mode: "athlete",
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith("index");
+  });
+
+  it("does not redirect when the focused route exists in the active mode", () => {
+    const { navigation } = renderNavTabBar({
+      activeIndex: 4, // clients
+      routeNames: ATHLETE_ROUTES,
+      tabs: COACH_TABS, // coach mode — clients is valid
+      mode: "coach",
+    });
+    expect(navigation.navigate).not.toHaveBeenCalledWith("index");
   });
 });

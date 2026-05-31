@@ -64,6 +64,27 @@ describe("useUserMode", () => {
     expect(mockSetItem).toHaveBeenCalledWith("persistence.userMode", "athlete");
   });
 
+  it("switchTo swallows a failed persist + still applies the mode (warns)", async () => {
+    // A rejected setItem must NOT escape switchTo — both callers invoke it
+    // fire-and-forget, so an uncaught rejection would surface as a Possible
+    // Unhandled Promise Rejection. The in-memory mode change still applies.
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    useUserMode.setState({ isTrainerEligible: true });
+    mockSetItem.mockRejectedValueOnce(new Error("disk gone"));
+
+    await expect(
+      useUserMode.getState().switchTo("coach"),
+    ).resolves.toBeUndefined();
+    expect(useUserMode.getState().mode).toBe("coach");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("switchTo persist failed"),
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+
   it("setEligibility(true) records eligibility + marks it known", () => {
     useUserMode.getState().setEligibility(true);
     const s = useUserMode.getState();
