@@ -35,6 +35,13 @@ export interface UserModeState {
   switchTo: (next: UserMode) => Promise<void>;
   setEligibility: (eligible: boolean) => void;
   rehydrate: () => Promise<void>;
+  /**
+   * Return the slice to its signed-out defaults and clear the persisted key.
+   * Called from `useAuth.signOut()` so a trainer's coach mode + eligibility
+   * can't bleed into the next account signed in on the same device (the
+   * STORAGE_KEY is device-global, not user-scoped).
+   */
+  reset: () => void;
 }
 
 export const useUserMode = create<UserModeState>((set, get) => ({
@@ -95,5 +102,20 @@ export const useUserMode = create<UserModeState>((set, get) => ({
     } catch (err) {
       console.warn("[user-mode] rehydrate failed", err);
     }
+  },
+
+  reset: () => {
+    // Back to signed-out defaults + drop the persisted key so the next
+    // account on this device starts as a fresh athlete. Disk clear is
+    // best-effort (fire-and-forget, swallow) — the in-memory reset is the
+    // user-visible effect and applies synchronously.
+    set({
+      mode: "athlete",
+      isTrainerEligible: false,
+      isEligibilityKnown: false,
+    });
+    AsyncStorage.removeItem(STORAGE_KEY).catch((err) => {
+      console.warn("[user-mode] reset removeItem failed", err);
+    });
   },
 }));

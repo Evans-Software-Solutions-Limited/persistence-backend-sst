@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
+import { useUserMode } from "@/state/user-mode";
 import { useAdapters } from "./useAdapters";
 
 export type AuthState = {
@@ -137,6 +138,12 @@ export function useAuth(): AuthState {
     } catch {
       // Best-effort — don't block sign-out on storage failure
     }
+    // Reset the runtime user-mode slice too — its persisted key is
+    // device-global, not user-scoped, so without this a trainer's coach
+    // mode + eligibility would bleed into the next account signed in on
+    // this device (PR #93 review). In-memory reset is synchronous; the
+    // disk clear inside reset() is best-effort.
+    useUserMode.getState().reset();
   }, [auth, storage]);
 
   const resetPassword = useCallback(

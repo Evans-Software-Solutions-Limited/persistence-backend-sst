@@ -11,6 +11,7 @@ import { useUserMode } from "../user-mode";
 
 const mockGetItem = AsyncStorage.getItem as jest.Mock;
 const mockSetItem = AsyncStorage.setItem as jest.Mock;
+const mockRemoveItem = AsyncStorage.removeItem as jest.Mock;
 
 // Reset the singleton store + the AsyncStorage mock before each test so the
 // slices are exercised from their documented default state.
@@ -22,8 +23,10 @@ beforeEach(() => {
   });
   mockGetItem.mockReset();
   mockSetItem.mockReset();
+  mockRemoveItem.mockReset();
   mockGetItem.mockResolvedValue(null);
   mockSetItem.mockResolvedValue(undefined);
+  mockRemoveItem.mockResolvedValue(undefined);
 });
 
 describe("useUserMode", () => {
@@ -163,6 +166,39 @@ describe("useUserMode", () => {
     expect(useUserMode.getState().mode).toBe("athlete");
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("rehydrate failed"),
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+
+  it("reset() returns to signed-out defaults + clears the persisted key", () => {
+    useUserMode.setState({
+      mode: "coach",
+      isTrainerEligible: true,
+      isEligibilityKnown: true,
+    });
+
+    useUserMode.getState().reset();
+
+    const s = useUserMode.getState();
+    expect(s.mode).toBe("athlete");
+    expect(s.isTrainerEligible).toBe(false);
+    expect(s.isEligibilityKnown).toBe(false);
+    expect(mockRemoveItem).toHaveBeenCalledWith("persistence.userMode");
+  });
+
+  it("reset() swallows a failed key removal (best-effort persist)", async () => {
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    mockRemoveItem.mockRejectedValueOnce(new Error("disk gone"));
+    useUserMode.setState({ mode: "coach", isTrainerEligible: true });
+
+    expect(() => useUserMode.getState().reset()).not.toThrow();
+    expect(useUserMode.getState().mode).toBe("athlete");
+    await Promise.resolve();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("reset removeItem failed"),
       expect.any(Error),
     );
     warn.mockRestore();
