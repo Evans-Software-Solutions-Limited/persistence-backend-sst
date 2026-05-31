@@ -118,8 +118,8 @@ Authoritative references:
 
 **Acceptance Criteria:**
 
-- 9.1 [ ] Drawer reads all data via cached hooks (`useGetUserProfile`, `useGetUserSubscription`, etc.) — already offline-safe in V2.
-- 9.2 [ ] Edit-profile saves queue + optimistic per V2 pattern.
+- 9.1 [x] Drawer reads all data via cached hooks (`useProfilePage`, `useMySubscription`, etc.) — offline-safe in V2.
+- 9.2 [x] Edit-profile saves queue + optimistic per V2 pattern. _Closed 2026-05-31 (b): `updateProfileCommand` does optimistic cache write + `enqueueMutation`; drains via `useSyncWorker`. See design.md § Revised 2026-05-31 (b) § I._
 - 9.3 [ ] Sign-out: requires online (Supabase session-clear). If offline, surfaces "Connect to internet to sign out" toast.
 
 ---

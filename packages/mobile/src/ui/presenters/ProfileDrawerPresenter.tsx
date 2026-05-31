@@ -73,9 +73,12 @@ export function tierPillTone(tier: SubscriptionTierName): PillTone {
 
 function fmtDate(date: Date): string {
   // DD/MM/YYYY — matches the prototype's "Ends 01/06/2026".
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yyyy = date.getFullYear();
+  // Use UTC components: `expiresAt` is a UTC ISO timestamp, and reading it
+  // via the local getters silently shifts the date back a day for any
+  // negative-offset timezone (PR #94 medium-severity find).
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = date.getUTCFullYear();
   return `${dd}/${mm}/${yyyy}`;
 }
 

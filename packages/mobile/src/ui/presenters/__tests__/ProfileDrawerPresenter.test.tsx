@@ -83,6 +83,20 @@ describe("ProfileDrawerPresenter", () => {
     expect(getByText("7-DAY TRIAL")).toBeTruthy();
   });
 
+  it("renders the subscription expiry from a UTC ISO timestamp without a timezone day-shift (PR #94 bug 3)", () => {
+    // expiresAt is UTC midnight on 1 June. fmtDate must read UTC components,
+    // not local — otherwise a negative-offset timezone renders 31/05/2026.
+    const { getByText } = renderDrawer({
+      subscription: {
+        tier: "premium",
+        inTrial: false,
+        expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+        planDescription: "Unlimited workouts",
+      },
+    });
+    expect(getByText("Ends 01/06/2026")).toBeTruthy();
+  });
+
   it("omits age from the sub when DOB-derived age is null", () => {
     const { getByText } = renderDrawer({
       profile: { ...baseProps.profile!, age: null },

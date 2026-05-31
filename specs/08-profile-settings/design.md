@@ -704,3 +704,34 @@ Shipped routes under `app/(app)/profile/`: `edit`, `privacy`, `privacy-settings`
 ---
 
 _Revised 2026-05-31 — implementation reconciliation against shipped `main` (#83 + #93). Supersedes the 2026-05-27 plumbing/route/backend assumptions where they conflict._
+
+---
+
+## Revised 2026-05-31 (b): offline-first profile write + PR #94 review fixes
+
+> Follow-up within the same PR after review. Closes the long-standing
+> STORY-009 AC 9.2 gap and the three bot-review findings.
+
+### I. Edit-profile save is now offline-first (closes STORY-009 AC 9.2)
+
+The 2026-05-27 design (and the shipped M6 code) had `EditProfileContainer` call `api.updateProfile` **directly** — a bare `PATCH /profile` that failed hard offline, with no queue and no optimistic write. That always contradicted STORY-009 AC 9.2 ("edit-profile saves queue + optimistic per V2 pattern"); the gap predates this spec but is closed here per owner decision (reads were already offline-first; writes now match).
+
+New `updateProfileCommand` (`application/commands/update-profile.command.ts`) mirrors `updateWorkoutCommand`:
+
+1. **Validate** the patch (DOB format) BEFORE enqueueing — the sync worker POSTs queued payloads with no feedback loop, so a bad value must never reach the queue (see § J bug 2).
+2. **Optimistic cache write** — merge the patch into the cached `/profile/page` payload (`storage.cacheProfilePage`) so the drawer (`useProfilePage`) + edit form reflect the change immediately and across an app restart, until the queue drains.
+3. **Enqueue** a `{ entityType: "profile", endpoint: "/profile", method: "PATCH" }` mutation.
+
+`EditProfileContainer` calls the command (not the adapter) + fires an inline `processSyncQueue` drain for immediacy (mirrors `WorkoutRatingContainer`). The drain is **not awaited** — Save must not block on the network. The generic `useSyncWorker` (mounted at the `(app)` auth boundary) already drains any `entityType` on mount + foreground, so a save made offline replays automatically on reconnect; no new mount point was needed. `useAuth.signOut` already clears the queue + caches, so there's no cross-account bleed surface.
+
+The direct `api.updateProfile` path is retired for the edit form. (The adapter method stays on `ApiPort` — `PrivacySettingsContainer` still uses it for its single-toggle write; converting that is out of scope here.)
+
+### J. PR #94 review fixes
+
+1. **(High) Clearing DOB → 422.** `PATCH /profile` schema was `t.Optional(t.String())`, which rejects an explicit `null`, so the "unset my DOB" path was unreachable. Widened to `t.Optional(t.Union([t.String(), t.Null()]))` + backend test.
+2. **(Med) Malformed DOB → 500.** `profiles.date_of_birth` is a Postgres `DATE`; an unparseable string crashed the `UPDATE`. Now validated in two places: client-side in `updateProfileCommand` (keeps bad dates out of the offline queue) via `shared/utils/date.isIsoDateString`, and server-side in the handler (structured 400 instead of a 500) via a matching `isValidIsoDate` guard. Both reject shape errors, impossible months/days, and non-leap Feb 29.
+3. **(Med) `fmtDate` timezone day-shift.** The drawer's subscription-expiry used local-time getters on a UTC ISO timestamp, shifting the date back a day for negative-offset timezones. Switched to `getUTC*` getters + a timezone-independent presenter test.
+
+---
+
+_Revised 2026-05-31 (b) — offline-first profile write (AC 9.2) + PR #94 fixes._

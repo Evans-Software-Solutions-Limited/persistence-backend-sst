@@ -40,6 +40,11 @@ MockPresenter.mockImplementation((props) => {
         testID="stub-set-fitness-advanced"
         onPress={() => props.onFitnessLevelChange("advanced")}
       />
+      <TextInput
+        testID="stub-dob"
+        value={props.dateOfBirth}
+        onChangeText={(t) => props.onDateOfBirthChange(t)}
+      />
       <Switch
         testID="stub-public-switch"
         value={props.isProfilePublic}
@@ -55,6 +60,13 @@ const mockBack = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ back: mockBack }),
 }));
+
+// The container fires an inline `processSyncQueue` drain after a successful
+// save (offline-first: optimistic cache + queue, drain for immediacy). That
+// drain calls global fetch — stub it so the drain resolves cleanly and the
+// queue entry marks completed.
+const mockFetch = jest.fn();
+(globalThis as Record<string, unknown>).fetch = mockFetch;
 
 function makeProfilePagePayload(
   overrides: Partial<ProfilePageData["profile"]> = {},
@@ -143,6 +155,8 @@ describe("EditProfileContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockBack.mockReset();
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
   });
 
@@ -171,26 +185,11 @@ describe("EditProfileContainer", () => {
     );
   });
 
-  it("PATCHes the profile, invalidates the cache, and routes back on save", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
+  it("optimistically caches + enqueues a PATCH /profile mutation, then routes back", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
     const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
     if (!userId) throw new Error("expected a signed-in session");
     storage.cacheProfilePage(userId, makeProfilePagePayload());
-    api.profiles = [
-      {
-        id: userId,
-        email: "brad@example.com",
-        fullName: "Brad Simms",
-        role: "user",
-        fitnessLevel: "intermediate",
-        avatarUrl: null,
-        isProfilePublic: false,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ];
-    const invalidateSpy = jest.spyOn(storage, "invalidateProfilePage");
-    const updateSpy = jest.spyOn(api, "updateProfile");
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -219,39 +218,37 @@ describe("EditProfileContainer", () => {
     await waitFor(() => {
       expect(mockBack).toHaveBeenCalled();
     });
-    expect(updateSpy).toHaveBeenCalledWith({
+
+    // Offline-first: a PATCH /profile mutation is queued with the diffed
+    // fields, then drained inline. Assert on the drained request body (the
+    // queue entry completes + is pruned after a successful drain).
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/profile");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({
       fullName: "Brad S Edited",
       fitnessLevel: "advanced",
       isProfilePublic: true,
     });
-    expect(invalidateSpy).toHaveBeenCalledWith(userId);
+
+    // Optimistic cache write — the cached profile-page payload reflects the
+    // edit immediately so the drawer + form survive an offline save.
+    const cached = storage.getCachedProfilePage(userId);
+    expect(cached?.payload.profile.fullName).toBe("Brad S Edited");
+    expect(cached?.payload.profile.fitnessLevel).toBe("advanced");
+    expect(cached?.payload.profile.isProfilePublic).toBe(true);
   });
 
-  it("sends fullName as null when the user clears a previously-set name", async () => {
-    // Inspector Brad PR #68 high-severity find: the old `Optional(String)`
-    // schema rejected null end-to-end, so even though the in-memory adapter
-    // accepted this body, the real backend would have 422'd. Schema is now
-    // widened to `Optional(Union([String, Null]))` (covered by a backend
-    // test) and the diff-on-save still emits fullName: null when the user
-    // genuinely wipes a stored name.
-    const { adapters, storage, auth, api } = await createTestAdapters();
+  it("queues fullName: null when the user clears a previously-set name", async () => {
+    // PR #68 high-severity find: the user must be able to clear their name.
+    // The diff-on-save still emits fullName: null; the offline path carries
+    // it through the queue (the server schema accepts null — covered by a
+    // backend test).
+    const { adapters, storage, auth } = await createTestAdapters();
     const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
     if (!userId) throw new Error("expected a signed-in session");
     storage.cacheProfilePage(userId, makeProfilePagePayload());
-    api.profiles = [
-      {
-        id: userId,
-        email: "brad@example.com",
-        fullName: "Brad Simms",
-        role: "user",
-        fitnessLevel: "intermediate",
-        avatarUrl: null,
-        isProfilePublic: false,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ];
-    const updateSpy = jest.spyOn(api, "updateProfile");
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -272,30 +269,28 @@ describe("EditProfileContainer", () => {
     });
 
     await waitFor(() => {
-      expect(updateSpy).toHaveBeenCalled();
+      expect(mockBack).toHaveBeenCalled();
     });
+
     // Diff-on-save: only the fullName changed (initial "Brad Simms" → null).
-    // fitnessLevel and isProfilePublic stayed put and MUST NOT be in the body
-    // (Inspector Brad PR #68 medium-severity find: silent fitnessLevel
-    // overwrite when only an unrelated field was edited).
-    const call = updateSpy.mock.calls[0][0];
-    expect(call).toEqual({ fullName: null });
+    // fitnessLevel and isProfilePublic stayed put and MUST NOT be in the
+    // payload (PR #68 medium-severity find: silent fitnessLevel overwrite).
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      fullName: null,
+    });
   });
 
   it("does NOT emit fitnessLevel when the user had no stored level and only edited the public switch", async () => {
-    // The picker collapses null → "beginner" for display. Before the diff-
-    // on-save fix, every save sent `fitnessLevel: "beginner"`, silently
-    // writing a real value to a user who'd never picked one. Now we diff
-    // against the same collapsed snapshot, so an untouched picker emits
-    // nothing.
-    const { adapters, storage, auth, api } = await createTestAdapters();
+    // The picker collapses null → "beginner" for display. Diffing against
+    // the same collapsed snapshot means an untouched picker emits nothing.
+    const { adapters, storage, auth } = await createTestAdapters();
     const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
     if (!userId) throw new Error("expected a signed-in session");
     storage.cacheProfilePage(
       userId,
       makeProfilePagePayload({ fitnessLevel: null }),
     );
-    const updateSpy = jest.spyOn(api, "updateProfile");
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -315,20 +310,24 @@ describe("EditProfileContainer", () => {
     });
 
     await waitFor(() => {
-      expect(updateSpy).toHaveBeenCalled();
+      expect(mockBack).toHaveBeenCalled();
     });
-    const call = updateSpy.mock.calls[0][0];
-    expect(call).toEqual({ isProfilePublic: true });
-    expect(call).not.toHaveProperty("fitnessLevel");
-    expect(call).not.toHaveProperty("fullName");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(payload).toEqual({ isProfilePublic: true });
+    expect(payload).not.toHaveProperty("fitnessLevel");
+    expect(payload).not.toHaveProperty("fullName");
   });
 
-  it("routes back without calling updateProfile when nothing changed and the user taps Save", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
+  it("rejects an invalid DOB before enqueueing — surfaces an error, no queue entry, no navigation", async () => {
+    // PR #94 medium-severity find: an unparseable date would 500 the server
+    // on every offline drain. The command validates BEFORE enqueueing, so a
+    // bad date never reaches the queue.
+    const { adapters, storage, auth } = await createTestAdapters();
     const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
     if (!userId) throw new Error("expected a signed-in session");
     storage.cacheProfilePage(userId, makeProfilePagePayload());
-    const updateSpy = jest.spyOn(api, "updateProfile");
 
     const { getByTestId } = render(
       <TestWrapper adapters={adapters}>
@@ -341,38 +340,7 @@ describe("EditProfileContainer", () => {
     });
 
     await act(async () => {
-      fireEvent.press(getByTestId("stub-save"));
-    });
-
-    expect(updateSpy).not.toHaveBeenCalled();
-    expect(mockBack).toHaveBeenCalled();
-  });
-
-  it("surfaces an error message and does not navigate when save fails", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-    api.shouldFail = true;
-    api.failError = { kind: "api", code: "server", message: "boom" };
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <EditProfileContainer />
-      </TestWrapper>,
-    );
-
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    // Split: the diff-on-save logic reads `fullName` from the handleSave
-    // closure, which is recreated by useCallback when state changes. Firing
-    // changeText + press in the same act() leaves handleSave still pointing
-    // at the pre-edit closure (empty diff → no API call → silent back-route)
-    // and the test would assert against a no-op rather than a failed save.
-    await act(async () => {
-      fireEvent.changeText(getByTestId("stub-full-name"), "Edited");
+      fireEvent.changeText(getByTestId("stub-dob"), "1990-13-50");
     });
     await act(async () => {
       fireEvent.press(getByTestId("stub-save"));
@@ -381,7 +349,110 @@ describe("EditProfileContainer", () => {
     await waitFor(() => {
       expect(getByTestId("stub-error").props.children).not.toBe("none");
     });
+    expect(storage.getPendingMutations()).toHaveLength(0);
     expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("queues dateOfBirth: null when the user clears their DOB", async () => {
+    // PR #94 high-severity find: clearing DOB must work. Empty field → null
+    // in the payload; the server schema accepts null (backend test covers it).
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(
+      userId,
+      makeProfilePagePayload({ dateOfBirth: "1990-01-15" }),
+    );
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-dob"), "");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => {
+      expect(mockBack).toHaveBeenCalled();
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      dateOfBirth: null,
+    });
+  });
+
+  it("routes back without enqueueing when nothing changed and the user taps Save", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("still routes back + queues when offline (the inline drain failing is non-fatal)", async () => {
+    // Offline-first invariant: Save must not block on the network. The
+    // inline drain rejects (offline), but the optimistic cache write + queue
+    // entry already landed and the user is routed back regardless.
+    mockFetch.mockRejectedValue(new Error("offline"));
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-full-name"), "Edited Offline");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => {
+      expect(mockBack).toHaveBeenCalled();
+    });
+    // The optimistic cache write survived even though the drain failed.
+    expect(storage.getCachedProfilePage(userId)?.payload.profile.fullName).toBe(
+      "Edited Offline",
+    );
+    // The mutation is still queued for the next drain (useSyncWorker on
+    // foreground). A failed inline drain marks it failed-but-retriable, so
+    // it remains in the pending pool.
+    expect(storage.getPendingMutations()).toHaveLength(1);
   });
 
   it("routes back without prompting when the form is unchanged", async () => {

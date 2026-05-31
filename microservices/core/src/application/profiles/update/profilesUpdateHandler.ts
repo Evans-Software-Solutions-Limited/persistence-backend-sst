@@ -6,6 +6,24 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
+/**
+ * Validate a `YYYY-MM-DD` calendar date (shape + real month/day, incl.
+ * leap-year rejection). The `profiles.date_of_birth` column is a Postgres
+ * `DATE`; an invalid string would crash the UPDATE with a 500, so the
+ * handler gates DOB here and returns a structured 400 instead.
+ */
+function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 export const profilesUpdateHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -24,8 +42,19 @@ export const profilesUpdateHandler = new Elysia()
       if (body.avatarUrl !== undefined) updateData.avatarUrl = body.avatarUrl;
       if (body.fitnessLevel !== undefined)
         updateData.fitnessLevel = body.fitnessLevel;
-      if (body.dateOfBirth !== undefined)
+      if (body.dateOfBirth !== undefined) {
+        // `null` clears the column (the Edit Profile screen's "unset my
+        // DOB" path — PR #94 high-severity find). A non-null value must be
+        // a real YYYY-MM-DD calendar date: the column is a Postgres `DATE`,
+        // so an unparseable string would throw `invalid input syntax for
+        // type date` deep in the UPDATE and surface as an uncaught 500.
+        // Reject it here with a structured 400 instead (PR #94 medium find).
+        if (body.dateOfBirth !== null && !isValidIsoDate(body.dateOfBirth)) {
+          ctx.set.status = 400;
+          return { error: "dateOfBirth must be a valid YYYY-MM-DD date" };
+        }
         updateData.dateOfBirth = body.dateOfBirth;
+      }
       if (body.heightCm !== undefined)
         updateData.heightCm = String(body.heightCm);
       if (body.weightKg !== undefined)
@@ -71,7 +100,7 @@ export const profilesUpdateHandler = new Elysia()
             t.Literal("elite"),
           ]),
         ),
-        dateOfBirth: t.Optional(t.String()),
+        dateOfBirth: t.Optional(t.Union([t.String(), t.Null()])),
         heightCm: t.Optional(t.Union([t.String(), t.Number()])),
         weightKg: t.Optional(t.Union([t.String(), t.Number()])),
         availableEquipment: t.Optional(t.Array(t.String())),
