@@ -1,23 +1,21 @@
 /**
- * Tabs layout route-registration tests.
+ * Tabs layout tests — Option 3 mode-aware routing (14-navigation Phase 14.4).
  *
- * Phase 14.3 (14-navigation) restructured the tab route set from the legacy
- * 6 tabs (index / progress / workouts / exercises / clients / profile) to the
- * Option 3 IA: index / train / fuel / you (+ coach-only clients / programs).
- *
- * This transitional layout still uses the legacy Ionicons rendering and keeps
- * the M10.5 Wave 2 trainer-tier gate on Clients (programs is hidden until
- * Phase 14.4 wires mode-driven visibility). Phase 14.4 rewrites the layout to
- * the mode-aware `<TabBar>` primitive + adds the athlete/coach component test
- * (T-14.4.4).
+ * Two concerns:
+ *  1. Route registration: all six tab routes stay registered as
+ *     <Tabs.Screen>; the active mode decides which are VISIBLE via
+ *     `options.href` (null hides while keeping the route navigable).
+ *  2. The visible tab spec: athlete → Home/Train/Fuel/You,
+ *     coach → Home/Clients/Programs/You — driven by useUserMode().mode.
  *
  * Spec: specs/14-navigation/design.md § <TabsLayout> + § Route registration
- *       specs/14-navigation/requirements.md STORY-001, STORY-002 (AC 2.6)
- *       specs/11-payments-subscriptions/design.md § Per-screen gate (Wave 2)
+ *       specs/14-navigation/requirements.md STORY-001, STORY-002, STORY-003
+ *       specs/14-navigation/tasks.md T-14.4.1, T-14.4.4 (STORY-009 AC 9.3)
  */
 
-// Capture every `<Tabs.Screen>` mounted under `<Tabs>` so we can
-// assert on the per-tab `options.href` (the visibility hinge).
+// Capture every <Tabs.Screen> mounted under <Tabs> so we can assert on the
+// per-tab `options.href` (the visibility hinge). Also capture the `tabBar`
+// render prop so we can render the custom NavTabBar in isolation.
 type CapturedScreen = {
   name: string;
   href: string | null | undefined;
@@ -29,17 +27,35 @@ const capturedScreens: CapturedScreen[] = [];
 jest.mock("expo-router", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react");
-  // Untyped `props` parameters to keep Jest's mock factory free of
-  // type-only references — Jest's `no-out-of-scope-variables` check
-  // doesn't permit type aliases here (caught when the suite runs in
-  // the full mobile test:unit pass).
-  // `Tabs` is a passthrough that renders children. Each `Tabs.Screen`
-  // child pushes a CapturedScreen record to the suite-scoped array
-  // (the `mock`-prefixed `capturedScreens` is whitelisted by Jest).
-  // Returning `null` keeps the test render tree clean — we only care
-  // about the side effect.
-  function Tabs(props: { children: React.ReactNode }) {
-    return React.createElement(React.Fragment, null, props.children);
+  function Tabs(props: {
+    children: React.ReactNode;
+    tabBar?: (p: unknown) => React.ReactNode;
+  }) {
+    // Render the custom tabBar with a minimal navigation state so the
+    // visible-tab assertions can exercise it. The route names mirror the
+    // registered screens; index 0 is active.
+    const tabBarNode = props.tabBar
+      ? props.tabBar({
+          state: {
+            index: 0,
+            routeNames: [
+              "index",
+              "you",
+              "train",
+              "fuel",
+              "clients",
+              "programs",
+            ],
+          },
+          navigation: { navigate: jest.fn() },
+        })
+      : null;
+    return React.createElement(
+      React.Fragment,
+      null,
+      tabBarNode,
+      props.children,
+    );
   }
   function TabsScreen(props: {
     name: string;
@@ -56,112 +72,120 @@ jest.mock("expo-router", () => {
   return { Tabs };
 });
 
-// Mock useSafeAreaInsets (no SafeAreaProvider in tests).
-jest.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
-
-// Mock useMySubscription so each test controls the trainer/non-
-// trainer branch directly. We only assert on `data.isTrainerTier`
-// (the only field the layout consumes), so the mock return type is
-// intentionally loose — the layout treats `data` as `Partial<...>` via
-// optional chaining.
-type MockSubReturn = { data: Record<string, unknown> | undefined };
-const mockUseMySubscription = jest.fn<MockSubReturn, []>();
-jest.mock("../../src/ui/hooks/useMySubscription", () => ({
-  useMySubscription: () => mockUseMySubscription(),
+// Drive the mode by hand.
+type MockModeReturn = "athlete" | "coach";
+const mockMode = jest.fn<MockModeReturn, []>();
+jest.mock("../../src/state/user-mode", () => ({
+  useUserMode: (selector: (s: { mode: MockModeReturn }) => unknown) =>
+    selector({ mode: mockMode() }),
 }));
 
 // eslint-disable-next-line import/first
-import React from "react";
+import { render, within } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
-import { render } from "@testing-library/react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+// eslint-disable-next-line import/first
+import { TamaguiProvider } from "@tamagui/core";
+// eslint-disable-next-line import/first
+import config from "../../tamagui.config";
 // eslint-disable-next-line import/first
 import TabsLayout from "../(app)/(tabs)/_layout";
 
-beforeEach(() => {
-  capturedScreens.length = 0;
-  mockUseMySubscription.mockReset();
-});
+const safeAreaMetrics = {
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  insets: { top: 44, left: 0, right: 0, bottom: 34 },
+};
 
 function renderLayout() {
-  render(<TabsLayout />);
+  return render(
+    <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+      <TamaguiProvider config={config} defaultTheme="dark">
+        <TabsLayout />
+      </TamaguiProvider>
+    </SafeAreaProvider>,
+  );
 }
 
-describe("TabsLayout — Option 3 route registration (14-navigation Phase 14.3)", () => {
-  it("registers exactly the Option 3 tab route set", () => {
-    // The route set is the new 4-tab athlete IA + the two coach-only routes
-    // (registered so deep links + programmatic navigation resolve; their
-    // visibility is gated). Legacy progress / workouts / exercises / profile
-    // are gone — folded into you / train / drawer respectively.
-    mockUseMySubscription.mockReturnValue({ data: undefined });
+beforeEach(() => {
+  capturedScreens.length = 0;
+  mockMode.mockReset();
+  mockMode.mockReturnValue("athlete");
+});
+
+describe("TabsLayout — route registration", () => {
+  it("registers all six tab routes regardless of mode", () => {
     renderLayout();
     const names = capturedScreens.map((s) => s.name).sort();
     expect(names).toEqual(
-      ["index", "train", "fuel", "you", "clients", "programs"].sort(),
+      ["index", "you", "train", "fuel", "clients", "programs"].sort(),
     );
   });
 
-  it("does not register any legacy tab routes", () => {
-    mockUseMySubscription.mockReturnValue({ data: undefined });
+  it("athlete mode: athlete tabs visible, coach tabs hidden (href: null)", () => {
+    mockMode.mockReturnValue("athlete");
     renderLayout();
-    const names = capturedScreens.map((s) => s.name);
-    for (const legacy of ["progress", "workouts", "exercises", "profile"]) {
-      expect(names).not.toContain(legacy);
+    const byName = Object.fromEntries(
+      capturedScreens.map((s) => [s.name, s.href]),
+    );
+    // Visible (href undefined → default route).
+    expect(byName.index).toBeUndefined();
+    expect(byName.train).toBeUndefined();
+    expect(byName.fuel).toBeUndefined();
+    expect(byName.you).toBeUndefined();
+    // Hidden (href null).
+    expect(byName.clients).toBeNull();
+    expect(byName.programs).toBeNull();
+  });
+
+  it("coach mode: coach tabs visible, athlete-only tabs hidden (href: null)", () => {
+    mockMode.mockReturnValue("coach");
+    renderLayout();
+    const byName = Object.fromEntries(
+      capturedScreens.map((s) => [s.name, s.href]),
+    );
+    // Visible.
+    expect(byName.index).toBeUndefined();
+    expect(byName.clients).toBeUndefined();
+    expect(byName.programs).toBeUndefined();
+    expect(byName.you).toBeUndefined();
+    // Hidden.
+    expect(byName.train).toBeNull();
+    expect(byName.fuel).toBeNull();
+  });
+});
+
+describe("TabsLayout — visible tab spec (STORY-009 AC 9.3)", () => {
+  it("renders exactly the four athlete tabs with their labels", () => {
+    mockMode.mockReturnValue("athlete");
+    const { getByTestId } = renderLayout();
+    const bar = within(getByTestId("nav-tab-bar"));
+    for (const label of ["Home", "Train", "Fuel", "You"]) {
+      expect(bar.getByText(label)).toBeTruthy();
     }
+    // The athlete-only labels Clients/Programs are absent.
+    expect(bar.queryByText("Clients")).toBeNull();
+    expect(bar.queryByText("Programs")).toBeNull();
   });
 
-  it("hides the Programs tab (coach-only) regardless of tier", () => {
-    mockUseMySubscription.mockReturnValue({
-      data: { isTrainerTier: true, tierName: "individual_trainer" },
-    });
-    renderLayout();
-    const programs = capturedScreens.find((s) => s.name === "programs");
-    expect(programs?.href).toBeNull();
-  });
-
-  it("hides the Clients tab (href: null) for a free-tier user", () => {
-    mockUseMySubscription.mockReturnValue({ data: { isTrainerTier: false } });
-    renderLayout();
-    const clients = capturedScreens.find((s) => s.name === "clients");
-    expect(clients).toBeDefined();
-    expect(clients?.href).toBeNull();
-  });
-
-  it("hides the Clients tab (href: null) for a premium (non-trainer) user", () => {
-    mockUseMySubscription.mockReturnValue({
-      data: { isTrainerTier: false, tierName: "premium" },
-    });
-    renderLayout();
-    const clients = capturedScreens.find((s) => s.name === "clients");
-    expect(clients?.href).toBeNull();
-  });
-
-  it("hides the Clients tab while the subscription cache is still resolving (data undefined)", () => {
-    mockUseMySubscription.mockReturnValue({ data: undefined });
-    renderLayout();
-    const clients = capturedScreens.find((s) => s.name === "clients");
-    expect(clients?.href).toBeNull();
-  });
-
-  it("shows the Clients tab (href: undefined → default route) for a trainer-tier user", () => {
-    mockUseMySubscription.mockReturnValue({
-      data: { isTrainerTier: true, tierName: "individual_trainer" },
-    });
-    renderLayout();
-    const clients = capturedScreens.find((s) => s.name === "clients");
-    // `undefined` lets Expo Router resolve the default href (the route
-    // file path). The Boolean check matters here: `null` would hide
-    // it, `undefined` shows it.
-    expect(clients?.href).toBeUndefined();
-  });
-
-  it("the four athlete tabs are always visible (never href: null)", () => {
-    mockUseMySubscription.mockReturnValue({ data: { isTrainerTier: false } });
-    renderLayout();
-    for (const name of ["index", "train", "fuel", "you"]) {
-      const screen = capturedScreens.find((s) => s.name === name);
-      expect(screen?.href).toBeUndefined();
+  it("renders exactly the four coach tabs with their labels", () => {
+    mockMode.mockReturnValue("coach");
+    const { getByTestId } = renderLayout();
+    const bar = within(getByTestId("nav-tab-bar"));
+    for (const label of ["Home", "Clients", "Programs", "You"]) {
+      expect(bar.getByText(label)).toBeTruthy();
     }
+    expect(bar.queryByText("Train")).toBeNull();
+    expect(bar.queryByText("Fuel")).toBeNull();
+  });
+
+  it("shows the COACH chrome dot only in coach mode", () => {
+    mockMode.mockReturnValue("coach");
+    const coach = renderLayout();
+    expect(coach.getByTestId("tabbar-coach-dot")).toBeTruthy();
+
+    capturedScreens.length = 0;
+    mockMode.mockReturnValue("athlete");
+    const athlete = renderLayout();
+    expect(athlete.queryByTestId("tabbar-coach-dot")).toBeNull();
   });
 });
