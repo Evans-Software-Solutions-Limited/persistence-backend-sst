@@ -49,10 +49,34 @@
 
 ## Phase 14.7 — Deep-link redirect map (1 PR)
 
-- [ ] **T-14.7.1** Add `LEGACY_REDIRECTS` map + `LegacyRedirects()` component in `app/_layout.tsx` per `design.md § Deep-link redirect map`. **Mount `<LegacyRedirects/>` as a sibling of `<Stack>` inside `RootLayout`** — not a child (expo-router's `<Stack>` renders only `<Stack.Screen>` children). Implements STORY-007 ACs.
-- [ ] **T-14.7.2** Wire both `Linking.getInitialURL()` (cold-launch deep link) AND `Linking.addEventListener('url', …)` (hot URL events) inside the `LegacyRedirects()` `useEffect`.
-- [ ] **T-14.7.3** Integration tests cover each redirect entry. Closes STORY-007 AC 7.1.
-- [ ] **T-14.7.4** Add comment block at the top of the redirect map: `// REMOVE: <date + 6 months>` so Phase 5 cleanup catches it.
+> **Deferred 2026-05-31 (scope decision).** The legacy deep-link redirect map
+> is a 6-month backward-compat shim for the OLD app's `persistence://` paths
+> (existing widgets / push notifications / Universal Links). The V2 app has **no
+> released users**, so there are no legacy deep links in the wild to keep
+> working — the shim has nothing to translate today. Building + maintaining a
+> dated removal shim now would be dead code.
+>
+> This phase is **deferred, not cancelled**. The redirect map is re-scoped to
+> land when it first has a real consumer — whichever comes first:
+>
+> - `09-notifications-social` mobile frontend (push payloads carrying route
+>   names — AC 7.3), or
+> - the first public/TestFlight release that needs Universal Link continuity.
+>
+> When picked up, it implements STORY-007 against `design.md § Deep-link
+redirect map` (which is preserved verbatim as the contract). The
+> `useTrainSegment.pendingCreate` one-shot + `setSegment(...)` setters the map
+> depends on already shipped in Phase 14.1/14.3 and are unit-tested, so the
+> deferred work is purely the map + `<LegacyRedirects/>` mount + its tests.
+>
+> Acceptance-gate impact: the "deep links from old paths land on the correct
+> new tabs" line is struck from the 14-navigation acceptance gate and inherited
+> by the consuming spec.
+
+- [ ] **T-14.7.1** _(deferred — see note above)_ Add `LEGACY_REDIRECTS` map + `LegacyRedirects()` component in `app/_layout.tsx` per `design.md § Deep-link redirect map`. **Mount `<LegacyRedirects/>` as a sibling of `<Stack>` inside `RootLayout`** — not a child (expo-router's `<Stack>` renders only `<Stack.Screen>` children). Implements STORY-007 ACs.
+- [ ] **T-14.7.2** _(deferred)_ Wire both `Linking.getInitialURL()` (cold-launch deep link) AND `Linking.addEventListener('url', …)` (hot URL events) inside the `LegacyRedirects()` `useEffect`.
+- [ ] **T-14.7.3** _(deferred)_ Integration tests cover each redirect entry. Closes STORY-007 AC 7.1.
+- [ ] **T-14.7.4** _(deferred)_ Add comment block at the top of the redirect map: `// REMOVE: <date + 6 months>` so Phase 5 cleanup catches it.
 
 ## Phase 14.8 — Tab bar safe-area + ActiveWorkoutBar coordination (1 PR)
 
@@ -71,10 +95,11 @@
 
 ## Acceptance gate (navigation phase complete)
 
-- [ ] All 9 phases above ship as PRs in dependency order (14.1 + 14.2 land first, then 14.3-14.8 can fan out, 14.9 verifies).
+- [ ] All phases above ship as PRs in dependency order (14.1 + 14.2 land first, then 14.3-14.8 can fan out, 14.9 verifies). **14.7 (deep-link redirects) is deferred — see the Phase 14.7 note; it does not gate navigation completion.**
 - [ ] `bun run typecheck`, `bun run lint`, `bun run build`, `bun run test:unit` all green.
 - [ ] 90% coverage on touched files.
-- [ ] Manual e2e: athlete and trainer users can both navigate the app end-to-end. Trainer can switch modes from the drawer. Deep links from old paths land on the correct new tabs.
+- [ ] Manual e2e: athlete and trainer users can both navigate the app end-to-end. Trainer can switch modes from the drawer.
+- [ ] ~~Deep links from old paths land on the correct new tabs.~~ _(Deferred with Phase 14.7 — inherited by the consuming spec, `09-notifications-social` / first-release, per the Phase 14.7 note.)_
 - [ ] No regression in active-workout overlay positioning (gated on `05-active-session` having been amended to use the new tab-bar-height contract from T-14.8.2).
 
 ---
