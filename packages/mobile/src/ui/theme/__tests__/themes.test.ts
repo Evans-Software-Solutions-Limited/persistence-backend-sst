@@ -25,18 +25,27 @@ describe("themes", () => {
     expect(lightTheme.borderColor).toBeDefined();
   });
 
-  it("dark theme is dark-first (dark backgrounds)", () => {
-    expect(darkTheme.background).toBe("#0A0A0F");
-    expect(darkTheme.color).toBe("#FFFFFF");
+  it("dark theme is dark-first using the handoff background + text ramp", () => {
+    expect(darkTheme.background).toBe("#0A0B12");
+    expect(darkTheme.color).toBe("#F4F4F8");
+    expect(darkTheme.surface).toBe("#12141D");
+    expect(darkTheme.colorSecondary).toBe("#C2C2CE");
   });
 
   it("light theme has light backgrounds", () => {
     expect(lightTheme.background).toBe("#F5F5F7");
-    expect(lightTheme.color).toBe("#0A0A0F");
+    expect(lightTheme.color).toBe("#0A0B12");
   });
 
-  it("both themes share the same primary accent", () => {
+  it("both themes share the refreshed brand cyan (#22D3EE)", () => {
     expect(darkTheme.primary).toBe(lightTheme.primary);
-    expect(darkTheme.primary).toBe("#00D4FF");
+    expect(darkTheme.primary).toBe("#22D3EE");
+  });
+
+  it("refreshes semantic tones to the handoff palette", () => {
+    expect(darkTheme.success).toBe("#34D399");
+    expect(darkTheme.warning).toBe("#FBBF24");
+    expect(darkTheme.error).toBe("#F87171");
+    expect(darkTheme.info).toBe("#60A5FA");
   });
 });

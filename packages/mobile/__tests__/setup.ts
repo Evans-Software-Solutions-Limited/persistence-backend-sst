@@ -27,7 +27,11 @@ jest.mock("react-native-reanimated", () => {
     withTiming: (val: number) => val,
     withDelay: (_delay: number, val: number) => val,
     withRepeat: (val: number) => val,
+    cancelAnimation: () => undefined,
     interpolate: (val: number) => val,
+    // Bar/Ring (01-design-system) call useReducedMotion to bypass the fill
+    // animation; default to false in tests so the animated path is exercised.
+    useReducedMotion: () => false,
     Extrapolation: { CLAMP: "clamp" },
     Easing: {
       linear: "linear",
@@ -36,6 +40,7 @@ jest.mock("react-native-reanimated", () => {
       out: () => "easeOut",
       in: () => "easeIn",
       inOut: () => "easeInOut",
+      bezier: () => ({ factory: () => "bezier" }),
     },
     FadeIn: {
       duration: () => ({ duration: () => ({}) }),
@@ -126,18 +131,116 @@ jest.mock("@/ui/components/workouts/SemiCircleSlider", () => {
   };
 });
 
-// Mock react-native-svg (native module, not available in Jest)
-jest.mock("react-native-svg", () => {
+// Mock expo-font — the native font loader isn't available in Jest. The app's
+// ThemeProvider gates first paint on `useFonts(...)` returning loaded=true
+// (01-design-system STORY-002). Returning [true, null] lets every test tree
+// that mounts the provider render immediately with the (mocked) Geist faces.
+jest.mock("expo-font", () => ({
+  __esModule: true,
+  useFonts: jest.fn(() => [true, null]),
+  loadAsync: jest.fn(async () => undefined),
+  isLoaded: jest.fn(() => true),
+}));
+
+// Mock @gorhom/bottom-sheet (01-design-system <BottomSheet> primitive). The
+// real package pulls native gesture/reanimated bindings; in Jest we render a
+// plain View tree so the sheet's header + children mount and can be asserted.
+jest.mock("@gorhom/bottom-sheet", () => {
   const { View } = require("react-native");
+  const React = require("react");
+  const passthrough = (testIdFallback?: string) =>
+    function MockSheetPart(props: Record<string, unknown>) {
+      return React.createElement(
+        View,
+        { testID: (props.testID as string) ?? testIdFallback },
+        props.children as React.ReactNode,
+      );
+    };
+  const GorhomBottomSheet = React.forwardRef(
+    (props: Record<string, unknown>, _ref: unknown) => {
+      const backdropComponent = props.backdropComponent;
+      const backdrop =
+        typeof backdropComponent === "function"
+          ? backdropComponent({ animatedIndex: { value: 0 }, style: {} })
+          : null;
+      return React.createElement(
+        View,
+        { testID: "gorhom-bottom-sheet" },
+        backdrop,
+        props.children as React.ReactNode,
+      );
+    },
+  );
   return {
     __esModule: true,
-    default: View, // Svg
-    Svg: View,
-    Path: View,
-    Circle: View,
-    Rect: View,
-    G: View,
+    default: GorhomBottomSheet,
+    BottomSheetModal: GorhomBottomSheet,
+    BottomSheetModalProvider: passthrough(),
+    BottomSheetView: passthrough(),
+    BottomSheetScrollView: passthrough(),
+    BottomSheetBackdrop: passthrough("gorhom-backdrop"),
+    BottomSheetTextInput: passthrough(),
+    BottomSheetHandle: passthrough(),
+    useBottomSheet: () => ({ expand: jest.fn(), close: jest.fn() }),
+    useBottomSheetModal: () => ({ dismiss: jest.fn() }),
   };
+});
+
+// Mock react-native-svg (native module, not available in Jest).
+// lucide-react-native imports this as a namespace (`import * as NativeSvg`)
+// and renders `NativeSvg.Svg` + PascalCased child tags (Path, Circle, Line,
+// Polyline, Polygon, Rect, Ellipse, G, …). A Proxy can't be used here because
+// Jest/babel's `_interopRequireWildcard` copies own-enumerable keys, which a
+// Proxy doesn't expose — so the namespace must be a plain object that names
+// every element lucide (and our own SVG components) may touch.
+jest.mock("react-native-svg", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  // The Svg root maps lucide's `data-testid` onto RN `testID` so icon testIDs
+  // stay queryable after the Ionicons -> lucide adoption sweep.
+  const Svg = (props: Record<string, unknown>) => {
+    const dataTestId = props["data-testid"];
+    const testID = (props.testID ?? dataTestId) as string | undefined;
+    return React.createElement(
+      View,
+      { testID },
+      props.children as React.ReactNode,
+    );
+  };
+  const elements = [
+    "Path",
+    "Circle",
+    "Ellipse",
+    "Line",
+    "Polyline",
+    "Polygon",
+    "Rect",
+    "G",
+    "Text",
+    "TSpan",
+    "TextPath",
+    "Defs",
+    "Use",
+    "Symbol",
+    "Image",
+    "ClipPath",
+    "Mask",
+    "Marker",
+    "Pattern",
+    "LinearGradient",
+    "RadialGradient",
+    "Stop",
+    "ForeignObject",
+  ];
+  const mock: Record<string, unknown> = {
+    __esModule: true,
+    default: Svg,
+    Svg,
+  };
+  for (const name of elements) {
+    mock[name] = View;
+  }
+  return mock;
 });
 
 // Mock expo-linear-gradient (native module, not available in Jest)

@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { IconBack, IconChevronR, IconMail } from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -15,6 +15,10 @@ import {
   Spacing,
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
+
+// [01-design-system adoption sweep 2026-05-29]
+// Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
+// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Help Center — pure presenter. FAQ list + Contact Support CTA ported
@@ -73,7 +77,7 @@ export function HelpCenterPresenter({
             testID="help-center-back"
             hitSlop={8}
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <IconBack size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Help Center</Text>
           <View style={styles.headerSpacer} />
@@ -101,17 +105,9 @@ export function HelpCenterPresenter({
               onPress={onContactSupport}
               testID="help-center-contact-support"
             >
-              <Ionicons
-                name="mail-outline"
-                size={20}
-                color={Colors.primary.DEFAULT}
-              />
+              <IconMail size={20} color={Colors.primary.DEFAULT} />
               <Text style={styles.actionButtonText}>Contact Support</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.text.secondary}
-              />
+              <IconChevronR size={20} color={Colors.text.secondary} />
             </TouchableOpacity>
           </View>
         </ScrollView>

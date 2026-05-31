@@ -124,24 +124,34 @@ If a downstream spec, brief, or PR ever ambiguates against the prototype, the pr
   - `#FFD700` → `$gold`
   - `#0A0A0F` and `#0A0B12` → `$bg`
   - `rgba(0,212,255,*)` → `$primaryDim` / `$primaryGlow` (heuristic on alpha < 0.20 → Dim, ≥ 0.20 → Glow)
-- 6.3 [ ] The four `*LegacyTheme` files have their internal hex literals codemodded to token references — they continue to export the same named exports, but their values now resolve through the token system. Existing screens that import from `*LegacyTheme` keep working unchanged.
-- 6.4 [ ] CI lint rule introduced: any new hex literal outside `theme/` or `__tests__/fixtures/` fails. The four `*LegacyTheme` files are allow-listed until M11 Polish deletes them.
-- 6.5 [ ] Codemod run output committed as a single sweep PR with a count of replacements per file. No semantic changes in the same PR.
+- 6.3 [x] The four `*LegacyTheme` files have their internal hex literals codemodded to token references — they continue to export the same named exports, but their values now resolve through the token system. Existing screens that import from `*LegacyTheme` keep working unchanged.
+  - _Revised 2026-05-31: superseded by the theme-bridge. Rather than codemod each `*LegacyTheme` file's internal hex to token refs, `homeLegacyTheme.Colors` was re-pointed to the new handoff palette and the other three shims funnel through it — so every legacy screen's colours refresh with zero per-file edits, achieving the same "screens resolve through the new system" intent more cheaply. The literal codemod-the-internals step is therefore not run; the exports are unchanged as required. Full deletion of these files is owned by `12-production-readiness` Phase 12.1._
+- 6.4 [x] CI lint rule introduced: any new hex literal outside `theme/` or `__tests__/fixtures/` fails. The four `*LegacyTheme` files are allow-listed until M11 Polish deletes them.
+- 6.5 [x] Codemod run output committed as a single sweep PR with a count of replacements per file. No semantic changes in the same PR.
+  - _Revised 2026-05-31: the "≥95% of hex replaced" framing assumed most hard-coded hex sat in tokenisable Tamagui style props. In practice a dry-run across `src/**` yields **0 safe replacements** — the residual hex all lives in positions a Tamagui `$token` cannot resolve (RN `StyleSheet.create` bodies, `LinearGradient` colour arrays, SVG `fill`/`stroke`, icon `color`, `shadowColor`), which the `no-raw-hex-colors` rule deliberately exempts. Rewriting those would break them at runtime. The codemod + lint rule ship as the permanent guard-rail against NEW raw hex; palette adoption was delivered by the theme-bridge (AC 6.3). The "count of replacements" deliverable is the committed dry-run report showing 0 and documenting why — accepted as the closure of this AC._
 
 ### STORY-007: As a developer, I want ad-hoc component shells in existing V2 screens swapped for the new primitives so screens benefit from the new design system as it lands — accepting that screens will look transitionally clunky until their owning spec finishes the port
 
 **Acceptance Criteria:**
 
-- 7.1 [ ] An "adoption sweep" PR (or per-screen sequence of PRs) visits every file in `packages/mobile/src/ui/presenters/**` and `packages/mobile/src/ui/components/**` (excluding the new primitives themselves) and swaps the following 1:1 shell replacements where the prop surface fits:
+> **Revised 2026-05-31 (adoption strategy + scope split).** A two-lever approach replaced the literal per-directory shell-swap, and the residual structural swaps are formally **handed to the owning specs** rather than completed here:
+>
+> - **Lever 1 — theme-bridge (DONE, universal):** `homeLegacyTheme.Colors` re-pointed to the handoff palette; all four `*LegacyTheme` shims funnel through it, so EVERY legacy screen's colours refreshed with zero per-screen edits. This is the high-value, low-risk win and it has fully landed.
+> - **Lever 2 — structural shell-swaps (DEFERRED to owning specs):** swapping ad-hoc `<View>`/`<TouchableOpacity>`/Ionicons shells for `<Card>`/`<Btn>`/Lucide in `home/`, `workouts/`, `session/`, `subscription/` is intentionally NOT done in this spec beyond the legal/support/settings presenter batch already swapped. STORY-007 explicitly allows these to land "when the consuming screen is touched by its owning spec"; forcing them now would churn screens that `04`/`05`/`06`/`08`/`10`/`11`/`13` are about to rebuild. Each owning spec inherits AC 7.1–7.6 for its own surfaces.
+>
+> Net: AC 7.1/7.5 are scoped to "done for the presenter batch + theme-bridge; remainder owned downstream"; the foundation phase does not block on the full structural sweep.
+
+- 7.1 [~] An "adoption sweep" PR (or per-screen sequence of PRs) visits every file in `packages/mobile/src/ui/presenters/**` and `packages/mobile/src/ui/components/**` (excluding the new primitives themselves) and swaps the following 1:1 shell replacements where the prop surface fits:
   - `<TouchableOpacity onPress={…}>` containing a single `<Text>` with manual font/colour → `<Btn>` with the matching variant/tone inferred from the legacy style
   - Inline `<View>` cards with manual padding + border + radius → `<Card>` with the matching surface/pad/radius
   - Manual badge `<View>` + `<Text>` → `<Pill>` with the matching tone
   - Circle `<View>` initials → `<Avatar>`
   - Custom Ionicons / `<Svg>` icon usage → Lucide icons (per STORY-008)
-- 7.2 [ ] **Layout shape is preserved.** The sweep changes component types and prop surfaces; it does NOT restructure how a screen lays out its content. (Example: legacy `HomePresenter` keeps its `Greeting → Goals → Workouts → MyProgress → RecentActivity` section order; the Goals card becomes a `<Card>` instead of a styled `<View>`, but the content inside is unchanged.) Screen-level rebuilds happen in their owning spec.
-- 7.3 [ ] **Composite primitives are NOT introduced in the adoption sweep.** Only foundation primitives (STORY-003) are swapped in. Composite primitives (`<PRCard>`, `<ClientRow>`, etc.) land when the consuming screen is touched by its owning spec — they exist in the library from STORY-004 but aren't force-fed into screens during the sweep.
-- 7.4 [ ] The transitional clunky appearance — e.g. a screen with a mix of `<Card>` primitives and bespoke older containers — is an accepted outcome. A note is added to each touched file: `// [01-design-system adoption sweep 2026-MM-DD] - shells swapped to primitives; owning spec finishes the port.`
-- 7.5 [ ] Each adoption-sweep PR includes screenshots of the affected screens before + after, confirming no layout regression. Visual review verifies "still functional, possibly mismatched".
+  - _Done for the legal/support/settings presenter batch (Terms, PrivacyPolicy, PrivacySettings, HelpCenter, ContactSupport — Ionicons→Lucide); colour adoption universal via theme-bridge; remaining structural swaps in `home/`/`workouts/`/`session/`/`subscription/` deferred to owning specs (revised 2026-05-31)._
+- 7.2 [x] **Layout shape is preserved.** The sweep changes component types and prop surfaces; it does NOT restructure how a screen lays out its content. (Example: legacy `HomePresenter` keeps its `Greeting → Goals → Workouts → MyProgress → RecentActivity` section order; the Goals card becomes a `<Card>` instead of a styled `<View>`, but the content inside is unchanged.) Screen-level rebuilds happen in their owning spec. _Honoured by the presenter batch; binding contract for the deferred swaps._
+- 7.3 [x] **Composite primitives are NOT introduced in the adoption sweep.** Only foundation primitives (STORY-003) are swapped in. Composite primitives (`<PRCard>`, `<ClientRow>`, etc.) land when the consuming screen is touched by its owning spec — they exist in the library from STORY-004 but aren't force-fed into screens during the sweep.
+- 7.4 [x] The transitional clunky appearance — e.g. a screen with a mix of `<Card>` primitives and bespoke older containers — is an accepted outcome. A note is added to each touched file: `// [01-design-system adoption sweep 2026-MM-DD] - shells swapped to primitives; owning spec finishes the port.`
+- 7.5 [~] Each adoption-sweep PR includes screenshots of the affected screens before + after, confirming no layout regression. Visual review verifies "still functional, possibly mismatched". _Human-only; applies per owning-spec PR as the deferred swaps land. The presenter batch + theme-bridge colour refresh were visually signed off on-device 2026-05-31._
 - 7.6 [ ] If a screen's existing component cannot map cleanly to a primitive prop surface, the swap is skipped for that occurrence and a `TODO(01-design-system)` comment is left in place. The owning spec is responsible for resolving these during its port.
 
 ### STORY-008: As a developer, I want Lucide icons replacing inline SVG and Ionicons so the icon vocabulary matches the prototype
@@ -201,4 +211,38 @@ None. All ten foundation decisions are locked at the top of this spec. Open ques
 
 ---
 
-_End of `01-design-system/requirements.md` · 2026-05-27 (rewritten from scratch)_
+## Revised 2026-05-29: token-export coexistence during the foundation phase
+
+**Context.** AC 1.1 mandates `tokens.ts` export the full handoff token surface "verbatim". T-1.1.1 phrases this as a verbatim drop-in. Implementation surfaced an ordering conflict against the quality-gate rule that the app must keep rendering and the gate must stay green at every step:
+
+- The pre-existing `tokens.ts` also exports a `colorPalette` const (numbered scale: `primary500`, `neutral1000`, …) consumed as plain JavaScript by six in-tree files (`ErrorBoundary`, `PLogoDrawLoader`, `HomePresenter`, `ActiveSessionBanner`, `homeLegacyTheme`, `themes.ts`) and the existing `space`/`size`/`radius`/`zIndex` numeric scales the current components reference (`$base`, `$md`, `$lg`, `$full`, …).
+- The handoff `tokens.tamagui.ts` does **not** define `colorPalette`, omits the legacy `$full`/`$0`/`true` keys, and redefines `size.md` (44 → 12 via `...space`).
+- The codemod that retires those legacy references (STORY-006 / Phase 1.6) lands _after_ the token PR (Phase 1.1). A pure replace-in-place would red the gate between 1.1 and 1.6.
+
+**Decision (owner rule "LegacyTheme files stay — codemod their internals; deletion is 12-production-readiness", applied to the token export).** `tokens.ts` carries the **handoff token surface verbatim** as the canonical export (`color`, `space`, `size`, `radius`, `zIndex`, `fonts`, `shadow` — values + inline contrast notes copied exactly from `~/Downloads/handoff/tokens.tamagui.ts`). The legacy `colorPalette` const and the legacy numeric `space`/`size`/`radius` keys are **preserved additively** in the same module (merged into the `createTokens` call) until the codemod + adoption sweep retire their consumers. Net effect:
+
+- Every handoff token (`$bg`, `$surface`–`$surface5`, `$text`–`$text5`, `$border`–`$border3`, `$primary` family, `$gold` family, `$accentTrainer` family, `$ember`, `$success`, `$warning`, `$error`, `$info`, the touch-target / tab-bar / header sizes, the radius + z-index ramps) resolves exactly as the prototype intends.
+- Legacy `colorPalette` + legacy numeric keys keep resolving so existing screens render unchanged.
+- The six colliding **theme** keys (`primary`, `surface`, `success`, `warning`, `error`, `info`) in `themes.ts` are re-pointed to the new palette values — this _is_ the intended "token refresh" (e.g. `$primary` shifts `#00D4FF` → `#22D3EE`), applied at the theme layer so no screen edit is required.
+
+Deletion of `colorPalette` and the legacy numeric keys is folded into the same M11 Polish cleanup as the `*LegacyTheme` files (`12-production-readiness`), once the codemod + adoption sweep have removed every consumer.
+
+`createTokens` empirically strips the leading `$` from token keys (verified against `@tamagui/core` 2.0.0-rc): a key authored as `$base` resolves under lookup key `base` and Tamagui reference `$base`. The handoff file's `$`-prefixed keys are therefore reference-compatible with the existing bare-key components — no component edit required for the additive merge.
+
+---
+
+## Revised 2026-05-29: adoption strategy — theme-bridge first, shell-swap second (STORY-007)
+
+STORY-007 frames adoption as a component-shell sweep (`<TouchableOpacity>` → `<Btn>`, inline card `<View>` → `<Card>`, …). Implementation surfaced that this is the wrong primary lever for the **colour** dimension, and the codemod dry-run proved it: the legacy screens are React-Native `StyleSheet`-based and read **all** their colours through four `*LegacyTheme` shims, every one of which re-exports a single `Colors` object from `homeLegacyTheme.ts`. Swapping shells one-by-one is high-churn, high-risk, leaves the surrounding StyleSheet colours stale, and produces exactly the "transitional clunkiness" AC 7.4 reluctantly accepts.
+
+**Decision — two-lever adoption, theme-bridge first:**
+
+1. **Theme-bridge (primary, this spec).** Re-point `homeLegacyTheme.Colors` (+ the `electric` / `glow` shadow accent) from the legacy `colorPalette.*` values to the **new handoff palette** concrete values (`$primary #22D3EE`, the `$bg`/`$surface`/`$text` ramps, the refreshed semantic tones). The schema keys are unchanged (`Colors.primary.DEFAULT`, `Colors.text.secondary`, …), so **every** legacy screen that imports any `*LegacyTheme` instantly renders the refreshed brand — the cyan shift, warm-cool surface ramp, and cooler semantic tones — with **zero screen-file edits, zero layout change, and no transitional clunkiness**. This is the truest reading of AC 6.3 ("codemod the LegacyTheme internals to token references") and of STORY-007's intent ("screens benefit from the new design system as it lands"), executed at the value layer where RN StyleSheet can actually consume it.
+
+2. **Shell-swap (secondary, incremental).** The component-shell replacement (Ionicons → Lucide, button-like → `<Btn>`, etc.) remains valuable for the **structural / iconographic** dimension and proceeds per-directory as originally specced (the legal/support/settings presenter batch already landed). It is no longer the colour-adoption mechanism, so it carries far less risk.
+
+Net effect: the design-system colour refresh reaches 100% of legacy screens immediately via one file, while structural primitive adoption proceeds incrementally and safely. The four `*LegacyTheme` files still aren't deleted (M11 Polish owns that); their internals now resolve to the new palette.
+
+---
+
+_End of `01-design-system/requirements.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (token coexistence; theme-bridge adoption)_

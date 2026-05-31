@@ -6,9 +6,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { IconBack, IconCheck } from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -16,6 +16,11 @@ import {
   Spacing,
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
+
+// [01-design-system adoption sweep 2026-05-29]
+// Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
+// checkmark-circle -> IconCheck (circle nuance dropped; same glyph intent).
+// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Privacy Settings — pure presenter. Visibility picker ported from
@@ -55,11 +60,7 @@ export function PrivacySettingsPresenter({
               testID="privacy-settings-back"
               hitSlop={8}
             >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={Colors.text.primary}
-              />
+              <IconBack size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Privacy Settings</Text>
             <View style={styles.headerSpacer} />
@@ -88,7 +89,7 @@ export function PrivacySettingsPresenter({
             testID="privacy-settings-back"
             hitSlop={8}
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <IconBack size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Privacy Settings</Text>
           <View style={styles.headerSpacer} />
@@ -116,8 +117,7 @@ export function PrivacySettingsPresenter({
                 </Text>
               </View>
               {currentVisibility === "private" && (
-                <Ionicons
-                  name="checkmark-circle"
+                <IconCheck
                   size={24}
                   color={Colors.primary.DEFAULT}
                   testID="privacy-settings-check-private"
@@ -143,8 +143,7 @@ export function PrivacySettingsPresenter({
                 </Text>
               </View>
               {currentVisibility === "public" && (
-                <Ionicons
-                  name="checkmark-circle"
+                <IconCheck
                   size={24}
                   color={Colors.primary.DEFAULT}
                   testID="privacy-settings-check-public"

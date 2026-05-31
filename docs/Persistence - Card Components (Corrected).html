@@ -1,0 +1,1141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Persistence — Card Components (Corrected)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0b12;
+        --surface: #12141d;
+        --surface-2: #1a1d29;
+        --surface-3: #232735;
+        --surface-4: #2d3243;
+        --text: #f4f4f8;
+        --text-2: #c2c2ce;
+        --text-3: #8a8a98;
+        --text-4: #5c5c68;
+        --border: rgba(255, 255, 255, 0.06);
+        --border-2: rgba(255, 255, 255, 0.1);
+        --border-3: rgba(255, 255, 255, 0.16);
+        --primary: #22d3ee;
+        --primary-glow: rgba(34, 211, 238, 0.22);
+        --primary-dim: rgba(34, 211, 238, 0.1);
+        --primary-ink: #042f39;
+        --gold: #f5c518;
+        --gold-glow: rgba(245, 197, 24, 0.2);
+        --gold-dim: rgba(245, 197, 24, 0.1);
+        --gold-ink: #2a1f00;
+        --trainer: #a78bfa;
+        --trainer-glow: rgba(167, 139, 250, 0.22);
+        --trainer-dim: rgba(167, 139, 250, 0.1);
+        --trainer-ink: #1e1b4b;
+        --ember: #fb923c;
+        --ember-dim: rgba(251, 146, 60, 0.1);
+        --success: #34d399;
+        --error: #f87171;
+        --font-display: "Geist", system-ui, sans-serif;
+        --font-mono: "Geist Mono", ui-monospace, monospace;
+        --shadow-card:
+          0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background:
+          radial-gradient(
+            120% 80% at 100% 0%,
+            rgba(34, 211, 238, 0.04),
+            transparent 50%
+          ),
+          var(--bg);
+        color: var(--text);
+        font-family: var(--font-display);
+        -webkit-font-smoothing: antialiased;
+        letter-spacing: -0.005em;
+        font-feature-settings: "ss01", "cv11";
+        line-height: 1.5;
+      }
+      ::selection {
+        background: rgba(34, 211, 238, 0.25);
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 56px 40px 96px;
+      }
+
+      /* ── masthead ── */
+      .eyebrow {
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--text-3);
+      }
+      .mast h1 {
+        font-weight: 800;
+        font-size: 40px;
+        letter-spacing: -0.035em;
+        line-height: 1.05;
+        margin: 14px 0 0;
+        max-width: 18ch;
+      }
+      .mast h1 em {
+        font-style: normal;
+        color: var(--primary);
+      }
+      .mast p {
+        color: var(--text-2);
+        font-size: 15px;
+        max-width: 64ch;
+        margin: 18px 0 0;
+        line-height: 1.6;
+      }
+      .mast .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 24px;
+      }
+      .tag {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-2);
+        background: var(--surface-2);
+        border: 1px solid var(--border-2);
+        border-radius: 999px;
+        padding: 5px 11px;
+        letter-spacing: -0.01em;
+      }
+
+      /* ── callout ── */
+      .callout {
+        margin: 36px 0 8px;
+        border: 1px solid var(--border-2);
+        border-left: 3px solid var(--ember);
+        background: linear-gradient(
+          120deg,
+          rgba(251, 146, 60, 0.05),
+          var(--surface) 60%
+        );
+        border-radius: 14px;
+        padding: 18px 22px;
+      }
+      .callout .k {
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--ember);
+      }
+      .callout p {
+        margin: 8px 0 0;
+        color: var(--text-2);
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+      .callout code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text);
+        background: var(--surface-3);
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+
+      /* ── block per card ── */
+      .block {
+        margin-top: 64px;
+      }
+      .block-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 16px;
+        margin-bottom: 28px;
+        border-bottom: 1px solid var(--border);
+      }
+      .block-head h2 {
+        font-weight: 700;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+      .block-head .src {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+      .accent-gold {
+        color: var(--gold);
+      }
+      .accent-trainer {
+        color: var(--trainer);
+      }
+      .accent-primary {
+        color: var(--primary);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 420px) 1fr;
+        gap: 36px;
+        align-items: start;
+      }
+      @media (max-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* stage = renders the card the way it appears on the Home screen (16px gutters, surface bg) */
+      .stage {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px 16px;
+        position: relative;
+        overflow: hidden;
+      }
+      .stage-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--text-4);
+        margin-bottom: 14px;
+      }
+
+      /* spec panel */
+      .spec h3 {
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--text-3);
+        margin: 0 0 12px;
+      }
+      .anatomy {
+        list-style: none;
+        margin: 0 0 22px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .anatomy li {
+        display: grid;
+        grid-template-columns: 128px 1fr;
+        gap: 14px;
+        padding: 9px 0;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .anatomy li:first-child {
+        border-top: 0;
+      }
+      .anatomy .a-k {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .anatomy .a-v {
+        color: var(--text-2);
+      }
+      .anatomy .a-v code,
+      .inl {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--text);
+        background: var(--surface-3);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .sw {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 3px;
+        vertical-align: middle;
+        margin-right: 5px;
+        transform: translateY(-1px);
+      }
+
+      .spec h3.mt {
+        margin-top: 4px;
+      }
+      .drift {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-top: 8px;
+      }
+      .drift .row {
+        display: flex;
+        gap: 9px;
+        font-size: 12.5px;
+        line-height: 1.55;
+        padding: 5px 0;
+      }
+      .drift .row + .row {
+        border-top: 1px solid var(--border);
+      }
+      .drift .x {
+        color: var(--error);
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+      .drift .ok {
+        color: var(--success);
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+      .drift .row span:last-child {
+        color: var(--text-2);
+      }
+      .drift .row b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+     ACTUAL CARD STYLES — copied 1:1 from prototype home.jsx
+     ───────────────────────────────────────────────────────────── */
+      .p-mono {
+        font-family: var(--font-mono);
+        font-feature-settings: "tnum", "zero";
+        letter-spacing: -0.02em;
+      }
+      .p-h2 {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 18px;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+      }
+      .p-stat-md {
+        font-family: var(--font-mono);
+        font-weight: 500;
+        font-size: 20px;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .p-eyebrow {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 10.5px;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+      }
+      .p-body {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      /* pills */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-family: var(--font-display);
+        font-weight: 600;
+        text-transform: uppercase;
+        border-radius: 9999px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        border: 1px solid transparent;
+      }
+      .pill.xs {
+        padding: 2px 6px;
+        font-size: 9.5px;
+        letter-spacing: 0.1em;
+      }
+      .pill.gold {
+        color: var(--gold);
+        background: var(--gold-dim);
+        border-color: var(--gold-dim);
+      }
+      .pill.trainer {
+        color: var(--trainer);
+        background: var(--trainer-dim);
+        border-color: var(--trainer-dim);
+      }
+      .pill.ember {
+        color: var(--ember);
+        background: var(--ember-dim);
+        border-color: var(--ember-dim);
+      }
+      .pill.neutral {
+        color: var(--text-2);
+        background: var(--surface-3);
+        border-color: var(--border-2);
+      }
+
+      /* PR carousel */
+      .pr-row {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        margin: 0 -16px;
+        padding: 0 16px 4px;
+      }
+      .pr-card {
+        flex: 0 0 180px;
+        background: linear-gradient(
+          135deg,
+          var(--gold-dim) 0%,
+          var(--surface-2) 80%
+        );
+        border: 1px solid var(--gold-dim);
+        border-radius: 16px;
+        padding: 14px;
+        position: relative;
+        overflow: hidden;
+      }
+      .pr-medal {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        opacity: 0.18;
+        color: var(--gold);
+      }
+      .pr-card .lift {
+        margin-top: 10px;
+        color: var(--text);
+      }
+      .pr-val {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .pr-val .wt {
+        color: var(--gold);
+      }
+      .pr-val .unit {
+        color: var(--text-3);
+        font-size: 12px;
+      }
+      .pr-val .delta {
+        color: var(--success);
+        font-size: 11px;
+        margin-left: 4px;
+      }
+      .pr-card .date {
+        color: var(--text-3);
+        font-size: 11px;
+        margin-top: 4px;
+      }
+
+      /* Coaching card */
+      .coach-card {
+        background: linear-gradient(
+          135deg,
+          var(--trainer-dim) 0%,
+          var(--surface-2) 100%
+        );
+        border: 1px solid var(--trainer-dim);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .coach-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        gap: 12px;
+      }
+      .coach-head .ey {
+        color: var(--trainer);
+        margin-bottom: 4px;
+      }
+      .coach-head .ttl {
+        color: var(--text);
+      }
+      .btn-soft-trainer {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 36px;
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: var(--trainer-dim);
+        color: var(--trainer);
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .coach-pills {
+        display: flex;
+        gap: 6px;
+      }
+
+      /* Workout carousel */
+      .wk-row {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        margin: 0 -16px;
+        padding: 0 16px 4px;
+      }
+      .wk-card {
+        flex: 0 0 260px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        position: relative;
+        cursor: pointer;
+      }
+      .wk-card.primary {
+        background: linear-gradient(
+          135deg,
+          rgba(34, 211, 238, 0.08),
+          var(--surface-2) 60%
+        );
+        border-color: var(--primary-dim);
+      }
+      .wk-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+      }
+      .wk-head .ttl {
+        color: var(--text);
+      }
+      .wk-play {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 16px var(--primary-glow);
+        flex-shrink: 0;
+      }
+      .wk-sub {
+        color: var(--text-2);
+        font-size: 12.5px;
+        margin-bottom: 12px;
+        min-height: 36px;
+      }
+      .wk-chips {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      /* hide scrollbars in stages */
+      .pr-row::-webkit-scrollbar,
+      .wk-row::-webkit-scrollbar {
+        display: none;
+      }
+      .pr-row,
+      .wk-row {
+        scrollbar-width: none;
+      }
+
+      .foot {
+        margin-top: 80px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+        color: var(--text-4);
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        line-height: 1.7;
+      }
+      .foot b {
+        color: var(--text-3);
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="mast">
+        <div class="eyebrow">Persistence · Handoff supplement</div>
+        <h1>Card components, <em>corrected to the prototype</em>.</h1>
+        <p>
+          Three composite cards drifted in the React-Native port because they
+          were never documented as primitives — they live only inside
+          <span class="inl">home.jsx</span> as screen-local functions. This
+          sheet pins each one to its exact prototype spec. Match these values;
+          they are the source of truth.
+        </p>
+        <div class="meta">
+          <span class="tag">source · design-source/screens/home.jsx</span>
+          <span class="tag">tokens · theme.css</span>
+          <span class="tag">viewport · 375–402px</span>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="k">Why these drifted</div>
+        <p>
+          The design-system doc documents base primitives (<code>Card</code>,
+          <code>Pill</code>, <code>Btn</code>, <code>Avatar</code>, rings, bars)
+          and a <em>standalone gold "stat card" demo</em> — which is
+          <b>not</b> the PR carousel tile. With no contract for the composite
+          cards, the port reinvented them. Build each as a
+          <code>presenter</code> that composes the existing primitives; do not
+          restyle the primitives themselves.
+        </p>
+      </div>
+
+      <!-- ════════════════ PR CARD ════════════════ -->
+      <section class="block">
+        <div class="block-head">
+          <h2>
+            <span class="accent-gold">PR card</span> — achievement carousel tile
+          </h2>
+          <div class="src">home.jsx › PRCarousel()</div>
+        </div>
+        <div class="grid">
+          <div class="stage">
+            <div class="stage-label">
+              In context · Home › Recent PRs (scrolls horizontally, bleeds to
+              screen edge)
+            </div>
+            <div class="pr-row">
+              <div class="pr-card">
+                <svg
+                  class="pr-medal"
+                  width="70"
+                  height="70"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="14" r="6" />
+                  <path d="M9 8.5 6 2.5h4l2.5 4M15 8.5l3-6h-4L11.5 6.5" />
+                  <path d="M12 11v6M9.5 14h5" />
+                </svg>
+                <span class="pill xs gold">NEW PR</span>
+                <div class="p-h2 lift">Bench Press</div>
+                <div class="pr-val">
+                  <span class="p-stat-md p-mono wt">85</span
+                  ><span class="p-mono unit">kg</span
+                  ><span class="p-mono delta">+5</span>
+                </div>
+                <div class="p-body date">2 days ago</div>
+              </div>
+              <div class="pr-card">
+                <svg
+                  class="pr-medal"
+                  width="70"
+                  height="70"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="14" r="6" />
+                  <path d="M9 8.5 6 2.5h4l2.5 4M15 8.5l3-6h-4L11.5 6.5" />
+                  <path d="M12 11v6M9.5 14h5" />
+                </svg>
+                <span class="pill xs gold">NEW PR</span>
+                <div class="p-h2 lift">Squat</div>
+                <div class="pr-val">
+                  <span class="p-stat-md p-mono wt">120</span
+                  ><span class="p-mono unit">kg</span
+                  ><span class="p-mono delta">+2.5</span>
+                </div>
+                <div class="p-body date">5 days ago</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="spec">
+            <h3>Anatomy &amp; exact values</h3>
+            <ul class="anatomy">
+              <li>
+                <span class="a-k">Tile</span
+                ><span class="a-v"
+                  >fixed <code>flex: 0 0 180px</code> · radius <code>16</code> ·
+                  pad <code>14</code> ·
+                  <code>position:relative; overflow:hidden</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Fill</span
+                ><span class="a-v"
+                  ><span class="sw" style="background: var(--gold-dim)"></span
+                  ><code
+                    >linear-gradient(135deg, --gold-dim 0%, --surface-2
+                    80%)</code
+                  ></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Border</span
+                ><span class="a-v"><code>1px solid --gold-dim</code></span>
+              </li>
+              <li>
+                <span class="a-k">Medal</span
+                ><span class="a-v"
+                  ><code>IconMedal</code> size <code>70</code>, stroke
+                  <span class="sw" style="background: var(--gold)"></span>gold ·
+                  absolute <code>top:-10; right:-10</code> ·
+                  <code>opacity:0.18</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Badge</span
+                ><span class="a-v"
+                  ><code
+                    >&lt;Pill tone="gold" size="xs"&gt;NEW PR&lt;/Pill&gt;</code
+                  ></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Lift</span
+                ><span class="a-v"
+                  ><code>p-h2</code> (Geist 600 / 18px), <code>--text</code> ·
+                  <code>margin-top:10</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Weight</span
+                ><span class="a-v"
+                  ><code>p-stat-md p-mono</code> (Mono 500 / 20px),
+                  <span class="sw" style="background: var(--gold)"></span
+                  >gold</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Unit</span
+                ><span class="a-v"
+                  ><code>p-mono</code> 12px <code>--text-3</code> ·
+                  baseline-aligned, <code>gap:4</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Delta</span
+                ><span class="a-v"
+                  ><code>p-mono</code> 11px
+                  <span class="sw" style="background: var(--success)"></span
+                  ><code>--success</code> · <code>margin-left:4</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Date</span
+                ><span class="a-v"
+                  ><code>p-body</code> 11px <code>--text-3</code> ·
+                  <code>margin-top:4</code></span
+                >
+              </li>
+            </ul>
+            <h3 class="mt">Common drift → fix</h3>
+            <div class="drift">
+              <div class="row">
+                <span class="x">✕</span
+                ><span
+                  >Built as the <b>220px gold "stat card"</b> from the DS doc
+                  (BENCH · 102.5 · "+2.5 from 100.0").</span
+                >
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  >It's a <b>180px carousel tile</b> with the medal watermark,
+                  <b>NEW PR</b> pill, lift name, weight+delta, and relative
+                  date.</span
+                >
+              </div>
+              <div class="row">
+                <span class="x">✕</span
+                ><span>Solid surface fill or a gold glow shadow.</span>
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  ><b>Diagonal gold-dim→surface-2 gradient</b>, flat
+                  <code>1px gold-dim</code> border, <b>no</b> shadow.</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ COACHING CARD ════════════════ -->
+      <section class="block">
+        <div class="block-head">
+          <h2>
+            <span class="accent-trainer">Coaching card</span> — violet
+            quick-peek
+          </h2>
+          <div class="src">home.jsx › CoachQuickPeek()</div>
+        </div>
+        <div class="grid">
+          <div class="stage">
+            <div class="stage-label">
+              In context · Home (coach mode) · full-width block
+            </div>
+            <div class="coach-card">
+              <div class="coach-head">
+                <div>
+                  <div class="p-eyebrow ey">COACHING · 8 CLIENTS</div>
+                  <div class="p-h2 ttl">3 need attention</div>
+                </div>
+                <button class="btn-soft-trainer">Open</button>
+              </div>
+              <div class="coach-pills">
+                <span class="pill xs trainer">2 missed yesterday</span>
+                <span class="pill xs ember">1 PR to review</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="spec">
+            <h3>Anatomy &amp; exact values</h3>
+            <ul class="anatomy">
+              <li>
+                <span class="a-k">Container</span
+                ><span class="a-v"
+                  ><code>&lt;Card pad={16} radius={16}&gt;</code> · full
+                  width</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Fill</span
+                ><span class="a-v"
+                  ><span
+                    class="sw"
+                    style="background: var(--trainer-dim)"
+                  ></span
+                  ><code
+                    >linear-gradient(135deg, --trainer-dim 0%, --surface-2
+                    100%)</code
+                  ></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Border</span
+                ><span class="a-v"
+                  ><code>1px solid --trainer-dim</code> · keeps
+                  <code>--shadow-card</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Eyebrow</span
+                ><span class="a-v"
+                  ><code>p-eyebrow</code>
+                  <span class="sw" style="background: var(--trainer)"></span
+                  ><code>--trainer</code> · <code>margin-bottom:4</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Title</span
+                ><span class="a-v"
+                  ><code>p-h2</code> <code>--text</code> · "3 need
+                  attention"</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Action</span
+                ><span class="a-v"
+                  ><code
+                    >&lt;Btn variant="soft" tone="trainer"
+                    size="sm"&gt;Open&lt;/Btn&gt;</code
+                  >
+                  (36px)</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Head row</span
+                ><span class="a-v"
+                  >space-between, centered · <code>margin-bottom:10</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Pills</span
+                ><span class="a-v"
+                  ><code>row gap:6</code> ·
+                  <span class="sw" style="background: var(--trainer)"></span
+                  >trainer "2 missed yesterday" +
+                  <span class="sw" style="background: var(--ember)"></span>ember
+                  "1 PR to review", both <code>size="xs"</code></span
+                >
+              </li>
+            </ul>
+            <h3 class="mt">Common drift → fix</h3>
+            <div class="drift">
+              <div class="row">
+                <span class="x">✕</span
+                ><span
+                  >Used cyan/primary accent, or a flat
+                  <code>--surface</code> card.</span
+                >
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  ><b>Violet (trainer) only.</b> The diagonal trainer-dim
+                  gradient is the signal this is coach mode — cyan and violet
+                  never co-occur.</span
+                >
+              </div>
+              <div class="row">
+                <span class="x">✕</span
+                ><span>Filled trainer button or a plain text link.</span>
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  ><b>Soft</b> trainer button — <code>trainer-dim</code> bg,
+                  <code>trainer</code> text, no border.</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ WORKOUT CAROUSEL ════════════════ -->
+      <section class="block">
+        <div class="block-head">
+          <h2>
+            <span class="accent-primary">Workout card</span> — today's-session
+            carousel
+          </h2>
+          <div class="src">home.jsx › WorkoutCarousel() / WorkoutCard()</div>
+        </div>
+        <div class="grid">
+          <div class="stage">
+            <div class="stage-label">
+              In context · Home › Today (first tile = primary, rest = neutral;
+              row bleeds to edge)
+            </div>
+            <div class="wk-row">
+              <div class="wk-card primary">
+                <div class="wk-head">
+                  <div class="p-h2 ttl">Upper Body</div>
+                  <div class="wk-play">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M7 4v16l13-8L7 4z" />
+                    </svg>
+                  </div>
+                </div>
+                <div class="wk-sub">
+                  Chest · Shoulders · Back · Biceps · Triceps
+                </div>
+                <div class="wk-chips">
+                  <span class="pill xs neutral"
+                    ><svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <circle cx="12" cy="13.5" r="7.5" />
+                      <path d="M12 9.5v4l2.5 1.5M9 2h6M12 6V2" />
+                    </svg>
+                    45M</span
+                  >
+                  <span class="pill xs neutral">Machine</span>
+                  <span class="pill xs neutral">5 exercises</span>
+                </div>
+              </div>
+              <div class="wk-card">
+                <div class="wk-head">
+                  <div class="p-h2 ttl">Lower Body</div>
+                  <div class="wk-play">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M7 4v16l13-8L7 4z" />
+                    </svg>
+                  </div>
+                </div>
+                <div class="wk-sub">Quads · Glutes · Hamstrings · Calves</div>
+                <div class="wk-chips">
+                  <span class="pill xs neutral"
+                    ><svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <circle cx="12" cy="13.5" r="7.5" />
+                      <path d="M12 9.5v4l2.5 1.5M9 2h6M12 6V2" />
+                    </svg>
+                    50M</span
+                  >
+                  <span class="pill xs neutral">Free weight</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="spec">
+            <h3>Anatomy &amp; exact values</h3>
+            <ul class="anatomy">
+              <li>
+                <span class="a-k">Row</span
+                ><span class="a-v"
+                  ><code>flex; gap:12; overflow-x:auto</code> ·
+                  <code>margin:0 -16px; padding:0 16px 4px</code> (edge
+                  bleed)</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Tile</span
+                ><span class="a-v"
+                  ><code>flex: 0 0 260px</code> · radius <code>16</code> · pad
+                  <code>16</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Fill · primary</span
+                ><span class="a-v"
+                  ><span
+                    class="sw"
+                    style="background: var(--primary-dim)"
+                  ></span
+                  ><code
+                    >linear-gradient(135deg, rgba(34,211,238,0.08), --surface-2
+                    60%)</code
+                  >
+                  · border <code>--primary-dim</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Fill · default</span
+                ><span class="a-v"
+                  ><span class="sw" style="background: var(--surface-2)"></span
+                  ><code>--surface-2</code> · border <code>--border</code></span
+                >
+              </li>
+              <li>
+                <span class="a-k">Title</span
+                ><span class="a-v"><code>p-h2</code> <code>--text</code></span>
+              </li>
+              <li>
+                <span class="a-k">Play</span
+                ><span class="a-v"
+                  ><code>34×34</code> circle ·
+                  <span class="sw" style="background: var(--primary)"></span
+                  >primary bg, <code>--bg</code> glyph ·
+                  <code>box-shadow:0 0 16px --primary-glow</code> ·
+                  <code>IconPlay</code> 14</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Subtitle</span
+                ><span class="a-v"
+                  ><code>p-body</code> 12.5px <code>--text-2</code> ·
+                  <code>margin-bottom:12</code> ·
+                  <code>min-height:36</code> (keeps tiles even)</span
+                >
+              </li>
+              <li>
+                <span class="a-k">Chips</span
+                ><span class="a-v"
+                  ><code>row gap:6</code> · neutral <code>xs</code> pills; first
+                  = <code>IconTimer</code> 11 + <code>{mins}M</code>, then meta
+                  chips</span
+                >
+              </li>
+            </ul>
+            <h3 class="mt">Common drift → fix</h3>
+            <div class="drift">
+              <div class="row">
+                <span class="x">✕</span
+                ><span
+                  >Tiles stretch full-width / wrap to a grid; play glyph
+                  rendered as an icon button.</span
+                >
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  ><b>Fixed 260px tiles</b> in a horizontal scroller with
+                  <b>edge bleed</b>; play is a <b>34px glowing primary disc</b>,
+                  not an IconBtn.</span
+                >
+              </div>
+              <div class="row">
+                <span class="x">✕</span
+                ><span>Primary gradient applied to every tile.</span>
+              </div>
+              <div class="row">
+                <span class="ok">✓</span
+                ><span
+                  >Only the <b>first / active</b> tile is primary; the rest are
+                  flat <code>--surface-2</code>. The
+                  <code>min-height:36</code> on the subtitle is load-bearing —
+                  keep it.</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="foot">
+        <b>Tokens referenced:</b> --gold-dim #F5C51810 · --gold #F5C518 ·
+        --trainer-dim #A78BFA10 · --trainer #A78BFA · --ember #FB923C ·
+        --primary #22D3EE · --primary-dim #22D3EE10 · --surface-2 #1A1D29 ·
+        --success #34D399<br />
+        <b>Build note:</b> each card composes existing primitives (Card / Pill /
+        Btn) — port as presenter components taking props, never by editing the
+        primitives.
+      </div>
+    </div>
+  </body>
+</html>

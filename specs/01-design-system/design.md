@@ -429,6 +429,30 @@ type PRCardProps = {
 
 `<Card>` with `$goldDim` border + gold glow. `<IconMedal>` 18pt `$gold` top-right. Exercise name `$display.md`, `newValue` `$mono` 18pt, `previousValue` strikethrough `$text3` 12pt, delta `$mono` 11pt with `▲` prefix in `$success`.
 
+> **Revised 2026-05-31 (PRCard prototype correction).** The contract above was synthesised from the design-system standalone's 220pt gold "stat card" demo, which is NOT the PR carousel tile. The PR card in the live prototype (`home.jsx › PRCarousel`, pinned in `docs/Persistence - Card Components (Corrected).html`) is a **180pt fixed-width horizontal-scroll carousel tile**, not a full-width glow card. Corrected contract — build to THIS:
+>
+> ```ts
+> type PRCardProps = {
+>   exerciseName: string; // lift name
+>   value: string | number; // weight, e.g. "85"
+>   unit: string; // e.g. "kg"
+>   delta?: string; // pre-formatted signed delta, e.g. "+5"
+>   date: string; // pre-formatted relative date, e.g. "2 days ago"
+>   loading?: boolean;
+>   testID?: string;
+> };
+> ```
+>
+> - **Tile:** fixed width **180**, radius **16**, pad **14**, `position:relative; overflow:hidden`. NOT pressable (carousel display tile).
+> - **Fill:** `linear-gradient(135deg, $goldDim 0%, $surface2 80%)` (LinearGradient, locations [0, 0.8]). Flat **1px `$goldDim`** border. **No glow, no shadow** — the gradient is the treatment.
+> - **Medal watermark:** `<IconMedal size={70}>` concrete gold (`#F5C518`), absolute `top:-10 right:-10`, `opacity:0.18`, behind content.
+> - **Badge:** `<Pill tone="gold" size="xs">NEW PR</Pill>` at the top.
+> - **Lift:** `$display` 600 / 18pt `$text`, `marginTop:10`.
+> - **Value row** (baseline, gap 4): value `$mono` 500 / 20pt `$gold`; unit `$mono` 12pt `$text3`; delta `$mono` 11pt `$success` `marginLeft:4`.
+> - **Date:** `$body` 11pt `$text3`, `marginTop:4`.
+>
+> Splitting `value`/`unit` (vs the old combined `newValue`) is required to colour the weight gold and the unit `$text3` on a shared baseline. `previousValue`/strikethrough and the `▲`-prefixed delta object are dropped — the prototype shows a plain signed delta string. The Session Summary PR row and the Progress `PRHistory` list-row are a DIFFERENT shape (full-width medal-tile rows) owned by their screens, not this carousel tile.
+
 ### 6. `<SummaryChip>` — `extra.jsx:243`
 
 ```ts
@@ -482,6 +506,10 @@ type WorkoutCarouselCardProps = {
 ```
 
 Fixed-width 260pt, 16pt padding, `$xl` radius (16). Default bg `$surface2`. `primary: true`: bg `linear-gradient(135deg, $primaryDim 0%, $surface2 60%)`, border `$primaryDim`. Header row: title `$display.h2` left + 34pt round play CTA (`$primary` bg, `$bg` fg, glow) right. Body: sub `$text2` 12.5pt min-height 36pt. Footer: timer pill + chip pills (`$xs` size, `neutral` tone).
+
+> **Revised 2026-05-31 (timer-pill icon).** Per the prototype (`home.jsx › WorkoutCard`, pinned in `docs/Persistence - Card Components (Corrected).html`) the first footer pill is `<Pill tone="neutral" size="xs"><IconTimer size={11} strokeWidth={2}/> {mins}M</Pill>` — i.e. it leads with an `IconTimer` glyph (concrete `$text2` hex, not a token, since the icon is an SVG consumer), then the `{mins}M` label. Our build shipped the timer pill text-only; add the icon. Everything else (260pt, gradient on `primary` only, 34pt glowing play disc, sub `minHeight:36`) already matches.
+
+> **Revised 2026-05-31 (gradient on all tiles — product override).** Product decision (Bradley, on-device review) **deviates from the prototype**: the cyan `$primaryDim → transparent` gradient tint now renders on **every** WorkoutCarouselCard, not just the promoted first tile. The prototype + the corrected card sheet reserve the gradient for the first/active tile only (flat `$surface2` for the rest) — this override applies it universally because it reads better in the app. The `primary` prop is retained but now only drives the **border** emphasis (`$primaryDim` border on the promoted tile, `$border` on the rest); the gradient is unconditional. The play-disc glow was also softened from the literal `0 0 16px @0.22` to `radius 8 @ 0.20` because iOS renders shadows denser than a CSS blur (a literal translation read as a neon ring on the 34pt disc).
 
 ### 9. `<HabitTile>` — `home.jsx:227 (inside HabitsGrid)`
 
@@ -796,4 +824,64 @@ Composites additionally:
 
 ---
 
-_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch)_
+## Revised 2026-05-29: Lucide 1.x icon renames
+
+The icon mapping table above (and the migration plan it mirrors) was authored against an older Lucide release. The SDK-55-compatible `lucide-react-native@1.17.0` (verified as the genuine published latest — SLSA provenance + OIDC trusted-publisher attestation, maintainer Eric Fennis, `lucide-icons/lucide` repo) renamed five icons and dropped the old-name aliases:
+
+| Prototype alias (stable) | Old Lucide name  | Lucide 1.x export  |
+| ------------------------ | ---------------- | ------------------ |
+| `IconHome`               | `Home`           | `House`            |
+| `IconChart`              | `BarChart3`      | `ChartColumn`      |
+| `IconMore`               | `MoreHorizontal` | `Ellipsis`         |
+| `IconMore_v`             | `MoreVertical`   | `EllipsisVertical` |
+| `IconFilter`             | `Filter`         | `ListFilter`       |
+
+**Decision.** The prototype-facing `IconXxx` aliases are the contract downstream specs consume, so they stay byte-for-byte identical to the design.md table (`IconHome`, `IconChart`, `IconMore`, `IconMore_v`, `IconFilter`). Only the underlying Lucide import is updated to the 1.x export name. `icons.ts` therefore reads e.g. `import { House as IconHome } from "lucide-react-native"`. The visual result matches the prototype (these are the same glyphs, renamed upstream). All other 43 mappings are unchanged.
+
+### Vocabulary extension (same date)
+
+The STORY-007 adoption sweep surfaced eight common legacy Ionicons with no entry in the original 48-icon mapping table — most critically `trash-outline` (used in ~8 set-row / card components). Per STORY-004 AC 4.7's "stop-and-flag, extend the spec, then proceed" principle (applied to the icon vocabulary), these are **added** to `icons.ts` rather than left as `TODO(01-design-system)` skips, since the icon module is owned by this spec and each has an obvious Lucide equivalent:
+
+| Added alias     | Lucide 1.x export | Covers Ionicons                       |
+| --------------- | ----------------- | ------------------------------------- |
+| `IconTrash`     | `Trash2`          | `trash-outline` / `trash`             |
+| `IconLock`      | `Lock`            | `lock-closed` / `lock-closed-outline` |
+| `IconList`      | `List`            | `list`                                |
+| `IconChevronUp` | `ChevronUp`       | `chevron-up`                          |
+| `IconWarning`   | `TriangleAlert`   | `warning`                             |
+| `IconAlert`     | `CircleAlert`     | `alert-circle`                        |
+| `IconMail`      | `Mail`            | `mail-outline`                        |
+| `IconClock`     | `Clock`           | `time-outline`                        |
+
+These unblock the bulk of the icon sweep. Remaining unmapped Ionicons (`cloud-offline-outline`, `battery-charging`, `library-outline`, `options-outline`, `help-circle-outline`) stay as `TODO(01-design-system)` skips for their owning specs (AC 7.6) — they're low-frequency and lack a clean 1:1 Lucide match.
+
+---
+
+## Revised 2026-05-29: `@gorhom/bottom-sheet` v5 (not v4)
+
+STORY-003 AC 3.6 + design.md § Foundation primitives #12 + tasks.md T-1.3.12 specify `@gorhom/bottom-sheet` **v4**. Implementation surfaced an incompatibility: v4 predates Reanimated-4 support, and this repo runs `react-native-reanimated@4.2.1` (+ `react-native-gesture-handler@2.31.1`, Expo SDK 55). The risk was already pre-flagged in design.md § Risks ("@gorhom/bottom-sheet v4 Expo SDK 53 quirks → fallback to Tamagui Sheet").
+
+**Decision.** Use `@gorhom/bottom-sheet@5` (latest 5.2.x). Verified against the npm registry: v5 peer-declares `react-native-reanimated: ">=3.16.0 || >=4.0.0-"` and `react-native-gesture-handler: ">=2.16.1"`, both satisfied by our stack. The v4→v5 API surface the `<BottomSheet>` primitive relies on (`BottomSheet`/`BottomSheetModal`, `snapPoints`, `BottomSheetBackdrop`, `BottomSheetView`/`BottomSheetScrollView`, `enablePanDownToClose`) is unchanged. The Tamagui-Sheet fallback in the risk table is therefore not needed. The primitive's documented props (`visible`, `onClose`, `title`, `eyebrow`, `accent`, `height: 'peek' | 'default' | number`, scrolling children with a fixed header) are preserved exactly.
+
+---
+
+## Revised 2026-05-29: codemod scope — token-resolvable positions only
+
+design.md § Codemod's replacement table maps legacy hex/rgba strings to Tamagui token references (`#00D4FF` → `$primary`, `rgba(0,212,255,A)` → `$primaryDim`/`$primaryGlow`, …). Implementation surfaced a correctness blocker: most legacy hex literals under `src/ui/**` do **not** live in Tamagui-resolvable positions. They live in:
+
+1. **`StyleSheet.create({...})` bodies** (e.g. `ActiveSessionBanner` `color: "#fff"`) — plain React Native styles. Tamagui tokens (`$text`) are not resolved by RN's StyleSheet; the literal `"$text"` would render as an invalid colour (invisible / fallback text).
+2. **Component colour props that take concrete colours** — `<LinearGradient colors={["rgba(0,212,255,0.08)", …]}>` (SignInPresenter ambient glows), `<Ionicons color="#fff">`, lucide `color="#0A0B12"`. These components read the raw string, not the Tamagui theme, so a token string breaks them.
+
+Blindly applying the table across these contexts would red the build/visual gate — violating the quality-gate-green-at-every-step rule.
+
+**Decision.** The codemod tokenises hex **only in token-resolvable positions** and skips the rest:
+
+- **Skipped JSX attributes** (value is a concrete colour for a non-Tamagui consumer): `fill`, `stroke` (already specced, icon-owned), plus `color`, `colors`, `tintColor`, `placeholderTextColor`, `shadowColor`, and any `*Color` attribute. Screen authors' Tamagui `<View backgroundColor="$x">` style props still tokenise (those use token names already, not hex).
+- **Skipped `StyleSheet.create(...)` object bodies** — RN StyleSheet literals stay concrete.
+- **Skipped all `**tests**/**`** (not just `**tests**/fixtures/**`) — rewriting hex inside test assertions / props breaks the tests (e.g. `SimpleLineGraph.test.tsx`asserts`toContain("#00D4FF")`). The original `**tests**/fixtures/**`exclusion is widened to the whole`**tests**` tree, matching the documented "leave test snapshots/fixtures alone" intent.
+
+Net effect: the codemod tokenises the genuinely-tokenisable hex (object-literal string values outside StyleSheet/skip-attr/test contexts) and leaves concrete-colour-consumer literals in place. The residual legacy hex in RN-StyleSheet / gradient / icon-colour positions is retired by the owning screen specs when they port those screens to Tamagui primitives (the same "owning spec finishes the port" principle as the adoption sweep). The CI `no-raw-hex-colors` lint rule (AC 6.4) therefore allow-lists the four `*LegacyTheme` files **and** the legacy-screen RN-StyleSheet/gradient positions until their owning spec ports them; it still blocks _new_ hex in token-resolvable positions.
+
+---
+
+_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5; codemod token-resolvable scope)_

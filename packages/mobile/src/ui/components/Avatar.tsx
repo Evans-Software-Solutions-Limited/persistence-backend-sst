@@ -54,6 +54,12 @@ const imageSizes: Record<AvatarSize, number> = {
   lg: 64,
 };
 
+/**
+ * @deprecated Legacy avatar (image/initials). New screen work should use the
+ * design-system primitive `@/ui/components/foundation/Avatar` (gradient
+ * initials, status dot, COACH badge, pressable + a11y, 44pt hitSlop). Retired
+ * in M11 Polish (12-production-readiness).
+ */
 export function Avatar({ source, fallback, size = "md", testID }: AvatarProps) {
   return (
     <AvatarFrame

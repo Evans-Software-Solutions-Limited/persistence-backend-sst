@@ -1,5 +1,11 @@
 import { styled, View } from "@tamagui/core";
 
+/**
+ * @deprecated Legacy card. New screen work should use the design-system
+ * primitive `@/ui/components/foundation/Card` (surface tiers, accent borders,
+ * glow rings, pressable + a11y). This shim is retired in M11 Polish
+ * (12-production-readiness) once no screen imports it.
+ */
 export const Card = styled(View, {
   backgroundColor: "$surface",
   borderRadius: "$lg",

@@ -15,20 +15,24 @@
     "build": "echo 'Mobile build handled by EAS'"
   },
   "dependencies": {
+    "@expo-google-fonts/geist": "^0.4.2",
+    "@expo-google-fonts/geist-mono": "^0.4.2",
     "@expo/vector-icons": "^15.1.1",
+    "@gorhom/bottom-sheet": "^5.2.14",
     "@kingstinct/react-native-healthkit": "^14.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
     "@stripe/stripe-react-native": "^0.61.0",
     "@supabase/supabase-js": "^2.49.4",
-    "@tanstack/react-query": "^5.62.0",
     "@tamagui/animations-react-native": "^2.0.0-rc.40",
     "@tamagui/babel-plugin": "^2.0.0-rc.40",
     "@tamagui/core": "^2.0.0-rc.40",
+    "@tanstack/react-query": "^5.62.0",
     "expo": "^55.0.0",
     "expo-build-properties": "~55.0.13",
     "expo-constants": "~55.0.14",
     "expo-device": "^55.0.15",
+    "expo-font": "~55.0.8",
     "expo-image-manipulator": "^55.0.16",
     "expo-image-picker": "^55.0.20",
     "expo-linear-gradient": "^55.0.13",
@@ -39,6 +43,7 @@
     "expo-sqlite": "~55.0.15",
     "expo-status-bar": "~55.0.5",
     "expo-web-browser": "^55.0.14",
+    "lucide-react-native": "^1.17.0",
     "react": "19.2.0",
     "react-native": "0.83.4",
     "react-native-gesture-handler": "2.31.1",
@@ -68,7 +73,8 @@
     "preset": "jest-expo",
     "testMatch": [
       "**/__tests__/**/*.test.{ts,tsx}",
-      "**/*.test.{ts,tsx}"
+      "**/*.test.{ts,tsx}",
+      "<rootDir>/eslint-rules/__tests__/**/*.test.js"
     ],
     "setupFiles": [
       "<rootDir>/__tests__/setup.ts"
