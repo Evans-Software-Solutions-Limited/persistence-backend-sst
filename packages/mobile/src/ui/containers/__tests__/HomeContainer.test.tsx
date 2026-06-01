@@ -88,7 +88,6 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
 import type { ReactNode } from "react";
 // eslint-disable-next-line import/first
-// eslint-disable-next-line import/first
 import { DASHBOARD_FIXTURE } from "@/adapters/api/__tests__/fixtures/dashboard.fixture";
 // eslint-disable-next-line import/first
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";

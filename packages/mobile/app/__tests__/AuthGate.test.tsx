@@ -186,6 +186,7 @@ describe("Notification setup at module load", () => {
     // observe the side effect cleanly.
     (Notifications.setNotificationHandler as jest.Mock).mockClear();
     jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require("../_layout");
     });
     expect(Notifications.setNotificationHandler).toHaveBeenCalledTimes(1);
