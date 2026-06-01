@@ -148,7 +148,7 @@ describe("ProfileDrawerPresenter", () => {
     fireEvent.press(getByTestId("row-profile-details"));
     fireEvent.press(getByTestId("row-achievements"));
     fireEvent.press(getByTestId("row-health"));
-    fireEvent.press(getByTestId("row-subscription"));
+    fireEvent.press(getByTestId("subscription-card-pressable"));
     fireEvent.press(getByTestId("row-notifications"));
     fireEvent.press(getByTestId("row-settings"));
 
@@ -181,7 +181,7 @@ describe("ProfileDrawerPresenter", () => {
 
   it("hides the Subscription section while subscription is unresolved", () => {
     const { queryByTestId } = renderDrawer({ subscription: undefined });
-    expect(queryByTestId("row-subscription")).toBeNull();
+    expect(queryByTestId("subscription-card-pressable")).toBeNull();
   });
 
   it("renders a loading state when profile is undefined", () => {
