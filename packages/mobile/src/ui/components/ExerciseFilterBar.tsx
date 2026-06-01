@@ -1,24 +1,29 @@
-import { Ionicons } from "@expo/vector-icons";
-import { styled, View, Text as TamaguiText } from "@tamagui/core";
 import { ScrollView } from "react-native";
 import type {
   CreatedByFilter,
   ExerciseDifficulty,
 } from "@/domain/models/exercise";
+import { FilterChip } from "@/ui/components/exercises/FilterChip";
+import { IconBtn } from "@/ui/components/foundation/IconBtn";
+import { IconFilter } from "@/ui/components/icons";
 
 /**
- * One of the curated quick-filter pills. `"all"` is mutually exclusive
- * with every other id (selecting it clears other axes; selecting any
- * other id removes `"all"`). The remaining ids split across two filter
- * axes under the hood:
+ * Train > Exercises filter rail.
+ * Source: ~/Downloads/handoff/design-source/prototype-hubs.jsx:107–119
+ * (`TrainExercisesContent`) — a leading filter <IconBtn> (opens the advanced
+ * modal; primary-dim "active" tint when advanced filters are applied) +
+ * horizontally-scrolling <FilterChip>s.
+ *
+ * One of the curated quick-filter pills. `"all"` is mutually exclusive with
+ * every other id (selecting it clears other axes; selecting any other id
+ * removes `"all"`). The remaining ids split across two filter axes:
  *
  *   created_by axis: "mine" | "system"
  *   difficulty axis: "beginner" | "intermediate" | "advanced" | "expert"
  *
- * Pills within an axis OR together; pills across axes AND together.
- *
- * `pt` / `physio` variants from the legacy app are deferred until user
- * relationship data lands.
+ * Pills within an axis OR together; pills across axes AND together. `pt` /
+ * `physio` variants from the legacy app are deferred until relationship data
+ * lands.
  */
 export type QuickFilterId = "all" | CreatedByFilter | ExerciseDifficulty;
 
@@ -34,80 +39,12 @@ export const QUICK_FILTERS: readonly QuickFilter[] = [
   { id: "expert", label: "Expert" },
 ] as const;
 
-const Pill = styled(View, {
-  paddingHorizontal: "$md",
-  paddingVertical: "$xs",
-  borderRadius: "$full",
-  borderWidth: 1,
-  borderColor: "$borderColor",
-  backgroundColor: "$surfaceSecondary",
-  minHeight: 32,
-  justifyContent: "center",
-
-  pressStyle: {
-    opacity: 0.85,
-    scale: 0.97,
-  },
-
-  variants: {
-    active: {
-      true: {
-        backgroundColor: "$primary",
-        borderColor: "$primary",
-      },
-    },
-  } as const,
-});
-
-const PillText = styled(TamaguiText, {
-  fontFamily: "$body",
-  fontSize: 13,
-  lineHeight: 18,
-  fontWeight: "600",
-  color: "$colorSecondary",
-
-  variants: {
-    active: {
-      true: { color: "$colorInverse" },
-    },
-  } as const,
-});
-
-const FilterIconPill = styled(View, {
-  width: 40,
-  height: 32,
-  borderRadius: "$full",
-  borderWidth: 1,
-  borderColor: "$borderColor",
-  backgroundColor: "$surfaceSecondary",
-  alignItems: "center",
-  justifyContent: "center",
-
-  pressStyle: {
-    opacity: 0.85,
-    scale: 0.97,
-  },
-});
-
-const ActiveDot = styled(View, {
-  position: "absolute",
-  top: -2,
-  right: -2,
-  width: 8,
-  height: 8,
-  borderRadius: "$full",
-  backgroundColor: "$primary",
-  borderWidth: 1,
-  borderColor: "$background",
-});
-
 export type ExerciseFilterBarProps = {
   /** Currently-selected quick-filter ids. Includes "all" iff nothing else is selected. */
   selectedQuickFilters: QuickFilterId[];
   /**
-   * True when the filter modal has any advanced filters applied
-   * (muscle group / equipment). Drives the `$primary` dot on the
-   * leading filter-icon pill.
+   * True when the filter modal has any advanced filters applied (muscle group
+   * / equipment). Tints the leading filter <IconBtn> with its active state.
    */
   hasAdvancedFilters: boolean;
   onToggleQuickFilter: (id: QuickFilterId) => void;
@@ -127,38 +64,33 @@ export function ExerciseFilterBar({
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{
-        gap: 8,
+        gap: 6,
         paddingHorizontal: 16,
         alignItems: "center",
       }}
       testID={testID}
     >
-      <FilterIconPill
+      <IconBtn
+        icon={<IconFilter size={14} />}
+        size={32}
+        tone="neutral"
+        active={hasAdvancedFilters}
         onPress={onOpenFilterModal}
-        accessibilityRole="button"
         accessibilityLabel="Open advanced filters"
         testID="filter-modal-trigger"
-      >
-        <Ionicons name="options-outline" size={18} color="#E8E8EC" />
-        {hasAdvancedFilters && <ActiveDot testID="filter-modal-trigger-dot" />}
-      </FilterIconPill>
+      />
 
-      {QUICK_FILTERS.map((filter) => {
-        const active = selectedQuickFilters.includes(filter.id);
-        return (
-          <Pill
-            key={filter.id}
-            active={active}
-            onPress={() => onToggleQuickFilter(filter.id)}
-            accessibilityRole="button"
-            accessibilityLabel={`${filter.label} filter`}
-            accessibilityState={{ selected: active }}
-            testID={`quick-filter-${filter.id}`}
-          >
-            <PillText active={active}>{filter.label}</PillText>
-          </Pill>
-        );
-      })}
+      {QUICK_FILTERS.map((filter) => (
+        <FilterChip
+          key={filter.id}
+          active={selectedQuickFilters.includes(filter.id)}
+          onPress={() => onToggleQuickFilter(filter.id)}
+          accessibilityLabel={`${filter.label} filter`}
+          testID={`quick-filter-${filter.id}`}
+        >
+          {filter.label}
+        </FilterChip>
+      ))}
     </ScrollView>
   );
 }
