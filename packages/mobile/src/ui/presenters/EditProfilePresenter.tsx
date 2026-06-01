@@ -1,5 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -59,6 +60,14 @@ export type EditProfilePresenterProps = {
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
+  /** Current avatar URL (null when no avatar set). */
+  avatarUrl?: string | null;
+  /** Cache-bust key for the avatar image. */
+  avatarCacheKey?: number;
+  /** True while the avatar picker/upload is in flight. */
+  isAvatarWorking?: boolean;
+  /** Opens the avatar picker sheet (Camera / Library / Remove / Cancel). */
+  onSelectAvatar?: () => void;
 };
 
 export function EditProfilePresenter({
@@ -69,6 +78,10 @@ export function EditProfilePresenter({
   isSaving,
   isLoadingInitial,
   errorMessage,
+  avatarUrl,
+  avatarCacheKey = 0,
+  isAvatarWorking = false,
+  onSelectAvatar,
   onFullNameChange,
   onFitnessLevelChange,
   onDateOfBirthChange,
@@ -145,6 +158,61 @@ export function EditProfilePresenter({
                 textAlign="center"
               >
                 {errorMessage}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Avatar */}
+          {onSelectAvatar ? (
+            <View marginBottom={24} alignItems="center">
+              <Pressable
+                onPress={onSelectAvatar}
+                disabled={isAvatarWorking || isSaving}
+                accessibilityRole="button"
+                accessibilityLabel="Change profile picture"
+                testID="edit-profile-avatar"
+                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+              >
+                <View
+                  width={80}
+                  height={80}
+                  borderRadius={9999}
+                  backgroundColor="$surface2"
+                  borderWidth={2}
+                  borderColor="$border2"
+                  alignItems="center"
+                  justifyContent="center"
+                  overflow="hidden"
+                >
+                  {avatarUrl ? (
+                    <Image
+                      key={`${avatarUrl}-${avatarCacheKey}`}
+                      source={{
+                        uri: `${avatarUrl}${avatarUrl.includes("?") ? "&" : "?"}_cb=${avatarCacheKey}`,
+                      }}
+                      style={{ width: 76, height: 76, borderRadius: 9999 }}
+                      resizeMode="cover"
+                      testID="edit-profile-avatar-image"
+                    />
+                  ) : (
+                    <Text
+                      fontFamily="$display"
+                      fontWeight="700"
+                      fontSize={28}
+                      color="$text3"
+                    >
+                      {fullName.trim().charAt(0).toUpperCase() || "–"}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                color="$primary"
+                marginTop={8}
+              >
+                {isAvatarWorking ? "Uploading…" : "Change photo"}
               </Text>
             </View>
           ) : null}

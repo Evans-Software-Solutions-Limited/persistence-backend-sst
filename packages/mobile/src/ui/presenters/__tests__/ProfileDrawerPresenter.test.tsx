@@ -94,7 +94,8 @@ describe("ProfileDrawerPresenter", () => {
         planDescription: "Unlimited workouts",
       },
     });
-    expect(getByText("Ends 01/06/2026")).toBeTruthy();
+    // The expiry is part of the DrawerRow sub text.
+    expect(getByText(/Ends 01\/06\/2026/)).toBeTruthy();
   });
 
   it("omits age from the sub when DOB-derived age is null", () => {
@@ -147,7 +148,7 @@ describe("ProfileDrawerPresenter", () => {
     fireEvent.press(getByTestId("row-profile-details"));
     fireEvent.press(getByTestId("row-achievements"));
     fireEvent.press(getByTestId("row-health"));
-    fireEvent.press(getByTestId("subscription-card-pressable"));
+    fireEvent.press(getByTestId("row-subscription"));
     fireEvent.press(getByTestId("row-notifications"));
     fireEvent.press(getByTestId("row-settings"));
 
@@ -180,7 +181,7 @@ describe("ProfileDrawerPresenter", () => {
 
   it("hides the Subscription section while subscription is unresolved", () => {
     const { queryByTestId } = renderDrawer({ subscription: undefined });
-    expect(queryByTestId("subscription-card-pressable")).toBeNull();
+    expect(queryByTestId("row-subscription")).toBeNull();
   });
 
   it("renders a loading state when profile is undefined", () => {

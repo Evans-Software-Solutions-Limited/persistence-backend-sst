@@ -1,5 +1,5 @@
 import { router, useSegments } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDrawer } from "@/state/drawer";
 import { useUserMode } from "@/state/user-mode";
@@ -52,13 +52,19 @@ export function ProfileDrawerContainer() {
     (health.permissionStatus.steps === "granted" ||
       health.permissionStatus.bodyWeight === "granted");
 
-  // Re-open the drawer when the user navigates back to the tabs after a
-  // sub-page push (Option 3 UX pattern — the drawer acts as a persistent
-  // menu). `returnToDrawer` is set by `closeForNavigation`; cleared here
-  // once the re-open fires.
+  // Re-open the drawer when the user navigates BACK to the tabs after a
+  // sub-page push (Option 3 UX pattern). The key insight: we only re-open
+  // when segments TRANSITION from a non-tabs route back to (tabs), not when
+  // they're already on (tabs) at the moment closeForNavigation fires.
   const segments = useSegments();
+  const prevSegmentRef = useRef(segments[1]);
   useEffect(() => {
-    if (returnToDrawer && segments[1] === "(tabs)") {
+    const prev = prevSegmentRef.current;
+    const current = segments[1];
+    prevSegmentRef.current = current;
+
+    // Only re-open when transitioning FROM a sub-page BACK to tabs.
+    if (returnToDrawer && prev !== "(tabs)" && current === "(tabs)") {
       openDrawer();
       clearReturn();
     }

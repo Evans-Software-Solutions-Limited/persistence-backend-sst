@@ -9,6 +9,7 @@ import {
 } from "@/application/commands";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import {
   EditProfilePresenter,
@@ -67,6 +68,8 @@ export function EditProfileContainer() {
   const { storage, auth } = useAdapters();
   const { session } = useAuth();
   const profilePage = useProfilePage();
+  const avatarUrl = profilePage.payload?.profile.avatarUrl ?? null;
+  const avatar = useAvatarUpload(avatarUrl);
 
   const initial: Snapshot | null = useMemo(() => {
     const p = profilePage.payload?.profile;
@@ -215,6 +218,10 @@ export function EditProfileContainer() {
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
       errorMessage={errorMessage}
+      avatarUrl={avatarUrl}
+      avatarCacheKey={avatar.cacheKey}
+      isAvatarWorking={avatar.isWorking}
+      onSelectAvatar={avatar.showAvatarSheet}
       onFullNameChange={setFullName}
       onFitnessLevelChange={setFitnessLevel}
       onDateOfBirthChange={setDateOfBirth}

@@ -2,13 +2,13 @@ import { Text, View } from "@tamagui/core";
 import { useState } from "react";
 import { Pressable } from "react-native";
 
-import { Avatar, BottomSheet, Card, Pill } from "@/ui/components/foundation";
+import { Avatar, BottomSheet, Pill } from "@/ui/components/foundation";
 import type { PillTone } from "@/ui/components/foundation/tones";
 import { DrawerRow } from "@/ui/components/composite";
 import { DrawerSection } from "@/ui/components/profile/DrawerSection";
 import {
   IconBell,
-  IconChevronR,
+  IconCrown,
   IconHealth,
   IconLogout,
   IconMedal,
@@ -269,46 +269,31 @@ export function ProfileDrawerPresenter({
         />
       </DrawerSection>
 
-      {/* Subscription section — extra.jsx:78–91. Guarded so it disappears
-          entirely when useMySubscription hasn't resolved. */}
+      {/* Subscription section — uses DrawerRow for consistent chevron
+          alignment with the Account rows above. */}
       {subscription ? (
         <DrawerSection title="Subscription">
-          <Card
-            pad={16}
-            radius={12}
-            surface={1}
+          <DrawerRow
+            icon={<IconCrown {...iconDefaults({ size: 16 })} />}
+            title={tierBadge(subscription.tier) ?? "Free Plan"}
+            sub={
+              [
+                subscription.planDescription,
+                subscription.expiresAt
+                  ? `Ends ${fmtDate(subscription.expiresAt)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+            trailing={
+              <Pill tone={tierPillTone(subscription.tier)} size="xs">
+                {tierBadge(subscription.tier) ?? "FREE"}
+              </Pill>
+            }
             onPress={onOpenSubscription}
-            testID="subscription-card"
-            accessibilityLabel="Manage subscription"
-          >
-            <View
-              flexDirection="row"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <View>
-                <View
-                  flexDirection="row"
-                  gap={6}
-                  alignItems="center"
-                  marginBottom={4}
-                >
-                  <Pill tone={tierPillTone(subscription.tier)} size="xs">
-                    {tierBadge(subscription.tier) ?? "FREE"}
-                  </Pill>
-                  {subscription.expiresAt ? (
-                    <Text fontFamily="$body" fontSize={11} color="$text3">
-                      Ends {fmtDate(subscription.expiresAt)}
-                    </Text>
-                  ) : null}
-                </View>
-                <Text fontFamily="$body" fontSize={13} color="$text2">
-                  {subscription.planDescription}
-                </Text>
-              </View>
-              <IconChevronR {...iconDefaults({ size: 16 })} color="#8A8A98" />
-            </View>
-          </Card>
+            testID="row-subscription"
+          />
         </DrawerSection>
       ) : null}
 
