@@ -1,290 +1,203 @@
+import { fireEvent } from "@testing-library/react-native";
 import React from "react";
+import { RefreshControl } from "react-native";
+
+import type { Workout } from "@/domain/models/workout";
+import type { WorkoutSplit } from "@/domain/services/workoutSplit";
 import { WorkoutsListPresenter } from "../WorkoutsListPresenter";
 import { renderWithTheme as render } from "../../../../__tests__/test-utils";
+
+const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
+  id: "wo-1",
+  name: "Push Day",
+  description: null,
+  createdBy: "test-user",
+  visibility: "private",
+  estimatedDurationMinutes: 45,
+  exercises: [],
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  ...overrides,
+});
 
 const baseProps = {
   isInitialLoading: false,
   error: null,
   isRefreshing: false,
-  searchQuery: "",
-  myAndAssignedCount: 0,
-  mineCount: 0,
-  assignedCount: 0,
-  defaultCount: 0,
-  filteredMyWorkouts: [],
-  filteredExampleWorkouts: [],
+  saved: [] as Workout[],
+  templates: [] as Workout[],
+  splits: new Map<string, WorkoutSplit>(),
   userWorkoutLimit: undefined,
   isAtLimit: false,
   currentUserId: "test-user",
-  deletingWorkoutIds: new Set<string>(),
-  onCreateWorkout: jest.fn(),
-  onBrowseExercises: jest.fn(),
+  onCreate: jest.fn(),
   onUpgrade: jest.fn(),
-  onSearchChange: jest.fn(),
-  onWorkoutPress: jest.fn(),
-  onEditWorkout: jest.fn(),
-  onDeleteWorkout: jest.fn(),
-  onStartWorkout: jest.fn(),
+  onOpen: jest.fn(),
+  onStart: jest.fn(),
+  onLongPress: jest.fn(),
   onRetry: jest.fn(),
   onRefresh: jest.fn(),
 };
 
-const buildCardView = (overrides: Record<string, unknown> = {}) => ({
-  id: "wo-1",
-  name: "Push Day",
-  description: null,
-  estimated_duration_minutes: 45,
-  created_by: "test-user",
-  is_assigned: false,
-  assigned_by_type: null,
-  targeted_muscles: [],
-  exercises: [],
-  ...overrides,
-});
-
 describe("WorkoutsListPresenter", () => {
   it("renders the loading splash on initial cold start", () => {
     const { getByText } = render(
-      <WorkoutsListPresenter {...baseProps} isInitialLoading={true} />,
+      <WorkoutsListPresenter {...baseProps} isInitialLoading />,
     );
     expect(getByText("Loading workouts...")).toBeTruthy();
   });
 
-  it("renders blocking ErrorState when refresh fails with empty cache", () => {
+  it("renders a blocking ErrorState when refresh fails with empty cache", () => {
     const { getByText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        error={{
-          kind: "api",
-          code: "network",
-          message: "Lost connection",
-        }}
+        error={{ kind: "api", code: "network", message: "Lost connection" }}
       />,
     );
     expect(getByText("Failed to load workouts")).toBeTruthy();
     expect(getByText("Lost connection")).toBeTruthy();
   });
 
-  it("renders both sections with cards when populated", () => {
-    const { getByText, getAllByText } = render(
-      <WorkoutsListPresenter
-        {...baseProps}
-        myAndAssignedCount={2}
-        mineCount={1}
-        assignedCount={1}
-        defaultCount={1}
-        filteredMyWorkouts={[
-          buildCardView({ id: "wo-1", name: "Push Day" }),
-          buildCardView({ id: "wo-2", name: "Pull Day", is_assigned: true }),
-        ]}
-        filteredExampleWorkouts={[
-          buildCardView({
-            id: "wo-3",
-            name: "Beginner Full Body",
-            created_by: "system",
-          }),
-        ]}
-      />,
-    );
-
-    expect(getByText("My Workouts")).toBeTruthy();
-    expect(getByText("Example Workouts")).toBeTruthy();
-    expect(getByText("Push Day")).toBeTruthy();
-    expect(getByText("Pull Day")).toBeTruthy();
-    expect(getByText("Beginner Full Body")).toBeTruthy();
-    // Subtitle reflects mine + assigned counts.
-    expect(getByText("2 workouts (1 created, 1 assigned)")).toBeTruthy();
-    // Both sections should render — three cards across them.
-    expect(getAllByText(/exercises$/).length).toBe(3);
-  });
-
-  it("renders the search-results section when searchQuery is set", () => {
+  it("renders the cached list (not the error wall) when an error arrives with cached data", () => {
     const { getByText, queryByText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        searchQuery="push"
-        filteredMyWorkouts={[buildCardView({ id: "wo-1", name: "Push Day" })]}
-        filteredExampleWorkouts={[]}
+        error={{ kind: "api", code: "network", message: "Lost connection" }}
+        saved={[buildWorkout({ id: "wo-1", name: "Cached Push" })]}
       />,
     );
+    expect(getByText("Cached Push")).toBeTruthy();
+    expect(queryByText("Failed to load workouts")).toBeNull();
+  });
 
-    expect(getByText("Search Results (1)")).toBeTruthy();
+  it("renders the empty My Workouts state with no Create CTA inside it", () => {
+    const { getByText, queryByText, getByTestId } = render(
+      <WorkoutsListPresenter {...baseProps} />,
+    );
+    expect(getByText("MY WORKOUTS · 0 SAVED")).toBeTruthy();
+    expect(getByText("No workouts yet")).toBeTruthy();
+    // The only Create path is the top CTA — the empty state has no button.
+    expect(getByTestId("create-workout-cta")).toBeTruthy();
+    // No Browse Exercises button (prototype has none) + no Templates section.
+    expect(queryByText("Browse Exercises")).toBeNull();
+    expect(queryByText(/^TEMPLATES/)).toBeNull();
+  });
+
+  it("renders the two eyebrow sections when populated", () => {
+    const { getByText } = render(
+      <WorkoutsListPresenter
+        {...baseProps}
+        saved={[
+          buildWorkout({ id: "wo-1", name: "Push Day" }),
+          buildWorkout({ id: "wo-2", name: "Coach Pull", createdBy: "coach" }),
+        ]}
+        templates={[
+          buildWorkout({ id: "wo-3", name: "PPL Legs", createdBy: "system" }),
+        ]}
+      />,
+    );
+    expect(getByText("MY WORKOUTS · 2 SAVED")).toBeTruthy();
+    expect(getByText("TEMPLATES · 1")).toBeTruthy();
     expect(getByText("Push Day")).toBeTruthy();
-    // Sections should NOT render during search
-    expect(queryByText("My Workouts")).toBeNull();
-    expect(queryByText("Example Workouts")).toBeNull();
+    expect(getByText("Coach Pull")).toBeTruthy();
+    expect(getByText("PPL Legs")).toBeTruthy();
   });
 
-  it("renders empty-search-results when no matches", () => {
+  it("renders the split badge for a workout when a split is supplied", () => {
     const { getByText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        searchQuery="nonexistent"
-        filteredMyWorkouts={[]}
-        filteredExampleWorkouts={[]}
+        saved={[buildWorkout({ id: "wo-7", name: "Upper Body" })]}
+        splits={new Map<string, WorkoutSplit>([["wo-7", "push"]])}
       />,
     );
-
-    expect(getByText("Search Results (0)")).toBeTruthy();
-    expect(getByText("No workouts found")).toBeTruthy();
+    expect(getByText("PUSH")).toBeTruthy();
   });
 
-  it("renders WorkoutLimitIndicator when isAtLimit is true", () => {
+  it("renders the WorkoutLimitIndicator when isAtLimit is true", () => {
     const { getByText } = render(
-      <WorkoutsListPresenter
-        {...baseProps}
-        userWorkoutLimit={3}
-        isAtLimit={true}
-      />,
+      <WorkoutsListPresenter {...baseProps} userWorkoutLimit={3} isAtLimit />,
     );
     expect(getByText("Workout Limit Reached")).toBeTruthy();
   });
 
-  it("hides QuickActions during search", () => {
-    const { queryByText } = render(
-      <WorkoutsListPresenter {...baseProps} searchQuery="push" />,
+  it("fires onCreate from the Create Workout CTA", () => {
+    const onCreate = jest.fn();
+    const { getByTestId } = render(
+      <WorkoutsListPresenter {...baseProps} onCreate={onCreate} />,
     );
-    expect(queryByText("Create New Workout")).toBeNull();
+    fireEvent.press(getByTestId("create-workout-cta"));
+    expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("renders QuickActions when not searching", () => {
-    const { getByText } = render(<WorkoutsListPresenter {...baseProps} />);
-    expect(getByText("Create New Workout")).toBeTruthy();
-    expect(getByText("Browse Exercises")).toBeTruthy();
-  });
-
-  it("renders WorkoutCard with description, targeted_muscles, and owner actions for owned workouts", () => {
-    // Exercises the conditional rendering branches: description text,
-    // muscle badges (>=4 to also exercise the "+N" overflow), and the
-    // edit/delete CTAs that only show when created_by === currentUserId
-    // and is_assigned is false.
+  it("fires onUpgrade from the limit indicator", () => {
+    const onUpgrade = jest.fn();
     const { getByText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        myAndAssignedCount={1}
-        mineCount={1}
-        filteredMyWorkouts={[
-          buildCardView({
-            id: "wo-1",
-            name: "Loaded Card",
-            description: "A complete workout",
-            targeted_muscles: [
-              { id: "m1", name: "Chest" },
-              { id: "m2", name: "Triceps" },
-              { id: "m3", name: "Shoulders" },
-              { id: "m4", display_name: "Lats" },
-              { id: "m5", name: "Biceps" },
-            ],
-          }),
-        ]}
+        userWorkoutLimit={3}
+        isAtLimit
+        onUpgrade={onUpgrade}
       />,
     );
-
-    expect(getByText("A complete workout")).toBeTruthy();
-    expect(getByText("Chest")).toBeTruthy();
-    expect(getByText("Triceps")).toBeTruthy();
-    expect(getByText("Shoulders")).toBeTruthy();
-    // 4th + 5th roll up into the "+N" overflow badge
-    expect(getByText("+2")).toBeTruthy();
-    // Owner actions visible
-    expect(getByText("Edit")).toBeTruthy();
-    expect(getByText("Delete")).toBeTruthy();
+    fireEvent.press(getByText("Upgrade Now"));
+    expect(onUpgrade).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the assigned tag on PT-assigned cards and hides owner actions", () => {
-    const { getByText, queryByText } = render(
+  it("opens a saved workout on row press and starts it from the Play button", () => {
+    const onOpen = jest.fn();
+    const onStart = jest.fn();
+    const { getByTestId, getByLabelText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        myAndAssignedCount={1}
-        assignedCount={1}
-        filteredMyWorkouts={[
-          buildCardView({
-            id: "wo-1",
-            name: "Assigned Push Day",
-            created_by: "trainer-1",
-            is_assigned: true,
-            assigned_by_type: "personal_trainer",
-          }),
-        ]}
+        saved={[buildWorkout({ id: "wo-7", name: "Upper Body" })]}
+        onOpen={onOpen}
+        onStart={onStart}
       />,
     );
-
-    expect(getByText("Assigned by: PT")).toBeTruthy();
-    // Owner-only actions are hidden because is_assigned=true
-    expect(queryByText("Edit")).toBeNull();
-    expect(queryByText("Delete")).toBeNull();
+    fireEvent.press(getByTestId("workout-row-wo-7"));
+    expect(onOpen).toHaveBeenCalledWith("wo-7");
+    fireEvent.press(getByLabelText("Start Upper Body"));
+    expect(onStart).toHaveBeenCalledWith("wo-7");
   });
 
-  it("renders the physio assigned tag variant", () => {
-    const { getByText } = render(
+  it("renders template rows with a chevron (no Play) and opens them on press", () => {
+    const onOpen = jest.fn();
+    const { getByTestId, queryByLabelText } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        myAndAssignedCount={1}
-        assignedCount={1}
-        filteredMyWorkouts={[
-          buildCardView({
-            id: "wo-1",
-            name: "Rehab Session",
-            created_by: "physio-1",
-            is_assigned: true,
-            assigned_by_type: "physio",
-          }),
+        templates={[
+          buildWorkout({ id: "tpl-1", name: "PPL Push", createdBy: "system" }),
         ]}
+        onOpen={onOpen}
       />,
     );
-
-    expect(getByText("Assigned by: Physio")).toBeTruthy();
+    // Templates have no Play button.
+    expect(queryByLabelText("Start PPL Push")).toBeNull();
+    fireEvent.press(getByTestId("workout-row-tpl-1"));
+    expect(onOpen).toHaveBeenCalledWith("tpl-1");
   });
 
-  it("formats long durations with hours+minutes (verbatim legacy heuristic)", () => {
-    const { getByText } = render(
+  it("wires long-press only on saved rows the current user owns", () => {
+    const onLongPress = jest.fn();
+    const { getByTestId } = render(
       <WorkoutsListPresenter
         {...baseProps}
-        myAndAssignedCount={2}
-        mineCount={2}
-        filteredMyWorkouts={[
-          buildCardView({
-            id: "wo-1",
-            name: "1h Workout",
-            estimated_duration_minutes: 60,
-          }),
-          buildCardView({
-            id: "wo-2",
-            name: "1h 30m Workout",
-            estimated_duration_minutes: 90,
-          }),
-        ]}
+        currentUserId="test-user"
+        saved={[buildWorkout({ id: "wo-mine", createdBy: "test-user" })]}
+        onLongPress={onLongPress}
       />,
     );
-
-    expect(getByText("1h")).toBeTruthy();
-    expect(getByText("1h 30m")).toBeTruthy();
+    fireEvent(getByTestId("workout-row-wo-mine"), "longPress");
+    expect(onLongPress).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the empty-mine state via WorkoutSection when no workouts cached", () => {
-    const { getByText } = render(<WorkoutsListPresenter {...baseProps} />);
-    expect(getByText("No workouts yet")).toBeTruthy();
-    expect(
-      getByText("Create your first workout template to get started"),
-    ).toBeTruthy();
-    expect(getByText("No example workouts available")).toBeTruthy();
-  });
-
-  it("disables WorkoutCard when workout id is in deletingWorkoutIds", () => {
-    const { getByText } = render(
-      <WorkoutsListPresenter
-        {...baseProps}
-        myAndAssignedCount={1}
-        mineCount={1}
-        filteredMyWorkouts={[
-          buildCardView({ id: "wo-deleting", name: "Deleting Workout" }),
-        ]}
-        deletingWorkoutIds={new Set(["wo-deleting"])}
-      />,
+  it("invokes onRefresh from the RefreshControl", () => {
+    const onRefresh = jest.fn();
+    const { UNSAFE_getByType } = render(
+      <WorkoutsListPresenter {...baseProps} onRefresh={onRefresh} />,
     );
-    // The card still renders (greyed out) but the start/edit/delete
-    // CTAs use the disabled colour. Verifying the workout name renders
-    // is enough to exercise the disabled style branch.
-    expect(getByText("Deleting Workout")).toBeTruthy();
+    fireEvent(UNSAFE_getByType(RefreshControl), "refresh");
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });
