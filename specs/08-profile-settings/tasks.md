@@ -32,7 +32,7 @@
 - [x] **T-08.4.1** ~~Run `01-design-system § Codemod` against new files.~~ _N/A — new files were authored against tokens from the start; the codemod retrofits legacy hex, of which the new files have none in token-resolvable positions._
 - [x] **T-08.4.2** `npx tsc --noEmit`, `npx expo lint`, `npx jest --coverage` — all green (mobile build is the EAS no-op). Core `vitest` green.
 - [x] **T-08.4.3** Coverage: global threshold met (changed-file set ~91% branch, 96%+ stmts/lines/funcs).
-- [ ] **T-08.4.4** Manual e2e: _deferred to the reviewer's on-device pass (jsdom can't assert animation/blur/real navigation); the automated container/presenter suites cover the logic._
+- [x] **T-08.4.4** Manual e2e: _Completed by owner on-device review (2026-06-01). PR #94 merged._
 
 ---
 
