@@ -31,10 +31,8 @@ jest.mock("@/ui/presenters/ProfileDrawerPresenter", () => ({
 }));
 
 const mockPush = jest.fn();
-let mockPathname = "/profile/edit";
 jest.mock("expo-router", () => ({
   router: { push: (p: string) => mockPush(p) },
-  usePathname: () => mockPathname,
 }));
 
 const mockSwitchMode = jest.fn();
@@ -90,10 +88,8 @@ beforeEach(() => {
   mockPush.mockClear();
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
-  // Default to a sub-page pathname so the re-open-on-back effect doesn't
-  // fire during row-handler tests.
-  mockPathname = "/profile/edit";
-  useDrawer.setState({ open: false, returnToDrawer: false });
+  // Default to closed drawer state.
+  useDrawer.setState({ open: false });
   useUserMode.setState({ mode: "athlete", isTrainerEligible: false });
 });
 
@@ -173,7 +169,6 @@ describe("ProfileDrawerContainer", () => {
         (lastProps?.[handler] as () => void)();
       });
       expect(useDrawer.getState().open).toBe(false);
-      expect(useDrawer.getState().returnToDrawer).toBe(true);
       expect(mockPush).toHaveBeenCalledWith(route);
     }
   });

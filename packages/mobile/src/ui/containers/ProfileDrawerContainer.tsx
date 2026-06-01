@@ -1,5 +1,5 @@
-import { router, usePathname } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { router } from "expo-router";
+import { useCallback, useState } from "react";
 
 import { useDrawer } from "@/state/drawer";
 import { useUserMode } from "@/state/user-mode";
@@ -21,20 +21,10 @@ import { ProfileDrawerPresenter } from "@/ui/presenters/ProfileDrawerPresenter";
  * Mounted ALWAYS at (app)/_layout.tsx (14-navigation); the <BottomSheet>'s
  * `visible` prop (from useDrawer().open) drives the slide animation so a
  * parent-driven close animates DOWN rather than unmounting.
- *
- * Hooks are the REAL ones (the spec's original useGet* names were
- * aspirational — see design.md § A reality-map):
- *   useProfilePage / useMySubscription / useHealthData / useAuth().signOut /
- *   useModeSwitch. Achievements + trainer-client counts are stubbed (their
- *   hooks are owned by 06 / 10, not yet shipped).
  */
 export function ProfileDrawerContainer() {
   const open = useDrawer((s) => s.open);
   const closeDrawer = useDrawer((s) => s.closeDrawer);
-  const closeForNavigation = useDrawer((s) => s.closeForNavigation);
-  const openDrawer = useDrawer((s) => s.openDrawer);
-  const returnToDrawer = useDrawer((s) => s.returnToDrawer);
-  const clearReturn = useDrawer((s) => s.clearReturn);
   const mode = useUserMode((s) => s.mode);
   const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
   const { switchMode } = useModeSwitch();
@@ -52,45 +42,13 @@ export function ProfileDrawerContainer() {
     (health.permissionStatus.steps === "granted" ||
       health.permissionStatus.bodyWeight === "granted");
 
-  // Re-open the drawer when the user navigates BACK to a tab after a
-  // sub-page push (Option 3 UX pattern). Uses usePathname which is global
-  // (works even though this component is a sibling of the Stack, not inside
-  // it). We detect a TRANSITION from a non-tab path back to a tab path.
-  const pathname = usePathname();
-  const prevPathnameRef = useRef(pathname);
-  useEffect(() => {
-    const prev = prevPathnameRef.current;
-    prevPathnameRef.current = pathname;
-
-    if (!returnToDrawer) return;
-
-    // Tab paths look like "/" (index), "/train", "/fuel", "/you", "/clients",
-    // "/programs". Sub-page paths look like "/profile/edit", "/coming-soon", etc.
-    const isTabPath = (p: string) =>
-      p === "/" ||
-      p === "/train" ||
-      p === "/fuel" ||
-      p === "/you" ||
-      p === "/clients" ||
-      p === "/programs";
-
-    const wasOnSubPage = !isTabPath(prev);
-    const nowOnTab = isTabPath(pathname);
-
-    if (wasOnSubPage && nowOnTab) {
-      openDrawer();
-      clearReturn();
-    }
-  }, [pathname, returnToDrawer, openDrawer, clearReturn]);
-
-  // Close the drawer for navigation — sets returnToDrawer so the drawer
-  // re-opens when the user navigates back to the tabs.
+  // Close the drawer then navigate to the sub-page.
   const pushFrom = useCallback(
     (path: string) => {
-      closeForNavigation();
+      closeDrawer();
       router.push(path as never);
     },
-    [closeForNavigation],
+    [closeDrawer],
   );
 
   const onSignOut = useCallback(async () => {
@@ -98,11 +56,9 @@ export function ProfileDrawerContainer() {
     setIsSigningOut(true);
     try {
       await signOut();
-      // signOut clears session → AuthGate redirects to (auth)/sign-in.
       closeDrawer();
     } catch {
-      // Surface nothing here — useAuth captures the error; the drawer
-      // stays open so the user can retry.
+      // useAuth captures the error; the drawer stays open so the user can retry.
     } finally {
       setIsSigningOut(false);
     }
@@ -138,12 +94,10 @@ export function ProfileDrawerContainer() {
             }
           : undefined
       }
-      // TODO(06-progress-goals): wire useGetAchievements once it ships.
       achievementsCount={undefined}
       healthConnected={healthConnected}
       mode={mode}
       isTrainerEligible={isTrainerEligible}
-      // TODO(10-trainer-features): wire useTrainerClients (M8) once it ships.
       clientCount={undefined}
       isSigningOut={isSigningOut}
       onSwitchMode={(next) => switchMode(next)}
