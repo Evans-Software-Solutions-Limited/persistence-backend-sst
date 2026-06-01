@@ -102,7 +102,7 @@ export function ProfileDrawerContainer() {
       isSigningOut={isSigningOut}
       onSwitchMode={(next) => switchMode(next)}
       onOpenProfile={() => pushFrom("/(app)/profile/edit")}
-      onOpenAchievements={() => pushFrom("/(app)/achievements")}
+      onOpenAchievements={() => pushFrom("/(app)/coming-soon?feature=achievements")}
       onOpenHealth={() => pushFrom("/(app)/coming-soon?feature=health")}
       onOpenSubscription={() =>
         pushFrom("/(app)/coming-soon?feature=subscription")

@@ -153,7 +153,7 @@ describe("ProfileDrawerContainer", () => {
 
     const cases: [string, string][] = [
       ["onOpenProfile", "/(app)/profile/edit"],
-      ["onOpenAchievements", "/(app)/achievements"],
+      ["onOpenAchievements", "/(app)/coming-soon?feature=achievements"],
       ["onOpenHealth", "/(app)/coming-soon?feature=health"],
       ["onOpenSubscription", "/(app)/coming-soon?feature=subscription"],
       ["onOpenNotifications", "/(app)/coming-soon?feature=notifications"],
