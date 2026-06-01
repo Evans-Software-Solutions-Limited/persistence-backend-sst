@@ -303,23 +303,29 @@ describe("WorkoutsListContainer", () => {
     expect(await findByText("PUSH")).toBeTruthy();
   });
 
-  it("pull-to-refresh runs the workouts refresh path", async () => {
+  it("pull-to-refresh re-fetches the workouts from the API", async () => {
     const storage = new InMemoryStorageAdapter();
     seedSlices(storage, {
       mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
     });
 
-    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const api = new InMemoryApiAdapter();
+    const getWorkoutsSpy = jest.spyOn(api, "getWorkouts");
+    const adapters = makeAdapters(api, storage);
     const { findByText, UNSAFE_getByType } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
     await findByText("Push Day");
 
+    // Ignore any initial stale-cache auto-refresh — assert the pull-to-refresh
+    // gesture specifically re-hits the API.
+    getWorkoutsSpy.mockClear();
     await act(async () => {
       fireEvent(UNSAFE_getByType(RefreshControl), "refresh");
     });
-    // The refresh handler executed without throwing.
-    expect(UNSAFE_getByType(RefreshControl)).toBeTruthy();
+
+    // onRefresh must wire through to workouts.refresh() -> api.getWorkouts().
+    expect(getWorkoutsSpy).toHaveBeenCalled();
   });
 
   it("renders the empty state when there is no authenticated user", async () => {
