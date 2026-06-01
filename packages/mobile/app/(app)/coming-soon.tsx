@@ -56,8 +56,7 @@ const COPY = {
   achievements: {
     icon: "trophy-outline" as const,
     title: "Achievements",
-    description:
-      "Your achievements grid arrives with 06-progress-goals.",
+    description: "Your achievements grid arrives with 06-progress-goals.",
   },
   notifications: {
     icon: "notifications-outline" as const,
