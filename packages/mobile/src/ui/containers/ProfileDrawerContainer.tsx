@@ -1,4 +1,4 @@
-import { router, useSegments } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDrawer } from "@/state/drawer";
@@ -52,23 +52,36 @@ export function ProfileDrawerContainer() {
     (health.permissionStatus.steps === "granted" ||
       health.permissionStatus.bodyWeight === "granted");
 
-  // Re-open the drawer when the user navigates BACK to the tabs after a
-  // sub-page push (Option 3 UX pattern). The key insight: we only re-open
-  // when segments TRANSITION from a non-tabs route back to (tabs), not when
-  // they're already on (tabs) at the moment closeForNavigation fires.
-  const segments = useSegments();
-  const prevSegmentRef = useRef(segments[1]);
+  // Re-open the drawer when the user navigates BACK to a tab after a
+  // sub-page push (Option 3 UX pattern). Uses usePathname which is global
+  // (works even though this component is a sibling of the Stack, not inside
+  // it). We detect a TRANSITION from a non-tab path back to a tab path.
+  const pathname = usePathname();
+  const prevPathnameRef = useRef(pathname);
   useEffect(() => {
-    const prev = prevSegmentRef.current;
-    const current = segments[1];
-    prevSegmentRef.current = current;
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = pathname;
 
-    // Only re-open when transitioning FROM a sub-page BACK to tabs.
-    if (returnToDrawer && prev !== "(tabs)" && current === "(tabs)") {
+    if (!returnToDrawer) return;
+
+    // Tab paths look like "/" (index), "/train", "/fuel", "/you", "/clients",
+    // "/programs". Sub-page paths look like "/profile/edit", "/coming-soon", etc.
+    const isTabPath = (p: string) =>
+      p === "/" ||
+      p === "/train" ||
+      p === "/fuel" ||
+      p === "/you" ||
+      p === "/clients" ||
+      p === "/programs";
+
+    const wasOnSubPage = !isTabPath(prev);
+    const nowOnTab = isTabPath(pathname);
+
+    if (wasOnSubPage && nowOnTab) {
       openDrawer();
       clearReturn();
     }
-  }, [segments, returnToDrawer, openDrawer, clearReturn]);
+  }, [pathname, returnToDrawer, openDrawer, clearReturn]);
 
   // Close the drawer for navigation — sets returnToDrawer so the drawer
   // re-opens when the user navigates back to the tabs.

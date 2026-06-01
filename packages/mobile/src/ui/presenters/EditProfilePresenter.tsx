@@ -7,6 +7,7 @@ import {
   ScrollView,
   Switch,
   TextInput,
+  View as RNView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -164,48 +165,52 @@ export function EditProfilePresenter({
 
           {/* Avatar */}
           {onSelectAvatar ? (
-            <View marginBottom={24} alignItems="center">
-              <Pressable
-                onPress={onSelectAvatar}
-                disabled={isAvatarWorking || isSaving}
-                accessibilityRole="button"
-                accessibilityLabel="Change profile picture"
-                testID="edit-profile-avatar"
-                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+            <Pressable
+              onPress={onSelectAvatar}
+              disabled={isAvatarWorking || isSaving}
+              accessibilityRole="button"
+              accessibilityLabel="Change profile picture"
+              testID="edit-profile-avatar"
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.8 : 1,
+                alignItems: "center",
+                marginBottom: 24,
+              })}
+            >
+              <RNView
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 9999,
+                  backgroundColor: "#171922",
+                  borderWidth: 2,
+                  borderColor: "#23252F",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                }}
               >
-                <View
-                  width={80}
-                  height={80}
-                  borderRadius={9999}
-                  backgroundColor="$surface2"
-                  borderWidth={2}
-                  borderColor="$border2"
-                  alignItems="center"
-                  justifyContent="center"
-                  overflow="hidden"
-                >
-                  {avatarUrl ? (
-                    <Image
-                      key={`${avatarUrl}-${avatarCacheKey}`}
-                      source={{
-                        uri: `${avatarUrl}${avatarUrl.includes("?") ? "&" : "?"}_cb=${avatarCacheKey}`,
-                      }}
-                      style={{ width: 76, height: 76, borderRadius: 9999 }}
-                      resizeMode="cover"
-                      testID="edit-profile-avatar-image"
-                    />
-                  ) : (
-                    <Text
-                      fontFamily="$display"
-                      fontWeight="700"
-                      fontSize={28}
-                      color="$text3"
-                    >
-                      {fullName.trim().charAt(0).toUpperCase() || "–"}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
+                {avatarUrl ? (
+                  <Image
+                    key={`${avatarUrl}-${avatarCacheKey}`}
+                    source={{
+                      uri: `${avatarUrl}${avatarUrl.includes("?") ? "&" : "?"}_cb=${avatarCacheKey}`,
+                    }}
+                    style={{ width: 76, height: 76, borderRadius: 9999 }}
+                    resizeMode="cover"
+                    testID="edit-profile-avatar-image"
+                  />
+                ) : (
+                  <Text
+                    fontFamily="$display"
+                    fontWeight="700"
+                    fontSize={28}
+                    color="$text3"
+                  >
+                    {fullName.trim().charAt(0).toUpperCase() || "–"}
+                  </Text>
+                )}
+              </RNView>
               <Text
                 fontFamily="$body"
                 fontSize={12}
@@ -214,7 +219,7 @@ export function EditProfilePresenter({
               >
                 {isAvatarWorking ? "Uploading…" : "Change photo"}
               </Text>
-            </View>
+            </Pressable>
           ) : null}
 
           {/* Full Name */}
