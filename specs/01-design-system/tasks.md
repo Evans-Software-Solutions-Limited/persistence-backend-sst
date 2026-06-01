@@ -33,7 +33,7 @@ One PR each. Each PR includes the primitive file, its `__tests__/` suite, and th
 - [x] **T-1.3.9** `<Segmented>` — 2–5 options, horizontal auto-scroll < 360pt viewport. Closes STORY-003 AC 3.7 + locked decision #9.
 - [x] **T-1.3.10** `<TabBar>` — mode-aware accent + COACH chrome dot. Closes STORY-003 AC 3.8. Detailed nav composition deferred to `14-navigation` (this PR ships the prop-driven primitive only). _Revised 2026-05-31 (`14-navigation` Phase 14.6, T-14.6.2): active-tab accent now animates `$primary`↔`$accentTrainer` over 200ms (cubic-bezier 0.2,0.7,0.2,1) via Reanimated, reduce-motion aware; see design.md § 10 Revised note._
 - [x] **T-1.3.11** `<HeaderBar>` — compact + `large` variants.
-- [x] **T-1.3.12** `<BottomSheet>` — `@gorhom/bottom-sheet` v5 integration (revised 2026-05-29; handoff said v4). Closes STORY-003 AC 3.6. _Drag-handle takes concrete hex; programmatic close drives gorhom's animation before unmount._
+- [x] **T-1.3.12** `<BottomSheet>` — `@gorhom/bottom-sheet` v5 integration (revised 2026-05-29; handoff said v4). Closes STORY-003 AC 3.6. _Drag-handle takes concrete hex; programmatic close drives gorhom's animation before unmount._ _Revised 2026-05-31 (`08-profile-settings`): added a `tall` (88%) named height alongside `peek` (60%) / `default` (78%) — see design.md § Revised 2026-05-31. The ProfileDrawer (locked decision #2) needs the 88% height._
 
 ## Phase 1.4 — Composite primitives (10 PRs)
 

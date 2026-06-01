@@ -6,8 +6,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { IconBack, IconChevronR, IconMail } from "@/ui/components/icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { HeaderBar, IconBtn } from "@/ui/components/foundation";
+import {
+  IconBack,
+  IconChevronR,
+  IconMail,
+  iconDefaults,
+} from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -16,9 +22,13 @@ import {
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
 
+// [08-profile-settings shell refresh 2026]
+// Header chrome moved to <HeaderBar> + <IconBtn> foundation primitives and
+// the top safe-area inset is applied to a plain container (replacing the
+// SafeAreaView top edge). FAQ list + Contact Support row kept on their
+// StyleSheet per the cosmetic-refresh scope. Behaviour + testIDs unchanged.
 // [01-design-system adoption sweep 2026-05-29]
 // Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
-// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Help Center — pure presenter. FAQ list + Contact Support CTA ported
@@ -68,78 +78,59 @@ export function HelpCenterPresenter({
   onBack,
   onContactSupport,
 }: HelpCenterPresenterProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <HeaderBar
+        title="Help Center"
+        leading={
+          <IconBtn
+            icon={<IconBack {...iconDefaults({ size: 20 })} />}
+            tone="ghost"
             onPress={onBack}
+            accessibilityLabel="Go back"
             testID="help-center-back"
-            hitSlop={8}
-          >
-            <IconBack size={24} color={Colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Help Center</Text>
-          <View style={styles.headerSpacer} />
+          />
+        }
+      />
+
+      <ScrollView style={styles.content} testID="help-center-scroll">
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+          {FAQ_ITEMS.map((item, index) => (
+            <View
+              key={index}
+              style={styles.faqItem}
+              testID={`help-center-faq-${index}`}
+            >
+              <Text style={styles.faqQuestion}>{item.question}</Text>
+              <Text style={styles.faqAnswer}>{item.answer}</Text>
+            </View>
+          ))}
         </View>
 
-        <ScrollView style={styles.content} testID="help-center-scroll">
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
-            {FAQ_ITEMS.map((item, index) => (
-              <View
-                key={index}
-                style={styles.faqItem}
-                testID={`help-center-faq-${index}`}
-              >
-                <Text style={styles.faqQuestion}>{item.question}</Text>
-                <Text style={styles.faqAnswer}>{item.answer}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Need More Help?</Text>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={onContactSupport}
-              testID="help-center-contact-support"
-            >
-              <IconMail size={20} color={Colors.primary.DEFAULT} />
-              <Text style={styles.actionButtonText}>Contact Support</Text>
-              <IconChevronR size={20} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Need More Help?</Text>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={onContactSupport}
+            testID="help-center-contact-support"
+          >
+            <IconMail size={20} color={Colors.primary.DEFAULT} />
+            <Text style={styles.actionButtonText}>Contact Support</Text>
+            <IconChevronR size={20} color={Colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background.primary,
-  },
   container: {
     flex: 1,
     backgroundColor: Colors.background.primary,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-  },
-  headerTitle: {
-    ...Typography.h3,
-  },
-  headerSpacer: {
-    width: 24,
   },
   content: {
     flex: 1,

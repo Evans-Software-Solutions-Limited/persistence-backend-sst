@@ -331,6 +331,7 @@ describe("ProfileRepository.getProfilePageData", () => {
       avatarUrl: null,
       role: "user",
       fitnessLevel: "intermediate",
+      dateOfBirth: "1990-01-15",
       heightCm: "180.5",
       weightKg: "75.25",
       preferredUnits: "metric",
@@ -394,6 +395,7 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.profile.id).toBe("user-1");
     expect(result?.profile.heightCm).toBe(180.5);
     expect(result?.profile.weightKg).toBe(75.25);
+    expect(result?.profile.dateOfBirth).toBe("1990-01-15");
     expect(result?.subscription.tierName).toBe("premium");
     expect(result?.subscription.tierDisplayName).toBe("Premium");
     expect(result?.subscription.status).toBe("active");

@@ -347,7 +347,7 @@ type BottomSheetProps = {
   title?: string;
   eyebrow?: string;
   accent?: "primary" | "gold" | "trainer" | "ember";
-  height?: number | "peek" | "default"; // peek=60%, default=78%
+  height?: number | "peek" | "default" | "tall"; // peek=60%, default=78%, tall=88% (tall added 2026-05-31 — see Revised note)
   children: ReactNode;
 };
 ```
@@ -886,4 +886,21 @@ Net effect: the codemod tokenises the genuinely-tokenisable hex (object-literal 
 
 ---
 
-_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5; codemod token-resolvable scope)_
+## Revised 2026-05-31: `<BottomSheet>` gains a `tall` (88%) height
+
+Driven by `08-profile-settings` (locked decision #2: the ProfileDrawer is 88% of screen height per `extra.jsx:23`). The shipped primitive offers only `peek` (60%) and `default` (78%) — neither matches the drawer's locked height, and the ProfileDrawer is the densest sheet in the app (identity + mode-switch card + three sections + sign-out), so it needs the extra room.
+
+**Decision.** Add a third named height to `<BottomSheet>`:
+
+```ts
+export type BottomSheetHeight = number | "peek" | "default" | "tall";
+// peek = 60% · default = 78% · tall = 88%
+```
+
+`resolveSnap("tall")` returns `"88%"`. No other API change; existing `peek`/`default`/numeric callers are untouched. This is the first commit on the `feat/08-profile-settings` branch (spec-first: amend the owning primitive spec, then `08` consumes `height="tall"`). The primitive change ships with the 08 work rather than a standalone 01 PR, but it's recorded here as a `01-design-system` amendment because the primitive is owned here.
+
+Updates `§ Foundation primitives #12` (`height?: number | "peek" | "default"` → `… | "tall"`) and `tasks.md` T-1.3.12.
+
+---
+
+_End of `01-design-system/design.md` · 2026-05-27 (rewritten from scratch) · revised 2026-05-29 (Lucide 1.x renames; @gorhom/bottom-sheet v5; codemod token-resolvable scope) · revised 2026-05-31 (`<BottomSheet>` `tall` 88% height for `08-profile-settings`)_

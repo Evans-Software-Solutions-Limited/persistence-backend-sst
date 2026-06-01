@@ -325,7 +325,7 @@ export function SubscriptionSelectionContainer() {
         // dismissed either (Inspector Brad PR #71 medium-severity find
         // — sweep #1). Chain via onPress instead; navigate only from
         // the final dismissal.
-        const alertsToShow: Array<{ title: string; message: string }> = [];
+        const alertsToShow: { title: string; message: string }[] = [];
 
         if (response.scheduled && response.effectiveAt) {
           const formatted = new Date(response.effectiveAt).toLocaleDateString(

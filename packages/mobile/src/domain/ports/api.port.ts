@@ -367,6 +367,10 @@ export type ApiProfile = {
   fullName: string | null;
   role: "user" | "personal_trainer" | "physiotherapist" | "admin";
   fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite" | null;
+  /** ISO date string (`YYYY-MM-DD`) or null. Backend accepts this on PATCH
+   *  (M0); surfaced on the wire type when Edit Profile started writing it
+   *  (08-profile-settings STORY-010). Age is derived client-side, never stored. */
+  dateOfBirth?: string | null;
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */

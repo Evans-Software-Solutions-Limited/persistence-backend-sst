@@ -55,6 +55,8 @@ export type HomePresenterViewModel = {
   userName: string | null;
   subscriptionTier: string | null;
   isFreeTier: boolean;
+  /** Initials for the profile avatar that opens the ProfileDrawer (08). */
+  avatarInitials: string;
   goals: readonly Goal[];
   workouts: readonly WorkoutCardWorkout[];
   currentUserId?: string;
@@ -117,6 +119,8 @@ export type HomePresenterProps = {
   onViewAllProgressPress: () => void;
   onConnectHealthPress: () => void;
   onActivityPress?: (sessionId: string) => void;
+  /** Opens the ProfileDrawer from the greeting avatar (08-profile-settings). */
+  onOpenProfileDrawer?: () => void;
 };
 
 /**
@@ -172,6 +176,7 @@ export function HomePresenter({
   onViewAllProgressPress,
   onConnectHealthPress,
   onActivityPress,
+  onOpenProfileDrawer,
 }: HomePresenterProps) {
   if (isLoading) {
     return (
@@ -256,6 +261,8 @@ export function HomePresenter({
             isFreeTier={viewModel.isFreeTier}
             onUpgradePress={onUpgradePress}
             onManageSubscription={onManageSubscriptionPress}
+            avatarInitials={viewModel.avatarInitials}
+            onAvatarPress={onOpenProfileDrawer}
           />
         </Animated.View>
 

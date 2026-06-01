@@ -94,6 +94,13 @@ export interface ProfilePageProfileSlice {
   avatarUrl: string | null;
   role: "user" | "personal_trainer" | "physiotherapist" | "admin";
   fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite" | null;
+  /**
+   * ISO date string (`YYYY-MM-DD`) or null. Stored as `text` in the
+   * `profiles` table; surfaced verbatim so the mobile app can derive
+   * the user's age client-side (08-profile-settings STORY-010 — store
+   * DOB, never persist a computed age).
+   */
+  dateOfBirth: string | null;
   heightCm: number | null;
   weightKg: number | null;
   preferredUnits: "metric" | "imperial";
@@ -287,6 +294,7 @@ export class ProfileRepository {
         avatarUrl: profiles.avatarUrl,
         role: profiles.role,
         fitnessLevel: profiles.fitnessLevel,
+        dateOfBirth: profiles.dateOfBirth,
         heightCm: profiles.heightCm,
         weightKg: profiles.weightKg,
         preferredUnits: profiles.preferredUnits,
@@ -316,6 +324,7 @@ export class ProfileRepository {
           ? row.role
           : "user",
       fitnessLevel: row.fitnessLevel ?? null,
+      dateOfBirth: row.dateOfBirth ?? null,
       heightCm: coerceDecimal(row.heightCm),
       weightKg: coerceDecimal(row.weightKg),
       preferredUnits: row.preferredUnits === "imperial" ? "imperial" : "metric",

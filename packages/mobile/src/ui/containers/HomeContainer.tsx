@@ -13,6 +13,8 @@ import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useStableMockHistory } from "@/ui/hooks/useStableMockHistory";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { useDrawer } from "@/state/drawer";
+import { initialsOf } from "@/shared/utils";
 
 /**
  * Home-tab container. Follows the 3-memo pipeline established in M0:
@@ -62,6 +64,7 @@ export function HomeContainer() {
   const { session } = useAuth();
   const dashboard = useDashboard();
   const health = useHealthData();
+  const openDrawer = useDrawer((s) => s.openDrawer);
   // Repoint legacy intra-app navigation onto the Option 3 IA (14-navigation):
   // the old `workouts` / `progress` tabs were folded into Train / You.
   const setTrainSegment = useTrainSegment((s) => s.setSegment);
@@ -130,6 +133,7 @@ export function HomeContainer() {
 
     return {
       userName: deriveUserName(cachedPayload?.profile.firstName),
+      avatarInitials: initialsOf(cachedPayload?.profile.fullName),
       subscriptionTier: cachedPayload?.subscription.tierName ?? null,
       isFreeTier: cachedPayload?.subscription.isFreeTier ?? true,
       goals,
@@ -383,6 +387,7 @@ export function HomeContainer() {
       onViewAllProgressPress={onViewAllProgressPress}
       onConnectHealthPress={onConnectHealthPress}
       onActivityPress={onActivityPress}
+      onOpenProfileDrawer={openDrawer}
     />
   );
 }

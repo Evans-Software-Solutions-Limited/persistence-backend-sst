@@ -41,6 +41,7 @@ function makeViewModel(
   };
   return {
     userName: "Alex",
+    avatarInitials: "AL",
     subscriptionTier: "free",
     isFreeTier: true,
     goals: [

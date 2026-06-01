@@ -11,12 +11,14 @@ function makeProps(
   return {
     fullName: "Brad Simms",
     fitnessLevel: "intermediate",
+    dateOfBirth: "1990-01-15",
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
     errorMessage: null,
     onFullNameChange: jest.fn(),
     onFitnessLevelChange: jest.fn(),
+    onDateOfBirthChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
     onBack: jest.fn(),
@@ -68,6 +70,16 @@ describe("EditProfilePresenter", () => {
     expect(onFullNameChange).toHaveBeenCalledWith("New Name");
   });
 
+  it("renders the DOB field and fires onDateOfBirthChange (STORY-010)", () => {
+    const onDateOfBirthChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ onDateOfBirthChange })} />,
+    );
+    expect(getByTestId("edit-profile-dob").props.value).toBe("1990-01-15");
+    fireEvent.changeText(getByTestId("edit-profile-dob"), "1992-02-29");
+    expect(onDateOfBirthChange).toHaveBeenCalledWith("1992-02-29");
+  });
+
   it("fires onFitnessLevelChange when a different level is tapped", () => {
     const onFitnessLevelChange = jest.fn();
     const { getByTestId } = renderWithTheme(
@@ -107,17 +119,31 @@ describe("EditProfilePresenter", () => {
   it("disables inputs + save while isSaving", () => {
     const onFullNameChange = jest.fn();
     const onSave = jest.fn();
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getByText } = renderWithTheme(
       <EditProfilePresenter
         {...makeProps({ isSaving: true, onFullNameChange, onSave })}
       />,
     );
     expect(getByTestId("edit-profile-full-name").props.editable).toBe(false);
+    expect(getByTestId("edit-profile-dob").props.editable).toBe(false);
+    // Save button shows the processing label + is disabled.
+    expect(getByText("Saving…")).toBeTruthy();
     expect(
       getByTestId("edit-profile-save").props.accessibilityState?.disabled,
     ).toBeTruthy();
     fireEvent.press(getByTestId("edit-profile-save"));
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("renders each fitness level option, selected one highlighted", () => {
+    const { getByText } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ fitnessLevel: "elite" })} />,
+    );
+    // capitalize() runs for every level label.
+    expect(getByText("Beginner")).toBeTruthy();
+    expect(getByText("Intermediate")).toBeTruthy();
+    expect(getByText("Advanced")).toBeTruthy();
+    expect(getByText("Elite")).toBeTruthy();
   });
 
   it("renders the error banner when errorMessage is set", () => {

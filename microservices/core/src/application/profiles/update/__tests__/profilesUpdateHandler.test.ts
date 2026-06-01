@@ -200,6 +200,92 @@ describe("ProfilesUpdateHandler", () => {
       );
     });
 
+    it("should accept and persist dateOfBirth: null so the user can clear their DOB", async () => {
+      // PR #94 high-severity find: the schema was `t.Optional(t.String())`,
+      // which rejected `null` with a 422 — making the Edit Profile screen's
+      // "clear my DOB" path unreachable even though the DB column is
+      // nullable. Schema widened to `t.Optional(t.Union([String, Null]))`.
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ dateOfBirth: null }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ dateOfBirth: null }),
+      );
+    });
+
+    it("should accept a valid YYYY-MM-DD dateOfBirth", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ dateOfBirth: "1990-01-15" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ dateOfBirth: "1990-01-15" }),
+      );
+    });
+
+    it("should return 400 (not 500) for a malformed dateOfBirth and not touch the repo", async () => {
+      // PR #94 medium-severity find: `profiles.date_of_birth` is a Postgres
+      // DATE, so an unparseable string would throw `invalid input syntax for
+      // type date` deep in the UPDATE → uncaught 500. The handler validates
+      // up front and returns a structured 400 instead.
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ dateOfBirth: "1990-13-50" }),
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
+    it("should reject Feb 29 in a non-leap year with a 400", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ dateOfBirth: "1990-02-29" }),
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
     it("should convert heightCm and weightKg to strings for decimal columns", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");

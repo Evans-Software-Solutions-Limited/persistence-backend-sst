@@ -1,9 +1,15 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import type { ApiProfile } from "@/domain/ports/api.port";
+import { getApiBaseUrl } from "@/adapters/api";
+import {
+  processSyncQueue,
+  updateProfileCommand,
+  type UpdateProfileInput,
+} from "@/application/commands";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import {
   EditProfilePresenter,
@@ -53,14 +59,17 @@ function asFitnessLevel(
 type Snapshot = {
   fullName: string;
   fitnessLevel: EditProfileFitnessLevel;
+  dateOfBirth: string;
   isProfilePublic: boolean;
 };
 
 export function EditProfileContainer() {
   const router = useRouter();
-  const { api, storage } = useAdapters();
+  const { storage, auth } = useAdapters();
   const { session } = useAuth();
   const profilePage = useProfilePage();
+  const avatarUrl = profilePage.payload?.profile.avatarUrl ?? null;
+  const avatar = useAvatarUpload(avatarUrl);
 
   const initial: Snapshot | null = useMemo(() => {
     const p = profilePage.payload?.profile;
@@ -68,6 +77,7 @@ export function EditProfileContainer() {
     return {
       fullName: p.fullName ?? "",
       fitnessLevel: asFitnessLevel(p.fitnessLevel),
+      dateOfBirth: p.dateOfBirth ?? "",
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -75,17 +85,15 @@ export function EditProfileContainer() {
   const [fullName, setFullName] = useState("");
   const [fitnessLevel, setFitnessLevel] =
     useState<EditProfileFitnessLevel>("beginner");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  // Seed form state from the cached payload once it's available. The
-  // hook hydrates synchronously from SQLite on mount, so in the common
-  // path (user comes from Profile tab) this runs on the first render
-  // and the user never sees the spinner.
   useEffect(() => {
     if (!initial || hydrated) return;
     setFullName(initial.fullName);
     setFitnessLevel(initial.fitnessLevel);
+    setDateOfBirth(initial.dateOfBirth);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -98,76 +106,87 @@ export function EditProfileContainer() {
     return (
       fullName !== initial.fullName ||
       fitnessLevel !== initial.fitnessLevel ||
+      dateOfBirth !== initial.dateOfBirth ||
       isProfilePublic !== initial.isProfilePublic
     );
-  }, [initial, hydrated, fullName, fitnessLevel, isProfilePublic]);
+  }, [initial, hydrated, fullName, fitnessLevel, dateOfBirth, isProfilePublic]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
     if (!initial) return;
+    if (!session?.userId) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      // Diff against the hydrated snapshot — only PATCH fields the user
-      // actually changed. This avoids two real bugs:
-      //   1. Sending `fitnessLevel: "beginner"` on every save would silently
-      //      overwrite a user who'd never picked a level (the picker showed
-      //      "beginner" only as a placeholder).
-      //   2. Sending `fullName: null` when the user didn't edit the field
-      //      would briefly fail backend validation in the old `Optional(
-      //      String)` schema. The schema's been widened, but only-send-what-
-      //      changed is the broader correctness principle anyway.
+      // Diff against the hydrated snapshot — only patch fields the user
+      // actually changed. This avoids silently overwriting a user who
+      // never picked a fitness level (the picker shows "beginner" only as
+      // a placeholder, so its collapsed value diffs to no-change).
       const trimmedName = fullName.trim();
       const nextFullName: string | null =
         trimmedName.length > 0 ? trimmedName : null;
       const initialFullName: string | null =
         initial.fullName.length > 0 ? initial.fullName : null;
-      const body: Partial<ApiProfile> = {};
+      const input: UpdateProfileInput = {};
       if (nextFullName !== initialFullName) {
-        body.fullName = nextFullName;
+        input.fullName = nextFullName;
       }
       if (fitnessLevel !== initial.fitnessLevel) {
-        // The picker's "placeholder" beginner state collapses against the
-        // initial snapshot's same collapsed value, so a user who never
-        // picked a level naturally diffs to no-change here.
-        body.fitnessLevel = fitnessLevel;
+        input.fitnessLevel = fitnessLevel;
+      }
+      if (dateOfBirth !== initial.dateOfBirth) {
+        // Empty string clears DOB (send null); otherwise send the raw
+        // YYYY-MM-DD string. The command validates the format before
+        // enqueueing. Backend stores DOB as text; age is derived
+        // client-side (STORY-010 — never persist a computed age).
+        const trimmedDob = dateOfBirth.trim();
+        input.dateOfBirth = trimmedDob.length > 0 ? trimmedDob : null;
       }
       if (isProfilePublic !== initial.isProfilePublic) {
-        body.isProfilePublic = isProfilePublic;
+        input.isProfilePublic = isProfilePublic;
       }
 
-      if (Object.keys(body).length === 0) {
-        // Nothing to send — route back as if save succeeded. Keeps the UX
-        // of "tapped Save → returned to Profile" intact while skipping a
-        // pointless no-op round trip.
-        router.back();
-        return;
-      }
-
-      const result = await api.updateProfile(body);
+      // Offline-first: optimistic cache write + enqueue (NOT a direct
+      // PATCH). The command returns a validation error synchronously for a
+      // bad DOB so it never reaches the queue; otherwise the queued
+      // mutation drains via useSyncWorker (mounted at the auth boundary)
+      // on the next foreground — plus the inline drain below for immediacy.
+      const result = updateProfileCommand(
+        { storage, userId: session.userId },
+        input,
+      );
       if (!result.ok) {
         setErrorMessage(
-          result.error.message ||
-            "Couldn't save your profile. Check your connection and try again.",
+          result.error.fields.dateOfBirth ??
+            result.error.fields.fullName ??
+            "Couldn't save your profile. Check your details and try again.",
         );
         return;
       }
-      if (session?.userId) {
-        storage.invalidateProfilePage(session.userId);
-      }
+
+      // Kick an inline drain so a save made while online lands now rather
+      // than waiting for the next foreground. Offline-safe: the per-entry
+      // retry path inside processSyncQueue handles transient failures, and
+      // the optimistic cache write already reflects the change locally.
+      // Not awaited — Save must not block on the network (offline-first).
+      void processSyncQueue(storage, auth, getApiBaseUrl()).catch((err) => {
+        console.warn("[EditProfileContainer] post-save drain failed:", err);
+      });
+
       router.back();
     } finally {
       setIsSaving(false);
     }
   }, [
-    api,
     storage,
+    auth,
     router,
     session?.userId,
     isSaving,
     initial,
     fullName,
     fitnessLevel,
+    dateOfBirth,
     isProfilePublic,
   ]);
 
@@ -194,12 +213,18 @@ export function EditProfileContainer() {
     <EditProfilePresenter
       fullName={fullName}
       fitnessLevel={fitnessLevel}
+      dateOfBirth={dateOfBirth}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
       errorMessage={errorMessage}
+      avatarUrl={avatarUrl}
+      avatarCacheKey={avatar.cacheKey}
+      isAvatarWorking={avatar.isWorking}
+      onSelectAvatar={avatar.showAvatarSheet}
       onFullNameChange={setFullName}
       onFitnessLevelChange={setFitnessLevel}
+      onDateOfBirthChange={setDateOfBirth}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

@@ -16,6 +16,7 @@ export const PROFILE_PAGE_FIXTURE: ProfilePageData = {
     avatarUrl: null,
     role: "user",
     fitnessLevel: "intermediate",
+    dateOfBirth: "1995-03-15",
     heightCm: 180,
     weightKg: 78,
     preferredUnits: "metric",

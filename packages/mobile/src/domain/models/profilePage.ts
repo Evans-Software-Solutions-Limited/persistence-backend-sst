@@ -42,6 +42,13 @@ export type ProfilePageProfile = {
   avatarUrl: string | null;
   role: ProfilePageRole;
   fitnessLevel: ProfilePageFitnessLevel | null;
+  /**
+   * ISO date string (`YYYY-MM-DD`) or null. Surfaced verbatim from the
+   * `profiles.date_of_birth` column; the UI derives age via
+   * `computeAge()` (08-profile-settings STORY-010 — store DOB, derive
+   * age, never persist a computed age).
+   */
+  dateOfBirth: string | null;
   heightCm: number | null;
   weightKg: number | null;
   preferredUnits: ProfilePagePreferredUnits;

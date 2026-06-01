@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import { IconBack, IconCheck } from "@/ui/components/icons";
+import { HeaderBar, IconBtn } from "@/ui/components/foundation";
+import { IconBack, IconCheck, iconDefaults } from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -17,10 +18,14 @@ import {
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
 
+// [08-profile-settings shell refresh 2026]
+// Header chrome moved to <HeaderBar> + <IconBtn> foundation primitives and
+// the top safe-area inset is applied to a plain container (replacing the
+// SafeAreaView top edge). Body list/scroll content kept on its StyleSheet
+// per the cosmetic-refresh scope. Behaviour, props + testIDs unchanged.
 // [01-design-system adoption sweep 2026-05-29]
 // Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
 // checkmark-circle -> IconCheck (circle nuance dropped; same glyph intent).
-// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Privacy Settings — pure presenter. Visibility picker ported from
@@ -44,35 +49,39 @@ export type PrivacySettingsPresenterProps = {
   onBack: () => void;
 };
 
+function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
+  return (
+    <HeaderBar
+      title="Privacy Settings"
+      leading={
+        <IconBtn
+          icon={<IconBack {...iconDefaults({ size: 20 })} />}
+          tone="ghost"
+          onPress={onBack}
+          accessibilityLabel="Go back"
+          testID="privacy-settings-back"
+        />
+      }
+    />
+  );
+}
+
 export function PrivacySettingsPresenter({
   isLoading,
   isProfilePublic,
   onUpdateVisibility,
   onBack,
 }: PrivacySettingsPresenterProps) {
+  const insets = useSafeAreaInsets();
+
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={["top"]}>
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={onBack}
-              testID="privacy-settings-back"
-              hitSlop={8}
-            >
-              <IconBack size={24} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Privacy Settings</Text>
-            <View style={styles.headerSpacer} />
-          </View>
-          <View
-            style={styles.loadingContainer}
-            testID="privacy-settings-loader"
-          >
-            <PLogoDrawLoader />
-          </View>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <PrivacySettingsHeader onBack={onBack} />
+        <View style={styles.loadingContainer} testID="privacy-settings-loader">
+          <PLogoDrawLoader />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -81,115 +90,83 @@ export function PrivacySettingsPresenter({
     : "private";
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.container}>
-        <View style={styles.header}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <PrivacySettingsHeader onBack={onBack} />
+
+      <ScrollView style={styles.content} testID="privacy-settings-scroll">
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Profile Visibility</Text>
+          <Text style={styles.sectionDescription}>
+            Control who can see your profile and workout data
+          </Text>
+
           <TouchableOpacity
-            onPress={onBack}
-            testID="privacy-settings-back"
-            hitSlop={8}
+            style={[
+              styles.option,
+              currentVisibility === "private" && styles.optionSelected,
+            ]}
+            onPress={() => onUpdateVisibility("private")}
+            testID="privacy-settings-option-private"
           >
-            <IconBack size={24} color={Colors.text.primary} />
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Private</Text>
+              <Text style={styles.optionDescription}>
+                Only you can see your profile and workouts
+              </Text>
+            </View>
+            {currentVisibility === "private" && (
+              <IconCheck
+                size={24}
+                color={Colors.primary.DEFAULT}
+                testID="privacy-settings-check-private"
+              />
+            )}
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Privacy Settings</Text>
-          <View style={styles.headerSpacer} />
+
+          {/* PORT-GAP: legacy "Friends Only" option dropped — V2 backend
+              exposes `isProfilePublic` boolean only. See module header. */}
+
+          <TouchableOpacity
+            style={[
+              styles.option,
+              currentVisibility === "public" && styles.optionSelected,
+            ]}
+            onPress={() => onUpdateVisibility("public")}
+            testID="privacy-settings-option-public"
+          >
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Public</Text>
+              <Text style={styles.optionDescription}>
+                Everyone can see your profile and workouts
+              </Text>
+            </View>
+            {currentVisibility === "public" && (
+              <IconCheck
+                size={24}
+                color={Colors.primary.DEFAULT}
+                testID="privacy-settings-check-public"
+              />
+            )}
+          </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.content} testID="privacy-settings-scroll">
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Profile Visibility</Text>
-            <Text style={styles.sectionDescription}>
-              Control who can see your profile and workout data
-            </Text>
-
-            <TouchableOpacity
-              style={[
-                styles.option,
-                currentVisibility === "private" && styles.optionSelected,
-              ]}
-              onPress={() => onUpdateVisibility("private")}
-              testID="privacy-settings-option-private"
-            >
-              <View style={styles.optionContent}>
-                <Text style={styles.optionTitle}>Private</Text>
-                <Text style={styles.optionDescription}>
-                  Only you can see your profile and workouts
-                </Text>
-              </View>
-              {currentVisibility === "private" && (
-                <IconCheck
-                  size={24}
-                  color={Colors.primary.DEFAULT}
-                  testID="privacy-settings-check-private"
-                />
-              )}
-            </TouchableOpacity>
-
-            {/* PORT-GAP: legacy "Friends Only" option dropped — V2 backend
-                exposes `isProfilePublic` boolean only. See module header. */}
-
-            <TouchableOpacity
-              style={[
-                styles.option,
-                currentVisibility === "public" && styles.optionSelected,
-              ]}
-              onPress={() => onUpdateVisibility("public")}
-              testID="privacy-settings-option-public"
-            >
-              <View style={styles.optionContent}>
-                <Text style={styles.optionTitle}>Public</Text>
-                <Text style={styles.optionDescription}>
-                  Everyone can see your profile and workouts
-                </Text>
-              </View>
-              {currentVisibility === "public" && (
-                <IconCheck
-                  size={24}
-                  color={Colors.primary.DEFAULT}
-                  testID="privacy-settings-check-public"
-                />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Data &amp; Privacy</Text>
-            <Text style={styles.sectionDescription}>
-              Your data is stored securely and used only to provide the service.
-              You can request data export or account deletion at any time by
-              contacting support.
-            </Text>
-          </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data &amp; Privacy</Text>
+          <Text style={styles.sectionDescription}>
+            Your data is stored securely and used only to provide the service.
+            You can request data export or account deletion at any time by
+            contacting support.
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background.primary,
-  },
   container: {
     flex: 1,
     backgroundColor: Colors.background.primary,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-  },
-  headerTitle: {
-    ...Typography.h3,
-  },
-  headerSpacer: {
-    width: 24,
   },
   content: {
     flex: 1,

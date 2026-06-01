@@ -1,25 +1,23 @@
 import React from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { IconBack, IconMail } from "@/ui/components/icons";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
+import { IconBack, iconDefaults } from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
-  Shadows,
   Spacing,
   Typography,
 } from "@/ui/theme/profileLegacyTheme";
 
+// [08-profile-settings shell refresh 2026]
+// Header chrome moved to <HeaderBar> + <IconBtn> and the Send Message CTA to
+// the <Btn> foundation primitive (filled/primary). Top safe-area inset is
+// applied to a plain container (replacing the SafeAreaView top edge). The
+// mailto form body is kept on its StyleSheet per the cosmetic-refresh scope.
+// Behaviour, props + testIDs unchanged.
 // [01-design-system adoption sweep 2026-05-29]
 // Foundation primitive shells swapped in: <Icon*> (Ionicons -> Lucide).
-// Composite primitives + layout-shape changes deferred to owning spec.
 
 /**
  * Contact Support — pure presenter. Mailto form ported verbatim from
@@ -49,118 +47,102 @@ export function ContactSupportPresenter({
   onOpenDirectEmail,
   onBack,
 }: ContactSupportPresenterProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <HeaderBar
+        title="Contact Support"
+        leading={
+          <IconBtn
+            icon={<IconBack {...iconDefaults({ size: 20 })} />}
+            tone="ghost"
             onPress={onBack}
+            accessibilityLabel="Go back"
             testID="contact-support-back"
-            hitSlop={8}
-          >
-            <IconBack size={24} color={Colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Contact Support</Text>
-          <View style={styles.headerSpacer} />
+          />
+        }
+      />
+
+      <ScrollView style={styles.content} testID="contact-support-scroll">
+        <View style={styles.section}>
+          <Text style={styles.sectionDescription}>
+            Have a question or need help? Send us a message and we&apos;ll get
+            back to you as soon as possible.
+          </Text>
         </View>
 
-        <ScrollView style={styles.content} testID="contact-support-scroll">
-          <View style={styles.section}>
-            <Text style={styles.sectionDescription}>
-              Have a question or need help? Send us a message and we&apos;ll get
-              back to you as soon as possible.
-            </Text>
-          </View>
+        <View style={styles.section}>
+          <Text style={styles.label}>Your Email</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            editable={false}
+            placeholderTextColor={Colors.text.tertiary}
+            testID="contact-support-email"
+          />
+        </View>
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Your Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              editable={false}
-              placeholderTextColor={Colors.text.tertiary}
-              testID="contact-support-email"
-            />
-          </View>
+        <View style={styles.section}>
+          <Text style={styles.label}>Subject</Text>
+          <TextInput
+            style={styles.input}
+            value={subject}
+            onChangeText={onSubjectChange}
+            placeholder="What can we help you with?"
+            placeholderTextColor={Colors.text.tertiary}
+            testID="contact-support-subject"
+          />
+        </View>
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Subject</Text>
-            <TextInput
-              style={styles.input}
-              value={subject}
-              onChangeText={onSubjectChange}
-              placeholder="What can we help you with?"
-              placeholderTextColor={Colors.text.tertiary}
-              testID="contact-support-subject"
-            />
-          </View>
+        <View style={styles.section}>
+          <Text style={styles.label}>Message</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={message}
+            onChangeText={onMessageChange}
+            placeholder="Describe your issue or question..."
+            placeholderTextColor={Colors.text.tertiary}
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+            testID="contact-support-message"
+          />
+        </View>
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Message</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={message}
-              onChangeText={onMessageChange}
-              placeholder="Describe your issue or question..."
-              placeholderTextColor={Colors.text.tertiary}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-              testID="contact-support-message"
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.sendButton}
+        <View style={styles.sendButton}>
+          <Btn
+            variant="filled"
+            tone="primary"
+            full
             onPress={onSend}
             testID="contact-support-send"
           >
-            <IconMail size={20} color={Colors.text.primary} />
-            <Text style={styles.sendButtonText}>Send Message</Text>
-          </TouchableOpacity>
+            Send Message
+          </Btn>
+        </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionDescription}>
-              You can also reach us directly at:{" "}
-              <Text
-                style={styles.link}
-                onPress={onOpenDirectEmail}
-                testID="contact-support-direct-email"
-              >
-                admin@evans-software-solutions.com
-              </Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionDescription}>
+            You can also reach us directly at:{" "}
+            <Text
+              style={styles.link}
+              onPress={onOpenDirectEmail}
+              testID="contact-support-direct-email"
+            >
+              admin@evans-software-solutions.com
             </Text>
-          </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background.primary,
-  },
   container: {
     flex: 1,
     backgroundColor: Colors.background.primary,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-  },
-  headerTitle: {
-    ...Typography.h4,
-  },
-  headerSpacer: {
-    width: 24,
   },
   content: {
     flex: 1,
@@ -190,20 +172,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
   },
   sendButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
     marginBottom: Spacing.lg,
-    ...Shadows.electric,
-  },
-  sendButtonText: {
-    ...Typography.button,
-    color: Colors.text.primary,
   },
   link: {
     color: Colors.primary.DEFAULT,

@@ -22,13 +22,13 @@ import { toneHex, toneTokens } from "./tones";
  * Implements 01-design-system/design.md § Foundation primitives #12 +
  * STORY-003 AC 3.6 + the 2026-05-29 revision (gorhom v5, not v4).
  *
- * Default 78% height; `peek` drops to 60%. Backdrop tap dismisses. The header
- * (eyebrow + title + drag handle) is fixed; children scroll. `accent` tints
- * the eyebrow + drag-handle.
+ * Default 78% height; `peek` drops to 60%, `tall` rises to 88%. Backdrop tap
+ * dismisses. The header (eyebrow + title + drag handle) is fixed; children
+ * scroll. `accent` tints the eyebrow + drag-handle.
  */
 
 export type BottomSheetAccent = "primary" | "gold" | "trainer" | "ember";
-export type BottomSheetHeight = number | "peek" | "default";
+export type BottomSheetHeight = number | "peek" | "default" | "tall";
 
 export type BottomSheetProps = {
   visible: boolean;
@@ -36,7 +36,7 @@ export type BottomSheetProps = {
   title?: string;
   eyebrow?: string;
   accent?: BottomSheetAccent;
-  /** peek=60%, default=78%, or an explicit percentage number (0-100). */
+  /** peek=60%, default=78%, tall=88%, or an explicit percentage number (0-100). */
   height?: BottomSheetHeight;
   children: ReactNode;
   testID?: string;
@@ -45,6 +45,7 @@ export type BottomSheetProps = {
 function resolveSnap(height: BottomSheetHeight): string {
   if (height === "peek") return "60%";
   if (height === "default") return "78%";
+  if (height === "tall") return "88%";
   return `${Math.min(100, Math.max(10, height))}%`;
 }
 
