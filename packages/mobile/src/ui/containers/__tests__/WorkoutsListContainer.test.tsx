@@ -266,10 +266,20 @@ describe("WorkoutsListContainer", () => {
 
   it("derives a split badge from the cached exercise library", async () => {
     const storage = new InMemoryStorageAdapter();
-    // Seed push-muscle exercises into the local library.
+    // Seed push-muscle exercises in the runtime shape: primaryMuscleGroups
+    // are UUIDs, readable names are in primaryMuscleGroupLabels.
     storage.cacheExercises([
-      { id: "ex-1", primaryMuscleGroups: ["chest"] } as unknown as Exercise,
-      { id: "ex-2", primaryMuscleGroups: ["shoulders"] } as unknown as Exercise,
+      {
+        id: "ex-1",
+        primaryMuscleGroups: ["15f7ddb6-uuid-chest"],
+        primaryMuscleGroupLabels: ["Chest"],
+      } as unknown as Exercise,
+      // ex-2 has no resolved labels — falls back to enum keys on
+      // primaryMuscleGroups (legacy-cached shape).
+      {
+        id: "ex-2",
+        primaryMuscleGroups: ["shoulders"],
+      } as unknown as Exercise,
     ]);
     seedSlices(storage, {
       mine: [

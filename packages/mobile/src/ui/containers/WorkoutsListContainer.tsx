@@ -3,7 +3,6 @@ import { useCallback, useMemo } from "react";
 import { Alert } from "react-native";
 
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
-import type { MuscleGroup } from "@/domain/models/exercise";
 import type { Workout } from "@/domain/models/workout";
 import {
   classifyWorkoutSplit,
@@ -56,14 +55,20 @@ export function WorkoutsListContainer() {
   // don't get a split (neutral tile, no badge). Recomputes when the workout
   // lists change (which a focus rereadCache ticks).
   const splits = useMemo(() => {
-    const muscleById = new Map<string, readonly MuscleGroup[]>();
+    // `primaryMuscleGroups` are DB UUIDs at runtime; the readable names are
+    // in `primaryMuscleGroupLabels`. Pass both — the classifier resolves
+    // labels + enum keys and ignores UUIDs.
+    const tokensById = new Map<string, readonly string[]>();
     for (const ex of storage.getCachedExercises()) {
-      muscleById.set(ex.id, ex.primaryMuscleGroups);
+      tokensById.set(ex.id, [
+        ...(ex.primaryMuscleGroupLabels ?? []),
+        ...ex.primaryMuscleGroups,
+      ]);
     }
-    const getMuscles = (id: string) => muscleById.get(id);
+    const getMuscleTokens = (id: string) => tokensById.get(id);
     const map = new Map<string, WorkoutSplit>();
     for (const w of [...saved, ...templates]) {
-      const split = classifyWorkoutSplit(w, getMuscles);
+      const split = classifyWorkoutSplit(w, getMuscleTokens);
       if (split) map.set(w.id, split);
     }
     return map;

@@ -1,4 +1,3 @@
-import type { MuscleGroup } from "@/domain/models/exercise";
 import type { Workout, WorkoutExercise } from "@/domain/models/workout";
 import { classifyWorkoutSplit, SPLIT_BADGE } from "../workoutSplit";
 
@@ -38,10 +37,11 @@ const workout = (exercises: WorkoutExercise[]): Workout => ({
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
 
-/** Build a getMuscles lookup from an id→muscles map. */
+/** Build a getMuscleTokens lookup — tokens may be labels, enum keys, or
+ * UUIDs (the classifier normalises them). */
 const lookup =
-  (map: Record<string, MuscleGroup[]>) =>
-  (id: string): readonly MuscleGroup[] | undefined =>
+  (map: Record<string, string[]>) =>
+  (id: string): readonly string[] | undefined =>
     map[id];
 
 describe("classifyWorkoutSplit", () => {
@@ -87,6 +87,41 @@ describe("classifyWorkoutSplit", () => {
       e3: ["triceps"],
     });
     expect(classifyWorkoutSplit(w, muscles)).toBe("push");
+  });
+
+  it("resolves display labels (the runtime shape), not just enum keys", () => {
+    const w = workout([exercise("e1"), exercise("e2")]);
+    const muscles = lookup({ e1: ["Chest"], e2: ["Triceps"] });
+    expect(classifyWorkoutSplit(w, muscles)).toBe("push");
+  });
+
+  it("ignores unresolvable UUID-only tokens and returns null", () => {
+    const w = workout([exercise("e1"), exercise("e2")]);
+    const muscles = lookup({
+      e1: ["15f7ddb6-0000-0000-0000-000000000000"],
+      e2: ["abcd1234-0000-0000-0000-000000000000"],
+    });
+    expect(classifyWorkoutSplit(w, muscles)).toBeNull();
+  });
+
+  it("classifies a chest-press/raise/row/curl/extension workout as upper (regression)", () => {
+    // The reported case — 3 push (chest, shoulders, triceps) + 2 pull (back,
+    // biceps), no legs → UPPER, not FULL. Uses display labels (runtime form).
+    const w = workout([
+      exercise("e1"),
+      exercise("e2"),
+      exercise("e3"),
+      exercise("e4"),
+      exercise("e5"),
+    ]);
+    const muscles = lookup({
+      e1: ["Chest"], // machine chest press
+      e2: ["Shoulders"], // lateral raise
+      e3: ["Back"], // seated row
+      e4: ["Biceps"], // bicep curl
+      e5: ["Triceps"], // tricep extension
+    });
+    expect(classifyWorkoutSplit(w, muscles)).toBe("upper");
   });
 
   it("classifies a pull-only workout as pull", () => {
