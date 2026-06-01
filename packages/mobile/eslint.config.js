@@ -30,7 +30,6 @@ module.exports = defineConfig([
       // Legacy-screen allow-list (owning spec finishes the port):
       "src/ui/components/home/WorkoutCard.tsx",
       "src/ui/components/subscription/SubscriptionBadge.tsx",
-      "src/ui/components/workouts/WorkoutCard/styles.ts",
     ],
     plugins: { "design-system": designSystem },
     rules: {

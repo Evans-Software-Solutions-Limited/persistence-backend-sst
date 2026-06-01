@@ -1,60 +1,56 @@
+import { Text, View } from "@tamagui/core";
 import React from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { RefreshControl, ScrollView } from "react-native";
+
+import type { Workout } from "@/domain/models/workout";
+import type { WorkoutSplit } from "@/domain/services/workoutSplit";
 import type { ApiError } from "@/shared/errors";
+import { EmptyState } from "@/ui/components/EmptyState";
 import { ErrorState } from "@/ui/components/ErrorState";
+import { Btn } from "@/ui/components/foundation/Btn";
+import { Card } from "@/ui/components/foundation/Card";
+import { NEUTRAL_HEX } from "@/ui/components/foundation/tones";
+import { IconPlus } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import { QuickActions } from "@/ui/components/workouts/QuickActions";
-import { WorkoutCard } from "@/ui/components/workouts/WorkoutCard";
+import { Section } from "@/ui/components/composite/Section";
 import { WorkoutLimitIndicator } from "@/ui/components/workouts/WorkoutLimitIndicator";
-import { WorkoutSection } from "@/ui/components/workouts/WorkoutSection";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { WorkoutRow } from "@/ui/components/workouts/WorkoutRow";
 
 /**
- * Pure presenter for the Workouts tab. Layout + StyleSheet ported from
- * `persistence-mobile/app/(tabs)/workouts.tsx`. The container owns all
- * state + side effects; this presenter is render-only.
+ * Pure presenter for the Train > Workouts segment — the headerless body
+ * under <TrainHubContainer> (the hub owns the eyebrow/title/search + the
+ * Segmented switcher).
+ *
+ * Layout source: ~/Downloads/handoff/design-source/prototype-hubs.jsx:44–92
+ * (`TrainWorkoutsContent`):
+ *  - full-width "Create Workout" CTA,
+ *  - "MY WORKOUTS · N SAVED" eyebrow section (mine + assigned; Dumbbell +
+ *    Play rows),
+ *  - "TEMPLATES · N" eyebrow section (public defaults; Book + chevron rows).
+ *
+ * Edit/Delete are surfaced via the owner long-press context menu (AC 1.6),
+ * handled by the container through `onLongPress`.
  */
-
-// Card-shaped object the verbatim WorkoutCard expects (legacy snake_case).
-
-type WorkoutCardView = any;
 
 export interface WorkoutsListPresenterProps {
   isInitialLoading: boolean;
   error: ApiError | null;
   isRefreshing: boolean;
-  searchQuery: string;
-  myAndAssignedCount: number;
-  mineCount: number;
-  assignedCount: number;
-  defaultCount: number;
-  filteredMyWorkouts: WorkoutCardView[];
-  filteredExampleWorkouts: WorkoutCardView[];
+  /** mine + assigned, rendered under "MY WORKOUTS". */
+  saved: Workout[];
+  /** public defaults, rendered under "TEMPLATES". */
+  templates: Workout[];
+  /** Derived split per workout id (colours the tile + meta badge). */
+  splits: ReadonlyMap<string, WorkoutSplit>;
   userWorkoutLimit: number | undefined;
   isAtLimit: boolean;
   currentUserId?: string;
-  deletingWorkoutIds: Set<string>;
-  onCreateWorkout: () => void;
-  onBrowseExercises: () => void;
+  onCreate: () => void;
   onUpgrade: () => void;
-  onSearchChange: (q: string) => void;
-  onWorkoutPress: (w: WorkoutCardView) => void;
-  onEditWorkout: (w: WorkoutCardView) => void;
-  onDeleteWorkout: (w: WorkoutCardView) => void;
-  onStartWorkout: (workoutId: string) => void;
+  onOpen: (workoutId: string) => void;
+  onStart: (workoutId: string) => void;
+  /** Owner-only long-press → Edit/Delete context menu. */
+  onLongPress: (workout: Workout) => void;
   onRetry: () => void;
   onRefresh: () => void;
 }
@@ -63,35 +59,23 @@ export function WorkoutsListPresenter({
   isInitialLoading,
   error,
   isRefreshing,
-  searchQuery,
-  myAndAssignedCount,
-  mineCount,
-  assignedCount,
-  defaultCount,
-  filteredMyWorkouts,
-  filteredExampleWorkouts,
+  saved,
+  templates,
+  splits,
   userWorkoutLimit,
   isAtLimit,
   currentUserId,
-  deletingWorkoutIds,
-  onCreateWorkout,
-  onBrowseExercises,
+  onCreate,
   onUpgrade,
-  onSearchChange,
-  onWorkoutPress,
-  onEditWorkout,
-  onDeleteWorkout,
-  onStartWorkout,
+  onOpen,
+  onStart,
+  onLongPress,
   onRetry,
   onRefresh,
 }: WorkoutsListPresenterProps) {
-  // Blocking error state ONLY when the underlying cache is empty +
-  // refresh failed. We check unfiltered counts, not the search-
-  // filtered arrays — otherwise a user who's offline AND searching
-  // for a term with no matches would see a "Failed to load workouts"
-  // wall instead of their cached list with an empty search result.
-  // Cached-offline must always render the user's own data.
-  const cachedHasAnyWorkout = myAndAssignedCount > 0 || defaultCount > 0;
+  // Blocking error ONLY when the cache is empty + refresh failed. A cached
+  // user offline must always see their list (matches V2 behaviour).
+  const cachedHasAnyWorkout = saved.length > 0 || templates.length > 0;
   if (error && !cachedHasAnyWorkout && !isInitialLoading) {
     return (
       <ErrorState
@@ -104,66 +88,49 @@ export function WorkoutsListPresenter({
 
   if (isInitialLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor="$bg"
+      >
         <PLogoDrawLoader />
-        <Text style={styles.loadingText}>Loading workouts...</Text>
+        <Text fontFamily="$body" color="$text2" marginTop={16}>
+          Loading workouts...
+        </Text>
       </View>
     );
   }
 
-  const renderList = (workouts: WorkoutCardView[]) =>
-    workouts.map((w) => (
-      <WorkoutCard
-        key={w.id}
-        workout={w}
-        currentUserId={currentUserId}
-        isDisabled={deletingWorkoutIds.has(w.id)}
-        onPress={() => onWorkoutPress(w)}
-        onStart={() => onStartWorkout(w.id)}
-        onEdit={() => onEditWorkout(w)}
-        onDelete={() => onDeleteWorkout(w)}
-      />
-    ));
-
   return (
-    <View style={styles.container}>
+    <View flex={1} backgroundColor="$bg">
       <ScrollView
-        style={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 8,
+          paddingBottom: 140,
+          gap: 14,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.text.secondary}
+            tintColor={NEUTRAL_HEX.text3}
           />
         }
       >
-        <View style={styles.header}>
-          <View style={styles.searchBar}>
-            <Ionicons
-              name="search"
-              size={18}
-              color={Colors.text.secondary}
-              style={styles.searchIcon}
-            />
-            <TextInput
-              value={searchQuery}
-              onChangeText={onSearchChange}
-              placeholder="Search workouts..."
-              placeholderTextColor={Colors.text.tertiary}
-              style={styles.searchInput}
-              testID="workouts-search-input"
-            />
-          </View>
-        </View>
-
-        {!searchQuery && (
-          <QuickActions
-            isAtLimit={isAtLimit}
-            onCreateWorkout={onCreateWorkout}
-            onBrowseExercises={onBrowseExercises}
-          />
-        )}
+        <Btn
+          full
+          variant="filled"
+          tone="primary"
+          size="lg"
+          icon={<IconPlus size={16} />}
+          onPress={onCreate}
+          testID="create-workout-cta"
+        >
+          Create Workout
+        </Btn>
 
         {isAtLimit && (
           <WorkoutLimitIndicator
@@ -173,124 +140,51 @@ export function WorkoutsListPresenter({
           />
         )}
 
-        {searchQuery ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Search Results (
-              {filteredMyWorkouts.length + filteredExampleWorkouts.length})
-            </Text>
-            {filteredMyWorkouts.length + filteredExampleWorkouts.length ===
-            0 ? (
-              <View style={styles.emptyContainer}>
-                <Ionicons
-                  name="search-outline"
-                  size={48}
-                  color={Colors.text.tertiary}
-                />
-                <Text style={styles.emptyTitle}>No workouts found</Text>
-                <Text style={styles.emptyMessage}>
-                  Try adjusting your search terms
-                </Text>
-              </View>
-            ) : (
-              <>
-                {renderList(filteredMyWorkouts)}
-                {renderList(filteredExampleWorkouts)}
-              </>
-            )}
-          </View>
-        ) : (
-          <>
-            <WorkoutSection
-              title="My Workouts"
-              subtitle={`${myAndAssignedCount} workouts (${mineCount} created, ${assignedCount} assigned)`}
-              isLoading={false}
-              isEmpty={filteredMyWorkouts.length === 0}
-              emptyTitle="No workouts yet"
-              emptyMessage="Create your first workout template to get started"
-              emptyIcon="fitness-outline"
-            >
-              {renderList(filteredMyWorkouts)}
-            </WorkoutSection>
+        <Section eyebrow={`MY WORKOUTS · ${saved.length} SAVED`} hideHr>
+          {saved.length === 0 ? (
+            <EmptyState
+              title="No workouts yet"
+              description="Create your first workout template to get started."
+            />
+          ) : (
+            <Card pad={0} radius={14}>
+              {saved.map((w, i) => {
+                const isOwner =
+                  currentUserId != null && w.createdBy === currentUserId;
+                return (
+                  <WorkoutRow
+                    key={w.id}
+                    workout={w}
+                    variant="saved"
+                    split={splits.get(w.id) ?? null}
+                    isLast={i === saved.length - 1}
+                    onPress={() => onOpen(w.id)}
+                    onStart={() => onStart(w.id)}
+                    onLongPress={isOwner ? () => onLongPress(w) : undefined}
+                  />
+                );
+              })}
+            </Card>
+          )}
+        </Section>
 
-            <WorkoutSection
-              title="Example Workouts"
-              subtitle={`${defaultCount} ready-to-use templates`}
-              isLoading={false}
-              isEmpty={filteredExampleWorkouts.length === 0}
-              emptyTitle="No example workouts available"
-              emptyMessage="Example workouts will appear here when available"
-              emptyIcon="fitness-outline"
-            >
-              {renderList(filteredExampleWorkouts)}
-            </WorkoutSection>
-          </>
+        {templates.length > 0 && (
+          <Section eyebrow={`TEMPLATES · ${templates.length}`} hideHr>
+            <Card pad={0} radius={14}>
+              {templates.map((w, i) => (
+                <WorkoutRow
+                  key={w.id}
+                  workout={w}
+                  variant="template"
+                  split={splits.get(w.id) ?? null}
+                  isLast={i === templates.length - 1}
+                  onPress={() => onOpen(w.id)}
+                />
+              ))}
+            </Card>
+          </Section>
         )}
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background.primary,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-  },
-  header: {
-    marginBottom: Spacing.lg,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  searchIcon: {
-    marginRight: Spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    color: Colors.text.primary,
-    fontSize: 16,
-  },
-  section: {
-    marginBottom: Spacing.lg,
-  },
-  sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
-  },
-  emptyContainer: {
-    alignItems: "center" as const,
-    paddingVertical: Spacing.xl,
-  },
-  emptyTitle: {
-    ...Typography.h3,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  emptyMessage: {
-    ...Typography.body2,
-    textAlign: "center" as const,
-    color: Colors.text.secondary,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    paddingVertical: Spacing.xl,
-    backgroundColor: Colors.background.primary,
-  },
-  loadingText: {
-    ...Typography.body2,
-    marginTop: Spacing.md,
-    color: Colors.text.secondary,
-  },
-});

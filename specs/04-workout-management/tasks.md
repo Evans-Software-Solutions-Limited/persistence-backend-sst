@@ -6,11 +6,11 @@
 
 ## Phase 04.1 — WorkoutsList rewrite (1 PR)
 
-- [ ] **T-04.1.1** Author `<WorkoutRow>` composite in `packages/mobile/src/ui/components/workouts/WorkoutRow/`. Tests + smoke route. Implements `requirements.md` STORY-001 AC 1.2.
-- [ ] **T-04.1.2** Rewrite `<WorkoutsListPresenter>` to use `<Section>` + `<Card>` + `<WorkoutRow>` + `<Btn>` per `design.md`. Implements STORY-001 ACs.
-- [ ] **T-04.1.3** Rewire `<WorkoutsListContainer>` to mount under `<TrainHubContainer>`'s Workouts segment. Closes STORY-001 AC 1.5.
-- [ ] **T-04.1.4** Update presenter tests for the new structure (three sections, empty state, quota indicator).
-- [ ] **T-04.1.5** Visual regression screenshots vs `library.jsx`.
+- [x] **T-04.1.1** Author `<WorkoutRow>` composite in `packages/mobile/src/ui/components/workouts/WorkoutRow/`. Tests + smoke route. Implements `requirements.md` STORY-001 AC 1.2.
+- [x] **T-04.1.2** Rewrite `<WorkoutsListPresenter>` to use `<Section>` + `<Card>` + `<WorkoutRow>` + `<Btn>` per `design.md`. Implements STORY-001 ACs.
+- [x] **T-04.1.3** Rewire `<WorkoutsListContainer>` to mount under `<TrainHubContainer>`'s Workouts segment. Closes STORY-001 AC 1.5.
+- [x] **T-04.1.4** Update presenter tests for the new structure (three sections, empty state, quota indicator).
+- [ ] **T-04.1.5** Visual regression screenshots vs `library.jsx`. _(Deferred to reviewer's on-device pass — RN UI can't be screenshotted from the build env.)_
 
 ## Phase 04.2 — ExerciseList rewrite (1 PR)
 

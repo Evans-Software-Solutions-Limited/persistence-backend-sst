@@ -1,10 +1,11 @@
-import { act, fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, RefreshControl } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
-import type { Workout } from "@/domain/models/workout";
+import type { Exercise } from "@/domain/models/exercise";
+import type { Workout, WorkoutExercise } from "@/domain/models/workout";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -25,27 +26,25 @@ const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   ...overrides,
 });
 
+const DEFAULT_SESSION: AuthSession = {
+  accessToken: "t",
+  refreshToken: "r",
+  userId: "test-user",
+  email: "u@example.com",
+  expiresAt: Date.now() + 60_000,
+};
+
 function makeAdapters(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
+  session: AuthSession | null = DEFAULT_SESSION,
 ): Adapters {
-  const session: AuthSession = {
-    accessToken: "t",
-    refreshToken: "r",
-    userId: "test-user",
-    email: "u@example.com",
-    expiresAt: Date.now() + 60_000,
-  };
   const auth = {
     signInWithEmail: jest.fn(),
     signUpWithEmail: jest.fn(),
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
-    // Fire the auth-state callback synchronously at registration —
-    // see SwapExercisePopover.test.tsx for the full rationale (CI
-    // flake from deferred-via-setTimeout setState racing with test-
-    // library polling).
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
       cb(session);
       return () => {};
@@ -69,16 +68,9 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
   return <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>;
 }
 
-// expo-router pieces — stub so tests don't need a real navigator.
-// `mock`-prefixed names are the only out-of-scope refs jest.mock() factories
-// are allowed to access.
 const mockRouterPush = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}));
 jest.mock("expo-router", () => {
-  // useFocusEffect's prod implementation registers with the React
-  // Navigation focus lifecycle. In test we collapse it to a plain
-  // useEffect on mount — the unit under test is the rereadCache
-  // wiring, not the navigation lifecycle itself.
   const React = jest.requireActual("react") as typeof import("react");
   return {
     __esModule: true,
@@ -92,6 +84,26 @@ jest.mock("expo-router", () => {
   };
 });
 
+/** Seed all three list slices; `mine` carries the optional quota. */
+function seedSlices(
+  storage: InMemoryStorageAdapter,
+  opts: {
+    mine?: Workout[];
+    assigned?: Workout[];
+    defaults?: Workout[];
+    quota?: { used: number; limit: number } | null;
+  } = {},
+) {
+  storage.cacheWorkoutsList(
+    "test-user",
+    "mine",
+    opts.mine ?? [],
+    opts.quota ?? null,
+  );
+  storage.cacheWorkoutsList("test-user", "assigned", opts.assigned ?? [], null);
+  storage.cacheWorkoutsList("test-user", "default", opts.defaults ?? [], null);
+}
+
 describe("WorkoutsListContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -99,121 +111,99 @@ describe("WorkoutsListContainer", () => {
   });
 
   afterEach(() => {
-    // Tests in this file install spies via `jest.spyOn` (e.g. on
-    // Alert.alert in the delete-confirmation test). `clearAllMocks` only
-    // clears call history; implementations persist into subsequent
-    // tests, which contributed to a CI flake where leftover spies +
-    // accumulated worker load pushed later tests past the 5s default.
     jest.restoreAllMocks();
   });
 
   it("renders the cached payload on mount", async () => {
-    const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    const cachedWorkout = buildWorkout({ id: "w-cached", name: "Cached Push" });
-    storage.cacheWorkoutsList("test-user", "mine", [cachedWorkout], {
-      used: 1,
-      limit: 50,
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-cached", name: "Cached Push" })],
+      quota: { used: 1, limit: 50 },
     });
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
 
-    const adapters = makeAdapters(api, storage);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Cached workout renders immediately. Auto-refresh behaviour is
-    // covered by useWorkouts.test.tsx — this test just asserts the
-    // container's cache-first read pipes into the presenter.
     expect(await findByText("Cached Push")).toBeTruthy();
   });
 
-  it("renders the search-results section when the user types into the search bar", async () => {
-    const api = new InMemoryApiAdapter();
+  it("pushes the workout-detail route when a row is pressed", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList(
-      "test-user",
-      "mine",
-      [
-        buildWorkout({ id: "w-1", name: "Push Day" }),
-        buildWorkout({ id: "w-2", name: "Pull Day" }),
-      ],
-      { used: 2, limit: 50 },
-    );
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
-
-    const adapters = makeAdapters(api, storage);
-    const { findByTestId, findByText, queryByText } = renderWithTheme(
-      withAdapters(adapters, <WorkoutsListContainer />),
-    );
-
-    const searchInput = await findByTestId("workouts-search-input");
-    await act(async () => {
-      fireEvent.changeText(searchInput, "push");
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
     });
 
-    // Search-results header appears, only Push Day matches.
-    expect(await findByText("Search Results (1)")).toBeTruthy();
-    expect(await findByText("Push Day")).toBeTruthy();
-    await waitFor(() => expect(queryByText("Pull Day")).toBeNull());
-  });
-
-  it("pushes the workout-detail route when a card is pressed", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList(
-      "test-user",
-      "mine",
-      [buildWorkout({ id: "w-1", name: "Push Day" })],
-      null,
-    );
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
-
-    const adapters = makeAdapters(api, storage);
-    const { findByText } = renderWithTheme(
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    const card = await findByText("Push Day");
-    fireEvent.press(card);
+    fireEvent.press(await findByTestId("workout-row-w-1"));
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1");
   });
 
-  it("delete confirmation enqueues a DELETE sync intent and clears the storage cache", async () => {
-    const api = new InMemoryApiAdapter();
+  it("starts a session from the Play button via the session route", async () => {
     const storage = new InMemoryStorageAdapter();
-    const w = buildWorkout({ id: "w-delete", name: "Delete Me" });
-    storage.cacheWorkoutsList("test-user", "mine", [w], null);
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
+    });
 
-    // Auto-confirm the destructive Alert button so the deletion path runs.
-    jest
-      .spyOn(Alert, "alert")
-      .mockImplementation((_title, _message, buttons) => {
-        const destructive = buttons?.find((b) => b.style === "destructive");
-        destructive?.onPress?.();
-      });
-
-    const adapters = makeAdapters(api, storage);
-    const { findByText } = renderWithTheme(
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByLabelText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    expect(await findByText("Delete Me")).toBeTruthy();
+    fireEvent.press(await findByLabelText("Start Push Day"));
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
+  });
 
-    await act(async () => {
-      fireEvent.press(await findByText("Delete"));
+  it("long-press → Edit routes to the editor modal", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
     });
 
-    // Assert on the deterministic side-effects rather than DOM updates,
-    // which are subject to refresh-promise scheduling timing in CI:
-    // the sync queue holds the DELETE intent, and the storage cache row
-    // for the workout has been pruned. Container's refresh-after-delete
-    // is exercised by the useWorkouts hook tests separately.
+    // Auto-press the "Edit" entry of the long-press context menu.
+    jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _message, buttons) => {
+        buttons?.find((b) => b.text === "Edit")?.onPress?.();
+      });
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    fireEvent(await findByTestId("workout-row-w-1"), "longPress");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
+  });
+
+  it("long-press → Delete enqueues a DELETE sync intent and prunes the cache", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-delete", name: "Delete Me" })],
+    });
+
+    // Cascade: press the destructive button on every Alert — the menu's
+    // "Delete" opens the confirm Alert, whose "Delete" runs the command.
+    jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _message, buttons) => {
+        buttons?.find((b) => b.style === "destructive")?.onPress?.();
+      });
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    await act(async () => {
+      fireEvent(await findByTestId("workout-row-w-delete"), "longPress");
+    });
+
     const pending = storage.getPendingMutations();
     expect(pending).toHaveLength(1);
     expect(pending[0].operation).toBe("delete");
@@ -224,91 +214,131 @@ describe("WorkoutsListContainer", () => {
     expect(storage.getCachedWorkoutDetail("test-user", "w-delete")).toBeNull();
   });
 
-  it("create button routes to the workout-creator modal when under quota", async () => {
-    const api = new InMemoryApiAdapter();
+  it("Create Workout routes to the creator modal", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList("test-user", "mine", [], { used: 0, limit: 3 });
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
+    seedSlices(storage, { quota: { used: 0, limit: 3 } });
 
-    const adapters = makeAdapters(api, storage);
-    const { findByText } = renderWithTheme(
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    fireEvent.press(await findByText("Create New Workout"));
-
+    fireEvent.press(await findByTestId("create-workout-cta"));
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/create");
   });
 
-  // Per-test 30s timeout: this test passes in ~200ms locally and in
-  // isolation, but in CI's loaded jest worker the multi-step async chain
-  // (auth setTimeout → setSnapshot → viewModel memo → at-limit indicator
-  // render) occasionally exceeds the 5s default. The timeout doesn't
-  // mask logic bugs (any failure surfaces well before 30s); it just
-  // gives findByText's polling room when the worker is under load.
-  it("at-limit users see the WorkoutLimitIndicator + Upgrade CTA route to the subscription placeholder", async () => {
-    const api = new InMemoryApiAdapter();
+  it("at-limit users see the indicator and Upgrade routes to subscription management", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList(
-      "test-user",
-      "mine",
-      [buildWorkout({ id: "w-1", name: "Push Day" })],
-      { used: 3, limit: 3 },
-    );
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
+      quota: { used: 3, limit: 3 },
+    });
 
-    const adapters = makeAdapters(api, storage);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    // Wait for the cached payload to render (proves auth bootstrap
-    // fired and the quota-bearing snapshot has propagated).
     expect(await findByText("Push Day")).toBeTruthy();
-
-    // Click "Upgrade Now" inside the quota indicator — that's the
-    // explicit at-limit path. The QuickActions Create button is
-    // `disabled={isAtLimit}` and its press is suppressed by RN, so it
-    // doesn't have its own at-limit branch (matches legacy).
     fireEvent.press(await findByText("Upgrade Now"));
     expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=subscription",
+      "/(app)/subscription-management",
     );
   }, 30_000);
 
-  it("browse-exercises button routes to the Exercises tab", async () => {
-    const api = new InMemoryApiAdapter();
+  it("renders public defaults as templates and opens them on press", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.cacheWorkoutsList("test-user", "mine", [], null);
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
+    seedSlices(storage, {
+      defaults: [buildWorkout({ id: "tpl-1", name: "PPL Push" })],
+    });
 
-    const adapters = makeAdapters(api, storage);
-    const { findByText } = renderWithTheme(
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId, queryByLabelText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    fireEvent.press(await findByText("Browse Exercises"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/train");
-    expect(useTrainSegment.getState().segment).toBe("Exercises");
+    const row = await findByTestId("workout-row-tpl-1");
+    // Template rows have no Play button.
+    expect(queryByLabelText("Start PPL Push")).toBeNull();
+    fireEvent.press(row);
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/tpl-1");
   });
 
-  it("edit button routes to the editor modal", async () => {
-    const api = new InMemoryApiAdapter();
+  it("derives a split badge from the cached exercise library", async () => {
     const storage = new InMemoryStorageAdapter();
-    const w = buildWorkout({ id: "w-1", name: "Push Day" });
-    storage.cacheWorkoutsList("test-user", "mine", [w], null);
-    storage.cacheWorkoutsList("test-user", "assigned", [], null);
-    storage.cacheWorkoutsList("test-user", "default", [], null);
+    // Seed push-muscle exercises in the runtime shape: primaryMuscleGroups
+    // are UUIDs, readable names are in primaryMuscleGroupLabels.
+    storage.cacheExercises([
+      {
+        id: "ex-1",
+        primaryMuscleGroups: ["15f7ddb6-uuid-chest"],
+        primaryMuscleGroupLabels: ["Chest"],
+      } as unknown as Exercise,
+      // ex-2 has no resolved labels — falls back to enum keys on
+      // primaryMuscleGroups (legacy-cached shape).
+      {
+        id: "ex-2",
+        primaryMuscleGroups: ["shoulders"],
+      } as unknown as Exercise,
+    ]);
+    seedSlices(storage, {
+      mine: [
+        buildWorkout({
+          id: "w-1",
+          name: "Push Day",
+          exercises: [
+            { exerciseId: "ex-1" } as WorkoutExercise,
+            { exerciseId: "ex-2" } as WorkoutExercise,
+          ],
+        }),
+      ],
+    });
 
-    const adapters = makeAdapters(api, storage);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     const { findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    fireEvent.press(await findByText("Edit"));
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
+    expect(await findByText("Push Day")).toBeTruthy();
+    expect(await findByText("PUSH")).toBeTruthy();
+  });
+
+  it("pull-to-refresh re-fetches the workouts from the API", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
+    });
+
+    const api = new InMemoryApiAdapter();
+    const getWorkoutsSpy = jest.spyOn(api, "getWorkouts");
+    const adapters = makeAdapters(api, storage);
+    const { findByText, UNSAFE_getByType } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+    await findByText("Push Day");
+
+    // Ignore any initial stale-cache auto-refresh — assert the pull-to-refresh
+    // gesture specifically re-hits the API.
+    getWorkoutsSpy.mockClear();
+    await act(async () => {
+      fireEvent(UNSAFE_getByType(RefreshControl), "refresh");
+    });
+
+    // onRefresh must wire through to workouts.refresh() -> api.getWorkouts().
+    expect(getWorkoutsSpy).toHaveBeenCalled();
+  });
+
+  it("renders the empty state when there is no authenticated user", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage);
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage, null);
+    const { findByText } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    // userId resolves to null → currentUserId undefined, no rows; the Mine
+    // empty state still renders.
+    expect(await findByText("No workouts yet")).toBeTruthy();
   });
 });

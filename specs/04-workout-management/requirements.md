@@ -160,6 +160,7 @@ Legacy reference (V1 behavioural source of truth per `_agent.md`): `../persisten
 - **Workout streaks + PR detection** — owned by `06-progress-goals`. This spec doesn't compute or render streak / PR data; consumers do.
 - **Backend additions** — none. Pure presentation refresh + new sheet pattern.
 - **Existing `<WorkoutCard>` rename** — V2's existing list-row `<WorkoutCard>` at `packages/mobile/src/ui/components/workouts/WorkoutCard/` stays. The Home carousel uses the separate `<WorkoutCarouselCard>` (per `01-design-system` locked decision discussion).
+  - **Revised 2026-06-01 (Phase 04.1):** the list-row `<WorkoutCard>` (and the now-orphaned `<QuickActions>`) are **deleted** — Phase 04.1 replaces the workouts list rows with the new `<WorkoutRow>` composite and the inline Create/Browse CTAs, leaving both components with no importers. They were only ever exercised transitively by the old `WorkoutsListPresenter` tests, so keeping them would be untested dead code. `<WorkoutCarouselCard>` (Home carousel) and `components/home/WorkoutCard.tsx` are unaffected.
 
 ---
 
@@ -188,4 +189,17 @@ None. All 11 locked decisions captured at the top. Any discovered ambiguity surf
 
 ---
 
-_End of `04-workout-management/requirements.md` · 2026-05-27 (rewritten from scratch)_
+---
+
+## Revised 2026-06-01 (Phase 04.1 — prototype fidelity)
+
+Phase 04.1 was built against the **canonical Train-hub composition** in `~/Downloads/handoff/design-source/prototype-hubs.jsx` (`TrainWorkoutsContent`, lines 44–92), which is the authoritative Option-3 IA per `docs/design-port-audit.md`. The earlier ACs leaned on the standalone `library.jsx` "reference" screen, which differs. The prototype-faithful structure (signed off by owner) supersedes these ACs:
+
+- **Two sections, not three** (overrides AC 1.1): `MY WORKOUTS · {N} SAVED` (mine **+** assigned combined) and `TEMPLATES · {N}` (public defaults). No standalone "Assigned" section.
+- **Eyebrow labels, not title+sub** (overrides AC 1.3): sections use the `<Section eyebrow>` uppercase label (`p-eyebrow`), e.g. `MY WORKOUTS · 4 SAVED` / `TEMPLATES · 3` — not a large title with a subtitle.
+- **Row variants**: My-Workouts rows = Dumbbell tile + Play `<IconBtn>` (start); Template rows = Book tile + chevron (open only — templates aren't started directly from the row).
+- **No "Browse Exercises" button** — the prototype's `TrainWorkoutsContent` has none (the Segmented switcher is the exercises entry point). Only the full-width **Create Workout** CTA at the top (prototype line 47) is kept.
+- **Empty My-Workouts state** carries no Create CTA — the top Create Workout button is the single create path.
+- **Colored tile + split badge** (`PUSH`/`PULL`/`LEGS`/`UPPER`/`LOWER`/`FULL`/`CORE`/`MOB`/`CARDIO`): the prototype's per-row tone + badge are hand-assigned mock values (the V2 `Workout` carries no split field, and the trimmed `WorkoutExerciseRef` no muscle groups). The split is therefore **derived client-side** by `classifyWorkoutSplit` (`domain/services/workoutSplit.ts`) — joining each exercise's `exerciseId` against the **cached exercise library** for muscle groups, plus the exercise `category` for the cardio/mobility override. PPL specifics (`push`/`pull`/`legs`/`core`) take priority over `upper`/`lower`, then `full`. Tone follows the split (push→primary, pull→gold, legs/lower/full→ember, upper/core→trainer, mobility→success, cardio→error). Workouts whose exercises aren't cached yet (cold start) fall back to a neutral `primary` tile with **no** badge — no invented data. No backend change (the more-robust muscle aggregation on the workout response remains the `TODO(M4)`).
+
+_End of `04-workout-management/requirements.md` · 2026-05-27 (rewritten from scratch) · revised 2026-06-01 (Phase 04.1 prototype fidelity)_
