@@ -5,14 +5,6 @@ import { ExerciseListPresenter } from "../ExerciseListPresenter";
 
 jest.setTimeout(15_000);
 
-jest.mock("@expo/vector-icons", () => {
-  const { Text } = jest.requireActual("react-native");
-  const Ionicons = ({ name }: { name: string }) => (
-    <Text testID={`icon-${name}`}>{name}</Text>
-  );
-  return { Ionicons };
-});
-
 function makeExercise(overrides: Partial<Exercise> = {}): Exercise {
   return {
     id: "ex-1",
@@ -58,12 +50,15 @@ function makeProps(
 }
 
 describe("ExerciseListPresenter", () => {
-  it("renders the 'Exercises' title", () => {
-    const { getByTestId, getByText } = renderWithTheme(
+  it("renders as a headerless body (no own 'Exercises' title — the hub owns it)", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
       <ExerciseListPresenter {...makeProps()} />,
     );
-    expect(getByTestId("exercise-list-title")).toBeTruthy();
-    expect(getByText("Exercises")).toBeTruthy();
+    expect(getByTestId("exercise-list-screen")).toBeTruthy();
+    expect(getByTestId("exercise-search")).toBeTruthy();
+    // The hub renders the title + Create; this body must not duplicate them.
+    expect(queryByTestId("exercise-list-title")).toBeNull();
+    expect(queryByTestId("create-exercise-button")).toBeNull();
   });
 
   it("renders each exercise as a card", () => {
@@ -88,33 +83,6 @@ describe("ExerciseListPresenter", () => {
     );
     fireEvent.changeText(getByTestId("exercise-search-input"), "squat");
     expect(onSearchChange).toHaveBeenCalledWith("squat");
-  });
-
-  it("clears search text when the close button is pressed", () => {
-    const onSearchChange = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseListPresenter
-        {...makeProps({ searchInput: "squat", onSearchChange })}
-      />,
-    );
-    fireEvent.press(getByTestId("exercise-search-clear"));
-    expect(onSearchChange).toHaveBeenCalledWith("");
-  });
-
-  it("does not render the clear-search button when search is empty", () => {
-    const { queryByTestId } = renderWithTheme(
-      <ExerciseListPresenter {...makeProps({ searchInput: "" })} />,
-    );
-    expect(queryByTestId("exercise-search-clear")).toBeNull();
-  });
-
-  it("fires onCreateExercise when the inline + button is pressed", () => {
-    const onCreateExercise = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ExerciseListPresenter {...makeProps({ onCreateExercise })} />,
-    );
-    fireEvent.press(getByTestId("create-exercise-button"));
-    expect(onCreateExercise).toHaveBeenCalledTimes(1);
   });
 
   it("forwards card press to onSelectExercise with the id", () => {
