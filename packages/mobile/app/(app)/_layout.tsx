@@ -55,6 +55,15 @@ export default function AppLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="profile/privacy-settings"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen name="profile/help" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/contact" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/terms" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/[id]" options={{ title: "Exercise" }} />
         <Stack.Screen
           name="exercises/create"

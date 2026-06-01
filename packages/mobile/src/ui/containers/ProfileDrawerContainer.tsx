@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import { useCallback, useState } from "react";
+import { router, useSegments } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 
 import { useDrawer } from "@/state/drawer";
 import { useUserMode } from "@/state/user-mode";
@@ -31,6 +31,10 @@ import { ProfileDrawerPresenter } from "@/ui/presenters/ProfileDrawerPresenter";
 export function ProfileDrawerContainer() {
   const open = useDrawer((s) => s.open);
   const closeDrawer = useDrawer((s) => s.closeDrawer);
+  const closeForNavigation = useDrawer((s) => s.closeForNavigation);
+  const openDrawer = useDrawer((s) => s.openDrawer);
+  const returnToDrawer = useDrawer((s) => s.returnToDrawer);
+  const clearReturn = useDrawer((s) => s.clearReturn);
   const mode = useUserMode((s) => s.mode);
   const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
   const { switchMode } = useModeSwitch();
@@ -48,14 +52,26 @@ export function ProfileDrawerContainer() {
     (health.permissionStatus.steps === "granted" ||
       health.permissionStatus.bodyWeight === "granted");
 
-  // Close the drawer first, then navigate — avoids the sheet's slide-down
-  // animation racing the route push (design.md § Risks).
+  // Re-open the drawer when the user navigates back to the tabs after a
+  // sub-page push (Option 3 UX pattern — the drawer acts as a persistent
+  // menu). `returnToDrawer` is set by `closeForNavigation`; cleared here
+  // once the re-open fires.
+  const segments = useSegments();
+  useEffect(() => {
+    if (returnToDrawer && segments[1] === "(tabs)") {
+      openDrawer();
+      clearReturn();
+    }
+  }, [segments, returnToDrawer, openDrawer, clearReturn]);
+
+  // Close the drawer for navigation — sets returnToDrawer so the drawer
+  // re-opens when the user navigates back to the tabs.
   const pushFrom = useCallback(
     (path: string) => {
-      closeDrawer();
+      closeForNavigation();
       router.push(path as never);
     },
-    [closeDrawer],
+    [closeForNavigation],
   );
 
   const onSignOut = useCallback(async () => {

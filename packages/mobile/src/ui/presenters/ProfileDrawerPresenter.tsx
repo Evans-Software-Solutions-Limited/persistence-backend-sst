@@ -2,13 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { useState } from "react";
 import { Pressable } from "react-native";
 
-import {
-  Avatar,
-  BottomSheet,
-  Card,
-  IconBtn,
-  Pill,
-} from "@/ui/components/foundation";
+import { Avatar, BottomSheet, Card, Pill } from "@/ui/components/foundation";
 import type { PillTone } from "@/ui/components/foundation/tones";
 import { DrawerRow } from "@/ui/components/composite";
 import { DrawerSection } from "@/ui/components/profile/DrawerSection";
@@ -20,7 +14,6 @@ import {
   IconMedal,
   IconSettings,
   IconUser,
-  IconX,
   iconDefaults,
 } from "@/ui/components/icons";
 import { toneHex } from "@/ui/components/foundation/tones";
@@ -175,12 +168,6 @@ export function ProfileDrawerPresenter({
               Loading…
             </Text>
           </View>
-          <IconBtn
-            icon={<IconX {...iconDefaults({ size: 16 })} />}
-            tone="ghost"
-            onPress={onClose}
-            accessibilityLabel="Close profile menu"
-          />
         </View>
       </BottomSheet>
     );
@@ -222,12 +209,6 @@ export function ProfileDrawerPresenter({
             ) : null}
           </View>
         </View>
-        <IconBtn
-          icon={<IconX {...iconDefaults({ size: 16 })} />}
-          tone="ghost"
-          onPress={onClose}
-          accessibilityLabel="Close profile menu"
-        />
       </View>
 
       {/* Mode-switch card — only for trainer-eligible users (STORY-003 AC 3.1) */}
@@ -293,7 +274,7 @@ export function ProfileDrawerPresenter({
       {subscription ? (
         <DrawerSection title="Subscription">
           <Card
-            pad={14}
+            pad={16}
             radius={12}
             surface={1}
             onPress={onOpenSubscription}
@@ -325,10 +306,7 @@ export function ProfileDrawerPresenter({
                   {subscription.planDescription}
                 </Text>
               </View>
-              <IconChevronR
-                {...iconDefaults({ size: 16 })}
-                color={toneHex("primary").base}
-              />
+              <IconChevronR {...iconDefaults({ size: 16 })} color="#8A8A98" />
             </View>
           </Card>
         </DrawerSection>

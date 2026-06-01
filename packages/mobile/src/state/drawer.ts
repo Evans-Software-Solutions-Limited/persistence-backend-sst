@@ -13,12 +13,22 @@ import { create } from "zustand";
 
 export interface DrawerState {
   open: boolean;
+  /** True when the drawer was closed specifically to navigate to a sub-page.
+   *  On back-navigation to the tabs, the drawer re-opens automatically. */
+  returnToDrawer: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
+  /** Close the drawer for a sub-page push — sets returnToDrawer so the
+   *  drawer re-opens when the user navigates back. */
+  closeForNavigation: () => void;
+  clearReturn: () => void;
 }
 
 export const useDrawer = create<DrawerState>((set) => ({
   open: false,
+  returnToDrawer: false,
   openDrawer: () => set({ open: true }),
-  closeDrawer: () => set({ open: false }),
+  closeDrawer: () => set({ open: false, returnToDrawer: false }),
+  closeForNavigation: () => set({ open: false, returnToDrawer: true }),
+  clearReturn: () => set({ returnToDrawer: false }),
 }));

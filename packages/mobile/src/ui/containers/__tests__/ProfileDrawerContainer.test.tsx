@@ -31,8 +31,10 @@ jest.mock("@/ui/presenters/ProfileDrawerPresenter", () => ({
 }));
 
 const mockPush = jest.fn();
+let mockSegments = ["(app)", "(tabs)"];
 jest.mock("expo-router", () => ({
   router: { push: (p: string) => mockPush(p) },
+  useSegments: () => mockSegments,
 }));
 
 const mockSwitchMode = jest.fn();
@@ -88,7 +90,11 @@ beforeEach(() => {
   mockPush.mockClear();
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
-  useDrawer.setState({ open: false });
+  // Default to a sub-page segment so the re-open-on-back effect doesn't
+  // fire during row-handler tests. Tests that assert re-open behavior
+  // set segments to "(tabs)" explicitly.
+  mockSegments = ["(app)", "profile"];
+  useDrawer.setState({ open: false, returnToDrawer: false });
   useUserMode.setState({ mode: "athlete", isTrainerEligible: false });
 });
 
@@ -168,6 +174,7 @@ describe("ProfileDrawerContainer", () => {
         (lastProps?.[handler] as () => void)();
       });
       expect(useDrawer.getState().open).toBe(false);
+      expect(useDrawer.getState().returnToDrawer).toBe(true);
       expect(mockPush).toHaveBeenCalledWith(route);
     }
   });

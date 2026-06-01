@@ -189,10 +189,8 @@ describe("ProfileDrawerPresenter", () => {
   });
 
   it("loading state close button fires onClose", () => {
-    const onClose = jest.fn();
-    const { getByLabelText } = renderDrawer({ profile: undefined, onClose });
-    fireEvent.press(getByLabelText("Close profile menu"));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Close icon removed per owner decision. Backdrop tap + drag-down
+    // dismiss the drawer in both loading and loaded states.
   });
 
   it("free-tier subscription: no identity badge, FREE pill on the card", () => {
@@ -247,9 +245,7 @@ describe("ProfileDrawerPresenter", () => {
   });
 
   it("fires onClose from the header close button", () => {
-    const onClose = jest.fn();
-    const { getByLabelText } = renderDrawer({ onClose });
-    fireEvent.press(getByLabelText("Close profile menu"));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Close icon removed per owner decision (backdrop tap + drag-down are
+    // sufficient). This test is retained as a no-op marker for the decision.
   });
 });

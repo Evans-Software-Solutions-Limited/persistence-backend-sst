@@ -67,31 +67,41 @@ export function Avatar({
       position="relative"
       style={{ flexShrink: 0 }}
     >
-      <LinearGradient
-        colors={[from, to]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: 9999,
-          alignItems: "center",
-          justifyContent: "center",
-          // two-ring border: bg ring + border2 ring
-          borderWidth: 1.5,
-          borderColor: "rgba(255,255,255,0.10)",
-        }}
+      {/* Double-ring border per prototype (boxShadow: 0 0 0 2px $bg, 0 0 0
+          3.5px $border2). RN doesn't support multi-ring box-shadow, so we use
+          a wrapper View for the outer ring + the gradient's own border for the
+          inner gap ring. */}
+      <View
+        width={size}
+        height={size}
+        borderRadius={9999}
+        borderWidth={2}
+        borderColor="$border2"
+        padding={1.5}
       >
-        <Text
-          fontFamily="$display"
-          fontWeight="700"
-          fontSize={Math.round(size * 0.36)}
-          letterSpacing={-0.3}
-          color={inkToken}
+        <LinearGradient
+          colors={[from, to]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            width: size - 7,
+            height: size - 7,
+            borderRadius: 9999,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          {initials}
-        </Text>
-      </LinearGradient>
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={Math.round(size * 0.36)}
+            letterSpacing={-0.3}
+            color={inkToken}
+          >
+            {initials}
+          </Text>
+        </LinearGradient>
+      </View>
 
       {dot ? (
         <View
