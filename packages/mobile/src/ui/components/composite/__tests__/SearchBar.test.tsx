@@ -74,6 +74,20 @@ describe("SearchBar", () => {
     );
   });
 
+  it("disables iOS autocapitalize + autocorrect (name-search fields)", () => {
+    const { getByTestId } = renderWithTheme(
+      <SearchBar
+        placeholder="Search exercises"
+        value=""
+        onChangeText={() => undefined}
+        testID="search"
+      />,
+    );
+    const input = getByTestId("search-input");
+    expect(input.props.autoCapitalize).toBe("none");
+    expect(input.props.autoCorrect).toBe(false);
+  });
+
   it("honours an explicit accessibilityLabel", () => {
     const { getByTestId } = renderWithTheme(
       <SearchBar

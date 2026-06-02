@@ -94,4 +94,35 @@ describe("ExerciseCard (library)", () => {
     expect(cardPressStyle({ pressed: true }).opacity).toBe(0.9);
     expect(cardPressStyle({ pressed: false }).opacity).toBe(1);
   });
+
+  it("skips empty-string labels (unresolved UUIDs) and uses the first non-empty muscle", () => {
+    const { getByText } = renderWithTheme(
+      <ExerciseCard
+        exercise={buildExercise({
+          // Leading "" is an unresolved UUID — must not swallow the row.
+          primaryMuscleGroupLabels: ["", "Back"],
+          // Empty entries must be dropped, not rendered as ghost pills.
+          equipmentLabels: ["", "Barbell", ""],
+        })}
+        onPress={jest.fn()}
+      />,
+    );
+    expect(getByText("Back")).toBeTruthy();
+    expect(getByText("Barbell")).toBeTruthy();
+  });
+
+  it("renders no tag row when every label is an empty string", () => {
+    const { queryByText } = renderWithTheme(
+      <ExerciseCard
+        exercise={buildExercise({
+          name: "All Unresolved",
+          primaryMuscleGroupLabels: ["", ""],
+          equipmentLabels: ["", ""],
+        })}
+        onPress={jest.fn()}
+      />,
+    );
+    expect(queryByText("Chest")).toBeNull();
+    expect(queryByText("Barbell")).toBeNull();
+  });
 });

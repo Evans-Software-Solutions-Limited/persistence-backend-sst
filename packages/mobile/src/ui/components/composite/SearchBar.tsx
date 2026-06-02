@@ -53,6 +53,11 @@ export function SearchBar({
         placeholder={placeholder}
         placeholderTextColor="#8A8A98"
         returnKeyType="search"
+        // Search-by-name fields must not let iOS title-case the first char or
+        // autocorrect short tokens (dl, rdl, db, kb) into non-matching words.
+        // Hardcoded off — every SearchBar use case is a name search.
+        autoCapitalize="none"
+        autoCorrect={false}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         style={{
           flex: 1,

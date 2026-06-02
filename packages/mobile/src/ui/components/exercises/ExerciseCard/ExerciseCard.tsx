@@ -54,8 +54,16 @@ function ExerciseCardBase({
   onLongPress,
   testID,
 }: ExerciseCardProps) {
-  const muscle = exercise.primaryMuscleGroupLabels?.[0];
-  const equipment = (exercise.equipmentLabels ?? []).slice(0, 2);
+  // `*Labels` are parallel-indexed with the UUID arrays; the adapter emits
+  // "" for ids it couldn't resolve (partial reference-cache hydration). Drop
+  // those empties — otherwise we'd render ghost pills (and collide on key=""),
+  // and a leading unresolved muscle would hide an otherwise-renderable [1].
+  const muscle = (exercise.primaryMuscleGroupLabels ?? []).find(
+    (l) => l.length > 0,
+  );
+  const equipment = (exercise.equipmentLabels ?? [])
+    .filter((e) => e.length > 0)
+    .slice(0, 2);
   const hasTags = Boolean(muscle) || equipment.length > 0;
 
   return (
@@ -121,8 +129,8 @@ function ExerciseCardBase({
                 {muscle}
               </Pill>
             ) : null}
-            {equipment.map((e) => (
-              <Pill key={e} tone="neutral" size="xs">
+            {equipment.map((e, i) => (
+              <Pill key={`${i}-${e}`} tone="neutral" size="xs">
                 {e}
               </Pill>
             ))}
