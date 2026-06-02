@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
+import { CreateExerciseSheetContainer } from "../../src/ui/containers/CreateExerciseSheetContainer";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
@@ -146,6 +147,14 @@ export default function AppLayout() {
               specs/14-navigation/tasks.md T-14.5.1
       */}
       <ProfileDrawerContainer />
+      {/*
+        Create-Exercise sheet — same root-sibling mount as ProfileDrawer so its
+        <BottomSheet> overlays the bottom tab bar (it used to mount inside the
+        Train hub tab content, which left the navbar drawn over the sheet's
+        footer). Open state comes from useCreateExerciseSheet.
+        Spec: specs/04-workout-management/requirements.md STORY-006 AC 6.1.
+      */}
+      <CreateExerciseSheetContainer />
       <ActiveSessionBanner />
     </ExerciseFiltersProvider>
   );

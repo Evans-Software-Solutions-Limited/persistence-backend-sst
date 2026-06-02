@@ -181,6 +181,7 @@ export function BottomSheet({
 
         <BottomSheetScrollView
           contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
         >
           {children}
         </BottomSheetScrollView>

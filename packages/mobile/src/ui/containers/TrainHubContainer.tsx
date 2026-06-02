@@ -1,11 +1,10 @@
 import { Text, View } from "@tamagui/core";
-import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
 import { IconPlus, IconSearch } from "@/ui/components/icons";
-import { CreateExerciseSheetContainer } from "@/ui/containers/CreateExerciseSheetContainer";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 
@@ -28,34 +27,18 @@ import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
  * The list BODIES (WorkoutsListContainer / ExerciseListContainer) are owned by
  * `04-workout-management`.
  *
- * Create flow (04.3): the Create action opens a local
- * <CreateExerciseSheetContainer> bottom-sheet. The `pendingCreate` flag is the
- * shared "open the create sheet" signal — set by the `/exercises/create`
- * deep-link redirect stub AND by the Exercises empty-state CTA — consumed
- * once on change to open the sheet.
+ * Create flow (04.3): the `+ Create` action opens the Create-Exercise sheet
+ * via `useCreateExerciseSheet().openSheet()`. The sheet itself is mounted once
+ * at the root `(app)/_layout.tsx` (like <ProfileDrawerContainer>) so it
+ * overlays the bottom tab bar — it's NOT mounted here in the tab content.
  */
 export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
-  const pendingCreate = useTrainSegment((s) => s.pendingCreate);
-  const clearPendingCreate = useTrainSegment((s) => s.clearPendingCreate);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const openCreateExercise = useCreateExerciseSheet((s) => s.openSheet);
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (battery/clock).
   const insets = useSafeAreaInsets();
-
-  const openCreateExercise = () => setSheetOpen(true);
-
-  // `pendingCreate` is the cross-surface "open the create sheet" signal:
-  // the /exercises/create deep-link redirect stub and the Exercises
-  // empty-state CTA both set it. Consume + clear it whenever it flips true
-  // so the sheet opens exactly once per request.
-  useEffect(() => {
-    if (pendingCreate) {
-      clearPendingCreate();
-      setSheetOpen(true);
-    }
-  }, [pendingCreate, clearPendingCreate]);
 
   const openSearch = () => {
     // TODO(04-workout-management § STORY-007): open the Exercises search
@@ -137,10 +120,6 @@ export function TrainHubContainer() {
           <ExerciseListContainer />
         )}
       </View>
-      <CreateExerciseSheetContainer
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-      />
     </View>
   );
 }

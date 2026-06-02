@@ -15,7 +15,7 @@ import type { Adapters } from "@/shared/types";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ExerciseFiltersProvider } from "@/ui/hooks/useExerciseFilters";
-import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import config from "../../../../tamagui.config";
 import { ExerciseListContainer } from "../ExerciseListContainer";
 
@@ -628,8 +628,8 @@ describe("ExerciseListContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/ex-1");
   });
 
-  it("raises the create-sheet signal when onCreateExercise fires", async () => {
-    useTrainSegment.setState({ pendingCreate: false });
+  it("opens the create sheet when onCreateExercise fires", async () => {
+    useCreateExerciseSheet.setState({ open: false });
     const { adapters } = createTestAdapters();
 
     const { getByTestId } = render(
@@ -642,11 +642,11 @@ describe("ExerciseListContainer", () => {
       expect(getByTestId("presenter-stub")).toBeTruthy();
     });
 
-    // The empty-state CTA asks the Train hub (the sheet owner) to open the
-    // Create-Exercise sheet via the shared `pendingCreate` signal — it no
-    // longer pushes the deleted full-screen route.
+    // The empty-state CTA opens the root-mounted Create-Exercise sheet via the
+    // shared open-state store — it no longer pushes the deleted full-screen
+    // route.
     fireEvent.press(getByTestId("stub-create-exercise"));
-    expect(useTrainSegment.getState().pendingCreate).toBe(true);
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
     expect(mockPush).not.toHaveBeenCalled();
   });
 

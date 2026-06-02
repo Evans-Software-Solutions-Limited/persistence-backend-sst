@@ -8,6 +8,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { CreateExerciseSheetContainer } from "@/ui/containers/CreateExerciseSheetContainer";
@@ -56,6 +57,9 @@ describe("CreateExerciseSheetContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useExerciseLibrary.setState({ revision: 0 });
+    // The container reads its visibility from the store; open it so the form
+    // renders. (It's mounted once at the root layout in production.)
+    useCreateExerciseSheet.setState({ open: true });
   });
 
   afterEach(() => {
@@ -66,12 +70,8 @@ describe("CreateExerciseSheetContainer", () => {
   it("creates a custom exercise: local cache + queued POST + library signal", async () => {
     jest.useFakeTimers();
     const storage = new InMemoryStorageAdapter();
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
-      withAdapters(
-        makeAdapters(storage),
-        <CreateExerciseSheetContainer visible onClose={onClose} />,
-      ),
+      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
     );
 
     fireEvent.changeText(getByTestId("exercise-form-name"), "Incline Press");
@@ -107,17 +107,16 @@ describe("CreateExerciseSheetContainer", () => {
     act(() => {
       jest.advanceTimersByTime(700);
     });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(useCreateExerciseSheet.getState().open).toBe(false);
   });
 
   it("blocks save when signed out and warns the user", async () => {
     const storage = new InMemoryStorageAdapter();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
       withAdapters(
         makeAdapters(storage, null),
-        <CreateExerciseSheetContainer visible onClose={onClose} />,
+        <CreateExerciseSheetContainer />,
       ),
     );
 
@@ -132,18 +131,14 @@ describe("CreateExerciseSheetContainer", () => {
     );
     expect(storage.getCachedExercises()).toHaveLength(0);
     expect(useExerciseLibrary.getState().revision).toBe(0);
-    expect(onClose).not.toHaveBeenCalled();
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
   });
 
   it("surfaces a domain validation failure without persisting", async () => {
     const storage = new InMemoryStorageAdapter();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
-      withAdapters(
-        makeAdapters(storage),
-        <CreateExerciseSheetContainer visible onClose={onClose} />,
-      ),
+      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
     );
 
     // One non-blank char passes the Save-disabled guard but fails the
@@ -156,7 +151,7 @@ describe("CreateExerciseSheetContainer", () => {
     expect(alertSpy).toHaveBeenCalledWith("Invalid input", expect.any(String));
     expect(storage.getCachedExercises()).toHaveLength(0);
     expect(useExerciseLibrary.getState().revision).toBe(0);
-    expect(onClose).not.toHaveBeenCalled();
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
   });
 
   it("falls back to a generic message when the error carries no fields", async () => {
@@ -170,12 +165,8 @@ describe("CreateExerciseSheetContainer", () => {
         ok: false,
         error: { kind: "validation", fields: {} },
       });
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
-      withAdapters(
-        makeAdapters(storage),
-        <CreateExerciseSheetContainer visible onClose={onClose} />,
-      ),
+      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
     );
 
     fireEvent.changeText(getByTestId("exercise-form-name"), "Incline Press");
@@ -187,6 +178,6 @@ describe("CreateExerciseSheetContainer", () => {
       "Invalid input",
       "Failed to save exercise",
     );
-    expect(onClose).not.toHaveBeenCalled();
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
   });
 });

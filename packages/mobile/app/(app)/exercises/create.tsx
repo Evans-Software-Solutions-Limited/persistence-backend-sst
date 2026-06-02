@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { useEffect } from "react";
 import { View } from "@tamagui/core";
 
+import { useCreateExerciseSheet } from "../../../src/state/createExerciseSheet";
 import { useTrainSegment } from "../../../src/ui/hooks/useTrainSegment";
 
 /**
@@ -10,11 +11,11 @@ import { useTrainSegment } from "../../../src/ui/hooks/useTrainSegment";
  * Spec: specs/04-workout-management/requirements.md STORY-006 AC 6.6
  *
  * The full-screen exercise creator is gone — exercise creation is now the
- * <CreateExerciseSheetContainer> bottom-sheet inside the Train hub (04.3).
- * This route survives only as the redirect target for legacy
+ * <CreateExerciseSheetContainer> bottom-sheet mounted at the root layout
+ * (04.3). This route survives only as the redirect target for legacy
  * `/exercises/create` deep links: it switches the Train hub to the Exercises
- * segment, raises the `pendingCreate` flag (the hub's open-sheet signal), and
- * replaces itself with the Train tab so the sheet opens over the hub.
+ * segment, opens the create sheet, and replaces itself with the Train tab so
+ * the sheet opens over the hub.
  *
  * Revised 2026-06-02 (Phase 04.3): kept as a redirect stub rather than
  * hard-deleted. AC 6.6 calls for deleting the route + a redirect in
@@ -25,9 +26,8 @@ import { useTrainSegment } from "../../../src/ui/hooks/useTrainSegment";
  */
 export default function CreateExerciseRedirect() {
   useEffect(() => {
-    const train = useTrainSegment.getState();
-    train.setSegment("Exercises");
-    train.setPendingCreate(true);
+    useTrainSegment.getState().setSegment("Exercises");
+    useCreateExerciseSheet.getState().openSheet();
     router.replace("/(app)/(tabs)/train");
   }, []);
 

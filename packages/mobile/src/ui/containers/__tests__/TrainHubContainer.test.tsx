@@ -43,25 +43,12 @@ jest.mock("@/ui/containers/ExerciseListContainer", () => {
   };
 });
 
-// The create sheet has its own container test (needs the adapter provider).
-// Here it's a lightweight visibility marker so we can assert the hub opens it.
-jest.mock("@/ui/containers/CreateExerciseSheetContainer", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Text } = require("react-native");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
-  return {
-    CreateExerciseSheetContainer: ({ visible }: { visible: boolean }) =>
-      visible
-        ? React.createElement(Text, { testID: "create-sheet" }, "create sheet")
-        : null,
-  };
-});
-
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+// eslint-disable-next-line import/first
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 // eslint-disable-next-line import/first
 import { TrainHubContainer } from "@/ui/containers/TrainHubContainer";
 
@@ -77,6 +64,7 @@ beforeEach(() => {
     pendingCreate: false,
     hydrated: true,
   });
+  useCreateExerciseSheet.setState({ open: false });
 });
 
 describe("TrainHubContainer", () => {
@@ -123,27 +111,13 @@ describe("TrainHubContainer", () => {
 
   it("Create on the Exercises segment opens the create sheet", () => {
     useTrainSegment.setState({ segment: "Exercises", hydrated: true });
-    const { getByText, getByTestId, queryByTestId } = renderWithTheme(
-      <TrainHubContainer />,
-    );
+    const { getByText } = renderWithTheme(<TrainHubContainer />);
 
-    expect(queryByTestId("create-sheet")).toBeNull();
+    expect(useCreateExerciseSheet.getState().open).toBe(false);
     fireEvent.press(getByText("Create"));
 
-    expect(getByTestId("create-sheet")).toBeTruthy();
+    // The sheet is mounted at the root layout; the hub just flips the store.
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
     expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("consumes a pendingCreate flag on mount: opens the sheet + clears the flag", () => {
-    useTrainSegment.setState({
-      segment: "Exercises",
-      pendingCreate: true,
-      hydrated: true,
-    });
-
-    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
-
-    expect(getByTestId("create-sheet")).toBeTruthy();
-    expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 });

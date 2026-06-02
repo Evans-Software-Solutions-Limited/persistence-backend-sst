@@ -9,12 +9,12 @@ import {
 import type { Exercise } from "@/domain/models/exercise";
 import { filterExercises } from "@/domain/services/exercise.service";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
-import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 
 const SEARCH_DEBOUNCE_MS = 300;
 /**
@@ -280,12 +280,10 @@ export function ExerciseListContainer() {
   );
 
   const onCreateExercise = useCallback(() => {
-    // Empty-state CTA → ask the Train hub to open the Create-Exercise sheet.
-    // `pendingCreate` is the hub's shared open-sheet signal (consumed in
-    // TrainHubContainer's effect). The hub owns the sheet; this list is a
-    // sibling body, so it signals up through the segment store rather than
-    // mounting its own sheet.
-    useTrainSegment.getState().setPendingCreate(true);
+    // Empty-state CTA → open the Create-Exercise sheet (mounted at the root
+    // layout). Shared open-state store, so this sibling body doesn't mount
+    // its own sheet.
+    useCreateExerciseSheet.getState().openSheet();
   }, []);
 
   /**

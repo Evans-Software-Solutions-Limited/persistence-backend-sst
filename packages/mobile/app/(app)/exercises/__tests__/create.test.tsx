@@ -1,3 +1,4 @@
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -13,13 +14,14 @@ describe("/exercises/create redirect stub", () => {
   beforeEach(() => {
     mockReplace.mockReset();
     useTrainSegment.setState({ segment: "Workouts", pendingCreate: false });
+    useCreateExerciseSheet.setState({ open: false });
   });
 
-  it("switches to Exercises, raises pendingCreate, and replaces with the Train tab", () => {
+  it("switches to Exercises, opens the create sheet, and replaces with the Train tab", () => {
     renderWithTheme(<CreateExerciseRedirect />);
 
     expect(useTrainSegment.getState().segment).toBe("Exercises");
-    expect(useTrainSegment.getState().pendingCreate).toBe(true);
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
     expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/train");
   });
 });

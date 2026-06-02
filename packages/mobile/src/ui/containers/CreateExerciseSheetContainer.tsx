@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Alert } from "react-native";
 
 import { createExerciseCommand } from "@/application/commands/create-exercise.command";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import {
   toCreateExerciseInput,
   type NewExerciseInput,
@@ -13,31 +14,31 @@ import { CreateExerciseSheetPresenter } from "@/ui/presenters/CreateExerciseShee
 
 /**
  * <CreateExerciseSheetContainer> — wires the Create-Exercise sheet to the
- * offline-first `createExerciseCommand`. Mounted inside <TrainHubContainer>.
+ * offline-first `createExerciseCommand`.
+ *
+ * Mounted ONCE at the root `(app)/_layout.tsx` (a sibling of the Stack, like
+ * <ProfileDrawerContainer>) so the sheet overlays the bottom tab bar. Open
+ * state comes from the `useCreateExerciseSheet` store rather than props —
+ * the Train hub action, the Exercises empty-state CTA, and the
+ * `/exercises/create` deep-link stub all call `openSheet()`.
  *
  * Spec: specs/04-workout-management/design.md § <CreateExerciseSheetPresenter>
  *       — Container; requirements.md STORY-006 (AC 6.3, 6.4, 6.5)
  *
  * The command validates → writes the new exercise to the local cache with a
  * `local-*` id → enqueues a POST /exercises mutation for the sync engine. On
- * success we bump the shared library revision so the (sibling) exercise list
- * re-reads and the new exercise appears under the "Mine" filter without a
- * reload. The mutation never awaits the network — fully offline-capable.
+ * success we bump the shared library revision so the exercise list re-reads
+ * and the new exercise appears under the "Mine" filter without a reload. The
+ * mutation never awaits the network — fully offline-capable.
  *
  * Note: the coarse UI labels convert to the granular domain enum *keys*
  * (`"chest"`, `"barbell"`) per design.md's conversion layer — NOT reference-
  * list UUIDs. Resolving labels → UUIDs for the create payload is deferred
  * (it touches the adapter layer, which STORY-009 freezes for this spec).
  */
-export type CreateExerciseSheetContainerProps = {
-  visible: boolean;
-  onClose: () => void;
-};
-
-export function CreateExerciseSheetContainer({
-  visible,
-  onClose,
-}: CreateExerciseSheetContainerProps) {
+export function CreateExerciseSheetContainer() {
+  const visible = useCreateExerciseSheet((s) => s.open);
+  const onClose = useCreateExerciseSheet((s) => s.closeSheet);
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
