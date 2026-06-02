@@ -4,6 +4,12 @@ import { View } from "react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Btn, type BtnSize, type BtnTone, type BtnVariant } from "../Btn";
 
+/** Icon stub that surfaces the `color` it was rendered with (via
+ * accessibilityLabel) so tests can assert <Btn>'s icon tint. */
+function ColorProbe({ color }: { color?: string }) {
+  return <View testID="probe-icon" accessibilityLabel={color ?? "none"} />;
+}
+
 const VARIANTS: BtnVariant[] = ["filled", "outline", "ghost", "soft"];
 const TONES: BtnTone[] = [
   "primary",
@@ -101,6 +107,30 @@ describe("Btn", () => {
       </Btn>,
     );
     expect(getByTestId("btn-icon")).toBeTruthy();
+  });
+
+  it("tints the icon to the foreground colour (non-filled uses the tone base)", () => {
+    const { getByTestId } = renderWithTheme(
+      <Btn
+        onPress={() => undefined}
+        variant="soft"
+        tone="primary"
+        icon={<ColorProbe />}
+      >
+        Create
+      </Btn>,
+    );
+    // soft/outline/ghost label colour is the tone base; the icon must match.
+    expect(getByTestId("probe-icon").props.accessibilityLabel).toBe("#22D3EE");
+  });
+
+  it("preserves a caller-set concrete icon colour", () => {
+    const { getByTestId } = renderWithTheme(
+      <Btn onPress={() => undefined} icon={<ColorProbe color="#abcabc" />}>
+        Go
+      </Btn>,
+    );
+    expect(getByTestId("probe-icon").props.accessibilityLabel).toBe("#abcabc");
   });
 
   it("stretches when full", () => {

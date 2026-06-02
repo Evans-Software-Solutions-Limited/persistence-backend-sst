@@ -8,18 +8,12 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 // change. Uses a jest.mock on the components barrel to count how many
 // times ExerciseCard is actually invoked.
 
-jest.mock("@expo/vector-icons", () => {
-  const { Text } = jest.requireActual("react-native");
-  const Ionicons = ({ name }: { name: string }) => (
-    <Text testID={`icon-${name}`}>{name}</Text>
-  );
-  return { Ionicons };
-});
-
 const mockExerciseCardRenderSpy = jest.fn();
 
-jest.mock("@/ui/components", () => {
-  const actual = jest.requireActual("@/ui/components");
+// The presenter imports the LIBRARY card from `@/ui/components/exercises/
+// ExerciseCard` (distinct from the root card). Mock that module so we can
+// count actual cell renders.
+jest.mock("@/ui/components/exercises/ExerciseCard", () => {
   const React = jest.requireActual("react") as typeof import("react");
   const memoisedCard = React.memo(function SpiedExerciseCard(props: {
     exercise: { id: string };
@@ -32,10 +26,7 @@ jest.mock("@/ui/components", () => {
     ) as typeof import("react-native");
     return <Text testID={props.testID}>{props.exercise.id}</Text>;
   });
-  return {
-    ...actual,
-    ExerciseCard: memoisedCard,
-  };
+  return { ExerciseCard: memoisedCard };
 });
 
 // eslint-disable-next-line import/first

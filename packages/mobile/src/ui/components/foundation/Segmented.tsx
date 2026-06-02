@@ -9,9 +9,11 @@ import { toneTokens } from "./tones";
  * Implements 01-design-system/design.md § Foundation primitives #9 +
  * STORY-003 AC 3.7 + locked decision #9 (2-5 options).
  *
- * Equal-width inline segments, $surface2 track, active segment $surface4 fill
- * + accent-dim shadow ring. With ≥4 options on a narrow (<360pt) viewport the
- * control auto-scrolls horizontally rather than truncating labels.
+ * Content-width inline segments (each hugs its label, per the prototype's
+ * `inline-flex` track — the control does NOT stretch full-width), $surface2
+ * track left-aligned, active segment $surface4 fill + accent-dim shadow ring.
+ * With ≥4 options on a narrow (<360pt) viewport the control auto-scrolls
+ * horizontally rather than truncating labels.
  */
 
 export type SegmentedOption = string | { value: string; label: string };
@@ -72,7 +74,6 @@ export function Segmented({
         accessibilityState={{ selected: isActive }}
         accessibilityLabel={label}
         style={{
-          flex: scrollable ? undefined : 1,
           minHeight: spec.height - spec.padding * 2,
         }}
       >
@@ -106,6 +107,7 @@ export function Segmented({
       accessibilityRole="tablist"
       flexDirection="row"
       alignItems="center"
+      alignSelf="flex-start"
       gap={2}
       padding={spec.padding}
       borderRadius={12}

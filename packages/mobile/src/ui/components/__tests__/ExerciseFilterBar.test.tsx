@@ -2,14 +2,6 @@ import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { ExerciseFilterBar } from "../ExerciseFilterBar";
 
-jest.mock("@expo/vector-icons", () => {
-  const { Text } = jest.requireActual("react-native");
-  const Ionicons = ({ name }: { name: string }) => (
-    <Text testID={`icon-${name}`}>{name}</Text>
-  );
-  return { Ionicons };
-});
-
 function makeProps(
   overrides: Partial<Parameters<typeof ExerciseFilterBar>[0]> = {},
 ) {
@@ -26,24 +18,27 @@ function makeProps(
 }
 
 describe("ExerciseFilterBar", () => {
-  it("renders the leading filter-modal trigger with the options icon", () => {
+  it("renders the leading filter-modal trigger", () => {
     const { getByTestId } = renderWithTheme(
       <ExerciseFilterBar {...makeProps()} />,
     );
     expect(getByTestId("filter-modal-trigger")).toBeTruthy();
-    expect(getByTestId("icon-options-outline")).toBeTruthy();
   });
 
-  it("shows the active dot on the trigger only when advanced filters are set", () => {
-    const { queryByTestId, rerender } = renderWithTheme(
+  it("tints the trigger active only when advanced filters are set", () => {
+    const { getByTestId, rerender } = renderWithTheme(
       <ExerciseFilterBar {...makeProps({ hasAdvancedFilters: false })} />,
     );
-    expect(queryByTestId("filter-modal-trigger-dot")).toBeNull();
+    expect(
+      getByTestId("filter-modal-trigger").props.accessibilityState?.selected,
+    ).toBe(false);
 
     rerender(
       <ExerciseFilterBar {...makeProps({ hasAdvancedFilters: true })} />,
     );
-    expect(queryByTestId("filter-modal-trigger-dot")).toBeTruthy();
+    expect(
+      getByTestId("filter-modal-trigger").props.accessibilityState?.selected,
+    ).toBe(true);
   });
 
   it("fires onOpenFilterModal when the trigger is pressed", () => {

@@ -1,28 +1,33 @@
-import { Ionicons } from "@expo/vector-icons";
-import { View, Text as TamaguiText } from "@tamagui/core";
+import { Text, View } from "@tamagui/core";
 import { useCallback } from "react";
 import {
   FlatList,
-  RefreshControl,
-  StyleSheet,
-  TextInput,
   type ListRenderItemInfo,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn } from "react-native-reanimated";
+
 import type { Exercise } from "@/domain/models/exercise";
+import { Column, EmptyState, ErrorState, Skeleton } from "@/ui/components";
 import {
-  Column,
-  EmptyState,
-  ErrorState,
-  ExerciseCard,
   ExerciseFilterBar,
-  Row,
-  Skeleton,
-  Text,
-} from "@/ui/components";
-import type { QuickFilterId } from "@/ui/components/ExerciseFilterBar";
-import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
+  type QuickFilterId,
+} from "@/ui/components/ExerciseFilterBar";
+import { SearchBar } from "@/ui/components/composite/SearchBar";
+import { ExerciseCard } from "@/ui/components/exercises/ExerciseCard";
+import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
+
+/**
+ * Pure presenter for the Train > Exercises segment — the headerless body
+ * under <TrainHubContainer> (the hub owns the eyebrow/title + the Create
+ * action + the Segmented switcher).
+ *
+ * Layout source: ~/Downloads/handoff/design-source/prototype-hubs.jsx:95–146
+ * (`TrainExercisesContent`): <SearchBar> + a leading filter <IconBtn> +
+ * horizontal <FilterChip> rail + a list of library <ExerciseCard>s. The
+ * skeleton / stale / empty / error affordances are preserved offline UX (the
+ * static prototype mock doesn't depict them).
+ */
 
 export type ExerciseListPresenterProps = {
   exercises: Exercise[];
@@ -43,11 +48,7 @@ export type ExerciseListPresenterProps = {
   onRefresh: () => void;
   onSelectExercise: (id: string) => void;
   onCreateExercise: () => void;
-  /**
-   * Long-press handler on exercise cards. Used to trigger the
-   * destructive-delete Alert (AC 7.17). Optional — presenter renders
-   * the same cards with or without it.
-   */
+  /** Long-press → destructive-delete Alert (AC 7.17). Optional. */
   onLongPressExercise?: (id: string) => void;
   /** Injectable clock for deterministic "Updated X ago" rendering in tests. */
   now?: () => number;
@@ -73,6 +74,10 @@ function keyExtractor(exercise: Exercise): string {
   return exercise.id;
 }
 
+function Separator() {
+  return <View height={8} />;
+}
+
 export function ExerciseListPresenter({
   exercises,
   searchInput,
@@ -95,17 +100,7 @@ export function ExerciseListPresenter({
   now = Date.now,
 }: ExerciseListPresenterProps) {
   const insets = useSafeAreaInsets();
-  const headerStyle = useStaggeredEntry(0);
-  const searchStyle = useStaggeredEntry(1);
-  const filterStyle = useStaggeredEntry(2);
-  const listStyle = useStaggeredEntry(3);
 
-  // Stabilise `renderItem` reference so FlatList's cell-level memoisation
-  // isn't defeated when unrelated props (isRefreshing, searchInput, etc.)
-  // change. Combined with `React.memo` on `ExerciseCard`, only the affected
-  // cells re-render when the exercises array itself changes. Depends only
-  // on `onSelectExercise`, which the container memoises via useCallback
-  // with a stable router reference.
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<Exercise>) => (
       <ExerciseCard
@@ -167,132 +162,58 @@ export function ExerciseListPresenter({
   ]);
 
   return (
-    <View
-      flex={1}
-      backgroundColor="$background"
-      testID="exercise-list-screen"
-      style={{ paddingTop: insets.top }}
-    >
-      {/* Header: title only. No counter, no right-action button. */}
-      <Animated.View style={headerStyle}>
-        <View paddingHorizontal="$base" paddingTop="$base" paddingBottom="$md">
-          <TamaguiText
-            fontFamily="$heading"
-            fontSize={28}
-            lineHeight={34}
-            fontWeight="700"
-            color="$color"
-            letterSpacing={-0.5}
-            testID="exercise-list-title"
-          >
-            Exercises
-          </TamaguiText>
-        </View>
-      </Animated.View>
+    <View flex={1} backgroundColor="$bg" testID="exercise-list-screen">
+      <View paddingHorizontal={16} paddingBottom={12}>
+        <SearchBar
+          testID="exercise-search"
+          placeholder="Search exercises"
+          value={searchInput}
+          onChangeText={onSearchChange}
+        />
+      </View>
 
-      {/* Search bar with inline create (+) affordance. */}
-      <Animated.View style={searchStyle}>
-        <View paddingHorizontal="$base" paddingBottom="$md">
-          <Row gap="sm">
-            <View
-              flex={1}
-              flexDirection="row"
-              alignItems="center"
-              height={48}
-              backgroundColor="$surfaceSecondary"
-              borderRadius="$lg"
-              paddingHorizontal="$base"
-            >
-              <Ionicons name="search-outline" size={20} color="#8E8E9A" />
-              <TextInput
-                value={searchInput}
-                onChangeText={onSearchChange}
-                placeholder="Search exercises"
-                placeholderTextColor="#8E8E9A"
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="exercise-search-input"
-                style={styles.searchField}
-              />
-              {searchInput.length > 0 && (
-                <View
-                  onPress={() => onSearchChange("")}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear search"
-                  testID="exercise-search-clear"
-                  padding="$xs"
-                >
-                  <Ionicons name="close-circle" size={18} color="#8E8E9A" />
-                </View>
-              )}
-            </View>
-            <View
-              width={48}
-              height={48}
-              borderRadius="$lg"
-              borderWidth={1}
-              borderColor="$primary"
-              backgroundColor="transparent"
-              alignItems="center"
-              justifyContent="center"
-              onPress={onCreateExercise}
-              accessibilityRole="button"
-              accessibilityLabel="Create new exercise"
-              testID="create-exercise-button"
-              pressStyle={{
-                backgroundColor: "$primary",
-                opacity: 0.9,
-                scale: 0.97,
-              }}
-            >
-              <Ionicons name="add" size={22} color="#00D4FF" />
-            </View>
-          </Row>
-        </View>
-      </Animated.View>
+      <View paddingBottom={12}>
+        <ExerciseFilterBar
+          selectedQuickFilters={selectedQuickFilters}
+          hasAdvancedFilters={hasAdvancedFilters}
+          onToggleQuickFilter={onToggleQuickFilter}
+          onOpenFilterModal={onOpenFilterModal}
+          testID="exercise-filter-bar"
+        />
+      </View>
 
-      {/* Curated quick-filter rail. No more muscle grid on the main screen. */}
-      <Animated.View style={filterStyle}>
-        <View paddingBottom="$md">
-          <ExerciseFilterBar
-            selectedQuickFilters={selectedQuickFilters}
-            hasAdvancedFilters={hasAdvancedFilters}
-            onToggleQuickFilter={onToggleQuickFilter}
-            onOpenFilterModal={onOpenFilterModal}
-            testID="exercise-filter-bar"
-          />
-        </View>
-      </Animated.View>
-
-      {/* Inline stale metadata strip — never obstructs content. */}
+      {/* Inline stale strip — never obstructs content. */}
       {isStale && !showSkeleton && loadError === null && (
-        <Animated.View entering={FadeIn.duration(200)}>
-          <View
-            paddingHorizontal="$base"
-            paddingBottom="$sm"
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="space-between"
-          >
-            <Row gap="sm">
-              <View
-                width={6}
-                height={6}
-                borderRadius="$full"
-                backgroundColor="$warning"
-              />
-              <Text variant="caption" muted testID="exercise-list-stale-banner">
-                {describeSyncAge(lastSyncedAt, now)}
-              </Text>
-            </Row>
-            <Text variant="caption" muted>
-              Pull to refresh
+        <View
+          paddingHorizontal={16}
+          paddingBottom={8}
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="space-between"
+        >
+          <View flexDirection="row" alignItems="center" gap={8}>
+            <View
+              width={6}
+              height={6}
+              borderRadius={9999}
+              backgroundColor={toneHex("gold").base}
+            />
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              color="$text3"
+              testID="exercise-list-stale-banner"
+            >
+              {describeSyncAge(lastSyncedAt, now)}
             </Text>
           </View>
-        </Animated.View>
+          <Text fontFamily="$body" fontSize={12} color="$text3">
+            Pull to refresh
+          </Text>
+        </View>
       )}
 
-      <Animated.View style={[listStyle, styles.flex]}>
+      <View flex={1}>
         <FlatList
           data={exercises}
           keyExtractor={keyExtractor}
@@ -301,7 +222,7 @@ export function ExerciseListPresenter({
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={onRefresh}
-              tintColor="#00D4FF"
+              tintColor={NEUTRAL_HEX.text3}
               testID="exercise-list-refresh-control"
             />
           }
@@ -315,22 +236,7 @@ export function ExerciseListPresenter({
           showsVerticalScrollIndicator={false}
           testID="exercise-list"
         />
-      </Animated.View>
+      </View>
     </View>
   );
 }
-
-function Separator() {
-  return <View height={12} />;
-}
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  searchField: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontSize: 16,
-    marginLeft: 10,
-    paddingVertical: 0,
-  },
-});
