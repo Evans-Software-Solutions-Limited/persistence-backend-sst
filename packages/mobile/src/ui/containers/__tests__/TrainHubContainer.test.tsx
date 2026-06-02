@@ -43,6 +43,21 @@ jest.mock("@/ui/containers/ExerciseListContainer", () => {
   };
 });
 
+// The create sheet has its own container test (needs the adapter provider).
+// Here it's a lightweight visibility marker so we can assert the hub opens it.
+jest.mock("@/ui/containers/CreateExerciseSheetContainer", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  return {
+    CreateExerciseSheetContainer: ({ visible }: { visible: boolean }) =>
+      visible
+        ? React.createElement(Text, { testID: "create-sheet" }, "create sheet")
+        : null,
+  };
+});
+
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
@@ -106,25 +121,29 @@ describe("TrainHubContainer", () => {
     );
   });
 
-  it("Create on the Exercises segment routes to the exercise creator", () => {
+  it("Create on the Exercises segment opens the create sheet", () => {
     useTrainSegment.setState({ segment: "Exercises", hydrated: true });
-    const { getByText } = renderWithTheme(<TrainHubContainer />);
+    const { getByText, getByTestId, queryByTestId } = renderWithTheme(
+      <TrainHubContainer />,
+    );
 
+    expect(queryByTestId("create-sheet")).toBeNull();
     fireEvent.press(getByText("Create"));
 
-    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
+    expect(getByTestId("create-sheet")).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("consumes a pendingCreate flag on mount: opens the creator + clears the flag", () => {
+  it("consumes a pendingCreate flag on mount: opens the sheet + clears the flag", () => {
     useTrainSegment.setState({
       segment: "Exercises",
       pendingCreate: true,
       hydrated: true,
     });
 
-    renderWithTheme(<TrainHubContainer />);
+    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
 
-    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
+    expect(getByTestId("create-sheet")).toBeTruthy();
     expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 });

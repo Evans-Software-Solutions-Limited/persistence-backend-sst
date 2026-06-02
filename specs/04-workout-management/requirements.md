@@ -124,6 +124,11 @@ Legacy reference (V1 behavioural source of truth per `_agent.md`): `../persisten
 - 6.5 [ ] On success, sheet closes with a 700ms "Saved ✓" affirmation per `create-exercise.jsx:43–47`, and the new exercise appears at the top of the Mine filter on the Exercises segment.
 - 6.6 [ ] The full-screen `(app)/exercises/create.tsx` route is **DELETED** — the sheet replaces it. Deep links pointing to `/exercises/create` redirect to opening the sheet over the current segment.
 
+> **Revised 2026-06-02 (Phase 04.3 implementation):**
+>
+> - **AC 6.2 — Cardio chip dropped.** The prototype lists `Cardio` in the PRIMARY MUSCLE radio set, but V2's `validateExerciseInput` requires ≥1 primary muscle group and there is no `cardio`/`full-body` entry in the `MuscleGroup` enum, so the design's `Cardio → []` conversion fails validation on Save. The picker ships with the six remaining muscles (Chest, Back, Legs, Shoulders, Arms, Core); `category` is always `strength`. Treating Cardio as a first-class _category_ (its own muscle-optional path) is a larger, dedicated future slice — deferred per Brad's call (2026-06-02).
+> - **AC 6.6 — redirect stub, not a hard delete.** `create.tsx` is converted to a redirect stub (segment→Exercises, raise `pendingCreate`, `router.replace` to the Train tab) rather than deleted outright. The intended redirect home — `14-navigation`'s Phase-14.7 `LegacyRedirects` map — is deferred and unbuilt, so a hard delete would 404 the deep link. The full-screen creator UI (`DevExerciseCreatorContainer`) is removed; the route file remains solely as the self-contained redirect until 14.7 lands. `pendingCreate` doubles as the in-app open-sheet signal (Exercises empty-state CTA).
+
 ### STORY-007: As a user, I want to view an exercise's full detail
 
 **Acceptance Criteria:**

@@ -250,6 +250,8 @@ function muscleToTone(muscle: MuscleGroup | undefined): CardAccent {
 
 Replaces V2's full-screen `(app)/exercises/create.tsx`. Per `create-exercise.jsx:19–203`.
 
+> **Revised 2026-06-02 (Phase 04.3 implementation):** Three deltas from the design below, all detailed in `requirements.md` STORY-006 revision + `tasks.md` Phase 04.3 revision: (1) the **Cardio** chip is dropped (the `Cardio → []` mapping fails `validateExerciseInput`'s ≥1-primary-muscle rule; cardio-as-category deferred), so `MuscleLabel` is the six muscles below and `category` is always `"strength"`; (2) form state is controlled `value`/`onChange`, not `react-hook-form` (not a dependency); (3) the container wires the real `createExerciseCommand` — there is **no** `useCreateExercise()` hook — and bumps a `useExerciseLibrary` signal on success so the sibling list re-reads (AC 6.5).
+
 ```ts
 type CreateExerciseSheetProps = {
   visible: boolean;

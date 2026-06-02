@@ -15,6 +15,7 @@ import type { Adapters } from "@/shared/types";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ExerciseFiltersProvider } from "@/ui/hooks/useExerciseFilters";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import config from "../../../../tamagui.config";
 import { ExerciseListContainer } from "../ExerciseListContainer";
 
@@ -627,7 +628,8 @@ describe("ExerciseListContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/ex-1");
   });
 
-  it("navigates to the create route when onCreateExercise fires", async () => {
+  it("raises the create-sheet signal when onCreateExercise fires", async () => {
+    useTrainSegment.setState({ pendingCreate: false });
     const { adapters } = createTestAdapters();
 
     const { getByTestId } = render(
@@ -640,8 +642,12 @@ describe("ExerciseListContainer", () => {
       expect(getByTestId("presenter-stub")).toBeTruthy();
     });
 
+    // The empty-state CTA asks the Train hub (the sheet owner) to open the
+    // Create-Exercise sheet via the shared `pendingCreate` signal — it no
+    // longer pushes the deleted full-screen route.
     fireEvent.press(getByTestId("stub-create-exercise"));
-    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
+    expect(useTrainSegment.getState().pendingCreate).toBe(true);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("navigates to the filters modal when onOpenFilterModal fires", async () => {

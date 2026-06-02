@@ -23,13 +23,15 @@
 
 ## Phase 04.3 — CreateExerciseSheet (1 PR)
 
-- [ ] **T-04.3.1** Author `<ExerciseFormFields>` shared internal component covering name + photo + primary muscle + secondary muscles + equipment + level + instructions. Used by both sheet and full-screen editor. Implements STORY-006 + STORY-008 ACs.
-- [ ] **T-04.3.2** Author `<CreateExerciseSheetPresenter>` per `design.md § CreateExerciseSheetPresenter`. Uses `<BottomSheet>` + `<ExerciseFormFields>` + footer Cancel/Save. Implements STORY-006 ACs.
-- [ ] **T-04.3.3** Author `<CreateExerciseSheetContainer>` wiring `useCreateExercise()` (existing V2 mutation).
-- [ ] **T-04.3.4** Mount the sheet inside `<TrainHubContainer>` (per `design.md`). Closes STORY-006 AC 6.1.
-- [ ] **T-04.3.5** Delete `app/(app)/exercises/create.tsx`. Add deep-link redirect to `14-navigation`'s map. Closes STORY-006 AC 6.6.
-- [ ] **T-04.3.6** "Saved ✓" affirmation for 700ms after successful save before sheet closes. Closes STORY-006 AC 6.5.
-- [ ] **T-04.3.7** Form state via `react-hook-form`. Save button disabled until name is non-empty.
+- [x] **T-04.3.1** Author `<ExerciseFormFields>` shared internal component covering name + photo + primary muscle + secondary muscles + equipment + level + instructions. Used by both sheet and full-screen editor. Implements STORY-006 + STORY-008 ACs. _(Pure form-model + UI→domain conversion live alongside in `exerciseForm.ts`.)_
+- [x] **T-04.3.2** Author `<CreateExerciseSheetPresenter>` per `design.md § CreateExerciseSheetPresenter`. Uses `<BottomSheet>` (`height="tall"` = 88%) + `<ExerciseFormFields>` + live PREVIEW chip + footer Cancel/Save. Implements STORY-006 ACs.
+- [x] **T-04.3.3** Author `<CreateExerciseSheetContainer>` wiring `createExerciseCommand` (the real V2 mutation — there is no `useCreateExercise()` hook; the spec referenced one that never existed). Pulls `userId` from `useAuth`, `storage` from `useAdapters`; on success bumps `useExerciseLibrary` so the list re-reads (AC 6.5).
+- [x] **T-04.3.4** Mount the sheet inside `<TrainHubContainer>` (per `design.md`). Closes STORY-006 AC 6.1.
+- [x] **T-04.3.5** Convert `app/(app)/exercises/create.tsx` to a deep-link **redirect stub** (sets segment=Exercises + `pendingCreate`, replaces with the Train tab) rather than a hard delete + a `14-navigation` map entry. The 14.7 `LegacyRedirects` map is deferred/unbuilt, so a hard delete would 404 the deep link; the stub is the self-contained redirect home. The full-screen creator (`DevExerciseCreatorContainer` + its test) is removed as orphaned. Closes STORY-006 AC 6.6. _(See requirements revision 2026-06-02.)_
+- [x] **T-04.3.6** "Saved ✓" affirmation for 700ms after successful save before sheet closes. Closes STORY-006 AC 6.5.
+- [x] **T-04.3.7** Form state via controlled `value`/`onChange` (NOT `react-hook-form` — it isn't a dependency of `packages/mobile`, and the controlled contract keeps `<ExerciseFormFields>` portable between the sheet and the 04.6 editor). Save disabled until name is non-empty.
+
+> **Revised 2026-06-02 (Phase 04.3):** The prototype's **Cardio** primary-muscle chip is dropped for now — V2's `validateExerciseInput` requires ≥1 primary muscle and there's no `cardio`/`full-body` muscle enum, so the design's `Cardio → []` mapping would fail validation on Save. Cardio-as-a-category is a larger, dedicated future slice (Brad's call, 2026-06-02). Remaining labels each map to ≥1 valid muscle; `category` is always `"strength"`. Conversion emits domain enum _keys_ (`"chest"`, `"barbell"`) per `design.md`, not reference-list UUIDs (UUID resolution touches the adapter layer that STORY-009 freezes). The exercise-list refresh after a create uses a new `useExerciseLibrary` signal store (sheet bumps it, list folds it into its cache-read deps).
 
 ## Phase 04.4 — WorkoutDetail rewrite (1 PR)
 

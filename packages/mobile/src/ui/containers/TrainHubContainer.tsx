@@ -1,11 +1,11 @@
 import { Text, View } from "@tamagui/core";
-import { router } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
 import { IconPlus, IconSearch } from "@/ui/components/icons";
+import { CreateExerciseSheetContainer } from "@/ui/containers/CreateExerciseSheetContainer";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 
@@ -28,34 +28,32 @@ import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
  * The list BODIES (WorkoutsListContainer / ExerciseListContainer) are owned by
  * `04-workout-management`.
  *
- * Transitional note: ExerciseListContainer still renders its own legacy
- * header + search; 04.2 reworks it into a headerless body. Until then there's
- * a benign chrome overlap on the Exercises segment. The Create action + the
- * /exercises/create deep-link's `pendingCreate` flag route to the existing
- * full-screen creator until 04.3 ships the bottom-sheet.
+ * Create flow (04.3): the Create action opens a local
+ * <CreateExerciseSheetContainer> bottom-sheet. The `pendingCreate` flag is the
+ * shared "open the create sheet" signal — set by the `/exercises/create`
+ * deep-link redirect stub AND by the Exercises empty-state CTA — consumed
+ * once on change to open the sheet.
  */
 export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
   const pendingCreate = useTrainSegment((s) => s.pendingCreate);
   const clearPendingCreate = useTrainSegment((s) => s.clearPendingCreate);
+  const [sheetOpen, setSheetOpen] = useState(false);
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (battery/clock).
   const insets = useSafeAreaInsets();
 
-  const openCreateExercise = () => {
-    // TODO(04-workout-management § Sheet mount-point): replace the push with
-    // a local <CreateExerciseSheetContainer> bottom-sheet once 04.3 ships it.
-    router.push("/(app)/exercises/create");
-  };
+  const openCreateExercise = () => setSheetOpen(true);
 
-  // Legacy /exercises/create deep-links surface here via the redirect map
-  // (Phase 14.7). The redirect sets `pendingCreate`; consume + clear it once
-  // on mount so the creator opens exactly once.
+  // `pendingCreate` is the cross-surface "open the create sheet" signal:
+  // the /exercises/create deep-link redirect stub and the Exercises
+  // empty-state CTA both set it. Consume + clear it whenever it flips true
+  // so the sheet opens exactly once per request.
   useEffect(() => {
     if (pendingCreate) {
       clearPendingCreate();
-      openCreateExercise();
+      setSheetOpen(true);
     }
   }, [pendingCreate, clearPendingCreate]);
 
@@ -139,6 +137,10 @@ export function TrainHubContainer() {
           <ExerciseListContainer />
         )}
       </View>
+      <CreateExerciseSheetContainer
+        visible={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+      />
     </View>
   );
 }
