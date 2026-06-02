@@ -113,8 +113,11 @@ function ExerciseCardBase({
 
         {hasTags ? (
           <View flexDirection="row" gap={6} marginTop={8} flexWrap="wrap">
+            {/* Muscle + equipment tags stay neutral/subtle — the difficulty
+                pill is the card's single colour accent (mirrors the subtle
+                single-accent treatment on the Workouts rows). */}
             {muscle ? (
-              <Pill tone="primary" size="xs">
+              <Pill tone="neutral" size="xs">
                 {muscle}
               </Pill>
             ) : null}

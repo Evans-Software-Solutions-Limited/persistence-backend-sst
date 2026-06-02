@@ -1,12 +1,17 @@
 import { Text, View } from "@tamagui/core";
-import type { ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   type AccessibilityState,
   Pressable,
   type ViewStyle,
 } from "react-native";
 
-import { type Tone, toneTokens } from "./tones";
+import { type Tone, toneHex, toneTokens } from "./tones";
 
 /**
  * <Btn> — primary button. 4 variants × 6 tones × 3 sizes.
@@ -108,6 +113,24 @@ export function Btn({
   const spec = SIZE_SPEC[size];
   const vs = variantStyle(variant, tone);
 
+  // Tint the icon glyph to match the button's text colour — lucide/SVG can't
+  // resolve a Tamagui `$token`, so use the concrete hex. `filled` reads ink-
+  // on-tone; the other variants read the tone base (same as the label). A
+  // caller-set concrete colour is preserved.
+  const iconHex = variant === "filled" ? toneHex(tone).ink : toneHex(tone).base;
+  const existingIconColor = (icon as { props?: { color?: unknown } })?.props
+    ?.color;
+  const tintedIcon =
+    isValidElement(icon) &&
+    !(
+      typeof existingIconColor === "string" &&
+      existingIconColor !== "currentColor"
+    )
+      ? cloneElement(icon as ReactElement<{ color?: string }>, {
+          color: iconHex,
+        })
+      : icon;
+
   const pressableStyle: ViewStyle = {
     minHeight: spec.height,
     width: full ? "100%" : undefined,
@@ -141,7 +164,7 @@ export function Btn({
         borderColor={vs.borderColor}
         borderWidth={vs.borderWidth}
       >
-        {icon ? <View flexDirection="row">{icon}</View> : null}
+        {tintedIcon ? <View flexDirection="row">{tintedIcon}</View> : null}
         <Text
           fontFamily="$display"
           fontWeight="600"
