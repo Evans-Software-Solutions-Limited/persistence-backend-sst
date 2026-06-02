@@ -12,12 +12,14 @@
 - [x] **T-04.1.4** Update presenter tests for the new structure (three sections, empty state, quota indicator).
 - [ ] **T-04.1.5** Visual regression screenshots vs `library.jsx`. _(Deferred to reviewer's on-device pass — RN UI can't be screenshotted from the build env.)_
 
-## Phase 04.2 — ExerciseList rewrite (1 PR)
+## Phase 04.2 — ExerciseList rewrite (PR #96)
 
-- [ ] **T-04.2.1** Author `<FilterChip>` + `<ExerciseCard>` composites in `packages/mobile/src/ui/components/exercises/`. Tests + smoke route. Implements STORY-005 AC 5.5.
-- [ ] **T-04.2.2** Rewrite `<ExerciseListPresenter>` to use `<SearchBar>` (from `01-design-system`) + horizontally-scrolling chip row + `FlashList` of `<ExerciseCard>`. Implements STORY-005 ACs.
-- [ ] **T-04.2.3** Rewire `<ExerciseListContainer>` to mount under `<TrainHubContainer>`'s Exercises segment.
-- [ ] **T-04.2.4** Preserve filter sub-routes at `(app)/exercises/filters/*`.
+- [x] **T-04.2.1** Author `<FilterChip>` + `<ExerciseCard>` composites in `packages/mobile/src/ui/components/exercises/`. Tests + smoke route. Implements STORY-005 AC 5.5. _(New library `<ExerciseCard>` is distinct from the root `@/ui/components/ExerciseCard` still used by active-session; 3pt left-border is fixed `$primary` per the prototype — not muscle-derived, which avoids the UUID-vs-enum trap.)_
+- [x] **T-04.2.2** Rewrite `<ExerciseListPresenter>` to use `<SearchBar>` (from `01-design-system`) + horizontally-scrolling chip row + list of `<ExerciseCard>`. Implements STORY-005 ACs. _(Retained `FlatList` — `@shopify/flash-list` is not a dependency; FlashList is M11 perf scope.)_
+- [x] **T-04.2.3** Rewire `<ExerciseListContainer>` to mount under `<TrainHubContainer>`'s Exercises segment. _(Already mounted by `14-navigation`; container unchanged — presenter is now a headerless body.)_
+- [x] **T-04.2.4** Preserve filter sub-routes at `(app)/exercises/filters/*`. _(Untouched; advanced muscle/equipment filtering reachable via the filter `<IconBtn>` → `/(app)/exercises/filters`.)_
+
+> **Revised 2026-06-01 (PR #96 review):** Built from `prototype-hubs.jsx § TrainExercisesContent` (canonical hub), superseding `library.jsx`. Also folded in two shared-primitive fixes surfaced in review — `<Btn>` now tints its icon to the foreground colour, and `<Segmented>` is content-width (not full-width) to match the prototype's `inline-flex`. Quick-filter pills match legacy's set (no muscle-group quick pills in legacy — those live in the modal); `PT Assigned`/`Physio Assigned` remain deferred to M8 (no V2 relationship data). The Workouts-segment search button stays a deferred STORY-007 placeholder pending a design.
 
 ## Phase 04.3 — CreateExerciseSheet (1 PR)
 
