@@ -1,7 +1,7 @@
 import { Text, View } from "@tamagui/core";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
 import { IconPlus, IconSearch } from "@/ui/components/icons";
@@ -27,15 +27,15 @@ import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
  * The list BODIES (WorkoutsListContainer / ExerciseListContainer) are owned by
  * `04-workout-management`.
  *
- * Create flow (04.3): the `+ Create` action opens the Create-Exercise sheet
- * via `useCreateExerciseSheet().openSheet()`. The sheet itself is mounted once
- * at the root `(app)/_layout.tsx` (like <ProfileDrawerContainer>) so it
- * overlays the bottom tab bar — it's NOT mounted here in the tab content.
+ * Create flow (04.3): the `+ Create` action pushes the full-screen
+ * `/exercises/create` route (revised 2026-06-03 — was a bottom-sheet; the long
+ * form needs reliable scroll/keyboard handling, so it's full-screen like the
+ * legacy creator + the 04.6 editor).
  */
 export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
-  const openCreateExercise = useCreateExerciseSheet((s) => s.openSheet);
+  const openCreateExercise = () => router.push("/(app)/exercises/create");
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (battery/clock).
   const insets = useSafeAreaInsets();

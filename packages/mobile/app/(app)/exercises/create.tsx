@@ -1,35 +1,18 @@
-import { router } from "expo-router";
-import { useEffect } from "react";
-import { View } from "@tamagui/core";
-
-import { useCreateExerciseSheet } from "../../../src/state/createExerciseSheet";
-import { useTrainSegment } from "../../../src/ui/hooks/useTrainSegment";
+import { CreateExerciseContainer } from "../../../src/ui/containers/CreateExerciseContainer";
 
 /**
- * `/exercises/create` — deep-link redirect stub.
+ * `/exercises/create` — full-screen create-a-custom-exercise route.
  *
- * Spec: specs/04-workout-management/requirements.md STORY-006 AC 6.6
+ * Spec: specs/04-workout-management/requirements.md STORY-006
  *
- * The full-screen exercise creator is gone — exercise creation is now the
- * <CreateExerciseSheetContainer> bottom-sheet mounted at the root layout
- * (04.3). This route survives only as the redirect target for legacy
- * `/exercises/create` deep links: it switches the Train hub to the Exercises
- * segment, opens the create sheet, and replaces itself with the Train tab so
- * the sheet opens over the hub.
- *
- * Revised 2026-06-02 (Phase 04.3): kept as a redirect stub rather than
- * hard-deleted. AC 6.6 calls for deleting the route + a redirect in
- * 14-navigation's deep-link map, but that map (Phase 14.7 `LegacyRedirects`)
- * is deferred and unbuilt, so a hard delete would 404 the deep link. The stub
- * is the self-contained redirect home until 14.7 lands; the full-screen
- * creator (the old `__DEV__` `DevExerciseCreatorContainer`) is removed.
+ * Revised 2026-06-03 (Phase 04.3): create is a full-screen route again (not the
+ * bottom-sheet the design package originally specced). The 8-section form needs
+ * reliable scrolling + keyboard handling that the gorhom sheet kept fighting on
+ * device; full-screen matches the legacy creator + the 04.6 editor and reuses
+ * the same <ExerciseFormFields>. The Train hub `+ Create` action + the Exercises
+ * empty-state CTA `router.push` here; deep links to `/exercises/create` resolve
+ * to this screen directly.
  */
-export default function CreateExerciseRedirect() {
-  useEffect(() => {
-    useTrainSegment.getState().setSegment("Exercises");
-    useCreateExerciseSheet.getState().openSheet();
-    router.replace("/(app)/(tabs)/train");
-  }, []);
-
-  return <View flex={1} backgroundColor="$background" />;
+export default function CreateExerciseScreen() {
+  return <CreateExerciseContainer />;
 }

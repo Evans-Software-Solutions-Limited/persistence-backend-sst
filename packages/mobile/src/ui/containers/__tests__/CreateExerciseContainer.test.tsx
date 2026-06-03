@@ -8,11 +8,15 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
-import { CreateExerciseSheetContainer } from "@/ui/containers/CreateExerciseSheetContainer";
+import { CreateExerciseContainer } from "@/ui/containers/CreateExerciseContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+
+const mockBack = jest.fn();
+jest.mock("expo-router", () => ({
+  router: { back: (...args: unknown[]) => mockBack(...args) },
+}));
 
 function makeAdapters(
   storage: InMemoryStorageAdapter,
@@ -53,13 +57,10 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
   return <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>;
 }
 
-describe("CreateExerciseSheetContainer", () => {
+describe("CreateExerciseContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useExerciseLibrary.setState({ revision: 0 });
-    // The container reads its visibility from the store; open it so the form
-    // renders. (It's mounted once at the root layout in production.)
-    useCreateExerciseSheet.setState({ open: true });
   });
 
   afterEach(() => {
@@ -71,7 +72,7 @@ describe("CreateExerciseSheetContainer", () => {
     jest.useFakeTimers();
     const storage = new InMemoryStorageAdapter();
     const { getByTestId } = renderWithTheme(
-      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
+      withAdapters(makeAdapters(storage), <CreateExerciseContainer />),
     );
 
     fireEvent.changeText(getByTestId("exercise-form-name"), "Incline Press");
@@ -107,17 +108,14 @@ describe("CreateExerciseSheetContainer", () => {
     act(() => {
       jest.advanceTimersByTime(700);
     });
-    expect(useCreateExerciseSheet.getState().open).toBe(false);
+    expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
   it("blocks save when signed out and warns the user", async () => {
     const storage = new InMemoryStorageAdapter();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const { getByTestId } = renderWithTheme(
-      withAdapters(
-        makeAdapters(storage, null),
-        <CreateExerciseSheetContainer />,
-      ),
+      withAdapters(makeAdapters(storage, null), <CreateExerciseContainer />),
     );
 
     fireEvent.changeText(getByTestId("exercise-form-name"), "Incline Press");
@@ -131,14 +129,14 @@ describe("CreateExerciseSheetContainer", () => {
     );
     expect(storage.getCachedExercises()).toHaveLength(0);
     expect(useExerciseLibrary.getState().revision).toBe(0);
-    expect(useCreateExerciseSheet.getState().open).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
   });
 
   it("surfaces a domain validation failure without persisting", async () => {
     const storage = new InMemoryStorageAdapter();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const { getByTestId } = renderWithTheme(
-      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
+      withAdapters(makeAdapters(storage), <CreateExerciseContainer />),
     );
 
     // One non-blank char passes the Save-disabled guard but fails the
@@ -151,14 +149,12 @@ describe("CreateExerciseSheetContainer", () => {
     expect(alertSpy).toHaveBeenCalledWith("Invalid input", expect.any(String));
     expect(storage.getCachedExercises()).toHaveLength(0);
     expect(useExerciseLibrary.getState().revision).toBe(0);
-    expect(useCreateExerciseSheet.getState().open).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
   });
 
   it("falls back to a generic message when the error carries no fields", async () => {
     const storage = new InMemoryStorageAdapter();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    // A defensive guard: the real command always attaches >=1 field, so force
-    // the empty-fields shape to exercise the fallback message branch.
     jest
       .spyOn(createExerciseCommandModule, "createExerciseCommand")
       .mockReturnValue({
@@ -166,7 +162,7 @@ describe("CreateExerciseSheetContainer", () => {
         error: { kind: "validation", fields: {} },
       });
     const { getByTestId } = renderWithTheme(
-      withAdapters(makeAdapters(storage), <CreateExerciseSheetContainer />),
+      withAdapters(makeAdapters(storage), <CreateExerciseContainer />),
     );
 
     fireEvent.changeText(getByTestId("exercise-form-name"), "Incline Press");
@@ -178,6 +174,6 @@ describe("CreateExerciseSheetContainer", () => {
       "Invalid input",
       "Failed to save exercise",
     );
-    expect(useCreateExerciseSheet.getState().open).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
   });
 });

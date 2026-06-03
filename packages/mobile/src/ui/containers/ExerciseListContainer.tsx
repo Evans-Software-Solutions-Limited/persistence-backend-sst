@@ -9,7 +9,6 @@ import {
 import type { Exercise } from "@/domain/models/exercise";
 import { filterExercises } from "@/domain/services/exercise.service";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
-import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
@@ -280,11 +279,9 @@ export function ExerciseListContainer() {
   );
 
   const onCreateExercise = useCallback(() => {
-    // Empty-state CTA → open the Create-Exercise sheet (mounted at the root
-    // layout). Shared open-state store, so this sibling body doesn't mount
-    // its own sheet.
-    useCreateExerciseSheet.getState().openSheet();
-  }, []);
+    // Empty-state CTA → push the full-screen Create-Exercise route.
+    router.push("/(app)/exercises/create");
+  }, [router]);
 
   /**
    * Guard against accidental double-taps that would open two Alerts

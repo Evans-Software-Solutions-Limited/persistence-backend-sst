@@ -1,8 +1,8 @@
+import { router } from "expo-router";
 import { useCallback } from "react";
 import { Alert } from "react-native";
 
 import { createExerciseCommand } from "@/application/commands/create-exercise.command";
-import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import {
   toCreateExerciseInput,
   type NewExerciseInput,
@@ -10,35 +10,29 @@ import {
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
-import { CreateExerciseSheetPresenter } from "@/ui/presenters/CreateExerciseSheetPresenter";
+import { CreateExercisePresenter } from "@/ui/presenters/CreateExercisePresenter";
 
 /**
- * <CreateExerciseSheetContainer> — wires the Create-Exercise sheet to the
- * offline-first `createExerciseCommand`.
+ * <CreateExerciseContainer> — wires the full-screen Create-Exercise route to
+ * the offline-first `createExerciseCommand`. Rendered by `(app)/exercises/
+ * create.tsx`; opened via `router.push` from the Train hub `+ Create` action
+ * and the Exercises empty-state CTA.
  *
- * Mounted ONCE at the root `(app)/_layout.tsx` (a sibling of the Stack, like
- * <ProfileDrawerContainer>) so the sheet overlays the bottom tab bar. Open
- * state comes from the `useCreateExerciseSheet` store rather than props —
- * the Train hub action, the Exercises empty-state CTA, and the
- * `/exercises/create` deep-link stub all call `openSheet()`.
- *
- * Spec: specs/04-workout-management/design.md § <CreateExerciseSheetPresenter>
+ * Spec: specs/04-workout-management/design.md § <CreateExercisePresenter>
  *       — Container; requirements.md STORY-006 (AC 6.3, 6.4, 6.5)
  *
  * The command validates → writes the new exercise to the local cache with a
  * `local-*` id → enqueues a POST /exercises mutation for the sync engine. On
  * success we bump the shared library revision so the exercise list re-reads
- * and the new exercise appears under the "Mine" filter without a reload. The
- * mutation never awaits the network — fully offline-capable.
+ * (it stays mounted under this pushed screen) and the new exercise appears
+ * under "Mine" when the user pops back — no reload, no network wait.
  *
  * Note: the coarse UI labels convert to the granular domain enum *keys*
  * (`"chest"`, `"barbell"`) per design.md's conversion layer — NOT reference-
- * list UUIDs. Resolving labels → UUIDs for the create payload is deferred
- * (it touches the adapter layer, which STORY-009 freezes for this spec).
+ * list UUIDs. Resolving labels → UUIDs is deferred (it touches the adapter
+ * layer, which STORY-009 freezes for this spec).
  */
-export function CreateExerciseSheetContainer() {
-  const visible = useCreateExerciseSheet((s) => s.open);
-  const onClose = useCreateExerciseSheet((s) => s.closeSheet);
+export function CreateExerciseContainer() {
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -72,10 +66,6 @@ export function CreateExerciseSheetContainer() {
   );
 
   return (
-    <CreateExerciseSheetPresenter
-      visible={visible}
-      onClose={onClose}
-      onSave={onSave}
-    />
+    <CreateExercisePresenter onClose={() => router.back()} onSave={onSave} />
   );
 }

@@ -48,8 +48,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 // eslint-disable-next-line import/first
-import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
-// eslint-disable-next-line import/first
 import { TrainHubContainer } from "@/ui/containers/TrainHubContainer";
 
 const mockSetItem = AsyncStorage.setItem as jest.Mock;
@@ -64,7 +62,6 @@ beforeEach(() => {
     pendingCreate: false,
     hydrated: true,
   });
-  useCreateExerciseSheet.setState({ open: false });
 });
 
 describe("TrainHubContainer", () => {
@@ -109,15 +106,12 @@ describe("TrainHubContainer", () => {
     );
   });
 
-  it("Create on the Exercises segment opens the create sheet", () => {
+  it("Create on the Exercises segment pushes the full-screen create route", () => {
     useTrainSegment.setState({ segment: "Exercises", hydrated: true });
     const { getByText } = renderWithTheme(<TrainHubContainer />);
 
-    expect(useCreateExerciseSheet.getState().open).toBe(false);
     fireEvent.press(getByText("Create"));
 
-    // The sheet is mounted at the root layout; the hub just flips the store.
-    expect(useCreateExerciseSheet.getState().open).toBe(true);
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 });

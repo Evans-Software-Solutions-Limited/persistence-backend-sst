@@ -16,12 +16,12 @@ import {
 
 /**
  * <ExerciseFormFields> — the shared, controlled field set for creating /
- * editing a custom exercise. Composed by <CreateExerciseSheetPresenter>
+ * editing a custom exercise. Composed by <CreateExercisePresenter>
  * (04.3) and, from 04.6, the full-screen <ExerciseEditorPresenter>.
  *
  * Source: ~/Downloads/handoff/design-source/screens/create-exercise.jsx:51-169
  * Spec: specs/04-workout-management/design.md § <ExerciseEditorPresenter>
- *       (ExerciseFormFields contract) + § <CreateExerciseSheetPresenter>
+ *       (ExerciseFormFields contract) + § <CreateExercisePresenter>
  *
  * Renders, top to bottom: Name, optional Photo placeholder, Primary muscle
  * (radio), Secondary muscles (multi-select, excludes the primary), Equipment

@@ -10,7 +10,7 @@ import type {
  * (and, from 04.6, the full-screen exercise editor).
  *
  * Spec: specs/04-workout-management/design.md
- *       § <CreateExerciseSheetPresenter> — Conversion layer
+ *       § <CreateExercisePresenter> — Conversion layer
  *       requirements.md STORY-006 + STORY-008
  *
  * The form collects the coarse, capitalised labels the prototype's
