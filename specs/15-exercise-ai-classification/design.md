@@ -62,47 +62,43 @@ export const exercisesClassifyHandler = new Elysia()
   );
 ```
 
-### Inference + validation — `groqClassifier.ts` (pure-ish, unit-testable)
+### Inference + mapping — `groqClassifier.ts` (unit-testable)
 
-The Groq call is injected (a `fetchChatCompletion` fn) so tests run without network. The validator is a pure function over the V2 enums and is the coverage-critical piece.
+Ports the legacy `classifyExerciseWithGroq` + `mapAIClassificationToDatabase`. The Groq call is injected (a `fetchChatCompletion` fn) and the reference lists are passed in, so tests run without network or DB. Two layers:
 
 ```ts
-import {
-  EXERCISE_CATEGORIES, EXERCISE_DIFFICULTIES, MUSCLE_GROUPS, EQUIPMENT_TYPES,
-  type ExerciseCategory, type ExerciseDifficulty, type MuscleGroup, type EquipmentType,
-} from "<shared exercise enums>"; // backend mirror of packages/db enums
-
 export type ClassifyInput = { name: string; description?: string; instructions?: string };
 export type ClassifyResult = {
-  category?: ExerciseCategory;
-  difficulty?: ExerciseDifficulty;
-  primaryMuscleGroups?: MuscleGroup[];
-  secondaryMuscleGroups?: MuscleGroup[];
-  equipment?: EquipmentType[];
+  category?: ExerciseCategory;          // static enum (lowercased)
+  difficulty?: ExerciseDifficulty;      // static enum (lowercased)
+  primaryMuscleGroups?: string[];       // muscle_groups UUIDs
+  secondaryMuscleGroups?: string[];     // muscle_groups UUIDs
+  equipment?: string[];                 // equipment_types UUIDs
 };
 
-// PURE — maps/validates raw AI JSON to the V2 enum subset. Unknown values dropped,
-// undeterminable fields omitted. This is the heart of decision #5 and gets the
-// heaviest unit coverage (every enum, casing, unknown-value, partial-object case).
-export function validateClassification(raw: unknown): ClassifyResult { … }
+type RefLists = {
+  muscleGroups: { id: string; name: string }[];
+  equipmentTypes: { id: string; name: string }[];
+};
+
+// PURE — maps the raw AI JSON to ClassifyResult given the reference lists.
+//   - category/difficulty: trim → lowercase → keep iff in the static enum.
+//   - primary/secondary muscles, equipment: AI returns NAMES → match
+//     case-insensitively against ref-list names → emit the UUID; drop unmatched.
+//   - region_type / movement_type / accessibility_requirements: parsed by the
+//     legacy fn but DROPPED here (no V2 columns).
+// Heaviest unit coverage: every enum, casing, unknown-value, empty/partial/
+// non-object input, name-with-no-UUID-match, deduping.
+export function mapClassification(raw: unknown, refs: RefLists): ClassifyResult { … }
+
+// Builds the prompt (inlining ref-list names), calls Groq, parses, maps.
+// 10s AbortController timeout; throws ClassifyError on non-2xx / parse fail / timeout.
+export async function classifyExercise(input: ClassifyInput, deps: {...}): Promise<ClassifyResult> { … }
 ```
 
-**Prompt shape** (system + user). The system prompt inlines the exact allowed values so the model can only choose from V2 enums, and demands strict JSON:
+**Prompt** — port the legacy system+user prompt verbatim (it's well-tuned): the expert-trainer system prompt enumerates category/difficulty/region/movement guidance and inlines the **exact allowed muscle + equipment display names** fetched from `muscle_groups` / `equipment_types` ("use EXACT database values, case-sensitive; do NOT use scientific names"). The user prompt asks for the strict JSON object shape. We keep region_type/movement_type in the prompt (cheap, helps the model reason) but drop them from the mapped result. Reference lists are read via the existing repository/DB layer the core service already has (the V2 backend talks to the same Supabase DB — see memory `project_supabase_db_as_is`).
 
-```
-You are a fitness-exercise tagger. Given an exercise, return ONLY a JSON object with these
-optional keys. Use ONLY the listed allowed values; omit a key if unsure.
-  category: one of [strength, cardio, flexibility, balance, plyometric, olympic, mobility]
-  difficulty: one of [beginner, intermediate, advanced, expert]
-  primaryMuscleGroups: array from [chest, back, shoulders, biceps, triceps, quadriceps,
-    hamstrings, glutes, calves, core, forearms, traps, lats, hip_flexors, abductors, adductors]
-  secondaryMuscleGroups: array from the same set (exclude any in primary)
-  equipment: array from [barbell, dumbbell, machine, cable, bodyweight, kettlebell,
-    resistance_band, smith_machine, ez_bar, other]
-No prose, no markdown — JSON only.
-```
-
-User message: the name + description + instructions. Call with `response_format: { type: "json_object" }`, `temperature: 0`, `max_tokens: ~300`, a 10s `AbortController` timeout. On non-2xx / parse failure / timeout → throw `ClassifyError` → handler returns 502 `{ error }`.
+Groq call params (verbatim from legacy): `model: "llama-3.1-8b-instant"`, `temperature: 0.3`, `response_format: { type: "json_object" }`, `max_tokens: 1000`, plus a 10s `AbortController` timeout (the one addition). On non-2xx / parse failure / timeout → `ClassifyError` → handler 502 `{ error }`.
 
 ### Secret + binding
 
@@ -127,34 +123,34 @@ Lightweight per-user limit keyed on the JWT `sub`. Simplest viable: an in-memory
 ### UI — `<ExerciseFormFields>` + presenters
 
 - Add an optional `onTagWithAI?: () => void` + `isTagging?: boolean` to `<ExerciseFormFields>` (or render the button in the composing presenter so the shared component stays presentational). Button disabled until name ≥ 2 chars and while tagging or offline.
-- The container (sheet: `CreateExerciseSheetContainer`; editor: 04.6) calls `classifyExercise`, then maps `ClassifyResult` → the form's `NewExerciseInput`:
+- The container (sheet: `CreateExerciseSheetContainer`; editor: 04.6) calls `classifyExercise`, then maps `ClassifyResult` → the form's `NewExerciseInput`. The result's muscle/equipment are **UUIDs**, so:
   - `category`/`difficulty` → `level` label (reverse of `LEVEL_TO_DIFFICULTY`).
-  - `primaryMuscleGroups[0]` → nearest **coarse** `MuscleLabel` for the sheet picker (granular→coarse reverse map); `secondaryMuscleGroups` → coarse labels (deduped, minus primary).
-  - `equipment[0]` → `EquipmentLabel`.
-  - The 04.6 editor (if it exposes granular muscles) applies granular directly — no coarse collapse.
+  - Resolve each muscle/equipment UUID → display label via the **reference-list cache** the exercise adapter already maintains (the same one the cards use for `*Labels`).
+  - Sheet: map the resolved primary muscle **label** → nearest coarse `MuscleLabel`; secondaries → coarse labels (deduped, minus primary); equipment label → `EquipmentLabel`.
+  - Editor (04.6, granular) applies the resolved labels directly — no coarse collapse.
 - Online-gate via the existing NetInfo adapter; disabled + hinted offline.
 
-### Granular → coarse reverse map
+### Label → coarse reverse map
 
-Add to `exerciseForm.ts` a `MUSCLE_GROUP_TO_COARSE: Record<MuscleGroup, MuscleLabel>` (inverse of `MUSCLE_LABEL_TO_GROUPS`, e.g. `lats → Back`, `quadriceps → Legs`, `biceps → Arms`). Pure + unit-tested.
+Add to `exerciseForm.ts` a `MUSCLE_LABEL_DISPLAY_TO_COARSE` helper mapping a resolved muscle display label → the coarse `MuscleLabel` (e.g. `Lats`/`Back → Back`, `Quads`/`Hamstrings/Glutes/Calves → Legs`, `Biceps/Triceps/Forearms → Arms`). Pure + unit-tested. (UUID → label resolution stays in the adapter's reference cache; this map only collapses labels → the 6 coarse buckets.)
 
 ---
 
 ## Testing strategy
 
-- **Unit (heaviest):** `validateClassification` — every enum, mixed casing, unknown values dropped, arrays filtered, partial objects, empty object, non-object input. `groqClassifier` with an injected fake completion (success, malformed JSON, timeout, non-2xx).
-- **Handler:** body validation (400s), auth (401), success shape `{ data }`, upstream failure → 502. Groq fetch mocked.
-- **Mobile:** adapter maps request/response; container maps `ClassifyResult` → `NewExerciseInput` (incl. granular→coarse); button disabled states (short name / tagging / offline); failure leaves the form untouched.
-- **Coverage:** ≥ 90% on changed files; the validator + reverse-map at/near 100% branches.
+- **Unit (heaviest):** `mapClassification(raw, refs)` — every category/difficulty enum + casing, name→UUID match (hit/miss/case-insensitive), unmatched dropped, dedupe, empty/partial/non-object input, region/movement/accessibility dropped. `classifyExercise` with an injected fake completion (success, malformed JSON, timeout, non-2xx).
+- **Handler:** body validation (400s), auth (401), success shape `{ data }`, upstream failure → 502. Groq fetch + ref-list reads mocked.
+- **Mobile:** adapter maps request/response; the label→coarse map; container maps `ClassifyResult` (UUIDs) → `NewExerciseInput` via the reference cache; button disabled states (short name / tagging / offline); failure leaves the form untouched.
+- **Coverage:** ≥ 90% on changed files; `mapClassification` + the label→coarse map at/near 100% branches.
 
 ---
 
 ## Risks + mitigations
 
-| Risk                                                 | Mitigation                                                                                                                                                        |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8B model returns invalid/hallucinated tags           | Strict server-side enum validation drops anything off-list; prompt inlines allowed values; fall back to `llama-3.3-70b-versatile` if accuracy is poor in testing. |
-| Cost blowout during onboarding                       | Cheapest model, low `max_tokens`, temp 0, per-user rate limit, short input caps.                                                                                  |
-| Groq outage / latency                                | 10s timeout, clean 502, non-blocking client UX — manual entry always works.                                                                                       |
-| Granular→coarse collapse loses fidelity in the sheet | Acceptable for v1 (sheet is coarse by design); 04.6 editor applies granular. Documented.                                                                          |
-| Leaking the API key                                  | Read from SST Secret only; never logged; not returned to client.                                                                                                  |
+| Risk                                                   | Mitigation                                                                                                                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8B model returns invalid/hallucinated tags             | category/difficulty enum-validated; muscle/equipment names matched against the ref lists → unmatched dropped; prompt inlines the exact allowed names; fall back to `llama-3.3-70b-versatile` if accuracy regresses. |
+| Cost blowout during onboarding                         | Cheap model, `max_tokens: 1000`, temp 0.3 (legacy params), per-user rate limit (new), short input caps.                                                                                                             |
+| Groq outage / latency                                  | 10s timeout, clean 502, non-blocking client UX — manual entry always works.                                                                                                                                         |
+| UUID→label→coarse collapse loses fidelity in the sheet | Acceptable for v1 (sheet is coarse by design); 04.6 editor applies resolved labels. Documented.                                                                                                                     |
+| Leaking the API key                                    | Read from SST Secret only; never logged; not returned to client.                                                                                                                                                    |

@@ -7,15 +7,15 @@
 ## Phase 15.1 — Backend classify endpoint (1 PR)
 
 - [ ] **T-15.1.1** Add `groqApiKey = new sst.Secret("GroqApiKey")` to `infra/secrets.ts`; link it to the API in `infra/api.ts`. Document the `sst secret set` step in the PR. Implements STORY-002 AC 2.6, decision #3.
-- [ ] **T-15.1.2** Author `groqClassifier.ts`: `validateClassification(raw)` (pure, maps/validates AI JSON → V2 enum subset, drops invalid) + `classifyExercise(input, deps)` (builds prompt, calls injected Groq completion fn, parses, validates, 10s timeout, `ClassifyError`). Implements STORY-002 AC 2.2–2.5, decision #5.
-- [ ] **T-15.1.3** Author `exercisesClassifyHandler.ts` (`POST /exercises/classify`, `requireAuth`, body validation, returns `{ data }`, 502 on upstream failure). Register it in the core API. Implements STORY-002 AC 2.1, 2.4.
-- [ ] **T-15.1.4** Per-user in-memory token-bucket rate limit → 429 when exceeded. Implements STORY-003 AC 3.1–3.3.
-- [ ] **T-15.1.5** Unit tests: `validateClassification` (every enum, casing, unknown-drop, partial/empty/non-object), `classifyExercise` (success, malformed JSON, timeout, non-2xx via injected fake), handler (400/401/502/success, Groq mocked), rate-limit. ≥ 90% coverage; validator ~100% branches.
+- [ ] **T-15.1.2** Author `groqClassifier.ts`, porting the legacy `classifyExerciseWithGroq` + `mapAIClassificationToDatabase`: `mapClassification(raw, refs)` (pure — category/difficulty → lowercased static-enum; muscle/equipment NAMES → ref-list UUIDs via case-insensitive exact match; drop unmatched + region/movement/accessibility) + `classifyExercise(input, deps)` (fetch ref-list names, build the verbatim legacy prompt, call the injected Groq completion fn with the decision-#1 params, parse, map, 10s timeout, `ClassifyError`). Implements STORY-002 AC 2.2–2.5, decision #5.
+- [ ] **T-15.1.3** Author `exercisesClassifyHandler.ts` (`POST /exercises/classify`, `requireAuth`, body validation, reads the muscle/equipment reference lists, returns `{ data }`, 502 on upstream failure). Register it in the core API. Implements STORY-002 AC 2.1, 2.4.
+- [ ] **T-15.1.4** Per-user in-memory token-bucket rate limit → 429 when exceeded (the one addition over legacy). Implements STORY-003 AC 3.1–3.3.
+- [ ] **T-15.1.5** Unit tests: `mapClassification` (every enum, casing, name→UUID hit/miss, dedupe, partial/empty/non-object, region/movement/accessibility dropped), `classifyExercise` (success, malformed JSON, timeout, non-2xx via injected fake), handler (400/401/502/success, Groq + ref-lists mocked), rate-limit. ≥ 90% coverage; `mapClassification` ~100% branches.
 
 ## Phase 15.2 — Mobile wiring (1 PR)
 
 - [ ] **T-15.2.1** Add `classifyExercise` to `domain/ports/api.port.ts` + implement in `sst-api.adapter.ts` + a canned stub in the in-memory api adapter. Types: `ClassifyInput` / `ClassifyResult`.
-- [ ] **T-15.2.2** Add `MUSCLE_GROUP_TO_COARSE` reverse map + a `classifyResultToFormPatch(result)` helper in `exerciseForm.ts` (pure, unit-tested). Implements decision #6 + granular→coarse.
+- [ ] **T-15.2.2** Add a label→coarse map (`MUSCLE_LABEL_DISPLAY_TO_COARSE`) + a `classifyResultToFormPatch(result, resolveLabel)` helper in `exerciseForm.ts` (pure, unit-tested) — resolves UUIDs→labels via the adapter's reference cache, then collapses to the 6 coarse buckets. Implements decision #6.
 - [ ] **T-15.2.3** Add the "Tag with AI" action to the Create-Exercise sheet (04.3) + editor (04.6): disabled until name ≥ 2 chars / while tagging / offline; loading state; failure → non-blocking message, form untouched. Implements STORY-001.
 - [ ] **T-15.2.4** Container wires `classifyExercise` → maps result → `NewExerciseInput` (sheet: coarse; editor: granular). Online-gate via NetInfo.
 - [ ] **T-15.2.5** Tests: adapter request/response mapping; `classifyResultToFormPatch`; button disabled states; success pre-fills form; failure leaves form intact. ≥ 90% coverage.
