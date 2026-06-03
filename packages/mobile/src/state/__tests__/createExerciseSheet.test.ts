@@ -15,4 +15,11 @@ describe("useCreateExerciseSheet", () => {
     useCreateExerciseSheet.getState().closeSheet();
     expect(useCreateExerciseSheet.getState().open).toBe(false);
   });
+
+  it("reset closes the sheet (sign-out teardown)", () => {
+    useCreateExerciseSheet.getState().openSheet();
+    expect(useCreateExerciseSheet.getState().open).toBe(true);
+    useCreateExerciseSheet.getState().reset();
+    expect(useCreateExerciseSheet.getState().open).toBe(false);
+  });
 });

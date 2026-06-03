@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useAdapters } from "./useAdapters";
@@ -149,6 +150,10 @@ export function useAuth(): AuthState {
     // one-shot pendingCreate flag — clear both so A's last segment (and any
     // pending create-exercise redirect) don't surface for account B.
     useTrainSegment.getState().reset();
+    // Likewise the Create-Exercise sheet's open-state singleton — otherwise
+    // A's open sheet pops over B's home on the next warm sign-in (the (app)
+    // layout remounts and reads open=true).
+    useCreateExerciseSheet.getState().reset();
   }, [auth, storage]);
 
   const resetPassword = useCallback(

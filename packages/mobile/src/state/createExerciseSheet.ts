@@ -20,6 +20,16 @@ export interface CreateExerciseSheetState {
   open: boolean;
   openSheet: () => void;
   closeSheet: () => void;
+  /**
+   * Reset to closed. Called from `useAuth.signOut` alongside the other
+   * `*.reset()` slices. This is a device-global zustand singleton (no user
+   * scoping), so without a sign-out reset, user A's open sheet would survive
+   * into user B's session on the same device: the `(app)` layout remounts on
+   * sign-in and `CreateExerciseSheetContainer` would read `open=true` and pop
+   * the sheet unprompted. Mirrors `useTrainSegment.reset()`. Cold launches
+   * already start closed — this guards the warm sign-in path.
+   */
+  reset: () => void;
 }
 
 export const useCreateExerciseSheet = create<CreateExerciseSheetState>(
@@ -27,5 +37,6 @@ export const useCreateExerciseSheet = create<CreateExerciseSheetState>(
     open: false,
     openSheet: () => set({ open: true }),
     closeSheet: () => set({ open: false }),
+    reset: () => set({ open: false }),
   }),
 );

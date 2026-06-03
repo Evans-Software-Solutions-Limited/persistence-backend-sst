@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
+import { useCreateExerciseSheet } from "@/state/createExerciseSheet";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -118,6 +119,8 @@ describe("useAuth", () => {
         isEligibilityKnown: true,
       });
       useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+      // Trainer A also has the Create-Exercise sheet open.
+      useCreateExerciseSheet.setState({ open: true });
     });
 
     await act(async () => {
@@ -133,6 +136,9 @@ describe("useAuth", () => {
     // Same for the Train segment + the one-shot pendingCreate flag.
     expect(useTrainSegment.getState().segment).toBe("Workouts");
     expect(useTrainSegment.getState().pendingCreate).toBe(false);
+    // ...and the Create-Exercise sheet must be closed so it can't pop over
+    // account B's home on the next warm sign-in.
+    expect(useCreateExerciseSheet.getState().open).toBe(false);
   });
 
   it("throws and sets error when sign-in fails", async () => {
