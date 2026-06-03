@@ -13,14 +13,15 @@ Mobile (04.3 sheet / 04.6 editor)
             └─ sst-api.adapter → POST /exercises/classify  (Supabase JWT)
                  └─ exercisesClassifyHandler (Elysia, requireAuth)
                       ├─ validate body
-                      ├─ build constrained prompt (allowed enum values inlined)
-                      ├─ Groq chat/completions (llama-3.1-8b-instant, JSON, temp≈0)
-                      ├─ parse + validate output against V2 enums (drop invalid)
+                      ├─ read muscle_groups + equipment_types reference lists
+                      ├─ build prompt (allowed display names inlined)
+                      ├─ Groq chat/completions (llama-3.1-8b-instant, JSON, temp 0.3)
+                      ├─ map: enum-validate category/difficulty; names → ref UUIDs
                       └─ return { category?, difficulty?, primaryMuscleGroups?,
-                                  secondaryMuscleGroups?, equipment? }
+                                  secondaryMuscleGroups?, equipment? }  // UUIDs
 ```
 
-No DB, no cache, no sync queue. Pure request → inference → validated response.
+Reads the reference lists; no writes, no cache, no sync queue. Request → inference → map → response.
 
 ---
 
