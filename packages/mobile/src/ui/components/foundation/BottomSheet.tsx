@@ -128,6 +128,12 @@ export function BottomSheet({
       index={visible ? 0 : -1}
       onChange={handleChange}
       snapPoints={snapPoints}
+      // gorhom v5 defaults `enableDynamicSizing: true`, which sizes the sheet to
+      // its CONTENT height and overrides `snapPoints`. With a long body (e.g. the
+      // Create-Exercise form) that pushes the sheet to ~full screen instead of the
+      // intended 88%/78%/60%. This component always has an explicit snap point, so
+      // dynamic sizing is never wanted — disable it to honour `height` exactly.
+      enableDynamicSizing={false}
       enablePanDownToClose
       onClose={onClose}
       backdropComponent={renderBackdrop}
@@ -180,6 +186,12 @@ export function BottomSheet({
         ) : null}
 
         <BottomSheetScrollView
+          // `flex: 1` bounds the scroll view to the space below the fixed
+          // header (the sheet is a fixed-height flex column now that dynamic
+          // sizing is off). Without it the scroll view grows to its content
+          // height and overflows — clipped by the sheet's `overflow: hidden`,
+          // so the body looked cut off and unscrollable.
+          style={{ flex: 1 }}
           contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
