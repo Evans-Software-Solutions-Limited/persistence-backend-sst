@@ -19,7 +19,7 @@ import {
   toneHex,
 } from "@/ui/components/foundation";
 import type { PillTone } from "@/ui/components/foundation";
-import { IconCheck, IconX } from "@/ui/components/icons";
+import { IconBack, IconCheck } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 
 /**
@@ -118,10 +118,10 @@ export function CreateExercisePresenter({
         title="New exercise"
         leading={
           <IconBtn
-            icon={<IconX size={20} />}
+            icon={<IconBack size={22} />}
             tone="ghost"
             onPress={onClose}
-            accessibilityLabel="Close"
+            accessibilityLabel="Back"
           />
         }
       />
