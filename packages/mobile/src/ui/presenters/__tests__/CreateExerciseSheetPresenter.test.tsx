@@ -161,4 +161,92 @@ describe("CreateExerciseSheetPresenter", () => {
     expect(getByText("INTERMEDIATE")).toBeTruthy();
     expect(getByText("+1")).toBeTruthy();
   });
+
+  it("ignores a rapid double-tap on Save (single submit, no duplicate)", async () => {
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    const { getByTestId } = renderWithTheme(
+      <CreateExerciseSheetPresenter
+        visible
+        onClose={jest.fn()}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.changeText(getByTestId("exercise-form-name"), "Squat");
+    await act(async () => {
+      // Two presses queued before the first `await onSave` yields — the
+      // synchronous in-flight ref must reject the second.
+      fireEvent.press(getByTestId("create-exercise-save"));
+      fireEvent.press(getByTestId("create-exercise-save"));
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms Save after a failed attempt so the user can retry", async () => {
+    const onSave = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+    const { getByTestId } = renderWithTheme(
+      <CreateExerciseSheetPresenter
+        visible
+        onClose={jest.fn()}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.changeText(getByTestId("exercise-form-name"), "Squat");
+    await act(async () => {
+      fireEvent.press(getByTestId("create-exercise-save"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("create-exercise-save"));
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the auto-close timer when the sheet closes before it fires", async () => {
+    jest.useFakeTimers();
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    const { getByTestId, rerender } = renderWithTheme(
+      <CreateExerciseSheetPresenter
+        visible
+        onClose={onClose}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.changeText(getByTestId("exercise-form-name"), "Squat");
+    await act(async () => {
+      fireEvent.press(getByTestId("create-exercise-save"));
+    });
+
+    // Sheet closes (e.g. pan-down) and reopens before the 700ms elapses.
+    rerender(
+      <CreateExerciseSheetPresenter
+        visible={false}
+        onClose={onClose}
+        onSave={onSave}
+      />,
+    );
+    rerender(
+      <CreateExerciseSheetPresenter
+        visible
+        onClose={onClose}
+        onSave={onSave}
+      />,
+    );
+    onClose.mockClear();
+
+    act(() => {
+      jest.advanceTimersByTime(700);
+    });
+
+    // The stale timer was cancelled on close — it must NOT close the
+    // freshly-reopened sheet.
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,12 @@
 import { Text, View } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ExerciseFormFields,
@@ -48,42 +54,70 @@ export function CreateExerciseSheetPresenter({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Synchronous "a save is in flight (or succeeded)" guard. State can't guard
+  // a double-tap: Pressable.onPress doesn't await, so a second tap queued
+  // before the first `await onSave` yields would pass a state-based check
+  // (React hasn't committed the disabled re-render yet) and submit twice —
+  // two local-* exercises + two queued POSTs. The ref flips synchronously
+  // before the await, so the second tap sees it set. It stays set through the
+  // success affirmation and is reset only when the sheet (re)opens.
+  const inFlightRef = useRef(false);
 
-  // Reset to a blank form every time the sheet (re)opens so a prior draft or
-  // a lingering "Saved ✓" state can't bleed into the next create.
-  useEffect(() => {
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // Run before paint (`useLayoutEffect`) so a reopened sheet never flashes the
+  // prior "Saved ✓" state for a frame. ALWAYS clears any pending auto-close
+  // timer on a `visible` change — so a lingering 700ms timer from a previous
+  // save can't fire onClose on a sheet the user has since closed + reopened
+  // (reachable via gorhom's pan-down-to-close). On open it also resets the
+  // form + the in-flight guard. The component is mounted permanently at the
+  // root layout, so this — not unmount — is the real cleanup path.
+  useLayoutEffect(() => {
+    clearTimer();
     if (visible) {
       setValue(EMPTY_NEW_EXERCISE);
       setSaving(false);
       setSaved(false);
+      inFlightRef.current = false;
     }
-  }, [visible]);
+  }, [visible, clearTimer]);
 
-  // Clear a pending close-timer if the sheet unmounts mid-affirmation.
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    [],
-  );
+  // Belt-and-suspenders: clear the timer if the sheet ever does unmount.
+  useEffect(() => clearTimer, [clearTimer]);
 
   const nameEmpty = value.name.trim().length === 0;
   const saveDisabled = nameEmpty || saving || saved;
 
   const handleSave = useCallback(async () => {
-    if (nameEmpty || saving || saved) return;
+    if (inFlightRef.current || nameEmpty) return;
+    inFlightRef.current = true;
     setSaving(true);
     try {
       await onSave(value);
       setSaved(true);
+      // Leave inFlightRef set — it blocks re-taps during the affirmation
+      // window too; the visible-effect resets it on the next open.
       timerRef.current = setTimeout(onClose, SAVED_AFFIRMATION_MS);
     } catch {
       // Container already surfaced the failure (Alert). Keep the sheet open
-      // with the form intact so the user can retry.
+      // with the form intact and re-arm so the user can retry.
+      inFlightRef.current = false;
     } finally {
       setSaving(false);
     }
-  }, [nameEmpty, saving, saved, onSave, value, onClose]);
+  }, [nameEmpty, onSave, value, onClose]);
+
+  // Manual close (Cancel + backdrop/pan-down) eagerly cancels a pending
+  // auto-close timer before closing.
+  const handleClose = useCallback(() => {
+    clearTimer();
+    onClose();
+  }, [clearTimer, onClose]);
 
   const levelTone: PillTone =
     LEVELS.find((l) => l.id === value.level)?.tone ?? "neutral";
@@ -92,7 +126,7 @@ export function CreateExerciseSheetPresenter({
   return (
     <BottomSheet
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       title="New exercise"
       eyebrow="MY EXERCISES"
       accent="primary"
@@ -167,7 +201,7 @@ export function CreateExerciseSheetPresenter({
               tone="primary"
               size="lg"
               full
-              onPress={onClose}
+              onPress={handleClose}
               testID="create-exercise-cancel"
             >
               Cancel
