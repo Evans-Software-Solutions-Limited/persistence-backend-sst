@@ -82,6 +82,40 @@ describe("CreateExercisePresenter", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("closes only once even if Cancel is tapped twice", () => {
+    const onClose = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <CreateExercisePresenter onClose={onClose} onSave={jest.fn()} />,
+    );
+    fireEvent.press(getByTestId("create-exercise-cancel"));
+    fireEvent.press(getByTestId("create-exercise-cancel"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not double-close when Cancel is tapped during the 'Saved ✓' wait", async () => {
+    jest.useFakeTimers();
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <CreateExercisePresenter onClose={onClose} onSave={onSave} />,
+    );
+
+    fireEvent.changeText(getByTestId("exercise-form-name"), "Squat");
+    await act(async () => {
+      fireEvent.press(getByTestId("create-exercise-save"));
+    });
+
+    // Manual close during the 700ms affirmation must cancel the pending timer.
+    fireEvent.press(getByTestId("create-exercise-cancel"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      jest.advanceTimersByTime(700);
+    });
+    // The timer was cleared — no second router.back().
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores a rapid double-tap on Save (single submit, no duplicate)", async () => {
     const onSave = jest.fn().mockResolvedValue(undefined);
     const { getByTestId } = renderWithTheme(

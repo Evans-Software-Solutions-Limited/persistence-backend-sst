@@ -76,13 +76,29 @@ export function CreateExercisePresenter({
   // two queued POSTs. The ref flips synchronously before the await; it stays set
   // through the success affirmation and resets only on a failed attempt.
   const inFlightRef = useRef(false);
+  // Guards against `onClose` (router.back) firing twice — e.g. the post-save
+  // affirmation timer AND a manual Cancel/Back during the 700ms wait, which
+  // would pop an extra screen.
+  const closedRef = useRef(false);
 
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    [],
-  );
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  /** Close exactly once: cancel any pending affirmation timer, then pop. Bound
+   * to Back + Cancel AND used as the affirmation timer's callback, so manual
+   * close during the 700ms wait can't double-fire router.back(). */
+  const handleClose = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    clearTimer();
+    onClose();
+  }, [clearTimer, onClose]);
+
+  useEffect(() => clearTimer, [clearTimer]);
 
   const nameEmpty = value.name.trim().length === 0;
   const saveDisabled = nameEmpty || saving || saved;
@@ -94,7 +110,7 @@ export function CreateExercisePresenter({
     try {
       await onSave(value);
       setSaved(true);
-      timerRef.current = setTimeout(onClose, SAVED_AFFIRMATION_MS);
+      timerRef.current = setTimeout(handleClose, SAVED_AFFIRMATION_MS);
     } catch {
       // Container already surfaced the failure (Alert). Keep the screen open
       // with the form intact and re-arm so the user can retry.
@@ -102,7 +118,7 @@ export function CreateExercisePresenter({
     } finally {
       setSaving(false);
     }
-  }, [nameEmpty, onSave, value, onClose]);
+  }, [nameEmpty, onSave, value, handleClose]);
 
   const levelTone = LEVEL_TONE[value.level];
   const secondaries = value.secondaryMuscleLabels;
@@ -120,7 +136,7 @@ export function CreateExercisePresenter({
           <IconBtn
             icon={<IconBack size={22} />}
             tone="ghost"
-            onPress={onClose}
+            onPress={handleClose}
             accessibilityLabel="Back"
           />
         }
@@ -214,7 +230,7 @@ export function CreateExercisePresenter({
             tone="primary"
             size="lg"
             full
-            onPress={onClose}
+            onPress={handleClose}
             testID="create-exercise-cancel"
           >
             Cancel
