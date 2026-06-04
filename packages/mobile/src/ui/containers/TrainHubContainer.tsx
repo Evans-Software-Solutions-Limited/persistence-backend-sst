@@ -1,6 +1,5 @@
 import { Text, View } from "@tamagui/core";
 import { router } from "expo-router";
-import { useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
@@ -28,36 +27,18 @@ import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
  * The list BODIES (WorkoutsListContainer / ExerciseListContainer) are owned by
  * `04-workout-management`.
  *
- * Transitional note: ExerciseListContainer still renders its own legacy
- * header + search; 04.2 reworks it into a headerless body. Until then there's
- * a benign chrome overlap on the Exercises segment. The Create action + the
- * /exercises/create deep-link's `pendingCreate` flag route to the existing
- * full-screen creator until 04.3 ships the bottom-sheet.
+ * Create flow (04.3): the `+ Create` action pushes the full-screen
+ * `/exercises/create` route (revised 2026-06-03 — was a bottom-sheet; the long
+ * form needs reliable scroll/keyboard handling, so it's full-screen like the
+ * legacy creator + the 04.6 editor).
  */
 export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
-  const pendingCreate = useTrainSegment((s) => s.pendingCreate);
-  const clearPendingCreate = useTrainSegment((s) => s.clearPendingCreate);
+  const openCreateExercise = () => router.push("/(app)/exercises/create");
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (battery/clock).
   const insets = useSafeAreaInsets();
-
-  const openCreateExercise = () => {
-    // TODO(04-workout-management § Sheet mount-point): replace the push with
-    // a local <CreateExerciseSheetContainer> bottom-sheet once 04.3 ships it.
-    router.push("/(app)/exercises/create");
-  };
-
-  // Legacy /exercises/create deep-links surface here via the redirect map
-  // (Phase 14.7). The redirect sets `pendingCreate`; consume + clear it once
-  // on mount so the creator opens exactly once.
-  useEffect(() => {
-    if (pendingCreate) {
-      clearPendingCreate();
-      openCreateExercise();
-    }
-  }, [pendingCreate, clearPendingCreate]);
 
   const openSearch = () => {
     // TODO(04-workout-management § STORY-007): open the Exercises search

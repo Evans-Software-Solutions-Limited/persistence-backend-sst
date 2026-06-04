@@ -627,7 +627,7 @@ describe("ExerciseListContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/ex-1");
   });
 
-  it("navigates to the create route when onCreateExercise fires", async () => {
+  it("pushes the full-screen create route when onCreateExercise fires", async () => {
     const { adapters } = createTestAdapters();
 
     const { getByTestId } = render(

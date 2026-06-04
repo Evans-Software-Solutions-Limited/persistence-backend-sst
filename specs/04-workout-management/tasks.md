@@ -21,15 +21,19 @@
 
 > **Revised 2026-06-01 (PR #96 review):** Built from `prototype-hubs.jsx § TrainExercisesContent` (canonical hub), superseding `library.jsx`. Also folded in two shared-primitive fixes surfaced in review — `<Btn>` now tints its icon to the foreground colour, and `<Segmented>` is content-width (not full-width) to match the prototype's `inline-flex`. Quick-filter pills match legacy's set (no muscle-group quick pills in legacy — those live in the modal); `PT Assigned`/`Physio Assigned` remain deferred to M8 (no V2 relationship data). The Workouts-segment search button stays a deferred STORY-007 placeholder pending a design.
 
-## Phase 04.3 — CreateExerciseSheet (1 PR)
+## Phase 04.3 — Create exercise (full-screen) (1 PR)
 
-- [ ] **T-04.3.1** Author `<ExerciseFormFields>` shared internal component covering name + photo + primary muscle + secondary muscles + equipment + level + instructions. Used by both sheet and full-screen editor. Implements STORY-006 + STORY-008 ACs.
-- [ ] **T-04.3.2** Author `<CreateExerciseSheetPresenter>` per `design.md § CreateExerciseSheetPresenter`. Uses `<BottomSheet>` + `<ExerciseFormFields>` + footer Cancel/Save. Implements STORY-006 ACs.
-- [ ] **T-04.3.3** Author `<CreateExerciseSheetContainer>` wiring `useCreateExercise()` (existing V2 mutation).
-- [ ] **T-04.3.4** Mount the sheet inside `<TrainHubContainer>` (per `design.md`). Closes STORY-006 AC 6.1.
-- [ ] **T-04.3.5** Delete `app/(app)/exercises/create.tsx`. Add deep-link redirect to `14-navigation`'s map. Closes STORY-006 AC 6.6.
-- [ ] **T-04.3.6** "Saved ✓" affirmation for 700ms after successful save before sheet closes. Closes STORY-006 AC 6.5.
-- [ ] **T-04.3.7** Form state via `react-hook-form`. Save button disabled until name is non-empty.
+- [x] **T-04.3.1** Author `<ExerciseFormFields>` shared internal component covering name + photo + primary muscle + secondary muscles + equipment + level + instructions. Used by both the create screen and the 04.6 editor. Implements STORY-006 + STORY-008 ACs. _(Pure form-model + UI→domain conversion live alongside in `exerciseForm.ts`.)_
+- [x] **T-04.3.2** Author `<CreateExercisePresenter>` — full-screen: `<HeaderBar>` (close + "New exercise") + `KeyboardAvoidingView` + `ScrollView` containing `<ExerciseFormFields>` + live PREVIEW chip, with a sticky Cancel/Save footer. Implements STORY-006 ACs.
+- [x] **T-04.3.3** Author `<CreateExerciseContainer>` wiring `createExerciseCommand` (the real V2 mutation — there is no `useCreateExercise()` hook; the spec referenced one that never existed). Pulls `userId` from `useAuth`, `storage` from `useAdapters`; on success bumps `useExerciseLibrary` so the list re-reads (AC 6.5), then `router.back()`.
+- [x] **T-04.3.4** `(app)/exercises/create.tsx` renders `<CreateExerciseContainer>` full-screen; the Train hub `+ Create` action + the Exercises empty-state CTA `router.push` it. Closes STORY-006 AC 6.1.
+- [x] **T-04.3.5** `create.tsx` is a real full-screen route (no redirect stub). Deep links to `/exercises/create` resolve directly. The old full-screen creator (`DevExerciseCreatorContainer` + its test) is removed as orphaned. Closes STORY-006 AC 6.6.
+- [x] **T-04.3.6** "Saved ✓" affirmation for 700ms after successful save before the screen pops. Closes STORY-006 AC 6.5.
+- [x] **T-04.3.7** Form state via controlled `value`/`onChange` (NOT `react-hook-form` — it isn't a dependency of `packages/mobile`, and the controlled contract keeps `<ExerciseFormFields>` portable between the create screen and the 04.6 editor). Save disabled until name is non-empty + guarded against double-tap (synchronous in-flight ref).
+
+> **Revised 2026-06-03 (Phase 04.3 — full-screen, not a sheet):** create-exercise moved off the `<BottomSheet>` (originally specced) to a **full-screen route**. The 8-section form needs reliable scroll + keyboard handling that the gorhom sheet kept fighting on device; full-screen matches the legacy creator + the 04.6 editor and reuses the same `<ExerciseFormFields>`. Brad signed off (2026-06-03). The sheet-only machinery added earlier in 04.3 (`useCreateExerciseSheet` open-state store, the root-layout mount, the sign-out reset, the `pendingCreate`/redirect-stub path) is **removed**. The shared `<BottomSheet>` primitive fixes from this work (gorhom `enableDynamicSizing={false}` + the scroll-view `flex: 1`) stay — they correct ProfileDrawer + other sheets too.
+>
+> **Revised 2026-06-02 (Phase 04.3 — Cardio dropped):** The prototype's **Cardio** primary-muscle chip is dropped for now — V2's `validateExerciseInput` requires ≥1 primary muscle and there's no `cardio`/`full-body` muscle enum, so the design's `Cardio → []` mapping would fail validation on Save. Cardio-as-a-category is a larger, dedicated future slice (Brad's call, 2026-06-02). Remaining labels each map to ≥1 valid muscle; `category` is always `"strength"`. Conversion emits domain enum _keys_ (`"chest"`, `"barbell"`) per `design.md`, not reference-list UUIDs (UUID resolution touches the adapter layer that STORY-009 freezes). The exercise-list refresh after a create uses a new `useExerciseLibrary` signal store (the create screen bumps it, the list folds it into its cache-read deps).
 
 ## Phase 04.4 — WorkoutDetail rewrite (1 PR)
 

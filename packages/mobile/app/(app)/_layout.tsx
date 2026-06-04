@@ -67,7 +67,7 @@ export default function AppLayout() {
         <Stack.Screen name="exercises/[id]" options={{ title: "Exercise" }} />
         <Stack.Screen
           name="exercises/create"
-          options={{ title: "New exercise" }}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="exercises/filters"

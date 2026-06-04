@@ -246,9 +246,13 @@ function muscleToTone(muscle: MuscleGroup | undefined): CardAccent {
 
 ---
 
-## `<CreateExerciseSheetPresenter>` — new sheet
+## `<CreateExercisePresenter>` — full-screen create
 
-Replaces V2's full-screen `(app)/exercises/create.tsx`. Per `create-exercise.jsx:19–203`.
+The form content below is per `create-exercise.jsx:19–203`, but rendered **full-screen**, not in a `<BottomSheet>`.
+
+> **Revised 2026-06-03 (Phase 04.3 — full-screen, supersedes the sheet design):** create-exercise is a **full-screen route** (`<CreateExercisePresenter>` = `<HeaderBar>` + `KeyboardAvoidingView` + `ScrollView` form + sticky Cancel/Save footer; `<CreateExerciseContainer>` wires the command + `router.back()`). The original `<BottomSheet>`-based design (this section's "Sheet mount-point" + the `TrainHubContainer` sheet snippet below) is **obsolete** — the long form needed reliable scroll/keyboard handling the gorhom sheet fought on device. The sheet-only machinery (`useCreateExerciseSheet` store, root-layout mount, sign-out reset, `pendingCreate`/redirect-stub) is removed; the `<BottomSheet>` primitive fixes (gorhom `enableDynamicSizing={false}` + scroll-view `flex: 1`) stay for ProfileDrawer + other sheets. Triggers `router.push("/(app)/exercises/create")`.
+>
+> **Revised 2026-06-02 (Phase 04.3 implementation):** Three deltas from the design below: (1) the **Cardio** chip is dropped (the `Cardio → []` mapping fails `validateExerciseInput`'s ≥1-primary-muscle rule; cardio-as-category deferred), so `MuscleLabel` is the six muscles below and `category` is always `"strength"`; (2) form state is controlled `value`/`onChange`, not `react-hook-form` (not a dependency); (3) the container wires the real `createExerciseCommand` — there is **no** `useCreateExercise()` hook — and bumps a `useExerciseLibrary` signal on success so the sibling list re-reads (AC 6.5).
 
 ```ts
 type CreateExerciseSheetProps = {

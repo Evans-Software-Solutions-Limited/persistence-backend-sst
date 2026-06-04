@@ -106,25 +106,12 @@ describe("TrainHubContainer", () => {
     );
   });
 
-  it("Create on the Exercises segment routes to the exercise creator", () => {
+  it("Create on the Exercises segment pushes the full-screen create route", () => {
     useTrainSegment.setState({ segment: "Exercises", hydrated: true });
     const { getByText } = renderWithTheme(<TrainHubContainer />);
 
     fireEvent.press(getByText("Create"));
 
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
-  });
-
-  it("consumes a pendingCreate flag on mount: opens the creator + clears the flag", () => {
-    useTrainSegment.setState({
-      segment: "Exercises",
-      pendingCreate: true,
-      hydrated: true,
-    });
-
-    renderWithTheme(<TrainHubContainer />);
-
-    expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
-    expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 });

@@ -1,38 +1,18 @@
-import { View } from "@tamagui/core";
-import { Text } from "../../../src/ui/components";
-import { DevExerciseCreatorContainer } from "../../../src/ui/containers/DevExerciseCreatorContainer";
+import { CreateExerciseContainer } from "../../../src/ui/containers/CreateExerciseContainer";
 
 /**
- * M0 `__DEV__`-gated creator (AC 7.18).
+ * `/exercises/create` — full-screen create-a-custom-exercise route.
  *
- * Dev builds: render the minimal creator form so the smoke test can
- * exercise `POST /exercises` end-to-end.
- * Production builds: fall back to the Phase 6 "coming in M5" placeholder
- * — the full-featured creator is scoped into M5 Exercise detail +
- * creator, not M0.
+ * Spec: specs/04-workout-management/requirements.md STORY-006
  *
- * `__DEV__` is a React Native global that Metro evaluates at bundle
- * time. In a production bundle the branch is dead-code-eliminated, so
- * the creator container never ships to end users.
+ * Revised 2026-06-03 (Phase 04.3): create is a full-screen route again (not the
+ * bottom-sheet the design package originally specced). The 8-section form needs
+ * reliable scrolling + keyboard handling that the gorhom sheet kept fighting on
+ * device; full-screen matches the legacy creator + the 04.6 editor and reuses
+ * the same <ExerciseFormFields>. The Train hub `+ Create` action + the Exercises
+ * empty-state CTA `router.push` here; deep links to `/exercises/create` resolve
+ * to this screen directly.
  */
 export default function CreateExerciseScreen() {
-  if (__DEV__) {
-    return <DevExerciseCreatorContainer />;
-  }
-  return (
-    <View
-      flex={1}
-      backgroundColor="$background"
-      justifyContent="center"
-      alignItems="center"
-      padding="$base"
-    >
-      <Text variant="h3" align="center">
-        Create exercise
-      </Text>
-      <Text variant="body" secondary align="center" marginTop="$sm">
-        Coming in M5
-      </Text>
-    </View>
-  );
+  return <CreateExerciseContainer />;
 }

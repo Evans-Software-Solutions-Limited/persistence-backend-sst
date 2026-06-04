@@ -12,6 +12,7 @@ import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -61,6 +62,10 @@ export function ExerciseListContainer() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [cacheVersion, setCacheVersion] = useState(0);
+  // Bumped by the Create-Exercise sheet (a sibling container) on a successful
+  // create so this list re-reads the local cache and the new custom exercise
+  // surfaces under "Mine" without an app reload (STORY-006 AC 6.5).
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
 
   const filters = useMemo(() => {
     const trimmed = debouncedSearch.trim();
@@ -102,8 +107,9 @@ export function ExerciseListContainer() {
   // Filtering is a separate, cheap, in-memory step below.
   const cacheRead = useMemo(() => {
     void cacheVersion;
+    void libraryRevision;
     return getExercisesQuery(storage);
-  }, [storage, cacheVersion]);
+  }, [storage, cacheVersion, libraryRevision]);
 
   // -- Server-side ranked search (FTS + trigram) -------------------------
   //
@@ -273,6 +279,7 @@ export function ExerciseListContainer() {
   );
 
   const onCreateExercise = useCallback(() => {
+    // Empty-state CTA → push the full-screen Create-Exercise route.
     router.push("/(app)/exercises/create");
   }, [router]);
 
