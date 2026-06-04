@@ -150,6 +150,7 @@ export function CreateExercisePresenter({
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 20, paddingBottom: 32, gap: 16 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           testID="create-exercise-scroll"
         >
@@ -212,45 +213,48 @@ export function CreateExercisePresenter({
             </View>
           </LinearGradient>
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      {/* Sticky footer — Save is always reachable regardless of scroll. */}
-      <View
-        flexDirection="row"
-        gap={10}
-        paddingHorizontal={20}
-        paddingTop={12}
-        paddingBottom={8}
-        borderTopWidth={1}
-        borderColor="$border"
-      >
-        <View flex={1}>
-          <Btn
-            variant="outline"
-            tone="primary"
-            size="lg"
-            full
-            onPress={handleClose}
-            testID="create-exercise-cancel"
-          >
-            Cancel
-          </Btn>
+        {/* Footer lives INSIDE the KeyboardAvoidingView so iOS `padding` lifts
+            it above the keyboard too — the name input autoFocuses, so the
+            keyboard is up on entry and a sibling-to-KAV footer would leave Save
+            occluded. Still a sticky footer: the ScrollView is flex:1 above it. */}
+        <View
+          flexDirection="row"
+          gap={10}
+          paddingHorizontal={20}
+          paddingTop={12}
+          paddingBottom={8}
+          borderTopWidth={1}
+          borderColor="$border"
+        >
+          <View flex={1}>
+            <Btn
+              variant="outline"
+              tone="primary"
+              size="lg"
+              full
+              onPress={handleClose}
+              testID="create-exercise-cancel"
+            >
+              Cancel
+            </Btn>
+          </View>
+          <View flex={2}>
+            <Btn
+              variant="filled"
+              tone="primary"
+              size="lg"
+              full
+              icon={<IconCheck size={15} strokeWidth={2.5} />}
+              onPress={handleSave}
+              disabled={saveDisabled}
+              testID="create-exercise-save"
+            >
+              {saved ? "Saved ✓" : "Save exercise"}
+            </Btn>
+          </View>
         </View>
-        <View flex={2}>
-          <Btn
-            variant="filled"
-            tone="primary"
-            size="lg"
-            full
-            icon={<IconCheck size={15} strokeWidth={2.5} />}
-            onPress={handleSave}
-            disabled={saveDisabled}
-            testID="create-exercise-save"
-          >
-            {saved ? "Saved ✓" : "Save exercise"}
-          </Btn>
-        </View>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

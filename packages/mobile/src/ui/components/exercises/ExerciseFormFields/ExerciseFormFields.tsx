@@ -105,33 +105,30 @@ export function ExerciseFormFields({
         />
       </View>
 
-      {/* Photo (optional placeholder) */}
+      {/* Photo placeholder — NON-interactive for now. Real photo/video upload
+          lands in 16-exercise-media-upload; until then this is a static "coming
+          soon" affordance, not a button (no onPress, no button role, no press
+          feedback — so it doesn't promise a tap that does nothing). */}
       {showsPhoto ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Add photo or video URL"
-          style={formChipPressStyle}
+        <View
+          aspectRatio={16 / 7}
+          borderRadius={14}
+          borderWidth={1.5}
+          borderColor="$border3"
+          backgroundColor="$surface2"
+          alignItems="center"
+          justifyContent="center"
+          gap={6}
+          // Dashed isn't a Tamagui style prop name; set it through the RN
+          // style escape hatch so the placeholder reads as a drop target.
+          style={{ borderStyle: "dashed" }}
           testID="exercise-form-photo"
         >
-          <View
-            aspectRatio={16 / 7}
-            borderRadius={14}
-            borderWidth={1.5}
-            borderColor="$border3"
-            backgroundColor="$surface2"
-            alignItems="center"
-            justifyContent="center"
-            gap={6}
-            // Dashed isn't a Tamagui style prop name; set it through the RN
-            // style escape hatch so the placeholder reads as a drop target.
-            style={{ borderStyle: "dashed" }}
-          >
-            <IconCamera size={22} color={color.$text3} />
-            <Text fontSize={11.5} fontWeight="500" color="$text3">
-              Add photo or video URL (optional)
-            </Text>
-          </View>
-        </Pressable>
+          <IconCamera size={22} color={color.$text3} />
+          <Text fontSize={11.5} fontWeight="500" color="$text3">
+            Photo &amp; video upload — coming soon
+          </Text>
+        </View>
       ) : null}
 
       {/* Primary muscle */}
