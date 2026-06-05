@@ -1052,7 +1052,24 @@ function referenceListPath(kind: ReferenceListKind): string {
   }
 }
 
+/**
+ * Sentinel owner id for the stock/system exercise catalogue. The backend's
+ * Supabase rows tag system exercises with `created_by = SYSTEM_USER_ID`
+ * (an all-zeros UUID) — NOT `NULL` — so a naive `createdBy !== null` check
+ * marks the ENTIRE stock catalogue as custom (System filter empties, Mine
+ * shows everything). Mirror the backend constant
+ * (`microservices/core/src/application/repositories/exerciseRepository.ts`
+ * `SYSTEM_USER_ID`) here so the client can recognise + normalise it.
+ */
+const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
 function mapApiExerciseToDomain(api: ApiExercise): Exercise {
+  // A row is system-authored when it has no owner OR carries the system
+  // sentinel. Normalise both to a null `createdBy` so ownership checks
+  // (`createdBy === userId`) and the Mine/System quick-filters treat the
+  // stock catalogue as un-owned.
+  const isSystemAuthored =
+    api.createdBy == null || api.createdBy === SYSTEM_USER_ID;
   return {
     id: api.id,
     name: api.name,
@@ -1065,11 +1082,10 @@ function mapApiExerciseToDomain(api: ApiExercise): Exercise {
     equipment: api.equipmentRequired as EquipmentType[],
     videoUrl: api.videoUrl ?? null,
     thumbnailUrl: api.thumbnailUrl ?? null,
-    // Derive client-side: V2 backend uses createdBy IS NULL for system
-    // exercises and has no is_custom column. Fall back to the wire
-    // flag if the backend still sets it (transitional).
-    isCustom: api.isCustom ?? api.createdBy !== null,
-    createdBy: api.createdBy,
+    // Prefer an explicit wire flag if the backend ever sends one; otherwise
+    // derive: custom iff a real (non-system) owner authored it.
+    isCustom: api.isCustom ?? !isSystemAuthored,
+    createdBy: isSystemAuthored ? null : api.createdBy,
   };
 }
 

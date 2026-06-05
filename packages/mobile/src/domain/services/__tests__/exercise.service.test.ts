@@ -2,6 +2,7 @@ import type { Exercise, CreateExerciseInput } from "@/domain/models/exercise";
 import {
   filterExercises,
   scoreExercise,
+  sortExercisesByName,
   tokenizeSearch,
   validateExerciseInput,
 } from "../exercise.service";
@@ -214,31 +215,6 @@ describe("filterExercises", () => {
     it("returns all exercises when no filters provided", () => {
       const result = filterExercises(EXERCISES, {});
       expect(result).toHaveLength(EXERCISES.length);
-    });
-
-    it("orders the no-search result alphabetically by name (legacy parity)", () => {
-      const names = filterExercises(EXERCISES, {}).map((e) => e.name);
-      const sorted = [...names].sort((a, b) => a.localeCompare(b));
-      expect(names).toEqual(sorted);
-    });
-
-    it("sorts a freshly-appended custom into its alphabetical place, not the bottom", () => {
-      const base = filterExercises(EXERCISES, {});
-      const custom = {
-        ...base[0],
-        id: "local-new",
-        name: "Aaa First Custom",
-        isCustom: true,
-        createdBy: "me",
-      };
-      // Append at the end (mirrors SQLite insertion order for a new row).
-      const result = filterExercises([...EXERCISES, custom], {});
-      expect(result[0].id).toBe("local-new");
-      // And it surfaces under the "Mine" filter.
-      const mine = filterExercises([...EXERCISES, custom], {
-        createdBy: "mine",
-      });
-      expect(mine.map((e) => e.id)).toContain("local-new");
     });
 
     it("returns all exercises with empty search string", () => {
@@ -810,5 +786,39 @@ describe("validateExerciseInput", () => {
         expect(result.error.kind).toBe("validation");
       }
     });
+  });
+});
+
+describe("sortExercisesByName", () => {
+  const make = (id: string, name: string): Exercise => ({
+    id,
+    name,
+    description: null,
+    instructions: null,
+    category: "strength",
+    difficulty: "beginner",
+    primaryMuscleGroups: [],
+    secondaryMuscleGroups: [],
+    equipment: [],
+    videoUrl: null,
+    thumbnailUrl: null,
+    isCustom: false,
+    createdBy: null,
+  });
+
+  it("orders alphabetically by name without mutating the input", () => {
+    const input = [
+      make("c", "Zercher Squat"),
+      make("a", "Air Squat"),
+      make("b", "Front Squat"),
+    ];
+    const out = sortExercisesByName(input);
+    expect(out.map((e) => e.name)).toEqual([
+      "Air Squat",
+      "Front Squat",
+      "Zercher Squat",
+    ]);
+    // Pure: input untouched.
+    expect(input[0].id).toBe("c");
   });
 });

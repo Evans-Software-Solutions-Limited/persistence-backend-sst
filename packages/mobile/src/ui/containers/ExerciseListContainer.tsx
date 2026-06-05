@@ -7,7 +7,10 @@ import {
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
 import type { Exercise } from "@/domain/models/exercise";
-import { filterExercises } from "@/domain/services/exercise.service";
+import {
+  filterExercises,
+  sortExercisesByName,
+} from "@/domain/services/exercise.service";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
@@ -198,9 +201,29 @@ export function ExerciseListContainer() {
 
   const filtered = useMemo(() => {
     if (useServerResults && serverSearch != null) {
-      return filterExercises(serverSearch.results, filtersWithoutSearch);
+      const serverFiltered = filterExercises(
+        serverSearch.results,
+        filtersWithoutSearch,
+      );
+      // The server search can't see local-only exercises — a just-created
+      // custom whose POST hasn't synced, or any offline write. Without this
+      // they flash in from the cache then vanish the instant the server
+      // results land. Union in local cache matches for the SAME query that
+      // the server didn't return (deduped by id) so offline / just-created
+      // exercises stay findable. Server-ranked results keep their order;
+      // local-only matches (already relevance-sorted by filterExercises)
+      // follow.
+      const localMatches = filterExercises(cacheRead.exercises, filters);
+      const serverIds = new Set(serverFiltered.map((e) => e.id));
+      const localOnly = localMatches.filter((e) => !serverIds.has(e.id));
+      return [...serverFiltered, ...localOnly];
     }
-    return filterExercises(cacheRead.exercises, filters);
+    const browse = filterExercises(cacheRead.exercises, filters);
+    // filterExercises ranks by relevance when a search term is present; for
+    // the no-search browse list restore legacy alphabetical order (V2's cache
+    // read is insertion-ordered, which buries newly-created customs at the
+    // bottom — they read as "vanished" after the post-create flash).
+    return filters.search ? browse : sortExercisesByName(browse);
   }, [
     useServerResults,
     serverSearch,

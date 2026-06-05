@@ -12,6 +12,7 @@ import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter"
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import { createExerciseCommand } from "@/application/commands/create-exercise.command";
 import type { Exercise } from "@/domain/models/exercise";
+import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -83,6 +84,9 @@ MockPresenter.mockImplementation((props) => {
         onPress={() => props.onLongPressExercise?.("ex-1")}
       />
       <Text testID="stub-count">{props.exercises.length}</Text>
+      <Text testID="stub-ids">
+        {props.exercises.map((e) => e.id).join(",")}
+      </Text>
       <Text testID="stub-refreshing">
         {props.isRefreshing ? "true" : "false"}
       </Text>
@@ -335,6 +339,68 @@ describe("ExerciseListContainer", () => {
     });
     await waitFor(() => {
       expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+  });
+
+  it("orders the no-search browse list alphabetically by name (legacy parity)", async () => {
+    const { adapters, api } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "z", name: "Zercher Squat" }),
+      makeExercise({ id: "a", name: "Air Squat" }),
+      makeExercise({ id: "m", name: "Front Squat" }),
+    ];
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(3);
+    });
+    // Air Squat (a) → Front Squat (m) → Zercher Squat (z).
+    expect(getByTestId("stub-ids").props.children).toBe("a,m,z");
+  });
+
+  it("keeps a local-only exercise in search results that the server search can't see", async () => {
+    const { adapters, api, storage } = createTestAdapters();
+    api.exercises = [makeExercise({ id: "sys-1", name: "Barbell Squat" })];
+    // A just-created custom that hasn't synced — present in the cache, but the
+    // server search endpoint doesn't know about it.
+    storage.saveCustomExercise(
+      makeExercise({
+        id: "local-test",
+        name: "Test Exercise",
+        isCustom: true,
+        createdBy: "me",
+      }),
+    );
+    // Server returns nothing for the query (it has no such row yet).
+    jest
+      .spyOn(api, "searchExercises")
+      .mockResolvedValue(ok({ data: [], hasMore: false, cursor: null }));
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBeGreaterThanOrEqual(
+        1,
+      );
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-search"), "test exercise");
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    // Despite the empty server response, the local-only match survives.
+    await waitFor(() => {
+      expect(getByTestId("stub-ids").props.children).toContain("local-test");
     });
   });
 

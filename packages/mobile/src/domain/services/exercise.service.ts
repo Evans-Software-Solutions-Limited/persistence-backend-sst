@@ -172,20 +172,20 @@ export function filterExercises(
     });
   }
 
-  // Default ordering: alphabetical by name, matching legacy
-  // (`exerciseQueries.ts` → `.order('name', { ascending: true })`). V2's
-  // cache read (`SELECT ... FROM cached_exercises` with no ORDER BY) returns
-  // rows in SQLite insertion order, so a newly-created custom exercise lands
-  // at the BOTTOM of the ~2.3k-row library and reads as "vanished" after the
-  // post-create flash. Sorting here restores the legacy order so a new
-  // exercise sorts into its alphabetical place (and shows at the top of the
-  // short "Mine" list). Skipped when a search term applied — those results
-  // keep their relevance-score order from the block above.
-  if (scored === null) {
-    result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-  }
-
   return result;
+}
+
+/**
+ * Legacy-parity alphabetical ordering for the browse list
+ * (`exerciseQueries.ts` → `.order('name', { ascending: true })`). V2's cache
+ * read returns rows in SQLite insertion order, so without this a newly-created
+ * custom lands at the BOTTOM of the ~2.3k-row library and reads as "vanished"
+ * after the post-create flash. Applied by the list container ONLY to the
+ * no-search browse path — search keeps its relevance-score order, and the
+ * server-ranked search path keeps the server's order.
+ */
+export function sortExercisesByName(exercises: Exercise[]): Exercise[] {
+  return [...exercises].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
