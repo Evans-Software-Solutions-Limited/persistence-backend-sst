@@ -216,6 +216,31 @@ describe("filterExercises", () => {
       expect(result).toHaveLength(EXERCISES.length);
     });
 
+    it("orders the no-search result alphabetically by name (legacy parity)", () => {
+      const names = filterExercises(EXERCISES, {}).map((e) => e.name);
+      const sorted = [...names].sort((a, b) => a.localeCompare(b));
+      expect(names).toEqual(sorted);
+    });
+
+    it("sorts a freshly-appended custom into its alphabetical place, not the bottom", () => {
+      const base = filterExercises(EXERCISES, {});
+      const custom = {
+        ...base[0],
+        id: "local-new",
+        name: "Aaa First Custom",
+        isCustom: true,
+        createdBy: "me",
+      };
+      // Append at the end (mirrors SQLite insertion order for a new row).
+      const result = filterExercises([...EXERCISES, custom], {});
+      expect(result[0].id).toBe("local-new");
+      // And it surfaces under the "Mine" filter.
+      const mine = filterExercises([...EXERCISES, custom], {
+        createdBy: "mine",
+      });
+      expect(mine.map((e) => e.id)).toContain("local-new");
+    });
+
     it("returns all exercises with empty search string", () => {
       const result = filterExercises(EXERCISES, { search: "" });
       expect(result).toHaveLength(EXERCISES.length);

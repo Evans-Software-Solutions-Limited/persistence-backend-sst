@@ -10,6 +10,7 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
+import { createExerciseCommand } from "@/application/commands/create-exercise.command";
 import type { Exercise } from "@/domain/models/exercise";
 import type { Adapters } from "@/shared/types";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
@@ -296,6 +297,43 @@ describe("ExerciseListContainer", () => {
     });
     await waitFor(() => {
       expect(getByTestId("stub-quick-filters").props.children).toBe("system");
+      expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+  });
+
+  it("REPRO: a created custom survives the initial refresh and shows under 'mine' + 'all'", async () => {
+    const { adapters, api, storage } = createTestAdapters();
+    api.exercises = [
+      makeExercise({ id: "sys-1", name: "Squat", isCustom: false }),
+      makeExercise({ id: "sys-2", name: "Row", isCustom: false }),
+    ];
+    const created = createExerciseCommand(
+      { storage, userId: "me", generateId: () => "abc" },
+      {
+        name: "My Curl",
+        category: "strength",
+        difficulty: "beginner",
+        primaryMuscleGroups: ["biceps"],
+        equipment: ["dumbbell"],
+      },
+    );
+    expect(created.ok).toBe(true);
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    // After the initial refresh: 2 system + 1 custom = 3.
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(3);
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-toggle-mine"));
+    });
+    await waitFor(() => {
       expect(getByTestId("stub-count").props.children).toBe(1);
     });
   });
