@@ -439,6 +439,22 @@ export interface StoragePort {
   swapLocalSessionId(localId: string, serverId: string): void;
 
   /**
+   * Rewrite a custom exercise's optimistic `local-…` id to the server-
+   * assigned id once its create POST flushes. Updates the cached row (both
+   * the PK and the id embedded in its blob) and re-points any queued
+   * exercise mutations still addressed to the local id (a follow-up
+   * PATCH/DELETE enqueued after the create completed). No-op when the ids
+   * match or nothing references `localId`.
+   *
+   * Without this, a synced custom exercise keeps its `local-…` id until the
+   * next full refresh — so the next edit enqueues `PATCH /exercises/local-…`
+   * which 404s on every retry (the edit is silently dropped), and the
+   * refresh duplicates the row under its real id. Mirrors
+   * `swapLocalSessionId`. Called from the sync worker's reply path.
+   */
+  swapLocalExerciseId(localId: string, serverId: string): void;
+
+  /**
    * Read the rest-timer state (started-at + total-seconds) for the
    * user's active session. Stored inline on `active_sessions` per
    * EXECUTION_PLAN § 3.1 — single-active-session invariant means a

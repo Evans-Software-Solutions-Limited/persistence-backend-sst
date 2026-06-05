@@ -1,6 +1,23 @@
 import { processSyncQueue } from "../sync.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
+import type { Exercise } from "@/domain/models/exercise";
+
+const customExercise = (id: string, name = "My Lift"): Exercise => ({
+  id,
+  name,
+  description: null,
+  instructions: null,
+  category: "strength",
+  difficulty: "intermediate",
+  primaryMuscleGroups: ["chest"],
+  secondaryMuscleGroups: [],
+  equipment: ["barbell"],
+  videoUrl: null,
+  thumbnailUrl: null,
+  isCustom: true,
+  createdBy: "me",
+});
 
 // Mock global fetch
 const mockFetch = jest.fn();
@@ -53,6 +70,96 @@ describe("processSyncQueue", () => {
       "https://api.test/workouts",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("swaps a custom exercise's local id to the server id on create success", async () => {
+    storage.saveCustomExercise(customExercise("local-abc"));
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-abc",
+      operation: "create",
+      payload: { name: "My Lift" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "server-xyz" } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+
+    // The optimistic local row is re-keyed to the server id, so a later edit
+    // PATCHes the real resource instead of 404ing on /exercises/local-abc.
+    expect(storage.getCachedExercise("local-abc")).toBeNull();
+    expect(storage.getCachedExercise("server-xyz")?.id).toBe("server-xyz");
+  });
+
+  it("completes the create even if the response carries no usable id (no swap, no throw)", async () => {
+    storage.saveCustomExercise(customExercise("local-def"));
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-def",
+      operation: "create",
+      payload: { name: "My Lift" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error("not JSON");
+      },
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    // No id to swap to → the local row is left intact for the next refresh.
+    expect(storage.getCachedExercise("local-def")?.id).toBe("local-def");
+  });
+
+  it("does not swap when the create response omits a server id", async () => {
+    storage.saveCustomExercise(customExercise("local-ghi"));
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-ghi",
+      operation: "create",
+      payload: { name: "My Lift" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    // Well-formed JSON, but no data.id — nothing to swap to.
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedExercise("local-ghi")?.id).toBe("local-ghi");
+  });
+
+  it("does not swap a non-create exercise mutation (e.g. an edit PATCH)", async () => {
+    storage.saveCustomExercise(customExercise("server-1", "Renamed"));
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "server-1",
+      operation: "update",
+      payload: { name: "Renamed" },
+      endpoint: "/exercises/server-1",
+      method: "PATCH",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "server-1" } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    // Row untouched — the create-only swap branch must not fire for a PATCH.
+    expect(storage.getCachedExercise("server-1")?.name).toBe("Renamed");
   });
 
   it("marks failed mutations and increments retry count", async () => {

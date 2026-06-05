@@ -1,13 +1,14 @@
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
-import type {
-  CreateExerciseInput,
-  EquipmentType,
-  Exercise,
-  ExerciseCategory,
-  ExerciseDifficulty,
-  ExerciseFilters,
-  MuscleGroup,
+import {
+  SYSTEM_USER_ID,
+  type CreateExerciseInput,
+  type EquipmentType,
+  type Exercise,
+  type ExerciseCategory,
+  type ExerciseDifficulty,
+  type ExerciseFilters,
+  type MuscleGroup,
 } from "@/domain/models/exercise";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
@@ -1051,17 +1052,6 @@ function referenceListPath(kind: ReferenceListKind): string {
       return "/exercises/categories";
   }
 }
-
-/**
- * Sentinel owner id for the stock/system exercise catalogue. The backend's
- * Supabase rows tag system exercises with `created_by = SYSTEM_USER_ID`
- * (an all-zeros UUID) — NOT `NULL` — so a naive `createdBy !== null` check
- * marks the ENTIRE stock catalogue as custom (System filter empties, Mine
- * shows everything). Mirror the backend constant
- * (`microservices/core/src/application/repositories/exerciseRepository.ts`
- * `SYSTEM_USER_ID`) here so the client can recognise + normalise it.
- */
-const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 function mapApiExerciseToDomain(api: ApiExercise): Exercise {
   // A row is system-authored when it has no owner OR carries the system

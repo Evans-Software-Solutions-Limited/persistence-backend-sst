@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "./useAdapters";
+import { useExerciseLibrary } from "./useExerciseLibrary";
 
 /**
  * Single-exercise hook backing the detail screen + the editor's initial load.
@@ -39,11 +40,22 @@ export function useExercise(id: string | null): ExerciseDetailState {
 
   const [cacheVersion, setCacheVersion] = useState(0);
 
+  // Subscribe to the shared "local exercise library changed" signal. The
+  // editor (a sibling route stacked on top of this screen) writes an edit
+  // straight into the same `cached_exercises` store and bumps `revision` —
+  // but this hook's own `cacheVersion` only moves on its own `refresh()`, so
+  // without watching `revision` the still-mounted detail screen behind the
+  // editor keeps rendering the pre-edit row until a full remount. Folding
+  // `revision` into the read makes the saved edit show the moment the editor
+  // pops back. (STORY-008 — edit reflects without navigate-out-and-in.)
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
+
   const initial = useMemo(() => {
     void cacheVersion;
+    void libraryRevision;
     if (!id) return null;
     return storage.getCachedExercise(id);
-  }, [storage, id, cacheVersion]);
+  }, [storage, id, cacheVersion, libraryRevision]);
 
   const [exercise, setExercise] = useState<Exercise | null>(initial);
   const [isLoading, setIsLoading] = useState(false);

@@ -176,6 +176,34 @@ export async function processSyncQueue(
         }
       }
 
+      // Custom-exercise create: the POST returns the server-assigned id, but
+      // the cached row + any queued follow-up edits still address the
+      // optimistic `local-…` id. Swap it through so a later PATCH/DELETE hits
+      // the real resource instead of 404ing forever (and so the next library
+      // refresh doesn't duplicate the row under its real id). Non-fatal on
+      // parse failure: the create already succeeded, so the entry still marks
+      // completed — worst case the local id lingers until the next full
+      // refresh reconciles it, exactly as before this fix. Mirrors the
+      // `swapLocalSessionId` reply-path swap for sessions.
+      if (
+        entry.entityType === "exercise" &&
+        entry.operation === "create" &&
+        entry.entityId !== null
+      ) {
+        try {
+          const body = (await response.json()) as { data?: { id?: string } };
+          const serverId = body.data?.id;
+          if (serverId && serverId !== entry.entityId) {
+            storage.swapLocalExerciseId(entry.entityId, serverId);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /exercises succeeded but id-swap failed; local id will reconcile on the next refresh:",
+            err,
+          );
+        }
+      }
+
       storage.markMutationCompleted(entry.id);
       succeeded++;
     } catch (err) {

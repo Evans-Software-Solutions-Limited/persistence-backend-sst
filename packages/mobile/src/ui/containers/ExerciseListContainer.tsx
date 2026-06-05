@@ -6,7 +6,6 @@ import {
   getExercisesQuery,
   refreshExerciseCache,
 } from "@/application/queries/exercises.query";
-import type { Exercise } from "@/domain/models/exercise";
 import {
   filterExercises,
   sortExercisesByName,
@@ -19,28 +18,6 @@ import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
 
 const SEARCH_DEBOUNCE_MS = 300;
-/**
- * Threshold for kicking off a server-side ranked search. Below this we
- * stick with the local cache + filterExercises path — single-char prefix
- * queries return almost the entire catalogue and aren't worth a round
- * trip. Matches the backend's `MIN_SEARCH_LENGTH`.
- */
-const SERVER_SEARCH_MIN_LENGTH = 2;
-/**
- * Page size for the server search call. The picker caps at 100; matching
- * here keeps the contract consistent and prevents a 1k-row payload from
- * the server outranking what the UI can render.
- */
-const SERVER_SEARCH_LIMIT = 100;
-
-type ServerSearchState = {
-  /** The exact trimmed query this state corresponds to. */
-  q: string;
-  results: Exercise[];
-  isFetching: boolean;
-  /** Non-null when the network call failed → caller falls back to cache. */
-  error: string | null;
-};
 
 export function ExerciseListContainer() {
   const { api, storage } = useAdapters();
@@ -114,123 +91,29 @@ export function ExerciseListContainer() {
     return getExercisesQuery(storage);
   }, [storage, cacheVersion, libraryRevision]);
 
-  // -- Server-side ranked search (FTS + trigram) -------------------------
+  // -- Search ------------------------------------------------------------
   //
-  // When the debounced search term hits 2+ chars we fire the backend
-  // `/exercises/search` endpoint. The ranked results replace the local
-  // filter for the search axis. The local cache + filterExercises path
-  // is preserved for: short queries, the empty-search state, and as a
-  // graceful fallback when the network call errors (offline-ish
-  // semantics without an explicit NetInfo dependency).
-  const [serverSearch, setServerSearch] = useState<ServerSearchState | null>(
-    null,
-  );
-
-  useEffect(() => {
-    const q = debouncedSearch.trim();
-    if (q.length < SERVER_SEARCH_MIN_LENGTH) {
-      setServerSearch(null);
-      return;
-    }
-    let cancelled = false;
-    // While the network call is in-flight, useServerResults flips false
-    // (see the `!isFetching` gate below) and the filtered memo falls
-    // through to the cache + tokenised filterExercises path. That's the
-    // intentional bridge — prior server results are NOT carried over,
-    // because showing results from a previous query during a new query
-    // is a worse UX than showing current-query local-cache matches.
-    setServerSearch({ q, results: [], isFetching: true, error: null });
-    // `filtersWithoutSearch` is forwarded so ranking happens within the
-    // user's filter selection, not across the whole catalogue then
-    // narrowed client-side (which silently drops matches ranked past
-    // SERVER_SEARCH_LIMIT). `filtersWithoutSearch` is memoised in
-    // useExerciseFilters, so adding it to the dep list does NOT cause
-    // the effect to re-fire on every keystroke — only on filter pill /
-    // modal changes — and the cleanup cancels any in-flight request
-    // when filters change mid-fetch.
-    void api
-      .searchExercises(q, filtersWithoutSearch, 0, SERVER_SEARCH_LIMIT)
-      .then((result) => {
-        if (cancelled) return;
-        if (result.ok) {
-          setServerSearch({
-            q,
-            results: result.value.data,
-            isFetching: false,
-            error: null,
-          });
-        } else {
-          setServerSearch({
-            q,
-            results: [],
-            isFetching: false,
-            error: result.error.message,
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedSearch, filtersWithoutSearch, api]);
-
-  /**
-   * The server's ranked results are the source of truth iff:
-   *  - we have a serverSearch state for the *current* debounced query
-   *    (avoids stale results outliving a query change)
-   *  - the call has settled (not in-flight)
-   *  - the call didn't error
-   *
-   * Any other condition (short query, in-flight, errored, never fired)
-   * falls through to `filterExercises(cacheRead.exercises, filters)` —
-   * the tokenised local matcher still gives meaningful results for the
-   * current query, which is preferable to showing stale results from
-   * the previous query while the network call runs.
-   *
-   * When the server is the source, the results are already filtered and
-   * ranked by every axis the user selected. We still pass them through
-   * `filterExercises(.., filtersWithoutSearch)` as a defensive client
-   * filter — cost is negligible (≤ SERVER_SEARCH_LIMIT rows) and it
-   * catches any future server/client filter-axis inconsistency without a
-   * wire-shape change.
-   */
-  const useServerResults =
-    serverSearch != null &&
-    serverSearch.q === debouncedSearch.trim() &&
-    serverSearch.error == null &&
-    !serverSearch.isFetching;
-
+  // Search is LOCAL-ONLY: the offline-first SQLite cache holds the entire
+  // exercise library (~2.3k rows, populated by `refreshExerciseCache`), and
+  // `filterExercises` does complete tokenised, ranked matching over it in
+  // sub-10ms. There is no server round-trip.
+  //
+  // An earlier build also fired the backend `/exercises/search` endpoint and
+  // reconciled its async response with the local cache. That dual-source
+  // design caused a visible flash/overwrite: correct local matches rendered
+  // first, then got swapped for the (separately-ranked, sometimes
+  // q-insensitive) server response when it landed. With the whole library
+  // cached locally there's nothing the server can add that the local matcher
+  // can't, so the round-trip was pure downside — removed. (`api.searchExercises`
+  // and the backend FTS endpoint still exist for any future use.)
   const filtered = useMemo(() => {
-    if (useServerResults && serverSearch != null) {
-      const serverFiltered = filterExercises(
-        serverSearch.results,
-        filtersWithoutSearch,
-      );
-      // The server search can't see local-only exercises — a just-created
-      // custom whose POST hasn't synced, or any offline write. Without this
-      // they flash in from the cache then vanish the instant the server
-      // results land. Union in local cache matches for the SAME query that
-      // the server didn't return (deduped by id) so offline / just-created
-      // exercises stay findable. Server-ranked results keep their order;
-      // local-only matches (already relevance-sorted by filterExercises)
-      // follow.
-      const localMatches = filterExercises(cacheRead.exercises, filters);
-      const serverIds = new Set(serverFiltered.map((e) => e.id));
-      const localOnly = localMatches.filter((e) => !serverIds.has(e.id));
-      return [...serverFiltered, ...localOnly];
-    }
-    const browse = filterExercises(cacheRead.exercises, filters);
+    const matches = filterExercises(cacheRead.exercises, filters);
     // filterExercises ranks by relevance when a search term is present; for
     // the no-search browse list restore legacy alphabetical order (V2's cache
     // read is insertion-ordered, which buries newly-created customs at the
     // bottom — they read as "vanished" after the post-create flash).
-    return filters.search ? browse : sortExercisesByName(browse);
-  }, [
-    useServerResults,
-    serverSearch,
-    filtersWithoutSearch,
-    cacheRead.exercises,
-    filters,
-  ]);
+    return filters.search ? matches : sortExercisesByName(matches);
+  }, [cacheRead.exercises, filters]);
 
   // Label enrichment: re-stamp `primaryMuscleGroupLabels` /
   // `secondaryMuscleGroupLabels` / `equipmentLabels` using the adapter's

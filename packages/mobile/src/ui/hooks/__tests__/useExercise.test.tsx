@@ -8,6 +8,7 @@ import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useExercise } from "@/ui/hooks/useExercise";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 
 const buildExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
   id: "ex-1",
@@ -148,6 +149,38 @@ describe("useExercise", () => {
       deferred["ex-2"]?.(ok(buildExercise({ id: "ex-2", name: "Fresh" })));
     });
     expect(result.current.exercise?.id).toBe("ex-2");
+  });
+
+  it("re-reads the cache when the library-changed signal fires (post-edit)", async () => {
+    const api = new InMemoryApiAdapter();
+    const getSpy = jest.spyOn(api, "getExercise");
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Old Name" })]);
+
+    const { result } = renderHook(() => useExercise("ex-1"), {
+      wrapper: wrap(makeAdapters(api, storage)),
+    });
+
+    expect(result.current.exercise?.name).toBe("Old Name");
+
+    // Simulate the editor: write the edit straight into the shared cache,
+    // then bump the library-changed revision. The still-mounted detail hook
+    // must pick the edit up without a remount or a network round-trip.
+    await act(async () => {
+      storage.saveCustomExercise(
+        buildExercise({
+          id: "ex-1",
+          name: "New Name",
+          isCustom: true,
+          createdBy: "me",
+        }),
+      );
+      useExerciseLibrary.getState().markChanged();
+    });
+
+    expect(result.current.exercise?.name).toBe("New Name");
+    // No network was involved — the re-read came straight off the cache.
+    expect(getSpy).not.toHaveBeenCalled();
   });
 
   it("dedupes concurrent refreshes for the same id", async () => {

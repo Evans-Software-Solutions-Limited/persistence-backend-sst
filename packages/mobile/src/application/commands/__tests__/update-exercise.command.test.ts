@@ -168,6 +168,39 @@ describe("updateExerciseCommand", () => {
     expect(payload.instructions).toBe("");
   });
 
+  it("preserves cached description/videoUrl/thumbnailUrl the edit never touched", () => {
+    // A synced exercise that already carries media + a description.
+    const withMedia: Exercise = {
+      ...existing,
+      description: "A solid compound lift",
+      videoUrl: "https://v/keep.mp4",
+      thumbnailUrl: "https://i/keep.png",
+    };
+    // `editedInput` omits description + videoUrl + thumbnailUrl entirely —
+    // exactly what the editor form emits (it exposes none of the three for an
+    // untouched edit). The command must NOT wipe them from the cache.
+    const result = updateExerciseCommand({ storage }, withMedia, editedInput);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.description).toBe("A solid compound lift");
+    expect(result.value.videoUrl).toBe("https://v/keep.mp4");
+    expect(result.value.thumbnailUrl).toBe("https://i/keep.png");
+
+    const cached = storage.getCachedExercise("ex-1");
+    expect(cached?.description).toBe("A solid compound lift");
+    expect(cached?.videoUrl).toBe("https://v/keep.mp4");
+    expect(cached?.thumbnailUrl).toBe("https://i/keep.png");
+
+    // The PATCH omits the untouched keys, so cache and server stay in sync
+    // (no drift that a later refresh would have to silently reconcile).
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.description).toBeUndefined();
+    expect(payload.video_url).toBeUndefined();
+    expect(payload.thumbnail_url).toBeUndefined();
+  });
+
   it("sends cleared optional text as explicit empty string so a PATCH can clear it", () => {
     const result = updateExerciseCommand({ storage }, existing, {
       ...editedInput,

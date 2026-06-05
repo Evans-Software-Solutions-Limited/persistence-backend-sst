@@ -783,7 +783,12 @@ describe("ExerciseListContainer", () => {
     it("shows destructive alert for owned customs and deletes on confirm", async () => {
       const { adapters, api, storage } = createTestAdapters();
       api.exercises = [
-        makeExercise({ id: "ex-1", name: "My Lift", isCustom: true }),
+        makeExercise({
+          id: "ex-1",
+          name: "My Lift",
+          isCustom: true,
+          createdBy: "me",
+        }),
       ];
       const deleteSpy = jest.spyOn(api, "deleteExercise");
 
@@ -844,7 +849,12 @@ describe("ExerciseListContainer", () => {
     it("keeps the row in the cache when the API rejects the delete", async () => {
       const { adapters, api, storage } = createTestAdapters();
       api.exercises = [
-        makeExercise({ id: "ex-1", name: "My Lift", isCustom: true }),
+        makeExercise({
+          id: "ex-1",
+          name: "My Lift",
+          isCustom: true,
+          createdBy: "me",
+        }),
       ];
       const { getByTestId } = render(
         <TestWrapper adapters={adapters}>
@@ -883,7 +893,12 @@ describe("ExerciseListContainer", () => {
     it("resets the pending-ref via onDismiss (Android back/outside tap) — regression", async () => {
       const { adapters, api } = createTestAdapters();
       api.exercises = [
-        makeExercise({ id: "ex-1", name: "My Lift", isCustom: true }),
+        makeExercise({
+          id: "ex-1",
+          name: "My Lift",
+          isCustom: true,
+          createdBy: "me",
+        }),
       ];
       const { getByTestId } = render(
         <TestWrapper adapters={adapters}>
@@ -958,17 +973,13 @@ describe("ExerciseListContainer", () => {
     });
   });
 
-  describe("server-side search (FTS)", () => {
-    it("hits api.searchExercises once the debounced query reaches 2 chars", async () => {
+  describe("search (local cache only)", () => {
+    it("filters the cached library by the search term — no server round-trip", async () => {
       const { adapters, api, storage } = createTestAdapters();
-      // Cache has only ex-1; server side has both. If the server path
-      // wins, the rendered count must reflect what the server returned.
-      api.exercises = [
-        makeExercise({ id: "ex-1", name: "Bench Press" }),
-        makeExercise({ id: "ex-2", name: "Incline Bench Press" }),
-      ];
       storage.cacheExercises([
         makeExercise({ id: "ex-1", name: "Bench Press" }),
+        makeExercise({ id: "ex-2", name: "Incline Bench Press" }),
+        makeExercise({ id: "ex-3", name: "Back Squat" }),
       ]);
 
       const searchSpy = jest.spyOn(api, "searchExercises");
@@ -980,27 +991,56 @@ describe("ExerciseListContainer", () => {
       );
 
       await waitFor(() => {
-        expect(getByTestId("stub-count").props.children).toBe(1);
+        expect(getByTestId("stub-count").props.children).toBe(3);
       });
 
       await act(async () => {
-        fireEvent.changeText(getByTestId("stub-search"), "press bench");
+        fireEvent.changeText(getByTestId("stub-search"), "bench");
         // SEARCH_DEBOUNCE_MS = 300 — flush.
         await new Promise((r) => setTimeout(r, 350));
       });
 
-      // The server's filterExercises shim AND-matches both tokens against
-      // name → both rows match.
       await waitFor(() => {
-        expect(searchSpy).toHaveBeenCalled();
-        expect(getByTestId("stub-count").props.children).toBeGreaterThanOrEqual(
-          1,
-        );
+        const names = lastProps?.exercises.map((e) => e.name) ?? [];
+        expect(names).toContain("Bench Press");
+        expect(names).toContain("Incline Bench Press");
+        expect(names).not.toContain("Back Squat");
       });
-      expect(searchSpy.mock.calls[0][0]).toBe("press bench");
+      // Search is local-only: the server endpoint is never called.
+      expect(searchSpy).not.toHaveBeenCalled();
     });
 
-    it("does NOT hit api.searchExercises when the debounced query is 1 char", async () => {
+    it("AND-matches multi-token queries out of order (local tokeniser)", async () => {
+      const { adapters, api, storage } = createTestAdapters();
+      storage.cacheExercises([
+        makeExercise({ id: "ex-1", name: "Bench Press" }),
+        makeExercise({ id: "ex-2", name: "Leg Press" }),
+      ]);
+      const searchSpy = jest.spyOn(api, "searchExercises");
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ExerciseListContainer />
+        </TestWrapper>,
+      );
+
+      await waitFor(() => {
+        expect(getByTestId("stub-count").props.children).toBe(2);
+      });
+
+      await act(async () => {
+        fireEvent.changeText(getByTestId("stub-search"), "press bench");
+        await new Promise((r) => setTimeout(r, 350));
+      });
+
+      await waitFor(() => {
+        const names = lastProps?.exercises.map((e) => e.name) ?? [];
+        expect(names).toEqual(["Bench Press"]);
+      });
+      expect(searchSpy).not.toHaveBeenCalled();
+    });
+
+    it("never calls api.searchExercises, even for a 1-char query", async () => {
       const { adapters, api } = createTestAdapters();
       api.exercises = [makeExercise()];
 
@@ -1024,25 +1064,22 @@ describe("ExerciseListContainer", () => {
       expect(searchSpy).not.toHaveBeenCalled();
     });
 
-    it("falls back to local cache + filterExercises when server search errors", async () => {
+    it("keeps a just-created local exercise visible and stable (no flash/overwrite)", async () => {
       const { adapters, api, storage } = createTestAdapters();
-      // Server-side data the search shim would return.
-      api.exercises = [makeExercise({ id: "ex-srv", name: "Server Bench" })];
-      // Local cache the fallback would render from.
+      // The full library is cached locally, including a freshly-created custom.
       storage.cacheExercises([
-        makeExercise({ id: "ex-local", name: "Local Bench" }),
+        makeExercise({ id: "ex-bench", name: "Bench Press" }),
+        makeExercise({ id: "ex-squat", name: "Back Squat" }),
       ]);
-
-      // Force searchExercises to fail; getExercises stays fine so the
-      // initial cache refresh works.
-      jest.spyOn(api, "searchExercises").mockResolvedValueOnce({
-        ok: false,
-        error: {
-          kind: "api",
-          code: "network",
-          message: "simulated offline",
-        },
-      });
+      storage.saveCustomExercise(
+        makeExercise({
+          id: "local-test",
+          name: "Test Exercise",
+          isCustom: true,
+          createdBy: "me",
+        }),
+      );
+      const searchSpy = jest.spyOn(api, "searchExercises");
 
       const { getByTestId } = render(
         <TestWrapper adapters={adapters}>
@@ -1051,24 +1088,29 @@ describe("ExerciseListContainer", () => {
       );
 
       await waitFor(() => {
-        expect(getByTestId("stub-count").props.children).toBeGreaterThanOrEqual(
-          1,
-        );
+        expect(getByTestId("presenter-stub")).toBeTruthy();
       });
 
       await act(async () => {
-        fireEvent.changeText(getByTestId("stub-search"), "bench");
+        fireEvent.changeText(getByTestId("stub-search"), "test exercise");
         await new Promise((r) => setTimeout(r, 350));
       });
 
-      // Wait for the failed promise to settle and the fallback to render.
+      // Single source of truth: only the local match shows, and there's no
+      // async server response to overwrite it.
       await waitFor(() => {
-        // Local 'Local Bench' is what the cache contains; the failed
-        // server call means filterExercises(cache, {search:'bench'})
-        // runs and matches 'Local Bench'.
         const names = lastProps?.exercises.map((e) => e.name) ?? [];
-        expect(names).toContain("Local Bench");
+        expect(names).toEqual(["Test Exercise"]);
       });
+      // Give any (non-existent) server round-trip a chance to land; the list
+      // must stay put.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+      });
+      expect(lastProps?.exercises.map((e) => e.name)).toEqual([
+        "Test Exercise",
+      ]);
+      expect(searchSpy).not.toHaveBeenCalled();
     });
   });
 });

@@ -62,18 +62,35 @@ export function updateExerciseCommand(
   const updated: Exercise = {
     ...existing,
     name: sanitized.name,
-    // Cache stores `null` for a cleared field (consistent with create); the
-    // wire payload below keeps the explicit `""` so the PATCH actually clears
-    // it server-side. `|| null` coerces the empty string for the cache row.
-    description: sanitized.description || null,
+    // For the optional text fields, the sanitizer preserves the
+    // undefined-vs-"" distinction the wire payload relies on:
+    //   - `undefined` → the field wasn't part of this edit (the editor form
+    //     exposes neither `description` nor `videoUrl`, and emits `undefined`
+    //     for a cleared photo). The PATCH omits the key, so the SERVER keeps
+    //     its value — the cache MUST keep `existing` too, or the two drift
+    //     until the next refresh silently restores the original.
+    //   - `""` → the user explicitly cleared the field. Cache stores `null`
+    //     and the PATCH sends `""` so the clear lands server-side as well.
+    // `sanitized.x || null` alone (the prior code) collapsed both cases to
+    // `null`, wiping a cached value the edit never touched.
+    description:
+      sanitized.description !== undefined
+        ? sanitized.description || null
+        : existing.description,
     instructions: sanitized.instructions || null,
     category: sanitized.category,
     difficulty: sanitized.difficulty,
     primaryMuscleGroups: sanitized.primaryMuscleGroups,
     secondaryMuscleGroups: sanitized.secondaryMuscleGroups,
     equipment: sanitized.equipment,
-    videoUrl: sanitized.videoUrl || null,
-    thumbnailUrl: sanitized.thumbnailUrl || null,
+    videoUrl:
+      sanitized.videoUrl !== undefined
+        ? sanitized.videoUrl || null
+        : existing.videoUrl,
+    thumbnailUrl:
+      sanitized.thumbnailUrl !== undefined
+        ? sanitized.thumbnailUrl || null
+        : existing.thumbnailUrl,
   };
 
   deps.storage.saveCustomExercise(updated);

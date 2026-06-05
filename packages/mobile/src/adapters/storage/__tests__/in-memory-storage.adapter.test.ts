@@ -522,11 +522,113 @@ describe("InMemoryStorageAdapter", () => {
     });
 
     it("saveCustomExercise tags exercise as custom and stores it", () => {
+      // A genuine custom exercise always carries a real owner; read-time
+      // re-derivation keeps isCustom true because createdBy is non-system.
       storage.saveCustomExercise(
-        buildExercise({ id: "custom-1", isCustom: false }),
+        buildExercise({ id: "custom-1", isCustom: false, createdBy: "user-1" }),
       );
       const stored = storage.getCachedExercise("custom-1");
       expect(stored?.isCustom).toBe(true);
+      expect(stored?.createdBy).toBe("user-1");
+    });
+
+    // Stale cached blobs were persisted before the write-time ownership fix
+    // existed, so they carry isCustom:true for system exercises (whose owner
+    // is the SYSTEM_USER_ID sentinel, not null). The read path must re-derive
+    // ownership and not trust the stored isCustom value.
+    describe("re-derives ownership at read time (poisoned cache)", () => {
+      const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+      beforeEach(() => {
+        storage.cacheExercises([
+          // System exercise stored with the sentinel owner + wrong isCustom.
+          buildExercise({
+            id: "sys-sentinel",
+            name: "System Sentinel",
+            isCustom: true,
+            createdBy: SYSTEM_USER_ID,
+          }),
+          // System exercise stored with a null owner + wrong isCustom.
+          buildExercise({
+            id: "sys-null",
+            name: "System Null",
+            isCustom: true,
+            createdBy: null,
+          }),
+          // Genuine user-created exercise with a real owner.
+          buildExercise({
+            id: "mine-1",
+            name: "My Exercise",
+            isCustom: true,
+            createdBy: "user-1",
+          }),
+        ]);
+      });
+
+      it("normalises the sentinel owner to null and isCustom to false", () => {
+        const stored = storage.getCachedExercise("sys-sentinel");
+        expect(stored?.isCustom).toBe(false);
+        expect(stored?.createdBy).toBeNull();
+      });
+
+      it("system filter returns sentinel + null-owner exercises", () => {
+        const system = storage.getCachedExercises({ createdBy: "system" });
+        expect(system.map((e) => e.id).sort()).toEqual([
+          "sys-null",
+          "sys-sentinel",
+        ]);
+      });
+
+      it("mine filter excludes system exercises and keeps owned ones", () => {
+        const mine = storage.getCachedExercises({ createdBy: "mine" });
+        expect(mine.map((e) => e.id)).toEqual(["mine-1"]);
+        expect(mine[0].isCustom).toBe(true);
+        expect(mine[0].createdBy).toBe("user-1");
+      });
+    });
+
+    describe("swapLocalExerciseId", () => {
+      it("re-keys the cached row (column + embedded id) and re-points queued edits", () => {
+        storage.saveCustomExercise(
+          buildExercise({ id: "local-1", name: "My Lift", createdBy: "me" }),
+        );
+        // A follow-up edit enqueued before the create flushed.
+        storage.enqueueMutation({
+          entityType: "exercise",
+          entityId: "local-1",
+          operation: "update",
+          payload: { name: "My Lift v2" },
+          endpoint: "/exercises/local-1",
+          method: "PATCH",
+        });
+
+        storage.swapLocalExerciseId("local-1", "server-9");
+
+        // Old id is gone; the row is readable under the server id with its
+        // embedded id rewritten.
+        expect(storage.getCachedExercise("local-1")).toBeNull();
+        const swapped = storage.getCachedExercise("server-9");
+        expect(swapped?.id).toBe("server-9");
+        expect(swapped?.name).toBe("My Lift");
+
+        // The queued edit now targets the real resource.
+        const [pending] = storage.getPendingMutations();
+        expect(pending.entityId).toBe("server-9");
+        expect(pending.endpoint).toBe("/exercises/server-9");
+      });
+
+      it("is a no-op when the ids are equal", () => {
+        storage.saveCustomExercise(buildExercise({ id: "ex-1" }));
+        storage.swapLocalExerciseId("ex-1", "ex-1");
+        expect(storage.getCachedExercise("ex-1")?.id).toBe("ex-1");
+      });
+
+      it("tolerates an unknown local id (nothing to swap)", () => {
+        expect(() =>
+          storage.swapLocalExerciseId("local-missing", "server-1"),
+        ).not.toThrow();
+        expect(storage.getCachedExercise("server-1")).toBeNull();
+      });
     });
   });
 
