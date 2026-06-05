@@ -56,4 +56,26 @@ otherServiceAPI.route("$default", {
   },
 });
 
+// ─── Scheduled Stripe⇄DB drift detection (spec 17 / Phase B, audit HIGH-3) ──
+//
+// Hourly read-only reconciliation. The handler logs `[reconcile:summary]`
+// every run and `[reconcile:drift]` (ERROR) only when Stripe and the local
+// mirror disagree. Wire a CloudWatch Logs metric filter on `[reconcile:drift]`
+// + an alarm to page ops (see specs/17-payments-reliability/design.md runbook).
+//
+// Read-only: it never writes. Healing remains the manual, reviewed
+// `scripts/reconcile-stripe.ts --write` op. Reuses the same DB + Stripe-key
+// bindings as the API route; no webhook secret needed (outbound reads only).
+export const reconcileCron = new sst.aws.Cron("reconcile-stripe-drift", {
+  schedule: "rate(1 hour)",
+  job: {
+    handler: "microservices/core/src/reconcileCron.handler",
+    timeout: "120 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+      STRIPE_SECRET_KEY: stripeSecretKey.value,
+    },
+  },
+});
+
 // api.addAuthorizer

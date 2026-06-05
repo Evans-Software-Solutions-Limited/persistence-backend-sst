@@ -70,11 +70,18 @@ export async function handleStripeWebhook(req: Request): Promise<Response> {
   const handler = resolveEventHandler(event.type);
   if (handler === null) {
     // Unhandled event type. Don't 500 — Stripe would retry forever for
-    // an event we'll never act on. Log + 200 + keep the row so the
-    // idempotency table doubles as a "what events have we seen?" audit
-    // log.
+    // an event we'll never act on. Mark the claim `done` (we've decided
+    // there's nothing to do) so future deliveries dedupe, and keep the row
+    // as a "what events have we seen?" audit log.
+    await repo.markDone(event.id).catch((markErr) => {
+      console.error(
+        `[stripe:webhook] failed to mark unhandled ${event.id} done: ${
+          markErr instanceof Error ? markErr.message : String(markErr)
+        }`,
+      );
+    });
     console.log(
-      `[stripe:webhook] no handler for ${event.type} (${event.id}) — claimed + skipped`,
+      `[stripe:webhook] no handler for ${event.type} (${event.id}) — claimed + marked done`,
     );
     return new Response(
       JSON.stringify({ received: true, handled: false, reason: "no_handler" }),
@@ -85,22 +92,36 @@ export async function handleStripeWebhook(req: Request): Promise<Response> {
   try {
     await handler(event);
   } catch (err) {
-    // Release the claim so Stripe's retry can re-run dispatch. Best-effort
-    // — a release failure here doesn't change the outcome (we're already
-    // returning 500), just risks one missed retry if the row stays.
-    await repo.release(event.id).catch((releaseErr) => {
+    // Mark the claim `failed` (NOT delete) so the row stays queryable and
+    // Stripe's retry re-claims it. Best-effort — even if this mark fails the
+    // row remains `processing` and the staleness window lets a later retry
+    // re-claim it; either way the event is never silently lost (the
+    // delete-based model's MED-2 failure mode).
+    const message = err instanceof Error ? err.message : String(err);
+    await repo.markFailed(event.id, message).catch((markErr) => {
       console.error(
-        `[stripe:webhook] failed to release claim for ${event.id}: ${
-          releaseErr instanceof Error ? releaseErr.message : String(releaseErr)
+        `[stripe:webhook] failed to mark ${event.id} failed: ${
+          markErr instanceof Error ? markErr.message : String(markErr)
         }`,
       );
     });
-    const message = err instanceof Error ? err.message : String(err);
     console.error(
       `[stripe:webhook] handler for ${event.type} (${event.id}) threw: ${message}`,
     );
     return new Response(`Handler error: ${message}`, { status: 500 });
   }
+
+  // Mark the claim `done` so duplicate deliveries dedupe. If this mark fails
+  // the row stays `processing`; a duplicate within the staleness window is
+  // still skipped, and after it the worst case is one idempotent re-run
+  // (handlers are individually replay-safe), never a double effect.
+  await repo.markDone(event.id).catch((markErr) => {
+    console.error(
+      `[stripe:webhook] handler for ${event.type} (${event.id}) succeeded but mark-done failed: ${
+        markErr instanceof Error ? markErr.message : String(markErr)
+      }`,
+    );
+  });
 
   return new Response(JSON.stringify({ received: true }), {
     status: 200,

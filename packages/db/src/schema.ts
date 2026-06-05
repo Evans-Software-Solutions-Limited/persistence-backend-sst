@@ -368,6 +368,15 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
     .notNull()
     .defaultNow(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  // Durable-claim lifecycle (spec 17 / Phase B): processing | done | failed.
+  // Dedupe skips only `done`; `failed` / stale `processing` are re-claimable.
+  // Defaults to 'done' so pre-existing (already-processed) rows keep deduping.
+  status: text("status").notNull().default("done"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 // ─── Exercises ────────────────────────────────────────────────────────────────

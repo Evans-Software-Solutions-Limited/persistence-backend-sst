@@ -41,10 +41,11 @@
 
 ---
 
-## Phase B — Safety net (future PR)
+## Phase B — Safety net (DONE — in this PR)
 
-- [ ] `stripe_webhook_events.status` (`pending`→`done`) instead of delete-on-failure; stranded-event query.
-- [ ] SST cron + detect+alert reconcile mode (diff, metric/alert, safe auto-heal only).
+- [x] **MED-2 durable claim** — `stripe_webhook_events` gains `status`/`attempts`/`last_error`/`updated_at` (migration `20260605130000`, schema parity). `claim()` is a single atomic upsert: skip only `done`, re-claim `failed` or stale (`>15min`) `processing`; never delete. Handler marks `done` on success / unhandled, `failed` on throw. Stranded events stay queryable via `WHERE status <> 'done'`. Repo + handler tests updated.
+- [x] **HIGH-3 detect+alert reconcile** — new `stripe/reconcile/reconcileDetect.ts` (dependency-injected, read-only diff of payment_status + tier vs Stripe; pure `diffSubscription` + `reconcileDetect` runner, unit-tested). Cron Lambda `src/reconcileCron.ts` logs `[reconcile:summary]` always + `[reconcile:drift]` (ERROR) on mismatch. Hourly `sst.aws.Cron` wired in `infra/api.ts`.
+- [ ] **Deploy-verification pending (ops, not code):** confirm the cron fires post-deploy; wire a CloudWatch Logs metric filter on `[reconcile:drift]` + an alarm to page. SST Cron syntax compiles but isn't deploy-verified in this PR.
 
 ## Phase C — Completeness (future PR)
 

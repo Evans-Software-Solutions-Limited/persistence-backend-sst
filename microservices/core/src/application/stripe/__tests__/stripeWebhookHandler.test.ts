@@ -20,12 +20,14 @@ vi.mock("../stripeClient", () => ({
 // Repository is the dedup boundary — by mocking we can drive the
 // duplicate-delivery path without standing up Postgres.
 const repoClaimMock = vi.fn();
-const repoReleaseMock = vi.fn();
+const repoMarkDoneMock = vi.fn();
+const repoMarkFailedMock = vi.fn();
 
 vi.mock("../../repositories/stripeWebhookEventsRepository", () => ({
   StripeWebhookEventsRepository: vi.fn().mockImplementation(() => ({
     claim: repoClaimMock,
-    release: repoReleaseMock,
+    markDone: repoMarkDoneMock,
+    markFailed: repoMarkFailedMock,
   })),
 }));
 
@@ -71,7 +73,8 @@ describe("handleStripeWebhook", () => {
     vi.clearAllMocks();
     constructEventAsyncMock.mockResolvedValue(fakeEvent);
     repoClaimMock.mockResolvedValue(true);
-    repoReleaseMock.mockResolvedValue(undefined);
+    repoMarkDoneMock.mockResolvedValue(undefined);
+    repoMarkFailedMock.mockResolvedValue(undefined);
     resolveEventHandlerMock.mockReturnValue(stubHandlerMock);
     stubHandlerMock.mockResolvedValue(undefined);
   });
@@ -147,12 +150,14 @@ describe("handleStripeWebhook", () => {
       expect(stubHandlerMock).toHaveBeenCalledWith(fakeEvent);
     });
 
-    it("returns 200 + received:true on successful dispatch", async () => {
+    it("returns 200 + received:true on successful dispatch and marks the claim done", async () => {
       const { handleStripeWebhook } = await import("../stripeWebhookHandler");
       const response = await handleStripeWebhook(buildRequest());
       expect(response.status).toBe(200);
       const body = (await response.json()) as { received: boolean };
       expect(body.received).toBe(true);
+      expect(repoMarkDoneMock).toHaveBeenCalledWith("evt_test");
+      expect(repoMarkFailedMock).not.toHaveBeenCalled();
     });
 
     it("returns 200 + handled:false when no handler is registered for the event type", async () => {
@@ -167,13 +172,13 @@ describe("handleStripeWebhook", () => {
       };
       expect(body.handled).toBe(false);
       expect(body.reason).toBe("no_handler");
-      // Important: we DO leave the claim in the dedup log — the row
-      // doubles as an audit trail and prevents Stripe from retrying an
-      // event we'll never act on.
-      expect(repoReleaseMock).not.toHaveBeenCalled();
+      // We mark the claim `done` so Stripe doesn't retry an event we'll
+      // never act on, and the row stays as an audit trail. Not `failed`.
+      expect(repoMarkDoneMock).toHaveBeenCalledWith("evt_test");
+      expect(repoMarkFailedMock).not.toHaveBeenCalled();
     });
 
-    it("releases the dedup claim and returns 500 when the handler throws", async () => {
+    it("marks the claim failed (NOT done) and returns 500 when the handler throws", async () => {
       stubHandlerMock.mockRejectedValueOnce(new Error("handler exploded"));
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -181,23 +186,29 @@ describe("handleStripeWebhook", () => {
       const response = await handleStripeWebhook(buildRequest());
 
       expect(response.status).toBe(500);
-      expect(repoReleaseMock).toHaveBeenCalledWith("evt_test");
+      // Durable claim: the row is marked failed (queryable + re-claimable),
+      // never deleted, and never marked done.
+      expect(repoMarkFailedMock).toHaveBeenCalledWith(
+        "evt_test",
+        expect.stringContaining("handler exploded"),
+      );
+      expect(repoMarkDoneMock).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });
 
-    it("returns 500 even when releasing the claim ALSO fails (best-effort release)", async () => {
+    it("returns 500 even when marking the claim failed ALSO fails (best-effort)", async () => {
       stubHandlerMock.mockRejectedValueOnce(new Error("handler exploded"));
-      repoReleaseMock.mockRejectedValueOnce(new Error("db gone"));
+      repoMarkFailedMock.mockRejectedValueOnce(new Error("db gone"));
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const { handleStripeWebhook } = await import("../stripeWebhookHandler");
       const response = await handleStripeWebhook(buildRequest());
 
       expect(response.status).toBe(500);
-      // The handler should have logged both the release failure AND the
-      // original dispatch failure — neither swallowed.
+      // Both the mark-failed failure AND the original dispatch failure are
+      // logged — neither swallowed.
       const errorLogs = errorSpy.mock.calls.map((c) => String(c[0]));
-      expect(errorLogs.some((m) => m.includes("failed to release"))).toBe(true);
+      expect(errorLogs.some((m) => m.includes("failed to mark"))).toBe(true);
       expect(errorLogs.some((m) => m.includes("handler"))).toBe(true);
       errorSpy.mockRestore();
     });
