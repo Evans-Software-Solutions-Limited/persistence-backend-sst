@@ -191,6 +191,49 @@ describe("ExerciseEditorContainer", () => {
     ]);
   });
 
+  it("preserves an expert difficulty when the Level picker is untouched", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // The coarse picker has no "Expert" tier, so toFormInput shows it as
+    // "Advanced". Saving without touching Level must NOT downgrade it.
+    storage.cacheExercises([buildExercise({ difficulty: "expert" })]);
+
+    const { getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseEditorContainer />),
+    );
+
+    fireEvent.changeText(getByTestId("exercise-form-name"), "Renamed Lift");
+    await act(async () => {
+      fireEvent.press(getByTestId("exercise-editor-save"));
+    });
+
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.difficulty_level).toBe("expert");
+    expect(storage.getCachedExercise("ex-1")?.difficulty).toBe("expert");
+  });
+
+  it("applies the new difficulty when the Level picker is changed", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ difficulty: "expert" })]);
+
+    const { getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseEditorContainer />),
+    );
+
+    // Move the Level picker off the (collapsed) "Advanced" position.
+    fireEvent.press(getByTestId("exercise-form-level-Beginner"));
+    await act(async () => {
+      fireEvent.press(getByTestId("exercise-editor-save"));
+    });
+
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.difficulty_level).toBe("beginner");
+    expect(storage.getCachedExercise("ex-1")?.difficulty).toBe("beginner");
+  });
+
   it("surfaces a validation error and enqueues nothing when the name is too short", async () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     const api = new InMemoryApiAdapter();

@@ -71,9 +71,17 @@ export function ExerciseEditorContainer() {
         initial.secondaryMuscleLabels,
       );
       const equipmentChanged = value.equipmentLabel !== initial.equipmentLabel;
+      // The coarse Level picker has no "Expert" tier — DIFFICULTY_TO_LEVEL
+      // collapses expert → "Advanced", so re-expanding an untouched picker
+      // would silently downgrade an expert exercise to advanced on every
+      // save. Preserve the stored difficulty unless the user actually moved
+      // the Level picker (same preserve-granular-unless-changed rule the
+      // muscle/equipment axes use above).
+      const levelChanged = value.level !== initial.level;
 
       const input: CreateExerciseInput = {
         ...expanded,
+        difficulty: levelChanged ? expanded.difficulty : exercise.difficulty,
         primaryMuscleGroups: primaryChanged
           ? expanded.primaryMuscleGroups
           : exercise.primaryMuscleGroups,
