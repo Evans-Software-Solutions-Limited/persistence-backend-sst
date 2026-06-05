@@ -51,8 +51,16 @@
 
 ## Phase 04.6 — ExerciseDetail + ExerciseEditor rewrite (1 PR)
 
-- [ ] **T-04.6.1** Rewrite `<ExerciseDetailPresenter>` shell. Implements STORY-007 ACs.
-- [ ] **T-04.6.2** Rewrite `<ExerciseEditorPresenter>` shell to compose `<ExerciseFormFields>` (shared with sheet from T-04.3.1). Full-screen layout. Implements STORY-008 ACs.
+- [x] **T-04.6.1** Build `<ExerciseDetailPresenter>` + `<ExerciseDetailContainer>` + `useExercise` hook. Route `[id].tsx` → `[id]/index.tsx`. Implements STORY-007 ACs.
+- [x] **T-04.6.2** Build `<ExerciseEditorPresenter>` + `<ExerciseEditorContainer>` composing `<ExerciseFormFields>` full-screen, route `[id]/edit.tsx`, offline-first `updateExerciseCommand`. Implements STORY-008 ACs.
+
+> **Revised 2026-06-05 (Phase 04.6):** the design package said "V2 already has it / preserved" for both screens — this was stale. `exercises/[id].tsx` was a placeholder and there was no editor route; both are **built fresh** as a design-port to the foundation system (`HeaderBar`/`Card`/`Pill`/Lucide), there being no detail/editor prototype in `handoff/design-source` (only `create-exercise.jsx` + `library.jsx`). Deltas from the original spec, all signed off:
+>
+> - **Detail body** drops the legacy PR-carousel / recent-sets / accessibility sections — V2's `GET /exercises/:id` returns no per-user history and there are no accessibility columns. Renders only the sections design.md lists (photo, name+level, description, primary/secondary muscles, equipment, instructions).
+> - **Editor save is offline-first** via `updateExerciseCommand`: optimistic local write, then **coalesce** onto a still-pending mutation for the same exercise (rewriting a queued create's payload in place so it stays a `POST` — never `PATCH`-ing a `local-*` id the server hasn't assigned), else enqueue a **`PATCH /exercises/:id`** (the adapter uses PATCH, not the `PUT` the doc named). Satisfies AC 8.2 + 8.3.
+> - **Preserve-granular-unless-changed**: the coarse picker is lossier than the stored granular muscle/equipment arrays, so the container keeps the original arrays for any field the user didn't touch and only re-expands a changed picker.
+> - **One additive `StoragePort` method** — `updateMutationPayload(id, payload)` (SQLite + InMemory) — powers the coalescing. No sync-engine handler, `api.port`, or migration change, so STORY-009's freeze + the existing 90% application-layer coverage hold.
+> - `<ExerciseFormFields>` gained an additive `autoFocus?` prop (default true) so the editor opens without popping the keyboard over a populated form. Create + edit keep **separate** presenters (the shared shell extraction was considered and declined to avoid touching the device-verified create screen).
 
 ## Phase 04.7 — Cleanup + verification
 

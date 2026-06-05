@@ -5,7 +5,25 @@ import {
   MUSCLES,
   type NewExerciseInput,
   toCreateExerciseInput,
+  toFormInput,
 } from "@/ui/components/exercises/ExerciseFormFields";
+import type { Exercise } from "@/domain/models/exercise";
+
+const exercise: Exercise = {
+  id: "ex-1",
+  name: "Bench Press",
+  description: null,
+  instructions: "Keep elbows tucked",
+  category: "strength",
+  difficulty: "advanced",
+  primaryMuscleGroups: ["chest"],
+  secondaryMuscleGroups: ["triceps"],
+  equipment: ["barbell"],
+  videoUrl: null,
+  thumbnailUrl: null,
+  isCustom: true,
+  createdBy: "u1",
+};
 
 const base: NewExerciseInput = {
   ...EMPTY_NEW_EXERCISE,
@@ -149,5 +167,93 @@ describe("toCreateExerciseInput", () => {
       expect(out.primaryMuscleGroups.length).toBeGreaterThanOrEqual(1);
       expect(out.equipment).toHaveLength(1);
     }
+  });
+});
+
+describe("toFormInput", () => {
+  it("seeds name, level, instructions, and photo from the exercise", () => {
+    const out = toFormInput(exercise);
+    expect(out.name).toBe("Bench Press");
+    expect(out.level).toBe("Advanced");
+    expect(out.instructions).toBe("Keep elbows tucked");
+    expect(out.photoUrl).toBeUndefined();
+  });
+
+  it("collapses the 'expert' difficulty onto the Advanced coarse tier", () => {
+    expect(toFormInput({ ...exercise, difficulty: "expert" }).level).toBe(
+      "Advanced",
+    );
+  });
+
+  it("derives the coarse primary muscle from granular display labels", () => {
+    const out = toFormInput({
+      ...exercise,
+      primaryMuscleGroups: [],
+      primaryMuscleGroupLabels: ["Quads"],
+    });
+    expect(out.primaryMuscleLabel).toBe("Legs");
+  });
+
+  it("derives the coarse primary muscle from raw enum keys when labels absent", () => {
+    const out = toFormInput({
+      ...exercise,
+      primaryMuscleGroups: ["hamstrings"],
+      primaryMuscleGroupLabels: undefined,
+    });
+    expect(out.primaryMuscleLabel).toBe("Legs");
+  });
+
+  it("dedupes secondary labels and excludes the resolved primary", () => {
+    const out = toFormInput({
+      ...exercise,
+      primaryMuscleGroups: ["chest"],
+      secondaryMuscleGroups: ["triceps", "biceps", "chest"],
+      primaryMuscleGroupLabels: ["Chest"],
+      secondaryMuscleGroupLabels: ["Triceps", "Biceps", "Chest"],
+    });
+    // triceps+biceps both → Arms (deduped); Chest dropped (it's primary).
+    expect(out.secondaryMuscleLabels).toEqual(["Arms"]);
+  });
+
+  it("resolves equipment display labels back to the coarse picker option", () => {
+    expect(
+      toFormInput({
+        ...exercise,
+        equipment: [],
+        equipmentLabels: ["Resistance Band"],
+      }).equipmentLabel,
+    ).toBe("Band");
+    expect(
+      toFormInput({
+        ...exercise,
+        equipment: ["dumbbell"],
+        equipmentLabels: undefined,
+      }).equipmentLabel,
+    ).toBe("Dumbbell");
+  });
+
+  it("falls back to the empty-form defaults for unmappable tokens", () => {
+    const out = toFormInput({
+      ...exercise,
+      primaryMuscleGroups: ["hip_flexors"],
+      primaryMuscleGroupLabels: ["Hip Flexors"],
+      secondaryMuscleGroups: [],
+      secondaryMuscleGroupLabels: [],
+      equipment: ["smith_machine"],
+      equipmentLabels: ["Smith Machine"],
+    });
+    expect(out.primaryMuscleLabel).toBe(EMPTY_NEW_EXERCISE.primaryMuscleLabel);
+    expect(out.secondaryMuscleLabels).toEqual([]);
+    expect(out.equipmentLabel).toBe(EMPTY_NEW_EXERCISE.equipmentLabel);
+  });
+
+  it("treats null instructions as an empty string and maps thumbnail to photoUrl", () => {
+    const out = toFormInput({
+      ...exercise,
+      instructions: null,
+      thumbnailUrl: "https://x/y.png",
+    });
+    expect(out.instructions).toBe("");
+    expect(out.photoUrl).toBe("https://x/y.png");
   });
 });

@@ -185,6 +185,72 @@ describe("InMemoryStorageAdapter", () => {
     it("returns false for a non-existent id (defensive)", () => {
       expect(storage.markMutationInFlight(99999)).toBe(false);
     });
+
+    it("updateMutationPayload rewrites a pending entry's body in place", () => {
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-1",
+        operation: "create",
+        payload: { name: "Old" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+
+      storage.updateMutationPayload(entry.id, { name: "New" });
+
+      const [updated] = storage.getPendingMutations();
+      expect(JSON.parse(updated.payload)).toEqual({ name: "New" });
+      // Operation/endpoint/method are untouched — only the body changes.
+      expect(updated.operation).toBe("create");
+      expect(updated.endpoint).toBe("/exercises");
+      expect(updated.method).toBe("POST");
+    });
+
+    it("updateMutationPayload also rewrites a failed entry (retry stays coalesced)", () => {
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "x1",
+        operation: "update",
+        payload: { name: "Old" },
+        endpoint: "/exercises/x1",
+        method: "PATCH",
+      });
+      const [entry] = storage.getPendingMutations();
+      storage.markMutationFailed(entry.id, "boom");
+
+      storage.updateMutationPayload(entry.id, { name: "New" });
+
+      const [updated] = storage.getPendingMutations();
+      expect(JSON.parse(updated.payload)).toEqual({ name: "New" });
+    });
+
+    it("updateMutationPayload is a no-op for an in-flight entry (drain may have serialized it)", () => {
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "x1",
+        operation: "update",
+        payload: { name: "Old" },
+        endpoint: "/exercises/x1",
+        method: "PATCH",
+      });
+      const [entry] = storage.getPendingMutations();
+      storage.markMutationInFlight(entry.id);
+
+      storage.updateMutationPayload(entry.id, { name: "New" });
+
+      // The entry left the pending pool when it went in-flight; fail it back
+      // in and confirm the body is still the original "Old".
+      storage.markMutationFailed(entry.id, "boom");
+      const [requeued] = storage.getPendingMutations();
+      expect(JSON.parse(requeued.payload)).toEqual({ name: "Old" });
+    });
+
+    it("updateMutationPayload is a no-op for a non-existent id (defensive)", () => {
+      expect(() =>
+        storage.updateMutationPayload(99999, { name: "x" }),
+      ).not.toThrow();
+    });
   });
 
   describe("blocked_entitlement (M10.6)", () => {

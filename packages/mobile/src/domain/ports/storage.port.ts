@@ -76,6 +76,23 @@ export interface StoragePort {
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
   /**
+   * Rewrite the payload of an already-queued mutation, in place. Only
+   * touches entries still in `pending` or `failed` — never an `in_flight`
+   * entry (a drain may have already serialized its body) nor a
+   * `completed`/`blocked_entitlement` one. No-op when the id isn't a
+   * rewritable entry.
+   *
+   * Powers offline edit-coalescing (04.6): when a user edits an exercise
+   * whose create POST hasn't flushed yet, `updateExerciseCommand` rewrites
+   * that pending create's payload instead of enqueueing a second mutation
+   * against a server id that doesn't exist yet. It also coalesces rapid
+   * re-edits of an already-synced exercise onto a single pending PATCH.
+   *
+   * `payload` is serialized the same way as `enqueueMutation` so the
+   * stored wire-format stays consistent.
+   */
+  updateMutationPayload(id: number, payload: unknown): void;
+  /**
    * M10.6: flip a queue entry to `blocked_entitlement` and persist the
    * server's verdict on the row. The sync worker calls this in response
    * to HTTP 402 + `code: "ENTITLEMENT_DENIED"` and CONTINUES processing

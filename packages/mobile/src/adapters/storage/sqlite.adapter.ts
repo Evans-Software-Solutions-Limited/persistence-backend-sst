@@ -444,6 +444,22 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  updateMutationPayload(id: number, payload: unknown): void {
+    const db = this.getDb();
+    // Status-conditional rewrite: only a `pending`/`failed` entry can have
+    // its body changed. An `in_flight` entry may already be mid-flush (its
+    // body serialized into a live request), and a `completed`/blocked entry
+    // is done — rewriting either would be a lost update or a phantom resend.
+    // No affected-rows check needed: a no-op on a non-rewritable id is the
+    // correct, safe outcome for the coalescing caller.
+    db.runSync(
+      `UPDATE sync_queue
+       SET payload = ?, updated_at = datetime('now')
+       WHERE id = ? AND status IN ('pending', 'failed')`,
+      [JSON.stringify(payload), id],
+    );
+  }
+
   markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
     const db = this.getDb();
     // M10.6: flip the entry to `blocked_entitlement` and stash the
