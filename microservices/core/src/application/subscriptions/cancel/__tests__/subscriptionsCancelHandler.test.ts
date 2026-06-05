@@ -213,6 +213,7 @@ describe("subscriptionsCancelHandler", () => {
       expect(stripeMock.subscriptions.update).toHaveBeenCalledWith(
         "sub_stripe_id",
         { cancel_at_period_end: true },
+        expect.objectContaining({ idempotencyKey: expect.any(String) }),
       );
       expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
 
@@ -338,6 +339,8 @@ describe("subscriptionsCancelHandler", () => {
       expect(res.status).toBe(200);
       expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
         "sub_stripe_id",
+        undefined,
+        expect.objectContaining({ idempotencyKey: expect.any(String) }),
       );
       expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
       const [, patch] = subscriptionRepositoryMocks.updateById.mock.calls[0];

@@ -15,6 +15,11 @@ import {
 } from "../../repositories/subscriptionRepository";
 import { ProfileRepository } from "../../repositories/profileRepository";
 import { getStripe } from "../../stripe/stripeClient";
+import {
+  deriveSubscriptionBaseKey,
+  opKey,
+} from "../../stripe/stripeIdempotency";
+import { isUniqueViolation } from "../../stripe/pgErrors";
 
 /**
  * POST /subscriptions — single endpoint that folds four outbound flows:
@@ -97,6 +102,14 @@ type CreateSubscriptionBody = {
   payment_method_id?: string;
   use_trial: boolean;
   platform?: "ios" | "android";
+  /**
+   * Optional client-generated idempotency key (spec 17 / Phase A). Stable
+   * per user action so a client-level retry of the SAME subscribe attempt
+   * reuses it and Stripe dedupes the outbound calls. When omitted, the
+   * backend derives a deterministic key from the request intent — see
+   * `deriveSubscriptionBaseKey`. Backward-compatible: older clients omit it.
+   */
+  idempotency_key?: string;
 };
 
 /**
@@ -475,6 +488,7 @@ async function resolveCustomerId(
   userId: string,
   existing: UserSubscription | null,
   profile: { email: string | null; fullName: string | null },
+  baseKey: string,
 ): Promise<string> {
   const existingCustomerId = existing
     ? readStringMeta(readMetadata(existing), "stripe_customer_id")
@@ -490,11 +504,16 @@ async function resolveCustomerId(
     }
   }
 
-  const customer = await stripe.customers.create({
-    email: profile.email ?? undefined,
-    name: profile.fullName ?? undefined,
-    metadata: { supabase_user_id: userId },
-  });
+  // Idempotency key (spec 17 / Phase A): a retry of this flow must not
+  // create a second Stripe customer for the user.
+  const customer = await stripe.customers.create(
+    {
+      email: profile.email ?? undefined,
+      name: profile.fullName ?? undefined,
+      metadata: { supabase_user_id: userId },
+    },
+    { idempotencyKey: opKey(baseKey, "customer") },
+  );
   return customer.id;
 }
 
@@ -508,20 +527,25 @@ async function attachPaymentMethod(
   stripe: Stripe,
   customerId: string,
   paymentMethodId: string,
+  baseKey: string,
 ): Promise<void> {
   try {
-    await stripe.paymentMethods.attach(paymentMethodId, {
-      customer: customerId,
-    });
+    await stripe.paymentMethods.attach(
+      paymentMethodId,
+      { customer: customerId },
+      { idempotencyKey: opKey(baseKey, "pm-attach") },
+    );
   } catch (err) {
     const code = (err as { code?: unknown }).code;
     if (code !== "resource_already_exists") {
       throw err;
     }
   }
-  await stripe.customers.update(customerId, {
-    invoice_settings: { default_payment_method: paymentMethodId },
-  });
+  await stripe.customers.update(
+    customerId,
+    { invoice_settings: { default_payment_method: paymentMethodId } },
+    { idempotencyKey: opKey(baseKey, "cust-update") },
+  );
 }
 
 /**
@@ -550,6 +574,7 @@ async function handleReinstate(args: {
   existing: UserSubscription;
   existingStripeSubId: string;
   paymentMethodId: string;
+  baseKey: string;
 }): Promise<SuccessResponse | ErrorResponse> {
   const {
     stripe,
@@ -558,6 +583,7 @@ async function handleReinstate(args: {
     existing,
     existingStripeSubId,
     paymentMethodId,
+    baseKey,
   } = args;
 
   let resumed: Stripe.Subscription;
@@ -566,11 +592,17 @@ async function handleReinstate(args: {
     // `Stripe.Response<T>` adds non-indexable metadata that breaks
     // downstream property reads. Same pattern as
     // eventHandlers/subscriptionUpdated.ts line 320-322.
-    resumed = (await stripe.subscriptions.update(existingStripeSubId, {
-      cancel_at_period_end: false,
-      default_payment_method: paymentMethodId,
-      expand: ["latest_invoice.payment_intent"],
-    })) as unknown as Stripe.Subscription;
+    // Idempotency key (spec 17 / Phase A): a retried reinstate must not
+    // re-mutate the sub twice.
+    resumed = (await stripe.subscriptions.update(
+      existingStripeSubId,
+      {
+        cancel_at_period_end: false,
+        default_payment_method: paymentMethodId,
+        expand: ["latest_invoice.payment_intent"],
+      },
+      { idempotencyKey: opKey(baseKey, "sub-update") },
+    )) as unknown as Stripe.Subscription;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
@@ -728,6 +760,7 @@ async function handleSubscriptionChange(args: {
   changeType: ChangeType;
   /** True for downgrades / unfavourable cycle changes → schedule to period-end. */
   isDowngrade: boolean;
+  baseKey: string;
 }): Promise<SuccessResponse | ErrorResponse> {
   const {
     stripe,
@@ -746,6 +779,7 @@ async function handleSubscriptionChange(args: {
     trial,
     changeType,
     isDowngrade,
+    baseKey,
   } = args;
 
   // In-flight chained-change guard now lives at the top of the POST
@@ -781,7 +815,12 @@ async function handleSubscriptionChange(args: {
 
   let subscription: Stripe.Subscription;
   try {
-    subscription = await stripe.subscriptions.create(createParams);
+    // Idempotency key (spec 17 / Phase A): two concurrent / retried
+    // change requests with the same intent collapse to one Stripe sub
+    // rather than orphaning a duplicate that keeps billing.
+    subscription = await stripe.subscriptions.create(createParams, {
+      idempotencyKey: opKey(baseKey, "sub-create"),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
@@ -1012,6 +1051,7 @@ async function handleChangeOfTierNoPayment(args: {
   };
   changeType: ChangeType;
   isDowngrade: boolean;
+  baseKey: string;
 }): Promise<SuccessResponse | ErrorResponse> {
   const {
     stripe,
@@ -1025,6 +1065,7 @@ async function handleChangeOfTierNoPayment(args: {
     newPriceInfo,
     changeType,
     isDowngrade,
+    baseKey,
   } = args;
 
   // Retrieve the existing Stripe sub so we can read the current sub-item
@@ -1091,9 +1132,12 @@ async function handleChangeOfTierNoPayment(args: {
 
   let updatedSub: Stripe.Subscription;
   try {
+    // Idempotency key (spec 17 / Phase A): a retried tier change must not
+    // re-apply the proration / item swap twice.
     updatedSub = (await stripe.subscriptions.update(
       existingStripeSubId,
       updateParams,
+      { idempotencyKey: opKey(baseKey, "sub-update") },
     )) as unknown as Stripe.Subscription;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1271,6 +1315,23 @@ export const subscriptionsCreateHandler = new Elysia()
           ? readStringMeta(readMetadata(existing), "stripe_subscription_id")
           : null;
 
+      // Idempotency base key (spec 17 / Phase A, closes HIGH-1). Computed
+      // once and namespaced per outbound Stripe call via `opKey`. Uses the
+      // client-supplied key when present (stable per user action); otherwise
+      // derives deterministically from the request intent so a retry of the
+      // SAME action dedupes while a genuinely different action stays
+      // distinct. `existingStripeSubId` is part of the derivation so a
+      // resubscribe-after-cancel (different/absent sub id) never falsely
+      // dedupes against a prior attempt.
+      const idempotencyBaseKey = deriveSubscriptionBaseKey({
+        clientKey: body.idempotency_key,
+        userId,
+        tierName: body.tier_name,
+        billingCycle: body.billing_cycle,
+        paymentMethodId: body.payment_method_id ?? null,
+        existingExternalSubscriptionId: existingStripeSubId,
+      });
+
       // ─── In-flight chained-change guard ──────────────────────────────
       // Refuse ANY follow-up flow (reinstate, change-of-tier) when the
       // existing row carries an `old_stripe_subscription_id` marker
@@ -1380,6 +1441,7 @@ export const subscriptionsCreateHandler = new Elysia()
           newPriceInfo: priceInfo,
           changeType,
           isDowngrade,
+          baseKey: idempotencyBaseKey,
         });
       }
 
@@ -1396,12 +1458,23 @@ export const subscriptionsCreateHandler = new Elysia()
         isReinstateable(existing!, body.tier_name, body.billing_cycle)
       ) {
         const stripe = getStripe();
-        const customerId = await resolveCustomerId(stripe, userId, existing, {
-          email: profile.email ?? null,
-          fullName: profile.fullName ?? null,
-        });
+        const customerId = await resolveCustomerId(
+          stripe,
+          userId,
+          existing,
+          {
+            email: profile.email ?? null,
+            fullName: profile.fullName ?? null,
+          },
+          idempotencyBaseKey,
+        );
         try {
-          await attachPaymentMethod(stripe, customerId, paymentMethodId);
+          await attachPaymentMethod(
+            stripe,
+            customerId,
+            paymentMethodId,
+            idempotencyBaseKey,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -1417,6 +1490,7 @@ export const subscriptionsCreateHandler = new Elysia()
           existing: existing!,
           existingStripeSubId: existingStripeSubId!,
           paymentMethodId,
+          baseKey: idempotencyBaseKey,
         });
       }
       // --- Subscription-change path (Phase 2A.3) --------------------------
@@ -1431,12 +1505,23 @@ export const subscriptionsCreateHandler = new Elysia()
       // (Brad Q10 sign-off).
       if (hasActiveSub) {
         const stripe = getStripe();
-        const customerId = await resolveCustomerId(stripe, userId, existing, {
-          email: profile.email ?? null,
-          fullName: profile.fullName ?? null,
-        });
+        const customerId = await resolveCustomerId(
+          stripe,
+          userId,
+          existing,
+          {
+            email: profile.email ?? null,
+            fullName: profile.fullName ?? null,
+          },
+          idempotencyBaseKey,
+        );
         try {
-          await attachPaymentMethod(stripe, customerId, paymentMethodId);
+          await attachPaymentMethod(
+            stripe,
+            customerId,
+            paymentMethodId,
+            idempotencyBaseKey,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(
@@ -1494,6 +1579,7 @@ export const subscriptionsCreateHandler = new Elysia()
           trial: trialForChange,
           changeType,
           isDowngrade,
+          baseKey: idempotencyBaseKey,
         });
       }
 
@@ -1507,13 +1593,24 @@ export const subscriptionsCreateHandler = new Elysia()
       );
 
       const stripe = getStripe();
-      const customerId = await resolveCustomerId(stripe, userId, existing, {
-        email: profile.email ?? null,
-        fullName: profile.fullName ?? null,
-      });
+      const customerId = await resolveCustomerId(
+        stripe,
+        userId,
+        existing,
+        {
+          email: profile.email ?? null,
+          fullName: profile.fullName ?? null,
+        },
+        idempotencyBaseKey,
+      );
 
       try {
-        await attachPaymentMethod(stripe, customerId, paymentMethodId);
+        await attachPaymentMethod(
+          stripe,
+          customerId,
+          paymentMethodId,
+          idempotencyBaseKey,
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(
@@ -1544,7 +1641,11 @@ export const subscriptionsCreateHandler = new Elysia()
 
       let subscription: Stripe.Subscription;
       try {
-        subscription = await stripe.subscriptions.create(createParams);
+        // Idempotency key (spec 17 / Phase A): a client retry / double-tap
+        // of a brand-new subscribe must not create a second Stripe sub.
+        subscription = await stripe.subscriptions.create(createParams, {
+          idempotencyKey: opKey(idempotencyBaseKey, "sub-create"),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
@@ -1590,6 +1691,8 @@ export const subscriptionsCreateHandler = new Elysia()
         console.error(
           `[subscriptions:create] DB insert failed for stripe_sub=${subscription.id}: ${message} — rolling back Stripe subscription`,
         );
+        // Cancel the just-created Stripe sub so we never strand a billable
+        // sub against no local row (keyless one-shot rollback — see design).
         await stripe.subscriptions
           .cancel(subscription.id)
           .catch((cancelErr) => {
@@ -1601,6 +1704,21 @@ export const subscriptionsCreateHandler = new Elysia()
               `[subscriptions:create] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
             );
           });
+        // A unique-violation here means a CONCURRENT request already inserted
+        // the user's one live row (the partial unique index — widened in
+        // spec 17 / Phase A to include 'trialing'+'past_due' — is the atomic
+        // arbiter). This request lost the race; its orphan Stripe sub was
+        // just cancelled above. Return 409 (not a bare 500) so the client
+        // refreshes and renders the winning subscription, rather than
+        // surfacing an internal error for what is a benign double-submit
+        // (spec 17 / Phase A, closes HIGH-2 / AC-A2.4).
+        if (isUniqueViolation(err)) {
+          ctx.set.status = 409;
+          return {
+            error:
+              "A subscription is already being set up for your account. Please refresh and try again.",
+          };
+        }
         ctx.set.status = 500;
         return { error: `Failed to create subscription record: ${message}` };
       }
@@ -1674,6 +1792,10 @@ export const subscriptionsCreateHandler = new Elysia()
         // trial usage (Brad Q3 sign-off).
         use_trial: t.Boolean(),
         platform: t.Optional(t.Union([t.Literal("ios"), t.Literal("android")])),
+        // Optional client-generated idempotency key (spec 17 / Phase A).
+        // Backward-compatible: older clients omit it and the backend derives
+        // a deterministic key from the request intent.
+        idempotency_key: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
       }),
     },
   );

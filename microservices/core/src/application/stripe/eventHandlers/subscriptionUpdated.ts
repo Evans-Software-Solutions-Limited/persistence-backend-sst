@@ -90,7 +90,13 @@ async function cancelOldSubscriptionWithRetry(oldId: string): Promise<boolean> {
   const stripe = getStripe();
   for (let attempt = 1; attempt <= MAX_CANCEL_ATTEMPTS; attempt += 1) {
     try {
-      await stripe.subscriptions.cancel(oldId);
+      // Deterministic idempotency key (spec 17 / Phase A) keyed on the old
+      // sub id: Stripe's redelivery of the SAME webhook event, or our own
+      // bounded retries, must not double-issue the cancel. `isAlreadyCanceledError`
+      // below still covers the cross-delivery already-cancelled case.
+      await stripe.subscriptions.cancel(oldId, undefined, {
+        idempotencyKey: `sub-cancel:${oldId}`,
+      });
       console.log(
         `[stripe:subscription.updated] cancelled old sub ${oldId} on attempt ${attempt}`,
       );

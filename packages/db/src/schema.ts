@@ -316,9 +316,18 @@ export const userSubscriptions = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
+    // One LIVE subscription per user. Live = active|pending|trialing|past_due.
+    // Terminal statuses (cancelled|expired|incomplete_expired) are excluded so
+    // a user can resubscribe. `trialing` + `past_due` were added in spec 17 /
+    // Phase A (migration 20260605120000) — the prior ('active','pending')
+    // predicate left a hole where two concurrent new-trial sign-ups each
+    // inserted a `trialing` row, yielding two billable Stripe subs. Keep this
+    // predicate VERBATIM in lockstep with that migration.
     uniqueIndex("user_subscriptions_active_unique")
       .on(t.userId)
-      .where(sql`payment_status IN ('active', 'pending')`),
+      .where(
+        sql`payment_status IN ('active', 'pending', 'trialing', 'past_due')`,
+      ),
   ],
 );
 

@@ -230,7 +230,11 @@ describe("handleSubscriptionUpdated", () => {
       });
       subscriptionsCancelMock.mockResolvedValueOnce({ id: "sub_old" });
       await handleSubscriptionUpdated(buildEvent());
-      expect(subscriptionsCancelMock).toHaveBeenCalledWith("sub_old");
+      expect(subscriptionsCancelMock).toHaveBeenCalledWith(
+        "sub_old",
+        undefined,
+        expect.objectContaining({ idempotencyKey: expect.any(String) }),
+      );
       const clearCall = updateByIdMock.mock.calls.find(
         (c) =>
           c[1].metadata &&

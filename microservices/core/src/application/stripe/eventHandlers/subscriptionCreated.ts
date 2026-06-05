@@ -1,38 +1,15 @@
 import type Stripe from "stripe";
 import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
+// `isUniqueViolation` extracted to a shared util (spec 17 / T-A.1.2) so the
+// outbound new-sub insert path shares one implementation. Behaviour here is
+// unchanged.
+import { isUniqueViolation } from "../pgErrors";
 import {
   mapStripeStatusToPaymentStatus,
   readCurrentPeriodEnd,
   readUserIdFromMetadata,
   unixSecondsToDate,
 } from "./_helpers";
-
-/**
- * Detect a Postgres unique-constraint violation. postgres-js + Neon both
- * expose the SQLSTATE on the error's `code` property; Drizzle wraps with
- * a `cause` chain, so we walk it. Specifically targets the
- * `user_subscriptions_active_unique` partial index but tolerates any
- * 23505 (matches by SQLSTATE rather than constraint name so future
- * partial-unique indexes on this table don't slip through).
- */
-function isUniqueViolation(err: unknown): boolean {
-  let cursor: unknown = err;
-  for (
-    let depth = 0;
-    depth < 4 && cursor !== undefined && cursor !== null;
-    depth += 1
-  ) {
-    const code = (cursor as { code?: unknown }).code;
-    if (code === "23505") return true;
-    cursor = (cursor as { cause?: unknown }).cause;
-  }
-  // Belt-and-braces: postgres-js sometimes drops the code on the cause
-  // chain and only leaves the human-readable message on the outer
-  // Error. Match the constraint name literally so we don't mistake
-  // some other duplicate-key error for the active-unique collision.
-  const message = err instanceof Error ? err.message : String(err);
-  return /user_subscriptions_active_unique/.test(message);
-}
 
 /**
  * Handler for `customer.subscription.created`.

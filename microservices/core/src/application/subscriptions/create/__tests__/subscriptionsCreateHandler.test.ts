@@ -465,13 +465,18 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     expect(stripeMock.customers.create).toHaveBeenCalledTimes(1);
     expect(stripeMock.customers.retrieve).not.toHaveBeenCalled();
 
-    // Payment method attach + default
-    expect(stripeMock.paymentMethods.attach).toHaveBeenCalledWith("pm_card", {
-      customer: "cus_new",
-    });
-    expect(stripeMock.customers.update).toHaveBeenCalledWith("cus_new", {
-      invoice_settings: { default_payment_method: "pm_card" },
-    });
+    // Payment method attach + default (third arg = idempotency options,
+    // spec 17 / Phase A)
+    expect(stripeMock.paymentMethods.attach).toHaveBeenCalledWith(
+      "pm_card",
+      { customer: "cus_new" },
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    );
+    expect(stripeMock.customers.update).toHaveBeenCalledWith(
+      "cus_new",
+      { invoice_settings: { default_payment_method: "pm_card" } },
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    );
 
     // Stripe subscription create — with trial
     const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
@@ -922,12 +927,16 @@ describe("subscriptionsCreateHandler — reinstatement path", () => {
       reinstated: true,
     });
 
-    // Stripe update call shape
-    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith("sub_old", {
-      cancel_at_period_end: false,
-      default_payment_method: "pm_card",
-      expand: ["latest_invoice.payment_intent"],
-    });
+    // Stripe update call shape (third arg = idempotency options, spec 17 / Phase A)
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith(
+      "sub_old",
+      {
+        cancel_at_period_end: false,
+        default_payment_method: "pm_card",
+        expand: ["latest_invoice.payment_intent"],
+      },
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    );
     // Reinstate must NOT create a new Stripe sub
     expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
 
@@ -1728,6 +1737,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     expect(stripeMock.subscriptions.update).toHaveBeenCalledWith(
       "sub_old",
       expect.any(Object),
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
     );
   });
 
@@ -1750,6 +1760,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
         email: undefined,
         name: undefined,
       }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
     );
   });
 

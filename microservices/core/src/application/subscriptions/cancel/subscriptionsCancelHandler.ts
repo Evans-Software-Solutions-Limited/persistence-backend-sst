@@ -8,6 +8,7 @@ import {
 
 import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
 import { getStripe } from "../../stripe/stripeClient";
+import { deriveCancelBaseKey, opKey } from "../../stripe/stripeIdempotency";
 
 /**
  * POST /subscriptions/:id/cancel — cancel a subscription either at the
@@ -96,6 +97,16 @@ export const subscriptionsCancelHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const subscriptionId = ctx.params.id;
       const cancelImmediately = ctx.body.cancel_immediately ?? false;
+
+      // Idempotency base key (spec 17 / Phase A): a retried cancel must not
+      // re-issue a second Stripe mutation. Keyed on the local sub id + mode
+      // so a genuine mode flip (period-end → immediate) stays distinct.
+      const idempotencyBaseKey = deriveCancelBaseKey({
+        clientKey: ctx.body.idempotency_key,
+        userId,
+        localSubscriptionId: subscriptionId,
+        cancelImmediately,
+      });
 
       const subRepo = new SubscriptionRepository();
       const subscription = await subRepo.findByIdForUser(
@@ -190,6 +201,8 @@ export const subscriptionsCancelHandler = new Elysia()
           // refuses to index, but the runtime payload IS a Subscription.
           cancelled = (await stripe.subscriptions.cancel(
             stripeSubscriptionId,
+            undefined,
+            { idempotencyKey: opKey(idempotencyBaseKey, "sub-cancel") },
           )) as unknown as Stripe.Subscription;
         } catch (err) {
           if (isAlreadyCanceledError(err)) {
@@ -223,9 +236,11 @@ export const subscriptionsCancelHandler = new Elysia()
       } else {
         let updated: Stripe.Subscription | null = null;
         try {
-          updated = (await stripe.subscriptions.update(stripeSubscriptionId, {
-            cancel_at_period_end: true,
-          })) as unknown as Stripe.Subscription;
+          updated = (await stripe.subscriptions.update(
+            stripeSubscriptionId,
+            { cancel_at_period_end: true },
+            { idempotencyKey: opKey(idempotencyBaseKey, "sub-update") },
+          )) as unknown as Stripe.Subscription;
         } catch (err) {
           if (isAlreadyCanceledError(err)) {
             // Cross-mode retry recovery: a previous `cancel_immediately:
@@ -331,6 +346,8 @@ export const subscriptionsCancelHandler = new Elysia()
       }),
       body: t.Object({
         cancel_immediately: t.Optional(t.Boolean()),
+        // Optional client-generated idempotency key (spec 17 / Phase A).
+        idempotency_key: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
       }),
     },
   );
