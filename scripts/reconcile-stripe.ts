@@ -198,7 +198,9 @@ function readUserIdFromMetadata(
 }
 
 function readTierFromMetadata(subscription: Stripe.Subscription): string {
-  return subscription.metadata?.tier_name ?? "basic";
+  // Default to "free" (not the removed "basic" tier — dropped in
+  // 20260526120000_simplify_tier_model.sql). spec 17 / Phase D, audit LOW-1.
+  return subscription.metadata?.tier_name ?? "free";
 }
 
 function readBillingCycleFromMetadata(

@@ -379,6 +379,28 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
     .defaultNow(),
 });
 
+/**
+ * Append-only ledger of `user_subscriptions.payment_status` transitions
+ * (spec 17 / Phase D). Insert-only — never updated or deleted. Not FK-cascaded
+ * so the audit trail outlives the subscription row it describes.
+ */
+export const subscriptionStatusTransitions = pgTable(
+  "subscription_status_transitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userSubscriptionId: uuid("user_subscription_id").notNull(),
+    userId: uuid("user_id"),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    source: text("source").notNull(),
+    stripeEventId: text("stripe_event_id"),
+    blocked: boolean("blocked").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
 // ─── Exercises ────────────────────────────────────────────────────────────────
 
 export const exercises = pgTable("exercises", {

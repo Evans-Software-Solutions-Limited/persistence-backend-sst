@@ -3,7 +3,10 @@ import {
   SubscriptionRepository,
   type UserSubscription,
 } from "../../repositories/subscriptionRepository";
+import { SubscriptionStatusTransitionsRepository } from "../../repositories/subscriptionStatusTransitionsRepository";
 import { getStripe } from "../stripeClient";
+import { emitStripeAlert } from "../alerts";
+import { reconcilePaymentStatus } from "../subscriptionState";
 import {
   mapStripeStatusToPaymentStatus,
   mapStripeStatusToPaymentStatusForUpdate,
@@ -228,7 +231,24 @@ export async function handleSubscriptionUpdated(
   }
 
   // --- 1. Basic update ---------------------------------------------------
-  const paymentStatus = mapStripeStatusToPaymentStatusForUpdate(subscription);
+  // Run the proposed status through the state machine (spec 17 / Phase D):
+  // an inbound webhook must not revive a TERMINAL sub into a LIVE status
+  // (the "delayed webhook flips cancelled → active" class of bug). Legal
+  // transitions pass untouched; an illegal one is suppressed + alerted.
+  const proposedStatus = mapStripeStatusToPaymentStatusForUpdate(subscription);
+  const { status: paymentStatus, blocked } = reconcilePaymentStatus(
+    existing.paymentStatus,
+    proposedStatus,
+  );
+  if (blocked) {
+    emitStripeAlert("illegal_transition_blocked", "warn", {
+      subscriptionId: subscription.id,
+      userId,
+      from: existing.paymentStatus,
+      attempted: proposedStatus,
+      source: event.type,
+    });
+  }
   const expiresAt = resolveExpiresAt(subscription);
   const cancelledAt = resolveCancelledAt(subscription, existing);
 
@@ -239,6 +259,29 @@ export async function handleSubscriptionUpdated(
     nextBillingDate: expiresAt, // same value — legacy line 248
     cancelledAt,
   });
+
+  // Append-only transition ledger (spec 17 / Phase D, best-effort). Records
+  // real transitions AND suppressed illegal attempts for the audit trail.
+  // Never fails the webhook — a ledger write error is logged and swallowed.
+  if (blocked || (existing.paymentStatus ?? null) !== paymentStatus) {
+    await new SubscriptionStatusTransitionsRepository()
+      .record({
+        userSubscriptionId: existing.id,
+        userId,
+        fromStatus: existing.paymentStatus,
+        toStatus: blocked ? proposedStatus : paymentStatus,
+        source: `webhook:${event.type}`,
+        stripeEventId: event.id,
+        blocked,
+      })
+      .catch((err) => {
+        console.error(
+          `[stripe:subscription.updated] ledger record failed for ${existing.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+  }
 
   // --- 2. Scheduled-downgrade activation --------------------------------
   const existingMeta = readMetadata(existing);

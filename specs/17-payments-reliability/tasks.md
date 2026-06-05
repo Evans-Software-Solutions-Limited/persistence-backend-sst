@@ -54,9 +54,10 @@
 - [x] **MED-4 dunning + trial-ending (ops-alert layer)** — `invoice.payment_failed` and `trial_will_end` now emit `[stripe:alert]` (warn). Single CloudWatch metric filter on `[stripe:alert]` covers refunds/disputes/dunning/trials.
 - [ ] **Deferred to M9 (by codebase design, not skipped):** user-facing in-app/push notifications for dunning + trial-ending. The `notification_type` enum has no payment/subscription values and there is no push-send pipeline yet; building it here would be out-of-scope invention. Wiring plan: add enum values + a `NotificationRepository.create` + call from these two handlers once M9 lands.
 
-## Phase D — Hardening (future PR)
+## Phase D — Hardening (DONE — in this PR)
 
-- [ ] Central `canTransition()` state-machine gate on all `payment_status` writes.
-- [ ] Append-only transition/money ledger.
-- [ ] Fix reconcile stale `"basic"` default → `"free"`; pin Stripe API version.
-- [ ] Evaluate full-handler transaction + advisory lock for the different-intent change race.
+- [x] **MED-1 state machine** — new `stripe/subscriptionState.ts`: `canTransition(from,to)` + `reconcilePaymentStatus(existing,proposed)`. Minimal non-destructive policy: a TERMINAL status (`cancelled`/`canceled`/`expired`) may not be revived into a LIVE one (`active`/`trialing`/`past_due`/`pending`) by an inbound webhook; all legitimate transitions pass. Wired into `subscriptionUpdated.ts` basic-update — illegal transitions are suppressed (keep existing) + `[stripe:alert] illegal_transition_blocked`. Reinstatement is outbound-driven so it's unaffected. Verified non-breaking: all prior tests stay green.
+- [x] **LOW-3 transition ledger** — append-only `subscription_status_transitions` table (migration `20260605140000` + schema + `SubscriptionStatusTransitionsRepository`). Records real transitions AND blocked attempts (best-effort, never fails the webhook). Not FK-cascaded so the audit trail outlives the row.
+- [x] **LOW-1** — reconcile `readTierFromMetadata` default `"basic"` → `"free"` (basic was dropped in tier-simplification).
+- [x] **LOW-2 (Stripe API version)** — re-evaluated; DELIBERATELY kept unpinned (documented in `stripeClient.ts`). Pinning fights the SDK's advancing type literal and is misleading for the dashboard-controlled inbound path; the version-resilient field reads in `_helpers.ts` are the real defence.
+- [ ] **Different-intent simultaneous-change race (still deferred):** the full-handler transaction + `pg_advisory_xact_lock` fix remains out of scope — bounded sub-second window, guarded by the existing in-flight 409 marker, and the transaction-mode pooler makes it a large higher-risk refactor. Documented residual risk in design.md.
