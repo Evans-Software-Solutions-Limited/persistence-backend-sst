@@ -66,23 +66,26 @@ describe("handleSubscriptionUpdated — state machine (spec 17 / Phase D)", () =
   });
   afterEach(() => warnSpy.mockRestore());
 
-  it("BLOCKS a terminal→live webhook transition: keeps cancelled, alerts, ledgers the blocked attempt", async () => {
-    // Local row is already terminal (cancelled); a stale 'active' event arrives.
+  it("BLOCKS a terminal→live webhook transition: suppresses the ENTIRE basic update (no stale expiresAt write), alerts, ledgers the blocked attempt", async () => {
+    // Local row is already terminal (cancelled) with a PAST expiry; a stale
+    // 'active' event arrives carrying a FUTURE current_period_end.
     findByExternalIdMock.mockResolvedValue({
       id: "us_test",
       externalSubscriptionId: "sub_1",
       paymentStatus: "cancelled",
+      expiresAt: new Date(Date.now() - 86400_000), // already expired
       cancelledAt: new Date(),
       metadata: {},
     });
 
     await handleSubscriptionUpdated(activeEvent());
 
-    // The basic update must KEEP cancelled (not flip to active).
-    expect(updateByIdMock).toHaveBeenCalledWith(
-      "us_test",
-      expect.objectContaining({ paymentStatus: "cancelled" }),
-    );
+    // CRITICAL: when blocked, the basic-update updateById must NOT run at all.
+    // Previously it still wrote the event's FUTURE expiresAt + cancelledAt:null
+    // onto the preserved "cancelled" row — which the entitlement gate reads as
+    // "cancelled but paid through" → re-entitled, neutralising the block.
+    // Suppressing the whole write keeps the row's past expiry intact.
+    expect(updateByIdMock).not.toHaveBeenCalled();
     // An ops alert was emitted.
     expect(
       warnSpy.mock.calls

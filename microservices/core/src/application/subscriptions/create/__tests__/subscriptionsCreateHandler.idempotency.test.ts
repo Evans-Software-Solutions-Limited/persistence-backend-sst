@@ -10,6 +10,7 @@ import {
 
 const subscriptionRepositoryMocks = {
   findMostRecentForUser: vi.fn(),
+  findByExternalId: vi.fn(),
   insert: vi.fn(),
   updateById: vi.fn(),
 };
@@ -145,6 +146,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   for (const m of [
     subscriptionRepositoryMocks.findMostRecentForUser,
+    subscriptionRepositoryMocks.findByExternalId,
     subscriptionRepositoryMocks.insert,
     subscriptionRepositoryMocks.updateById,
     profileRepositoryMocks.getById,
@@ -161,6 +163,8 @@ beforeEach(() => {
   }
 
   subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue(null);
+  // Default: the just-created Stripe sub is unreferenced (genuine orphan).
+  subscriptionRepositoryMocks.findByExternalId.mockResolvedValue(null);
   subscriptionRepositoryMocks.insert.mockResolvedValue({ id: "us_new" });
   profileRepositoryMocks.getById.mockResolvedValue({
     id: "user-1",
@@ -220,17 +224,37 @@ describe("subscriptionsCreateHandler — idempotency keys (spec 17 / Phase A)", 
     );
   });
 
-  it("on a unique-violation (23505) at insert: cancels the orphan Stripe sub and returns 409", async () => {
+  it("on 23505 when the new Stripe sub is UNREFERENCED: cancels the genuine orphan + 409", async () => {
     mockPriceLookup();
     subscriptionRepositoryMocks.insert.mockRejectedValueOnce({ code: "23505" });
+    // No committed row points at sub_new → it's a true orphan.
+    subscriptionRepositoryMocks.findByExternalId.mockResolvedValue(null);
 
     const res = await postCreate(newSubBody);
 
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toMatch(/already being set up/i);
-    // Orphan Stripe sub must be cancelled so nothing keeps billing.
     expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith("sub_new");
+  });
+
+  it("on 23505 when the winning row already OWNS the new Stripe sub (idempotency dedup): does NOT cancel, returns 409", async () => {
+    // The double-tap / concurrent-retry case: Stripe's Idempotency-Key
+    // collapsed both creates onto sub_new, the winner committed a row
+    // pointing at sub_new, this request lost the insert race. Cancelling
+    // sub_new here would revoke the WINNER's live subscription.
+    mockPriceLookup();
+    subscriptionRepositoryMocks.insert.mockRejectedValueOnce({ code: "23505" });
+    subscriptionRepositoryMocks.findByExternalId.mockResolvedValue({
+      id: "us_winner",
+      externalSubscriptionId: "sub_new",
+    });
+
+    const res = await postCreate(newSubBody);
+
+    expect(res.status).toBe(409);
+    // CRITICAL: the winner's live sub must NOT be cancelled.
+    expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
   });
 
   it("on a non-unique insert error: still cancels the orphan but returns 500", async () => {

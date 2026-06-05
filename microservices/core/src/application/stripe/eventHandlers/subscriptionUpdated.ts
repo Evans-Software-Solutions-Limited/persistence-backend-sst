@@ -241,6 +241,15 @@ export async function handleSubscriptionUpdated(
     proposedStatus,
   );
   if (blocked) {
+    // The inbound event tried to revive a TERMINAL sub into a LIVE status.
+    // Suppress the ENTIRE basic update — not just paymentStatus. Writing the
+    // event's expiresAt/cancelledAt would silently neutralise the block: a
+    // preserved "cancelled" status + a future expiresAt reads as
+    // still-entitled via the grace path in
+    // assertEntitlement.classifySubscriptionStatus ("cancelled but paid
+    // through"). So we touch NOTHING from the stale payload here; only the
+    // ledger below records the suppressed attempt. (Inspector review —
+    // expiresAt write bypassed the state machine.)
     emitStripeAlert("illegal_transition_blocked", "warn", {
       subscriptionId: subscription.id,
       userId,
@@ -248,17 +257,18 @@ export async function handleSubscriptionUpdated(
       attempted: proposedStatus,
       source: event.type,
     });
-  }
-  const expiresAt = resolveExpiresAt(subscription);
-  const cancelledAt = resolveCancelledAt(subscription, existing);
+  } else {
+    const expiresAt = resolveExpiresAt(subscription);
+    const cancelledAt = resolveCancelledAt(subscription, existing);
 
-  await repo.updateById(existing.id, {
-    paymentStatus,
-    expiresAt,
-    trialEndsAt: unixSecondsToDate(subscription.trial_end),
-    nextBillingDate: expiresAt, // same value — legacy line 248
-    cancelledAt,
-  });
+    await repo.updateById(existing.id, {
+      paymentStatus,
+      expiresAt,
+      trialEndsAt: unixSecondsToDate(subscription.trial_end),
+      nextBillingDate: expiresAt, // same value — legacy line 248
+      cancelledAt,
+    });
+  }
 
   // Append-only transition ledger (spec 17 / Phase D, best-effort). Records
   // real transitions AND suppressed illegal attempts for the audit trail.

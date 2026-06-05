@@ -1688,11 +1688,60 @@ export const subscriptionsCreateHandler = new Elysia()
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+
+        if (isUniqueViolation(err)) {
+          // A CONCURRENT request already inserted this user's one live row
+          // (the partial unique index — widened in spec 17 / Phase A to
+          // include 'trialing'+'past_due' — is the atomic arbiter). This
+          // request lost the race.
+          //
+          // CRITICAL: do NOT blindly cancel `subscription.id`. Stripe's
+          // Idempotency-Key collapses two same-intent concurrent creates onto
+          // ONE subscription, so the WINNER's committed row may point at this
+          // exact `subscription.id`. Cancelling it would revoke the winner's
+          // live sub — they already received 200, and `customer.subscription.
+          // deleted` would later strip their entitlement. Only a Stripe sub
+          // that NO committed local row references is a genuine orphan worth
+          // cancelling (the case where the two requests carried distinct keys
+          // and Stripe created two different subs).
+          const owner = await subRepo.findByExternalId(subscription.id);
+          if (owner === null) {
+            console.error(
+              `[subscriptions:create] lost insert race AND stripe_sub=${subscription.id} is unreferenced — cancelling the orphan`,
+            );
+            await stripe.subscriptions
+              .cancel(subscription.id)
+              .catch((cancelErr) => {
+                const cm =
+                  cancelErr instanceof Error
+                    ? cancelErr.message
+                    : String(cancelErr);
+                console.error(
+                  `[subscriptions:create] orphan cancel failed for ${subscription.id}: ${cm} — manual intervention required`,
+                );
+              });
+          } else {
+            console.warn(
+              `[subscriptions:create] lost insert race; stripe_sub=${subscription.id} is owned by the winning row ${owner.id} (idempotency-deduped) — leaving the Stripe sub intact`,
+            );
+          }
+          // Return 409 (not a bare 500) so the client refreshes and renders
+          // the winning subscription — a benign double-submit
+          // (spec 17 / Phase A, HIGH-2 / AC-A2.4; orphan-cancel correctness
+          // from inspector review).
+          ctx.set.status = 409;
+          return {
+            error:
+              "A subscription is already being set up for your account. Please refresh and try again.",
+          };
+        }
+
+        // Non-unique failure: the insert died for some other reason, so our
+        // just-created Stripe sub is a genuine orphan (no local row will ever
+        // reference it). Cancel it so we don't strand a billable sub, then 500.
         console.error(
           `[subscriptions:create] DB insert failed for stripe_sub=${subscription.id}: ${message} — rolling back Stripe subscription`,
         );
-        // Cancel the just-created Stripe sub so we never strand a billable
-        // sub against no local row (keyless one-shot rollback — see design).
         await stripe.subscriptions
           .cancel(subscription.id)
           .catch((cancelErr) => {
@@ -1704,21 +1753,6 @@ export const subscriptionsCreateHandler = new Elysia()
               `[subscriptions:create] Stripe rollback ALSO failed for ${subscription.id}: ${cm} — manual intervention required`,
             );
           });
-        // A unique-violation here means a CONCURRENT request already inserted
-        // the user's one live row (the partial unique index — widened in
-        // spec 17 / Phase A to include 'trialing'+'past_due' — is the atomic
-        // arbiter). This request lost the race; its orphan Stripe sub was
-        // just cancelled above. Return 409 (not a bare 500) so the client
-        // refreshes and renders the winning subscription, rather than
-        // surfacing an internal error for what is a benign double-submit
-        // (spec 17 / Phase A, closes HIGH-2 / AC-A2.4).
-        if (isUniqueViolation(err)) {
-          ctx.set.status = 409;
-          return {
-            error:
-              "A subscription is already being set up for your account. Please refresh and try again.",
-          };
-        }
         ctx.set.status = 500;
         return { error: `Failed to create subscription record: ${message}` };
       }
