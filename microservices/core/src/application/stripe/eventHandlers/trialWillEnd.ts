@@ -1,18 +1,15 @@
 import type Stripe from "stripe";
+import { emitStripeAlert } from "../alerts";
 import { readUserIdFromMetadata } from "./_helpers";
 
 /**
- * Log-only handler for `customer.subscription.trial_will_end`. Stripe
- * fires this 3 days before a trial expires.
+ * Handler for `customer.subscription.trial_will_end`. Stripe fires this 3
+ * days before a trial expires.
  *
- * Legacy comment in stripe-webhook/index.ts line 696:
- *   "TODO: Send notification to user that trial is ending soon"
- *
- * We carry the TODO forward — wiring this into the push-notification
- * pipeline is a separate milestone (M9 trial-reminder push). For now,
- * receiving the event + logging it (so it shows up in CloudWatch when
- * we audit "who got notified about ending trials?") is the minimum
- * useful behavior.
+ * Emits a `warn` ops alert (spec 17 / Phase C, audit MED-4) so trial-ending
+ * is a structured, alertable signal. User-facing trial-reminder push remains
+ * the M9 milestone (the notification_type enum + push pipeline don't exist
+ * yet) — this is the ops-alert layer, not the customer notification.
  */
 export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
   const subscription = event.data.object as Stripe.Subscription;
@@ -23,7 +20,10 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
     );
     return;
   }
-  console.log(
-    `[stripe:trial_will_end] user=${userId} subscription=${subscription.id} trial_end=${subscription.trial_end ?? "null"} — push-notification wiring deferred to M9`,
-  );
+  emitStripeAlert("trial_will_end", "warn", {
+    userId,
+    subscriptionId: subscription.id,
+    trialEnd: subscription.trial_end ?? null,
+  });
+  return Promise.resolve();
 }

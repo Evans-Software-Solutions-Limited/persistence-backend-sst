@@ -2,18 +2,30 @@ import { describe, expect, it } from "vitest";
 import { eventHandlers, resolveEventHandler } from "../eventHandlers";
 
 describe("resolveEventHandler", () => {
-  it("returns a handler for each of the 6 legacy webhook event types", () => {
+  it("returns a handler for each supported webhook event type", () => {
     const supportedTypes = [
+      // 6 legacy types
       "customer.subscription.created",
       "customer.subscription.updated",
       "customer.subscription.deleted",
       "invoice.payment_succeeded",
       "invoice.payment_failed",
       "customer.subscription.trial_will_end",
+      // spec 17 / Phase C additions
+      "customer.subscription.paused",
+      "customer.subscription.resumed",
+      "charge.refunded",
+      "charge.dispute.created",
     ];
     for (const type of supportedTypes) {
       expect(resolveEventHandler(type)).toBeInstanceOf(Function);
     }
+  });
+
+  it("routes pause + resume to the same handler as `updated` (refresh-from-truth)", () => {
+    const updated = resolveEventHandler("customer.subscription.updated");
+    expect(resolveEventHandler("customer.subscription.paused")).toBe(updated);
+    expect(resolveEventHandler("customer.subscription.resumed")).toBe(updated);
   });
 
   it("returns null for unknown event types", () => {

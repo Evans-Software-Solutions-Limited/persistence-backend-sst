@@ -23,41 +23,41 @@ describe("handleTrialWillEnd", () => {
     vi.clearAllMocks();
   });
 
-  it("logs user_id + subscription_id + trial_end on a well-formed event", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("emits a [stripe:alert] trial_will_end ops alert with user + sub on a well-formed event", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     await handleTrialWillEnd(buildEvent());
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("user=user-1"));
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("subscription=sub_test"),
-    );
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("trial_end=1700000000"),
-    );
-    logSpy.mockRestore();
+    const alert = warnSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((m) => m.includes("[stripe:alert]"));
+    expect(alert).toBeDefined();
+    expect(alert).toContain('"kind":"trial_will_end"');
+    expect(alert).toContain("user-1");
+    expect(alert).toContain("sub_test");
+    warnSpy.mockRestore();
   });
 
-  it("warns and skips when supabase_user_id is missing", async () => {
+  it("warns and skips (no alert emitted) when supabase_user_id is missing", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleTrialWillEnd(
       buildEvent({ metadata: {} } as Partial<Stripe.Subscription>),
     );
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("missing supabase_user_id"),
+    const messages = warnSpy.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes("missing supabase_user_id"))).toBe(
+      true,
     );
-    expect(logSpy).not.toHaveBeenCalled();
+    expect(messages.some((m) => m.includes("[stripe:alert]"))).toBe(false);
     warnSpy.mockRestore();
-    logSpy.mockRestore();
   });
 
-  it("renders trial_end='null' in the log when Stripe omits the field", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("includes trialEnd:null in the alert when Stripe omits the field", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     await handleTrialWillEnd(
       buildEvent({ trial_end: null } as Partial<Stripe.Subscription>),
     );
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("trial_end=null"),
-    );
-    logSpy.mockRestore();
+    const alert = warnSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((m) => m.includes("[stripe:alert]"));
+    expect(alert).toContain('"trialEnd":null');
+    warnSpy.mockRestore();
   });
 });

@@ -47,10 +47,12 @@
 - [x] **HIGH-3 detect+alert reconcile** — new `stripe/reconcile/reconcileDetect.ts` (dependency-injected, read-only diff of payment_status + tier vs Stripe; pure `diffSubscription` + `reconcileDetect` runner, unit-tested). Cron Lambda `src/reconcileCron.ts` logs `[reconcile:summary]` always + `[reconcile:drift]` (ERROR) on mismatch. Hourly `sst.aws.Cron` wired in `infra/api.ts`.
 - [ ] **Deploy-verification pending (ops, not code):** confirm the cron fires post-deploy; wire a CloudWatch Logs metric filter on `[reconcile:drift]` + an alarm to page. SST Cron syntax compiles but isn't deploy-verified in this PR.
 
-## Phase C — Completeness (future PR)
+## Phase C — Completeness (DONE — in this PR)
 
-- [ ] `charge.refunded`, `charge.dispute.created`, `customer.subscription.paused` handlers.
-- [ ] Wire `invoice.payment_failed` + `trial_will_end` to M9 notifications.
+- [x] **MED-3 refund/dispute** — new `charge.refunded` + `charge.dispute.created` handlers emit structured ops alerts via shared `stripe/alerts.ts` (`[stripe:alert]`, severity warn/critical). Full refund + any dispute = `critical`. They surface the event for review; they do NOT auto-revoke entitlement (revocation is a reviewed policy call — documented).
+- [x] **MED-3 pause/resume** — `customer.subscription.paused` + `customer.subscription.resumed` routed to the existing `handleSubscriptionUpdated` (refresh-from-Stripe-truth). `paused` maps via the default branch to a non-entitled local status; `resumed` (status `active`) re-entitles. **Decision to confirm:** paused ⇒ access removed (safe default; legacy didn't handle pause).
+- [x] **MED-4 dunning + trial-ending (ops-alert layer)** — `invoice.payment_failed` and `trial_will_end` now emit `[stripe:alert]` (warn). Single CloudWatch metric filter on `[stripe:alert]` covers refunds/disputes/dunning/trials.
+- [ ] **Deferred to M9 (by codebase design, not skipped):** user-facing in-app/push notifications for dunning + trial-ending. The `notification_type` enum has no payment/subscription values and there is no push-send pipeline yet; building it here would be out-of-scope invention. Wiring plan: add enum values + a `NotificationRepository.create` + call from these two handlers once M9 lands.
 
 ## Phase D — Hardening (future PR)
 
