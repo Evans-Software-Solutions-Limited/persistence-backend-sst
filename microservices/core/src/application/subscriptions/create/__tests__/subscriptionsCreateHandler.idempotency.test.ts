@@ -257,6 +257,23 @@ describe("subscriptionsCreateHandler — idempotency keys (spec 17 / Phase A)", 
     expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
   });
 
+  it("on 23505 when the ownership lookup itself throws: does NOT cancel (could be the winner) and returns 500", async () => {
+    // Transient DB blip on the post-23505 findByExternalId. We can't tell
+    // orphan from dedup-winner, so cancelling blind would risk revoking the
+    // winner's live sub. Leave it for drift-detection; 500 so the client
+    // retries — never a blind Stripe mutation.
+    mockPriceLookup();
+    subscriptionRepositoryMocks.insert.mockRejectedValueOnce({ code: "23505" });
+    subscriptionRepositoryMocks.findByExternalId.mockRejectedValueOnce(
+      new Error("neon timeout"),
+    );
+
+    const res = await postCreate(newSubBody);
+
+    expect(res.status).toBe(500);
+    expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+  });
+
   it("on a non-unique insert error: still cancels the orphan but returns 500", async () => {
     mockPriceLookup();
     subscriptionRepositoryMocks.insert.mockRejectedValueOnce(

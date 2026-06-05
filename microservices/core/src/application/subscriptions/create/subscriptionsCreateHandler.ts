@@ -1704,7 +1704,28 @@ export const subscriptionsCreateHandler = new Elysia()
           // that NO committed local row references is a genuine orphan worth
           // cancelling (the case where the two requests carried distinct keys
           // and Stripe created two different subs).
-          const owner = await subRepo.findByExternalId(subscription.id);
+          let owner: UserSubscription | null;
+          try {
+            owner = await subRepo.findByExternalId(subscription.id);
+          } catch (lookupErr) {
+            // The ownership lookup itself failed (transient DB blip right
+            // after the unique violation). We CANNOT tell whether this sub is
+            // the dedup winner's or a true orphan — so do NOT cancel: a blind
+            // cancel would re-introduce the revoke-the-winner bug. Leave the
+            // (rare) potential leak for the scheduled drift-detection reconcile
+            // to surface as `missing_local_row`, and 500 so the client retries.
+            const lm =
+              lookupErr instanceof Error
+                ? lookupErr.message
+                : String(lookupErr);
+            console.error(
+              `[subscriptions:create] post-23505 ownership lookup failed for stripe_sub=${subscription.id}: ${lm} — NOT cancelling (could be the dedup winner); drift-detection reconcile will surface any genuine orphan`,
+            );
+            ctx.set.status = 500;
+            return {
+              error: `Failed to create subscription record: ${message}`,
+            };
+          }
           if (owner === null) {
             console.error(
               `[subscriptions:create] lost insert race AND stripe_sub=${subscription.id} is unreferenced — cancelling the orphan`,
