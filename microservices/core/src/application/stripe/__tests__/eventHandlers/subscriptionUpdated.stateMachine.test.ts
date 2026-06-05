@@ -21,9 +21,11 @@ vi.mock(
   }),
 );
 
+const stripeCancelMock = vi.fn();
+const stripeRetrieveMock = vi.fn();
 vi.mock("../../stripeClient", () => ({
   getStripe: vi.fn(() => ({
-    subscriptions: { retrieve: vi.fn(), cancel: vi.fn() },
+    subscriptions: { retrieve: stripeRetrieveMock, cancel: stripeCancelMock },
   })),
   getStripeWebhookSecret: vi.fn(() => "whsec_test"),
 }));
@@ -60,6 +62,8 @@ describe("handleSubscriptionUpdated — state machine (spec 17 / Phase D)", () =
     vi.clearAllMocks();
     updateByIdMock.mockResolvedValue({ id: "us_test" });
     ledgerRecordMock.mockResolvedValue(undefined);
+    stripeCancelMock.mockResolvedValue({});
+    stripeRetrieveMock.mockResolvedValue({});
     // Suppress + capture alert output without restoreAllMocks (which would
     // wipe the module-mock implementations between tests).
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -102,6 +106,29 @@ describe("handleSubscriptionUpdated — state machine (spec 17 / Phase D)", () =
         source: "webhook:customer.subscription.updated",
       }),
     );
+  });
+
+  it("when blocked, suppresses the section-3 cleanup too — no outbound cancel of old_stripe_subscription_id on the distrusted event", async () => {
+    // Terminal local row that STILL carries an in-flight change marker (the
+    // cancel-old retry exhausted earlier, leaving old_stripe_subscription_id).
+    // A stale 'active' event for this sub arrives → state machine blocks it.
+    // The section-3 cleanup must NOT fire cancelOldSubscriptionWithRetry on
+    // the marker — that would be an outbound Stripe mutation driven by an
+    // event we just declared untrustworthy.
+    findByExternalIdMock.mockResolvedValue({
+      id: "us_test",
+      externalSubscriptionId: "sub_1",
+      paymentStatus: "cancelled",
+      expiresAt: new Date(Date.now() - 86400_000),
+      cancelledAt: new Date(),
+      metadata: { old_stripe_subscription_id: "sub_OLD" },
+    });
+
+    await handleSubscriptionUpdated(activeEvent());
+
+    expect(updateByIdMock).not.toHaveBeenCalled();
+    expect(stripeCancelMock).not.toHaveBeenCalled();
+    expect(stripeRetrieveMock).not.toHaveBeenCalled();
   });
 
   it("ALLOWS a legal transition (past_due→active) and ledgers it as not-blocked", async () => {

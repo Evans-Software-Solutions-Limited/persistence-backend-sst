@@ -293,6 +293,18 @@ export async function handleSubscriptionUpdated(
       });
   }
 
+  if (blocked) {
+    // We deemed this event untrustworthy for the local write above; that
+    // distrust must govern EVERY mutation driven by the same event — not just
+    // the basic update. The scheduled-downgrade activation (section 2) and the
+    // subscription-change cleanup (section 3) both act on the stale payload:
+    // section 3 in particular would call cancelOldSubscriptionWithRetry on the
+    // marker's old_stripe_subscription_id, issuing an outbound Stripe cancel on
+    // a forged-by-stale-event basis. Bail out after the ledger so the
+    // state-machine policy applies uniformly (inspector review).
+    return;
+  }
+
   // --- 2. Scheduled-downgrade activation --------------------------------
   const existingMeta = readMetadata(existing);
   const periodEnd = readCurrentPeriodEnd(subscription);

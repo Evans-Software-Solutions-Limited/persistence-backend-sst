@@ -106,13 +106,52 @@ describe("reconcileDetect", () => {
       resolveTierForPrice: async () => "premium",
     });
 
-    expect(result.counts).toEqual({ total: 3, ok: 1, drift: 1, skipped: 1 });
+    expect(result.counts).toEqual({
+      total: 3,
+      ok: 1,
+      drift: 1,
+      skipped: 1,
+      errored: 0,
+    });
     expect(result.hasDrift).toBe(true);
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]).toMatchObject({
       kind: "missing_local_row",
       stripeSubscriptionId: "sub_missing",
     });
+  });
+
+  it("survives a throwing item: counts it as errored, keeps going, and still alerts", async () => {
+    const subs = [
+      sub({ id: "sub_boom", status: "active" }), // findByExternalId throws
+      sub({ id: "sub_ok", status: "active" }), // processed fine after the throw
+    ];
+    const result = await reconcileDetect({
+      listSubscriptions: () => listOf(subs),
+      findByExternalId: async (id) => {
+        if (id === "sub_boom") throw new Error("neon blip");
+        return { tierName: "premium", paymentStatus: "active" };
+      },
+      resolveTierForPrice: async () => "premium",
+    });
+
+    // The throw did NOT abort the sweep — the second sub was still checked.
+    expect(result.counts).toEqual({
+      total: 2,
+      ok: 1,
+      drift: 0,
+      skipped: 0,
+      errored: 1,
+    });
+    // Errors fire the alert (we can't claim "no drift" if we couldn't check).
+    expect(result.hasDrift).toBe(true);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        kind: "error",
+        stripeSubscriptionId: "sub_boom",
+        error: "neon blip",
+      }),
+    );
   });
 
   it("reports hasDrift=false when everything agrees", async () => {

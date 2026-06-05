@@ -26,6 +26,7 @@ export async function handler(): Promise<{
   total: number;
   drift: number;
   skipped: number;
+  errored: number;
 }> {
   const stripe = getStripe();
   const db = getDb();
@@ -82,5 +83,6 @@ export async function handler(): Promise<{
     total: result.counts.total,
     drift: result.counts.drift,
     skipped: result.counts.skipped,
+    errored: result.counts.errored,
   };
 }

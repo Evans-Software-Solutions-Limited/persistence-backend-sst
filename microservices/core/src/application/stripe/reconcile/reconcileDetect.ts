@@ -19,7 +19,7 @@ import {
  * is unit-testable without a live Stripe account or DB.
  */
 
-export type DriftKind = "missing_local_row" | "field_mismatch";
+export type DriftKind = "missing_local_row" | "field_mismatch" | "error";
 
 export interface DriftFinding {
   kind: DriftKind;
@@ -31,6 +31,8 @@ export interface DriftFinding {
     stripe: string | null;
     local: string | null;
   }>;
+  /** For `kind: "error"`: the per-item failure message. */
+  error?: string;
 }
 
 export interface ReconcileCounts {
@@ -38,6 +40,7 @@ export interface ReconcileCounts {
   ok: number;
   drift: number;
   skipped: number; // no supabase_user_id metadata — config issue, not drift
+  errored: number; // per-item lookup/diff threw — counted, not fatal
 }
 
 export interface ReconcileDetectResult {
@@ -143,29 +146,58 @@ export async function reconcileDetect(
   deps: ReconcileDeps,
 ): Promise<ReconcileDetectResult> {
   const findings: DriftFinding[] = [];
-  const counts: ReconcileCounts = { total: 0, ok: 0, drift: 0, skipped: 0 };
+  const counts: ReconcileCounts = {
+    total: 0,
+    ok: 0,
+    drift: 0,
+    skipped: 0,
+    errored: 0,
+  };
 
   for await (const subscription of deps.listSubscriptions()) {
     counts.total += 1;
 
-    if (readUserIdFromMetadata(subscription) === null) {
+    const userId = readUserIdFromMetadata(subscription);
+    if (userId === null) {
       counts.skipped += 1;
       continue;
     }
 
-    const local = await deps.findByExternalId(subscription.id);
-    const priceId = readPriceId(subscription);
-    const tierFromPrice =
-      priceId !== null ? await deps.resolveTierForPrice(priceId) : null;
+    // A transient failure on one subscription must NOT abort the whole sweep —
+    // an hourly drift detector that silently produces zero output for the hour
+    // because item 42 of 5000 threw is the exact failure mode this layer
+    // exists to prevent. Count the error, surface it as an `error` finding (so
+    // the [reconcile:drift] alert still fires), and keep going (inspector
+    // review).
+    try {
+      const local = await deps.findByExternalId(subscription.id);
+      const priceId = readPriceId(subscription);
+      const tierFromPrice =
+        priceId !== null ? await deps.resolveTierForPrice(priceId) : null;
 
-    const finding = diffSubscription(subscription, local, tierFromPrice);
-    if (finding === null) {
-      counts.ok += 1;
-    } else {
-      counts.drift += 1;
-      findings.push(finding);
+      const finding = diffSubscription(subscription, local, tierFromPrice);
+      if (finding === null) {
+        counts.ok += 1;
+      } else {
+        counts.drift += 1;
+        findings.push(finding);
+      }
+    } catch (err) {
+      counts.errored += 1;
+      findings.push({
+        kind: "error",
+        stripeSubscriptionId: subscription.id,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  return { hasDrift: counts.drift > 0, counts, findings };
+  // Errors count toward the alert: a sweep that couldn't check some subs can't
+  // claim "no drift", so `hasDrift` fires the [reconcile:drift] alert.
+  return {
+    hasDrift: counts.drift > 0 || counts.errored > 0,
+    counts,
+    findings,
+  };
 }
