@@ -1,4 +1,6 @@
 import type Stripe from "stripe";
+import { handleChargeDisputeCreated } from "./chargeDisputeCreated";
+import { handleChargeRefunded } from "./chargeRefunded";
 import { handleInvoicePaymentFailed } from "./invoicePaymentFailed";
 import { handleInvoicePaymentSucceeded } from "./invoicePaymentSucceeded";
 import { handleSubscriptionCreated } from "./subscriptionCreated";
@@ -32,9 +34,19 @@ export const eventHandlers: Record<string, StripeEventHandler> = {
   "customer.subscription.created": handleSubscriptionCreated,
   "customer.subscription.updated": handleSubscriptionUpdated,
   "customer.subscription.deleted": handleSubscriptionDeleted,
+  // Pause / resume (spec 17 / Phase C). Both carry a full Subscription
+  // object, so they reuse the `updated` handler's refresh-from-Stripe-truth
+  // logic; `mapStripeStatusToPaymentStatusForUpdate` maps the `paused`
+  // status to a non-entitled local status.
+  "customer.subscription.paused": handleSubscriptionUpdated,
+  "customer.subscription.resumed": handleSubscriptionUpdated,
   "invoice.payment_succeeded": handleInvoicePaymentSucceeded,
   "invoice.payment_failed": handleInvoicePaymentFailed,
   "customer.subscription.trial_will_end": handleTrialWillEnd,
+  // Money-side alerting (spec 17 / Phase C). These surface refunds +
+  // disputes for ops review; they do not auto-mutate subscription state.
+  "charge.refunded": handleChargeRefunded,
+  "charge.dispute.created": handleChargeDisputeCreated,
 };
 
 /**

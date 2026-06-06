@@ -316,9 +316,18 @@ export const userSubscriptions = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
+    // One LIVE subscription per user. Live = active|pending|trialing|past_due.
+    // Terminal statuses (cancelled|expired|incomplete_expired) are excluded so
+    // a user can resubscribe. `trialing` + `past_due` were added in spec 17 /
+    // Phase A (migration 20260605120000) — the prior ('active','pending')
+    // predicate left a hole where two concurrent new-trial sign-ups each
+    // inserted a `trialing` row, yielding two billable Stripe subs. Keep this
+    // predicate VERBATIM in lockstep with that migration.
     uniqueIndex("user_subscriptions_active_unique")
       .on(t.userId)
-      .where(sql`payment_status IN ('active', 'pending')`),
+      .where(
+        sql`payment_status IN ('active', 'pending', 'trialing', 'past_due')`,
+      ),
   ],
 );
 
@@ -359,7 +368,38 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
     .notNull()
     .defaultNow(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  // Durable-claim lifecycle (spec 17 / Phase B): processing | done | failed.
+  // Dedupe skips only `done`; `failed` / stale `processing` are re-claimable.
+  // Defaults to 'done' so pre-existing (already-processed) rows keep deduping.
+  status: text("status").notNull().default("done"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
+
+/**
+ * Append-only ledger of `user_subscriptions.payment_status` transitions
+ * (spec 17 / Phase D). Insert-only — never updated or deleted. Not FK-cascaded
+ * so the audit trail outlives the subscription row it describes.
+ */
+export const subscriptionStatusTransitions = pgTable(
+  "subscription_status_transitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userSubscriptionId: uuid("user_subscription_id").notNull(),
+    userId: uuid("user_id"),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    source: text("source").notNull(),
+    stripeEventId: text("stripe_event_id"),
+    blocked: boolean("blocked").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
 
 // ─── Exercises ────────────────────────────────────────────────────────────────
 

@@ -1,36 +1,49 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { stripeWebhookEvents } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
 /**
- * Idempotency log for Stripe webhook events. Inserted by `event_id` BEFORE
- * the per-event handler runs side effects; ON CONFLICT DO NOTHING gives
- * O(1) dedup against Stripe's at-least-once delivery semantics.
+ * Durable idempotency + lifecycle log for Stripe webhook events (spec 17 /
+ * Phase B, closes audit MED-2).
  *
- * Race scenario this guards against: Stripe retries an event we already
- * processed → we ON-CONFLICT-skip the insert → return 200 silently → no
- * duplicate side effects. The legacy Supabase Edge Function had no
- * dedup; this closes that gap.
+ * Each event row carries a `status`:
+ *   - `processing` — claimed, handler in flight.
+ *   - `done`       — handled successfully. Future deliveries dedupe (skip).
+ *   - `failed`     — handler threw. Queryable + re-claimable: Stripe's retry
+ *                    re-runs it.
  *
- * Failure-mode handling: if the side-effect dispatch throws AFTER we've
- * claimed the event_id, the caller MUST delete the row so Stripe's
- * subsequent retry can re-run the handler. `release()` exists for that
- * rollback path.
+ * The row is NEVER deleted (the old `release()`-by-DELETE model could strand
+ * an event forever if BOTH the handler and the delete failed). Instead a
+ * failed handler marks the row `failed`; the next delivery re-claims it.
+ *
+ * `claim()` is a single atomic upsert so the dedupe + state transition can't
+ * race:
+ *   - new event id            → INSERT (processing)        → claimed
+ *   - existing `done`          → conflict, no update        → NOT claimed (skip)
+ *   - existing `failed`        → conflict, re-claim         → claimed (retry)
+ *   - existing `processing`,
+ *       fresh (< STALE)        → conflict, no update        → NOT claimed
+ *       (a concurrent duplicate delivery — let the in-flight worker finish)
+ *   - existing `processing`,
+ *       stale (>= STALE)       → conflict, re-claim         → claimed
+ *       (the prior worker crashed mid-flight; recover the stranded event)
  */
 export class StripeWebhookEventsRepository {
   static readonly key = "StripeWebhookEventsRepository";
 
   /**
-   * Atomically claim a Stripe event for processing.
-   *
-   * Returns `true` when this caller successfully inserted the row (new
-   * event — caller proceeds to dispatch). Returns `false` when the
-   * row already existed (duplicate — caller short-circuits with 200).
-   *
-   * `event` is the full Stripe event JSON, persisted in the `payload`
-   * column for forensic replay. We persist before any side-effect
-   * code touches the event so a handler bug can be replayed offline
-   * against the exact bytes Stripe sent.
+   * How long a `processing` row may sit before it's considered abandoned
+   * (worker crashed / Lambda timed out before mark-done/failed) and a new
+   * delivery is allowed to re-claim it. Comfortably longer than the Lambda
+   * timeout, shorter than Stripe's first retry interval (~1h).
+   */
+  static readonly STALE_PROCESSING_MINUTES = 15;
+
+  /**
+   * Atomically claim a Stripe event for processing. Returns `true` when the
+   * caller owns the claim and should dispatch; `false` when the event is
+   * already `done` (or a fresh concurrent `processing`) and dispatch should
+   * be skipped.
    */
   async claim(
     eventId: string,
@@ -38,35 +51,58 @@ export class StripeWebhookEventsRepository {
     payload: Record<string, unknown>,
   ): Promise<boolean> {
     const db = getDb();
-    const inserted = await db
+    const staleCutoff = `${StripeWebhookEventsRepository.STALE_PROCESSING_MINUTES} minutes`;
+    const rows = await db
       .insert(stripeWebhookEvents)
       .values({
         eventId,
         type,
         payload,
+        status: "processing",
+        attempts: 1,
+        updatedAt: new Date(),
       })
-      .onConflictDoNothing({ target: stripeWebhookEvents.eventId })
+      .onConflictDoUpdate({
+        target: stripeWebhookEvents.eventId,
+        set: {
+          status: "processing",
+          attempts: sql`${stripeWebhookEvents.attempts} + 1`,
+          updatedAt: new Date(),
+        },
+        // Only re-claim a non-`done` row that is either failed or a stale
+        // (abandoned) processing row. A `done` row or a fresh `processing`
+        // row fails this predicate → no update → empty RETURNING → skip.
+        setWhere: sql`${stripeWebhookEvents.status} = 'failed' OR (${stripeWebhookEvents.status} = 'processing' AND ${stripeWebhookEvents.updatedAt} < now() - ${staleCutoff}::interval)`,
+      })
       .returning({ id: stripeWebhookEvents.eventId });
 
-    return inserted.length > 0;
+    return rows.length > 0;
+  }
+
+  /** Mark an event handled. Future deliveries of the same id dedupe (skip). */
+  async markDone(eventId: string): Promise<void> {
+    const db = getDb();
+    await db
+      .update(stripeWebhookEvents)
+      .set({ status: "done", updatedAt: new Date() })
+      .where(eq(stripeWebhookEvents.eventId, eventId));
   }
 
   /**
-   * Release the claim on an event_id. Called from the webhook handler's
-   * error path when the side-effect dispatch throws — without this,
-   * the next Stripe retry would see the event_id row and skip dispatch
-   * entirely, leaving the original failure permanent.
-   *
-   * Best-effort: a failure here is swallowed by the caller. The worst
-   * case is a stranded event_id row that prevents one retry — usually
-   * Stripe sends several retries so a subsequent delivery still
-   * arrives, and (more importantly) the upstream error is already
-   * being logged + returned 500.
+   * Mark an event's handler as failed (queryable, re-claimable). Replaces the
+   * old delete-based `release()` — the row stays so a stranded event is never
+   * silently lost and shows up in the `WHERE status <> 'done'` reconciliation
+   * sweep.
    */
-  async release(eventId: string): Promise<void> {
+  async markFailed(eventId: string, error: string): Promise<void> {
     const db = getDb();
     await db
-      .delete(stripeWebhookEvents)
+      .update(stripeWebhookEvents)
+      .set({
+        status: "failed",
+        lastError: error.slice(0, 2000),
+        updatedAt: new Date(),
+      })
       .where(eq(stripeWebhookEvents.eventId, eventId));
   }
 }

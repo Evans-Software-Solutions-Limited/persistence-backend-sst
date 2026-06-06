@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
 import { getStripe } from "../stripeClient";
+import { emitStripeAlert } from "../alerts";
 import { readInvoiceSubscriptionId } from "./_helpers";
 
 /**
@@ -99,11 +100,15 @@ export async function handleInvoicePaymentFailed(
     paymentStatus,
   });
 
-  // TODO(M9): send push notification to the user about the failed payment.
-  // The legacy edge function carried the same TODO at line 683 and never
-  // shipped it — moving the comment forward so the next milestone can
-  // pick it up from the new code path.
-  console.log(
-    `[stripe:invoice.payment_failed] user=${userId} subscription=${subscriptionId} → past_due (notify TBD M9)`,
-  );
+  // Dunning ops alert (spec 17 / Phase C, audit MED-4). Surfaces the
+  // failed recurring charge so ops can act before Stripe escalates to
+  // cancellation. NOTE: user-facing push/in-app dunning is still M9 — the
+  // notification_type enum + push pipeline don't exist yet; this is the
+  // ops-alert layer the audit called the minimum bar.
+  emitStripeAlert("invoice.payment_failed", "warn", {
+    userId,
+    subscriptionId,
+    invoiceId: invoice.id,
+    nextStatus: paymentStatus,
+  });
 }

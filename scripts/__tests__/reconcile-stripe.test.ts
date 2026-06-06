@@ -168,7 +168,9 @@ describe("reconcile-stripe — pure helpers", () => {
   });
 
   it("readTierFromMetadata + readBillingCycleFromMetadata fall back to safe defaults", () => {
-    expect(readTierFromMetadata({ metadata: {} } as any)).toBe("basic");
+    // Default is "free" (spec 17 / Phase D, LOW-1 — "basic" was dropped in
+    // tier-simplification).
+    expect(readTierFromMetadata({ metadata: {} } as any)).toBe("free");
     expect(
       readTierFromMetadata({ metadata: { tier_name: "premium" } } as any),
     ).toBe("premium");

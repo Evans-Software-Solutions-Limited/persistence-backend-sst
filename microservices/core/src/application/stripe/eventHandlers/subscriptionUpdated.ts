@@ -3,7 +3,10 @@ import {
   SubscriptionRepository,
   type UserSubscription,
 } from "../../repositories/subscriptionRepository";
+import { SubscriptionStatusTransitionsRepository } from "../../repositories/subscriptionStatusTransitionsRepository";
 import { getStripe } from "../stripeClient";
+import { emitStripeAlert } from "../alerts";
+import { reconcilePaymentStatus } from "../subscriptionState";
 import {
   mapStripeStatusToPaymentStatus,
   mapStripeStatusToPaymentStatusForUpdate,
@@ -90,7 +93,13 @@ async function cancelOldSubscriptionWithRetry(oldId: string): Promise<boolean> {
   const stripe = getStripe();
   for (let attempt = 1; attempt <= MAX_CANCEL_ATTEMPTS; attempt += 1) {
     try {
-      await stripe.subscriptions.cancel(oldId);
+      // Deterministic idempotency key (spec 17 / Phase A) keyed on the old
+      // sub id: Stripe's redelivery of the SAME webhook event, or our own
+      // bounded retries, must not double-issue the cancel. `isAlreadyCanceledError`
+      // below still covers the cross-delivery already-cancelled case.
+      await stripe.subscriptions.cancel(oldId, undefined, {
+        idempotencyKey: `sub-cancel:${oldId}`,
+      });
       console.log(
         `[stripe:subscription.updated] cancelled old sub ${oldId} on attempt ${attempt}`,
       );
@@ -222,17 +231,79 @@ export async function handleSubscriptionUpdated(
   }
 
   // --- 1. Basic update ---------------------------------------------------
-  const paymentStatus = mapStripeStatusToPaymentStatusForUpdate(subscription);
-  const expiresAt = resolveExpiresAt(subscription);
-  const cancelledAt = resolveCancelledAt(subscription, existing);
+  // Run the proposed status through the state machine (spec 17 / Phase D):
+  // an inbound webhook must not revive a TERMINAL sub into a LIVE status
+  // (the "delayed webhook flips cancelled → active" class of bug). Legal
+  // transitions pass untouched; an illegal one is suppressed + alerted.
+  const proposedStatus = mapStripeStatusToPaymentStatusForUpdate(subscription);
+  const { status: paymentStatus, blocked } = reconcilePaymentStatus(
+    existing.paymentStatus,
+    proposedStatus,
+  );
+  if (blocked) {
+    // The inbound event tried to revive a TERMINAL sub into a LIVE status.
+    // Suppress the ENTIRE basic update — not just paymentStatus. Writing the
+    // event's expiresAt/cancelledAt would silently neutralise the block: a
+    // preserved "cancelled" status + a future expiresAt reads as
+    // still-entitled via the grace path in
+    // assertEntitlement.classifySubscriptionStatus ("cancelled but paid
+    // through"). So we touch NOTHING from the stale payload here; only the
+    // ledger below records the suppressed attempt. (Inspector review —
+    // expiresAt write bypassed the state machine.)
+    emitStripeAlert("illegal_transition_blocked", "warn", {
+      subscriptionId: subscription.id,
+      userId,
+      from: existing.paymentStatus,
+      attempted: proposedStatus,
+      source: event.type,
+    });
+  } else {
+    const expiresAt = resolveExpiresAt(subscription);
+    const cancelledAt = resolveCancelledAt(subscription, existing);
 
-  await repo.updateById(existing.id, {
-    paymentStatus,
-    expiresAt,
-    trialEndsAt: unixSecondsToDate(subscription.trial_end),
-    nextBillingDate: expiresAt, // same value — legacy line 248
-    cancelledAt,
-  });
+    await repo.updateById(existing.id, {
+      paymentStatus,
+      expiresAt,
+      trialEndsAt: unixSecondsToDate(subscription.trial_end),
+      nextBillingDate: expiresAt, // same value — legacy line 248
+      cancelledAt,
+    });
+  }
+
+  // Append-only transition ledger (spec 17 / Phase D, best-effort). Records
+  // real transitions AND suppressed illegal attempts for the audit trail.
+  // Never fails the webhook — a ledger write error is logged and swallowed.
+  if (blocked || (existing.paymentStatus ?? null) !== paymentStatus) {
+    await new SubscriptionStatusTransitionsRepository()
+      .record({
+        userSubscriptionId: existing.id,
+        userId,
+        fromStatus: existing.paymentStatus,
+        toStatus: blocked ? proposedStatus : paymentStatus,
+        source: `webhook:${event.type}`,
+        stripeEventId: event.id,
+        blocked,
+      })
+      .catch((err) => {
+        console.error(
+          `[stripe:subscription.updated] ledger record failed for ${existing.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+  }
+
+  if (blocked) {
+    // We deemed this event untrustworthy for the local write above; that
+    // distrust must govern EVERY mutation driven by the same event — not just
+    // the basic update. The scheduled-downgrade activation (section 2) and the
+    // subscription-change cleanup (section 3) both act on the stale payload:
+    // section 3 in particular would call cancelOldSubscriptionWithRetry on the
+    // marker's old_stripe_subscription_id, issuing an outbound Stripe cancel on
+    // a forged-by-stale-event basis. Bail out after the ledger so the
+    // state-machine policy applies uniformly (inspector review).
+    return;
+  }
 
   // --- 2. Scheduled-downgrade activation --------------------------------
   const existingMeta = readMetadata(existing);

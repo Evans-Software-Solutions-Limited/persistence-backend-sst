@@ -18,6 +18,14 @@ import { getEnv } from "@persistence/api-utils/env";
  *      legacy edge function pinned "2023-10-16"; we accept whatever the
  *      SDK defaults to and rely on the dashboard-level config for the
  *      inbound side. Outbound code can override per-call if needed.
+ *
+ * spec 17 / Phase D (audit LOW-2): re-evaluated and DELIBERATELY kept
+ * unpinned. Pinning the SDK `apiVersion` is the fragile option here — it
+ * fights the SDK's advancing type literal and is misleading for the inbound
+ * path (dashboard-controlled). The version-resilient field reads in
+ * `eventHandlers/_helpers.ts` (`readCurrentPeriodEnd`, `readInvoiceSubscriptionId`)
+ * are the real defence against Stripe field-shape migrations. The control to
+ * manage is the dashboard webhook endpoint's API version, not this line.
  */
 let _stripe: Stripe | null = null;
 
