@@ -2,7 +2,11 @@ import type {
   CachedDashboard,
   DashboardPayload,
 } from "@/domain/models/dashboard";
-import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import {
+  deriveExerciseOwnership,
+  type Exercise,
+  type ExerciseFilters,
+} from "@/domain/models/exercise";
 import type {
   CachedProfilePage,
   ProfilePageData,
@@ -121,6 +125,16 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  updateMutationPayload(id: number, payload: unknown): void {
+    // Mirror the SQLite adapter: only `pending`/`failed` entries are
+    // rewritable. An in-flight entry may already be mid-flush; a
+    // completed/blocked one is done. No-op otherwise.
+    const entry = this.queue.find((e) => e.id === id);
+    if (!entry) return;
+    if (entry.status !== "pending" && entry.status !== "failed") return;
+    entry.payload = JSON.stringify(payload);
+  }
+
   markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
     // M10.6: parity with SQLite — flip to blocked_entitlement and
     // persist the verdict. `errorMessage` + `retryCount` untouched so
@@ -185,7 +199,9 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
 
   getCachedExercises(filters?: ExerciseFilters): Exercise[] {
-    const all = Array.from(this.exerciseCache.values()).map((v) => v.exercise);
+    const all = Array.from(this.exerciseCache.values()).map((v) =>
+      deriveExerciseOwnership(v.exercise),
+    );
     if (!filters) return all;
     return filterExercises(all, filters);
   }
@@ -198,7 +214,8 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
 
   getCachedExercise(id: string): Exercise | null {
-    return this.exerciseCache.get(id)?.exercise ?? null;
+    const cached = this.exerciseCache.get(id)?.exercise;
+    return cached ? deriveExerciseOwnership(cached) : null;
   }
 
   getExerciseCacheAge(): string | null {
@@ -219,6 +236,26 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   removeCachedExercise(id: string): void {
     this.exerciseCache.delete(id);
+  }
+
+  swapLocalExerciseId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const entry = this.exerciseCache.get(localId);
+    if (entry) {
+      this.exerciseCache.delete(localId);
+      this.exerciseCache.set(serverId, {
+        exercise: { ...entry.exercise, id: serverId },
+        syncedAt: entry.syncedAt,
+      });
+    }
+    for (const e of this.queue) {
+      if (e.entityType === "exercise" && e.entityId === localId) {
+        e.entityId = serverId;
+        if (e.endpoint === `/exercises/${localId}`) {
+          e.endpoint = `/exercises/${serverId}`;
+        }
+      }
+    }
   }
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {

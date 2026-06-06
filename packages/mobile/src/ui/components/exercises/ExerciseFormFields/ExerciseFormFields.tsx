@@ -47,6 +47,13 @@ export type ExerciseFormFieldsProps = {
   onChange: (next: NewExerciseInput) => void;
   /** Sheet shows the compact photo placeholder; the editor can hide it. */
   showsPhoto?: boolean;
+  /**
+   * Auto-focus the name field on mount. The create flow wants it (empty form,
+   * keyboard-up on entry); the 04.6 editor opens on a populated form, so it
+   * passes `false` to avoid stealing focus + popping the keyboard over an
+   * already-filled screen. Defaults true to preserve create behaviour.
+   */
+  autoFocus?: boolean;
   testID?: string;
 };
 
@@ -54,6 +61,7 @@ export function ExerciseFormFields({
   value,
   onChange,
   showsPhoto = true,
+  autoFocus = true,
   testID,
 }: ExerciseFormFieldsProps) {
   const setPrimary = (label: MuscleLabel) => {
@@ -89,7 +97,7 @@ export function ExerciseFormFields({
           onChangeText={(name) => onChange({ ...value, name })}
           placeholder="e.g. Incline Dumbbell Press"
           placeholderTextColor={color.$text3}
-          autoFocus
+          autoFocus={autoFocus}
           style={{
             width: "100%",
             backgroundColor: color.$surface2,

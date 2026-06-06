@@ -3,7 +3,11 @@ import type {
   CachedDashboard,
   DashboardPayload,
 } from "@/domain/models/dashboard";
-import type { Exercise, ExerciseFilters } from "@/domain/models/exercise";
+import {
+  deriveExerciseOwnership,
+  type Exercise,
+  type ExerciseFilters,
+} from "@/domain/models/exercise";
 import type {
   CachedProfilePage,
   ProfilePageData,
@@ -444,6 +448,22 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  updateMutationPayload(id: number, payload: unknown): void {
+    const db = this.getDb();
+    // Status-conditional rewrite: only a `pending`/`failed` entry can have
+    // its body changed. An `in_flight` entry may already be mid-flush (its
+    // body serialized into a live request), and a `completed`/blocked entry
+    // is done — rewriting either would be a lost update or a phantom resend.
+    // No affected-rows check needed: a no-op on a non-rewritable id is the
+    // correct, safe outcome for the coalescing caller.
+    db.runSync(
+      `UPDATE sync_queue
+       SET payload = ?, updated_at = datetime('now')
+       WHERE id = ? AND status IN ('pending', 'failed')`,
+      [JSON.stringify(payload), id],
+    );
+  }
+
   markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
     const db = this.getDb();
     // M10.6: flip the entry to `blocked_entitlement` and stash the
@@ -565,7 +585,9 @@ export class SQLiteStorageAdapter implements StoragePort {
       data: string;
     }[];
 
-    const exercises = rows.map((row) => JSON.parse(row.data) as Exercise);
+    const exercises = rows.map((row) =>
+      deriveExerciseOwnership(JSON.parse(row.data) as Exercise),
+    );
     if (!filters) return exercises;
     return filterExercises(exercises, filters);
   }
@@ -591,7 +613,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       [id],
     ) as { data: string }[];
     if (rows.length === 0) return null;
-    return JSON.parse(rows[0].data) as Exercise;
+    return deriveExerciseOwnership(JSON.parse(rows[0].data) as Exercise);
   }
 
   getExerciseCacheAge(): string | null {
@@ -614,6 +636,44 @@ export class SQLiteStorageAdapter implements StoragePort {
   removeCachedExercise(id: string): void {
     const db = this.getDb();
     db.runSync(`DELETE FROM cached_exercises WHERE id = ?`, [id]);
+  }
+
+  swapLocalExerciseId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // Re-key the cached row. The id lives BOTH in the PK column and inside
+      // the serialized blob, so rewrite both. INSERT-then-DELETE (rather than
+      // `UPDATE id`) also folds cleanly onto any row a concurrent refresh
+      // already pulled under the server id.
+      const rows = db.getAllSync(
+        `SELECT data FROM cached_exercises WHERE id = ?`,
+        [localId],
+      ) as { data: string }[];
+      if (rows.length > 0) {
+        const exercise = JSON.parse(rows[0].data) as Exercise;
+        exercise.id = serverId;
+        db.runSync(
+          `INSERT INTO cached_exercises (id, data, synced_at) VALUES (?, ?, datetime('now'))
+           ON CONFLICT(id) DO UPDATE SET data = excluded.data, synced_at = excluded.synced_at`,
+          [serverId, JSON.stringify(exercise)],
+        );
+        db.runSync(`DELETE FROM cached_exercises WHERE id = ?`, [localId]);
+      }
+      // Re-point any queued exercise mutations still addressed to the local
+      // id (e.g. a PATCH/DELETE enqueued before the create flushed) so they
+      // hit the real resource instead of 404ing on `/exercises/local-…`.
+      db.runSync(
+        `UPDATE sync_queue SET endpoint = ?
+         WHERE entity_type = 'exercise' AND endpoint = ?`,
+        [`/exercises/${serverId}`, `/exercises/${localId}`],
+      );
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?
+         WHERE entity_type = 'exercise' AND entity_id = ?`,
+        [serverId, localId],
+      );
+    });
   }
 
   // -- Reference-List Cache --

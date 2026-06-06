@@ -4,6 +4,10 @@ export {
   type CreateExerciseCommandDeps,
 } from "./create-exercise.command";
 export {
+  updateExerciseCommand,
+  type UpdateExerciseCommandDeps,
+} from "./update-exercise.command";
+export {
   updateProfileCommand,
   type UpdateProfileCommandDeps,
   type UpdateProfileInput,

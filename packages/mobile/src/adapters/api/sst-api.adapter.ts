@@ -1,13 +1,14 @@
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
-import type {
-  CreateExerciseInput,
-  EquipmentType,
-  Exercise,
-  ExerciseCategory,
-  ExerciseDifficulty,
-  ExerciseFilters,
-  MuscleGroup,
+import {
+  SYSTEM_USER_ID,
+  type CreateExerciseInput,
+  type EquipmentType,
+  type Exercise,
+  type ExerciseCategory,
+  type ExerciseDifficulty,
+  type ExerciseFilters,
+  type MuscleGroup,
 } from "@/domain/models/exercise";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
@@ -1053,6 +1054,12 @@ function referenceListPath(kind: ReferenceListKind): string {
 }
 
 function mapApiExerciseToDomain(api: ApiExercise): Exercise {
+  // A row is system-authored when it has no owner OR carries the system
+  // sentinel. Normalise both to a null `createdBy` so ownership checks
+  // (`createdBy === userId`) and the Mine/System quick-filters treat the
+  // stock catalogue as un-owned.
+  const isSystemAuthored =
+    api.createdBy == null || api.createdBy === SYSTEM_USER_ID;
   return {
     id: api.id,
     name: api.name,
@@ -1065,11 +1072,10 @@ function mapApiExerciseToDomain(api: ApiExercise): Exercise {
     equipment: api.equipmentRequired as EquipmentType[],
     videoUrl: api.videoUrl ?? null,
     thumbnailUrl: api.thumbnailUrl ?? null,
-    // Derive client-side: V2 backend uses createdBy IS NULL for system
-    // exercises and has no is_custom column. Fall back to the wire
-    // flag if the backend still sets it (transitional).
-    isCustom: api.isCustom ?? api.createdBy !== null,
-    createdBy: api.createdBy,
+    // Prefer an explicit wire flag if the backend ever sends one; otherwise
+    // derive: custom iff a real (non-system) owner authored it.
+    isCustom: api.isCustom ?? !isSystemAuthored,
+    createdBy: isSystemAuthored ? null : api.createdBy,
   };
 }
 

@@ -167,6 +167,36 @@ export type Exercise = {
   createdBy: string | null;
 };
 
+/**
+ * Sentinel owner id for the stock/system exercise catalogue. The backend's
+ * Supabase rows tag system exercises with `created_by = SYSTEM_USER_ID`
+ * (an all-zeros UUID) — NOT `NULL`. A naive `createdBy !== null` check marks
+ * the ENTIRE stock catalogue as custom (the System filter empties, Mine
+ * shows everything). Mirrors the backend constant in
+ * `microservices/core/src/application/repositories/exerciseRepository.ts`.
+ */
+export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Re-derive `isCustom` and normalise `createdBy`, treating the system
+ * sentinel owner the same as a null owner. Pure and idempotent.
+ *
+ * Applied at the API boundary (write-time) AND on the way out of the local
+ * exercise cache (read-time). The read-time pass matters because blobs were
+ * persisted before the write-time fix existed and carry `isCustom: true` for
+ * every system exercise — so the cache read must NOT trust the stored value
+ * and instead re-derives ownership from the (authoritative) `createdBy`.
+ */
+export function deriveExerciseOwnership(exercise: Exercise): Exercise {
+  const isSystem =
+    exercise.createdBy == null || exercise.createdBy === SYSTEM_USER_ID;
+  return {
+    ...exercise,
+    isCustom: !isSystem,
+    createdBy: isSystem ? null : exercise.createdBy,
+  };
+}
+
 // -- Filter type --
 
 /**

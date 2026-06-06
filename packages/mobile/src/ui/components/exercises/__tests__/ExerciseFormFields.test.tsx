@@ -47,6 +47,22 @@ describe("ExerciseFormFields", () => {
     );
   });
 
+  it("auto-focuses the name field by default (create flow)", () => {
+    const { getByTestId } = setup();
+    expect(getByTestId("exercise-form-name").props.autoFocus).toBe(true);
+  });
+
+  it("does not auto-focus when autoFocus is false (editor flow)", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseFormFields
+        value={EMPTY_NEW_EXERCISE}
+        onChange={jest.fn()}
+        autoFocus={false}
+      />,
+    );
+    expect(getByTestId("exercise-form-name").props.autoFocus).toBe(false);
+  });
+
   it("edits the instructions", () => {
     const { onChange, getByTestId } = setup();
     fireEvent.changeText(getByTestId("exercise-form-instructions"), "Brace");

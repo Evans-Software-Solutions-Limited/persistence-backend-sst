@@ -132,18 +132,18 @@ Legacy reference (V1 behavioural source of truth per `_agent.md`): `../persisten
 
 **Acceptance Criteria:**
 
-- 7.1 [ ] Route `(app)/exercises/[id].tsx` renders the exercise detail. Header with name + level pill + Edit IconBtn (owner only).
-- 7.2 [ ] Body: optional photo/video, description, primary muscle + secondary muscles list, equipment, instructions, related-exercises section.
-- 7.3 [ ] Owner-only Edit IconBtn opens `(app)/exercises/[id]/edit.tsx` (full-screen route, V2's current shape).
+- 7.1 [x] Route `(app)/exercises/[id]/index.tsx` renders the exercise detail. Header with Back + owner-only Edit IconBtn; name + level pill in the body. _(Revised 2026-06-05: route restructured `[id].tsx` → `[id]/index.tsx`; name lives in the body, not a duplicated header title.)_
+- 7.2 [x] Body: optional photo, description, primary + secondary muscle pills, equipment pills, instructions. _(Revised 2026-06-05: legacy related-exercises / PR-carousel / recent-sets dropped — no data on `GET /exercises/:id`.)_
+- 7.3 [x] Owner-only Edit IconBtn opens `(app)/exercises/[id]/edit.tsx` (full-screen route).
 
 ### STORY-008: As a user, I want to edit an exercise I created
 
 **Acceptance Criteria:**
 
 - 8.1 [ ] Route `(app)/exercises/[id]/edit.tsx` renders the same form fields as the Create Exercise sheet (STORY-006) — but as a full-screen route, not a sheet (per locked decision #7).
-- 8.2 [ ] Submit via `PUT /exercises/:id` (existing V2 endpoint).
-- 8.3 [ ] Offline: mutation queues + optimistic.
-- 8.4 [ ] Owner-only — non-owners get a 403 + read-only banner.
+- 8.2 [x] Submit via the existing V2 update endpoint. _(Revised 2026-06-05: the adapter uses **`PATCH /exercises/:id`**, not `PUT` — matched it.)_
+- 8.3 [x] Offline: mutation queues + optimistic. _(Revised 2026-06-05: optimistic local write + either coalesce onto a still-pending create/update mutation for the same id, or enqueue a `PATCH`; never `PATCH`-es a not-yet-synced `local-*` id.)_
+- 8.4 [x] Owner-only — non-owners get a read-only notice (the editor route is owner-gated upstream by the detail screen's owner-only Edit affordance).
 
 ### STORY-009: As a developer, I want the data layer unchanged so the existing 90% coverage holds and the sync engine doesn't regress
 

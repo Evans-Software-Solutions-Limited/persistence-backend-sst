@@ -2,6 +2,7 @@ import type { Exercise, CreateExerciseInput } from "@/domain/models/exercise";
 import {
   filterExercises,
   scoreExercise,
+  sortExercisesByName,
   tokenizeSearch,
   validateExerciseInput,
 } from "../exercise.service";
@@ -785,5 +786,39 @@ describe("validateExerciseInput", () => {
         expect(result.error.kind).toBe("validation");
       }
     });
+  });
+});
+
+describe("sortExercisesByName", () => {
+  const make = (id: string, name: string): Exercise => ({
+    id,
+    name,
+    description: null,
+    instructions: null,
+    category: "strength",
+    difficulty: "beginner",
+    primaryMuscleGroups: [],
+    secondaryMuscleGroups: [],
+    equipment: [],
+    videoUrl: null,
+    thumbnailUrl: null,
+    isCustom: false,
+    createdBy: null,
+  });
+
+  it("orders alphabetically by name without mutating the input", () => {
+    const input = [
+      make("c", "Zercher Squat"),
+      make("a", "Air Squat"),
+      make("b", "Front Squat"),
+    ];
+    const out = sortExercisesByName(input);
+    expect(out.map((e) => e.name)).toEqual([
+      "Air Squat",
+      "Front Squat",
+      "Zercher Squat",
+    ]);
+    // Pure: input untouched.
+    expect(input[0].id).toBe("c");
   });
 });

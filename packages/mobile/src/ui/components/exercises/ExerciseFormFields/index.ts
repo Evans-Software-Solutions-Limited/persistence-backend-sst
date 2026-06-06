@@ -6,6 +6,7 @@ export {
   LEVELS,
   MUSCLES,
   toCreateExerciseInput,
+  toFormInput,
 } from "./exerciseForm";
 export type {
   EquipmentLabel,

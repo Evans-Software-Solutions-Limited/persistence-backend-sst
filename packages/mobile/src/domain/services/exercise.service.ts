@@ -176,6 +176,19 @@ export function filterExercises(
 }
 
 /**
+ * Legacy-parity alphabetical ordering for the browse list
+ * (`exerciseQueries.ts` → `.order('name', { ascending: true })`). V2's cache
+ * read returns rows in SQLite insertion order, so without this a newly-created
+ * custom lands at the BOTTOM of the ~2.3k-row library and reads as "vanished"
+ * after the post-create flash. Applied by the list container ONLY to the
+ * no-search browse path — search keeps its relevance-score order, and the
+ * server-ranked search path keeps the server's order.
+ */
+export function sortExercisesByName(exercises: Exercise[]): Exercise[] {
+  return [...exercises].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Validate a CreateExerciseInput. Returns the input on success
  * or a ValidationError with per-field messages on failure.
  */

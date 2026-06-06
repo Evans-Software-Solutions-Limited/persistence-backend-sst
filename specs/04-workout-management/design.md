@@ -502,7 +502,9 @@ No behavioural changes — same validation, same submit, same propagation logic 
 
 ## `<ExerciseDetailPresenter>` rewrite
 
-V2 already has it. Shell-only update:
+> **Revised 2026-06-05 (Phase 04.6):** "V2 already has it" was stale — `exercises/[id].tsx` was a trivial placeholder. Built fresh as a foundation-system design-port (`ExerciseDetailContainer` + `ExerciseDetailPresenter` + cache-first `useExercise` hook; route restructured to `[id]/index.tsx`). The legacy PR-carousel / recent-sets / accessibility sections are **dropped** (no per-user history on `GET /exercises/:id`, no accessibility columns). See `tasks.md` § Phase 04.6 Revised note.
+
+Shell:
 
 - Header: `<HeaderBar>` compact with close + Edit (owner only).
 - Body: photo (if present), description, primary + secondary muscles section, equipment section, instructions section, related-exercises section.
@@ -514,7 +516,9 @@ Container unchanged.
 
 ## `<ExerciseEditorPresenter>` rewrite
 
-V2 already has it. Same field set as the Create Exercise sheet (per STORY-008) but rendered full-screen. Shell-only update + ensures the field components are shared with the sheet (a `<ExerciseFormFields>` shared internal component that both the sheet and the editor compose against).
+> **Revised 2026-06-05 (Phase 04.6):** "V2 already has it" was stale — there was no editor route. Built fresh: route `[id]/edit.tsx` → `ExerciseEditorContainer` → `ExerciseEditorPresenter`, composing the shared `<ExerciseFormFields>` full-screen. Save is offline-first via `updateExerciseCommand` (coalesce-onto-pending-create, else `PATCH /exercises/:id`) with the preserve-granular-unless-changed rule, backed by one additive `StoragePort.updateMutationPayload`. Non-owners get a read-only notice (AC 8.4). See `tasks.md` § Phase 04.6 Revised note for the full delta.
+
+Same field set as the Create Exercise screen (per STORY-008) but rendered full-screen. Composes the shared `<ExerciseFormFields>` (the same component the create screen uses).
 
 ```ts
 // packages/mobile/src/ui/components/exercises/ExerciseFormFields.tsx
