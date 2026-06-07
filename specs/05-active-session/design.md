@@ -41,6 +41,14 @@ packages/mobile/
 
 ## `useActiveWorkout` Zustand slice
 
+> **Revised 2026-06-07 (Hybrid architecture — supersedes the literal sample code below).** The audit during 05 implementation found that the sample slice code in this section contradicts this doc's own opening prose ("the data layer is unchanged from V2 … introduces a new state machine for the minimise-to-bar pattern") and three load-bearing project invariants. The slice is a **UI-state machine only**; set data stays in SQLite. Three corrections, confirmed by Brad, are now authoritative over the sample below:
+>
+> 1. **No parallel set store.** `useActiveWorkout` holds UI state only — an active-workout pointer (`workout` ref: `{ id, name }`-class identity, plus `withClient`/`retroactive`) and `expanded` (minimised ↔ expanded). **Drop `setLog` / `appendSetLog`.** Set data remains in SQLite via `useActiveSession` (`getActiveSession(userId)` → `active_sessions`/`session_exercises`/`exercise_sets`). A second copy in Zustand would diverge from SQLite (the #1 load-bearing rule) and violate STORY-010.
+> 2. **Wall-clock elapsed, not a tick counter.** Replace `tick()` / `elapsedSeconds` accumulation with derivation from `session.startedAt` (`now − startedAt`), mirroring the rest-timer pattern. A `setInterval` tick freezes during backgrounding and undercounts; wall-clock is correct across background/force-quit.
+> 3. **Rehydrate session/set data from SQLite, not AsyncStorage.** Reuse the existing M3 recovery path (`getActiveSession`) for the actual session + sets. The slice's AsyncStorage entry persists only the lightweight flag "a workout is active + its minimised/expanded UI state" — never a second copy of the set data. The >24h stale + resume/discard prompt (STORY-007 AC 7.3) keys off the SQLite session's `startedAt`.
+>
+> The commands data layer is untouched (STORY-010); the `<ActiveSessionContainer>` plumbing sample further down (which references non-existent `usePostRecordSet`/`useDeleteSet`/`useEndSession`/etc. hooks) is likewise illustrative — wire to the existing `logSetCommand` / `cancelSessionCommand` / `completeSessionCommand` / `substituteExerciseCommand` + `useActiveSession` / `useRestTimer`. The existing `ActiveSessionBanner` is **replaced** by the new `<ActiveWorkoutBarPresenter>` (one bar, not two). The code sample below is retained for historical context only.
+
 Per migration plan §"Active workout specifically — minimize/restore pattern" + locked decision #7.
 
 ```ts
