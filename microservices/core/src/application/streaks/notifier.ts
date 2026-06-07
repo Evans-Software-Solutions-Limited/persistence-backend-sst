@@ -11,9 +11,16 @@ import { NotificationRepository } from "../repositories/notificationRepository";
 import type { StreakNotification, StreakNotifier } from "./engine";
 
 export class StreakNotificationDispatcher implements StreakNotifier {
+  private readonly notifications: NotificationRepository;
+
+  // NB: explicit field assignment, not a TS parameter-property — the web
+  // package typechecks core with `erasableSyntaxOnly`, which bans the
+  // `constructor(private readonly …)` shorthand.
   constructor(
-    private readonly notifications: NotificationRepository = new NotificationRepository(),
-  ) {}
+    notifications: NotificationRepository = new NotificationRepository(),
+  ) {
+    this.notifications = notifications;
+  }
 
   async notify(notification: StreakNotification): Promise<void> {
     await this.notifications.create(notification.userId, {
