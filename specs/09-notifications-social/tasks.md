@@ -29,13 +29,13 @@
 - [ ] **T-09.2.3** Permission-denial graceful path — banner on Preferences screen.
 - [ ] **T-09.2.4** Token re-registration on auth change + Expo token rotation event.
 
-## Phase 09.3 — Notifications list screen (1 PR)
+## Phase 09.3 — Notifications list screen — ✅ shipped 2026-06-07
 
-- [ ] **T-09.3.1** Author `<NotificationRowPresenter>` spec-local composite per `design.md`. Icon mapping for every notification type. Implements STORY-002 AC 2.4.
-- [ ] **T-09.3.2** Author `<NotificationsListPresenter>` with grouped sections (Today / Yesterday / This Week / Older) + FlashList + pull-to-refresh + pagination. Implements STORY-002 ACs.
-- [ ] **T-09.3.3** Author `<NotificationsListContainer>` wiring `useGetNotifications` + mark-read + deep-link dispatch.
-- [ ] **T-09.3.4** Route `(app)/notifications.tsx`.
-- [ ] **T-09.3.5** Empty state copy.
+- [x] **T-09.3.1** `<NotificationRowPresenter>` spec-local composite (36×36 tone tile + title + 2-line body + compact relative time + chevron) with a data-driven `notificationVisual` icon/tone map + forward-compatible fallback. STORY-002 AC 2.4, 2.5.
+- [x] **T-09.3.2** `<NotificationsListPresenter>` — grouped sections (Today / Yesterday / This Week / Older) + **FlatList** (FlashList deferred to M11) + pull-to-refresh + `onEndReached` pagination. STORY-002.
+- [x] **T-09.3.3** `<NotificationsListContainer>` — cache-first read (`getNotificationsQuery`) + background refresh + cursor pagination + optimistic mark-read / mark-all + tap→deep-link (09.6 hardens redirect/fallback).
+- [x] **T-09.3.4** Route `(app)/notifications.tsx` + Stack registration.
+- [x] **T-09.3.5** Empty state copy ("No notifications yet" / "Check back after a workout 💪").
 
 ## Phase 09.4 — Preferences screen (1 PR)
 
