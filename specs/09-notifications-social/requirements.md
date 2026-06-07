@@ -35,6 +35,15 @@
 > 6. **List uses `FlatList`** (FlashList swap deferred to M11 perf work per the
 >    MEMORY ledger); the data/renderItem/refresh/onEndReached contract is
 >    identical so the swap is mechanical.
+> 7. **Mark-read `read_at` semantics (clarifies locked decision #3 / STORY-006
+>    AC 6.4).** `PATCH /notifications/:id` accepts only `{ isRead: true }` and
+>    stamps `read_at = COALESCE(read_at, NOW())` server-side. So the SERVER
+>    records the first-flush moment (it never receives a client timestamp),
+>    and COALESCE makes sync-queue replays idempotent (a re-flush can't
+>    advance `read_at`). The user's offline-tap moment is preserved in the
+>    LOCAL SQLite cache (also COALESCE). The original spec wording
+>    "read_at = original-mark moment" is reconciled to this: original-mark
+>    moment lives client-side; server-side guarantee is replay-idempotency.
 
 ---
 

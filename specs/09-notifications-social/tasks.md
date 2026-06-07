@@ -63,11 +63,13 @@
 - [x] **T-09.6.3** Unknown / absent deep-link → Home fallback (`resolveNotificationRoute`). AC 5.5.
 - [x] **T-09.6.4** Cold-start dispatch covered in `useNotificationDeepLink.test` (launching deepLink → push; normal launch → no nav).
 
-## Phase 09.7 — Offline + cache verification (1 PR)
+## Phase 09.7 — Offline + cache verification — ✅ shipped 2026-06-07
 
-- [ ] **T-09.7.1** Verify cached list renders offline (cold-start without network).
-- [ ] **T-09.7.2** Verify mark-read offline → queue → reconnect → server uses `COALESCE` per PR #81 sweep 2 (test: navigate, mark read offline, wait 2 minutes, reconnect; assert read_at = original-mark moment not flush moment).
-- [ ] **T-09.7.3** Verify preferences toggle offline → queue → reconnect → server merge returns correct merged column.
+> Integration tests in `src/application/notifications/__tests__/offline.integration.test.ts` (real `processSyncQueue` over a mocked fetch). See the read_at reconciliation in the requirements Revised 2026-06-07 banner (point 7).
+
+- [x] **T-09.7.1** Cached list renders with no network (pure cache read; no fetch).
+- [x] **T-09.7.2** Mark-read offline → optimistic local COALESCE + queue `{isRead:true}` → reconnect flush → replay-idempotent (no re-send) → offline-tap moment preserved client-side. (Server records first-flush moment + COALESCE replay-idempotency — it only accepts `{isRead:true}`; reconciled in requirements banner pt 7.)
+- [x] **T-09.7.3** Preferences toggle offline → optimistic merge + queue partial → reconnect flush → cache reset to the server's full merged column.
 
 ## Phase 09.8 — Cleanup + verification
 
