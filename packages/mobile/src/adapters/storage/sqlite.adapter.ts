@@ -16,7 +16,11 @@ import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
-import type { HomePayload, BodyTrendPoint } from "@/domain/models/progress";
+import type {
+  HomePayload,
+  BodyTrendPoint,
+  VolumeStats,
+} from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
@@ -326,6 +330,11 @@ export class SQLiteStorageAdapter implements StoragePort {
         synced_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS cached_body_trend (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_volume_stats (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -1122,6 +1131,13 @@ export class SQLiteStorageAdapter implements StoragePort {
   }
   cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void {
     this.writeBlob("cached_body_trend", userId, series);
+  }
+
+  getCachedVolumeStats(userId: string): VolumeStats | null {
+    return this.readBlob<VolumeStats>("cached_volume_stats", userId);
+  }
+  cacheVolumeStats(userId: string, stats: VolumeStats): void {
+    this.writeBlob("cached_volume_stats", userId, stats);
   }
 
   getCachedHabitCompletions(
