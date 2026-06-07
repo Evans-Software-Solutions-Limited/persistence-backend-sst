@@ -25,4 +25,19 @@ export interface NotificationsPort {
   getDevicePushToken(): Promise<Result<string, NotificationError>>;
   scheduleLocalNotification(notification: LocalNotification): Promise<string>;
   cancelLocalNotification(id: string): Promise<void>;
+
+  /**
+   * Subscribe to device push-token rotation (Expo emits a new token when
+   * the OS rotates it). The listener receives the new token string. Used
+   * by `usePushNotifications` (09.2) to re-register with the backend.
+   * Returns an unsubscribe function.
+   */
+  addPushTokenListener(listener: (token: string) => void): () => void;
+
+  /**
+   * Subscribe to notifications received while the app is foregrounded.
+   * The listener takes no args — consumers refresh the cache + unread
+   * count off it. Returns an unsubscribe function.
+   */
+  addNotificationReceivedListener(listener: () => void): () => void;
 }

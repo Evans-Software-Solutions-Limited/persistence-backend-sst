@@ -49,6 +49,12 @@ class StubNotifications implements NotificationsPort {
   async cancelLocalNotification(id: string): Promise<void> {
     this.cancelledIds.push(id);
   }
+  addPushTokenListener(): () => void {
+    return () => {};
+  }
+  addNotificationReceivedListener(): () => void {
+    return () => {};
+  }
 }
 
 // jest.useFakeTimers() blocks setImmediate; flush microtasks via real

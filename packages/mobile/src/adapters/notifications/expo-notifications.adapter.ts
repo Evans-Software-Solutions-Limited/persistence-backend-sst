@@ -6,11 +6,12 @@
  * request happens on first session start, not at app launch
  * (FRONTEND_BRIEF § Group C / EXECUTION_PLAN § 5).
  *
- * Push tokens are out of scope for M3 — `getDevicePushToken` returns
- * a not-yet-implemented error so the type contract holds; M9 ships the
- * push delivery surface.
+ * Push tokens land in 09.2: `getDevicePushToken` wraps
+ * `getDevicePushTokenAsync`, and the listener subscriptions back the
+ * push-registration + foreground-refresh flow in `usePushNotifications`.
  *
  * Spec: specs/05-active-session/requirements.md STORY-003
+ *       specs/09-notifications-social/requirements.md STORY-004
  */
 
 import * as Notifications from "expo-notifications";
@@ -20,12 +21,6 @@ import type {
   NotificationError,
 } from "@/domain/ports/notifications.port";
 import { fail, ok, type Result } from "@/shared/errors";
-
-const PUSH_NOT_IMPLEMENTED: NotificationError = {
-  kind: "notification",
-  code: "token_failed",
-  message: "Push tokens are not implemented in M3 — see milestone 09.",
-};
 
 export class ExpoNotificationsAdapter implements NotificationsPort {
   async requestPermissions(): Promise<
@@ -54,7 +49,37 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
   }
 
   async getDevicePushToken(): Promise<Result<string, NotificationError>> {
-    return fail(PUSH_NOT_IMPLEMENTED);
+    try {
+      const result = await Notifications.getDevicePushTokenAsync();
+      const token =
+        typeof result.data === "string" ? result.data : String(result.data);
+      return ok(token);
+    } catch (err) {
+      return fail({
+        kind: "notification",
+        code: "token_failed",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Failed to get device push token",
+      });
+    }
+  }
+
+  addPushTokenListener(listener: (token: string) => void): () => void {
+    const sub = Notifications.addPushTokenListener((token) => {
+      listener(
+        typeof token.data === "string" ? token.data : String(token.data),
+      );
+    });
+    return () => sub.remove();
+  }
+
+  addNotificationReceivedListener(listener: () => void): () => void {
+    const sub = Notifications.addNotificationReceivedListener(() => {
+      listener();
+    });
+    return () => sub.remove();
   }
 
   async scheduleLocalNotification(
