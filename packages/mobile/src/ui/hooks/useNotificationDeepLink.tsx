@@ -34,13 +34,13 @@ export function useNotificationDeepLink(enabled = true): void {
 
     let cancelled = false;
     void (async () => {
-      const deepLink =
-        await notifications.getLastNotificationResponseDeepLink();
+      const response = await notifications.getLastNotificationResponse();
       if (cancelled) return;
-      // Only navigate when the app was actually opened from a notification
-      // (deepLink !== null); a normal cold launch must not redirect.
-      if (deepLink !== null) {
-        router.push(resolveNotificationRoute(deepLink) as never);
+      // `response === null` → normal cold launch (no tap) → do not redirect.
+      // `response !== null` → the app WAS opened by a tap; route via the
+      // resolver, which sends a tap-with-no-deepLink to Home (AC 5.5).
+      if (response !== null) {
+        router.push(resolveNotificationRoute(response.deepLink) as never);
       }
     })();
 

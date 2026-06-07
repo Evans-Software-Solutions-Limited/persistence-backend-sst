@@ -66,7 +66,7 @@ class StubPushNotifications implements NotificationsPort {
   addNotificationResponseListener() {
     return () => {};
   }
-  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+  async getLastNotificationResponse(): Promise<null> {
     return null;
   }
 }
@@ -324,6 +324,39 @@ describe("usePushNotifications", () => {
       ),
     );
     expect(api.registeredDevices).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("logs + retries when registerDevice returns an error Result (not a throw)", async () => {
+    // Inspector Brad #2: registerDevice returns Result (never throws). A
+    // failed registration must be logged AND must not leave the per-user
+    // guard set, so a later token rotation / re-mount retries.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubPushNotifications();
+    api.shouldFail = true; // registerDevice → Result.err
+    const adapters = makeAdapters(api, storage, notifications, SESSION);
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    renderHook(() => usePushNotifications(true), {
+      wrapper: wrapperFor(adapters),
+    });
+
+    await waitFor(() =>
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[push] device registration failed:",
+        expect.any(Error),
+      ),
+    );
+    expect(api.registeredDevices).toHaveLength(0);
+
+    // Guard was rolled back → token rotation retries; succeed this time.
+    api.shouldFail = false;
+    await act(async () => {
+      notifications.emitTokenRotation();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
     warnSpy.mockRestore();
   });
 

@@ -16,6 +16,9 @@ MockPresenter.mockImplementation((props) => (
   <View>
     <Text testID="unread">{String(props.unreadCount)}</Text>
     <Text testID="group-count">{String(props.groups.length)}</Text>
+    <Text testID="item-count">
+      {String(props.groups.reduce((n, g) => n + g.notifications.length, 0))}
+    </Text>
     <Text testID="first-title">
       {props.groups[0]?.notifications[0]?.title ?? ""}
     </Text>
@@ -105,18 +108,44 @@ describe("NotificationsListContainer", () => {
         id: "t1",
         readAt: null,
         deepLink: "/(app)/(tabs)/you",
+        createdAt: "2026-06-07T11:00:00.000Z", // newest → groups[0].notifications[0]
       }),
+      // a second (older) row so the optimistic map iterates a non-tapped row
+      makeNotification({ id: "other", createdAt: "2026-06-07T08:00:00.000Z" }),
     ]);
 
     const { getByTestId } = renderContainer(api, storage);
+    expect(getByTestId("unread").props.children).toBe("2");
     fireEvent.press(getByTestId("tap"));
 
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/you");
-    await waitFor(() =>
-      expect(storage.getCachedNotifications()[0].readAt).not.toBeNull(),
-    );
+    // optimistic: only the tapped row's unread is cleared
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+    expect(
+      storage.getCachedNotifications().find((n) => n.id === "t1")?.readAt,
+    ).not.toBeNull();
     // mark-read enqueued
     expect(storage.getPendingMutations()).toHaveLength(1);
+  });
+
+  it("tapping an already-read row does not change the unread count", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheNotifications([
+      makeNotification({
+        id: "read1",
+        readAt: "2026-06-01T00:00:00.000Z",
+        createdAt: "2026-06-07T11:00:00.000Z", // newest → tapped first
+      }),
+      makeNotification({ id: "unread1", readAt: null }),
+    ]);
+
+    const { getByTestId } = renderContainer(api, storage);
+    expect(getByTestId("unread").props.children).toBe("1");
+    fireEvent.press(getByTestId("tap")); // taps read1
+    expect(mockPush).toHaveBeenCalled();
+    // unread count unchanged — the tapped row was already read
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
   });
 
   it("tap falls back to Home when the notification has no deep link", async () => {
@@ -136,11 +165,12 @@ describe("NotificationsListContainer", () => {
     const storage = new InMemoryStorageAdapter();
     storage.cacheNotifications([
       makeNotification({ id: "u1", readAt: null }),
-      makeNotification({ id: "u2", readAt: null }),
+      // a mix: an already-read row must stay read (map keeps it as-is)
+      makeNotification({ id: "r1", readAt: "2026-06-01T00:00:00.000Z" }),
     ]);
 
     const { getByTestId } = renderContainer(api, storage);
-    expect(getByTestId("unread").props.children).toBe("2");
+    expect(getByTestId("unread").props.children).toBe("1");
     fireEvent.press(getByTestId("mark-all"));
     await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
   });
@@ -157,6 +187,35 @@ describe("NotificationsListContainer", () => {
     fireEvent.press(getByTestId("load-more"));
     await waitFor(() =>
       expect(api.getNotificationsCalls).toContainEqual({ cursor: "cursor-2" }),
+    );
+  });
+
+  it("grows the visible list across pages (not capped at the cache size)", async () => {
+    // Inspector Brad #1 regression: load-more must append OLDER pages to the
+    // visible list even though they fall outside the newest-100 the cache
+    // LRU keeps. The in-memory adapter returns whatever `notifications` is
+    // set to, so we swap it between pages to simulate distinct keyset pages.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [
+      makeNotification({ id: "new", createdAt: "2026-06-07T09:00:00.000Z" }),
+    ];
+    api.notificationsNextCursor = "c2";
+
+    const { getByTestId } = renderContainer(api, storage);
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("1"),
+    );
+
+    // Next (older) page.
+    api.notifications = [
+      makeNotification({ id: "old", createdAt: "2026-05-01T09:00:00.000Z" }),
+    ];
+    api.notificationsNextCursor = null;
+    fireEvent.press(getByTestId("load-more"));
+
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("2"),
     );
   });
 

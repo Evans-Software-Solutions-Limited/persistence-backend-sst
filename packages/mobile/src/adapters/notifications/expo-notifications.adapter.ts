@@ -19,6 +19,7 @@ import type {
   LocalNotification,
   NotificationsPort,
   NotificationError,
+  NotificationResponseInfo,
 } from "@/domain/ports/notifications.port";
 import { fail, ok, type Result } from "@/shared/errors";
 
@@ -101,9 +102,10 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
     return () => sub.remove();
   }
 
-  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+  async getLastNotificationResponse(): Promise<NotificationResponseInfo | null> {
     const response = await Notifications.getLastNotificationResponseAsync();
-    return extractDeepLink(response);
+    if (!response) return null;
+    return { deepLink: extractDeepLink(response) };
   }
 
   async scheduleLocalNotification(

@@ -70,10 +70,22 @@ export function usePushNotifications(enabled = true): void {
     const tokenResult = await notifications.getDevicePushToken();
     if (!tokenResult.ok) return;
 
-    await api.registerDevice({
+    // `registerDevice` returns a Result — it does NOT throw on a
+    // transport/server failure. Inspect `ok` explicitly: on failure roll
+    // back the per-user "already registered" guard so a later re-render /
+    // token rotation gets another shot, and throw so the outer `.catch`
+    // logs uniformly with the JS-error path (AC 4.5). Without this a failed
+    // registration is silent and never retried for the session.
+    const registerResult = await api.registerDevice({
       token: tokenResult.value,
       platform: devicePlatform(),
     });
+    if (!registerResult.ok) {
+      registeredForRef.current = null;
+      throw new Error(
+        `device registration rejected: ${registerResult.error.message}`,
+      );
+    }
   }, [api, notifications]);
 
   // Registration on auth resolve / change.

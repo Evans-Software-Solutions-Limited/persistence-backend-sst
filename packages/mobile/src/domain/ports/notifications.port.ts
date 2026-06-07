@@ -52,9 +52,18 @@ export interface NotificationsPort {
   ): () => void;
 
   /**
-   * The `data.deepLink` of the notification that cold-launched the app
-   * (tapped from a killed state), or null when the app wasn't opened from
-   * a notification. Read once on launch for cold-start dispatch.
+   * The response that cold-launched the app (tapped from a killed state),
+   * or `null` when the app was NOT opened from a notification.
+   *
+   * Distinguishing these two cases matters: a normal cold launch (`null`)
+   * must not navigate, whereas a tap whose payload omitted `data.deepLink`
+   * (`{ deepLink: null }`) should still route — to Home per AC 5.5. A bare
+   * `string | null` deepLink can't express that difference.
    */
-  getLastNotificationResponseDeepLink(): Promise<string | null>;
+  getLastNotificationResponse(): Promise<NotificationResponseInfo | null>;
 }
+
+/** The launching notification's deep link (null when the payload omitted it). */
+export type NotificationResponseInfo = {
+  deepLink: string | null;
+};

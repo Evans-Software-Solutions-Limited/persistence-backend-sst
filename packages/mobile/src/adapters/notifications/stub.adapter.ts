@@ -40,7 +40,7 @@ export class StubNotificationsAdapter implements NotificationsPort {
   addNotificationResponseListener() {
     return () => {};
   }
-  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+  async getLastNotificationResponse(): Promise<null> {
     return null;
   }
 }

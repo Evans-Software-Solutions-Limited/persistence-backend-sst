@@ -10,7 +10,8 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useNotificationDeepLink } from "@/ui/hooks/useNotificationDeepLink";
 
 class StubNotifications implements NotificationsPort {
-  coldStart: string | null = null;
+  // null = normal cold launch (no tap); { deepLink } = launched by a tap.
+  coldStart: { deepLink: string | null } | null = null;
   responseListeners: ((d: string | null) => void)[] = [];
 
   async requestPermissions(): Promise<
@@ -42,7 +43,7 @@ class StubNotifications implements NotificationsPort {
       );
     };
   }
-  async getLastNotificationResponseDeepLink() {
+  async getLastNotificationResponse() {
     return this.coldStart;
   }
   emitResponse(d: string | null) {
@@ -75,7 +76,7 @@ beforeEach(() => mockPush.mockClear());
 describe("useNotificationDeepLink", () => {
   it("routes the cold-start notification's deep link once (legacy remap), and not again on re-render", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = "/progress";
+    notifications.coldStart = { deepLink: "/progress" };
     // No explicit arg → exercises the `enabled = true` default.
     const { rerender } = renderHook(() => useNotificationDeepLink(), {
       wrapper: wrapperFor(notifications),
@@ -93,7 +94,7 @@ describe("useNotificationDeepLink", () => {
 
   it("cancels the in-flight cold-start read on unmount", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = "/progress";
+    notifications.coldStart = { deepLink: "/progress" };
     const { unmount } = renderHook(() => useNotificationDeepLink(true), {
       wrapper: wrapperFor(notifications),
     });
@@ -115,6 +116,18 @@ describe("useNotificationDeepLink", () => {
       await Promise.resolve();
     });
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("routes a cold-start tap with NO deep link to Home (AC 5.5)", async () => {
+    // Launched by a tap, but the payload omitted data.deepLink. This is
+    // distinct from a normal launch (coldStart === null) and must route to
+    // Home, not no-op.
+    const notifications = new StubNotifications();
+    notifications.coldStart = { deepLink: null };
+    renderHook(() => useNotificationDeepLink(true), {
+      wrapper: wrapperFor(notifications),
+    });
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)"));
   });
 
   it("routes a background/foreground tap to its deep link", async () => {
@@ -143,7 +156,7 @@ describe("useNotificationDeepLink", () => {
 
   it("is a no-op when disabled", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = "/progress";
+    notifications.coldStart = { deepLink: "/progress" };
     renderHook(() => useNotificationDeepLink(false), {
       wrapper: wrapperFor(notifications),
     });

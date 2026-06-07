@@ -62,7 +62,7 @@ function makeAdapters(
     addPushTokenListener: jest.fn(() => () => {}),
     addNotificationReceivedListener: jest.fn(() => () => {}),
     addNotificationResponseListener: jest.fn(() => () => {}),
-    getLastNotificationResponseDeepLink: jest.fn(async () => null),
+    getLastNotificationResponse: jest.fn(async () => null),
   };
 
   return {
