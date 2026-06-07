@@ -1,30 +1,66 @@
-import { Colors, Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
+import { GEIST_FAMILY, GEIST_MONO_FAMILY } from "@/ui/theme/fonts";
+import { color } from "@/ui/theme/tokens";
 
-// Mirrors persistence-mobile/components/workouts/ActiveWorkoutScreen
-// styles.header / .timerSection / .timer / .workoutName (336-360).
-// Flush row, no background or border — sits inside the screen's
-// content padding rather than as a top-bar.
+/**
+ * 05.3 re-skin — active-session header per the prototype
+ * (`active-workout.jsx:16–42`): a 36×36 chevron-down minimise button on the
+ * left, a centred workout name with a mono elapsed timer beneath it, and an
+ * "End" pill on the right.
+ */
 export const styles = {
   container: {
     flexDirection: "row" as const,
-    justifyContent: "space-between" as const,
     alignItems: "center" as const,
-    paddingBottom: Spacing.sm,
+    justifyContent: "space-between" as const,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  minimizeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: color.$surface2,
+    borderWidth: 1,
+    borderColor: color.$border,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  centerSection: {
+    flex: 1,
+    alignItems: "center" as const,
   },
   workoutName: {
-    ...Typography.h3,
-    color: Colors.text.primary,
-    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: "600" as const,
+    color: color.$text,
   },
   timerSection: {
     flexDirection: "row" as const,
-    gap: Spacing.sm,
-    justifyContent: "center" as const,
     alignItems: "center" as const,
+    gap: 4,
+    marginTop: 2,
   },
   timer: {
-    ...Typography.h3,
-    color: Colors.text.primary,
-    fontWeight: "700" as const,
+    fontFamily: GEIST_MONO_FAMILY,
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: color.$primary,
+  },
+  endButton: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: color.$border2,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  endButtonText: {
+    fontFamily: GEIST_FAMILY,
+    fontSize: 12.5,
+    fontWeight: "600" as const,
+    color: color.$text3,
   },
 };

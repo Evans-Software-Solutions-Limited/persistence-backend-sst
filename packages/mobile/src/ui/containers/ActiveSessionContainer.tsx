@@ -483,6 +483,15 @@ export function ActiveSessionContainer() {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
 
+  const onMinimize = useCallback(() => {
+    // Collapse to the floating <ActiveWorkoutBar> (STORY-002 AC 2.4 /
+    // STORY-006). Dismiss the session modal — the route segment leaves
+    // "session" and <ActiveWorkoutOverlay> re-shows the bar. The session is
+    // NOT cancelled; it stays live in SQLite (the existence authority), so
+    // tapping the bar re-pushes this screen with the in-progress sets intact.
+    router.dismiss();
+  }, []);
+
   const onFinish = useCallback(() => {
     // Tap Complete → rating screen captures 1-10 difficulty + notes
     // → submit fires completeSessionCommand → replaces with summary.
@@ -594,6 +603,7 @@ export function ActiveSessionContainer() {
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}
         onStartRest={onStartRest}
+        onMinimize={onMinimize}
         onDiscard={onDiscard}
         onFinish={onFinish}
       />

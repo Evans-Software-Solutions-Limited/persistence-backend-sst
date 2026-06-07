@@ -15,7 +15,6 @@
  *       specs/05-active-session/requirements.md STORY-005
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
@@ -24,12 +23,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { IconSwap, IconTrash } from "@/ui/components/icons";
+import { GEIST_MONO_FAMILY } from "@/ui/theme/fonts";
+import { color } from "@/ui/theme/tokens";
+import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet } from "@/domain/models/session";
 
 export type ActiveSupersetExerciseRowProps = {
@@ -117,11 +114,7 @@ export function ActiveSupersetExerciseRow({
             style={styles.swapButton}
             testID={`superset-row-${sessionExerciseId}-swap`}
           >
-            <Ionicons
-              name="swap-horizontal"
-              size={18}
-              color={Colors.text.secondary}
-            />
+            <IconSwap size={15} color={color.$text3} />
           </TouchableOpacity>
         )}
         {showRemove && onRemove && (
@@ -132,11 +125,7 @@ export function ActiveSupersetExerciseRow({
             style={styles.removeButton}
             testID={`superset-row-${sessionExerciseId}-remove-exercise`}
           >
-            <Ionicons
-              name="trash-outline"
-              size={18}
-              color={Colors.error.DEFAULT}
-            />
+            <IconTrash size={15} color={color.$error} />
           </TouchableOpacity>
         )}
       </View>
@@ -163,7 +152,7 @@ export function ActiveSupersetExerciseRow({
         keyboardType="number-pad"
         returnKeyType="next"
         placeholder="-"
-        placeholderTextColor={Colors.text.tertiary}
+        placeholderTextColor={color.$text4}
         testID={`superset-row-${sessionExerciseId}-${setNumber}-reps`}
       />
 
@@ -174,7 +163,7 @@ export function ActiveSupersetExerciseRow({
         keyboardType="decimal-pad"
         returnKeyType="done"
         placeholder="-"
-        placeholderTextColor={Colors.text.tertiary}
+        placeholderTextColor={color.$text4}
         testID={`superset-row-${sessionExerciseId}-${setNumber}-weight`}
       />
     </View>
@@ -189,7 +178,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     gap: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$border,
   },
   column: {
     justifyContent: "center",
@@ -202,7 +191,7 @@ const styles = StyleSheet.create({
   },
   exerciseName: {
     ...Typography.body2,
-    color: Colors.text.primary,
+    color: color.$text,
     flex: 1,
     flexShrink: 1,
     textAlign: "left",
@@ -214,25 +203,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   previousText: {
-    ...Typography.body2,
-    color: Colors.primary.DEFAULT,
-    fontWeight: "600",
+    fontFamily: GEIST_MONO_FAMILY,
+    fontSize: 12,
+    color: color.$text4,
     textAlign: "center",
   },
   previousPlaceholder: {
-    ...Typography.body2,
-    color: Colors.text.tertiary,
+    fontFamily: GEIST_MONO_FAMILY,
+    fontSize: 12,
+    color: color.$text4,
     textAlign: "center",
   },
   input: {
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.sm,
+    backgroundColor: color.$surface2,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$border,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
-    ...Typography.body2,
-    color: Colors.text.primary,
+    fontFamily: GEIST_MONO_FAMILY,
+    fontSize: 13,
+    color: color.$text,
     textAlign: "center",
   },
   columnReps: { flex: 1 },

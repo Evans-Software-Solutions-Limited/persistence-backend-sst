@@ -14,12 +14,19 @@
  * Spec: persistence-mobile/components/workouts/ActiveExerciseRow/ActiveExerciseRow.tsx
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SetLogger } from "../SetLogger";
 import { styles } from "./styles";
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import {
+  IconDumbbell,
+  IconNote,
+  IconPlus,
+  IconSwap,
+  IconTimer,
+  IconTrash,
+} from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 
 export type SessionExerciseCardProps = {
@@ -83,12 +90,8 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             style={styles.exerciseImage}
           />
         ) : (
-          <View style={styles.exerciseImagePlaceholder}>
-            <Ionicons
-              name="barbell-outline"
-              size={20}
-              color={Colors.text.secondary}
-            />
+          <View style={styles.iconTile}>
+            <IconDumbbell size={14} color={color.$primary} />
           </View>
         )}
 
@@ -119,10 +122,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             testID="session-exercise-notes"
             accessibilityLabel={hasNotes ? "Edit notes" : "Add notes"}
           >
-            <Ionicons
-              name="create-outline"
-              size={26}
-              color={hasNotes ? Colors.primary.DEFAULT : Colors.text.secondary}
+            <IconNote
+              size={15}
+              color={hasNotes ? color.$primary : color.$text3}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -131,11 +133,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             testID="session-exercise-substitute"
             accessibilityLabel="Substitute exercise"
           >
-            <Ionicons
-              name="swap-horizontal-outline"
-              size={26}
-              color={Colors.text.secondary}
-            />
+            <IconSwap size={15} color={color.$text3} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={props.onRemoveExercise}
@@ -143,11 +141,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             testID="session-exercise-remove"
             accessibilityLabel="Remove exercise"
           >
-            <Ionicons
-              name="trash-outline"
-              size={26}
-              color={Colors.error.DEFAULT}
-            />
+            <IconTrash size={15} color={color.$error} />
           </TouchableOpacity>
         </View>
       </View>
@@ -155,10 +149,10 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       <View style={styles.columnHeaders}>
         <Text style={[styles.columnHeader, styles.columnHeaderSet]}>SET</Text>
         <Text style={[styles.columnHeader, styles.columnHeaderPrevious]}>
-          Previous
+          PREV
         </Text>
-        <Text style={[styles.columnHeader, styles.columnHeaderReps]}>reps</Text>
-        <Text style={[styles.columnHeader, styles.columnHeaderKg]}>kg</Text>
+        <Text style={[styles.columnHeader, styles.columnHeaderReps]}>REPS</Text>
+        <Text style={[styles.columnHeader, styles.columnHeaderKg]}>KG</Text>
         <View style={styles.columnHeaderSpacer} />
       </View>
 
@@ -198,12 +192,8 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             testID="session-exercise-add-set"
             accessibilityLabel="Add a new set"
           >
-            <Ionicons
-              name="add-sharp"
-              size={20}
-              color={Colors.primary.DEFAULT}
-            />
-            <Text style={styles.footerButtonText}>ADD NEW SET</Text>
+            <IconPlus size={12} color={color.$primary} strokeWidth={2.5} />
+            <Text style={styles.footerButtonText}>ADD SET</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={props.onStartRest}
@@ -211,13 +201,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             testID="session-exercise-start-rest"
             accessibilityLabel={`Start ${props.restSeconds} second rest timer`}
           >
-            <Ionicons
-              name="timer-outline"
-              size={20}
-              color={Colors.primary.DEFAULT}
-            />
+            <IconTimer size={12} color={color.$primary} />
             <Text style={styles.footerButtonText}>
-              START {props.restSeconds}S REST
+              {props.restSeconds}S REST
             </Text>
           </TouchableOpacity>
         </View>

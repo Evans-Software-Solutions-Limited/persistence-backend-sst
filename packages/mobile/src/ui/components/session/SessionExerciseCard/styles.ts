@@ -1,37 +1,44 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { GEIST_FAMILY } from "@/ui/theme/fonts";
+import { color } from "@/ui/theme/tokens";
 
+/**
+ * 05.3 re-skin — ExerciseBlock visual per the prototype
+ * (`active-workout.jsx:73–106`): 28×28 icon tile + name + "{N} sets × reps"
+ * meta + action IconBtns; an uppercase 5-column grid header aligned to the
+ * SetLogger rows (`SET 36 · PREV 1fr · REPS 1fr · KG 1fr · × 24`); inline
+ * `+ ADD SET` / `{rest}S REST` links below. Notes + remove affordances are
+ * preserved alongside the prototype's swap (legacy fidelity).
+ */
 export const styles = {
   exerciseRow: {
-    borderRadius: BorderRadius.sm,
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: 8,
+    marginBottom: 14,
   },
   exerciseHeader: {
     flexDirection: "row" as const,
-    gap: Spacing.sm,
+    alignItems: "center" as const,
+    gap: 10,
+    marginBottom: 8,
   },
-  exerciseImage: {
-    width: 50,
-    height: 50,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surface.secondary,
-  },
-  exerciseImagePlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surface.secondary,
+  // 28×28 toned icon tile (or thumbnail when an image URL is present).
+  iconTile: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: color.$surface2,
+    borderWidth: 1,
+    borderColor: color.$border,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
+  exerciseImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: color.$surface2,
+  },
   exerciseInfo: {
     flex: 1,
-    gap: Spacing.xxs,
     justifyContent: "center" as const,
   },
   exerciseTitleRow: {
@@ -39,72 +46,76 @@ export const styles = {
     alignItems: "center" as const,
   },
   exerciseName: {
-    ...Typography.body2,
-    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: "600" as const,
+    color: color.$text,
   },
   exerciseDescription: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 11,
+    color: color.$text3,
+    marginTop: 1,
   },
   exerciseActions: {
     flexDirection: "row" as const,
-    gap: Spacing.xs,
-    marginLeft: Spacing.md,
+    alignItems: "center" as const,
+    gap: 2,
   },
   actionButton: {
-    flexDirection: "row" as const,
+    width: 28,
+    height: 28,
     alignItems: "center" as const,
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    justifyContent: "center" as const,
   },
+  // 5-column grid header — widths mirror SetLogger row columns.
   columnHeaders: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    paddingVertical: Spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-    gap: Spacing.xs,
+    gap: 8,
+    paddingHorizontal: 4,
+    marginBottom: 4,
   },
   columnHeader: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
+    fontFamily: GEIST_FAMILY,
+    fontSize: 10.5,
     fontWeight: "600" as const,
+    color: color.$text3,
+    letterSpacing: 1,
     textTransform: "uppercase" as const,
   },
   columnHeaderSet: {
-    flex: 1,
-    textAlign: "center" as const,
+    width: 36,
+    textAlign: "left" as const,
   },
   columnHeaderPrevious: {
-    flex: 2,
-    textAlign: "center" as const,
+    flex: 1,
+    textAlign: "left" as const,
   },
   columnHeaderReps: {
-    width: 60,
+    flex: 1,
     textAlign: "center" as const,
   },
   columnHeaderKg: {
-    width: 60,
+    flex: 1,
     textAlign: "center" as const,
   },
   columnHeaderSpacer: {
-    flex: 1,
+    width: 24,
   },
   buttonsContainer: {
     flexDirection: "row" as const,
     justifyContent: "space-between" as const,
-    paddingHorizontal: Spacing.md,
+    alignItems: "center" as const,
+    marginTop: 6,
   },
   footerButton: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.xs,
+    gap: 4,
+    paddingVertical: 4,
   },
   footerButtonText: {
-    ...Typography.caption,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
+    fontSize: 11.5,
+    fontWeight: "600" as const,
   },
 };

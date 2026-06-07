@@ -49,6 +49,7 @@ const baseProps = {
   onAddExercise: jest.fn(),
   onAddExerciseToSuperset: jest.fn(),
   onStartRest: jest.fn(),
+  onMinimize: jest.fn(),
   onDiscard: jest.fn(),
   onFinish: jest.fn(),
 };
@@ -214,15 +215,23 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("superset-group-1")).toBeNull();
   });
 
-  it("Discard footer button calls onDiscard directly (Alert.alert lives in the container)", () => {
+  it("header chevron-down calls onMinimize (collapse to floating bar)", () => {
     const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...baseProps} />,
     );
-    fireEvent.press(getByTestId("active-session-discard"));
+    fireEvent.press(getByTestId("session-minimize"));
+    expect(baseProps.onMinimize).toHaveBeenCalledTimes(1);
+  });
+
+  it("header End pill calls onDiscard (end without saving; Alert.alert lives in the container)", () => {
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...baseProps} />,
+    );
+    fireEvent.press(getByTestId("session-end"));
     expect(baseProps.onDiscard).toHaveBeenCalledTimes(1);
   });
 
-  it("Finish footer button calls onFinish", () => {
+  it("sticky Finish Workout CTA calls onFinish", () => {
     const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...baseProps} />,
     );
