@@ -37,6 +37,9 @@ import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
+import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
+import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
+import { activeWorkoutElapsedSeconds } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
@@ -521,27 +524,20 @@ export function ActiveSessionContainer() {
     router.push("/(app)/session/rate" as never);
   }, [session]);
 
+  // 05.4: the header "End" pill opens the styled <EndConfirmDialogPresenter>
+  // (replacing the legacy Alert.alert). Confirming fires cancelSessionCommand
+  // (queues the bulk-record cancellation flush) and dismisses the modal stack.
+  const [endConfirmVisible, setEndConfirmVisible] = useState(false);
+
   const onDiscard = useCallback(() => {
-    // Native Alert.alert matching legacy `ActiveWorkoutModal.handleDiscardWorkout`
-    // (persistence-mobile/components/workouts/ActiveWorkoutModal.tsx:514).
-    // Confirm first; on Discard, fire cancelSessionCommand (queues the
-    // bulk-record cancellation flush) and dismiss the modal stack.
+    setEndConfirmVisible(true);
+  }, []);
+
+  const onConfirmEnd = useCallback(() => {
+    setEndConfirmVisible(false);
     if (!userId) return;
-    Alert.alert(
-      "Cancel Workout",
-      "Are you sure you want to discard this workout? All progress will be lost.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            cancelSessionCommand({ storage, userId });
-            router.dismissAll();
-          },
-        },
-      ],
-    );
+    cancelSessionCommand({ storage, userId });
+    router.dismissAll();
   }, [userId, storage]);
 
   // Existing-exercise ids gate every picker (Add, Add-to-Superset,
@@ -670,6 +666,16 @@ export function ActiveSessionContainer() {
         onSave={onSaveNotes}
         onCancel={onCloseNotes}
       />
+
+      {endConfirmVisible && (
+        <EndConfirmDialogPresenter
+          elapsed={formatBarElapsed(
+            activeWorkoutElapsedSeconds(session.startedAt),
+          )}
+          onKeepGoing={() => setEndConfirmVisible(false)}
+          onEnd={onConfirmEnd}
+        />
+      )}
     </>
   );
 }

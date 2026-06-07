@@ -242,8 +242,7 @@ describe("ActiveSessionContainer", () => {
     expect(await findByText("Quick Workout")).toBeTruthy();
   });
 
-  it("header End pill shows Alert.alert; confirming fires cancelSessionCommand and dismisses", async () => {
-    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  it("header End pill opens the styled end-confirm dialog; End fires cancelSessionCommand and dismisses", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -258,35 +257,51 @@ describe("ActiveSessionContainer", () => {
       exercises: [],
     });
 
-    const { findByTestId } = renderWithTheme(
+    const { findByTestId, queryByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
-    // Discard now lives on the header "End" pill (STORY-002); it routes through
-    // the same container discard confirmation as the legacy footer button.
+    // 05.4: discard lives on the header "End" pill → opens the styled
+    // <EndConfirmDialogPresenter> (no Alert.alert).
     fireEvent.press(await findByTestId("session-end"));
+    expect(await findByTestId("end-confirm-dialog")).toBeTruthy();
 
-    // Native Alert was opened with the legacy copy.
-    expect(alertSpy).toHaveBeenCalledWith(
-      "Cancel Workout",
-      "Are you sure you want to discard this workout? All progress will be lost.",
-      expect.any(Array),
-    );
+    // Confirm "End" → bulk cancellation queued + modal stack collapsed.
+    fireEvent.press(await findByTestId("end-confirm-dialog-end"));
 
-    // Simulate the user tapping Discard in the alert.
-    const buttons = (alertSpy.mock.calls.at(-1)?.[2] ?? []) as {
-      text: string;
-      style?: string;
-      onPress?: () => void;
-    }[];
-    const discardButton = buttons.find((b) => b.style === "destructive");
-    discardButton?.onPress?.();
-
-    // Bulk cancellation queued; modal stack collapsed.
     const queue = storage.getPendingMutations();
     expect(queue).toHaveLength(1);
     expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
     expect(mockRouterDismissAll).toHaveBeenCalled();
+    expect(queryByTestId("end-confirm-dialog")).toBeNull();
+  });
+
+  it("End-confirm dialog 'Keep going' dismisses without cancelling the session", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-end"));
+    fireEvent.press(await findByTestId("end-confirm-dialog-keep-going"));
+
+    expect(queryByTestId("end-confirm-dialog")).toBeNull();
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+    expect(mockRouterDismissAll).not.toHaveBeenCalled();
   });
 
   it("header chevron-down minimises (dismisses the modal) without cancelling the session", async () => {

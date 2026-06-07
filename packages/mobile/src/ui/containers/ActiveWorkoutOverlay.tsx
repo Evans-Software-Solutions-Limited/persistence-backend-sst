@@ -28,7 +28,7 @@
 
 import { router, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cancelSessionCommand } from "@/application/commands/session";
 import {
@@ -37,7 +37,11 @@ import {
 } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
-import { ActiveWorkoutBarPresenter } from "@/ui/presenters/ActiveWorkoutBarPresenter";
+import {
+  ActiveWorkoutBarPresenter,
+  formatBarElapsed,
+} from "@/ui/presenters/ActiveWorkoutBarPresenter";
+import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
 
 // Tab-bar geometry contract — kept in lockstep with `14-navigation`'s
 // `app/(app)/(tabs)/_layout.tsx` (`TAB_BAR_CONTENT_HEIGHT` 60 +
@@ -49,31 +53,11 @@ const TAB_BAR_CONTENT_HEIGHT = 60;
 const TAB_BAR_BOTTOM_GAP = 8;
 const ACTIVE_WORKOUT_BAR_GAP = 12;
 
-export type ActiveWorkoutOverlayProps = {
-  /**
-   * Test seam — replaces the imperative end confirmation. Production uses an
-   * Alert; Phase 05.4 swaps this for the styled <EndConfirmDialogPresenter>.
-   */
-  confirmEnd?: (onConfirm: () => void) => void;
-};
-
-function defaultConfirmEnd(onConfirm: () => void): void {
-  Alert.alert(
-    "End workout?",
-    "Your progress so far won't be saved as a completed workout.",
-    [
-      { text: "Keep going", style: "cancel" },
-      { text: "End", style: "destructive", onPress: onConfirm },
-    ],
-  );
-}
-
-export function ActiveWorkoutOverlay({
-  confirmEnd = defaultConfirmEnd,
-}: ActiveWorkoutOverlayProps = {}) {
+export function ActiveWorkoutOverlay() {
   const { session } = useActiveSession();
   const { storage } = useAdapters();
   const insets = useSafeAreaInsets();
+  const [endConfirmVisible, setEndConfirmVisible] = useState(false);
 
   // Expo Router types `useSegments` against the typed-route tuple, which
   // narrows literal `.includes()` of group segments to `never` — widen to
@@ -108,15 +92,16 @@ export function ActiveWorkoutOverlay({
     router.push(`/(app)/session?sessionId=${session.id}` as never);
   };
 
-  const onLongPress = () => {
-    confirmEnd(() => {
-      // Discard escape hatch (STORY-006 AC 6.7) — cancel queues the
-      // bulk-record cancellation flush; end() clears the UI-state slice.
-      // `session.userId` is always present (the session came from SQLite
-      // keyed on it), so no auth-userId guard is needed.
-      cancelSessionCommand({ storage, userId: session.userId });
-      void useActiveWorkout.getState().end();
-    });
+  // STORY-006 AC 6.7 — long-press the bar opens the styled end-confirm dialog.
+  const onLongPress = () => setEndConfirmVisible(true);
+
+  const onConfirmEnd = () => {
+    // Discard escape hatch — cancel queues the bulk-record cancellation flush;
+    // end() clears the UI-state slice. `session.userId` is always present (the
+    // session came from SQLite keyed on it), so no auth-userId guard is needed.
+    setEndConfirmVisible(false);
+    cancelSessionCommand({ storage, userId: session.userId });
+    void useActiveWorkout.getState().end();
   };
 
   // On a tab screen the bar floats above the tab bar; on a pushed-over screen
@@ -127,17 +112,27 @@ export function ActiveWorkoutOverlay({
     (inTabs ? tabBarHeight : insets.bottom) + ACTIVE_WORKOUT_BAR_GAP;
 
   return (
-    <View
-      style={{ position: "absolute", left: 12, right: 12, bottom }}
-      pointerEvents="box-none"
-      testID="active-workout-overlay"
-    >
-      <ActiveWorkoutBarPresenter
-        workoutName={session.name || "Active Workout"}
-        elapsedSeconds={elapsed}
-        onPress={onPress}
-        onLongPress={onLongPress}
-      />
-    </View>
+    <>
+      <View
+        style={{ position: "absolute", left: 12, right: 12, bottom }}
+        pointerEvents="box-none"
+        testID="active-workout-overlay"
+      >
+        <ActiveWorkoutBarPresenter
+          workoutName={session.name || "Active Workout"}
+          elapsedSeconds={elapsed}
+          onPress={onPress}
+          onLongPress={onLongPress}
+        />
+      </View>
+
+      {endConfirmVisible && (
+        <EndConfirmDialogPresenter
+          elapsed={formatBarElapsed(elapsed)}
+          onKeepGoing={() => setEndConfirmVisible(false)}
+          onEnd={onConfirmEnd}
+        />
+      )}
+    </>
   );
 }

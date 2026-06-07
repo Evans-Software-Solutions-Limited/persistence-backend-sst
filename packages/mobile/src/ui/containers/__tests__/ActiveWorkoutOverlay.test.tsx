@@ -13,8 +13,6 @@ import { renderWithTheme, waitFor } from "../../../../__tests__/test-utils";
 // eslint-disable-next-line import/first
 import { fireEvent } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
-import { Alert } from "react-native";
-// eslint-disable-next-line import/first
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 // eslint-disable-next-line import/first
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
@@ -115,16 +113,13 @@ function makeSession(overrides: Partial<WorkoutSession> = {}): WorkoutSession {
   };
 }
 
-function renderOverlay(
-  adapters: Adapters,
-  confirmEnd?: (onConfirm: () => void) => void,
-) {
+function renderOverlay(adapters: Adapters) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
   );
   return renderWithTheme(
     <Wrapper>
-      <ActiveWorkoutOverlay confirmEnd={confirmEnd} />
+      <ActiveWorkoutOverlay />
     </Wrapper>,
   );
 }
@@ -210,7 +205,7 @@ it("tapping the bar pushes the session route to expand", async () => {
   expect(mockPush).toHaveBeenCalledWith("/(app)/session?sessionId=local-abc");
 });
 
-it("long-press → confirm → discards the session (cancel + slice clear)", async () => {
+it("long-press → styled dialog → End discards the session (cancel + slice clear)", async () => {
   const { adapters, storage, auth } = makeAdapters();
   signIn(auth);
   storage.cacheActiveSession(USER, makeSession());
@@ -224,39 +219,41 @@ it("long-press → confirm → discards the session (cancel + slice clear)", asy
     expanded: false,
   });
 
-  // Auto-confirm the end.
-  const confirmEnd = jest.fn((onConfirm: () => void) => onConfirm());
-  const { getByTestId } = renderOverlay(adapters, confirmEnd);
+  const { getByTestId, queryByTestId } = renderOverlay(adapters);
   await waitFor(() => {
     expect(getByTestId("active-workout-bar")).toBeTruthy();
   });
 
+  // Long-press opens the styled end-confirm dialog (not an Alert).
   fireEvent(getByTestId("active-workout-bar"), "longPress");
-  expect(confirmEnd).toHaveBeenCalledTimes(1);
+  expect(getByTestId("end-confirm-dialog")).toBeTruthy();
+
+  // Confirm "End" → cancel + slice clear.
+  fireEvent.press(getByTestId("end-confirm-dialog-end"));
   await waitFor(() => {
     expect(useActiveWorkout.getState().active).toBeNull();
   });
   // cancelSessionCommand finalized the SQLite session → no longer active.
   expect(storage.getActiveSession(USER)).toBeNull();
+  expect(queryByTestId("end-confirm-dialog")).toBeNull();
 });
 
-it("uses the default Alert end-confirm when no confirmEnd is injected", async () => {
-  const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+it("long-press dialog dismisses via 'Keep going' without ending the session", async () => {
   const { adapters, storage, auth } = makeAdapters();
   signIn(auth);
   storage.cacheActiveSession(USER, makeSession());
 
-  const { getByTestId } = renderOverlay(adapters); // no confirmEnd → default
+  const { getByTestId, queryByTestId } = renderOverlay(adapters);
   await waitFor(() => {
     expect(getByTestId("active-workout-bar")).toBeTruthy();
   });
   fireEvent(getByTestId("active-workout-bar"), "longPress");
-  expect(alertSpy).toHaveBeenCalledWith(
-    "End workout?",
-    expect.stringContaining("won't be saved"),
-    expect.any(Array),
-  );
-  alertSpy.mockRestore();
+  expect(getByTestId("end-confirm-dialog")).toBeTruthy();
+
+  fireEvent.press(getByTestId("end-confirm-dialog-keep-going"));
+  expect(queryByTestId("end-confirm-dialog")).toBeNull();
+  // Session untouched.
+  expect(storage.getActiveSession(USER)).not.toBeNull();
 });
 
 it("falls back to 'Active Workout' when the session has no name", async () => {
