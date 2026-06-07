@@ -7,6 +7,7 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { safeEvaluateStreaks } from "../../streaks/evaluate";
+import { safeRecomputeVolume } from "../../progress/recompute";
 
 export const sessionsUpdateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -108,6 +109,7 @@ export const sessionsUpdateHandler = new Elysia()
             ? new Date(body.completedAt)
             : new Date();
         await safeEvaluateStreaks(userId, "workout_logged", completedTs);
+        await safeRecomputeVolume(userId);
       }
 
       return { data: session };

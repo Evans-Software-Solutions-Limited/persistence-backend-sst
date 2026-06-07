@@ -97,4 +97,22 @@ export const streakCron = new sst.aws.Cron("streak-sweep", {
   },
 });
 
+// ─── Nightly volume aggregation sweep (06-progress-goals / M4, Phase 06.4) ──
+//
+// 03:00 UTC daily — one hour after the streak sweep. Re-materialises every
+// active user's current-week total + current-month by-muscle volume into
+// weekly_volume_per_user / volume_by_muscle_per_user so Home + You reads stay
+// warm. On-session-complete recompute is the backup path (two-write
+// redundancy). Logs `[volume-cron:summary]`. See design.md § Backend audit.
+export const volumeCron = new sst.aws.Cron("volume-aggregation", {
+  schedule: "cron(0 3 * * ? *)",
+  job: {
+    handler: "microservices/core/src/volumeCron.handler",
+    timeout: "300 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+    },
+  },
+});
+
 // api.addAuthorizer

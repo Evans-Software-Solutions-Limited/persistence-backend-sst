@@ -13,6 +13,7 @@ import {
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
 import { safeEvaluateStreaks } from "../../streaks/evaluate";
+import { safeRecomputeVolume } from "../../progress/recompute";
 
 /**
  * POST /sessions/record
@@ -123,6 +124,9 @@ export const sessionsRecordHandler = new Elysia()
           ? new Date(payload.completedAt)
           : new Date();
         await safeEvaluateStreaks(userId, "workout_logged", completedTs);
+        // Backup volume recompute so Home/You weekly volume is fresh before
+        // the 03:00 cron (design.md § Risks — two-write redundancy).
+        await safeRecomputeVolume(userId);
       }
 
       ctx.set.status = 201;
