@@ -2,6 +2,43 @@
 
 > **Spec rewritten from scratch on 2026-05-28.** Pairs with `requirements.md`.
 
+> **Revised 2026-06-07 (Phase 09.1 reconciliation — authoritative over conflicting inline detail).**
+>
+> - **Domain `NotificationType` = the 9 shipped enum values** (`workout_assigned`,
+>   `friend_request`, `pt_request`, `pt_accepted`, `physio_request`,
+>   `physio_accepted`, `workout_reminder`, `goal_milestone`, `trainer_feedback`).
+>   The 11-type list under "Frontend — domain models" below is a forward-looking
+>   inventory; each streak / nutrition / on-behalf type is registered by its
+>   producing spec (06 / 13 / 10) via the enum-extension contract, NOT bulk-added
+>   here. `Notification.type` is widened to `WireNotificationType`
+>   (`NotificationType | (string & {})`) so an unknown/future server value flows
+>   to a **forward-compatible renderer** (generic fallback icon, still markable-read).
+> - **Wire ↔ domain mapping (adapter boundary).** Backend row fields
+>   `message` → `body`, `isRead`+`readAt` → `readAt` (null = unread),
+>   `data.deepLink` → `deepLink`. No DB column rename. `relatedEntityType` /
+>   `relatedEntityId` are carried through for 09.6 route derivation.
+> - **List endpoint is cursor (keyset).** The shipped handler was realigned
+>   offset → cursor to match the design below: `GET /notifications?cursor=&limit=`
+>   → `{ rows: AppNotification[], nextCursor: string | null, unreadCount }`,
+>   keyset on `(created_at, id)`, malformed cursor → 400. The mobile
+>   `NotificationsPage` mirrors this.
+> - **`CATEGORIES` + `DEFAULT_OPT_IN` reconciled to the 9 live types** (see the
+>   data-driven constants in `domain/models/notification-preferences.ts`):
+>   Workouts (`workout_assigned`, `workout_reminder`) · Goals (`goal_milestone`) ·
+>   Trainer & Physio (`pt_request`, `pt_accepted`, `physio_request`,
+>   `physio_accepted`, `trainer_feedback`) · Social (`friend_request`).
+>   Default opt-in = all 9 ON (matches the backend read-default; the
+>   `daily_nutrition_target_hit: false` default below applies once that type is
+>   registered by spec 13).
+> - **List renders with `FlatList`** (FlashList deferred to M11). Same list
+>   contract — mechanical swap later.
+> - **Adapter file layout.** The single `SSTApiAdapter` / `SQLiteStorageAdapter`
+>   classes implement the extended ports (matching the codebase's one-adapter-
+>   per-port convention); the separate `notifications.adapter.ts` /
+>   `notifications.sqlite.ts` files in the tree below are conceptual groupings,
+>   not separate classes. SQLite cache adds `cached_notifications` (100-row LRU,
+>   per the schema below) + a single-row `cached_notification_preferences`.
+
 ---
 
 ## Architecture overview

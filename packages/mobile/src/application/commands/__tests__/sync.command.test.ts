@@ -72,6 +72,80 @@ describe("processSyncQueue", () => {
     );
   });
 
+  it("resets the preferences cache to the server's merged column on flush", async () => {
+    // optimistic value pre-flush
+    storage.cacheNotificationPreferences({ goal_milestone: false });
+    storage.enqueueMutation({
+      entityType: "notification-preferences",
+      operation: "update",
+      payload: { goal_milestone: false },
+      endpoint: "/notifications/preferences",
+      method: "POST",
+    });
+
+    // server echoes the FULL merged column (RETURNING), reconciled
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { goal_milestone: false, workout_assigned: true },
+      }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedNotificationPreferences()).toEqual({
+      goal_milestone: false,
+      workout_assigned: true,
+    });
+  });
+
+  it("keeps the optimistic preferences value when the response carries no data", async () => {
+    storage.cacheNotificationPreferences({ goal_milestone: false });
+    storage.enqueueMutation({
+      entityType: "notification-preferences",
+      operation: "update",
+      payload: { goal_milestone: false },
+      endpoint: "/notifications/preferences",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}), // no `data` key
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedNotificationPreferences()).toEqual({
+      goal_milestone: false,
+    });
+  });
+
+  it("keeps the optimistic preferences value if the response capture fails", async () => {
+    storage.cacheNotificationPreferences({ goal_milestone: false });
+    storage.enqueueMutation({
+      entityType: "notification-preferences",
+      operation: "update",
+      payload: { goal_milestone: false },
+      endpoint: "/notifications/preferences",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error("not json");
+      },
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    // POST succeeded → entry completes; cache keeps its optimistic value
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedNotificationPreferences()).toEqual({
+      goal_milestone: false,
+    });
+  });
+
   it("swaps a custom exercise's local id to the server id on create success", async () => {
     storage.saveCustomExercise(customExercise("local-abc"));
     storage.enqueueMutation({

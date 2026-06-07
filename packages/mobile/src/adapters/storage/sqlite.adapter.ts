@@ -12,6 +12,9 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { Notification } from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
+import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -272,8 +275,38 @@ export class SQLiteStorageAdapter implements StoragePort {
         cached_at TEXT NOT NULL
       );
 
+      -- 09: notifications cache (100-row LRU). Not user-scoped — the
+      -- cache is wiped on sign-out via clearAll, so at most one user's
+      -- rows live here at a time. Matches design.md § SQLite cache
+      -- schema (deep_link + data_json carried for offline deep-link
+      -- dispatch; related_entity_* added so 09.6 can derive a route when
+      -- data.deepLink is absent). read_at null = unread.
+      CREATE TABLE IF NOT EXISTS cached_notifications (
+        id                  TEXT PRIMARY KEY,
+        type                TEXT NOT NULL,
+        title               TEXT NOT NULL,
+        body                TEXT NOT NULL,
+        deep_link           TEXT,
+        data_json           TEXT NOT NULL,
+        related_entity_type TEXT,
+        related_entity_id   TEXT,
+        read_at             TEXT,
+        created_at          TEXT NOT NULL
+      );
+
+      -- 09: per-type notification opt-in map for offline reads + optimistic
+      -- toggles. Single row (id = 1); prefs_json is the JSON-serialised
+      -- NotificationPreferences. Reset to the server's merged column when
+      -- the sync queue flushes the POST.
+      CREATE TABLE IF NOT EXISTS cached_notification_preferences (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        prefs_json TEXT NOT NULL,
+        synced_at  TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
+      CREATE INDEX IF NOT EXISTS idx_cached_notifications_created ON cached_notifications(created_at DESC);
     `);
 
     // M10.6 migration for installs that predate this milestone.
@@ -883,6 +916,130 @@ export class SQLiteStorageAdapter implements StoragePort {
     db.runSync(`DELETE FROM cached_dashboard WHERE user_id = ?`, [userId]);
   }
 
+  // -- Notifications Cache (09) --
+
+  getCachedNotifications(limit = 100): Notification[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT id, type, title, body, deep_link, data_json,
+              related_entity_type, related_entity_id, read_at, created_at
+       FROM cached_notifications
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+      [limit],
+    ) as CachedNotificationRow[];
+    return rows.map(rowToNotification);
+  }
+
+  cacheNotifications(notifications: Notification[]): void {
+    const db = this.getDb();
+    // Upsert each row (server-truth wins on conflict), then prune to the
+    // newest 100 by created_at — the design.md § SQLite cache LRU bound.
+    db.withTransactionSync(() => {
+      for (const n of notifications) {
+        db.runSync(
+          `INSERT INTO cached_notifications
+             (id, type, title, body, deep_link, data_json,
+              related_entity_type, related_entity_id, read_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             type = excluded.type,
+             title = excluded.title,
+             body = excluded.body,
+             deep_link = excluded.deep_link,
+             data_json = excluded.data_json,
+             related_entity_type = excluded.related_entity_type,
+             related_entity_id = excluded.related_entity_id,
+             read_at = excluded.read_at,
+             created_at = excluded.created_at`,
+          [
+            n.id,
+            n.type,
+            n.title,
+            n.body,
+            n.deepLink,
+            JSON.stringify(n.data ?? {}),
+            n.relatedEntityType,
+            n.relatedEntityId,
+            n.readAt,
+            n.createdAt,
+          ],
+        );
+      }
+      db.runSync(
+        `DELETE FROM cached_notifications
+         WHERE id NOT IN (
+           SELECT id FROM cached_notifications
+           ORDER BY created_at DESC, id DESC
+           LIMIT 100
+         )`,
+      );
+    });
+  }
+
+  getCachedUnreadCount(): number {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT COUNT(*) AS total FROM cached_notifications WHERE read_at IS NULL`,
+    ) as { total: number }[];
+    return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Optimistically mark a cached row read. Uses COALESCE semantics —
+   * only stamps `read_at` when it's currently null — to mirror the
+   * server's `COALESCE(read_at, NOW())` so an offline mark + later
+   * replay preserves the original read moment (locked decision #3).
+   */
+  markCachedNotificationRead(id: string, readAt: string): void {
+    const db = this.getDb();
+    db.runSync(
+      `UPDATE cached_notifications
+       SET read_at = COALESCE(read_at, ?)
+       WHERE id = ?`,
+      [readAt, id],
+    );
+  }
+
+  markAllCachedNotificationsRead(readAt: string): void {
+    const db = this.getDb();
+    db.runSync(
+      `UPDATE cached_notifications
+       SET read_at = COALESCE(read_at, ?)
+       WHERE read_at IS NULL`,
+      [readAt],
+    );
+  }
+
+  getCachedNotificationPreferences(): NotificationPreferences | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT prefs_json FROM cached_notification_preferences WHERE id = 1`,
+    ) as { prefs_json: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    try {
+      return normalizePreferences(
+        JSON.parse(row.prefs_json) as Record<string, unknown>,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  cacheNotificationPreferences(preferences: NotificationPreferences): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_notification_preferences (id, prefs_json, synced_at)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         prefs_json = excluded.prefs_json,
+         synced_at = excluded.synced_at`,
+      [JSON.stringify(preferences), syncedAt],
+    );
+  }
+
   // -- Profile-Page Cache (M6) --
 
   getCachedProfilePage(userId: string): CachedProfilePage | null {
@@ -1369,8 +1526,46 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM reference_lists;
       DELETE FROM cached_dashboard;
       DELETE FROM cached_profile_page;
+      DELETE FROM cached_notifications;
+      DELETE FROM cached_notification_preferences;
     `);
   }
+}
+
+/** Raw `cached_notifications` row as stored (snake_case columns). */
+type CachedNotificationRow = {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  deep_link: string | null;
+  data_json: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+/** Re-hydrate a cached row into the domain `Notification`. */
+function rowToNotification(row: CachedNotificationRow): Notification {
+  let data: Record<string, unknown> = {};
+  try {
+    data = JSON.parse(row.data_json) as Record<string, unknown>;
+  } catch {
+    data = {};
+  }
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    deepLink: row.deep_link,
+    data,
+    relatedEntityType: row.related_entity_type,
+    relatedEntityId: row.related_entity_id,
+    readAt: row.read_at,
+    createdAt: row.created_at,
+  };
 }
 
 type ActiveSessionRow = {

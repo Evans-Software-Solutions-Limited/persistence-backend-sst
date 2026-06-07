@@ -10,13 +10,17 @@
 
 ---
 
-## Phase 09.1 — Domain + adapters (1 PR)
+## Phase 09.1 — Domain + adapters (1 PR) — ✅ shipped 2026-06-07
 
-- [ ] **T-09.1.1** Domain models in `packages/mobile/src/domain/models/`: `Notification`, `NotificationPreferences`, `NotificationType` union. Implements requirements STORY-007.
-- [ ] **T-09.1.2** API port extensions in `domain/ports/api.port.ts`.
-- [ ] **T-09.1.3** API adapter `adapters/api/notifications.adapter.ts` — 6 endpoint wrappers.
-- [ ] **T-09.1.4** SQLite cache schema + repository per `design.md § SQLite cache schema`. 100-row LRU.
-- [ ] **T-09.1.5** Sync queue handlers for mark-read + update-preferences + mark-all-read.
+> Reconciled to the shipped backend + V2 conventions (see the Revised
+> 2026-06-07 banners in requirements.md / design.md). Also realigned the
+> backend list endpoint offset → cursor (in-scope backend diff).
+
+- [x] **T-09.1.1** Domain models in `packages/mobile/src/domain/models/`: `Notification` + `WireNotificationType`, `NotificationPreferences`, `NotificationType` union (9 producer-owned types), `CATEGORIES`/`DEFAULT_OPT_IN`. Implements requirements STORY-007.
+- [x] **T-09.1.2** API port extensions in `domain/ports/api.port.ts` (6 methods + wire/input/result types).
+- [x] **T-09.1.3** 6 endpoint wrappers on `SSTApiAdapter` (one-adapter-per-port convention) + `mapApiNotification` wire→domain mapping.
+- [x] **T-09.1.4** SQLite cache (`cached_notifications` 100-row LRU + `cached_notification_preferences`) + StoragePort methods, per `design.md § SQLite cache schema`.
+- [x] **T-09.1.5** Sync-queue commands for mark-read + mark-all-read + update-preferences (+ preferences response-capture branch in `sync.command.ts`).
 
 ## Phase 09.2 — Push token registration + listener (1 PR)
 

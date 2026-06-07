@@ -7,6 +7,8 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { Notification } from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -263,6 +265,48 @@ export interface StoragePort {
    * fresh fetch instead of showing the pre-mutation snapshot.
    */
   invalidateDashboard(userId: string): void;
+
+  // -- Notifications Cache (09) --
+  /**
+   * Read cached notifications, newest-first, capped at `limit` (default
+   * 100 — the LRU bound). Powers the offline-first list render before
+   * the background refresh. Not user-scoped: the cache holds one user's
+   * rows at a time (wiped on sign-out via clearAll).
+   *
+   * Spec: specs/09-notifications-social/design.md § SQLite cache schema
+   */
+  getCachedNotifications(limit?: number): Notification[];
+  /**
+   * Upsert a batch of notifications (server-truth wins on id conflict),
+   * then prune to the newest 100 by `created_at` (LRU). Called by the
+   * list refresh write-through.
+   */
+  cacheNotifications(notifications: Notification[]): void;
+  /**
+   * Count cached unread rows (`read_at IS NULL`). Offline fallback for
+   * the bell badge; the server-authoritative count comes from the list
+   * response when online.
+   */
+  getCachedUnreadCount(): number;
+  /**
+   * Optimistically mark one cached row read. COALESCE semantics — only
+   * stamps `read_at` when currently null — so an offline mark then a
+   * later sync replay preserves the original moment (locked decision #3).
+   */
+  markCachedNotificationRead(id: string, readAt: string): void;
+  /** Optimistically mark every cached unread row read (COALESCE). */
+  markAllCachedNotificationsRead(readAt: string): void;
+  /**
+   * Read the cached per-type opt-in map, or null when nothing is cached
+   * yet. Normalised to known types on read.
+   */
+  getCachedNotificationPreferences(): NotificationPreferences | null;
+  /**
+   * Write-through the per-type opt-in map (single row). Called on
+   * preferences fetch, on optimistic toggle, and on sync-flush reset to
+   * the server's merged column.
+   */
+  cacheNotificationPreferences(preferences: NotificationPreferences): void;
 
   // -- Profile-Page Cache (M6) --
   /**
