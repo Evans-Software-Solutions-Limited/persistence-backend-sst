@@ -40,4 +40,21 @@ export interface NotificationsPort {
    * count off it. Returns an unsubscribe function.
    */
   addNotificationReceivedListener(listener: () => void): () => void;
+
+  /**
+   * Subscribe to notification taps (background + foreground responses).
+   * The listener receives the tapped notification's `data.deepLink`
+   * (or null when absent). Used by `useNotificationDeepLink` (09.6) to
+   * route. Returns an unsubscribe function.
+   */
+  addNotificationResponseListener(
+    listener: (deepLink: string | null) => void,
+  ): () => void;
+
+  /**
+   * The `data.deepLink` of the notification that cold-launched the app
+   * (tapped from a killed state), or null when the app wasn't opened from
+   * a notification. Read once on launch for cold-start dispatch.
+   */
+  getLastNotificationResponseDeepLink(): Promise<string | null>;
 }

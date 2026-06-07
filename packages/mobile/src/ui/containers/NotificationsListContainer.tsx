@@ -7,6 +7,7 @@ import {
   refreshNotifications,
 } from "@/application/notifications/queries/list-notifications.query";
 import { groupNotificationsByDate } from "@/application/notifications/grouping";
+import { resolveNotificationRoute } from "@/application/notifications/deep-link";
 import { markNotificationReadCommand } from "@/application/notifications/commands/mark-read.command";
 import { markAllNotificationsReadCommand } from "@/application/notifications/commands/mark-all-read.command";
 import { NotificationsListPresenter } from "@/ui/presenters/NotificationsListPresenter";
@@ -23,8 +24,6 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  * Spec: specs/09-notifications-social/design.md § NotificationsListPresenter
  *       requirements.md STORY-002
  */
-
-const HOME_ROUTE = "/(app)/(tabs)";
 
 export function NotificationsListContainer() {
   const { api, storage } = useAdapters();
@@ -92,10 +91,9 @@ export function NotificationsListContainer() {
     (notification: Notification) => {
       markNotificationReadCommand(storage, notification.id);
       reread();
-      // 09.6 hardens this with the 14-navigation redirect map + a typed
-      // fallback; for now route to the deep link when present, else Home.
-      const target = notification.deepLink ?? HOME_ROUTE;
-      router.push(target as never);
+      // Resolve the deep link (legacy remap + Home fallback for
+      // unknown/absent links) via the shared 09.6 resolver.
+      router.push(resolveNotificationRoute(notification.deepLink) as never);
     },
     [storage, reread, router],
   );

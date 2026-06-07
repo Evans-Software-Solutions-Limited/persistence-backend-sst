@@ -3,6 +3,7 @@ import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessi
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
@@ -43,6 +44,9 @@ export default function AppLayout() {
   // own `processSyncQueue` call so freshly-unblocked entries land
   // without waiting for the next foreground tick.
   useAutoRetryOnUpgrade();
+  // 09.6: route notification taps (cold-start + background) to their deep
+  // link. Mounted in the authenticated tree so router targets resolve.
+  useNotificationDeepLink();
 
   return (
     <ExerciseFiltersProvider>

@@ -63,6 +63,12 @@ class StubPushNotifications implements NotificationsPort {
   emitReceived() {
     this.receivedListeners.forEach((l) => l());
   }
+  addNotificationResponseListener() {
+    return () => {};
+  }
+  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+    return null;
+  }
 }
 
 function makeAdapters(

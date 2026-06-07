@@ -61,6 +61,8 @@ function makeAdapters(
     cancelLocalNotification: jest.fn(async () => undefined),
     addPushTokenListener: jest.fn(() => () => {}),
     addNotificationReceivedListener: jest.fn(() => () => {}),
+    addNotificationResponseListener: jest.fn(() => () => {}),
+    getLastNotificationResponseDeepLink: jest.fn(async () => null),
   };
 
   return {

@@ -61,6 +61,12 @@ class StubNotifications implements NotificationsPort {
   addNotificationReceivedListener() {
     return () => {};
   }
+  addNotificationResponseListener() {
+    return () => {};
+  }
+  async getLastNotificationResponseDeepLink() {
+    return null;
+  }
 }
 
 function makeWrapper(notifications: NotificationsPort) {

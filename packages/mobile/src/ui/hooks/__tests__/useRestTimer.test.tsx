@@ -55,6 +55,12 @@ class StubNotifications implements NotificationsPort {
   addNotificationReceivedListener(): () => void {
     return () => {};
   }
+  addNotificationResponseListener(): () => void {
+    return () => {};
+  }
+  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+    return null;
+  }
 }
 
 // jest.useFakeTimers() blocks setImmediate; flush microtasks via real

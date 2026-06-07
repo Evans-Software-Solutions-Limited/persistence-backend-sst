@@ -22,6 +22,14 @@ import type {
 } from "@/domain/ports/notifications.port";
 import { fail, ok, type Result } from "@/shared/errors";
 
+/** Pull `data.deepLink` off a notification response, or null. */
+function extractDeepLink(
+  response: Notifications.NotificationResponse | null,
+): string | null {
+  const deepLink = response?.notification?.request?.content?.data?.deepLink;
+  return typeof deepLink === "string" ? deepLink : null;
+}
+
 export class ExpoNotificationsAdapter implements NotificationsPort {
   async requestPermissions(): Promise<
     Result<"granted" | "denied", NotificationError>
@@ -80,6 +88,22 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
       listener();
     });
     return () => sub.remove();
+  }
+
+  addNotificationResponseListener(
+    listener: (deepLink: string | null) => void,
+  ): () => void {
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        listener(extractDeepLink(response));
+      },
+    );
+    return () => sub.remove();
+  }
+
+  async getLastNotificationResponseDeepLink(): Promise<string | null> {
+    const response = await Notifications.getLastNotificationResponseAsync();
+    return extractDeepLink(response);
   }
 
   async scheduleLocalNotification(

@@ -54,12 +54,14 @@
 - [ ] **T-09.5.3** `useGetUnreadCount` hook with `staleTime: 30s` + refresh-on-focus.
 - [ ] **T-09.5.4** `9+` overflow display for ≥10.
 
-## Phase 09.6 — Deep-link dispatch wiring (1 PR)
+## Phase 09.6 — Deep-link dispatch wiring — ✅ shipped 2026-06-07
 
-- [ ] **T-09.6.1** Tap handler in `<NotificationRowPresenter>` calls mark-read THEN `router.push(deepLink)`. Implements STORY-005.
-- [ ] **T-09.6.2** Push response listener (cold-start + background tap) routes per `data.deepLink`.
-- [ ] **T-09.6.3** Unknown deep-link falls back to Home.
-- [ ] **T-09.6.4** Integration test for `useLastNotificationResponse` cold-start dispatch.
+> No central `14-navigation` redirect map exists in the codebase, so the small notification redirect table lives in `application/notifications/deep-link.ts` (`resolveNotificationRoute`). Cold-start uses the port's `getLastNotificationResponseDeepLink()` (async getter) rather than the `useLastNotificationResponse` expo hook — same intent, testable through `NotificationsPort`.
+
+- [x] **T-09.6.1** In-app row tap (`NotificationsListContainer.onTap`) marks read THEN `router.push(resolveNotificationRoute(deepLink))`. STORY-005 AC 5.2.
+- [x] **T-09.6.2** Push response listener (cold-start + background/foreground tap) via `useNotificationDeepLink` (mounted in `(app)/_layout`) → routes per `data.deepLink`. AC 5.3.
+- [x] **T-09.6.3** Unknown / absent deep-link → Home fallback (`resolveNotificationRoute`). AC 5.5.
+- [x] **T-09.6.4** Cold-start dispatch covered in `useNotificationDeepLink.test` (launching deepLink → push; normal launch → no nav).
 
 ## Phase 09.7 — Offline + cache verification (1 PR)
 

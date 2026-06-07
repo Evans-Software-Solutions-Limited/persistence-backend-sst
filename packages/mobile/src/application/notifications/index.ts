@@ -13,6 +13,14 @@ export {
 } from "./queries/preferences.query";
 
 export {
+  type NotificationGroup,
+  type NotificationGroupLabel,
+  groupNotificationsByDate,
+  relativeTime,
+} from "./grouping";
+export { HOME_ROUTE, resolveNotificationRoute } from "./deep-link";
+
+export {
   type Clock,
   markNotificationReadCommand,
 } from "./commands/mark-read.command";
