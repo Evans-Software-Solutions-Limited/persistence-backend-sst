@@ -37,13 +37,15 @@
 - [x] **T-09.3.4** Route `(app)/notifications.tsx` + Stack registration.
 - [x] **T-09.3.5** Empty state copy ("No notifications yet" / "Check back after a workout 💪").
 
-## Phase 09.4 — Preferences screen (1 PR)
+## Phase 09.4 — Preferences screen — ✅ shipped 2026-06-07
 
-- [ ] **T-09.4.1** Author `<NotificationPreferencesPresenter>` per `design.md`. Categories grouped via `<Section>` + `<DrawerRow>` with Switch trailing. Implements STORY-003.
-- [ ] **T-09.4.2** Author `<NotificationPreferencesContainer>` wiring `useGetPreferences` + `useUpdatePreferences`. Optimistic toggle handler.
-- [ ] **T-09.4.3** First-time-open: write `DEFAULT_OPT_IN` to backend.
-- [ ] **T-09.4.4** Permission-denial banner.
-- [ ] **T-09.4.5** Route `(app)/profile/notifications.tsx`.
+> Reconciliation (Revised 2026-06-07): design.md AC 3.4 says "DrawerRow with switch", but DrawerRow renders a mandatory chevron (implies navigation — wrong for a toggle). Built a DrawerRow-style spec-local `NotificationPreferenceRow` (same icon-tile + label, Switch trailing, no chevron) in the notifications lane rather than editing the shared primitive (avoids cross-stream collision).
+
+- [x] **T-09.4.1** `<NotificationPreferencesPresenter>` — categories grouped via `<Section>` + `NotificationPreferenceRow` (Switch trailing). 08-shell (HeaderBar + back + ScrollView). STORY-003.
+- [x] **T-09.4.2** `<NotificationPreferencesContainer>` — cache-first `getPreferencesQuery` + `refreshPreferences`; optimistic toggle via `updateNotificationPreferencesCommand`.
+- [x] **T-09.4.3** First-time-open writes `DEFAULT_OPT_IN` (optimistic + enqueued POST; the merged column reconciles on flush — no GET-clobber).
+- [x] **T-09.4.4** Permission-denial banner (tap → `Linking.openSettings()`).
+- [x] **T-09.4.5** Route `(app)/profile/notifications.tsx` + Stack registration.
 
 ## Phase 09.5 — Home bell badge (1 PR)
 

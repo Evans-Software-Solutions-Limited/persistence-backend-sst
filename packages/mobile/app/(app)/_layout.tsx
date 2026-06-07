@@ -56,6 +56,10 @@ export default function AppLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="profile/notifications"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
         <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
         <Stack.Screen
