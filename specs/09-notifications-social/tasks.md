@@ -71,28 +71,30 @@
 - [x] **T-09.7.2** Mark-read offline → optimistic local COALESCE + queue `{isRead:true}` → reconnect flush → replay-idempotent (no re-send) → offline-tap moment preserved client-side. (Server records first-flush moment + COALESCE replay-idempotency — it only accepts `{isRead:true}`; reconciled in requirements banner pt 7.)
 - [x] **T-09.7.3** Preferences toggle offline → optimistic merge + queue partial → reconnect flush → cache reset to the server's full merged column.
 
-## Phase 09.8 — Cleanup + verification
+## Phase 09.8 — Cleanup + verification — ✅ shipped 2026-06-07 (T-09.8.4 device pass pending)
 
-- [ ] **T-09.8.1** Run `01-design-system § Codemod` against new files.
-- [ ] **T-09.8.2** `bun run typecheck`, `bun run lint`, `bun run build`, `bun run test:unit` — all green.
-- [ ] **T-09.8.3** 90% coverage on touched files.
-- [ ] **T-09.8.4** Manual e2e:
-  - Trigger streak milestone via test session completion → assert push delivered + bell badge increments + list row appears.
-  - Open Preferences → toggle Streaks off → assert subsequent test trigger does NOT deliver.
+- [x] **T-09.8.1** Design-system check: new notifications files use only foundation/composite primitives + Tamagui/RN — **zero** legacy-component imports. (No codemod script exists in-repo; verified by grep.)
+- [x] **T-09.8.2** Full repo gate green from the worktree: `typecheck` (7 tasks), `lint` (5), `build` (12), `test:unit` (18 tasks; mobile 2578 passing, core 1040 passing).
+- [x] **T-09.8.3** 90% coverage on touched files (every new application/UI file ≥95%; most 100%).
+- [ ] **T-09.8.4** Manual on-device e2e — **pending Brad's device pass** (cannot drive a simulator from here). Adjusted to the shipped 9-type taxonomy:
+  - Trigger a `workout_assigned` (trainer assigns a workout) → assert push delivered + (after 09.5) bell badge increments + list row appears.
+  - Open Preferences → toggle "Workouts" off → assert subsequent assign does NOT deliver.
   - Tap notification in list → assert mark-read + correct deep-link route.
-  - Offline notifications browse → assert cached list renders.
+  - Airplane-mode → open Notifications → assert cached list renders; toggle a pref offline → reconnect → assert it persists.
 
 ---
 
 ## Acceptance gate (notifications phase complete)
 
-- [ ] All 8 phases shipped as PRs.
-- [ ] Backend (PR #81) consumed without modification.
-- [ ] Push notifications deliver + tap-routes correctly.
-- [ ] Bell badge accurate.
-- [ ] Preferences toggle persists across cold-starts.
-- [ ] Offline list browse works.
-- [ ] Adding a new notification type follows the locked-decision-10 procedure (single PR with cross-cuts + spec + migration).
+> Shipped as a single rolling PR (#104) per Brad's call, not one PR per phase.
+
+- [x] Phases 09.1–09.4 + 09.6 + 09.7 + 09.8 shipped on PR #104. **09.5 (Home bell badge) deferred** until Stream C's HomePresenter re-skin lands (the HomeBell mounts inside it).
+- [~] Backend (PR #81) consumed — 5 endpoints unmodified; GET /notifications realigned offset→cursor (in-scope per Brad's steer, reconciled toward design.md).
+- [~] Push deliver + tap-routes — registration + cold-start/background dispatch covered by tests; on-device confirmation pending (T-09.8.4).
+- [ ] Bell badge accurate — **09.5 deferred** (badge presenter mounts in Stream C's Home).
+- [~] Preferences persist across cold-starts — offline queue + merge proven in 09.7; device pass pending.
+- [x] Offline list browse works — verified (09.7.1).
+- [x] Adding a new notification type follows locked-decision-10 (data-driven `NOTIFICATION_TYPES` + `CATEGORIES` + `notificationVisual` — one-line additive; producer-owned per the Revised 2026-06-07 reconciliation).
 
 ---
 
