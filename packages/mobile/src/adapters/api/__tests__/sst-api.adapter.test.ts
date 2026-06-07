@@ -620,6 +620,41 @@ describe("SSTApiAdapter.createSubscription (M7 / M10)", () => {
     expect(result.error.message).toContain("free tier");
     expect(result.error.status).toBe(400);
   });
+
+  it("maps input.idempotencyKey → idempotency_key on the wire body (spec 17)", async () => {
+    const mock = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            requires_action: false,
+            subscription_id: "us_idem",
+            stripe_subscription_id: "sub_idem",
+            trial_ends_at: null,
+            next_billing_date: null,
+            payment_status: "active",
+            change_type: "new",
+            scheduled: false,
+            effective_at: null,
+            is_trial: false,
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const adapter = new SSTApiAdapter();
+    await adapter.createSubscription({
+      tierName: "premium",
+      billingCycle: "monthly",
+      paymentMethodId: "pm_card",
+      useTrial: false,
+      idempotencyKey: "sub-create-123",
+    });
+
+    const [, init] = mock.mock.calls[0];
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body.idempotency_key).toBe("sub-create-123");
+  });
 });
 
 describe("SSTApiAdapter.cancelSubscription (M7 / M10)", () => {
@@ -688,6 +723,33 @@ describe("SSTApiAdapter.cancelSubscription (M7 / M10)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("not_found");
+  });
+
+  it("maps input.idempotencyKey → idempotency_key on the wire body (spec 17)", async () => {
+    const mock = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            cancelled_at: "2026-05-21T12:00:00.000Z",
+            subscription_ends_at: "2026-06-01T00:00:00.000Z",
+            message: "ok",
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const adapter = new SSTApiAdapter();
+    await adapter.cancelSubscription("us_abc", {
+      cancelImmediately: false,
+      idempotencyKey: "sub-cancel-123",
+    });
+
+    const [, init] = mock.mock.calls[0];
+    expect(JSON.parse((init as { body: string }).body)).toEqual({
+      cancel_immediately: false,
+      idempotency_key: "sub-cancel-123",
+    });
   });
 });
 

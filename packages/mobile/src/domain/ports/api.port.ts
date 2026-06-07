@@ -681,6 +681,14 @@ export type CreateSubscriptionInput = {
   paymentMethodId?: string;
   useTrial: boolean;
   platform?: "ios" | "android";
+  /**
+   * Optional client idempotency token (spec 17 / Phase A). One token per
+   * Subscribe attempt; the backend uses it as the base for every outbound
+   * Stripe call so a transport retry of the same submission can't create a
+   * duplicate subscription / charge. Omitting it is safe — the backend falls
+   * back to a deterministic server-side key.
+   */
+  idempotencyKey?: string;
 };
 
 /**
@@ -691,6 +699,12 @@ export type CreateSubscriptionInput = {
  */
 export type CancelSubscriptionInput = {
   cancelImmediately?: boolean;
+  /**
+   * Optional client idempotency token (spec 17 / Phase A). One token per
+   * Cancel confirmation; lets a retried cancel dedupe at the gateway.
+   * Omitting it is safe — the backend falls back to a deterministic key.
+   */
+  idempotencyKey?: string;
 };
 
 /**

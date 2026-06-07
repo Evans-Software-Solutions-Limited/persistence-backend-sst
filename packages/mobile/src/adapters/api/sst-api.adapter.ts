@@ -848,6 +848,9 @@ export class SSTApiAdapter implements ApiPort {
     if (input.platform !== undefined) {
       body.platform = input.platform;
     }
+    if (input.idempotencyKey !== undefined) {
+      body.idempotency_key = input.idempotencyKey;
+    }
     const result = await this.request<WireCreateSubscriptionResponse>(
       "/subscriptions",
       {
@@ -869,6 +872,9 @@ export class SSTApiAdapter implements ApiPort {
     const body: Record<string, unknown> = {};
     if (input.cancelImmediately !== undefined) {
       body.cancel_immediately = input.cancelImmediately;
+    }
+    if (input.idempotencyKey !== undefined) {
+      body.idempotency_key = input.idempotencyKey;
     }
     const result = await this.request<WireCancelSubscriptionResponse>(
       `/subscriptions/${subscriptionId}/cancel`,
