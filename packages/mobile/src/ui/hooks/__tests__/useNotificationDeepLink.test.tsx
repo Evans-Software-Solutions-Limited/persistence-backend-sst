@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import type {
   NotificationError,
+  NotificationResponseInfo,
   NotificationsPort,
 } from "@/domain/ports/notifications.port";
 import { ok, type Result } from "@/shared/errors";
@@ -10,9 +11,9 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useNotificationDeepLink } from "@/ui/hooks/useNotificationDeepLink";
 
 class StubNotifications implements NotificationsPort {
-  // null = normal cold launch (no tap); { deepLink } = launched by a tap.
-  coldStart: { deepLink: string | null } | null = null;
-  responseListeners: ((d: string | null) => void)[] = [];
+  // null = normal cold launch (no tap); { id, deepLink } = launched by a tap.
+  coldStart: NotificationResponseInfo | null = null;
+  responseListeners: ((r: NotificationResponseInfo) => void)[] = [];
 
   async requestPermissions(): Promise<
     Result<"granted" | "denied", NotificationError>
@@ -35,7 +36,9 @@ class StubNotifications implements NotificationsPort {
   addNotificationReceivedListener() {
     return () => {};
   }
-  addNotificationResponseListener(listener: (d: string | null) => void) {
+  addNotificationResponseListener(
+    listener: (r: NotificationResponseInfo) => void,
+  ) {
     this.responseListeners.push(listener);
     return () => {
       this.responseListeners = this.responseListeners.filter(
@@ -46,8 +49,8 @@ class StubNotifications implements NotificationsPort {
   async getLastNotificationResponse() {
     return this.coldStart;
   }
-  emitResponse(d: string | null) {
-    this.responseListeners.forEach((l) => l(d));
+  emitResponse(response: NotificationResponseInfo) {
+    this.responseListeners.forEach((l) => l(response));
   }
 }
 
@@ -76,7 +79,7 @@ beforeEach(() => mockPush.mockClear());
 describe("useNotificationDeepLink", () => {
   it("routes the cold-start notification's deep link once (legacy remap), and not again on re-render", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = { deepLink: "/progress" };
+    notifications.coldStart = { id: "cold-1", deepLink: "/progress" };
     // No explicit arg → exercises the `enabled = true` default.
     const { rerender } = renderHook(() => useNotificationDeepLink(), {
       wrapper: wrapperFor(notifications),
@@ -94,7 +97,7 @@ describe("useNotificationDeepLink", () => {
 
   it("cancels the in-flight cold-start read on unmount", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = { deepLink: "/progress" };
+    notifications.coldStart = { id: "cold-1", deepLink: "/progress" };
     const { unmount } = renderHook(() => useNotificationDeepLink(true), {
       wrapper: wrapperFor(notifications),
     });
@@ -123,7 +126,7 @@ describe("useNotificationDeepLink", () => {
     // distinct from a normal launch (coldStart === null) and must route to
     // Home, not no-op.
     const notifications = new StubNotifications();
-    notifications.coldStart = { deepLink: null };
+    notifications.coldStart = { id: "cold-2", deepLink: null };
     renderHook(() => useNotificationDeepLink(true), {
       wrapper: wrapperFor(notifications),
     });
@@ -138,7 +141,12 @@ describe("useNotificationDeepLink", () => {
     await waitFor(() =>
       expect(notifications.responseListeners).toHaveLength(1),
     );
-    act(() => notifications.emitResponse("/(app)/notifications"));
+    act(() =>
+      notifications.emitResponse({
+        id: "tap-1",
+        deepLink: "/(app)/notifications",
+      }),
+    );
     expect(mockPush).toHaveBeenCalledWith("/(app)/notifications");
   });
 
@@ -150,13 +158,39 @@ describe("useNotificationDeepLink", () => {
     await waitFor(() =>
       expect(notifications.responseListeners).toHaveLength(1),
     );
-    act(() => notifications.emitResponse(null));
+    act(() => notifications.emitResponse({ id: "tap-2", deepLink: null }));
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("dispatches a cold-start tap only ONCE even if the listener re-fires it", async () => {
+    // expo can surface the launching tap via BOTH the cold-start read and
+    // the mounted response listener — the id-keyed dedup must collapse them
+    // into a single navigation.
+    const notifications = new StubNotifications();
+    notifications.coldStart = {
+      id: "dupe-1",
+      deepLink: "/(app)/notifications",
+    };
+
+    renderHook(() => useNotificationDeepLink(true), {
+      wrapper: wrapperFor(notifications),
+    });
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/(app)/notifications"),
+    );
+    // The listener re-delivers the SAME launching notification (same id).
+    act(() =>
+      notifications.emitResponse({
+        id: "dupe-1",
+        deepLink: "/(app)/notifications",
+      }),
+    );
+    expect(mockPush).toHaveBeenCalledTimes(1);
   });
 
   it("is a no-op when disabled", async () => {
     const notifications = new StubNotifications();
-    notifications.coldStart = { deepLink: "/progress" };
+    notifications.coldStart = { id: "cold-1", deepLink: "/progress" };
     renderHook(() => useNotificationDeepLink(false), {
       wrapper: wrapperFor(notifications),
     });

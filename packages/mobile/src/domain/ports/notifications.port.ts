@@ -43,12 +43,13 @@ export interface NotificationsPort {
 
   /**
    * Subscribe to notification taps (background + foreground responses).
-   * The listener receives the tapped notification's `data.deepLink`
-   * (or null when absent). Used by `useNotificationDeepLink` (09.6) to
-   * route. Returns an unsubscribe function.
+   * The listener receives the tapped notification's `id` + `data.deepLink`
+   * (deepLink null when absent). Used by `useNotificationDeepLink` (09.6)
+   * to route — the `id` lets the hook dedupe against the cold-start path.
+   * Returns an unsubscribe function.
    */
   addNotificationResponseListener(
-    listener: (deepLink: string | null) => void,
+    listener: (response: NotificationResponseInfo) => void,
   ): () => void;
 
   /**
@@ -63,7 +64,12 @@ export interface NotificationsPort {
   getLastNotificationResponse(): Promise<NotificationResponseInfo | null>;
 }
 
-/** The launching notification's deep link (null when the payload omitted it). */
+/**
+ * A tapped notification's identity + deep link. `id` is the platform
+ * notification identifier — used to dedupe the cold-start read against the
+ * response listener (both can surface the SAME launching tap).
+ */
 export type NotificationResponseInfo = {
+  id: string;
   deepLink: string | null;
 };

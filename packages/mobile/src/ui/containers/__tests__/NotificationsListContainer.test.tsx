@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -38,13 +38,33 @@ MockPresenter.mockImplementation((props) => (
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, back: mockBack }),
-}));
+jest.mock("expo-router", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  return {
+    useRouter: () => ({ push: mockPush, back: mockBack }),
+    // Run the focus callback like a mount effect (no real navigator in jest).
+    useFocusEffect: (cb: () => void | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
+
+/** Controllable notifications stub — captures the received listener. */
+function makeNotificationsStub() {
+  const received: (() => void)[] = [];
+  return {
+    addNotificationReceivedListener: jest.fn((l: () => void) => {
+      received.push(l);
+      return () => {};
+    }),
+    emitReceived: () => received.forEach((l) => l()),
+  };
+}
 
 function makeAdapters(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
+  notifications: ReturnType<typeof makeNotificationsStub>,
 ): Adapters {
   return {
     api,
@@ -52,7 +72,7 @@ function makeAdapters(
     auth: {} as Adapters["auth"],
     health: {} as Adapters["health"],
     payments: {} as Adapters["payments"],
-    notifications: {} as Adapters["notifications"],
+    notifications: notifications as unknown as Adapters["notifications"],
     netInfo: {} as Adapters["netInfo"],
   } as Adapters;
 }
@@ -60,13 +80,15 @@ function makeAdapters(
 function renderContainer(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
+  notifications = makeNotificationsStub(),
 ) {
-  const adapters = makeAdapters(api, storage);
-  return render(<NotificationsListContainer />, {
+  const adapters = makeAdapters(api, storage, notifications);
+  const utils = render(<NotificationsListContainer />, {
     wrapper: ({ children }: { children: ReactNode }) => (
       <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
     ),
   });
+  return { ...utils, notifications };
 }
 
 beforeEach(() => {
@@ -262,6 +284,49 @@ describe("NotificationsListContainer", () => {
         api.getNotificationsCalls.filter((c) => c?.cursor === "cursor-2")
           .length,
       ).toBeGreaterThanOrEqual(2),
+    );
+  });
+
+  it("does not clobber an un-flushed optimistic read on refresh (Inspector #5)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    // A mark-read for "x" is queued but not yet flushed.
+    storage.enqueueMutation({
+      entityType: "notification",
+      entityId: "x",
+      operation: "update",
+      payload: { isRead: true },
+      endpoint: "/notifications/x",
+      method: "PATCH",
+    });
+    // The server still returns "x" as UNREAD (the PATCH hasn't landed).
+    api.notifications = [makeNotification({ id: "x", readAt: null })];
+    api.notificationsUnreadCount = 1;
+
+    const { getByTestId } = renderContainer(api, storage);
+
+    // After the mount refresh, the optimistic read is re-applied: unread 0.
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
+  });
+
+  it("refreshes the open list when a push arrives (Inspector #6)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [makeNotification({ id: "first", title: "First" })];
+
+    const { getByTestId, notifications } = renderContainer(api, storage);
+    await waitFor(() =>
+      expect(getByTestId("first-title").props.children).toBe("First"),
+    );
+
+    // A push arrives while the screen is open → the received listener fires
+    // → the list re-fetches and shows the newest server state.
+    api.notifications = [makeNotification({ id: "pushed", title: "Pushed" })];
+    act(() => notifications.emitReceived());
+
+    await waitFor(() =>
+      expect(getByTestId("first-title").props.children).toBe("Pushed"),
     );
   });
 

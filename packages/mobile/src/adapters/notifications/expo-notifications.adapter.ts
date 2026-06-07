@@ -31,6 +31,16 @@ function extractDeepLink(
   return typeof deepLink === "string" ? deepLink : null;
 }
 
+/** Map an expo response to the port's `{ id, deepLink }` shape. */
+function toResponseInfo(
+  response: Notifications.NotificationResponse,
+): NotificationResponseInfo {
+  return {
+    id: response.notification.request.identifier,
+    deepLink: extractDeepLink(response),
+  };
+}
+
 export class ExpoNotificationsAdapter implements NotificationsPort {
   async requestPermissions(): Promise<
     Result<"granted" | "denied", NotificationError>
@@ -92,11 +102,11 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
   }
 
   addNotificationResponseListener(
-    listener: (deepLink: string | null) => void,
+    listener: (response: NotificationResponseInfo) => void,
   ): () => void {
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        listener(extractDeepLink(response));
+        listener(toResponseInfo(response));
       },
     );
     return () => sub.remove();
@@ -105,7 +115,7 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
   async getLastNotificationResponse(): Promise<NotificationResponseInfo | null> {
     const response = await Notifications.getLastNotificationResponseAsync();
     if (!response) return null;
-    return { deepLink: extractDeepLink(response) };
+    return toResponseInfo(response);
   }
 
   async scheduleLocalNotification(
