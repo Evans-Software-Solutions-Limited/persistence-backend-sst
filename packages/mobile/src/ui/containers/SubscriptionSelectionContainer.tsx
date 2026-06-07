@@ -16,6 +16,7 @@ import { useCreateSubscription } from "@/ui/hooks/useCreateSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
+import { newIdempotencyKey } from "@/shared/utils";
 import { CancelSubscriptionModal } from "@/ui/components/subscription/CancelSubscriptionModal";
 import { USER_CANCELLED_ERROR } from "@/ui/components/subscription/PaymentMethodForm";
 import {
@@ -270,6 +271,11 @@ export function SubscriptionSelectionContainer() {
           billingCycle,
           paymentMethodId,
           useTrial: isTrialEligible,
+          // One idempotency token per Subscribe attempt (this Apple Pay
+          // authorisation). The backend keys every outbound Stripe call off
+          // it, so a transport retry of this exact submission can't create a
+          // second subscription / charge (spec 17 / Phase A).
+          idempotencyKey: newIdempotencyKey("sub-create"),
         });
 
         // 3DS branch — present the challenge sheet, wait for the
@@ -421,7 +427,11 @@ export function SubscriptionSelectionContainer() {
     try {
       const result = await cancelSubscriptionMutation.mutateAsync({
         subscriptionId,
-        input: { cancelImmediately: false },
+        input: {
+          cancelImmediately: false,
+          // One idempotency token per Cancel confirmation (spec 17 / Phase A).
+          idempotencyKey: newIdempotencyKey("sub-cancel"),
+        },
       });
       const formatted = new Date(result.subscriptionEndsAt).toLocaleDateString(
         "en-GB",

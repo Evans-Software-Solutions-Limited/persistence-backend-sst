@@ -209,6 +209,8 @@ describe("SubscriptionSelectionContainer", () => {
       billingCycle: "monthly",
       paymentMethodId: "pm_buy",
       useTrial: true,
+      // One client idempotency token per Subscribe attempt (spec 17).
+      idempotencyKey: expect.stringMatching(/^sub-create-/),
     });
     await waitFor(() =>
       expect(mockPush).toHaveBeenCalledWith("/(auth)/success"),
@@ -364,6 +366,8 @@ describe("SubscriptionSelectionContainer", () => {
     await waitFor(() => expect(api.cancelSubscriptionCalls).toBe(1));
     expect(api.lastCancelSubscription?.input).toEqual({
       cancelImmediately: false,
+      // One client idempotency token per Cancel confirmation (spec 17).
+      idempotencyKey: expect.stringMatching(/^sub-cancel-/),
     });
     // Success alert fires; clicking OK routes back.
     await waitFor(() => {
