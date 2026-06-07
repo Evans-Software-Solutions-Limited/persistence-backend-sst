@@ -2,6 +2,29 @@
 
 > **Spec rewritten from scratch on 2026-05-27.** Prior tasks preserved in git history.
 
+> **Status — 2026-06-07 (single phase-5 PR, branch `feat/05-2-active-workout-overlay`).**
+> Phases **05.1 → 05.6 code-complete**; 05.7 verification gate **green**
+> (tsc 0 · eslint 0 warnings · prettier clean · 240 suites / 2522 tests · **no
+> backend/infra/db diff**, STORY-010 held). Built on the **Hybrid Option A**
+> architecture confirmed by Brad (see `design.md` Revised 2026-06-07): root-mounted
+> `<ActiveWorkoutOverlay>` + `useActiveWorkout` UI-state slice, SQLite stays the
+> set-data + existence authority, wall-clock elapsed, modal-route minimise. The
+> presenter rebuild (05.3) is a **re-skin in place** preserving every legacy
+> affordance + testID.
+>
+> **Deferred / flagged for review:**
+>
+> - **T-05.7.2 + T-05.7.5** — manual on-device smoke + e2e (Start CTA gating,
+>   kill/relaunch resume, offline-then-sync, prototype pixel parity). Reviewer
+>   (Brad) to run on device — the "prototype parity confirmed on-device" gate.
+> - **T-05.7.1 codemod** — `scripts/codemod-tokens.ts` not runnable in the worktree
+>   (jscodeshift unresolved); its outcome (no hardcoded brand hex) is already
+>   enforced by the `no-raw-hex-colors` ESLint rule, which passed 0-warnings on
+>   every changed file.
+> - **EndConfirmDialog backdrop blur(6px)** omitted — RN has no native backdrop
+>   blur + `expo-blur` isn't a dependency; a solid `rgba(0,0,0,0.65)` scrim stands
+>   in. Adding blur = native dep + rebuild (needs sign-off).
+
 ---
 
 ## Phase 05.1 — useActiveWorkout state machine (1 PR)
