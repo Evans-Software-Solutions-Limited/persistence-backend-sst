@@ -36,6 +36,7 @@ import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
+import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { IconCheck } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
@@ -138,6 +139,13 @@ export type ActiveSessionPresenterProps = {
    * button). User-tap-driven — no auto-fire on set completion.
    */
   onStartRest: (sessionExerciseId: string) => void;
+  /**
+   * Coach on-behalf context (M8 / `10-trainer-features`). Defaults undefined —
+   * the trainer banner renders only when `withClient` is present (STORY-004
+   * AC 4.6); athletes never see it. Wired by M8.
+   */
+  withClient?: { initials: string; name: string };
+  retroactive?: boolean;
   /** Collapse the session to the floating bar (header chevron-down). */
   onMinimize: () => void;
   /**
@@ -226,6 +234,12 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             onMinimize={props.onMinimize}
             onEnd={props.onDiscard}
           />
+          {props.withClient && (
+            <TrainerBannerPresenter
+              withClient={props.withClient}
+              retroactive={props.retroactive}
+            />
+          )}
           {orderedExercises.length === 0 ? (
             <View style={styles.emptyWrap} testID="active-session-empty">
               <Text style={styles.emptyTitle}>No exercises yet</Text>

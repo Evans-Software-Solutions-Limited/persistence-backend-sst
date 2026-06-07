@@ -39,7 +39,10 @@ import type { ExerciseSet } from "@/domain/models/session";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
-import { activeWorkoutElapsedSeconds } from "@/state/active-workout";
+import {
+  activeWorkoutElapsedSeconds,
+  useActiveWorkout,
+} from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
@@ -71,6 +74,12 @@ export function ActiveSessionContainer() {
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, rereadCache } = useActiveSession();
+
+  // Coach on-behalf context for the trainer banner (STORY-004). Sourced from
+  // the UI-state slice; undefined until M8 (`10-trainer-features`) seeds it via
+  // the on-behalf start flow → no banner for athletes today.
+  const withClient = useActiveWorkout((s) => s.active?.withClient);
+  const retroactive = useActiveWorkout((s) => s.active?.retroactive);
 
   // Stable id factory — empty deps, M2 learning #7.
   const generateId = useCallback(
@@ -599,6 +608,8 @@ export function ActiveSessionContainer() {
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}
         onStartRest={onStartRest}
+        withClient={withClient}
+        retroactive={retroactive}
         onMinimize={onMinimize}
         onDiscard={onDiscard}
         onFinish={onFinish}
