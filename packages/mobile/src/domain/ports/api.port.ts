@@ -31,6 +31,17 @@ import type {
 } from "@/domain/models/workout";
 import type { Result, ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
+import type { PersonalRecord } from "@/domain/models/record";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { Streak } from "@/domain/models/streak";
+import type {
+  HomePayload,
+  Rings,
+  WeeklyVolume,
+  VolumeStats,
+  BodyTrendPoint,
+} from "@/domain/models/progress";
 
 /**
  * Port for remote SST API operations.
@@ -427,9 +438,83 @@ export interface ApiPort {
     data: Partial<CreateGoalInput>,
   ): Promise<Result<ApiGoal, ApiError>>;
   deleteGoal(id: string): Promise<Result<void, ApiError>>;
+
+  // -- Progress / Home (M4 — 06-progress-goals) --
+  /** Aggregate cold-start payload (GET /users/me/home). */
+  getHome(): Promise<Result<HomePayload, ApiError>>;
+  getTodayRings(): Promise<Result<Rings, ApiError>>;
+  /** `window` is an `Nd` string (default 7d). */
+  getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>>;
+  /** `window` ∈ month|quarter|year|lifetime (default month). */
+  getVolumeStats(window?: string): Promise<Result<VolumeStats, ApiError>>;
+  getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>>;
+  getBodyTrend(window?: string): Promise<Result<BodyTrendPoint[], ApiError>>;
+  getAchievements(): Promise<Result<Achievement[], ApiError>>;
+  getHabitCompletions(params?: {
+    goalId?: string;
+    window?: string;
+  }): Promise<Result<HabitCompletion[], ApiError>>;
+  /** Toggle a habit ON for a day (idempotent POST). */
+  createHabitCompletion(
+    input: CreateHabitCompletionInput,
+  ): Promise<Result<HabitCompletion, ApiError>>;
+  /** Toggle a habit OFF for a day (idempotent DELETE). */
+  deleteHabitCompletion(
+    input: DeleteHabitCompletionInput,
+  ): Promise<Result<{ deleted: boolean }, ApiError>>;
+  useFreezeToken(streakId: string): Promise<Result<Streak, ApiError>>;
+  getMeasurements(
+    params?: PaginationParams,
+  ): Promise<Result<ApiMeasurement[], ApiError>>;
+  logMeasurement(
+    input: LogMeasurementInput,
+  ): Promise<Result<ApiMeasurement, ApiError>>;
 }
 
 // -- API data shapes (mirror backend response types) --
+
+export type CreateHabitCompletionInput = {
+  goalId: string;
+  /** ISO date/datetime of the toggled day; defaults to now server-side. */
+  date?: string;
+  value?: number;
+};
+
+export type DeleteHabitCompletionInput = {
+  goalId: string;
+  date?: string;
+};
+
+/** Wire shape for body_measurements (decimal columns arrive as strings). */
+export type ApiMeasurement = {
+  id: string;
+  userId: string;
+  weightKg: string | null;
+  bodyFatPercentage: string | null;
+  chestCm: string | null;
+  waistCm: string | null;
+  hipsCm: string | null;
+  leftArmCm: string | null;
+  rightArmCm: string | null;
+  leftThighCm: string | null;
+  rightThighCm: string | null;
+  notes: string | null;
+  measuredAt: string | null;
+};
+
+/** POST /measurements body — all optional; the weigh-in sheet sends weight/fat/notes. */
+export type LogMeasurementInput = {
+  weightKg?: number;
+  bodyFatPercentage?: number;
+  chestCm?: number;
+  waistCm?: number;
+  hipsCm?: number;
+  leftArmCm?: number;
+  rightArmCm?: number;
+  leftThighCm?: number;
+  rightThighCm?: number;
+  notes?: string;
+};
 
 export type ApiProfile = {
   id: string;

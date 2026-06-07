@@ -12,3 +12,12 @@ export {
   type UpdateProfileCommandDeps,
   type UpdateProfileInput,
 } from "./update-profile.command";
+export {
+  toggleHabitDayCommand,
+  type ToggleHabitCommandDeps,
+  type ToggleHabitInput,
+} from "./toggle-habit.command";
+export {
+  logMeasurementCommand,
+  type LogMeasurementCommandDeps,
+} from "./log-measurement.command";
