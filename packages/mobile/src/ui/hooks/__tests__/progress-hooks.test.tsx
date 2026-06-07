@@ -218,14 +218,14 @@ describe("Progress/Home mutation hooks", () => {
   it("useLogMeasurement appends body-trend + validates", async () => {
     const { storage, wrapper } = setup();
     const { result } = renderHook(() => useLogMeasurement(), { wrapper });
-    let res;
+    let res: { ok: boolean } | undefined;
     await act(async () => {
       res = await result.current.mutate({ weightKg: 82.5 }, "2026-06-10");
     });
     expect(res?.ok).toBe(true);
     expect(storage.getCachedBodyTrend(USER)).toHaveLength(1);
 
-    let bad;
+    let bad: { ok: boolean } | undefined;
     await act(async () => {
       bad = await result.current.mutate({});
     });
