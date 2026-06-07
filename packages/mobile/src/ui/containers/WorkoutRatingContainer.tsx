@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { completeSessionCommand } from "@/application/commands/session";
 import { processSyncQueue } from "@/application/commands/sync.command";
+import { useActiveWorkout } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -42,6 +43,12 @@ export function WorkoutRatingContainer() {
         { storage, userId },
         { rating, notes: notes.trim() || null },
       );
+      // STORY-009 AC 9.4 — the session is finalized (or already was), so
+      // clear the useActiveWorkout UI-state slice. Idempotent + safe in both
+      // branches (under Hybrid Option A the slice is usually already empty;
+      // this also drops any M8 withClient/retroactive trainer context).
+      void useActiveWorkout.getState().end();
+
       if (!result.ok) {
         // No active session → already finalized. Bounce to summary
         // so the user can see their stats anyway.

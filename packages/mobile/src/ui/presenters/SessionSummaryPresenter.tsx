@@ -32,7 +32,6 @@
  * Spec: specs/05-active-session/requirements.md STORY-006, STORY-007
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
   ScrollView,
@@ -41,12 +40,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Btn } from "@/ui/components/foundation/Btn";
 import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+  IconCheck,
+  IconChevronR,
+  IconDumbbell,
+  IconMedal,
+  IconX,
+} from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
+import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { SummaryPersonalRecord } from "@/ui/containers/SessionSummaryContainer";
 
 const RECORD_TYPE_LABEL: Record<SummaryPersonalRecord["recordType"], string> = {
@@ -153,7 +156,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
             accessibilityLabel="Close summary"
             testID="session-summary-close"
           >
-            <Ionicons name="close" size={24} color={Colors.text.secondary} />
+            <IconX size={24} color={color.$text3} />
           </TouchableOpacity>
         </View>
 
@@ -175,27 +178,19 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
             style={styles.statCard}
             testID="summary-stat-workouts-this-month"
           >
-            <Ionicons
-              name="checkmark-circle"
-              size={28}
-              color={Colors.success.DEFAULT}
-            />
+            <IconCheck size={28} color={color.$success} />
             <Text style={styles.statValue}>
               {workoutsThisMonth == null ? "—" : workoutsThisMonth}
             </Text>
             <Text style={styles.statLabel}>Workouts this month</Text>
           </View>
           <View style={styles.statCard} testID="summary-stat-records-hit">
-            <Ionicons
-              name="trending-up"
-              size={28}
-              color={Colors.warning.DEFAULT}
-            />
+            <IconMedal size={28} color={color.$gold} />
             <Text style={styles.statValue}>{recordsHit}</Text>
             <Text style={styles.statLabel}>Records Hit</Text>
           </View>
           <View style={styles.statCard} testID="summary-stat-total-volume">
-            <Ionicons name="barbell" size={28} color={Colors.info.DEFAULT} />
+            <IconDumbbell size={28} color={color.$info} />
             <Text style={styles.statValue}>{formatVolume(totalVolume)}</Text>
             <Text style={styles.statLabel}>Total Volume</Text>
           </View>
@@ -211,11 +206,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
                 testID={`summary-pr-${pr.exerciseId}-${pr.recordType}`}
               >
                 <View style={styles.prHeader}>
-                  <Ionicons
-                    name="medal"
-                    size={24}
-                    color={Colors.warning.DEFAULT}
-                  />
+                  <IconMedal size={24} color={color.$gold} />
                   <Text style={styles.prExerciseName} numberOfLines={1}>
                     {pr.exerciseName}
                   </Text>
@@ -248,18 +239,17 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
         )}
 
         <View style={styles.continueButtonContainer}>
-          <TouchableOpacity
-            style={styles.continueButton}
+          <Btn
+            full
+            variant="filled"
+            tone="primary"
+            size="lg"
+            icon={<IconChevronR size={18} color={color.$primaryInk} />}
             onPress={onSave}
             testID="summary-save-button"
           >
-            <Text style={styles.continueButtonText}>Continue</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.primary}
-            />
-          </TouchableOpacity>
+            Continue
+          </Btn>
         </View>
       </ScrollView>
     </View>
@@ -269,7 +259,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   scroll: { flex: 1 },
   scrollContent: {
@@ -284,13 +274,13 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.h2,
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
     fontWeight: "700",
   },
   subtitle: {
     ...Typography.body1,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   statsRow: {
@@ -301,20 +291,22 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: 120,
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$surface,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 14,
     padding: Spacing.lg,
     alignItems: "center",
     gap: Spacing.xs,
   },
   statValue: {
     ...Typography.h2,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "700",
   },
   statLabel: {
     ...Typography.body2,
-    color: Colors.text.secondary,
+    color: color.$text3,
     textAlign: "center",
   },
   section: {
@@ -322,12 +314,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.h3,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
   },
   prCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$surface,
+    borderWidth: 1,
+    borderColor: color.$goldDim,
+    borderRadius: 14,
     padding: Spacing.md,
     gap: Spacing.sm,
   },
@@ -338,7 +332,7 @@ const styles = StyleSheet.create({
   },
   prExerciseName: {
     ...Typography.body1,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
   },
@@ -350,7 +344,7 @@ const styles = StyleSheet.create({
   },
   prType: {
     ...Typography.body2,
-    color: Colors.text.secondary,
+    color: color.$text3,
   },
   prValues: {
     flexDirection: "row",
@@ -359,35 +353,20 @@ const styles = StyleSheet.create({
   },
   prNewValue: {
     ...Typography.body1,
-    color: Colors.warning.DEFAULT,
+    color: color.$gold,
     fontWeight: "600",
   },
   prArrow: {
     ...Typography.body2,
-    color: Colors.text.secondary,
+    color: color.$text3,
   },
   prPreviousValue: {
     ...Typography.body2,
-    color: Colors.text.tertiary,
+    color: color.$text4,
     textDecorationLine: "line-through",
   },
   continueButtonContainer: {
     marginTop: Spacing.md,
     marginBottom: Spacing.xl,
-  },
-  continueButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  continueButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
-    fontWeight: "600",
   },
 });
