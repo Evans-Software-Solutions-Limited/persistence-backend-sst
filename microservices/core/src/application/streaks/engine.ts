@@ -1,0 +1,237 @@
+/**
+ * Streak engine (06-progress-goals, Phase 06.2). Per cross-cuts § 3.
+ *
+ * `evaluateStreaks` runs on-write — every event that could satisfy a streak
+ * (a workout logged, a habit completed, a measurement recorded) calls it. It
+ * advances any matching active streak whose current user-local period has just
+ * been satisfied, earns freeze tokens, unlocks milestone achievements, and
+ * emits `streak_milestone` notifications.
+ *
+ * The "nothing happened" case (a period elapses with no event) is the nightly
+ * cron's job (cron.ts) — the on-write hook can't fire on the absence of an
+ * event.
+ *
+ * Data access + notification delivery are injected ports so the orchestration
+ * is unit-testable without a DB. The real wiring lives in
+ * repositories/streakRepository.ts + the streakCron handler.
+ */
+
+import type { UserStreak } from "@persistence/db";
+import {
+  periodEndISO,
+  periodStartFromEndISO,
+  compareISO,
+  type Period,
+} from "./period";
+import { crossedMilestones, freezeTokensAfterAdvance } from "./milestones";
+
+export type StreakEventType =
+  | "workout_logged"
+  | "habit_completed"
+  | "measurement_logged"
+  | "nutrition_in_target";
+
+export type StreakType =
+  | "workout_streak"
+  | "habit_streak"
+  | "measurement_streak"
+  | "nutrition_streak";
+
+/** Which streak type an event feeds. */
+export const EVENT_TO_STREAK_TYPE: Record<StreakEventType, StreakType> = {
+  workout_logged: "workout_streak",
+  habit_completed: "habit_streak",
+  measurement_logged: "measurement_streak",
+  nutrition_in_target: "nutrition_streak",
+};
+
+/** A milestone that was newly unlocked by an advance. */
+export interface UnlockedMilestone {
+  streakId: string;
+  streakType: StreakType;
+  threshold: number;
+  achievementId: string;
+}
+
+/** Fields persisted when a streak advances one period. */
+export interface StreakAdvanceFields {
+  currentCount: number;
+  longestCount: number;
+  lastPeriodEnd: string;
+  freezeTokens: number;
+}
+
+/**
+ * Data port — the engine asks these of the DB layer. Implemented by
+ * StreakRepository; faked in tests.
+ */
+export interface StreakDataPort {
+  getUserTimezone(userId: string): Promise<string>;
+  getActiveStreaksByType(
+    userId: string,
+    streakType: StreakType,
+  ): Promise<UserStreak[]>;
+  /**
+   * Whether `streak`'s threshold was met within the user-local date window
+   * [startDate, endDate] (inclusive). The repository pushes the tz conversion
+   * into SQL (`AT TIME ZONE`). For workout_streak the threshold is the source
+   * goal's target_value (≥ N sessions); for habit/measurement/nutrition it is
+   * "≥ 1 qualifying row".
+   */
+  isPeriodSatisfied(
+    streak: UserStreak,
+    startDate: string,
+    endDate: string,
+    tz: string,
+  ): Promise<boolean>;
+  persistAdvance(
+    streakId: string,
+    fields: StreakAdvanceFields,
+  ): Promise<UserStreak>;
+  /**
+   * Resolve the achievement for (streakType, threshold) and insert a
+   * user_achievements row idempotently. Returns the achievementId +
+   * whether it was newly unlocked (false on a duplicate), or null when no
+   * matching achievement is seeded.
+   */
+  unlockAchievement(
+    userId: string,
+    streakType: StreakType,
+    threshold: number,
+  ): Promise<{ achievementId: string; newlyUnlocked: boolean } | null>;
+}
+
+export interface StreakNotification {
+  userId: string;
+  type: "streak_milestone" | "streak_at_risk" | "freeze_token_applied";
+  title: string;
+  message: string;
+  data: Record<string, unknown>;
+  relatedEntityId: string | null;
+}
+
+export interface StreakNotifier {
+  notify(notification: StreakNotification): Promise<void>;
+}
+
+export interface StreakEngineDeps {
+  data: StreakDataPort;
+  notifier: StreakNotifier;
+}
+
+export interface EvaluateResult {
+  advanced: UserStreak[];
+  milestones: UnlockedMilestone[];
+}
+
+/**
+ * Advance a single streak if its current period has just been satisfied.
+ * Returns the updated row + any milestones, or null if no advance happened
+ * (period already counted, or threshold not yet met). Shared shape so the
+ * milestone-emit path is identical across callers.
+ */
+async function tryAdvance(
+  streak: UserStreak,
+  ts: Date,
+  tz: string,
+  deps: StreakEngineDeps,
+): Promise<{ updated: UserStreak; milestones: UnlockedMilestone[] } | null> {
+  const period = streak.period as Period;
+  const currentEnd = periodEndISO(ts, period, tz);
+
+  // Already advanced for this (or a later) period — idempotent no-op. Also
+  // guards against an event arriving for a period at/behind last_period_end.
+  if (compareISO(currentEnd, streak.lastPeriodEnd) <= 0) return null;
+
+  const currentStart = periodStartFromEndISO(currentEnd, period);
+  const satisfied = await deps.data.isPeriodSatisfied(
+    streak,
+    currentStart,
+    currentEnd,
+    tz,
+  );
+  if (!satisfied) return null;
+
+  const prevCount = streak.currentCount;
+  const newCount = prevCount + 1;
+  const fields: StreakAdvanceFields = {
+    currentCount: newCount,
+    longestCount: Math.max(streak.longestCount, newCount),
+    lastPeriodEnd: currentEnd,
+    freezeTokens: freezeTokensAfterAdvance(streak.freezeTokens, newCount),
+  };
+
+  const updated = await deps.data.persistAdvance(streak.id, fields);
+
+  const milestones: UnlockedMilestone[] = [];
+  for (const threshold of crossedMilestones(prevCount, newCount, period)) {
+    const unlocked = await deps.data.unlockAchievement(
+      streak.userId,
+      streak.streakType as StreakType,
+      threshold,
+    );
+    if (unlocked && unlocked.newlyUnlocked) {
+      milestones.push({
+        streakId: streak.id,
+        streakType: streak.streakType as StreakType,
+        threshold,
+        achievementId: unlocked.achievementId,
+      });
+      await deps.notifier.notify({
+        userId: streak.userId,
+        type: "streak_milestone",
+        title: "Streak milestone!",
+        message: milestoneMessage(streak.streakType as StreakType, threshold),
+        data: {
+          streakType: streak.streakType,
+          threshold,
+          streakId: streak.id,
+          achievementId: unlocked.achievementId,
+        },
+        relatedEntityId: streak.id,
+      });
+    }
+  }
+
+  return { updated, milestones };
+}
+
+/** Human-readable milestone copy. Weekly streaks count weeks; daily count days. */
+export function milestoneMessage(
+  streakType: StreakType,
+  threshold: number,
+): string {
+  const isWeekly =
+    streakType === "workout_streak" || streakType === "measurement_streak";
+  const unit = isWeekly ? (threshold === 1 ? "week" : "weeks") : "days";
+  return `You hit a ${threshold}-${unit} streak. Keep it going!`;
+}
+
+/**
+ * On-write entrypoint. For every active streak matching the event's type,
+ * advance it if its current period just became satisfied.
+ */
+export async function evaluateStreaks(
+  userId: string,
+  eventType: StreakEventType,
+  ts: Date,
+  deps: StreakEngineDeps,
+): Promise<EvaluateResult> {
+  const streakType = EVENT_TO_STREAK_TYPE[eventType];
+  const streaks = await deps.data.getActiveStreaksByType(userId, streakType);
+  if (streaks.length === 0) return { advanced: [], milestones: [] };
+
+  const tz = await deps.data.getUserTimezone(userId);
+
+  const advanced: UserStreak[] = [];
+  const milestones: UnlockedMilestone[] = [];
+  for (const streak of streaks) {
+    const result = await tryAdvance(streak, ts, tz, deps);
+    if (result) {
+      advanced.push(result.updated);
+      milestones.push(...result.milestones);
+    }
+  }
+
+  return { advanced, milestones };
+}

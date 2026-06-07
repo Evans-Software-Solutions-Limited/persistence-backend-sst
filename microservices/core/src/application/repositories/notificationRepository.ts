@@ -22,7 +22,13 @@ export type NotificationType =
   | "physio_accepted"
   | "workout_reminder"
   | "goal_milestone"
-  | "trainer_feedback";
+  | "trainer_feedback"
+  // M4 (06-progress-goals) streak events. DB enum extended in
+  // 20260607120000_m4_notification_type_streak_values.sql. Default opt-in
+  // "on" per cross-cuts § 5 (the JSONB prefs default '{}' reads as all-on).
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "freeze_token_applied";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -34,6 +40,9 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_reminder",
   "goal_milestone",
   "trainer_feedback",
+  "streak_milestone",
+  "streak_at_risk",
+  "freeze_token_applied",
 ] as const;
 
 /**
@@ -108,8 +117,52 @@ function toAppNotification(row: {
   };
 }
 
+export interface CreateNotificationInput {
+  type: NotificationType;
+  title: string;
+  message?: string | null;
+  data?: Record<string, unknown>;
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
+}
+
 export class NotificationRepository {
   static readonly key = "NotificationRepository";
+
+  /**
+   * Insert one notification for `userId`. This is the single write path other
+   * subsystems (the streak engine, PR detection) call to emit a notification
+   * — added in M4 (06-progress-goals) because M7 shipped only the read/update
+   * surface. M7 (09-notifications-social) owns delivery + rendering and will
+   * converge on this writer.
+   *
+   * Ownership: `userId` is supplied by the trusted emitter (the JWT subject of
+   * the event that triggered it), never from a request body.
+   */
+  async create(
+    userId: string,
+    input: CreateNotificationInput,
+  ): Promise<AppNotification> {
+    const db = getDb();
+    const rows = await db
+      .insert(notifications)
+      .values({
+        userId,
+        type: input.type,
+        title: input.title,
+        message: input.message ?? null,
+        data: input.data ?? {},
+        relatedEntityType: input.relatedEntityType ?? null,
+        relatedEntityId: input.relatedEntityId ?? null,
+      })
+      .returning();
+
+    const row = rows[0];
+    return toAppNotification({
+      ...row,
+      type: row.type as NotificationType,
+    });
+  }
 
   /**
    * List the user's notifications, newest-first. Pagination via

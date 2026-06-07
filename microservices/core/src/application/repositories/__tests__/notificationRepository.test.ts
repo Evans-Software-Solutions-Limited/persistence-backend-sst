@@ -319,3 +319,88 @@ describe("NotificationRepository.markAllRead", () => {
     expect(setPayload.readAt).toBeInstanceOf(Date);
   });
 });
+
+describe("NotificationRepository.create", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeInsertChain(resolvedValue: unknown) {
+    const returning = vi.fn().mockResolvedValue(resolvedValue);
+    const values = vi.fn().mockReturnValue({ returning });
+    return { values };
+  }
+
+  it("inserts a notification and returns the wire shape", async () => {
+    const row = {
+      id: "n1",
+      userId: "user-1",
+      type: "streak_milestone",
+      title: "Streak milestone!",
+      message: "You hit a 4-week streak. Keep it going!",
+      data: { threshold: 4 },
+      isRead: false,
+      readAt: null,
+      relatedEntityType: "streak",
+      relatedEntityId: "s1",
+      createdAt: new Date("2026-06-07T10:00:00Z"),
+    };
+    const mockDb = { insert: vi.fn().mockReturnValue(makeInsertChain([row])) };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { NotificationRepository } =
+      await import("../notificationRepository");
+    const repo = new NotificationRepository();
+    const result = await repo.create("user-1", {
+      type: "streak_milestone",
+      title: "Streak milestone!",
+      message: "You hit a 4-week streak. Keep it going!",
+      data: { threshold: 4 },
+      relatedEntityType: "streak",
+      relatedEntityId: "s1",
+    });
+
+    expect(result).toMatchObject({
+      id: "n1",
+      type: "streak_milestone",
+      relatedEntityId: "s1",
+      isRead: false,
+    });
+    const valuesPayload =
+      mockDb.insert.mock.results[0].value.values.mock.calls[0][0];
+    expect(valuesPayload.userId).toBe("user-1");
+    expect(valuesPayload.type).toBe("streak_milestone");
+  });
+
+  it("defaults optional fields when omitted", async () => {
+    const row = {
+      id: "n2",
+      userId: "user-1",
+      type: "freeze_token_applied",
+      title: "Streak protected",
+      message: null,
+      data: {},
+      isRead: false,
+      readAt: null,
+      relatedEntityType: null,
+      relatedEntityId: null,
+      createdAt: new Date("2026-06-07T10:00:00Z"),
+    };
+    const mockDb = { insert: vi.fn().mockReturnValue(makeInsertChain([row])) };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { NotificationRepository } =
+      await import("../notificationRepository");
+    const repo = new NotificationRepository();
+    await repo.create("user-1", {
+      type: "freeze_token_applied",
+      title: "Streak protected",
+    });
+
+    const valuesPayload =
+      mockDb.insert.mock.results[0].value.values.mock.calls[0][0];
+    expect(valuesPayload.message).toBeNull();
+    expect(valuesPayload.data).toEqual({});
+    expect(valuesPayload.relatedEntityId).toBeNull();
+  });
+});

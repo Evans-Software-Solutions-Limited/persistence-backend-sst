@@ -78,4 +78,23 @@ export const reconcileCron = new sst.aws.Cron("reconcile-stripe-drift", {
   },
 });
 
+// ─── Nightly streak sweep (06-progress-goals / M4, Phase 06.2) ──────────────
+//
+// 02:00 UTC daily. Detects active streaks whose last_period_end fell behind
+// the most-recently-completed user-local period (the on-write engine advances
+// it whenever a period is satisfied, so "behind" == "missed"). Spends a freeze
+// token (quiet recovery) or breaks the streak. Logs `[streak-cron:summary]`
+// each run. Reuses the same DATABASE_URL binding as the API route. See
+// specs/06-progress-goals/design.md § Streak engine + cross-cuts § 3.4/§ 3.5.
+export const streakCron = new sst.aws.Cron("streak-sweep", {
+  schedule: "cron(0 2 * * ? *)",
+  job: {
+    handler: "microservices/core/src/streakCron.handler",
+    timeout: "120 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+    },
+  },
+});
+
 // api.addAuthorizer
