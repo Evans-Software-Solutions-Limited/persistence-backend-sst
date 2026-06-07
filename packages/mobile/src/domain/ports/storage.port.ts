@@ -26,6 +26,10 @@ import type {
   SyncOperation,
   SyncStatus,
 } from "@/domain/ports/sync.types";
+import type { HomePayload, BodyTrendPoint } from "@/domain/models/progress";
+import type { Streak } from "@/domain/models/streak";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -290,6 +294,47 @@ export interface StoragePort {
    * symmetrical with `invalidateDashboard`.
    */
   invalidateProfilePage(userId: string): void;
+
+  // -- Home / Progress cache (M4 — 06-progress-goals) --
+  /** Cached aggregate Home payload (cache-first cold-start render). */
+  getCachedHome(userId: string): HomePayload | null;
+  getHomeAge(userId: string): string | null;
+  cacheHome(userId: string, payload: HomePayload): void;
+  invalidateHome(userId: string): void;
+
+  /** Cached streak rows (StreakHero + the deriveStreak server reconciliation). */
+  getCachedStreaks(userId: string): Streak[];
+  cacheStreaks(userId: string, streaks: Streak[]): void;
+
+  /** Cached unlocked achievements (milestones row + drawer count). */
+  getCachedAchievements(userId: string): Achievement[];
+  cacheAchievements(userId: string, achievements: Achievement[]): void;
+
+  /** Cached body-measurement trend (sparkline) — optimistic weigh-in appends here. */
+  getCachedBodyTrend(userId: string): BodyTrendPoint[];
+  cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void;
+
+  /**
+   * Row-level habit-completion cache — feeds the 7-day grid + the offline
+   * `deriveStreak` walk. `since` filters to completions on/after a YYYY-MM-DD.
+   */
+  getCachedHabitCompletions(
+    userId: string,
+    opts?: { goalId?: string; since?: string },
+  ): HabitCompletion[];
+  /** Replace the whole cached set for a user (server refresh — server wins). */
+  cacheHabitCompletions(userId: string, rows: HabitCompletion[]): void;
+  /** Optimistic toggle-on: idempotent per (user, goal, local day). */
+  upsertHabitCompletion(row: {
+    id: string;
+    userId: string;
+    goalId: string;
+    day: string;
+    completedAt: string;
+    value: number | null;
+  }): void;
+  /** Optimistic toggle-off for a (user, goal, local day). */
+  removeHabitCompletion(userId: string, goalId: string, day: string): void;
 
   // -- Active Session (M3) --
   /**

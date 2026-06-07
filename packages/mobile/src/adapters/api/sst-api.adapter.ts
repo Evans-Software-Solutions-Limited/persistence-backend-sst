@@ -39,7 +39,22 @@ import type {
   UploadAvatarInput,
   CreateSubscriptionInput,
   CancelSubscriptionInput,
+  ApiMeasurement,
+  LogMeasurementInput,
+  CreateHabitCompletionInput,
+  DeleteHabitCompletionInput,
 } from "@/domain/ports/api.port";
+import type { PersonalRecord } from "@/domain/models/record";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { Streak } from "@/domain/models/streak";
+import type {
+  HomePayload,
+  Rings,
+  WeeklyVolume,
+  VolumeStats,
+  BodyTrendPoint,
+} from "@/domain/models/progress";
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionResult,
@@ -891,6 +906,116 @@ export class SSTApiAdapter implements ApiPort {
       message: result.value.message,
     });
   }
+
+  // -- Progress / Home (M4 — 06-progress-goals) --
+
+  async getHome(): Promise<Result<HomePayload, ApiError>> {
+    const res = await this.requestEnvelope<HomePayload>("/users/me/home");
+    if (!res.ok) return res;
+    return ok({
+      ...res.value,
+      recentPRs: res.value.recentPRs.map(normalizePersonalRecord),
+    });
+  }
+
+  async getTodayRings(): Promise<Result<Rings, ApiError>> {
+    return this.requestEnvelope<Rings>("/users/me/today-rings");
+  }
+
+  async getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>> {
+    return this.requestEnvelope<WeeklyVolume>("/users/me/weekly-volume", {
+      params: window ? { window } : undefined,
+    });
+  }
+
+  async getVolumeStats(window?: string): Promise<Result<VolumeStats, ApiError>> {
+    return this.requestEnvelope<VolumeStats>("/users/me/volume-stats", {
+      params: window ? { window } : undefined,
+    });
+  }
+
+  async getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>> {
+    const res = await this.requestEnvelope<PersonalRecord[]>("/users/me/prs", {
+      params: limit != null ? { limit } : undefined,
+    });
+    if (!res.ok) return res;
+    return ok(res.value.map(normalizePersonalRecord));
+  }
+
+  async getBodyTrend(
+    window?: string,
+  ): Promise<Result<BodyTrendPoint[], ApiError>> {
+    return this.requestEnvelope<BodyTrendPoint[]>("/users/me/body-trend", {
+      params: window ? { window } : undefined,
+    });
+  }
+
+  async getAchievements(): Promise<Result<Achievement[], ApiError>> {
+    return this.requestEnvelope<Achievement[]>("/users/me/achievements");
+  }
+
+  async getHabitCompletions(params?: {
+    goalId?: string;
+    window?: string;
+  }): Promise<Result<HabitCompletion[], ApiError>> {
+    return this.requestEnvelope<HabitCompletion[]>("/habit-completions", {
+      params,
+    });
+  }
+
+  async createHabitCompletion(
+    input: CreateHabitCompletionInput,
+  ): Promise<Result<HabitCompletion, ApiError>> {
+    return this.requestEnvelope<HabitCompletion>("/habit-completions", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async deleteHabitCompletion(
+    input: DeleteHabitCompletionInput,
+  ): Promise<Result<{ deleted: boolean }, ApiError>> {
+    return this.requestEnvelope<{ deleted: boolean }>("/habit-completions", {
+      method: "DELETE",
+      params: input,
+    });
+  }
+
+  async useFreezeToken(streakId: string): Promise<Result<Streak, ApiError>> {
+    return this.requestEnvelope<Streak>(
+      `/users/me/streaks/${streakId}/use-token`,
+      { method: "POST" },
+    );
+  }
+
+  async getMeasurements(
+    params?: PaginationParams,
+  ): Promise<Result<ApiMeasurement[], ApiError>> {
+    return this.requestEnvelope<ApiMeasurement[]>("/measurements", { params });
+  }
+
+  async logMeasurement(
+    input: LogMeasurementInput,
+  ): Promise<Result<ApiMeasurement, ApiError>> {
+    return this.requestEnvelope<ApiMeasurement>("/measurements", {
+      method: "POST",
+      body: input,
+    });
+  }
+}
+
+/**
+ * The PR read endpoints (`/users/me/prs`, `/users/me/home`) omit
+ * userId/sessionId/setId from the wire, so normalise to the full
+ * PersonalRecord domain shape (the PRCard presenter consumes domain PRs).
+ */
+function normalizePersonalRecord(pr: PersonalRecord): PersonalRecord {
+  return {
+    ...pr,
+    userId: pr.userId ?? "",
+    sessionId: pr.sessionId ?? null,
+    setId: pr.setId ?? null,
+  };
 }
 
 // -- HTTP error → ApiError mapping --
