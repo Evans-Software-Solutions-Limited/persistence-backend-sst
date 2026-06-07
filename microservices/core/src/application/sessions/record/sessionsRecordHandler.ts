@@ -12,6 +12,7 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
+import { safeEvaluateStreaks } from "../../streaks/evaluate";
 
 /**
  * POST /sessions/record
@@ -113,6 +114,16 @@ export const sessionsRecordHandler = new Elysia()
         (uid, sessionId, tx) =>
           ctx.PersonalRecordsRepository.recordPRsForSession(uid, sessionId, tx),
       );
+
+      // Advance the workout streak for a completed session (STORY-006).
+      // Cancelled sessions don't count. Fire-and-forget + error-tolerant:
+      // the session + PRs already committed in the transaction above.
+      if (payload.status === "completed") {
+        const completedTs = payload.completedAt
+          ? new Date(payload.completedAt)
+          : new Date();
+        await safeEvaluateStreaks(userId, "workout_logged", completedTs);
+      }
 
       ctx.set.status = 201;
       return { data: recorded };

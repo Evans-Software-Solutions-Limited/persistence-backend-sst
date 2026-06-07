@@ -39,6 +39,9 @@ import { recordsListHandler } from "./application/records/list/recordsListHandle
 import { personalRecordsListHandler } from "./application/personalRecords/list/personalRecordsListHandler";
 import { measurementsCreateHandler } from "./application/measurements/create/measurementsCreateHandler";
 import { measurementsListHandler } from "./application/measurements/list/measurementsListHandler";
+import { createHabitCompletionHandler } from "./application/habits/createHabitCompletionHandler";
+import { listHabitCompletionsHandler } from "./application/habits/listHabitCompletionsHandler";
+import { deleteHabitCompletionHandler } from "./application/habits/deleteHabitCompletionHandler";
 import { goalsCreateHandler } from "./application/goals/create/goalsCreateHandler";
 import { goalsListHandler } from "./application/goals/list/goalsListHandler";
 import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
@@ -101,6 +104,9 @@ const app = new Elysia()
   .use(personalRecordsListHandler)
   .use(measurementsCreateHandler)
   .use(measurementsListHandler)
+  .use(createHabitCompletionHandler)
+  .use(listHabitCompletionsHandler)
+  .use(deleteHabitCompletionHandler)
   .use(goalsCreateHandler)
   .use(goalsListHandler)
   .use(goalsGetHandler)
