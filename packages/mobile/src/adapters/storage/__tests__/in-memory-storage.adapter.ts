@@ -35,7 +35,11 @@ import type {
   RecordResponseSummary,
   RestTimerState,
 } from "@/domain/ports/storage.port";
-import type { HomePayload, BodyTrendPoint } from "@/domain/models/progress";
+import type {
+  HomePayload,
+  BodyTrendPoint,
+  VolumeStats,
+} from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
@@ -629,6 +633,14 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
   cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void {
     this.bodyTrendCache.set(userId, [...series]);
+  }
+
+  private volumeStatsCache: Map<string, VolumeStats> = new Map();
+  getCachedVolumeStats(userId: string): VolumeStats | null {
+    return this.volumeStatsCache.get(userId) ?? null;
+  }
+  cacheVolumeStats(userId: string, stats: VolumeStats): void {
+    this.volumeStatsCache.set(userId, stats);
   }
 
   getCachedHabitCompletions(

@@ -26,7 +26,11 @@ import type {
   SyncOperation,
   SyncStatus,
 } from "@/domain/ports/sync.types";
-import type { HomePayload, BodyTrendPoint } from "@/domain/models/progress";
+import type {
+  HomePayload,
+  BodyTrendPoint,
+  VolumeStats,
+} from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
@@ -313,6 +317,10 @@ export interface StoragePort {
   /** Cached body-measurement trend (sparkline) — optimistic weigh-in appends here. */
   getCachedBodyTrend(userId: string): BodyTrendPoint[];
   cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void;
+
+  /** Cached You/Progress volume stats (workouts, tonnes, adherence, by-muscle). */
+  getCachedVolumeStats(userId: string): VolumeStats | null;
+  cacheVolumeStats(userId: string, stats: VolumeStats): void;
 
   /**
    * Row-level habit-completion cache — feeds the 7-day grid + the offline
