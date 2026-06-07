@@ -225,6 +225,20 @@ describe("StreakRepository", () => {
     });
   });
 
+  it("spendTokenManually decrements a token or returns null", async () => {
+    const updated = streak({ freezeTokens: 1 });
+    (getDb as any).mockReturnValue({ update: () => updateChain([updated]) });
+    expect(await new StreakRepository().spendTokenManually("u1", "s1")).toBe(
+      updated,
+    );
+
+    // WHERE matched nothing (wrong user or no tokens) → null
+    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
+    expect(
+      await new StreakRepository().spendTokenManually("u1", "s1"),
+    ).toBeNull();
+  });
+
   it("persistFreezeSpend / persistBreak update and return the row", async () => {
     const frozen = streak({ freezeTokens: 0 });
     (getDb as any).mockReturnValue({ update: () => updateChain([frozen]) });

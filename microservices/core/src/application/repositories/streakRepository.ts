@@ -230,4 +230,33 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       .returning();
     return rows[0];
   }
+
+  /**
+   * Manual freeze-token spend (06.5 — the You/Progress "Use" button). Decrements
+   * one token only when the streak is owned by `userId` AND has a token to
+   * spend — ownership + the `freeze_tokens > 0` guard are folded into the WHERE
+   * so a cross-user or empty-balance spend simply updates nothing. Returns the
+   * updated row, or null when the WHERE matched nothing.
+   */
+  async spendTokenManually(
+    userId: string,
+    streakId: string,
+  ): Promise<UserStreak | null> {
+    const db = getDb();
+    const rows = await db
+      .update(userStreaks)
+      .set({
+        freezeTokens: sql`${userStreaks.freezeTokens} - 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.userId, userId),
+          sql`${userStreaks.freezeTokens} > 0`,
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  }
 }
