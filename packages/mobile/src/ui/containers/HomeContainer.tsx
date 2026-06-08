@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
@@ -9,6 +9,7 @@ import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
 import { initialsOf } from "@/shared/utils";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
+import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
 
 function addDaysISO(iso: string, delta: number): string {
   const d = new Date(`${iso}T00:00:00.000Z`);
@@ -33,6 +34,7 @@ export function HomeContainer() {
   const home = useGetHome();
   const habitsState = useGetHabits();
   const toggle = useToggleHabitDay();
+  const [weighInOpen, setWeighInOpen] = useState(false);
 
   const weekDates = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -80,29 +82,34 @@ export function HomeContainer() {
   );
 
   const noop = useCallback(() => {}, []);
+  const openWeighIn = useCallback(() => setWeighInOpen(true), []);
+  const closeWeighIn = useCallback(() => setWeighInOpen(false), []);
 
   return (
-    <HomePresenter
-      user={user}
-      home={home.data}
-      habits={habitsState.habits}
-      weekDates={weekDates}
-      recentPRs={home.data?.recentPRs ?? []}
-      showCoachPeek={mode === "coach"}
-      coachPeek={undefined}
-      isLoading={home.isStale && home.data === null}
-      isRefreshing={home.isRefreshing}
-      error={home.error}
-      animationStyles={animationStyles}
-      onRefresh={onRefresh}
-      onOpenDrawer={openDrawer}
-      onOpenTab={onOpenTab}
-      onOpenWeighIn={noop}
-      onOpenMealLog={noop}
-      onLogWater={noop}
-      onLogMood={noop}
-      onToggleHabitDay={onToggleHabitDay}
-      onOpenCoach={noop}
-    />
+    <>
+      <HomePresenter
+        user={user}
+        home={home.data}
+        habits={habitsState.habits}
+        weekDates={weekDates}
+        recentPRs={home.data?.recentPRs ?? []}
+        showCoachPeek={mode === "coach"}
+        coachPeek={undefined}
+        isLoading={home.isStale && home.data === null}
+        isRefreshing={home.isRefreshing}
+        error={home.error}
+        animationStyles={animationStyles}
+        onRefresh={onRefresh}
+        onOpenDrawer={openDrawer}
+        onOpenTab={onOpenTab}
+        onOpenWeighIn={openWeighIn}
+        onOpenMealLog={noop}
+        onLogWater={noop}
+        onLogMood={noop}
+        onToggleHabitDay={onToggleHabitDay}
+        onOpenCoach={noop}
+      />
+      <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />
+    </>
   );
 }
