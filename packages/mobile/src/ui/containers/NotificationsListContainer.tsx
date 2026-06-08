@@ -36,48 +36,94 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  *       requirements.md STORY-002
  */
 
-/** Pending mark-read state from the sync queue (un-flushed optimistic reads). */
+/**
+ * Un-flushed optimistic reads from the sync queue:
+ * - `ids`: individually mark-read notification ids.
+ * - `markAllAt`: the timestamp of the latest un-flushed `mark-all`, or null.
+ *   A mark-all only covers notifications that existed at that moment — rows
+ *   created AFTER it (new arrivals during the pending window) must stay
+ *   unread, so the flag is time-scoped rather than a global blanket
+ *   (Inspector Brad #8).
+ */
 function pendingReadState(storage: StoragePort): {
-  allRead: boolean;
+  markAllAt: string | null;
   ids: Set<string>;
 } {
   const pending = storage
     .getPendingMutations()
     .filter((m) => m.entityType === "notification");
-  const allRead = pending.some((m) => m.endpoint === "/notifications/all");
+  let markAllAt: string | null = null;
   const ids = new Set<string>();
   for (const m of pending) {
-    if (m.entityId) ids.add(m.entityId);
+    if (m.endpoint === "/notifications/all") {
+      if (markAllAt === null || m.createdAt > markAllAt)
+        markAllAt = m.createdAt;
+    } else if (m.entityId) {
+      ids.add(m.entityId);
+    }
   }
-  return { allRead, ids };
+  return { markAllAt, ids };
+}
+
+/**
+ * True when a notification is covered by an un-flushed optimistic read:
+ * individually marked, OR predating a pending mark-all. `Date.parse` keeps
+ * the comparison robust to timestamp-format differences between the queue
+ * entry and the notification row.
+ */
+function isPendingRead(
+  n: Notification,
+  markAllAt: string | null,
+  ids: Set<string>,
+): boolean {
+  if (ids.has(n.id)) return true;
+  if (markAllAt !== null) {
+    const at = Date.parse(markAllAt);
+    const created = Date.parse(n.createdAt);
+    if (!Number.isNaN(at) && !Number.isNaN(created) && created <= at) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
  * Re-apply un-flushed optimistic reads onto a freshly-fetched page so the
- * server's (older) read state doesn't clobber them.
+ * server's (older) read state doesn't clobber them — while leaving
+ * post-mark-all arrivals unread.
  */
 function applyPendingReads(
   items: Notification[],
   storage: StoragePort,
   now: string,
 ): Notification[] {
-  const { allRead, ids } = pendingReadState(storage);
+  const { markAllAt, ids } = pendingReadState(storage);
   return items.map((n) =>
-    n.readAt === null && (allRead || ids.has(n.id)) ? { ...n, readAt: now } : n,
+    n.readAt === null && isPendingRead(n, markAllAt, ids)
+      ? { ...n, readAt: now }
+      : n,
   );
 }
 
 /**
- * The server-authoritative unread total minus the reads the user has made
- * optimistically but not yet flushed — across ALL loaded pages, not just
- * the fetched page. Using the full `pendingReadState().ids` (and the
- * mark-all short-circuit) keeps the badge consistent with the visible read
- * state even for rows on pages beyond page 1 (Inspector Brad: a page-2
- * mark-read must not bounce the count back up on the next focus/push).
+ * Optimistic unread count for a freshly-fetched (and pending-read-applied)
+ * page 1.
+ * - With a pending mark-all, everything up to that moment is read, so the
+ *   only remaining unread are post-mark-all arrivals — which are the newest
+ *   rows and therefore all on page 1: count the page's still-unread rows.
+ * - Otherwise it's the server total minus every individually-pending read
+ *   (all pages), so a page-2+ mark-read isn't bounced back up here.
  */
-function optimisticUnread(serverUnread: number, storage: StoragePort): number {
-  const { allRead, ids } = pendingReadState(storage);
-  return allRead ? 0 : Math.max(0, serverUnread - ids.size);
+function optimisticUnread(
+  serverUnread: number,
+  pageAfterReads: Notification[],
+  storage: StoragePort,
+): number {
+  const { markAllAt, ids } = pendingReadState(storage);
+  if (markAllAt !== null) {
+    return pageAfterReads.filter((n) => n.readAt === null).length;
+  }
+  return Math.max(0, serverUnread - ids.size);
 }
 
 export function NotificationsListContainer() {
@@ -132,9 +178,12 @@ export function NotificationsListContainer() {
             return fresh.length === 0 ? prev : [...fresh, ...prev];
           });
         }
-        // Count from the server total minus ALL un-flushed optimistic reads
-        // (every page), so a page-2+ mark-read isn't overwritten here.
-        setUnreadCount(optimisticUnread(result.value.unreadCount, storage));
+        // Count from the (pending-read-applied) page so a page-2+ mark-read
+        // isn't bounced up, and a pending mark-all leaves only post-mark-all
+        // arrivals counted.
+        setUnreadCount(
+          optimisticUnread(result.value.unreadCount, page, storage),
+        );
       } finally {
         if (mode === "reset") setIsRefreshing(false);
         setIsLoading(false);
@@ -205,8 +254,11 @@ export function NotificationsListContainer() {
 
   const onTap = useCallback(
     (notification: Notification) => {
-      markNotificationReadCommand(storage, notification.id);
+      // Only enqueue a mark-read on an actual unread→read transition —
+      // re-tapping an already-read row (to follow its deep link) must not
+      // pile up redundant PATCHes in the sync queue (Inspector Brad #9).
       if (notification.readAt === null) {
+        markNotificationReadCommand(storage, notification.id);
         const now = new Date().toISOString();
         setItems((prev) =>
           prev.map((n) =>

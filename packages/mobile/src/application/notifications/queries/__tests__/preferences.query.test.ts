@@ -45,5 +45,43 @@ describe("preferences.query", () => {
         workout_assigned: true,
       });
     });
+
+    it("re-applies un-flushed optimistic toggles on top of the server map (#10)", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      // Server still has the old value; the user has optimistically toggled
+      // goal_milestone OFF (queued, not flushed).
+      api.notificationPreferences = {
+        goal_milestone: true,
+        workout_assigned: true,
+      };
+      // An unrelated pending mutation must be ignored by the merge.
+      storage.enqueueMutation({
+        entityType: "notification",
+        entityId: "n1",
+        operation: "update",
+        payload: { isRead: true },
+        endpoint: "/notifications/n1",
+        method: "PATCH",
+      });
+      storage.enqueueMutation({
+        entityType: "notification-preferences",
+        operation: "update",
+        payload: { goal_milestone: false },
+        endpoint: "/notifications/preferences",
+        method: "POST",
+      });
+
+      const result = await refreshPreferences(api, storage);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // The in-flight refresh must NOT revert the pending toggle.
+      expect(result.value.goal_milestone).toBe(false);
+      expect(result.value.workout_assigned).toBe(true);
+      expect(storage.getCachedNotificationPreferences()?.goal_milestone).toBe(
+        false,
+      );
+    });
   });
 });

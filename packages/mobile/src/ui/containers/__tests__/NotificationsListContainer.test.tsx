@@ -168,6 +168,39 @@ describe("NotificationsListContainer", () => {
     expect(mockPush).toHaveBeenCalled();
     // unread count unchanged — the tapped row was already read
     await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+    // …and NO redundant mark-read enqueued for an already-read row (#9).
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("does not mark notifications that arrive after a pending mark-all as read (#8)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    // An old (pre-mark-all) unread row. Far-past/future dates make the
+    // comparison vs the mark-all moment (real "now") deterministic.
+    api.notifications = [
+      makeNotification({ id: "old", createdAt: "2020-01-01T00:00:00.000Z" }),
+    ];
+    api.notificationsUnreadCount = 1;
+
+    const { getByTestId, notifications } = renderContainer(api, storage);
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+
+    // Mark all read → optimistic 0; /notifications/all queued (createdAt now).
+    fireEvent.press(getByTestId("mark-all"));
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
+
+    // A push arrives AFTER the mark-all (future createdAt); server now counts
+    // both because the mark-all hasn't flushed.
+    api.notifications = [
+      makeNotification({ id: "new", createdAt: "2099-01-01T00:00:00.000Z" }),
+      makeNotification({ id: "old", createdAt: "2020-01-01T00:00:00.000Z" }),
+    ];
+    api.notificationsUnreadCount = 2;
+    act(() => notifications.emitReceived());
+
+    // The post-mark-all arrival stays unread → count 1 (not blanketed to 0).
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
   });
 
   it("tap falls back to Home when the notification has no deep link", async () => {
