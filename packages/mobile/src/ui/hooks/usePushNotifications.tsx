@@ -54,11 +54,45 @@ export function usePushNotifications(enabled = true): void {
   // userId changes (sign-out → sign-in as a different account), satisfying
   // AC 4.4's "re-register on auth change".
   const registeredForRef = useRef<string | null>(null);
+  // The last push token we've ATTEMPTED to register this session (success
+  // OR failure). Expo's `addPushTokenListener` can fire repeatedly for the
+  // SAME token (notably when the push service can't settle a token in dev /
+  // Expo Go); without deduping by value, a backend that rejects the token
+  // would be re-POSTed — and re-logged — on every rotation event, a warning
+  // storm. Deduping here means one attempt per distinct token.
+  const lastTokenRef = useRef<string | null>(null);
 
+  // POST a single device token. No-ops if this exact token was already
+  // attempted this session. Logs ONE detailed warning on failure and never
+  // throws — registration is best-effort and must not block launch or spam
+  // (AC 4.5). A genuinely new token (or an app relaunch) drives a retry.
+  const registerToken = useCallback(
+    async (token: string): Promise<void> => {
+      if (token === lastTokenRef.current) return;
+      lastTokenRef.current = token;
+      try {
+        const result = await api.registerDevice({
+          token,
+          platform: devicePlatform(),
+        });
+        if (!result.ok) {
+          console.warn(
+            `[push] device registration failed (${result.error.code}): ${
+              result.error.message || "no detail"
+            }`,
+          );
+        }
+      } catch (err) {
+        console.warn("[push] device registration threw:", err);
+      }
+    },
+    [api],
+  );
+
+  // Resolve permission + token, then register. `useNotificationPermissions`
+  // already prompts on launch; we re-check here and only prompt when still
+  // undetermined so a denied user is never re-nagged (AC 4.3).
   const register = useCallback(async (): Promise<void> => {
-    // Ensure permission. `useNotificationPermissions` already prompts on
-    // launch; we re-check here and only prompt when still undetermined so
-    // a denied user is never re-nagged (AC 4.3).
     const status = await notifications.getPermissionStatus();
     let granted = status === "granted";
     if (status === "not_determined") {
@@ -70,45 +104,33 @@ export function usePushNotifications(enabled = true): void {
     const tokenResult = await notifications.getDevicePushToken();
     if (!tokenResult.ok) return;
 
-    // `registerDevice` returns a Result — it does NOT throw on a
-    // transport/server failure. Inspect `ok` explicitly: on failure roll
-    // back the per-user "already registered" guard so a later re-render /
-    // token rotation gets another shot, and throw so the outer `.catch`
-    // logs uniformly with the JS-error path (AC 4.5). Without this a failed
-    // registration is silent and never retried for the session.
-    const registerResult = await api.registerDevice({
-      token: tokenResult.value,
-      platform: devicePlatform(),
-    });
-    if (!registerResult.ok) {
-      registeredForRef.current = null;
-      throw new Error(
-        `device registration rejected: ${registerResult.error.message}`,
-      );
-    }
-  }, [api, notifications]);
+    await registerToken(tokenResult.value);
+  }, [notifications, registerToken]);
 
-  // Registration on auth resolve / change.
+  // Registration on auth resolve / change. On a NEW user, clear the token
+  // dedupe so the device re-registers under the new account even if the OS
+  // token is unchanged (AC 4.4).
   useEffect(() => {
     if (!enabled || !userId) return;
     if (registeredForRef.current === userId) return;
     registeredForRef.current = userId;
+    lastTokenRef.current = null;
     register().catch((err) => {
-      // AC 4.5: failure is non-fatal — log and move on.
+      // Unexpected throw from the permission/token read — non-fatal.
       console.warn("[push] device registration failed:", err);
     });
   }, [enabled, userId, register]);
 
-  // Re-register on Expo token rotation (AC 4.4).
+  // Re-register on Expo token rotation. Use the rotated token directly;
+  // `registerToken` dedupes by value so repeated same-token events are a
+  // no-op rather than a re-POST storm (AC 4.4).
   useEffect(() => {
     if (!enabled || !userId) return;
-    const unsubscribe = notifications.addPushTokenListener(() => {
-      register().catch((err) => {
-        console.warn("[push] re-registration on token rotation failed:", err);
-      });
+    const unsubscribe = notifications.addPushTokenListener((token) => {
+      void registerToken(token);
     });
     return unsubscribe;
-  }, [enabled, userId, notifications, register]);
+  }, [enabled, userId, notifications, registerToken]);
 
   // Foreground receive → refresh cache + unread count (STORY-001 AC 1.5).
   useEffect(() => {

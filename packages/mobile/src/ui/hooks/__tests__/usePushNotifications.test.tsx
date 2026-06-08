@@ -293,11 +293,11 @@ describe("usePushNotifications", () => {
     expect(notifications.receivedListeners).toHaveLength(0);
   });
 
-  it("logs and never throws when registration rejects (mount + rotation)", async () => {
+  it("logs the failure detail (with code) and never throws on registerDevice err", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const notifications = new StubPushNotifications();
-    notifications.statusThrows = true; // register() rejects
+    api.shouldFail = true; // registerDevice → Result.err {code:"server", message:"Test error"}
     const adapters = makeAdapters(api, storage, notifications, SESSION);
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -305,36 +305,94 @@ describe("usePushNotifications", () => {
       wrapper: wrapperFor(adapters),
     });
 
-    // mount registration rejected → caught + logged, nothing registered
     await waitFor(() =>
       expect(warnSpy).toHaveBeenCalledWith(
-        "[push] device registration failed:",
-        expect.any(Error),
-      ),
-    );
-    // rotation also rejects → its own catch logs
-    await act(async () => {
-      notifications.emitTokenRotation();
-      await Promise.resolve();
-    });
-    await waitFor(() =>
-      expect(warnSpy).toHaveBeenCalledWith(
-        "[push] re-registration on token rotation failed:",
-        expect.any(Error),
+        expect.stringContaining(
+          "device registration failed (server): Test error",
+        ),
       ),
     );
     expect(api.registeredDevices).toHaveLength(0);
     warnSpy.mockRestore();
   });
 
-  it("logs + retries when registerDevice returns an error Result (not a throw)", async () => {
-    // Inspector Brad #2: registerDevice returns Result (never throws). A
-    // failed registration must be logged AND must not leave the per-user
-    // guard set, so a later token rotation / re-mount retries.
+  it("does NOT re-POST or re-log when the same failing token rotates repeatedly (no storm)", async () => {
+    // The device-reported bug: Expo re-emits the same token on every
+    // rotation event; without value-dedup a rejecting backend would be
+    // re-POSTed + re-logged on each one. Mount attempts "device-token-abc"
+    // (fails, 1 warn); repeated same-token rotations must be no-ops.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubPushNotifications(); // token "device-token-abc"
+    api.shouldFail = true;
+    const adapters = makeAdapters(api, storage, notifications, SESSION);
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    renderHook(() => usePushNotifications(true), {
+      wrapper: wrapperFor(adapters),
+    });
+    await waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      notifications.emitTokenRotation("device-token-abc");
+      notifications.emitTokenRotation("device-token-abc");
+      notifications.emitTokenRotation("device-token-abc");
+      await Promise.resolve();
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1); // still just the one attempt
+    expect(api.registeredDevices).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("retries on a genuinely new token after a failure", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const notifications = new StubPushNotifications();
-    api.shouldFail = true; // registerDevice → Result.err
+    api.shouldFail = true;
+    const adapters = makeAdapters(api, storage, notifications, SESSION);
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    renderHook(() => usePushNotifications(true), {
+      wrapper: wrapperFor(adapters),
+    });
+    await waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
+
+    // A genuinely NEW token (different value) is a fresh attempt → succeeds.
+    api.shouldFail = false;
+    await act(async () => {
+      notifications.emitTokenRotation("a-new-token");
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
+    expect(api.registeredDevices[0].token).toBe("a-new-token");
+    warnSpy.mockRestore();
+  });
+
+  it("dedupes a repeated same-token rotation after a successful register", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubPushNotifications(); // token "device-token-abc"
+    const adapters = makeAdapters(api, storage, notifications, SESSION);
+
+    renderHook(() => usePushNotifications(true), {
+      wrapper: wrapperFor(adapters),
+    });
+    await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
+
+    await act(async () => {
+      notifications.emitTokenRotation("device-token-abc"); // same as mount
+      notifications.emitTokenRotation("device-token-abc");
+      await Promise.resolve();
+    });
+    expect(api.registeredDevices).toHaveLength(1); // no duplicate POST
+  });
+
+  it("caught + logged when the permission read throws (unexpected, non-fatal)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubPushNotifications();
+    notifications.statusThrows = true; // register() rejects before any POST
     const adapters = makeAdapters(api, storage, notifications, SESSION);
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -349,14 +407,6 @@ describe("usePushNotifications", () => {
       ),
     );
     expect(api.registeredDevices).toHaveLength(0);
-
-    // Guard was rolled back → token rotation retries; succeed this time.
-    api.shouldFail = false;
-    await act(async () => {
-      notifications.emitTokenRotation();
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
     warnSpy.mockRestore();
   });
 
