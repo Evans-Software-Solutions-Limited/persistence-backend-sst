@@ -54,7 +54,7 @@ const TAB_BAR_BOTTOM_GAP = 8;
 const ACTIVE_WORKOUT_BAR_GAP = 12;
 
 export function ActiveWorkoutOverlay() {
-  const { session } = useActiveSession();
+  const { session, rereadCache } = useActiveSession();
   const { storage } = useAdapters();
   const insets = useSafeAreaInsets();
   const [endConfirmVisible, setEndConfirmVisible] = useState(false);
@@ -86,6 +86,21 @@ export function ActiveWorkoutOverlay() {
     return () => clearInterval(id);
   }, [visible, startedAt]);
 
+  // Bug fix (Inspector Brad 🔴) — re-read SQLite on every route change.
+  // `useActiveSession` snapshots through a `cacheVersion`-keyed `useMemo` and
+  // never re-reads on navigation. Without this, the bar would never appear
+  // after the normal start → minimise flow: the overlay mounts once (at
+  // auth-resolve, session = null), the session is then written to SQLite by a
+  // *different* `useActiveSession` instance inside `ActiveSessionContainer`,
+  // and the overlay's memo — deps unchanged — keeps returning that mount-time
+  // null. The legacy `ActiveSessionBanner` avoided this by re-reading storage
+  // on every `segments` change; restore that. Keyed on the joined path string
+  // so it fires once per route change, not on every render.
+  const segmentsKey = segments.join("/");
+  useEffect(() => {
+    rereadCache();
+  }, [segmentsKey, rereadCache]);
+
   if (!visible || !session) return null;
 
   const onPress = () => {
@@ -102,6 +117,11 @@ export function ActiveWorkoutOverlay() {
     setEndConfirmVisible(false);
     cancelSessionCommand({ storage, userId: session.userId });
     void useActiveWorkout.getState().end();
+    // The bar's own end path triggers no navigation, so the cacheVersion-keyed
+    // memo wouldn't otherwise refresh — re-read so the (now-cancelled) session
+    // drops out and the bar hides immediately (Inspector Brad's secondary
+    // symptom on the 🔴 lead).
+    rereadCache();
   };
 
   // On a tab screen the bar floats above the tab bar; on a pushed-over screen

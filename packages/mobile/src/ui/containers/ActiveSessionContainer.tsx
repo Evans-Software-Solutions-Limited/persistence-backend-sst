@@ -546,6 +546,12 @@ export function ActiveSessionContainer() {
     setEndConfirmVisible(false);
     if (!userId) return;
     cancelSessionCommand({ storage, userId });
+    // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
+    // overlay's end path. Without this, slice.active + the AsyncStorage pointer
+    // dangle until the next launch's orphan reconciliation; and a stale
+    // withClient/retroactive (read at lines 81-82) could leak into a future
+    // session once M8 wires start() to populate them.
+    void useActiveWorkout.getState().end();
     router.dismissAll();
   }, [userId, storage]);
 

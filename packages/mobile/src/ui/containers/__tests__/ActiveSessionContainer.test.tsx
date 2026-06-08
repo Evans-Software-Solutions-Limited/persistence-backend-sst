@@ -19,6 +19,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
+import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 // M2 learning #13: cascading-async tests (findByTestId →
@@ -193,6 +194,7 @@ describe("ActiveSessionContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({});
+    useActiveWorkout.setState({ active: null, expanded: false });
   });
 
   afterEach(() => {
@@ -256,6 +258,17 @@ describe("ActiveSessionContainer", () => {
       notes: null,
       exercises: [],
     });
+    // Seed the slice as if launch reconciliation adopt()-ed this session, so we
+    // can assert onConfirmEnd clears it (Bug fix, Inspector Brad 🟡).
+    useActiveWorkout.setState({
+      active: {
+        sessionId: "local-1",
+        workoutId: null,
+        name: "Quick Workout",
+        startedAt: "2026-05-05T10:00:00.000Z",
+      },
+      expanded: true,
+    });
 
     const { findByTestId, queryByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
@@ -274,6 +287,9 @@ describe("ActiveSessionContainer", () => {
     expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
     expect(mockRouterDismissAll).toHaveBeenCalled();
     expect(queryByTestId("end-confirm-dialog")).toBeNull();
+    // Bug fix (🟡): the in-session End path must clear the slice too, not just
+    // SQLite — otherwise the pointer dangles until the next launch.
+    expect(useActiveWorkout.getState().active).toBeNull();
   });
 
   it("End-confirm dialog 'Keep going' dismisses without cancelling the session", async () => {

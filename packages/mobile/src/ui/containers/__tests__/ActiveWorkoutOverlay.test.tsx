@@ -236,6 +236,11 @@ it("long-press → styled dialog → End discards the session (cancel + slice cl
   // cancelSessionCommand finalized the SQLite session → no longer active.
   expect(storage.getActiveSession(USER)).toBeNull();
   expect(queryByTestId("end-confirm-dialog")).toBeNull();
+  // Bug fix (Inspector Brad 🔴 secondary symptom): the bar's own end path
+  // triggers no navigation, so onConfirmEnd must re-read SQLite for the bar to
+  // disappear. Before the fix the stale memo kept the cancelled session live
+  // and the bar lingered.
+  expect(queryByTestId("active-workout-bar")).toBeNull();
 });
 
 it("long-press dialog dismisses via 'Keep going' without ending the session", async () => {
@@ -266,5 +271,46 @@ it("falls back to 'Active Workout' when the session has no name", async () => {
     expect(getByTestId("active-workout-bar-title").props.children).toBe(
       "Active Workout",
     );
+  });
+});
+
+it("shows the bar when the session starts AFTER mount (Inspector Brad 🔴 repro)", async () => {
+  // Reproduces the real-world flow the other tests masked by pre-caching the
+  // session before render. Here the overlay mounts with NO session (user is
+  // inside the session modal), the session is then written to SQLite, the user
+  // minimises (segment change), and the bar must appear. Before the fix, the
+  // overlay's cacheVersion-keyed memo kept its mount-time null and the bar
+  // never showed.
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  mockSegments = ["(app)", "session", "index"];
+
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+  );
+  const { queryByTestId, getByTestId, rerender } = renderWithTheme(
+    <Wrapper>
+      <ActiveWorkoutOverlay />
+    </Wrapper>,
+  );
+
+  // Nothing cached + on the session screen → no bar.
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeNull();
+  });
+
+  // startSessionCommand writes the session to SQLite while on the session
+  // screen; then the user minimises → route changes back to a tab.
+  storage.cacheActiveSession(USER, makeSession());
+  mockSegments = ["(app)", "(tabs)", "train"];
+  rerender(
+    <Wrapper>
+      <ActiveWorkoutOverlay />
+    </Wrapper>,
+  );
+
+  // The segment-keyed re-read picks up the newly-cached session → bar appears.
+  await waitFor(() => {
+    expect(getByTestId("active-workout-bar")).toBeTruthy();
   });
 });
