@@ -178,6 +178,25 @@ describe("SetLogger", () => {
     expect(onRemove).toHaveBeenCalled();
   });
 
+  it("submit on reps hops focus to weight, and submit on weight dismisses (no crash)", () => {
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        onChange={jest.fn()}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    // Exercises the reps `onSubmitEditing` focus-hop + the weight
+    // `onSubmitEditing={Keyboard.dismiss}` — both should run without throwing.
+    expect(() => {
+      fireEvent(getByTestId("set-logger-reps"), "submitEditing");
+      fireEvent(getByTestId("set-logger-weight"), "submitEditing");
+    }).not.toThrow();
+  });
+
   it("tap on previous-hint fires onFillPrevious", () => {
     const onFillPrevious = jest.fn();
     const { getByTestId } = renderWithTheme(

@@ -12,7 +12,7 @@
 
 import { fireEvent, render } from "@testing-library/react-native";
 import React from "react";
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { WorkoutRatingPresenter } from "../WorkoutRatingPresenter";
 
 const noop = () => undefined;
@@ -47,7 +47,7 @@ describe("WorkoutRatingPresenter — Phase 3a port", () => {
     // current V2 palette `info` and `primary` happen to share the
     // same cyan RGB, so a `!==` check would be false-negative —
     // assert the semantic token directly.
-    expect(flatStyle.color).toBe(Colors.info.DEFAULT);
+    expect(flatStyle.color).toBe(color.$info);
   });
 
   it("difficulty band 1-2 stays on success, band 5-6 on warning, band 9-10 on error (sanity-check the full ladder)", () => {
@@ -62,19 +62,15 @@ describe("WorkoutRatingPresenter — Phase 3a port", () => {
     };
     // Band 1-2 → success.
     fireEvent.press(getByTestId("workout-rating-2"));
-    expect(flatten("workout-rating-message").color).toBe(
-      Colors.success.DEFAULT,
-    );
+    expect(flatten("workout-rating-message").color).toBe(color.$success);
     // Band 5-6 → warning.
     fireEvent.press(getByTestId("workout-rating-5"));
-    expect(flatten("workout-rating-message").color).toBe(
-      Colors.warning.DEFAULT,
-    );
-    // Band 7-8 → warning.dark.
+    expect(flatten("workout-rating-message").color).toBe(color.$warning);
+    // Band 7-8 → ember (05.6 RPE token mapping; was legacy warning.dark).
     fireEvent.press(getByTestId("workout-rating-7"));
-    expect(flatten("workout-rating-message").color).toBe(Colors.warning.dark);
+    expect(flatten("workout-rating-message").color).toBe(color.$ember);
     // Band 9-10 → error.
     fireEvent.press(getByTestId("workout-rating-10"));
-    expect(flatten("workout-rating-message").color).toBe(Colors.error.DEFAULT);
+    expect(flatten("workout-rating-message").color).toBe(color.$error);
   });
 });

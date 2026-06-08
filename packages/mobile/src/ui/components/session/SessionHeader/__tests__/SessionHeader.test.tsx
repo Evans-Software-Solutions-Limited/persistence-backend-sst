@@ -1,4 +1,4 @@
-import { act } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import React from "react";
 import { SessionHeader } from "../SessionHeader";
 import { renderWithTheme } from "../../../../../../__tests__/test-utils";
@@ -11,12 +11,14 @@ describe("SessionHeader", () => {
     jest.useRealTimers();
   });
 
-  it("renders the workout name on the left and the live elapsed timer on the right", () => {
+  it("renders the centred workout name and the live elapsed timer", () => {
     let now = Date.parse("2026-05-05T10:00:30.000Z");
     const { getByText, getByTestId } = renderWithTheme(
       <SessionHeader
         startedAt="2026-05-05T10:00:00.000Z"
         sessionName="Push Day"
+        onMinimize={() => {}}
+        onEnd={() => {}}
         clock={() => now}
       />,
     );
@@ -36,6 +38,8 @@ describe("SessionHeader", () => {
       <SessionHeader
         startedAt="2026-05-05T08:00:00.000Z"
         sessionName="Marathon"
+        onMinimize={() => {}}
+        onEnd={() => {}}
         clock={() => Date.parse("2026-05-05T10:01:05.000Z")}
       />,
     );
@@ -49,9 +53,29 @@ describe("SessionHeader", () => {
       <SessionHeader
         startedAt="not-an-iso"
         sessionName="X"
+        onMinimize={() => {}}
+        onEnd={() => {}}
         clock={() => Date.parse("2026-05-05T10:00:00.000Z")}
       />,
     );
     expect(getByTestId("session-header-elapsed").props.children).toBe("0:00");
+  });
+
+  it("fires onMinimize from the chevron-down button and onEnd from the End pill", () => {
+    const onMinimize = jest.fn();
+    const onEnd = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SessionHeader
+        startedAt="2026-05-05T10:00:00.000Z"
+        sessionName="Push Day"
+        onMinimize={onMinimize}
+        onEnd={onEnd}
+        clock={() => Date.parse("2026-05-05T10:00:00.000Z")}
+      />,
+    );
+    fireEvent.press(getByTestId("session-minimize"));
+    expect(onMinimize).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByTestId("session-end"));
+    expect(onEnd).toHaveBeenCalledTimes(1);
   });
 });

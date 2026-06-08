@@ -1,5 +1,5 @@
 import { Stack } from "expo-router";
-import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
+import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
@@ -162,7 +162,15 @@ export default function AppLayout() {
               specs/14-navigation/tasks.md T-14.5.1
       */}
       <ProfileDrawerContainer />
-      <ActiveSessionBanner />
+      {/*
+        ActiveWorkoutOverlay — the minimised "workout in progress" bar.
+        Root-mounted so it persists across tab/drawer navigation. Renders the
+        BAR only; the expanded session stays the /(app)/session modal route
+        (Hybrid Option A — see the overlay's header for the rationale).
+
+        Spec: specs/05-active-session/design.md § <ActiveWorkoutBarPresenter>
+      */}
+      <ActiveWorkoutOverlay />
     </ExerciseFiltersProvider>
   );
 }

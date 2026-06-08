@@ -36,6 +36,10 @@ import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
+import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
+import { Btn } from "@/ui/components/foundation/Btn";
+import { IconCheck } from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 import {
   BorderRadius,
   Colors,
@@ -135,7 +139,23 @@ export type ActiveSessionPresenterProps = {
    * button). User-tap-driven — no auto-fire on set completion.
    */
   onStartRest: (sessionExerciseId: string) => void;
+  /**
+   * Coach on-behalf context (M8 / `10-trainer-features`). Defaults undefined —
+   * the trainer banner renders only when `withClient` is present (STORY-004
+   * AC 4.6); athletes never see it. Wired by M8.
+   */
+  withClient?: { initials: string; name: string };
+  retroactive?: boolean;
+  /** Collapse the session to the floating bar (header chevron-down). */
+  onMinimize: () => void;
+  /**
+   * End the session WITHOUT completing it (header "End" pill → end-confirm).
+   * Wired to the cancel/discard flow — "progress won't be saved as a
+   * completed workout". The styled end-confirm dialog lands in 05.4; until
+   * then this routes through the container's existing discard confirmation.
+   */
   onDiscard: () => void;
+  /** Complete + save the session (sticky "Finish Workout" CTA). */
   onFinish: () => void;
 };
 
@@ -211,7 +231,15 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
           <SessionHeader
             startedAt={props.startedAt}
             sessionName={props.sessionName}
+            onMinimize={props.onMinimize}
+            onEnd={props.onDiscard}
           />
+          {props.withClient && (
+            <TrainerBannerPresenter
+              withClient={props.withClient}
+              retroactive={props.retroactive}
+            />
+          )}
           {orderedExercises.length === 0 ? (
             <View style={styles.emptyWrap} testID="active-session-empty">
               <Text style={styles.emptyTitle}>No exercises yet</Text>
@@ -302,37 +330,26 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
               </TouchableOpacity>
             </View>
           )}
-
-          <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity
-              style={styles.discardButton}
-              onPress={props.onDiscard}
-              testID="active-session-discard"
-              accessibilityLabel="Discard session"
-            >
-              <Ionicons
-                name="trash-outline"
-                size={20}
-                color={Colors.error.DEFAULT}
-              />
-              <Text style={styles.discardButtonText}>Discard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.completeButton}
-              onPress={props.onFinish}
-              testID="active-session-finish"
-              accessibilityLabel="Complete session"
-            >
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={20}
-                color={Colors.text.primary}
-              />
-              <Text style={styles.completeButtonText}>Complete</Text>
-            </TouchableOpacity>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Sticky Finish CTA — floats above the content per the prototype
+          (`active-workout.jsx:110–112`). Discard moved to the header "End"
+          pill (STORY-002). */}
+      <View style={styles.finishContainer} pointerEvents="box-none">
+        <Btn
+          full
+          variant="filled"
+          tone="primary"
+          size="lg"
+          icon={<IconCheck size={16} color={color.$primaryInk} />}
+          onPress={props.onFinish}
+          testID="active-session-finish"
+          accessibilityLabel="Finish workout"
+        >
+          Finish Workout
+        </Btn>
+      </View>
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
@@ -358,6 +375,9 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: {
     padding: Spacing.md,
+    // Clear the floating "Finish Workout" CTA (52pt + 24pt offset + breathing
+    // room) so the last exercise's actions aren't hidden behind it.
+    paddingBottom: 100,
   },
   exercisesContainer: {
     gap: Spacing.md,
@@ -414,43 +434,10 @@ const styles = StyleSheet.create({
     color: Colors.primary.DEFAULT,
     fontWeight: "600",
   },
-  actionButtonsContainer: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    paddingBottom: Spacing.lg,
-  },
-  discardButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.error.DEFAULT,
-  },
-  discardButtonText: {
-    ...Typography.body1,
-    color: Colors.error.DEFAULT,
-    fontWeight: "600",
-  },
-  completeButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: 12,
-  },
-  completeButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
-    fontWeight: "600",
+  finishContainer: {
+    position: "absolute",
+    bottom: 24,
+    left: 16,
+    right: 16,
   },
 });

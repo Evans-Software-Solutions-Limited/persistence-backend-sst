@@ -64,6 +64,16 @@ jest.mock("../../src/ui/hooks/usePushNotifications", () => ({
   usePushNotifications: (enabled: boolean) => mockUsePushNotifications(enabled),
 }));
 
+// Mock useActiveWorkoutRehydration — the real hook calls useAdapters/useAuth
+// (05-active-session) and throws without an AdapterProvider in scope. Same
+// passthrough-AppProviders reasoning as the two bootstraps above; its own
+// behaviour is covered in
+// src/ui/hooks/__tests__/useActiveWorkoutRehydration.test.tsx.
+const mockUseActiveWorkoutRehydration = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/useActiveWorkoutRehydration", () => ({
+  useActiveWorkoutRehydration: () => mockUseActiveWorkoutRehydration(),
+}));
+
 // eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -316,5 +326,20 @@ describe("UserModeBootstrap (mode-eligibility wiring)", () => {
     render(<RootLayout />);
 
     expect(mockUseUserModeEligibility).toHaveBeenCalled();
+  });
+});
+
+describe("ActiveWorkoutBootstrap (active-session rehydration wiring)", () => {
+  it("invokes `useActiveWorkoutRehydration()` on mount", () => {
+    // 05-active-session — restores the useActiveWorkout slice + reconciles
+    // against the SQLite session cache. Mounted as a sibling of AuthGate
+    // inside AppProviders.
+    mockUseActiveWorkoutRehydration.mockClear();
+    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    expect(mockUseActiveWorkoutRehydration).toHaveBeenCalled();
   });
 });
