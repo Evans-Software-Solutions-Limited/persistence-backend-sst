@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
-import { NOTIFICATION_TYPES } from "@/domain/models/notification";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { NotificationPreferencesPresenter } from "@/ui/presenters/NotificationPreferencesPresenter";
@@ -67,27 +66,36 @@ beforeEach(() => {
 });
 
 describe("NotificationPreferencesContainer", () => {
-  it("writes DEFAULT_OPT_IN on first open (no cache yet) and enqueues the POST", async () => {
+  it("does NOT write defaults on first open — no destructive POST (Inspector)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
+    // Brand-new user: the server has no prefs row yet (empty map).
+    api.notificationPreferences = {};
 
-    renderContainer(api, storage);
-
+    const { getByTestId } = renderContainer(api, storage);
     await waitFor(() =>
-      expect(storage.getCachedNotificationPreferences()).not.toBeNull(),
+      expect(JSON.parse(getByTestId("prefs").props.children)).toEqual({}),
     );
-    const cached = storage.getCachedNotificationPreferences();
-    // every known type defaulted on
-    for (const type of NOTIFICATION_TYPES) {
-      expect(cached?.[type]).toBe(true);
-    }
-    const queued = storage.getPendingMutations();
-    expect(queued).toHaveLength(1);
-    expect(queued[0]).toMatchObject({
-      entityType: "notification-preferences",
-      endpoint: "/notifications/preferences",
-      method: "POST",
-    });
+    // Nothing enqueued — the old all-true DEFAULT_OPT_IN write is gone;
+    // an empty map already reads as "all on" via isTypeEnabled.
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("hydrates existing server prefs on reinstall instead of clobbering them (Inspector)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Reinstall / data-wipe: local cache empty, but the user previously
+    // DISABLED a category on the server. The container must not re-enable it.
+    api.notificationPreferences = { goal_milestone: false };
+
+    const { getByTestId } = renderContainer(api, storage);
+    await waitFor(() =>
+      expect(JSON.parse(getByTestId("prefs").props.children)).toEqual({
+        goal_milestone: false,
+      }),
+    );
+    // No destructive all-true POST that would flip goal_milestone back on.
+    expect(storage.getPendingMutations()).toHaveLength(0);
   });
 
   it("refreshes from the server (no default write) when a cache already exists", async () => {

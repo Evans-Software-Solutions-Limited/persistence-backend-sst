@@ -311,7 +311,14 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   cacheNotifications(notifications: Notification[]): void {
     for (const n of notifications) {
-      this.notificationsCache.set(n.id, n);
+      // Mirror the SQLite COALESCE: keep an already-set (optimistic)
+      // read_at rather than letting a server write-through reset it to
+      // null before the mark-read flushes (Inspector Brad).
+      const prev = this.notificationsCache.get(n.id);
+      this.notificationsCache.set(n.id, {
+        ...n,
+        readAt: prev?.readAt ?? n.readAt,
+      });
     }
     const keep = new Set(this.getCachedNotifications(100).map((n) => n.id));
     for (const id of [...this.notificationsCache.keys()]) {

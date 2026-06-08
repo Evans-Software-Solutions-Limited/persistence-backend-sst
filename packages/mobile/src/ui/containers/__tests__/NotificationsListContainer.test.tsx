@@ -394,6 +394,64 @@ describe("NotificationsListContainer", () => {
     );
   });
 
+  it("keeps a page-2 mark-read out of the unread count on the next merge (Inspector)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    // The user has optimistically read a row that lives on page 2 (not in
+    // the page-1 fetch). Its mark-read sits in the queue.
+    storage.enqueueMutation({
+      entityType: "notification",
+      entityId: "p2row",
+      operation: "update",
+      payload: { isRead: true },
+      endpoint: "/notifications/p2row",
+      method: "PATCH",
+    });
+    // Server page 1 doesn't contain p2row; server total unread still counts
+    // it (2) because the PATCH hasn't flushed.
+    api.notifications = [makeNotification({ id: "p1row", readAt: null })];
+    api.notificationsUnreadCount = 2;
+
+    const { getByTestId, notifications } = renderContainer(api, storage);
+    // After the mount refresh: 2 (server) − 1 (pending read for p2row) = 1,
+    // NOT bounced back to 2.
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+
+    // A push re-runs the merge — the page-2 read must still be subtracted.
+    act(() => notifications.emitReceived());
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+  });
+
+  it("load-more ignores a repeat fire while a page is in flight (no dup append)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [
+      makeNotification({ id: "p1", createdAt: "2026-06-07T11:00:00.000Z" }),
+    ];
+    api.notificationsNextCursor = "c2";
+
+    const { getByTestId } = renderContainer(api, storage);
+    await waitFor(() => expect(api.getNotificationsCalls.length).toBe(1));
+
+    api.notifications = [
+      makeNotification({ id: "p2", createdAt: "2026-06-05T11:00:00.000Z" }),
+    ];
+    api.notificationsNextCursor = null;
+
+    // Two rapid onEndReached fires before the first response lands: the
+    // second must be a no-op (cursor claimed synchronously).
+    fireEvent.press(getByTestId("load-more"));
+    fireEvent.press(getByTestId("load-more"));
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("2"),
+    );
+    // The cursor was requested exactly once (not twice).
+    expect(
+      api.getNotificationsCalls.filter((c) => c?.cursor === "c2").length,
+    ).toBe(1);
+  });
+
   it("back navigates back", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

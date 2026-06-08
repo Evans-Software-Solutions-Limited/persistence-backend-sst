@@ -213,19 +213,43 @@ export class NotificationRepository {
     }
     if (cursor !== undefined) {
       const { createdAt, id } = decodeCursor(cursor);
-      const cursorDate = new Date(createdAt);
-      // Keyset predicate, stable across non-unique created_at:
+      // Keyset predicate, stable across non-unique created_at, and
+      // microsecond-precise: the cursor's `createdAt` is the full
+      // `timestamptz::text` of the last row of the previous page, so we
+      // cast it back to `timestamptz` for an exact comparison.
+      // Comparing against a JS `Date` (millisecond precision) would skip
+      // sibling rows whose created_at falls in the truncated sub-ms gap.
       //   created_at < c OR (created_at = c AND id < i)
       const keyset = or(
-        lt(notifications.createdAt, cursorDate),
-        and(eq(notifications.createdAt, cursorDate), lt(notifications.id, id)),
+        sql`${notifications.createdAt} < ${createdAt}::timestamptz`,
+        and(
+          sql`${notifications.createdAt} = ${createdAt}::timestamptz`,
+          lt(notifications.id, id),
+        ),
       );
       // `or(...)` is only undefined with zero args; guard for the type.
       if (keyset) conditions.push(keyset);
     }
 
     const rows = await db
-      .select()
+      .select({
+        id: notifications.id,
+        userId: notifications.userId,
+        type: notifications.type,
+        title: notifications.title,
+        message: notifications.message,
+        data: notifications.data,
+        isRead: notifications.isRead,
+        readAt: notifications.readAt,
+        relatedEntityType: notifications.relatedEntityType,
+        relatedEntityId: notifications.relatedEntityId,
+        createdAt: notifications.createdAt,
+        // Full-precision (microsecond) cursor key. `timestamptz::text`
+        // round-trips losslessly through `::timestamptz`, unlike a JS
+        // Date which truncates to milliseconds. Used ONLY for the
+        // opaque cursor — the wire `createdAt` stays a millisecond ISO.
+        createdAtCursor: sql<string>`${notifications.createdAt}::text`,
+      })
       .from(notifications)
       .where(and(...conditions))
       .orderBy(desc(notifications.createdAt), desc(notifications.id))
@@ -241,10 +265,10 @@ export class NotificationRepository {
       }),
     );
 
-    const last = mapped[mapped.length - 1];
+    const lastRow = pageRows[pageRows.length - 1];
     const nextCursor =
-      hasMore && last !== undefined
-        ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+      hasMore && lastRow !== undefined
+        ? encodeCursor({ createdAt: lastRow.createdAtCursor, id: lastRow.id })
         : null;
 
     return { rows: mapped, nextCursor };

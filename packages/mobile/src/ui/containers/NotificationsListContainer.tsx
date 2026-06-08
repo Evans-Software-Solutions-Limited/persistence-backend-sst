@@ -54,24 +54,30 @@ function pendingReadState(storage: StoragePort): {
 
 /**
  * Re-apply un-flushed optimistic reads onto a freshly-fetched page so the
- * server's (older) read state doesn't clobber them. Returns the merged
- * rows + how many were flipped read (to adjust the unread count).
+ * server's (older) read state doesn't clobber them.
  */
 function applyPendingReads(
   items: Notification[],
   storage: StoragePort,
   now: string,
-): { items: Notification[]; flipped: number; allRead: boolean } {
+): Notification[] {
   const { allRead, ids } = pendingReadState(storage);
-  let flipped = 0;
-  const merged = items.map((n) => {
-    if (n.readAt === null && (allRead || ids.has(n.id))) {
-      flipped += 1;
-      return { ...n, readAt: now };
-    }
-    return n;
-  });
-  return { items: merged, flipped, allRead };
+  return items.map((n) =>
+    n.readAt === null && (allRead || ids.has(n.id)) ? { ...n, readAt: now } : n,
+  );
+}
+
+/**
+ * The server-authoritative unread total minus the reads the user has made
+ * optimistically but not yet flushed — across ALL loaded pages, not just
+ * the fetched page. Using the full `pendingReadState().ids` (and the
+ * mark-all short-circuit) keeps the badge consistent with the visible read
+ * state even for rows on pages beyond page 1 (Inspector Brad: a page-2
+ * mark-read must not bounce the count back up on the next focus/push).
+ */
+function optimisticUnread(serverUnread: number, storage: StoragePort): number {
+  const { allRead, ids } = pendingReadState(storage);
+  return allRead ? 0 : Math.max(0, serverUnread - ids.size);
 }
 
 export function NotificationsListContainer() {
@@ -111,11 +117,7 @@ export function NotificationsListContainer() {
           setError(new Error(result.error.message));
           return;
         }
-        const {
-          items: page,
-          flipped,
-          allRead,
-        } = applyPendingReads(
+        const page = applyPendingReads(
           result.value.notifications,
           storage,
           new Date().toISOString(),
@@ -130,9 +132,9 @@ export function NotificationsListContainer() {
             return fresh.length === 0 ? prev : [...fresh, ...prev];
           });
         }
-        setUnreadCount(
-          allRead ? 0 : Math.max(0, result.value.unreadCount - flipped),
-        );
+        // Count from the server total minus ALL un-flushed optimistic reads
+        // (every page), so a page-2+ mark-read isn't overwritten here.
+        setUnreadCount(optimisticUnread(result.value.unreadCount, storage));
       } finally {
         if (mode === "reset") setIsRefreshing(false);
         setIsLoading(false);
@@ -169,18 +171,28 @@ export function NotificationsListContainer() {
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
     if (!cursor) return;
+    // Claim the cursor synchronously BEFORE awaiting. `onEndReached` fires
+    // repeatedly across RN versions (threshold cross, content settle, re-
+    // scroll); without this guard each repeat fire would re-request the
+    // same cursor and append the same page, producing duplicate rows + key
+    // collisions (Inspector Brad). Nulling the cursor makes a repeat fire a
+    // no-op until the response lands; restore it on failure so a retry can
+    // resume.
+    nextCursorRef.current = null;
     // Fetch the next (older) page straight from the API and APPEND to the
     // visible list. NOT written through the cache (older rows would be
     // pruned by the newest-100 LRU). Re-apply pending reads here too.
     const result = await api.getNotifications({ cursor });
     if (result.ok) {
       nextCursorRef.current = result.value.nextCursor;
-      const { items: merged } = applyPendingReads(
+      const merged = applyPendingReads(
         result.value.notifications,
         storage,
         new Date().toISOString(),
       );
       setItems((prev) => [...prev, ...merged]);
+    } else {
+      nextCursorRef.current = cursor;
     }
   }, [api, storage]);
 

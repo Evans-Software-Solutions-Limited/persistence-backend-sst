@@ -950,7 +950,13 @@ export class SQLiteStorageAdapter implements StoragePort {
              data_json = excluded.data_json,
              related_entity_type = excluded.related_entity_type,
              related_entity_id = excluded.related_entity_id,
-             read_at = excluded.read_at,
+             -- COALESCE so a refresh write-through can't reset an
+             -- optimistic read back to unread before the mark-read flushes
+             -- (the server returns read_at=null until the queue drains).
+             -- Keeps locked-decision-#3's "offline-tap moment lives in the
+             -- local cache" invariant — and the bell badge's
+             -- getCachedUnreadCount() honest (Inspector Brad).
+             read_at = COALESCE(cached_notifications.read_at, excluded.read_at),
              created_at = excluded.created_at`,
           [
             n.id,

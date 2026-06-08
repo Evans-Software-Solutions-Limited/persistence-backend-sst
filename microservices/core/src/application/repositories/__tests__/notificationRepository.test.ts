@@ -51,6 +51,9 @@ const baseRow = {
   relatedEntityType: null,
   relatedEntityId: null,
   createdAt: new Date("2026-05-27T10:00:00Z"),
+  // Full microsecond-precision cursor key (timestamptz::text), as the
+  // repo now selects it. Used to build nextCursor losslessly.
+  createdAtCursor: "2026-05-27 10:00:00+00",
 };
 
 describe("NotificationRepository cursor helpers", () => {
@@ -61,6 +64,18 @@ describe("NotificationRepository cursor helpers", () => {
     const token = encodeCursor(pos);
     // base64url is opaque and URL-safe — no '+', '/', or '=' padding.
     expect(token).not.toMatch(/[+/=]/);
+    expect(decodeCursor(token)).toEqual(pos);
+  });
+
+  it("round-trips a microsecond-precise timestamptz::text cursor", async () => {
+    const { encodeCursor, decodeCursor } =
+      await import("../notificationRepository");
+    // Postgres `timestamptz::text` shape, microsecond precision.
+    const pos = { createdAt: "2026-05-27 10:00:00.123456+00", id: "n1" };
+    const token = encodeCursor(pos);
+    expect(token).not.toMatch(/[+/=]/);
+    // Full microsecond precision survives the round-trip unchanged — no
+    // truncation to milliseconds.
     expect(decodeCursor(token)).toEqual(pos);
   });
 
@@ -157,6 +172,7 @@ describe("NotificationRepository.list", () => {
       ...baseRow,
       id: "n2",
       createdAt: new Date("2026-05-27T09:00:00Z"),
+      createdAtCursor: "2026-05-27 09:00:00+00",
     };
     const mockDb = {
       select: vi.fn().mockReturnValue(makeSelectChain([baseRow, second])),
@@ -171,10 +187,11 @@ describe("NotificationRepository.list", () => {
     // Only the first row is returned; the surplus row is dropped.
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].id).toBe("n1");
-    // nextCursor points at the LAST returned row (n1), not the surplus.
+    // nextCursor points at the LAST returned row (n1), not the surplus,
+    // and carries the FULL-PRECISION createdAtCursor (not the wire ISO).
     expect(result.nextCursor).not.toBeNull();
     expect(decodeCursor(result.nextCursor as string)).toEqual({
-      createdAt: "2026-05-27T10:00:00.000Z",
+      createdAt: "2026-05-27 10:00:00+00",
       id: "n1",
     });
   });
@@ -295,6 +312,83 @@ describe("NotificationRepository.list", () => {
     });
 
     expect(result.rows[0].createdAt).toBe(new Date(0).toISOString());
+  });
+
+  it("pages through sub-millisecond siblings without skipping any (microsecond cursor regression)", async () => {
+    // Regression: three rows share the SAME millisecond but differ in
+    // MICROseconds. A JS-Date cursor truncates to ms, so the keyset
+    // `created_at < c OR (= c AND id < i)` would skip siblings whose
+    // created_at lies in the truncated sub-ms gap, losing a page's tail
+    // forever. With a timestamptz::text cursor the comparison is exact.
+    //
+    // We seed a microsecond-precise dataset (newest-first) and emulate
+    // Postgres: each page is the dataset filtered by the decoded cursor
+    // using the SAME (created_at DESC, id DESC) keyset Postgres applies,
+    // compared at full string precision.
+    const dataset = [
+      {
+        ...baseRow,
+        id: "n-a",
+        createdAt: new Date("2026-05-27T10:00:00.123Z"),
+        createdAtCursor: "2026-05-27 10:00:00.123900+00",
+      },
+      {
+        ...baseRow,
+        id: "n-b",
+        createdAt: new Date("2026-05-27T10:00:00.123Z"),
+        createdAtCursor: "2026-05-27 10:00:00.123654+00",
+      },
+      {
+        ...baseRow,
+        id: "n-c",
+        createdAt: new Date("2026-05-27T10:00:00.123Z"),
+        createdAtCursor: "2026-05-27 10:00:00.123456+00",
+      },
+      {
+        ...baseRow,
+        id: "n-d",
+        createdAt: new Date("2026-05-27T09:59:59.000Z"),
+        createdAtCursor: "2026-05-27 09:59:59.000000+00",
+      },
+    ];
+
+    // Keyset comparator matching `created_at DESC, id DESC`, full
+    // string precision: a row is "after" the cursor (belongs on a later
+    // page) iff createdAtCursor < c, OR (== c AND id < i).
+    const afterCursor = (row: (typeof dataset)[number], c: string, i: string) =>
+      row.createdAtCursor < c || (row.createdAtCursor === c && row.id < i);
+
+    const { NotificationRepository, decodeCursor } =
+      await import("../notificationRepository");
+    const repo = new NotificationRepository();
+    const limit = 2;
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let guard = 0;
+    do {
+      const decoded = cursor ? decodeCursor(cursor) : null;
+      const remaining = decoded
+        ? dataset.filter((r) => afterCursor(r, decoded.createdAt, decoded.id))
+        : dataset;
+      // Postgres returns up to limit+1 rows for the page; the repo
+      // fetches limit+1 to detect a further page.
+      const page = remaining.slice(0, limit + 1);
+
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain(page)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const result = await repo.list("user-1", { limit, unreadOnly: false });
+      for (const r of result.rows) seen.push(r.id);
+      cursor = result.nextCursor ?? undefined;
+      guard += 1;
+    } while (cursor !== undefined && guard < 10);
+
+    // Every row appears exactly once, in order, none skipped/duplicated.
+    expect(seen).toEqual(["n-a", "n-b", "n-c", "n-d"]);
+    expect(new Set(seen).size).toBe(seen.length);
   });
 
   it("invokes the AND-of-isRead-false predicate when unreadOnly", async () => {

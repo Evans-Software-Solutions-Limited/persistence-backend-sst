@@ -88,6 +88,23 @@ describe("notifications offline integration (09.7)", () => {
     expect(storage.getCachedNotifications()[0].readAt).toBe(offlineMoment);
   });
 
+  it("09.7.4 a refresh write-through between mark-read and drain keeps the cached read_at (COALESCE)", () => {
+    const offlineMoment = "2026-06-07T10:00:00.000Z";
+    storage.cacheNotifications([makeNotification({ id: "n1", readAt: null })]);
+
+    // Offline tap: optimistic local mark.
+    markNotificationReadCommand(storage, "n1", () => offlineMoment);
+    expect(storage.getCachedNotifications()[0].readAt).toBe(offlineMoment);
+
+    // A pull-to-refresh lands BEFORE the queue drains — the server still
+    // returns n1 as UNREAD (read_at: null). The write-through must NOT reset
+    // the cached optimistic read (Inspector Brad / locked decision #3).
+    storage.cacheNotifications([makeNotification({ id: "n1", readAt: null })]);
+
+    expect(storage.getCachedNotifications()[0].readAt).toBe(offlineMoment);
+    expect(storage.getCachedUnreadCount()).toBe(0);
+  });
+
   it("09.7.3 preferences toggle offline → queue → reconnect → cache reset to merged column", async () => {
     storage.cacheNotificationPreferences({
       goal_milestone: true,

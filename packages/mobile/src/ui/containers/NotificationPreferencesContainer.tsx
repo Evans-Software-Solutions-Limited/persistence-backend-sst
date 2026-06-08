@@ -3,10 +3,7 @@ import { Linking } from "react-native";
 import { useRouter } from "expo-router";
 
 import type { NotificationType } from "@/domain/models/notification";
-import {
-  DEFAULT_OPT_IN,
-  type NotificationPreferences,
-} from "@/domain/models/notification-preferences";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import {
   getPreferencesQuery,
   refreshPreferences,
@@ -18,14 +15,24 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 /**
  * <NotificationPreferencesContainer> — offline-first preferences wiring.
  *
- * Reads the cached opt-in map synchronously, writes `DEFAULT_OPT_IN` on
- * first-ever open (AC 3.7), and toggles optimistically (cache + enqueue;
- * the sync worker flushes the partial-merge POST and resets the cache to
- * the server's merged column). Surfaces a permission-denial banner when OS
- * notifications are off.
+ * Reads the cached opt-in map synchronously and refreshes from the server
+ * on open. Toggles are optimistic (cache + enqueue; the sync worker flushes
+ * the partial-merge POST and resets the cache to the server's merged
+ * column). Surfaces a permission-denial banner when OS notifications are
+ * off.
+ *
+ * Revised (Inspector Brad): we no longer POST `DEFAULT_OPT_IN` on a null
+ * cache. That branch fired not just on first-ever open but on every
+ * reinstall / data-wipe / post-sign-out `clearAll` — and an all-true merge
+ * would silently re-enable categories the user had explicitly disabled on
+ * the server. Instead we just `refreshPreferences`: existing users get
+ * their stored prefs back, and brand-new users get an empty map that
+ * `isTypeEnabled` already reads as "all on" (so AC 3.7's UI default holds
+ * without a destructive write). The first explicit toggle drives the first
+ * server write.
  *
  * Spec: specs/09-notifications-social/design.md § NotificationPreferencesPresenter
- *       requirements.md STORY-003
+ *       requirements.md STORY-003 (AC 3.7 default-write reconciled — see above)
  */
 
 export function NotificationPreferencesContainer() {
@@ -41,24 +48,15 @@ export function NotificationPreferencesContainer() {
     return getPreferencesQuery(storage) ?? {};
   }, [storage, version]);
 
-  // First-open default write OR background refresh, plus a permission read.
+  // Background refresh from the server + a permission read. No first-open
+  // default write — see the Inspector Brad note in the header doc.
   useEffect(() => {
     let cancelled = false;
 
-    if (getPreferencesQuery(storage) === null) {
-      // First time this device has opened Preferences — persist the opt-in
-      // defaults so the stored column matches the UI. We deliberately do
-      // NOT GET-refresh here: the enqueued POST returns the merged column
-      // on flush (captured by the sync worker), and a server that has no
-      // row yet would otherwise clobber the just-written defaults.
-      updateNotificationPreferencesCommand(storage, DEFAULT_OPT_IN);
-      reread();
-    } else {
-      void (async () => {
-        const result = await refreshPreferences(api, storage);
-        if (!cancelled && result.ok) reread();
-      })();
-    }
+    void (async () => {
+      const result = await refreshPreferences(api, storage);
+      if (!cancelled && result.ok) reread();
+    })();
 
     void (async () => {
       const status = await notifications.getPermissionStatus();
