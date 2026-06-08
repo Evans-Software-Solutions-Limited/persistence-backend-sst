@@ -33,10 +33,11 @@ export const styles = {
     color: color.$text2,
     textAlign: "left" as const,
   },
-  // PREV — flexible column, tap-to-fill.
+  // PREV — flexible column, tap-to-fill. Centred within its column (value +
+  // empty "—") to match the centred REPS/KG fields.
   previousContainer: {
     flex: 1,
-    alignItems: "flex-start" as const,
+    alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   // Tap-to-fill control → styled as a primary link, not dim body text.
@@ -45,9 +46,11 @@ export const styles = {
     fontSize: 12,
     fontWeight: "600" as const,
     color: color.$primary,
+    textAlign: "center" as const,
   },
   previousDisabled: {
     flex: 1,
+    textAlign: "center" as const,
     fontFamily: GEIST_MONO_FAMILY,
     fontSize: 12,
     color: color.$text4,
