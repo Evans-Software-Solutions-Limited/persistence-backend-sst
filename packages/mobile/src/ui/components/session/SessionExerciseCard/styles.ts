@@ -90,12 +90,15 @@ export const styles = {
     flex: 1,
     textAlign: "left" as const,
   },
+  // Match the SetLogger data row exactly: REPS/KG are fixed 62pt fields (not
+  // flex), so the headers must use the same fixed width to sit centred over
+  // their inputs. PREV (flex) takes the slack in both rows.
   columnHeaderReps: {
-    flex: 1,
+    width: 62,
     textAlign: "center" as const,
   },
   columnHeaderKg: {
-    flex: 1,
+    width: 62,
     textAlign: "center" as const,
   },
   columnHeaderSpacer: {
