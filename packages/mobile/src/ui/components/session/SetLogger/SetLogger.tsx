@@ -71,7 +71,11 @@ export function SetLogger(props: SetLoggerProps) {
           style={styles.previousContainer}
           testID="set-logger-fill-previous"
         >
-          <Text style={styles.previousText}>
+          <Text
+            style={styles.previousText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {props.previous.reps} reps • {props.previous.weightKg} kg
           </Text>
         </TouchableOpacity>

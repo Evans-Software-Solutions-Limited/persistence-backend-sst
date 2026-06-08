@@ -89,12 +89,15 @@ export function ActiveWorkoutBarPresenter({
         backgroundColor="$surface2"
         borderWidth={1}
         borderColor="$primaryDim"
-        // Cyan glow — `0 12px 32px rgba(0,0,0,.5), 0 0 0 1px $primaryDim` in the
-        // prototype; RN shadow approximates the outer cyan halo.
+        // Cyan glow — the prototype's `0 12px 32px` y-offset is a downward web
+        // drop-shadow; on a pill floating directly above the tab bar that
+        // pushes the halo ~32px DOWN onto the tab bar (Brad: "glow goes too
+        // close to the drawer"). Use a symmetric halo (offset 0) with a tighter
+        // radius so the glow hugs the pill and doesn't bleed into the nav.
         shadowColor="$primary"
-        shadowOffset={{ width: 0, height: 12 }}
+        shadowOffset={{ width: 0, height: 0 }}
         shadowOpacity={0.45}
-        shadowRadius={20}
+        shadowRadius={14}
       >
         {/* Pulsing dot */}
         <Animated.View style={dotStyle} testID="active-workout-bar-pulse">

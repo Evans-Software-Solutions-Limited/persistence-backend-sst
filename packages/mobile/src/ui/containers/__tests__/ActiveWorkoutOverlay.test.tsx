@@ -139,9 +139,9 @@ it("shows the bar on a tab screen when a session is live, floating above the tab
   await waitFor(() => {
     expect(getByTestId("active-workout-bar")).toBeTruthy();
   });
-  // tabBarHeight(34) + gap = 60 + 34 + 8 + 12 = 114
+  // tabBarHeight(34) + gap + glow clearance = 60 + 34 + 8 + 12 + 10 = 124
   const overlay = getByTestId("active-workout-overlay");
-  expect(overlay.props.style.bottom).toBe(114);
+  expect(overlay.props.style.bottom).toBe(124);
 });
 
 it("floats just above the home indicator on a pushed-over (non-tab) screen", async () => {
@@ -154,8 +154,8 @@ it("floats just above the home indicator on a pushed-over (non-tab) screen", asy
   await waitFor(() => {
     expect(getByTestId("active-workout-overlay")).toBeTruthy();
   });
-  // insets.bottom (34) + gap (12) = 46
-  expect(getByTestId("active-workout-overlay").props.style.bottom).toBe(46);
+  // insets.bottom (34) + gap (12) + glow clearance (10) = 56
+  expect(getByTestId("active-workout-overlay").props.style.bottom).toBe(56);
 });
 
 it("hides on the session screen (expanded surface owns the view)", async () => {

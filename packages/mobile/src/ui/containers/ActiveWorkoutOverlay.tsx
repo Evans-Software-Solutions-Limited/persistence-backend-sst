@@ -52,6 +52,11 @@ import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPrese
 const TAB_BAR_CONTENT_HEIGHT = 60;
 const TAB_BAR_BOTTOM_GAP = 8;
 const ACTIVE_WORKOUT_BAR_GAP = 12;
+// Extra lift on top of the shared GAP so the pill's cyan glow (a soft halo
+// around the bar) clears the tab bar instead of bleeding onto it. The GAP is
+// the geometric contract with 14-navigation; this is a glow-only presentation
+// margin owned by this bar.
+const BAR_GLOW_CLEARANCE = 10;
 
 export function ActiveWorkoutOverlay() {
   const { session, rereadCache } = useActiveSession();
@@ -129,7 +134,9 @@ export function ActiveWorkoutOverlay() {
   const tabBarHeight =
     TAB_BAR_CONTENT_HEIGHT + insets.bottom + TAB_BAR_BOTTOM_GAP;
   const bottom =
-    (inTabs ? tabBarHeight : insets.bottom) + ACTIVE_WORKOUT_BAR_GAP;
+    (inTabs ? tabBarHeight : insets.bottom) +
+    ACTIVE_WORKOUT_BAR_GAP +
+    BAR_GLOW_CLEARANCE;
 
   return (
     <>

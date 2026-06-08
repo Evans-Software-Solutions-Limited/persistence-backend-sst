@@ -136,7 +136,11 @@ export function ActiveSupersetExerciseRow({
             onPress={onFillPrevious}
             testID={`superset-row-${sessionExerciseId}-${setNumber}-previous`}
           >
-            <Text style={styles.previousText}>
+            <Text
+              style={styles.previousText}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {previousSet.reps} reps • {previousSet.weightKg} kg
             </Text>
           </TouchableOpacity>
