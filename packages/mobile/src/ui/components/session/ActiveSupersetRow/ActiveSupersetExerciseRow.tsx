@@ -209,7 +209,8 @@ const styles = StyleSheet.create({
   previousText: {
     fontFamily: GEIST_MONO_FAMILY,
     fontSize: 12,
-    color: color.$text4,
+    fontWeight: "600",
+    color: color.$primary,
     textAlign: "center",
   },
   previousPlaceholder: {
@@ -230,6 +231,8 @@ const styles = StyleSheet.create({
     color: color.$text,
     textAlign: "center",
   },
-  columnReps: { flex: 1 },
-  columnWeight: { flex: 1 },
+  // Fixed-width fields (not greedy flex) — same fix as the normal set row, so
+  // the inputs don't balloon and the exercise/PREV columns keep their room.
+  columnReps: { width: 62 },
+  columnWeight: { width: 62 },
 });
