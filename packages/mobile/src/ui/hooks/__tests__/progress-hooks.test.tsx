@@ -15,6 +15,7 @@ import {
   useGetVolumeStats,
   useGetBodyMeasurements,
   useGetAchievements,
+  useGetStreaks,
   useGetHabits,
   useToggleHabitDay,
   useLogMeasurement,
@@ -179,6 +180,27 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     ];
     const { result } = renderHook(() => useGetAchievements(), { wrapper });
     await waitFor(() => expect(result.current.data?.length).toBe(1));
+  });
+
+  it("useGetStreaks refreshes from the API", async () => {
+    const { api, wrapper } = setup();
+    api.streaks = [
+      {
+        id: "s1",
+        userId: USER,
+        streakType: "workout_streak",
+        sourceGoalId: null,
+        period: "weekly",
+        currentCount: 4,
+        longestCount: 8,
+        lastPeriodEnd: "2026-06-07",
+        freezeTokens: 2,
+        status: "active",
+      },
+    ];
+    const { result } = renderHook(() => useGetStreaks(), { wrapper });
+    await waitFor(() => expect(result.current.data?.length).toBe(1));
+    expect(result.current.data?.[0].freezeTokens).toBe(2);
   });
 
   it("useGetHabits builds the 7-day grid", async () => {

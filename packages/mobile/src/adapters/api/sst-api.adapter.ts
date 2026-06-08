@@ -922,19 +922,25 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<Rings>("/users/me/today-rings");
   }
 
-  async getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>> {
+  async getWeeklyVolume(
+    window?: string,
+  ): Promise<Result<WeeklyVolume, ApiError>> {
     return this.requestEnvelope<WeeklyVolume>("/users/me/weekly-volume", {
       params: window ? { window } : undefined,
     });
   }
 
-  async getVolumeStats(window?: string): Promise<Result<VolumeStats, ApiError>> {
+  async getVolumeStats(
+    window?: string,
+  ): Promise<Result<VolumeStats, ApiError>> {
     return this.requestEnvelope<VolumeStats>("/users/me/volume-stats", {
       params: window ? { window } : undefined,
     });
   }
 
-  async getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>> {
+  async getRecentPRs(
+    limit?: number,
+  ): Promise<Result<PersonalRecord[], ApiError>> {
     const res = await this.requestEnvelope<PersonalRecord[]>("/users/me/prs", {
       params: limit != null ? { limit } : undefined,
     });
@@ -952,6 +958,10 @@ export class SSTApiAdapter implements ApiPort {
 
   async getAchievements(): Promise<Result<Achievement[], ApiError>> {
     return this.requestEnvelope<Achievement[]>("/users/me/achievements");
+  }
+
+  async getStreaks(): Promise<Result<Streak[], ApiError>> {
+    return this.requestEnvelope<Streak[]>("/users/me/streaks");
   }
 
   async getHabitCompletions(params?: {

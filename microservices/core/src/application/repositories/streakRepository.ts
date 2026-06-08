@@ -65,6 +65,17 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       .where(eq(userStreaks.status, "active"));
   }
 
+  /** All of a user's active streaks (You/Progress StreakHero, 06.10). */
+  async getActiveStreaksForUser(userId: string): Promise<UserStreak[]> {
+    const db = getDb();
+    return db
+      .select()
+      .from(userStreaks)
+      .where(
+        and(eq(userStreaks.userId, userId), eq(userStreaks.status, "active")),
+      );
+  }
+
   async isPeriodSatisfied(
     streak: UserStreak,
     startDate: string,

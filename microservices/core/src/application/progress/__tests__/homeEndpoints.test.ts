@@ -17,6 +17,9 @@ const homeMock = vi.hoisted(() => ({
 const habitMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as any[]) }));
 const streakMock = vi.hoisted(() => ({
   spendTokenManually: vi.fn(async () => ({ id: "s1", freezeTokens: 1 })),
+  getActiveStreaksForUser: vi.fn(async () => [
+    { id: "s1", streakType: "workout_streak", currentCount: 4 },
+  ]),
 }));
 
 vi.mock("../../repositories/volumeRepository", () => ({
@@ -57,6 +60,7 @@ import {
 } from "../getBodyTrendHandler";
 import { getAchievementsHandler } from "../getAchievementsHandler";
 import { useFreezeTokenHandler } from "../useFreezeTokenHandler";
+import { getStreaksHandler } from "../getStreaksHandler";
 
 describe("Home/You endpoints", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -136,6 +140,16 @@ describe("Home/You endpoints", () => {
       }),
     );
     expect(denied.status).toBe(400);
+  });
+
+  it("GET /users/me/streaks returns the user's active streaks", async () => {
+    const res = await getStreaksHandler.handle(
+      new Request("http://localhost/users/me/streaks", { headers: AUTH }),
+    );
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as any;
+    expect(data[0].streakType).toBe("workout_streak");
+    expect(streakMock.getActiveStreaksForUser).toHaveBeenCalledWith("u1");
   });
 
   it("requires authentication", async () => {
