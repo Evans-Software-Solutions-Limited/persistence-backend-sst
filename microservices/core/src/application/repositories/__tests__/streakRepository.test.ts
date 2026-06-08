@@ -61,13 +61,16 @@ describe("StreakRepository", () => {
     );
   });
 
-  it("getActiveStreaksByType / getActiveStreaks return rows", async () => {
+  it("getActiveStreaksByType / getActiveStreaks / forUser return rows", async () => {
     const rows = [streak()];
     (getDb as any).mockReturnValue({ select: () => selectWhere(rows) });
     expect(
       await new StreakRepository().getActiveStreaksByType("u1", "habit_streak"),
     ).toBe(rows);
     expect(await new StreakRepository().getActiveStreaks()).toBe(rows);
+    expect(await new StreakRepository().getActiveStreaksForUser("u1")).toBe(
+      rows,
+    );
   });
 
   describe("isPeriodSatisfied", () => {

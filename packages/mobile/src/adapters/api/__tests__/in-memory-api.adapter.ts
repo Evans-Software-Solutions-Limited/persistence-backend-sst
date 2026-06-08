@@ -943,6 +943,10 @@ export class InMemoryApiAdapter implements ApiPort {
   async getAchievements() {
     return this.mayFail<Achievement[]>(this.achievements);
   }
+  public streaks: Streak[] = [];
+  async getStreaks() {
+    return this.mayFail<Streak[]>(this.streaks);
+  }
   async getHabitCompletions(params?: { goalId?: string; window?: string }) {
     const rows = params?.goalId
       ? this.habitCompletions.filter((h) => h.goalId === params.goalId)
@@ -992,7 +996,9 @@ export class InMemoryApiAdapter implements ApiPort {
       userId: "test-user",
       weightKg: input.weightKg != null ? String(input.weightKg) : null,
       bodyFatPercentage:
-        input.bodyFatPercentage != null ? String(input.bodyFatPercentage) : null,
+        input.bodyFatPercentage != null
+          ? String(input.bodyFatPercentage)
+          : null,
       chestCm: null,
       waistCm: null,
       hipsCm: null,

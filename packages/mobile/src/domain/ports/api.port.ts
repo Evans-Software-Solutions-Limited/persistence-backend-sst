@@ -450,6 +450,8 @@ export interface ApiPort {
   getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>>;
   getBodyTrend(window?: string): Promise<Result<BodyTrendPoint[], ApiError>>;
   getAchievements(): Promise<Result<Achievement[], ApiError>>;
+  /** Active streak rows for the You/Progress StreakHero. */
+  getStreaks(): Promise<Result<Streak[], ApiError>>;
   getHabitCompletions(params?: {
     goalId?: string;
     window?: string;
