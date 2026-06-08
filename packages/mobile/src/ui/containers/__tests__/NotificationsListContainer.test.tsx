@@ -330,6 +330,70 @@ describe("NotificationsListContainer", () => {
     );
   });
 
+  it("preserves loaded pages when a push arrives mid-pagination (Inspector #7)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [
+      makeNotification({
+        id: "p1",
+        title: "Page1",
+        createdAt: "2026-06-07T11:00:00.000Z",
+      }),
+    ];
+    api.notificationsNextCursor = "c2";
+
+    const { getByTestId, notifications } = renderContainer(api, storage);
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("1"),
+    );
+
+    // Paginate to an older page.
+    api.notifications = [
+      makeNotification({
+        id: "p2",
+        title: "Page2",
+        createdAt: "2026-06-05T11:00:00.000Z",
+      }),
+    ];
+    api.notificationsNextCursor = null;
+    fireEvent.press(getByTestId("load-more"));
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("2"),
+    );
+
+    // A push arrives mid-pagination → MERGE (prepend new), NOT a reset.
+    api.notifications = [
+      makeNotification({
+        id: "fresh",
+        title: "Fresh",
+        createdAt: "2026-06-07T12:00:00.000Z",
+      }),
+    ];
+    act(() => notifications.emitReceived());
+
+    // Loaded pages preserved + the new row added → 3 (not reset back to 1).
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("3"),
+    );
+  });
+
+  it("a push that brings no new rows leaves the list unchanged", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [makeNotification({ id: "only", title: "Only" })];
+
+    const { getByTestId, notifications } = renderContainer(api, storage);
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("1"),
+    );
+
+    // Same id comes back on the merge → no new rows → list unchanged.
+    act(() => notifications.emitReceived());
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("1"),
+    );
+  });
+
   it("back navigates back", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

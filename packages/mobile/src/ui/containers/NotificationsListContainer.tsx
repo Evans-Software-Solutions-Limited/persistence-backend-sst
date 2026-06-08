@@ -90,18 +90,29 @@ export function NotificationsListContainer() {
 
   const groups = useMemo(() => groupNotificationsByDate(items), [items]);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
-    try {
-      // Page 1. `refreshNotifications` writes through to the cache (newest-
-      // 100 offline fallback); the visible list is reset to this freshest
-      // page, with any un-flushed optimistic reads re-applied.
-      const result = await refreshNotifications(api, storage);
-      if (result.ok) {
-        nextCursorRef.current = result.value.nextCursor;
+  const initialLoadedRef = useRef(false);
+
+  /**
+   * Fetch page 1.
+   * - `reset` (explicit pull-to-refresh / first load): replace the visible
+   *   list with the freshest page and re-anchor the pagination cursor.
+   * - `merge` (auto-refresh on focus / push): prepend only genuinely-new
+   *   rows (ids not already shown), leaving the already-loaded older pages,
+   *   the cursor and the user's scroll position intact. A background event
+   *   must not collapse pagination (Inspector Brad #7).
+   */
+  const loadPageOne = useCallback(
+    async (mode: "reset" | "merge") => {
+      if (mode === "reset") setIsRefreshing(true);
+      setError(null);
+      try {
+        const result = await refreshNotifications(api, storage);
+        if (!result.ok) {
+          setError(new Error(result.error.message));
+          return;
+        }
         const {
-          items: merged,
+          items: page,
           flipped,
           allRead,
         } = applyPendingReads(
@@ -109,33 +120,51 @@ export function NotificationsListContainer() {
           storage,
           new Date().toISOString(),
         );
-        setItems(merged);
+        if (mode === "reset") {
+          nextCursorRef.current = result.value.nextCursor;
+          setItems(page);
+        } else {
+          setItems((prev) => {
+            const seen = new Set(prev.map((n) => n.id));
+            const fresh = page.filter((n) => !seen.has(n.id));
+            return fresh.length === 0 ? prev : [...fresh, ...prev];
+          });
+        }
         setUnreadCount(
           allRead ? 0 : Math.max(0, result.value.unreadCount - flipped),
         );
-      } else {
-        setError(new Error(result.error.message));
+      } finally {
+        if (mode === "reset") setIsRefreshing(false);
+        setIsLoading(false);
       }
-    } finally {
-      setIsRefreshing(false);
-      setIsLoading(false);
-    }
-  }, [api, storage]);
-
-  // Refresh on focus (covers mount + returning to the screen after a push).
-  useFocusEffect(
-    useCallback(() => {
-      void refresh();
-    }, [refresh]),
+    },
+    [api, storage],
   );
 
-  // Refresh when a push arrives while the screen is open.
+  // Explicit pull-to-refresh → full reset to page 1 (expected for a manual
+  // gesture). Returns a promise so the RefreshControl can await it.
+  const refresh = useCallback(() => loadPageOne("reset"), [loadPageOne]);
+
+  // First focus loads + anchors the cursor; subsequent focuses only merge
+  // new rows in, so returning to the screen never resets a paginated list.
+  useFocusEffect(
+    useCallback(() => {
+      if (initialLoadedRef.current) {
+        void loadPageOne("merge");
+      } else {
+        initialLoadedRef.current = true;
+        void loadPageOne("reset");
+      }
+    }, [loadPageOne]),
+  );
+
+  // A push while the screen is open merges new rows in (never a reset).
   useEffect(() => {
     const unsubscribe = notifications.addNotificationReceivedListener(() => {
-      void refresh();
+      void loadPageOne("merge");
     });
     return unsubscribe;
-  }, [notifications, refresh]);
+  }, [notifications, loadPageOne]);
 
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
