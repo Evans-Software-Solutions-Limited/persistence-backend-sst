@@ -63,7 +63,7 @@ describe("SessionExerciseCard", () => {
     expect(getByTestId("set-logger-set-1")).toBeTruthy();
   });
 
-  it("renders the column-header strip (SET / Previous / reps / kg)", () => {
+  it("renders the column-header strip (SET / PREV / REPS / KG)", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard
         exercise={buildExercise()}
@@ -73,9 +73,9 @@ describe("SessionExerciseCard", () => {
       />,
     );
     expect(getByText("SET")).toBeTruthy();
-    expect(getByText("Previous")).toBeTruthy();
-    expect(getByText("reps")).toBeTruthy();
-    expect(getByText("kg")).toBeTruthy();
+    expect(getByText("PREV")).toBeTruthy();
+    expect(getByText("REPS")).toBeTruthy();
+    expect(getByText("KG")).toBeTruthy();
   });
 
   it("renders the description line when targetSets + targetRepsMin/Max are supplied", () => {
@@ -152,7 +152,7 @@ describe("SessionExerciseCard", () => {
     expect(queryByText(/sets ×/)).toBeNull();
   });
 
-  it("renders the START NS REST button labelled with the supplied rest seconds", () => {
+  it("renders the rest button labelled with the supplied rest seconds", () => {
     const onStartRest = jest.fn();
     const { getByText, getByTestId } = renderWithTheme(
       <SessionExerciseCard
@@ -163,12 +163,12 @@ describe("SessionExerciseCard", () => {
         onStartRest={onStartRest}
       />,
     );
-    expect(getByText("START 75S REST")).toBeTruthy();
+    expect(getByText("75S REST")).toBeTruthy();
     fireEvent.press(getByTestId("session-exercise-start-rest"));
     expect(onStartRest).toHaveBeenCalled();
   });
 
-  it("renders ADD NEW SET copy and fires onLogSet on press", () => {
+  it("renders ADD SET copy and fires onLogSet on press", () => {
     const onLogSet = jest.fn();
     const { getByText, getByTestId } = renderWithTheme(
       <SessionExerciseCard
@@ -179,7 +179,7 @@ describe("SessionExerciseCard", () => {
         onLogSet={onLogSet}
       />,
     );
-    expect(getByText("ADD NEW SET")).toBeTruthy();
+    expect(getByText("ADD SET")).toBeTruthy();
     fireEvent.press(getByTestId("session-exercise-add-set"));
     expect(onLogSet).toHaveBeenCalled();
   });

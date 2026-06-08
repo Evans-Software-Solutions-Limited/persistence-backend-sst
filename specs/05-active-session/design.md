@@ -41,6 +41,14 @@ packages/mobile/
 
 ## `useActiveWorkout` Zustand slice
 
+> **Revised 2026-06-07 (Hybrid architecture — supersedes the literal sample code below).** The audit during 05 implementation found that the sample slice code in this section contradicts this doc's own opening prose ("the data layer is unchanged from V2 … introduces a new state machine for the minimise-to-bar pattern") and three load-bearing project invariants. The slice is a **UI-state machine only**; set data stays in SQLite. Three corrections, confirmed by Brad, are now authoritative over the sample below:
+>
+> 1. **No parallel set store.** `useActiveWorkout` holds UI state only — an active-workout pointer (`workout` ref: `{ id, name }`-class identity, plus `withClient`/`retroactive`) and `expanded` (minimised ↔ expanded). **Drop `setLog` / `appendSetLog`.** Set data remains in SQLite via `useActiveSession` (`getActiveSession(userId)` → `active_sessions`/`session_exercises`/`exercise_sets`). A second copy in Zustand would diverge from SQLite (the #1 load-bearing rule) and violate STORY-010.
+> 2. **Wall-clock elapsed, not a tick counter.** Replace `tick()` / `elapsedSeconds` accumulation with derivation from `session.startedAt` (`now − startedAt`), mirroring the rest-timer pattern. A `setInterval` tick freezes during backgrounding and undercounts; wall-clock is correct across background/force-quit.
+> 3. **Rehydrate session/set data from SQLite, not AsyncStorage.** Reuse the existing M3 recovery path (`getActiveSession`) for the actual session + sets. The slice's AsyncStorage entry persists only the lightweight flag "a workout is active + its minimised/expanded UI state" — never a second copy of the set data. The >24h stale + resume/discard prompt (STORY-007 AC 7.3) keys off the SQLite session's `startedAt`.
+>
+> The commands data layer is untouched (STORY-010); the `<ActiveSessionContainer>` plumbing sample further down (which references non-existent `usePostRecordSet`/`useDeleteSet`/`useEndSession`/etc. hooks) is likewise illustrative — wire to the existing `logSetCommand` / `cancelSessionCommand` / `completeSessionCommand` / `substituteExerciseCommand` + `useActiveSession` / `useRestTimer`. The existing `ActiveSessionBanner` is **replaced** by the new `<ActiveWorkoutBarPresenter>` (one bar, not two). The code sample below is retained for historical context only.
+
 Per migration plan §"Active workout specifically — minimize/restore pattern" + locked decision #7.
 
 ```ts
@@ -152,6 +160,17 @@ useEffect(() => {
 ---
 
 ## `<ActiveWorkoutOverlay>` — root-mounted switcher
+
+> **Revised 2026-06-07 (Hybrid navigation model — Option A, Brad-confirmed).** The "switcher" sample below (overlay renders `<ActiveSessionContainer>` when expanded) is superseded. The EXPANDED session stays the existing `/(app)/session` **modal route** — port-faithful (legacy used a modal) and it keeps Stream A's start contract (`router.push('/(app)/session?workoutId=')`, `04.7`) **untouched**. The overlay therefore renders the **minimised bar ONLY**; it never mounts `<ActiveSessionContainer>` (the route does — no double-render). Concretely:
+>
+> - Visibility = existence authority (SQLite via `useActiveSession`) gated on route segment: `showBar = hasActiveSession && !onSessionScreen && !inAuth`. The slice's `expanded` flag is NOT the render gate — the route segment is (robust to swipe-to-dismiss; no manually-synced flag to desync).
+> - **Minimise** = the session screen's chevron `router.dismiss()`es the modal → segment drops "session" → bar reappears. **Expand** = tap bar → `router.push('/(app)/session?sessionId=…')`.
+> - Elapsed is wall-clock from `session.startedAt` (a 1s interval re-renders only the clock).
+> - The new `<ActiveWorkoutBarPresenter>` **replaces** the legacy `ActiveSessionBanner` (one bar, not two — the old banner + its tests are deleted).
+> - Long-press on the bar = the end escape hatch (STORY-006 AC 6.7) → discard confirm (interim `Alert` in 05.2; the styled `<EndConfirmDialogPresenter>` lands in 05.4) → `cancelSessionCommand` + `useActiveWorkout.end()`.
+> - The tab-bar-height contract values are mirrored locally in the overlay (not imported from the tabs route module) to avoid pulling the navigator tree into the presentation graph — same rationale as the legacy banner's `60 + insets.bottom`.
+>
+> The code sample below is retained for historical context only.
 
 ```tsx
 // packages/mobile/src/ui/containers/ActiveWorkoutOverlay.tsx

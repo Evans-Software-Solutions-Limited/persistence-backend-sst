@@ -10,7 +10,6 @@
  * Spec: persistence-mobile/components/workouts/ActiveSetRow/ActiveSetRow.tsx
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -20,7 +19,8 @@ import {
   View,
 } from "react-native";
 import { styles } from "./styles";
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { IconX } from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet } from "@/domain/models/session";
 
 export type SetLoggerProps = {
@@ -71,7 +71,11 @@ export function SetLogger(props: SetLoggerProps) {
           style={styles.previousContainer}
           testID="set-logger-fill-previous"
         >
-          <Text style={styles.previousText}>
+          <Text
+            style={styles.previousText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {props.previous.reps} reps • {props.previous.weightKg} kg
           </Text>
         </TouchableOpacity>
@@ -119,11 +123,7 @@ export function SetLogger(props: SetLoggerProps) {
           testID="set-logger-remove"
           accessibilityLabel="Remove set"
         >
-          <Ionicons
-            name="trash-outline"
-            size={18}
-            color={Colors.error.DEFAULT}
-          />
+          <IconX size={12} color={color.$error} />
         </TouchableOpacity>
       </View>
     </View>
