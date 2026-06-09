@@ -10,7 +10,10 @@ import { groupNotificationsByDate } from "@/application/notifications/grouping";
 import { resolveNotificationRoute } from "@/application/notifications/deep-link";
 import { markNotificationReadCommand } from "@/application/notifications/commands/mark-read.command";
 import { markAllNotificationsReadCommand } from "@/application/notifications/commands/mark-all-read.command";
-import type { StoragePort } from "@/domain/ports/storage.port";
+import {
+  applyPendingReads,
+  optimisticUnread,
+} from "@/application/notifications/pending-reads";
 import { NotificationsListPresenter } from "@/ui/presenters/NotificationsListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 
@@ -36,96 +39,6 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  *       requirements.md STORY-002
  */
 
-/**
- * Un-flushed optimistic reads from the sync queue:
- * - `ids`: individually mark-read notification ids.
- * - `markAllAt`: the timestamp of the latest un-flushed `mark-all`, or null.
- *   A mark-all only covers notifications that existed at that moment — rows
- *   created AFTER it (new arrivals during the pending window) must stay
- *   unread, so the flag is time-scoped rather than a global blanket
- *   (Inspector Brad #8).
- */
-function pendingReadState(storage: StoragePort): {
-  markAllAt: string | null;
-  ids: Set<string>;
-} {
-  const pending = storage
-    .getPendingMutations()
-    .filter((m) => m.entityType === "notification");
-  let markAllAt: string | null = null;
-  const ids = new Set<string>();
-  for (const m of pending) {
-    if (m.endpoint === "/notifications/all") {
-      if (markAllAt === null || m.createdAt > markAllAt)
-        markAllAt = m.createdAt;
-    } else if (m.entityId) {
-      ids.add(m.entityId);
-    }
-  }
-  return { markAllAt, ids };
-}
-
-/**
- * True when a notification is covered by an un-flushed optimistic read:
- * individually marked, OR predating a pending mark-all. `Date.parse` keeps
- * the comparison robust to timestamp-format differences between the queue
- * entry and the notification row.
- */
-function isPendingRead(
-  n: Notification,
-  markAllAt: string | null,
-  ids: Set<string>,
-): boolean {
-  if (ids.has(n.id)) return true;
-  if (markAllAt !== null) {
-    const at = Date.parse(markAllAt);
-    const created = Date.parse(n.createdAt);
-    if (!Number.isNaN(at) && !Number.isNaN(created) && created <= at) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Re-apply un-flushed optimistic reads onto a freshly-fetched page so the
- * server's (older) read state doesn't clobber them — while leaving
- * post-mark-all arrivals unread.
- */
-function applyPendingReads(
-  items: Notification[],
-  storage: StoragePort,
-  now: string,
-): Notification[] {
-  const { markAllAt, ids } = pendingReadState(storage);
-  return items.map((n) =>
-    n.readAt === null && isPendingRead(n, markAllAt, ids)
-      ? { ...n, readAt: now }
-      : n,
-  );
-}
-
-/**
- * Optimistic unread count for a freshly-fetched (and pending-read-applied)
- * page 1.
- * - With a pending mark-all, everything up to that moment is read, so the
- *   only remaining unread are post-mark-all arrivals — which are the newest
- *   rows and therefore all on page 1: count the page's still-unread rows.
- * - Otherwise it's the server total minus every individually-pending read
- *   (all pages), so a page-2+ mark-read isn't bounced back up here.
- */
-function optimisticUnread(
-  serverUnread: number,
-  pageAfterReads: Notification[],
-  storage: StoragePort,
-): number {
-  const { markAllAt, ids } = pendingReadState(storage);
-  if (markAllAt !== null) {
-    return pageAfterReads.filter((n) => n.readAt === null).length;
-  }
-  return Math.max(0, serverUnread - ids.size);
-}
-
 export function NotificationsListContainer() {
   const { api, storage, notifications } = useAdapters();
   const router = useRouter();
@@ -139,6 +52,11 @@ export function NotificationsListContainer() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const nextCursorRef = useRef<string | null>(null);
+  // Bumped on every `reset` (pull-to-refresh / re-anchor). A `loadMore`
+  // captures the epoch before awaiting and discards its response if a reset
+  // landed meanwhile — otherwise the stale older page would splice in after
+  // the fresh page and corrupt the cursor (Inspector Brad #276).
+  const loadEpochRef = useRef(0);
 
   const groups = useMemo(() => groupNotificationsByDate(items), [items]);
 
@@ -169,6 +87,9 @@ export function NotificationsListContainer() {
           new Date().toISOString(),
         );
         if (mode === "reset") {
+          // Invalidate any in-flight loadMore so its stale older page can't
+          // splice in after this fresh page (Inspector Brad #276).
+          loadEpochRef.current += 1;
           nextCursorRef.current = result.value.nextCursor;
           setItems(page);
         } else {
@@ -204,7 +125,10 @@ export function NotificationsListContainer() {
     const now = new Date().toISOString();
     setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })));
     setUnreadCount(0);
-    void notifications.setBadgeCount(0);
+    // Best-effort — setBadgeCountAsync rejects when notification permission
+    // is denied; swallow so it doesn't surface as an unhandled rejection on
+    // every list open / push (Inspector Brad).
+    void notifications.setBadgeCount(0).catch(() => {});
   }, [storage, notifications]);
 
   // Load page 1, then — per Brad's "viewing the list marks everything read"
@@ -258,10 +182,15 @@ export function NotificationsListContainer() {
     // no-op until the response lands; restore it on failure so a retry can
     // resume.
     nextCursorRef.current = null;
+    const epoch = loadEpochRef.current;
     // Fetch the next (older) page straight from the API and APPEND to the
     // visible list. NOT written through the cache (older rows would be
     // pruned by the newest-100 LRU). Re-apply pending reads here too.
     const result = await api.getNotifications({ cursor });
+    // A pull-to-refresh (reset) that landed mid-flight bumped the epoch and
+    // re-anchored the cursor/list — discard this now-stale older page rather
+    // than splicing it after the fresh page (Inspector Brad #276).
+    if (loadEpochRef.current !== epoch) return;
     if (result.ok) {
       nextCursorRef.current = result.value.nextCursor;
       const merged = applyPendingReads(

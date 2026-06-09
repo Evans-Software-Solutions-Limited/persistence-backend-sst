@@ -20,6 +20,7 @@ import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
 
 import { refreshUnreadCount } from "@/application/notifications";
+import { optimisticBadgeCount } from "@/application/notifications/pending-reads";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -31,8 +32,12 @@ export function useNotificationBadge(enabled = true): void {
   const sync = useCallback(async () => {
     const result = await refreshUnreadCount(api, storage);
     if (!result.ok) return;
+    // Subtract un-flushed optimistic mark-read / mark-all from the server
+    // total so the badge can't re-paint the stale pre-mark-all count and
+    // clobber an acknowledged "mark all read" (Inspector Brad badge race).
+    const count = optimisticBadgeCount(result.value, storage);
     try {
-      await notifications.setBadgeCount(result.value);
+      await notifications.setBadgeCount(count);
     } catch {
       // Best-effort — never block on a badge write.
     }

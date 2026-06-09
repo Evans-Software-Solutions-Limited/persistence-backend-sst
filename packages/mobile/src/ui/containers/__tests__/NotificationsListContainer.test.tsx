@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { NotificationsListPresenter } from "@/ui/presenters/NotificationsListPresenter";
@@ -480,6 +481,74 @@ describe("NotificationsListContainer", () => {
     expect(
       api.getNotificationsCalls.filter((c) => c?.cursor === "c2").length,
     ).toBe(1);
+  });
+
+  it("discards a stale loadMore page when a reset lands mid-flight (Inspector #276)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.notifications = [
+      makeNotification({ id: "p1", createdAt: "2026-06-09T11:00:00.000Z" }),
+    ];
+    api.notificationsNextCursor = "c2";
+
+    // Hold the loadMore (cursor) fetch open; reset (no cursor) resolves live.
+    let resolveLoadMore!: (v: unknown) => void;
+    const realGet = api.getNotifications.bind(api);
+    jest
+      .spyOn(api, "getNotifications")
+      .mockImplementation((params?: { cursor?: string }) => {
+        if (params?.cursor) {
+          return new Promise((res) => {
+            resolveLoadMore = res as (v: unknown) => void;
+          });
+        }
+        return realGet(params);
+      });
+
+    const { getByTestId } = renderContainer(api, storage);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() =>
+      expect(getByTestId("item-count").props.children).toBe("1"),
+    );
+
+    // loadMore starts (in-flight against cursor c2).
+    await act(async () => {
+      fireEvent.press(getByTestId("load-more"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Pull-to-refresh lands first with a fresh page → bumps the epoch.
+    api.notifications = [
+      makeNotification({
+        id: "fresh",
+        title: "Fresh",
+        createdAt: "2026-06-09T12:00:00.000Z",
+      }),
+    ];
+    api.notificationsNextCursor = "freshCursor";
+    await act(async () => {
+      fireEvent.press(getByTestId("refresh"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(getByTestId("first-title").props.children).toBe("Fresh");
+
+    // The stale loadMore now resolves with an OLD page — must be discarded.
+    await act(async () => {
+      resolveLoadMore(
+        ok({
+          notifications: [makeNotification({ id: "stale-p2" })],
+          nextCursor: "stale3",
+          unreadCount: 0,
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Still just the fresh page — the stale older page was NOT spliced in.
+    expect(getByTestId("item-count").props.children).toBe("1");
+    jest.restoreAllMocks();
   });
 
   it("back navigates back", () => {
