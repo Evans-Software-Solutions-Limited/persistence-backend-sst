@@ -25,13 +25,18 @@
  *       specs/05-active-session/requirements.md STORY-005
  */
 
-import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActiveSupersetExerciseRow } from "./ActiveSupersetExerciseRow";
 import {
+  IconNote,
+  IconPlus,
+  IconTimer,
+  IconTrash,
+} from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
+import {
   BorderRadius,
-  Colors,
   Spacing,
   Typography,
 } from "@/ui/theme/workoutsLegacyTheme";
@@ -152,11 +157,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                     style={styles.actionButton}
                     testID={`superset-${props.supersetGroup}-set-${setNumber}-rest`}
                   >
-                    <Ionicons
-                      name="timer-outline"
-                      size={18}
-                      color={Colors.primary.DEFAULT}
-                    />
+                    <IconTimer size={16} color={color.$primary} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     accessibilityRole="button"
@@ -167,14 +168,9 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                     style={styles.actionButton}
                     testID={`superset-${props.supersetGroup}-set-${setNumber}-notes`}
                   >
-                    <Ionicons
-                      name="create-outline"
-                      size={18}
-                      color={
-                        supersetHasNotes
-                          ? Colors.primary.DEFAULT
-                          : Colors.text.secondary
-                      }
+                    <IconNote
+                      size={16}
+                      color={supersetHasNotes ? color.$primary : color.$text3}
                     />
                   </TouchableOpacity>
                   {canRemoveSet && (
@@ -187,11 +183,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                       accessibilityLabel={`Remove set ${setNumber} from superset ${props.supersetGroup}`}
                       testID={`superset-${props.supersetGroup}-set-${setNumber}-remove`}
                     >
-                      <Ionicons
-                        name="trash-outline"
-                        size={18}
-                        color={Colors.error.DEFAULT}
-                      />
+                      <IconTrash size={16} color={color.$error} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -263,10 +255,10 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                     accessibilityLabel="Add exercise to superset"
                     testID={`superset-${props.supersetGroup}-add-exercise`}
                   >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={20}
-                      color={Colors.primary.DEFAULT}
+                    <IconPlus
+                      size={16}
+                      color={color.$primary}
+                      strokeWidth={2.5}
                     />
                     <Text style={styles.addExerciseToSupersetText}>
                       Add Exercise to Superset
@@ -287,7 +279,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
           accessibilityHint="Add another superset set"
           testID={`superset-${props.supersetGroup}-add-set`}
         >
-          <Ionicons name="add-sharp" size={20} color={Colors.primary.DEFAULT} />
+          <IconPlus size={16} color={color.$primary} strokeWidth={2.5} />
           <Text style={styles.buttonText}>ADD SET</Text>
         </TouchableOpacity>
       </View>
@@ -303,7 +295,7 @@ const styles = StyleSheet.create({
   supersetContent: {
     gap: Spacing.md,
     borderLeftWidth: 2,
-    borderLeftColor: Colors.primary.DEFAULT,
+    borderLeftColor: color.$primary,
   },
   setBlock: {
     gap: Spacing.sm,
@@ -322,7 +314,7 @@ const styles = StyleSheet.create({
   },
   setHeaderText: {
     ...Typography.body1,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     fontWeight: "700",
   },
   actionButton: { padding: Spacing.xs },
@@ -346,7 +338,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.sm,
     paddingTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
+    borderTopColor: color.$border,
   },
   addExerciseToSupersetButton: {
     flexDirection: "row",
@@ -357,12 +349,12 @@ const styles = StyleSheet.create({
   },
   addExerciseToSupersetText: {
     ...Typography.body1,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     fontWeight: "600",
   },
   buttonText: {
     ...Typography.caption,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     fontWeight: "600",
   },
   supersetConnector: {
@@ -374,21 +366,21 @@ const styles = StyleSheet.create({
     // Without an explicit color, RN defaults to black — leaves a 2pt
     // black segment at the top of the rail before `supersetContent`'s
     // cyan border picks up below. Match `supersetContent.borderLeftColor`.
-    borderLeftColor: Colors.primary.DEFAULT,
+    borderLeftColor: color.$primary,
   },
   supersetLineStart: {
     height: 2,
     flex: 0,
     width: 0,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
   },
   supersetLineContinue: {
     height: 2,
     flex: 1,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
   },
   supersetBadge: {
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.sm,
@@ -396,7 +388,7 @@ const styles = StyleSheet.create({
   },
   supersetBadgeText: {
     ...Typography.caption,
-    color: Colors.text.primary,
+    color: color.$primaryInk,
     fontWeight: "700",
     textTransform: "uppercase",
   },
@@ -406,7 +398,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingBottom: Spacing.xs,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$border,
     // Must match `ActiveSupersetExerciseRow.row.gap` (Spacing.sm) so
     // the four flex columns line up under their headers — same flex
     // ratios + same gap = identical column positions. Was `xs`,
@@ -415,7 +407,7 @@ const styles = StyleSheet.create({
   },
   columnHeader: {
     ...Typography.caption,
-    color: Colors.text.secondary,
+    color: color.$text3,
     textTransform: "uppercase",
     fontWeight: "600",
   },

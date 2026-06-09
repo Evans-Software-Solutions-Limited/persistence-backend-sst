@@ -1,8 +1,10 @@
 import { Stack } from "expo-router";
-import { ActiveSessionBanner } from "../../src/ui/components/session/ActiveSessionBanner";
+import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
+import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
@@ -43,6 +45,12 @@ export default function AppLayout() {
   // own `processSyncQueue` call so freshly-unblocked entries land
   // without waiting for the next foreground tick.
   useAutoRetryOnUpgrade();
+  // 09.6: route notification taps (cold-start + background) to their deep
+  // link. Mounted in the authenticated tree so router targets resolve.
+  useNotificationDeepLink();
+  // Keep the OS app-icon badge in sync with the unread count (launch /
+  // foreground / push).
+  useNotificationBadge();
 
   return (
     <ExerciseFiltersProvider>
@@ -55,6 +63,11 @@ export default function AppLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="notifications" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="profile/notifications"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
         <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
         <Stack.Screen
@@ -153,7 +166,15 @@ export default function AppLayout() {
               specs/14-navigation/tasks.md T-14.5.1
       */}
       <ProfileDrawerContainer />
-      <ActiveSessionBanner />
+      {/*
+        ActiveWorkoutOverlay — the minimised "workout in progress" bar.
+        Root-mounted so it persists across tab/drawer navigation. Renders the
+        BAR only; the expanded session stays the /(app)/session modal route
+        (Hybrid Option A — see the overlay's header for the rationale).
+
+        Spec: specs/05-active-session/design.md § <ActiveWorkoutBarPresenter>
+      */}
+      <ActiveWorkoutOverlay />
     </ExerciseFiltersProvider>
   );
 }

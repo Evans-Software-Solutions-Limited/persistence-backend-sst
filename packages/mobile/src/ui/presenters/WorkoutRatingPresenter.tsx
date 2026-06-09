@@ -31,12 +31,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
+import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import { SemiCircleSlider } from "@/ui/components/workouts/SemiCircleSlider";
 
 const MIN_RATING = 1;
@@ -50,17 +46,16 @@ const getDifficultyMessage = (rating: number): string => {
   return "Extremely Hard";
 };
 
+// 05.6: RPE band → design-system token mapping (design.md § WorkoutRating
+// RPE_BAND_TONES): easy → $success, moderate → $info, hard → $warning,
+// veryHard → $ember, maximal → $error. Band boundaries preserved from the
+// legacy port (1-2 / 3-4 / 5-6 / 7-8 / 9-10).
 const getDifficultyColor = (rating: number): string => {
-  if (rating <= 2) return Colors.success.DEFAULT;
-  // Band 3-4 is `info` (cyan), not the brand `primary` — matches
-  // legacy `WorkoutRatingScreen.getDifficultyColor`. The previous V2
-  // value collapsed band 3-4 onto the brand colour, which made every
-  // "Easy" rating bleed into the app's chrome accent and washed the
-  // difficulty scale out.
-  if (rating <= 4) return Colors.info.DEFAULT;
-  if (rating <= 6) return Colors.warning.DEFAULT;
-  if (rating <= 8) return Colors.warning.dark;
-  return Colors.error.DEFAULT;
+  if (rating <= 2) return color.$success;
+  if (rating <= 4) return color.$info;
+  if (rating <= 6) return color.$warning;
+  if (rating <= 8) return color.$ember;
+  return color.$error;
 };
 
 export type WorkoutRatingPresenterProps = {
@@ -153,7 +148,7 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
             <TextInput
               style={styles.notesInput}
               placeholder="Add any notes about your workout..."
-              placeholderTextColor={Colors.text.tertiary}
+              placeholderTextColor={color.$text4}
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -188,7 +183,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   header: {
     paddingHorizontal: Spacing.md,
@@ -199,7 +194,7 @@ const styles = StyleSheet.create({
   },
   backLabel: {
     ...Typography.body1,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   content: {
     width: "100%",
@@ -210,18 +205,18 @@ const styles = StyleSheet.create({
   },
   congrats: {
     ...Typography.h1,
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
     paddingTop: Spacing.sm,
   },
   subtitle: {
     ...Typography.body1,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   question: {
     ...Typography.h3,
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
     marginTop: Spacing.lg,
   },
@@ -249,7 +244,7 @@ const styles = StyleSheet.create({
   },
   ratingMax: {
     ...Typography.h3,
-    color: Colors.text.secondary,
+    color: color.$text3,
     marginLeft: Spacing.xs,
   },
   difficultyContainer: {
@@ -269,24 +264,24 @@ const styles = StyleSheet.create({
   },
   notesLabel: {
     ...Typography.body2,
-    color: Colors.text.secondary,
+    color: color.$text3,
     marginBottom: Spacing.sm,
   },
   notesInput: {
     ...Typography.body2,
-    color: Colors.text.primary,
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.md,
+    color: color.$text,
+    backgroundColor: color.$surface2,
+    borderRadius: 12,
     padding: Spacing.md,
     minHeight: 100,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$border,
   },
   submitButton: {
     width: "100%",
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.md,
+    borderRadius: 14,
     alignItems: "center",
     marginTop: Spacing.lg,
   },
@@ -295,7 +290,9 @@ const styles = StyleSheet.create({
   },
   submitLabel: {
     ...Typography.body1,
-    color: Colors.text.primary,
-    fontWeight: "600",
+    // Dark ink on the vivid difficulty-accent fill (the new band tokens are
+    // lighter than the legacy palette → light text would fail contrast).
+    color: color.$bg,
+    fontWeight: "700",
   },
 });

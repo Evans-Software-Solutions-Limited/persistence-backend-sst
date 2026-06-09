@@ -31,4 +31,17 @@ export class StubNotificationsAdapter implements NotificationsPort {
     return "";
   }
   async cancelLocalNotification() {}
+  async setBadgeCount() {}
+  addPushTokenListener() {
+    return () => {};
+  }
+  addNotificationReceivedListener() {
+    return () => {};
+  }
+  addNotificationResponseListener() {
+    return () => {};
+  }
+  async getLastNotificationResponse(): Promise<null> {
+    return null;
+  }
 }

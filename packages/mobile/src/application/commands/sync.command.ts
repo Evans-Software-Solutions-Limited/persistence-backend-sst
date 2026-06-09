@@ -5,6 +5,8 @@ import type {
   StoragePort,
 } from "@/domain/ports/storage.port";
 import type { EntitlementVerdict } from "@/domain/ports/sync.types";
+import { normalizePreferences } from "@/domain/models/notification-preferences";
+import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 
 export type SyncResult = {
@@ -199,6 +201,37 @@ export async function processSyncQueue(
         } catch (err) {
           console.warn(
             "[sync] POST /exercises succeeded but id-swap failed; local id will reconcile on the next refresh:",
+            err,
+          );
+        }
+      }
+
+      // 09: a flushed `POST /notifications/preferences` echoes the
+      // server's authoritative merged JSONB column (RETURNING). Reset the
+      // local cache to it so an optimistic toggle that raced a concurrent
+      // change converges on server-truth. Non-fatal on parse failure: the
+      // POST already succeeded, so the entry still marks completed and the
+      // cache keeps its optimistic value until the next preferences read.
+      if (
+        entry.entityType === "notification-preferences" &&
+        entry.endpoint === "/notifications/preferences"
+      ) {
+        try {
+          const body = (await response.json()) as {
+            data?: Record<string, unknown>;
+          };
+          if (body.data) {
+            // Re-apply toggles still queued behind this one (this entry is
+            // already in_flight, so it's excluded) so a concurrent toggle
+            // isn't clobbered by this response's merged column.
+            storage.cacheNotificationPreferences({
+              ...normalizePreferences(body.data),
+              ...pendingPreferenceOverrides(storage),
+            });
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /notifications/preferences succeeded but response capture failed; cache keeps its optimistic value:",
             err,
           );
         }

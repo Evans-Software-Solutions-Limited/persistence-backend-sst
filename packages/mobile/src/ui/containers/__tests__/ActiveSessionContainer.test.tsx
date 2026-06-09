@@ -19,6 +19,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
+import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 // M2 learning #13: cascading-async tests (findByTestId →
@@ -138,6 +139,11 @@ function makeAdapters(
     getDevicePushToken: jest.fn(async () => ok("device-token")),
     scheduleLocalNotification: jest.fn(async () => "notif-1"),
     cancelLocalNotification: jest.fn(async () => undefined),
+    setBadgeCount: jest.fn(async () => undefined),
+    addPushTokenListener: jest.fn(() => () => {}),
+    addNotificationReceivedListener: jest.fn(() => () => {}),
+    addNotificationResponseListener: jest.fn(() => () => {}),
+    getLastNotificationResponse: jest.fn(async () => null),
   };
 
   return {
@@ -158,6 +164,7 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 const mockRouterBack = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterDismissAll = jest.fn();
+const mockRouterDismiss = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => {
   // useFocusEffect's prod implementation registers with the React
@@ -173,6 +180,7 @@ jest.mock("expo-router", () => {
       back: (...args: unknown[]) => mockRouterBack(...args),
       push: (...args: unknown[]) => mockRouterPush(...args),
       dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
+      dismiss: (...args: unknown[]) => mockRouterDismiss(...args),
     },
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useFocusEffect: (cb: React.EffectCallback) => {
@@ -182,6 +190,7 @@ jest.mock("expo-router", () => {
       push: (...args: unknown[]) => mockRouterPush(...args),
       back: (...args: unknown[]) => mockRouterBack(...args),
       dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
+      dismiss: (...args: unknown[]) => mockRouterDismiss(...args),
     }),
   };
 });
@@ -190,6 +199,7 @@ describe("ActiveSessionContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({});
+    useActiveWorkout.setState({ active: null, expanded: false });
   });
 
   afterEach(() => {
@@ -239,8 +249,83 @@ describe("ActiveSessionContainer", () => {
     expect(await findByText("Quick Workout")).toBeTruthy();
   });
 
-  it("Discard footer button shows Alert.alert; confirming fires cancelSessionCommand and dismisses", async () => {
-    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  it("header End pill opens the styled end-confirm dialog; End fires cancelSessionCommand and dismisses", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+    // Seed the slice as if launch reconciliation adopt()-ed this session, so we
+    // can assert onConfirmEnd clears it (Bug fix, Inspector Brad 🟡).
+    useActiveWorkout.setState({
+      active: {
+        sessionId: "local-1",
+        workoutId: null,
+        name: "Quick Workout",
+        startedAt: "2026-05-05T10:00:00.000Z",
+      },
+      expanded: true,
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // 05.4: discard lives on the header "End" pill → opens the styled
+    // <EndConfirmDialogPresenter> (no Alert.alert).
+    fireEvent.press(await findByTestId("session-end"));
+    expect(await findByTestId("end-confirm-dialog")).toBeTruthy();
+
+    // Confirm "End" → bulk cancellation queued + modal stack collapsed.
+    fireEvent.press(await findByTestId("end-confirm-dialog-end"));
+
+    const queue = storage.getPendingMutations();
+    expect(queue).toHaveLength(1);
+    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
+    expect(mockRouterDismissAll).toHaveBeenCalled();
+    expect(queryByTestId("end-confirm-dialog")).toBeNull();
+    // Bug fix (🟡): the in-session End path must clear the slice too, not just
+    // SQLite — otherwise the pointer dangles until the next launch.
+    expect(useActiveWorkout.getState().active).toBeNull();
+  });
+
+  it("End-confirm dialog 'Keep going' dismisses without cancelling the session", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-end"));
+    fireEvent.press(await findByTestId("end-confirm-dialog-keep-going"));
+
+    expect(queryByTestId("end-confirm-dialog")).toBeNull();
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+    expect(mockRouterDismissAll).not.toHaveBeenCalled();
+  });
+
+  it("header chevron-down minimises (dismisses the modal) without cancelling the session", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheActiveSession("user-1", {
@@ -259,29 +344,13 @@ describe("ActiveSessionContainer", () => {
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
-    fireEvent.press(await findByTestId("active-session-discard"));
+    fireEvent.press(await findByTestId("session-minimize"));
 
-    // Native Alert was opened with the legacy copy.
-    expect(alertSpy).toHaveBeenCalledWith(
-      "Cancel Workout",
-      "Are you sure you want to discard this workout? All progress will be lost.",
-      expect.any(Array),
-    );
-
-    // Simulate the user tapping Discard in the alert.
-    const buttons = (alertSpy.mock.calls.at(-1)?.[2] ?? []) as {
-      text: string;
-      style?: string;
-      onPress?: () => void;
-    }[];
-    const discardButton = buttons.find((b) => b.style === "destructive");
-    discardButton?.onPress?.();
-
-    // Bulk cancellation queued; modal stack collapsed.
-    const queue = storage.getPendingMutations();
-    expect(queue).toHaveLength(1);
-    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
-    expect(mockRouterDismissAll).toHaveBeenCalled();
+    // Modal dismissed (the floating bar takes over) and the session stays
+    // live in SQLite — NOT cancelled, no mutation queued.
+    expect(mockRouterDismiss).toHaveBeenCalledTimes(1);
+    expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+    expect(storage.getPendingMutations()).toHaveLength(0);
   });
 
   it("Finish footer button routes to /session/rate when at least one set has weight + reps logged", async () => {
@@ -643,14 +712,13 @@ describe("ActiveSessionContainer", () => {
     );
 
     // Gate on the rest-seconds-bearing label rendering. The button text
-    // includes the template's restSeconds (e.g. "START 60S REST"); only
-    // after `useWorkout` commits the cached workout to state does the
-    // 60s label appear. Without this wait, the tap races the cache
-    // hydration on a slow runner — `templateByExercise` is empty for one
-    // render, the button reads "START 90S REST" (default fallback), and
-    // the tap schedules 90s instead of 60s. Locally fast enough to slip
-    // through; CI consistently lost the race.
-    await findByText("START 60S REST");
+    // includes the template's restSeconds (e.g. "60S REST"); only after
+    // `useWorkout` commits the cached workout to state does the 60s label
+    // appear. Without this wait, the tap races the cache hydration on a slow
+    // runner — `templateByExercise` is empty for one render, the button reads
+    // "90S REST" (default fallback), and the tap schedules 90s instead of 60s.
+    // Locally fast enough to slip through; CI consistently lost the race.
+    await findByText("60S REST");
     fireEvent.press(await findByTestId("session-exercise-start-rest"));
 
     await waitFor(() => {

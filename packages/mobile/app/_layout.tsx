@@ -7,8 +7,10 @@ import * as Notifications from "expo-notifications";
 import { StripeProvider } from "@stripe/stripe-react-native";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
+import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 
 /**
@@ -73,6 +75,33 @@ function NotificationPermissionsBootstrap() {
  */
 function UserModeBootstrap() {
   useUserModeEligibility();
+  return null;
+}
+
+/**
+ * Registers the device push token after auth resolves + refreshes the
+ * notifications cache when a push arrives while foregrounded (09.2).
+ * Sibling to the other bootstraps — push delivery and auth are
+ * independent concerns. Self-gates on a resolved `userId`, so it no-ops
+ * until the user is signed in.
+ *
+ * Spec: specs/09-notifications-social/requirements.md STORY-004
+ */
+function PushNotificationsBootstrap() {
+  usePushNotifications(true);
+  return null;
+}
+
+/**
+ * Restores the `useActiveWorkout` UI-state slice on launch and reconciles it
+ * against the SQLite session cache (the existence authority). Sibling to
+ * `UserModeBootstrap` — self-gates on a resolved `userId`, so it no-ops until
+ * signed in. Surfaces the >24h resume/discard prompt.
+ *
+ * Spec: specs/05-active-session/requirements.md STORY-007 (AC 7.2, 7.3)
+ */
+function ActiveWorkoutBootstrap() {
+  useActiveWorkoutRehydration();
   return null;
 }
 
@@ -160,7 +189,9 @@ export default function RootLayout() {
         >
           <AppProviders>
             <NotificationPermissionsBootstrap />
+            <PushNotificationsBootstrap />
             <UserModeBootstrap />
+            <ActiveWorkoutBootstrap />
             <AuthGate />
           </AppProviders>
         </StripeProvider>

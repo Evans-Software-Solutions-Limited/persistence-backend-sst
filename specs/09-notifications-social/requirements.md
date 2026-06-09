@@ -2,6 +2,49 @@
 
 > **Spec rewritten from scratch on 2026-05-28** to align with the May 2026 design package + the May 2027 M7-backend ship. Prior version preserved in git history.
 
+> **Revised 2026-06-07 (Phase 09.1 reconciliation — supersedes conflicting detail below).**
+> Building the mobile frontend surfaced that the 2026-05-28 rewrite's inline
+> taxonomy was aspirational and never matched the shipped backend (PR #81).
+> The following is now authoritative; older inline detail that conflicts is
+> superseded:
+>
+> 1. **Taxonomy is producer-owned (9 types, not 11).** The canonical
+>    `notification_type` enum has 9 values today —
+>    `workout_assigned`, `friend_request`, `pt_request`, `pt_accepted`,
+>    `physio_request`, `physio_accepted`, `workout_reminder`,
+>    `goal_milestone`, `trainer_feedback`. The streak / nutrition / on-behalf
+>    types sketched in the design.md inventory are a **forward-looking list**
+>    registered by their producing specs (06 / 13 / 10) when those features
+>    ship, via the enum-extension contract (locked decision #10). M7/09 builds
+>    against the 9 live types only. `POST /notifications/preferences` 400s any
+>    key outside the enum, so the client must not send unshipped keys.
+> 2. **Forward-compatible renderer.** An unknown / future `type` from a server
+>    ahead of the client renders with a generic fallback visual and stays
+>    markable-read — never crashes, never drops the list.
+> 3. **List pagination is cursor (keyset), not offset.** The backend list
+>    endpoint was realigned offset → cursor to match this spec's design
+>    (`GET /notifications?cursor=&limit=` → `{ rows, nextCursor, unreadCount }`).
+>    AC 2.9's "confirm" resolves to **cursor**, not `offset`.
+> 4. **Wire field mapping (client-side).** The backend row uses `message`,
+>    `isRead`+`readAt`, and `data` (deep-link lives in `data.deepLink`). The
+>    mobile adapter maps these onto the domain `Notification`
+>    (`body`, `readAt`, `deepLink`) at the adapter boundary — no DB column
+>    rename. Default opt-in is "all 9 on" (matches the backend read-default).
+> 5. **Preferences categories** are reconciled to the 9 live types
+>    (Workouts / Goals / Trainer & Physio / Social) — see design.md.
+> 6. **List uses `FlatList`** (FlashList swap deferred to M11 perf work per the
+>    MEMORY ledger); the data/renderItem/refresh/onEndReached contract is
+>    identical so the swap is mechanical.
+> 7. **Mark-read `read_at` semantics (clarifies locked decision #3 / STORY-006
+>    AC 6.4).** `PATCH /notifications/:id` accepts only `{ isRead: true }` and
+>    stamps `read_at = COALESCE(read_at, NOW())` server-side. So the SERVER
+>    records the first-flush moment (it never receives a client timestamp),
+>    and COALESCE makes sync-queue replays idempotent (a re-flush can't
+>    advance `read_at`). The user's offline-tap moment is preserved in the
+>    LOCAL SQLite cache (also COALESCE). The original spec wording
+>    "read_at = original-mark moment" is reconciled to this: original-mark
+>    moment lives client-side; server-side guarantee is replay-idempotency.
+
 ---
 
 ## Overview

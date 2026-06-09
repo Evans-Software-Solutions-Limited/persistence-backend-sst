@@ -37,6 +37,12 @@ import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
+import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
+import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
+import {
+  activeWorkoutElapsedSeconds,
+  useActiveWorkout,
+} from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
@@ -68,6 +74,12 @@ export function ActiveSessionContainer() {
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, rereadCache } = useActiveSession();
+
+  // Coach on-behalf context for the trainer banner (STORY-004). Sourced from
+  // the UI-state slice; undefined until M8 (`10-trainer-features`) seeds it via
+  // the on-behalf start flow → no banner for athletes today.
+  const withClient = useActiveWorkout((s) => s.active?.withClient);
+  const retroactive = useActiveWorkout((s) => s.active?.retroactive);
 
   // Stable id factory — empty deps, M2 learning #7.
   const generateId = useCallback(
@@ -483,6 +495,15 @@ export function ActiveSessionContainer() {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
 
+  const onMinimize = useCallback(() => {
+    // Collapse to the floating <ActiveWorkoutBar> (STORY-002 AC 2.4 /
+    // STORY-006). Dismiss the session modal — the route segment leaves
+    // "session" and <ActiveWorkoutOverlay> re-shows the bar. The session is
+    // NOT cancelled; it stays live in SQLite (the existence authority), so
+    // tapping the bar re-pushes this screen with the in-progress sets intact.
+    router.dismiss();
+  }, []);
+
   const onFinish = useCallback(() => {
     // Tap Complete → rating screen captures 1-10 difficulty + notes
     // → submit fires completeSessionCommand → replaces with summary.
@@ -512,27 +533,26 @@ export function ActiveSessionContainer() {
     router.push("/(app)/session/rate" as never);
   }, [session]);
 
+  // 05.4: the header "End" pill opens the styled <EndConfirmDialogPresenter>
+  // (replacing the legacy Alert.alert). Confirming fires cancelSessionCommand
+  // (queues the bulk-record cancellation flush) and dismisses the modal stack.
+  const [endConfirmVisible, setEndConfirmVisible] = useState(false);
+
   const onDiscard = useCallback(() => {
-    // Native Alert.alert matching legacy `ActiveWorkoutModal.handleDiscardWorkout`
-    // (persistence-mobile/components/workouts/ActiveWorkoutModal.tsx:514).
-    // Confirm first; on Discard, fire cancelSessionCommand (queues the
-    // bulk-record cancellation flush) and dismiss the modal stack.
+    setEndConfirmVisible(true);
+  }, []);
+
+  const onConfirmEnd = useCallback(() => {
+    setEndConfirmVisible(false);
     if (!userId) return;
-    Alert.alert(
-      "Cancel Workout",
-      "Are you sure you want to discard this workout? All progress will be lost.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            cancelSessionCommand({ storage, userId });
-            router.dismissAll();
-          },
-        },
-      ],
-    );
+    cancelSessionCommand({ storage, userId });
+    // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
+    // overlay's end path. Without this, slice.active + the AsyncStorage pointer
+    // dangle until the next launch's orphan reconciliation; and a stale
+    // withClient/retroactive (read at lines 81-82) could leak into a future
+    // session once M8 wires start() to populate them.
+    void useActiveWorkout.getState().end();
+    router.dismissAll();
   }, [userId, storage]);
 
   // Existing-exercise ids gate every picker (Add, Add-to-Superset,
@@ -594,6 +614,9 @@ export function ActiveSessionContainer() {
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}
         onStartRest={onStartRest}
+        withClient={withClient}
+        retroactive={retroactive}
+        onMinimize={onMinimize}
         onDiscard={onDiscard}
         onFinish={onFinish}
       />
@@ -660,6 +683,16 @@ export function ActiveSessionContainer() {
         onSave={onSaveNotes}
         onCancel={onCloseNotes}
       />
+
+      {endConfirmVisible && (
+        <EndConfirmDialogPresenter
+          elapsed={formatBarElapsed(
+            activeWorkoutElapsedSeconds(session.startedAt),
+          )}
+          onKeepGoing={() => setEndConfirmVisible(false)}
+          onEnd={onConfirmEnd}
+        />
+      )}
     </>
   );
 }
