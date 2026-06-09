@@ -5,6 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { resolveEventTs } from "../streaks/evaluate";
 
 /**
  * DELETE /habit-completions?goalId=&date= — toggle a habit OFF for a
@@ -24,13 +25,15 @@ export const deleteHabitCompletionHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const { goalId, date } = ctx.query;
-      const completedAt = date ? new Date(date) : new Date();
-      // Reject a malformed date with 400 rather than 500ing on the
-      // downstream `.toISOString()` RangeError (Inspector finding).
-      if (Number.isNaN(completedAt.getTime())) {
+      // Reject a malformed date with 400 rather than letting the downstream
+      // `.toISOString()` throw a RangeError → 500 (Inspector finding).
+      if (date !== undefined && Number.isNaN(new Date(date).getTime())) {
         ctx.set.status = 400;
         return { error: "Invalid date" };
       }
+      // Clamp future dates to now — mirrors createHabitCompletionHandler so
+      // the lookup key matches what the create path actually stored.
+      const completedAt = resolveEventTs(date);
 
       const deleted = await ctx.HabitRepository.remove(
         userId,
