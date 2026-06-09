@@ -185,8 +185,10 @@ describe("NotificationsListHandler", () => {
     expect(response.status).toBe(400);
     const data = (await response.json()) as any;
     expect(data.error).toBe("Invalid cursor");
-    // countUnread must NOT run once the cursor is rejected.
-    expect(mocks.countUnread).not.toHaveBeenCalled();
+    // `countUnread` may run (it's fired in parallel with `list` — they're
+    // independent queries), but its result is discarded on a bad cursor:
+    // the 400 body carries only the error, never an unreadCount.
+    expect(data.unreadCount).toBeUndefined();
   });
 
   it("re-throws non-cursor errors from the repository", async () => {

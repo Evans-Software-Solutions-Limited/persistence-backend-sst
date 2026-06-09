@@ -49,6 +49,13 @@ export const notificationsListHandler = new Elysia()
         MAX_LIMIT,
       );
 
+      // Fire both queries in parallel — they hit `notifications`
+      // independently over Neon's stateless HTTP, so total latency is
+      // max(list, count) rather than the sum. `countUnread` doesn't depend
+      // on the cursor, so it's safe to start before the cursor is validated;
+      // on a malformed cursor we simply discard its result.
+      const countPromise = ctx.NotificationRepository.countUnread(userId);
+
       let page;
       try {
         page = await ctx.NotificationRepository.list(userId, {
@@ -57,6 +64,8 @@ export const notificationsListHandler = new Elysia()
           unreadOnly: unreadOnly === true,
         });
       } catch (err) {
+        // Avoid an unhandled rejection from the in-flight count when we bail.
+        void countPromise.catch(() => undefined);
         if (err instanceof InvalidCursorError) {
           ctx.set.status = 400;
           return { error: "Invalid cursor" };
@@ -64,7 +73,7 @@ export const notificationsListHandler = new Elysia()
         throw err;
       }
 
-      const unreadCount = await ctx.NotificationRepository.countUnread(userId);
+      const unreadCount = await countPromise;
 
       return {
         rows: page.rows,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Linking } from "react-native";
+import { AppState, Linking } from "react-native";
 import { useRouter } from "expo-router";
 
 import type { NotificationType } from "@/domain/models/notification";
@@ -48,25 +48,42 @@ export function NotificationPreferencesContainer() {
     return getPreferencesQuery(storage) ?? {};
   }, [storage, version]);
 
-  // Background refresh from the server + a permission read. No first-open
-  // default write — see the Inspector Brad note in the header doc.
+  // Background refresh of the stored prefs from the server (once on open).
+  // No first-open default write — see the Inspector Brad note in the header.
   useEffect(() => {
     let cancelled = false;
-
     void (async () => {
       const result = await refreshPreferences(api, storage);
       if (!cancelled && result.ok) reread();
     })();
-
-    void (async () => {
-      const status = await notifications.getPermissionStatus();
-      if (!cancelled) setPermissionGranted(status === "granted");
-    })();
-
     return () => {
       cancelled = true;
     };
-  }, [api, storage, notifications, reread]);
+  }, [api, storage, reread]);
+
+  // Permission state: read on mount AND every time the app returns to the
+  // foreground. The banner deep-links the user to OS Settings; when they
+  // enable notifications and come back, the app foregrounds but this screen
+  // never unmounted — a mount-only read would leave the banner falsely
+  // showing "off". AppState 'active' is the same trigger useSyncWorker uses
+  // for "returned from another app" (Inspector Brad).
+  useEffect(() => {
+    let cancelled = false;
+    const readPermission = async () => {
+      const status = await notifications.getPermissionStatus();
+      if (!cancelled) setPermissionGranted(status === "granted");
+    };
+    void readPermission();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void readPermission();
+    });
+    return () => {
+      cancelled = true;
+      // `addEventListener` returns a subscription on RN 0.65+, but guard
+      // defensively (older RN / test mocks can return undefined).
+      sub?.remove?.();
+    };
+  }, [notifications]);
 
   const onToggle = useCallback(
     (type: NotificationType, enabled: boolean) => {

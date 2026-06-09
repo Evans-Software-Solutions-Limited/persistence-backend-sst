@@ -1,6 +1,6 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { AppState, Linking, Pressable, Text, View } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { Adapters } from "@/shared/types";
@@ -29,10 +29,16 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ back: mockBack, push: jest.fn() }),
 }));
 
+type PermissionStatus = "granted" | "denied" | "not_determined";
+
+function makeNotificationsStub(permission: PermissionStatus) {
+  return { getPermissionStatus: jest.fn(async () => permission) };
+}
+
 function makeAdapters(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
-  permission: "granted" | "denied" | "not_determined",
+  notifications: ReturnType<typeof makeNotificationsStub>,
 ): Adapters {
   return {
     api,
@@ -40,9 +46,7 @@ function makeAdapters(
     auth: {} as Adapters["auth"],
     health: {} as Adapters["health"],
     payments: {} as Adapters["payments"],
-    notifications: {
-      getPermissionStatus: jest.fn(async () => permission),
-    } as unknown as Adapters["notifications"],
+    notifications: notifications as unknown as Adapters["notifications"],
     netInfo: {} as Adapters["netInfo"],
   } as Adapters;
 }
@@ -50,14 +54,16 @@ function makeAdapters(
 function renderContainer(
   api: InMemoryApiAdapter,
   storage: InMemoryStorageAdapter,
-  permission: "granted" | "denied" | "not_determined" = "granted",
+  permission: PermissionStatus = "granted",
 ) {
-  const adapters = makeAdapters(api, storage, permission);
-  return render(<NotificationPreferencesContainer />, {
+  const notifications = makeNotificationsStub(permission);
+  const adapters = makeAdapters(api, storage, notifications);
+  const utils = render(<NotificationPreferencesContainer />, {
     wrapper: ({ children }: { children: ReactNode }) => (
       <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
     ),
   });
+  return { ...utils, notifications };
 }
 
 beforeEach(() => {
@@ -141,6 +147,39 @@ describe("NotificationPreferencesContainer", () => {
     await waitFor(() =>
       expect(getByTestId("granted").props.children).toBe("false"),
     );
+  });
+
+  it("re-reads permission on app foreground (banner clears after granting in Settings)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const addSpy = jest.spyOn(AppState, "addEventListener").mockClear();
+
+    const { getByTestId, notifications } = renderContainer(
+      api,
+      storage,
+      "denied",
+    );
+    // Flush all mount async (prefs refresh + initial permission read).
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(getByTestId("granted").props.children).toBe("false");
+
+    // User flips notifications ON in OS Settings and returns to the app.
+    notifications.getPermissionStatus.mockImplementation(async () => "granted");
+    // This container's listener is the most-recent "change" registration.
+    const changeCalls = addSpy.mock.calls.filter((c) => c[0] === "change");
+    const change = changeCalls[changeCalls.length - 1]?.[1] as (
+      s: string,
+    ) => void;
+    expect(change).toBeDefined();
+    await act(async () => {
+      change("active");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(getByTestId("granted").props.children).toBe("true");
+    addSpy.mockRestore();
   });
 
   it("opens device settings from the banner handler", async () => {
