@@ -49,9 +49,8 @@ describe("listHabitCompletionsHandler", () => {
 
   it("returns completions for the parsed window + goal filter", async () => {
     habitMock.list.mockResolvedValue([{ id: "h1" }]);
-    const { listHabitCompletionsHandler } = await import(
-      "../listHabitCompletionsHandler"
-    );
+    const { listHabitCompletionsHandler } =
+      await import("../listHabitCompletionsHandler");
     const res = await listHabitCompletionsHandler.handle(
       new Request("http://localhost/habit-completions?goalId=g1&window=30d", {
         headers: { authorization: "Bearer token" },
@@ -67,9 +66,8 @@ describe("listHabitCompletionsHandler", () => {
   });
 
   it("requires authentication", async () => {
-    const { listHabitCompletionsHandler } = await import(
-      "../listHabitCompletionsHandler"
-    );
+    const { listHabitCompletionsHandler } =
+      await import("../listHabitCompletionsHandler");
     const res = await listHabitCompletionsHandler.handle(
       new Request("http://localhost/habit-completions"),
     );

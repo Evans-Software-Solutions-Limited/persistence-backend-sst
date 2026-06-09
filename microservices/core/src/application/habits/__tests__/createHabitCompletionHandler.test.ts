@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const habitMock = { create: vi.fn(), list: vi.fn(), remove: vi.fn() };
-const evaluateMock = vi.fn().mockResolvedValue({ advanced: [], milestones: [] });
+const evaluateMock = vi
+  .fn()
+  .mockResolvedValue({ advanced: [], milestones: [] });
 
 vi.mock("../../repositories/habitRepository", () => ({
   HabitRepository: vi.fn().mockImplementation(() => habitMock),
@@ -40,9 +42,8 @@ describe("createHabitCompletionHandler", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("requires authentication", async () => {
-    const { createHabitCompletionHandler } = await import(
-      "../createHabitCompletionHandler"
-    );
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
     const res = await createHabitCompletionHandler.handle(
       post({ goalId: "g1" }, false),
     );
@@ -51,9 +52,8 @@ describe("createHabitCompletionHandler", () => {
 
   it("creates a completion, triggers the streak engine, returns 201", async () => {
     habitMock.create.mockResolvedValue({ id: "h1", goalId: "g1" });
-    const { createHabitCompletionHandler } = await import(
-      "../createHabitCompletionHandler"
-    );
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
     const res = await createHabitCompletionHandler.handle(
       post({ goalId: "g1", date: "2026-06-07T12:00:00Z", value: 3 }),
     );
@@ -72,10 +72,11 @@ describe("createHabitCompletionHandler", () => {
 
   it("defaults completedAt to now when no date is given", async () => {
     habitMock.create.mockResolvedValue({ id: "h2", goalId: "g1" });
-    const { createHabitCompletionHandler } = await import(
-      "../createHabitCompletionHandler"
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1" }),
     );
-    const res = await createHabitCompletionHandler.handle(post({ goalId: "g1" }));
     expect(res.status).toBe(201);
     const arg = habitMock.create.mock.calls[0][1];
     expect(arg.completedAt).toBeInstanceOf(Date);

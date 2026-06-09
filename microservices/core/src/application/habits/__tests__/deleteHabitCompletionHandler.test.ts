@@ -26,9 +26,8 @@ describe("deleteHabitCompletionHandler", () => {
 
   it("deletes a completion and reports the result", async () => {
     habitMock.remove.mockResolvedValue(true);
-    const { deleteHabitCompletionHandler } = await import(
-      "../deleteHabitCompletionHandler"
-    );
+    const { deleteHabitCompletionHandler } =
+      await import("../deleteHabitCompletionHandler");
     const res = await deleteHabitCompletionHandler.handle(
       new Request(
         "http://localhost/habit-completions?goalId=g1&date=2026-06-07T12:00:00Z",
@@ -46,9 +45,8 @@ describe("deleteHabitCompletionHandler", () => {
   });
 
   it("requires authentication", async () => {
-    const { deleteHabitCompletionHandler } = await import(
-      "../deleteHabitCompletionHandler"
-    );
+    const { deleteHabitCompletionHandler } =
+      await import("../deleteHabitCompletionHandler");
     const res = await deleteHabitCompletionHandler.handle(
       new Request("http://localhost/habit-completions?goalId=g1", {
         method: "DELETE",

@@ -1,8 +1,5 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import {
-  habitCompletions,
-  type HabitCompletion,
-} from "@persistence/db";
+import { habitCompletions, type HabitCompletion } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
 /**

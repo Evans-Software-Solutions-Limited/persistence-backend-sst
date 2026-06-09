@@ -52,7 +52,9 @@ describe("HabitRepository", () => {
   });
 
   it("remove reports whether a row was deleted", async () => {
-    (getDb as any).mockReturnValue({ delete: () => deleteChain([{ id: "h1" }]) });
+    (getDb as any).mockReturnValue({
+      delete: () => deleteChain([{ id: "h1" }]),
+    });
     expect(await new HabitRepository().remove("u1", "g1", TS)).toBe(true);
 
     (getDb as any).mockReturnValue({ delete: () => deleteChain([]) });
