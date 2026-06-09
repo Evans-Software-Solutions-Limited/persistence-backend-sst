@@ -19,8 +19,10 @@
 import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
 
-import { refreshUnreadCount } from "@/application/notifications";
-import { optimisticBadgeCount } from "@/application/notifications/pending-reads";
+import {
+  applyPendingReads,
+  optimisticUnread,
+} from "@/application/notifications/pending-reads";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -30,12 +32,22 @@ export function useNotificationBadge(enabled = true): void {
   const userId = session?.userId ?? null;
 
   const sync = useCallback(async () => {
-    const result = await refreshUnreadCount(api, storage);
+    // Fetch the unread rows (not just the count) so the badge is computed the
+    // SAME way as the list header — via `optimisticUnread` over a real page.
+    // Trusting the cached count alone undercounts during a pending mark-all:
+    // the cache shows 0 (all flipped read), so a push that lands before the
+    // queue drains would paint the badge 0 and hide the new arrival until the
+    // next foreground drain (Inspector Brad badge undercount). Pulling the
+    // page lets `applyPendingReads` flip only the pre-mark-all rows and leave
+    // post-mark-all arrivals counted. `unreadOnly` keeps the payload tight.
+    const result = await api.getNotifications({ unreadOnly: true });
     if (!result.ok) return;
-    // Subtract un-flushed optimistic mark-read / mark-all from the server
-    // total so the badge can't re-paint the stale pre-mark-all count and
-    // clobber an acknowledged "mark all read" (Inspector Brad badge race).
-    const count = optimisticBadgeCount(result.value, storage);
+    const page = applyPendingReads(
+      result.value.notifications,
+      storage,
+      new Date().toISOString(),
+    );
+    const count = optimisticUnread(result.value.unreadCount, page, storage);
     try {
       await notifications.setBadgeCount(count);
     } catch {

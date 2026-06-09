@@ -1,7 +1,6 @@
 import {
   applyPendingReads,
   isPendingRead,
-  optimisticBadgeCount,
   optimisticUnread,
   pendingReadState,
 } from "@/application/notifications/pending-reads";
@@ -167,23 +166,25 @@ describe("optimisticUnread", () => {
     ];
     expect(optimisticUnread(9, page, storage)).toBe(1);
   });
-});
 
-describe("optimisticBadgeCount", () => {
-  it("subtracts individually-pending reads from the server total", () => {
+  it("with a pending mark-all, still counts a post-mark-all arrival in the page (Inspector badge undercount)", () => {
+    // Regression: the badge previously trusted the cached count (0 after the
+    // optimistic mark-all) and hid a push that landed before the queue drained.
+    // Counting the fetched page leaves the post-mark-all arrival visible.
     const storage = new InMemoryStorageAdapter();
-    markReadEntry(storage, "a");
-    expect(optimisticBadgeCount(4, storage)).toBe(3);
-  });
-
-  it("with a pending mark-all, uses the (optimistic) cache count, not the server total", () => {
-    const storage = new InMemoryStorageAdapter();
-    // Cache reflects the optimistic mark-all (all rows read) → 0 unread.
-    storage.cacheNotifications([
-      makeNotification({ id: "a", readAt: "2026-06-09T00:00:00.000Z" }),
-    ]);
     markAllEntry(storage);
-    // Server still reports 3 unread (mark-all not flushed) — must NOT clobber.
-    expect(optimisticBadgeCount(3, storage)).toBe(0);
+    const at = pendingReadState(storage).markAllAt!;
+    const before = new Date(Date.parse(at) - 60_000).toISOString();
+    const after = new Date(Date.parse(at) + 60_000).toISOString();
+    const page = applyPendingReads(
+      [
+        makeNotification({ id: "old", createdAt: before, readAt: null }),
+        makeNotification({ id: "push", createdAt: after, readAt: null }),
+      ],
+      storage,
+      "2026-06-09T20:00:00.000Z",
+    );
+    // `old` is flipped read by the mark-all; the post-mark-all `push` stays.
+    expect(optimisticUnread(2, page, storage)).toBe(1);
   });
 });

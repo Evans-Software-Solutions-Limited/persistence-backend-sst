@@ -202,6 +202,40 @@ describe("useNotificationBadge", () => {
     expect(notifications.badgeCounts).toEqual([]); // rejected, swallowed
   });
 
+  it("keeps a post-mark-all push counted on the badge while the queue is pending (Inspector undercount)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubNotifications();
+    // Optimistic mark-all: cache flipped to all-read + queued PATCH all.
+    storage.cacheNotifications([
+      makeNotification({ id: "old", readAt: "2026-06-09T00:00:00.000Z" }),
+    ]);
+    storage.enqueueMutation({
+      entityType: "notification",
+      operation: "update",
+      payload: {},
+      endpoint: "/notifications/all",
+      method: "PATCH",
+    });
+    // A push lands AFTER the mark-all (far-future createdAt) before the drain.
+    api.notifications = [
+      makeNotification({
+        id: "push",
+        createdAt: "2099-01-01T00:00:00.000Z",
+        readAt: null,
+      }),
+    ];
+    api.notificationsUnreadCount = 1;
+
+    renderHook(() => useNotificationBadge(true), {
+      wrapper: wrapperFor(makeAdapters(api, storage, notifications, SESSION)),
+    });
+
+    // Must paint 1 (the new arrival), NOT 0 from the optimistic cache.
+    await waitFor(() => expect(notifications.badgeCounts).toContain(1));
+    expect(notifications.badgeCounts).not.toContain(0);
+  });
+
   it("defaults to enabled when called with no argument", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

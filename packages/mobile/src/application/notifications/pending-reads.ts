@@ -113,25 +113,3 @@ export function optimisticUnread(
   }
   return Math.max(0, serverUnread - ids.size);
 }
-
-/**
- * Optimistic unread count for the OS badge, which only has a server total
- * (no fetched page). Mirrors `optimisticUnread` but for the no-page caller:
- * - With a pending mark-all, the SQLite cache already reflects it
- *   (`markAllCachedNotificationsRead` + COALESCE-preserving write-through),
- *   so its unread count IS the post-mark-all remainder — use it.
- * - Otherwise subtract individually-pending reads from the server total.
- *
- * This stops the badge from re-painting the stale pre-mark-all server count
- * and clobbering an acknowledged "mark all read" (Inspector Brad badge race).
- */
-export function optimisticBadgeCount(
-  serverUnread: number,
-  storage: StoragePort,
-): number {
-  const { markAllAt, ids } = pendingReadState(storage);
-  if (markAllAt !== null) {
-    return storage.getCachedUnreadCount();
-  }
-  return Math.max(0, serverUnread - ids.size);
-}
