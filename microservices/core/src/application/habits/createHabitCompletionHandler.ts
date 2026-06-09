@@ -5,7 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { safeEvaluateStreaks } from "../streaks/evaluate";
+import { safeEvaluateStreaks, resolveEventTs } from "../streaks/evaluate";
 
 /**
  * POST /habit-completions — mark a habit complete for a user-local day
@@ -26,13 +26,19 @@ export const createHabitCompletionHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const { goalId, date, value } = ctx.body;
-      const completedAt = date ? new Date(date) : new Date();
       // Reject a malformed date with 400 rather than letting the downstream
       // `.toISOString()` throw a RangeError → 500 (Inspector finding).
-      if (Number.isNaN(completedAt.getTime())) {
+      if (date !== undefined && Number.isNaN(new Date(date).getTime())) {
         ctx.set.status = 400;
         return { error: "Invalid date" };
       }
+      // Clamp to now: past-day backfill (AC 4.5) passes through, but a
+      // future date is pulled back so it can't push the habit_streak's
+      // last_period_end into the future and grief the streak past every
+      // genuinely-missed day (Inspector finding — same class fixed earlier in
+      // the workout path). The CLAMPED value is what we both store + evaluate,
+      // so we never persist a future-dated completion either.
+      const completedAt = resolveEventTs(date);
 
       const completion = await ctx.HabitRepository.create(userId, {
         goalId,

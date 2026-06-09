@@ -9,9 +9,14 @@ const evaluateMock = vi
 vi.mock("../../repositories/habitRepository", () => ({
   HabitRepository: vi.fn().mockImplementation(() => habitMock),
 }));
-vi.mock("../../streaks/evaluate", () => ({
-  safeEvaluateStreaks: (...args: unknown[]) => evaluateMock(...args),
-}));
+vi.mock("../../streaks/evaluate", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../streaks/evaluate")>();
+  return {
+    ...actual, // keep the real resolveEventTs (clamp logic under test)
+    safeEvaluateStreaks: (...args: unknown[]) => evaluateMock(...args),
+  };
+});
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) =>
     authHeader?.startsWith("Bearer ")
@@ -91,5 +96,22 @@ describe("createHabitCompletionHandler", () => {
     );
     expect(res.status).toBe(400);
     expect(habitMock.create).not.toHaveBeenCalled();
+  });
+
+  it("clamps a future date to now (no future streak grief)", async () => {
+    habitMock.create.mockResolvedValue({ id: "h3", goalId: "g1" });
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const before = Date.now();
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2099-01-01T00:00:00Z" }),
+    );
+    expect(res.status).toBe(201);
+    // Both the stored completedAt AND the streak event are clamped to ~now,
+    // never the 2099 input.
+    const stored = habitMock.create.mock.calls[0][1].completedAt as Date;
+    expect(stored.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(stored.getTime()).toBeGreaterThanOrEqual(before);
+    expect(evaluateMock).toHaveBeenCalledWith("u1", "habit_completed", stored);
   });
 });
