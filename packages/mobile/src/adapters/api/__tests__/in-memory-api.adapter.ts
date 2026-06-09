@@ -6,12 +6,20 @@ import type {
 } from "@/domain/models/exercise";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
+  Notification,
+  NotificationsPage,
+} from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
+import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   ApiPort,
+  GetNotificationsParams,
+  RegisterDeviceInput,
+  RegisterDeviceResult,
   ApiProfile,
   ApiSession,
   ApiSessionExercise,
@@ -764,5 +772,102 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<CancelSubscriptionResult>(
       this.nextCancelSubscriptionResponse,
     );
+  }
+
+  // -- Notifications (09) --
+  public notifications: Notification[] = [];
+  public notificationsNextCursor: string | null = null;
+  public notificationsUnreadCount = 0;
+  public notificationPreferences: NotificationPreferences = {};
+  public registeredDevices: RegisterDeviceInput[] = [];
+  public lastPreferencesUpdate: NotificationPreferences | null = null;
+  /** Captures every `getNotifications` params for assertions. */
+  public getNotificationsCalls: (GetNotificationsParams | undefined)[] = [];
+
+  async getNotifications(
+    params?: GetNotificationsParams,
+  ): Promise<Result<NotificationsPage, ApiError>> {
+    this.getNotificationsCalls.push(params);
+    const rows =
+      params?.unreadOnly === true
+        ? this.notifications.filter((n) => n.readAt === null)
+        : this.notifications;
+    return this.mayFail<NotificationsPage>({
+      notifications: rows,
+      nextCursor: this.notificationsNextCursor,
+      unreadCount: this.notificationsUnreadCount,
+    });
+  }
+
+  async markNotificationRead(
+    id: string,
+  ): Promise<Result<Notification, ApiError>> {
+    const guard = this.mayFail(undefined);
+    if (!guard.ok) return fail<ApiError>(guard.error);
+    const idx = this.notifications.findIndex((n) => n.id === id);
+    if (idx === -1) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Notification not found",
+      });
+    }
+    const existing = this.notifications[idx];
+    const updated: Notification = {
+      ...existing,
+      readAt: existing.readAt ?? new Date().toISOString(),
+    };
+    this.notifications[idx] = updated;
+    return ok(updated);
+  }
+
+  async markAllNotificationsRead(): Promise<
+    Result<{ updated: number }, ApiError>
+  > {
+    const guard = this.mayFail(undefined);
+    if (!guard.ok) return fail<ApiError>(guard.error);
+    let updated = 0;
+    const now = new Date().toISOString();
+    this.notifications = this.notifications.map((n) => {
+      if (n.readAt === null) {
+        updated += 1;
+        return { ...n, readAt: now };
+      }
+      return n;
+    });
+    return ok({ updated });
+  }
+
+  async getNotificationPreferences(): Promise<
+    Result<NotificationPreferences, ApiError>
+  > {
+    return this.mayFail<NotificationPreferences>({
+      ...this.notificationPreferences,
+    });
+  }
+
+  async updateNotificationPreferences(
+    partial: NotificationPreferences,
+  ): Promise<Result<NotificationPreferences, ApiError>> {
+    const guard = this.mayFail(undefined);
+    if (!guard.ok) return fail<ApiError>(guard.error);
+    this.lastPreferencesUpdate = partial;
+    this.notificationPreferences = {
+      ...this.notificationPreferences,
+      ...partial,
+    };
+    return ok({ ...this.notificationPreferences });
+  }
+
+  async registerDevice(
+    input: RegisterDeviceInput,
+  ): Promise<Result<RegisterDeviceResult, ApiError>> {
+    const guard = this.mayFail(undefined);
+    if (!guard.ok) return fail<ApiError>(guard.error);
+    this.registeredDevices.push(input);
+    return ok<RegisterDeviceResult>({
+      id: `device-${this.registeredDevices.length}`,
+      registered: true,
+    });
   }
 }

@@ -10,6 +10,7 @@ import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 
 /**
@@ -74,6 +75,20 @@ function NotificationPermissionsBootstrap() {
  */
 function UserModeBootstrap() {
   useUserModeEligibility();
+  return null;
+}
+
+/**
+ * Registers the device push token after auth resolves + refreshes the
+ * notifications cache when a push arrives while foregrounded (09.2).
+ * Sibling to the other bootstraps — push delivery and auth are
+ * independent concerns. Self-gates on a resolved `userId`, so it no-ops
+ * until the user is signed in.
+ *
+ * Spec: specs/09-notifications-social/requirements.md STORY-004
+ */
+function PushNotificationsBootstrap() {
+  usePushNotifications(true);
   return null;
 }
 
@@ -174,6 +189,7 @@ export default function RootLayout() {
         >
           <AppProviders>
             <NotificationPermissionsBootstrap />
+            <PushNotificationsBootstrap />
             <UserModeBootstrap />
             <ActiveWorkoutBootstrap />
             <AuthGate />

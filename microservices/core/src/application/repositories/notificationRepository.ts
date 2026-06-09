@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { notifications } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -59,8 +59,84 @@ export interface AppNotification {
 
 export interface ListFilters {
   limit: number;
-  offset: number;
+  cursor?: string;
   unreadOnly: boolean;
+}
+
+/**
+ * Result of a keyset list page. `rows` holds up to `limit`
+ * notifications; `nextCursor` is an opaque token for fetching the next
+ * (older) page, or `null` when the caller has reached the end.
+ *
+ * Spec: specs/09-notifications-social/design.md § Backend endpoints
+ *       > GET /notifications.
+ */
+export interface ListPage {
+  rows: AppNotification[];
+  nextCursor: string | null;
+}
+
+/**
+ * Decoded keyset cursor — the `(createdAt, id)` of the last row of the
+ * previous page. The endpoint pages newest-first, so the next page is
+ * everything strictly "older" than this position.
+ */
+interface DecodedCursor {
+  createdAt: string;
+  id: string;
+}
+
+/**
+ * Thrown when a `cursor` query param cannot be decoded back into a
+ * `(createdAt, id)` pair. The handler maps this to a 400 so a corrupt
+ * token fails fast instead of silently restarting pagination (which
+ * would loop the client forever).
+ */
+export class InvalidCursorError extends Error {
+  constructor() {
+    super("Invalid cursor");
+    this.name = "InvalidCursorError";
+  }
+}
+
+/**
+ * Encode a `(createdAt, id)` position as an opaque base64url token:
+ * base64url(JSON({ c: createdAt, i: id })). Opaque on purpose — the
+ * client treats it as a blob and only echoes it back, so we can change
+ * the keyset shape later without a contract break.
+ */
+export function encodeCursor(position: DecodedCursor): string {
+  const json = JSON.stringify({ c: position.createdAt, i: position.id });
+  return Buffer.from(json, "utf8").toString("base64url");
+}
+
+/**
+ * Decode an opaque cursor token back into `(createdAt, id)`. Throws
+ * `InvalidCursorError` on any malformed input — bad base64, non-JSON,
+ * missing/empty fields, or a non-parseable timestamp.
+ */
+export function decodeCursor(token: string): DecodedCursor {
+  let parsed: unknown;
+  try {
+    const json = Buffer.from(token, "base64url").toString("utf8");
+    parsed = JSON.parse(json);
+  } catch {
+    throw new InvalidCursorError();
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new InvalidCursorError();
+  }
+
+  const { c, i } = parsed as { c?: unknown; i?: unknown };
+  if (typeof c !== "string" || typeof i !== "string" || c === "" || i === "") {
+    throw new InvalidCursorError();
+  }
+  if (Number.isNaN(new Date(c).getTime())) {
+    throw new InvalidCursorError();
+  }
+
+  return { createdAt: c, id: i };
 }
 
 function toIsoString(value: Date | string | null | undefined): string | null {
@@ -112,35 +188,90 @@ export class NotificationRepository {
   static readonly key = "NotificationRepository";
 
   /**
-   * List the user's notifications, newest-first. Pagination via
-   * `limit` + `offset`. `unreadOnly=true` ANDs `is_read = false` into
-   * the WHERE clause.
+   * List the user's notifications, newest-first. Keyset (cursor)
+   * pagination ordered `created_at DESC, id DESC`. `cursor` encodes the
+   * `(createdAt, id)` of the last row of the previous page; the next
+   * page is everything strictly older. `unreadOnly=true` ANDs
+   * `is_read = false` into the WHERE clause.
+   *
+   * Fetches `limit + 1` rows: if a surplus row comes back there's
+   * another page, so we drop it and emit `nextCursor` from the last
+   * kept row; otherwise `nextCursor` is `null`.
    *
    * Ownership: `userId` is the JWT subject — handler MUST NOT take it
    * from the request body.
+   *
+   * Throws `InvalidCursorError` if `cursor` is malformed.
    */
-  async list(userId: string, filters: ListFilters): Promise<AppNotification[]> {
+  async list(userId: string, filters: ListFilters): Promise<ListPage> {
     const db = getDb();
-    const { limit, offset, unreadOnly } = filters;
+    const { limit, cursor, unreadOnly } = filters;
 
-    const whereClause = unreadOnly
-      ? and(eq(notifications.userId, userId), eq(notifications.isRead, false))
-      : eq(notifications.userId, userId);
+    const conditions = [eq(notifications.userId, userId)];
+    if (unreadOnly) {
+      conditions.push(eq(notifications.isRead, false));
+    }
+    if (cursor !== undefined) {
+      const { createdAt, id } = decodeCursor(cursor);
+      // Keyset predicate, stable across non-unique created_at, and
+      // microsecond-precise: the cursor's `createdAt` is the full
+      // `timestamptz::text` of the last row of the previous page, so we
+      // cast it back to `timestamptz` for an exact comparison.
+      // Comparing against a JS `Date` (millisecond precision) would skip
+      // sibling rows whose created_at falls in the truncated sub-ms gap.
+      //   created_at < c OR (created_at = c AND id < i)
+      const keyset = or(
+        sql`${notifications.createdAt} < ${createdAt}::timestamptz`,
+        and(
+          sql`${notifications.createdAt} = ${createdAt}::timestamptz`,
+          lt(notifications.id, id),
+        ),
+      );
+      // `or(...)` is only undefined with zero args; guard for the type.
+      if (keyset) conditions.push(keyset);
+    }
 
     const rows = await db
-      .select()
+      .select({
+        id: notifications.id,
+        userId: notifications.userId,
+        type: notifications.type,
+        title: notifications.title,
+        message: notifications.message,
+        data: notifications.data,
+        isRead: notifications.isRead,
+        readAt: notifications.readAt,
+        relatedEntityType: notifications.relatedEntityType,
+        relatedEntityId: notifications.relatedEntityId,
+        createdAt: notifications.createdAt,
+        // Full-precision (microsecond) cursor key. `timestamptz::text`
+        // round-trips losslessly through `::timestamptz`, unlike a JS
+        // Date which truncates to milliseconds. Used ONLY for the
+        // opaque cursor — the wire `createdAt` stays a millisecond ISO.
+        createdAtCursor: sql<string>`${notifications.createdAt}::text`,
+      })
       .from(notifications)
-      .where(whereClause)
-      .orderBy(desc(notifications.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .where(and(...conditions))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
+      .limit(limit + 1);
 
-    return rows.map((row) =>
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const mapped = pageRows.map((row) =>
       toAppNotification({
         ...row,
         type: row.type as NotificationType,
       }),
     );
+
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && lastRow !== undefined
+        ? encodeCursor({ createdAt: lastRow.createdAtCursor, id: lastRow.id })
+        : null;
+
+    return { rows: mapped, nextCursor };
   }
 
   /**

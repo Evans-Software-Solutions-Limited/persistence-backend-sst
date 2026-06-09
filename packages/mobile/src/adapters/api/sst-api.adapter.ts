@@ -12,11 +12,22 @@ import {
 } from "@/domain/models/exercise";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
+  Notification,
+  NotificationsPage,
+} from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
+import { normalizePreferences } from "@/domain/models/notification-preferences";
+import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type {
   ApiPort,
+  ApiNotification,
+  ApiNotificationListResponse,
+  GetNotificationsParams,
+  RegisterDeviceInput,
+  RegisterDeviceResult,
   ApiProfile,
   ApiWorkout,
   ApiSession,
@@ -807,6 +818,95 @@ export class SSTApiAdapter implements ApiPort {
     return this.request<void>(`/goals/${id}`, { method: "DELETE" });
   }
 
+  // -- Notifications (09) --
+  //
+  // GET /notifications returns a FLAT `{ rows, nextCursor, unreadCount }`
+  // (not a `{ data }` envelope), so it goes via `request<T>`. The
+  // mark-read / mark-all / preferences endpoints return the single
+  // `{ data }` envelope and use `requestEnvelope<T>`. The adapter maps
+  // the wire `AppNotification` onto the domain `Notification` here so
+  // containers/presenters never see `message` / `isRead`.
+
+  async getNotifications(
+    params: GetNotificationsParams = {},
+  ): Promise<Result<NotificationsPage, ApiError>> {
+    const queryParams: Record<string, string | number | undefined> = {
+      cursor: params.cursor,
+      limit: params.limit,
+      unreadOnly: params.unreadOnly === true ? "true" : undefined,
+    };
+    const result = await this.request<ApiNotificationListResponse>(
+      "/notifications",
+      { params: queryParams },
+    );
+    if (!result.ok) return result;
+    const body = result.value;
+    return ok({
+      notifications: (body.rows ?? []).map(mapApiNotification),
+      nextCursor: body.nextCursor ?? null,
+      unreadCount: body.unreadCount ?? 0,
+    });
+  }
+
+  async markNotificationRead(
+    id: string,
+  ): Promise<Result<Notification, ApiError>> {
+    const result = await this.requestEnvelope<ApiNotification>(
+      `/notifications/${id}`,
+      { method: "PATCH", body: { isRead: true } },
+    );
+    if (!result.ok) return result;
+    return ok(mapApiNotification(result.value));
+  }
+
+  async markAllNotificationsRead(): Promise<
+    Result<{ updated: number }, ApiError>
+  > {
+    return this.requestEnvelope<{ updated: number }>("/notifications/all", {
+      method: "PATCH",
+      body: {},
+    });
+  }
+
+  async getNotificationPreferences(): Promise<
+    Result<NotificationPreferences, ApiError>
+  > {
+    const result = await this.requestEnvelope<Record<string, unknown>>(
+      "/notifications/preferences",
+    );
+    if (!result.ok) return result;
+    return ok(normalizePreferences(result.value));
+  }
+
+  async updateNotificationPreferences(
+    partial: NotificationPreferences,
+  ): Promise<Result<NotificationPreferences, ApiError>> {
+    const result = await this.requestEnvelope<Record<string, unknown>>(
+      "/notifications/preferences",
+      { method: "POST", body: partial },
+    );
+    if (!result.ok) return result;
+    return ok(normalizePreferences(result.value));
+  }
+
+  async registerDevice(
+    input: RegisterDeviceInput,
+  ): Promise<Result<RegisterDeviceResult, ApiError>> {
+    // Domain `token` → wire `deviceToken`; pass platform + deviceInfo
+    // through unchanged.
+    const body: Record<string, unknown> = {
+      deviceToken: input.token,
+      platform: input.platform,
+    };
+    if (input.deviceInfo !== undefined) {
+      body.deviceInfo = input.deviceInfo;
+    }
+    return this.requestEnvelope<RegisterDeviceResult>("/devices/register", {
+      method: "POST",
+      body,
+    });
+  }
+
   // -- Subscriptions (M7 / M10) --
   //
   // Write endpoints (POST /subscriptions, POST /subscriptions/:id/cancel)
@@ -1156,6 +1256,29 @@ type WireSubscriptionTier = {
 
 function parseDecimal(value: string | number): number {
   return typeof value === "number" ? value : Number.parseFloat(value);
+}
+
+/**
+ * Map the wire `AppNotification` onto the domain `Notification`. Keeps the
+ * field-name reconciliation (`message`→`body`, `data.deepLink`→`deepLink`)
+ * at the adapter boundary so the rest of the app speaks the domain shape.
+ * `type` is passed through as a raw string — an unknown/future enum value
+ * reaches the forward-compatible renderer rather than being rejected.
+ */
+export function mapApiNotification(api: ApiNotification): Notification {
+  const rawDeepLink = (api.data ?? {}).deepLink;
+  return {
+    id: api.id,
+    type: api.type,
+    title: api.title,
+    body: api.message ?? "",
+    deepLink: typeof rawDeepLink === "string" ? rawDeepLink : null,
+    data: api.data ?? {},
+    relatedEntityType: api.relatedEntityType ?? null,
+    relatedEntityId: api.relatedEntityId ?? null,
+    readAt: api.readAt ?? null,
+    createdAt: api.createdAt,
+  };
 }
 
 export function mapSubscriptionTier(

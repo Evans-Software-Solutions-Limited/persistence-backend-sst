@@ -78,3 +78,24 @@ export {
   type CreateSubscriptionResult,
   type CancelSubscriptionResult,
 } from "./subscription";
+
+export {
+  type NotificationType,
+  type WireNotificationType,
+  type Notification,
+  type NotificationsPage,
+  NOTIFICATION_TYPES,
+  NOTIFICATION_TYPE_LABELS,
+  isKnownNotificationType,
+  notificationTypeLabel,
+  isUnread,
+} from "./notification";
+
+export {
+  type NotificationPreferences,
+  type NotificationCategory,
+  CATEGORIES,
+  DEFAULT_OPT_IN,
+  isTypeEnabled,
+  normalizePreferences,
+} from "./notification-preferences";

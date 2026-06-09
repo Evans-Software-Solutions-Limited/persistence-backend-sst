@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { InvalidCursorError } from "../../../repositories/notificationRepository";
 
 const mocks = { list: vi.fn(), countUnread: vi.fn() };
 
@@ -23,28 +24,35 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 
-vi.mock("../../../repositories/notificationRepository", () => ({
-  NotificationRepository: vi.fn().mockImplementation(() => mocks),
-}));
+vi.mock("../../../repositories/notificationRepository", async (orig) => {
+  // Keep the real InvalidCursorError so `instanceof` checks in the
+  // handler match what the test throws.
+  const actual =
+    await orig<typeof import("../../../repositories/notificationRepository")>();
+  return {
+    ...actual,
+    NotificationRepository: vi.fn().mockImplementation(() => mocks),
+  };
+});
+
+const sampleRow = {
+  id: "n1",
+  userId: "test-user-id",
+  type: "workout_assigned",
+  title: "Push Day",
+  message: null,
+  data: {},
+  isRead: false,
+  readAt: null,
+  relatedEntityType: null,
+  relatedEntityId: null,
+  createdAt: "2026-05-27T10:00:00.000Z",
+};
 
 describe("NotificationsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.list.mockResolvedValue([
-      {
-        id: "n1",
-        userId: "test-user-id",
-        type: "workout_assigned",
-        title: "Push Day",
-        message: null,
-        data: {},
-        isRead: false,
-        readAt: null,
-        relatedEntityType: null,
-        relatedEntityId: null,
-        createdAt: "2026-05-27T10:00:00.000Z",
-      },
-    ]);
+    mocks.list.mockResolvedValue({ rows: [sampleRow], nextCursor: null });
     mocks.countUnread.mockResolvedValue(1);
   });
 
@@ -57,7 +65,7 @@ describe("NotificationsListHandler", () => {
     expect(response.status).toBe(401);
   });
 
-  it("returns 200 with { data, unreadCount }", async () => {
+  it("returns 200 with { rows, nextCursor, unreadCount }", async () => {
     const { notificationsListHandler } =
       await import("../notificationsListHandler");
     const response = await notificationsListHandler.handle(
@@ -68,11 +76,13 @@ describe("NotificationsListHandler", () => {
     );
     expect(response.status).toBe(200);
     const data = (await response.json()) as any;
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(Array.isArray(data.rows)).toBe(true);
+    expect(data.rows[0].id).toBe("n1");
+    expect(data.nextCursor).toBeNull();
     expect(data.unreadCount).toBe(1);
   });
 
-  it("uses defaults (limit=50, offset=0, unreadOnly=false)", async () => {
+  it("defaults to first page (no cursor, limit=50, unreadOnly=false)", async () => {
     const { notificationsListHandler } =
       await import("../notificationsListHandler");
     await notificationsListHandler.handle(
@@ -83,7 +93,7 @@ describe("NotificationsListHandler", () => {
     );
     expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
       limit: 50,
-      offset: 0,
+      cursor: undefined,
       unreadOnly: false,
     });
   });
@@ -100,7 +110,7 @@ describe("NotificationsListHandler", () => {
     expect(response.status).toBe(200);
     expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
       limit: 100,
-      offset: 0,
+      cursor: undefined,
       unreadOnly: false,
     });
   });
@@ -116,29 +126,87 @@ describe("NotificationsListHandler", () => {
     );
     expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
       limit: 50,
-      offset: 0,
+      cursor: undefined,
       unreadOnly: true,
     });
   });
 
-  it("supports pagination via offset", async () => {
+  it("forwards the cursor and surfaces nextCursor (second page)", async () => {
+    mocks.list.mockResolvedValueOnce({
+      rows: [{ ...sampleRow, id: "n2" }],
+      nextCursor: "CURSOR_FOR_PAGE_3",
+    });
     const { notificationsListHandler } =
       await import("../notificationsListHandler");
-    await notificationsListHandler.handle(
-      new Request("http://localhost/notifications?limit=10&offset=20", {
+    const response = await notificationsListHandler.handle(
+      new Request("http://localhost/notifications?cursor=PAGE_2_TOKEN", {
         method: "GET",
         headers: { authorization: "Bearer token" },
       }),
     );
+    expect(response.status).toBe(200);
     expect(mocks.list).toHaveBeenCalledWith("test-user-id", {
-      limit: 10,
-      offset: 20,
+      limit: 50,
+      cursor: "PAGE_2_TOKEN",
       unreadOnly: false,
     });
+    const data = (await response.json()) as any;
+    expect(data.rows[0].id).toBe("n2");
+    expect(data.nextCursor).toBe("CURSOR_FOR_PAGE_3");
   });
 
-  it("returns zero unreadCount when no notifications", async () => {
-    mocks.list.mockResolvedValueOnce([]);
+  it("returns nextCursor=null on the last page", async () => {
+    mocks.list.mockResolvedValueOnce({
+      rows: [sampleRow],
+      nextCursor: null,
+    });
+    const { notificationsListHandler } =
+      await import("../notificationsListHandler");
+    const response = await notificationsListHandler.handle(
+      new Request("http://localhost/notifications?cursor=LAST_TOKEN", {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    const data = (await response.json()) as any;
+    expect(data.nextCursor).toBeNull();
+  });
+
+  it("maps a malformed cursor to 400 { error: 'Invalid cursor' }", async () => {
+    mocks.list.mockRejectedValueOnce(new InvalidCursorError());
+    const { notificationsListHandler } =
+      await import("../notificationsListHandler");
+    const response = await notificationsListHandler.handle(
+      new Request("http://localhost/notifications?cursor=%%%not-base64%%%", {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as any;
+    expect(data.error).toBe("Invalid cursor");
+    // `countUnread` may run (it's fired in parallel with `list` — they're
+    // independent queries), but its result is discarded on a bad cursor:
+    // the 400 body carries only the error, never an unreadCount.
+    expect(data.unreadCount).toBeUndefined();
+  });
+
+  it("re-throws non-cursor errors from the repository", async () => {
+    mocks.list.mockRejectedValueOnce(new Error("db down"));
+    const { notificationsListHandler } =
+      await import("../notificationsListHandler");
+    const response = await notificationsListHandler.handle(
+      new Request("http://localhost/notifications", {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    // Elysia maps an unhandled throw to a 500.
+    expect(response.status).toBe(500);
+  });
+
+  it("returns zero unreadCount + empty rows when there are none", async () => {
+    mocks.list.mockResolvedValueOnce({ rows: [], nextCursor: null });
     mocks.countUnread.mockResolvedValueOnce(0);
     const { notificationsListHandler } =
       await import("../notificationsListHandler");
@@ -149,7 +217,8 @@ describe("NotificationsListHandler", () => {
       }),
     );
     const data = (await response.json()) as any;
-    expect(data.data).toEqual([]);
+    expect(data.rows).toEqual([]);
+    expect(data.nextCursor).toBeNull();
     expect(data.unreadCount).toBe(0);
   });
 });

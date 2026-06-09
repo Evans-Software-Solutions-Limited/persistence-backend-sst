@@ -4,6 +4,11 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type {
+  Notification,
+  NotificationsPage,
+} from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
@@ -347,6 +352,71 @@ export interface ApiPort {
     subscriptionId: string,
     input?: CancelSubscriptionInput,
   ): Promise<Result<CancelSubscriptionResult, ApiError>>;
+
+  // -- Notifications (09) --
+  /**
+   * List the caller's notifications, newest-first, with keyset (cursor)
+   * pagination. Returns the page rows mapped to the domain
+   * `Notification` shape, the opaque `nextCursor` for the next (older)
+   * page (null when exhausted), and the server-authoritative total
+   * `unreadCount` (all unread rows, not just this page).
+   *
+   * Contract: `GET /notifications?cursor=&limit=&unreadOnly=` (PR #81,
+   * realigned offset→cursor in this PR). The adapter maps the wire
+   * `AppNotification` (`message` / `isRead` / `data.deepLink`) onto the
+   * domain `Notification` (`body` / `readAt` / `deepLink`).
+   *
+   * Spec: specs/09-notifications-social/design.md § list endpoint.
+   */
+  getNotifications(
+    params?: GetNotificationsParams,
+  ): Promise<Result<NotificationsPage, ApiError>>;
+
+  /**
+   * Mark a single notification read. Wraps `PATCH /notifications/:id`
+   * with body `{ isRead: true }`. Backend uses `COALESCE(read_at, NOW())`
+   * so a sync-queue replay preserves the original read moment. Returns
+   * the updated row (domain-mapped). 404 → not found / not owned.
+   */
+  markNotificationRead(id: string): Promise<Result<Notification, ApiError>>;
+
+  /**
+   * Mark every unread notification read. Wraps `PATCH /notifications/all`.
+   * Returns the count of rows newly flipped (`{ updated }`). Idempotent.
+   */
+  markAllNotificationsRead(): Promise<Result<{ updated: number }, ApiError>>;
+
+  /**
+   * Read the caller's per-type opt-in map. Wraps
+   * `GET /notifications/preferences`. The backend applies defaults for
+   * missing keys and drops stale keys; the adapter normalises to the
+   * known-type-keyed `NotificationPreferences`.
+   */
+  getNotificationPreferences(): Promise<
+    Result<NotificationPreferences, ApiError>
+  >;
+
+  /**
+   * Merge a partial per-type opt-in map. Wraps
+   * `POST /notifications/preferences` — atomic JSONB merge server-side.
+   * Returns the FULL merged map (echoed via `RETURNING`, reconciled
+   * against defaults) so the client can treat the response as
+   * authoritative without a follow-up GET. Sending a key outside the
+   * 9-value enum is a 400 — callers must only send known types.
+   */
+  updateNotificationPreferences(
+    partial: NotificationPreferences,
+  ): Promise<Result<NotificationPreferences, ApiError>>;
+
+  /**
+   * Register this device's push token. Wraps `POST /devices/register`
+   * with body `{ deviceToken, platform, deviceInfo? }` (the adapter maps
+   * the domain `token` → wire `deviceToken`). Idempotent upsert by
+   * `(user_id, device_token)`.
+   */
+  registerDevice(
+    input: RegisterDeviceInput,
+  ): Promise<Result<RegisterDeviceResult, ApiError>>;
 
   // -- Goals --
   getGoals(params?: PaginationParams): Promise<Result<ApiGoal[], ApiError>>;
@@ -718,4 +788,73 @@ export type UploadAvatarInput = {
   uri: string;
   mimeType: string;
   name?: string;
+};
+
+// -- Notifications (09) --
+
+/**
+ * Wire shape for a notification row, mirroring the backend
+ * `AppNotification` projection (notificationRepository.ts). The adapter
+ * maps this onto the domain `Notification`:
+ *   - `message`        → `body` (`?? ""`)
+ *   - `data.deepLink`  → `deepLink` (when a string; else null)
+ *   - `isRead`+`readAt`→ `readAt` (null = unread)
+ * `type` stays a raw string so an unknown/future enum value flows
+ * through to the forward-compatible renderer rather than throwing.
+ */
+export type ApiNotification = {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  message: string | null;
+  data: Record<string, unknown>;
+  isRead: boolean;
+  readAt: string | null;
+  relatedEntityType: string | null;
+  relatedEntityId: string | null;
+  createdAt: string;
+};
+
+/**
+ * Wire shape for `GET /notifications` (realigned to keyset pagination in
+ * this PR). `rows` is the page, `nextCursor` the opaque next-page token
+ * (null when exhausted), `unreadCount` the server-authoritative total.
+ */
+export type ApiNotificationListResponse = {
+  rows: ApiNotification[];
+  nextCursor: string | null;
+  unreadCount: number;
+};
+
+/** Query params for `getNotifications`. */
+export type GetNotificationsParams = {
+  /** Opaque keyset cursor from a prior page's `nextCursor`. */
+  cursor?: string;
+  /** Page size; backend clamps to [1, 100] (default 50). */
+  limit?: number;
+  /** When true, only unread rows are returned. */
+  unreadOnly?: boolean;
+};
+
+/**
+ * Domain input for `registerDevice`. `token` is the Expo device push
+ * token; the adapter maps it to the wire `deviceToken` field. `platform`
+ * matches the backend union (`web` is accepted server-side though mobile
+ * only ever sends ios/android).
+ */
+export type RegisterDeviceInput = {
+  token: string;
+  platform: "ios" | "android" | "web";
+  deviceInfo?: {
+    deviceName?: string;
+    osVersion?: string;
+    appVersion?: string;
+    modelName?: string;
+  };
+};
+
+export type RegisterDeviceResult = {
+  id: string;
+  registered: true;
 };

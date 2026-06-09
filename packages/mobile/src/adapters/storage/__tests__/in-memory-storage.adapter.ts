@@ -11,6 +11,8 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { Notification } from "@/domain/models/notification";
+import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -56,6 +58,8 @@ export class InMemoryStorageAdapter implements StoragePort {
   private personalRecords: Map<string, PersonalRecord[]> = new Map();
   private recentSets: Map<string, RecentSetEntry[]> = new Map();
   private restTimers: Map<string, RestTimerState> = new Map();
+  private notificationsCache: Map<string, Notification> = new Map();
+  private notificationPreferencesCache: NotificationPreferences | null = null;
   private nextId = 1;
 
   private workoutsListKey(userId: string, type: WorkoutListType): string {
@@ -292,6 +296,65 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   invalidateDashboard(userId: string): void {
     this.dashboardCache.delete(userId);
+  }
+
+  // -- Notifications Cache (09) --
+
+  getCachedNotifications(limit = 100): Notification[] {
+    return [...this.notificationsCache.values()]
+      .sort((a, b) => {
+        if (a.createdAt === b.createdAt) return a.id < b.id ? 1 : -1;
+        return a.createdAt < b.createdAt ? 1 : -1;
+      })
+      .slice(0, limit);
+  }
+
+  cacheNotifications(notifications: Notification[]): void {
+    for (const n of notifications) {
+      // Mirror the SQLite COALESCE: keep an already-set (optimistic)
+      // read_at rather than letting a server write-through reset it to
+      // null before the mark-read flushes (Inspector Brad).
+      const prev = this.notificationsCache.get(n.id);
+      this.notificationsCache.set(n.id, {
+        ...n,
+        readAt: prev?.readAt ?? n.readAt,
+      });
+    }
+    const keep = new Set(this.getCachedNotifications(100).map((n) => n.id));
+    for (const id of [...this.notificationsCache.keys()]) {
+      if (!keep.has(id)) this.notificationsCache.delete(id);
+    }
+  }
+
+  getCachedUnreadCount(): number {
+    return [...this.notificationsCache.values()].filter(
+      (n) => n.readAt === null,
+    ).length;
+  }
+
+  markCachedNotificationRead(id: string, readAt: string): void {
+    const n = this.notificationsCache.get(id);
+    if (n && n.readAt === null) {
+      this.notificationsCache.set(id, { ...n, readAt });
+    }
+  }
+
+  markAllCachedNotificationsRead(readAt: string): void {
+    for (const [id, n] of this.notificationsCache) {
+      if (n.readAt === null) {
+        this.notificationsCache.set(id, { ...n, readAt });
+      }
+    }
+  }
+
+  getCachedNotificationPreferences(): NotificationPreferences | null {
+    return this.notificationPreferencesCache
+      ? { ...this.notificationPreferencesCache }
+      : null;
+  }
+
+  cacheNotificationPreferences(preferences: NotificationPreferences): void {
+    this.notificationPreferencesCache = { ...preferences };
   }
 
   // -- Profile-Page Cache (M6) --
@@ -577,6 +640,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.personalRecords.clear();
     this.recentSets.clear();
     this.restTimers.clear();
+    this.notificationsCache.clear();
+    this.notificationPreferencesCache = null;
     this.nextId = 1;
   }
 
