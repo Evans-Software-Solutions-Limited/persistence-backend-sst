@@ -18,8 +18,8 @@ import type {
 } from "../streaks/engine";
 import type { StreakCronDataPort } from "../streaks/cron";
 import {
-  compareISO,
   lastCompletedPeriodEndISO,
+  periodsBetween,
   type Period,
 } from "../streaks/period";
 
@@ -238,18 +238,19 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
 
   /**
    * Manual freeze-token spend (06.5 — the You/Progress "Use" button). Spends one
-   * token to PROTECT a behind streak: it both decrements `freeze_tokens` AND
-   * fast-forwards `last_period_end` to the last completed user-local period
-   * (mirroring the cron's `persistFreezeSpend`). Without the `last_period_end`
-   * advance the nightly cron would re-detect the same miss and break the streak
-   * with 0 tokens left — making the button strictly worse than doing nothing
-   * (Inspector finding, PR #116).
+   * token PER missed period to PROTECT a behind streak: it decrements
+   * `freeze_tokens` by `missed` AND fast-forwards `last_period_end` to the last
+   * completed user-local period (mirroring the cron's `persistFreezeSpend` cost
+   * exactly — cross-cuts § 3.5). Without the `last_period_end` advance the
+   * nightly cron would re-detect the miss and break the streak; without the
+   * per-period cost the manual path would be strictly cheaper than the cron
+   * (Inspector findings, PR #116).
    *
    * Returns null (→ handler 400) when: the streak isn't owned by `userId`, is
    * not `active` (a broken/paused streak keeps its leftover tokens, but reviving
-   * it would just mint a zombie active/count=0 streak), has no token to spend,
-   * OR isn't actually behind (spending then would waste a token the cron would
-   * otherwise auto-apply on a real miss).
+   * it would just mint a zombie active/count=0 streak), isn't actually behind
+   * (no token wasted), OR doesn't have enough tokens to cover every missed
+   * period (the cron will break it — manual can't partially protect).
    *
    * `now` is injectable for deterministic tests.
    */
@@ -271,21 +272,27 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       )
       .limit(1);
     const streak = existing[0];
-    if (!streak || streak.freezeTokens <= 0) return null;
+    if (!streak) return null;
 
     const tz = await this.getUserTimezone(userId);
-    const lastCompletedEnd = lastCompletedPeriodEndISO(
-      now,
-      streak.period as Period,
-      tz,
+    const period = streak.period as Period;
+    const lastCompletedEnd = lastCompletedPeriodEndISO(now, period, tz);
+    // One token shields ONE missed period (cross-cuts § 3.5), matching the cron
+    // — so a manual spend costs `missed` tokens, not a flat 1. Bail (→ 400)
+    // when nothing's missed (no token wasted) OR there aren't enough tokens to
+    // cover every missed period (the cron will break it; manual can't partially
+    // protect). This keeps the manual + automatic paths symmetric.
+    const missed = periodsBetween(
+      streak.lastPeriodEnd,
+      lastCompletedEnd,
+      period,
     );
-    // Not behind → nothing to protect; don't waste the token.
-    if (compareISO(streak.lastPeriodEnd, lastCompletedEnd) >= 0) return null;
+    if (missed <= 0 || streak.freezeTokens < missed) return null;
 
     const rows = await db
       .update(userStreaks)
       .set({
-        freezeTokens: sql`${userStreaks.freezeTokens} - 1`,
+        freezeTokens: sql`${userStreaks.freezeTokens} - ${missed}`,
         lastPeriodEnd: lastCompletedEnd,
         status: "active",
         updatedAt: new Date(),
@@ -295,12 +302,12 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
           eq(userStreaks.id, streakId),
           eq(userStreaks.userId, userId),
           eq(userStreaks.status, "active"),
-          sql`${userStreaks.freezeTokens} > 0`,
+          sql`${userStreaks.freezeTokens} >= ${missed}`,
           // Conditional write: only spend if the row is STILL behind. Guards a
           // TOCTOU race where evaluateStreaks/tryAdvance commits a newer
           // last_period_end between our SELECT and this UPDATE — without it we
           // would overwrite that advance with the older lastCompletedEnd and
-          // silently regress the streak by a period (Inspector finding).
+          // silently regress the streak (Inspector finding).
           sql`${userStreaks.lastPeriodEnd} < ${lastCompletedEnd}`,
         ),
       )

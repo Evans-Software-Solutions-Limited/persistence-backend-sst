@@ -7,7 +7,7 @@
  */
 
 import { VolumeRepository } from "../repositories/volumeRepository";
-import { addDaysISO } from "../streaks/period";
+import { addDaysISO, localDateISO } from "../streaks/period";
 import { weekStartISO, windowStartISO } from "./window";
 
 /** Recompute the week + month aggregates for one user. Throws on DB error. */
@@ -22,7 +22,13 @@ export async function recomputeUserVolume(
   await repo.recomputeWeeklyVolume(userId, tz, ws, addDaysISO(ws, 6));
 
   const ms = windowStartISO(now, "month", tz);
-  await repo.recomputeVolumeByMuscle(userId, tz, "month", ms);
+  await repo.recomputeVolumeByMuscle(
+    userId,
+    tz,
+    "month",
+    ms,
+    localDateISO(now, tz),
+  );
 }
 
 /**

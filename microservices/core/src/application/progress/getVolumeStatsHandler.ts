@@ -51,6 +51,7 @@ export const getVolumeStatsHandler = new Elysia()
         tz,
         kind,
         start,
+        end,
       );
 
       const [workouts, totalKg, byMuscleRaw] = await Promise.all([

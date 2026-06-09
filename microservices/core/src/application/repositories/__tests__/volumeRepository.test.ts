@@ -166,6 +166,7 @@ describe("VolumeRepository", () => {
       "Europe/London",
       "month",
       "2026-06-01",
+      "2026-06-30",
     );
 
     expect(txDelete).toHaveBeenCalled();
@@ -194,6 +195,7 @@ describe("VolumeRepository", () => {
       "UTC",
       "month",
       "2026-06-01",
+      "2026-06-30",
     );
     expect(txDelete).toHaveBeenCalled();
     expect(txInsert).not.toHaveBeenCalled();

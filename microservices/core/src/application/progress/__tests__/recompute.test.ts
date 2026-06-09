@@ -31,6 +31,7 @@ describe("recomputeUserVolume", () => {
       "Europe/London",
       "month",
       "2026-06-01",
+      "2026-06-10", // bounded window end (today, user-local)
     );
   });
 });

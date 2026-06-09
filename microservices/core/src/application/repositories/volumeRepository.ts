@@ -205,6 +205,7 @@ export class VolumeRepository {
     tz: string,
     windowKind: WindowKind,
     windowStartISO: string,
+    windowEndISO: string,
   ): Promise<void> {
     const db = getDb();
 
@@ -229,7 +230,11 @@ export class VolumeRepository {
           eq(workoutSessions.userId, userId),
           eq(workoutSessions.status, "completed"),
           eq(exerciseSets.isCompleted, true),
-          sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date >= ${windowStartISO}`,
+          // Bounded BOTH ends — matches the sibling completedSessionCount /
+          // totalVolume reads (BETWEEN start AND end). An unbounded `>=` would
+          // fold a future-dated session into the materialised row while the
+          // live headline excludes it, so `Σ byMuscle > totalKg` (Inspector).
+          sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${windowStartISO} AND ${windowEndISO}`,
         ),
       );
 

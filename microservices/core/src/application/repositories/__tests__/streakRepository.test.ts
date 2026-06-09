@@ -228,11 +228,11 @@ describe("StreakRepository", () => {
   describe("spendTokenManually", () => {
     const now = new Date("2026-06-20T12:00:00Z"); // daily last-completed = 06-19
 
-    it("advances last_period_end + decrements when behind", async () => {
+    it("advances last_period_end + decrements when behind one period", async () => {
       const behind = streak({
         period: "daily",
         freezeTokens: 1,
-        lastPeriodEnd: "2026-06-06",
+        lastPeriodEnd: "2026-06-18", // 1 period behind (last completed 06-19)
       });
       const updated = streak({ freezeTokens: 0, lastPeriodEnd: "2026-06-19" });
       const select = vi
@@ -248,11 +248,47 @@ describe("StreakRepository", () => {
       ).toBe(updated);
     });
 
+    it("spends one token PER missed period when it has enough", async () => {
+      const behind = streak({
+        period: "daily",
+        freezeTokens: 3,
+        lastPeriodEnd: "2026-06-16", // 3 periods behind
+      });
+      const updated = streak({ freezeTokens: 0 });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([behind]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+      (getDb as any).mockReturnValue({
+        select,
+        update: () => updateChain([updated]),
+      });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBe(updated);
+    });
+
+    it("returns null when there aren't enough tokens to cover every missed period", async () => {
+      const behind = streak({
+        period: "daily",
+        freezeTokens: 2,
+        lastPeriodEnd: "2026-06-16", // 3 periods behind, only 2 tokens
+      });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([behind]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+      (getDb as any).mockReturnValue({ select });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBeNull();
+    });
+
     it("returns null when the conditional UPDATE matches nothing (lost the race to tryAdvance)", async () => {
       const behind = streak({
         period: "daily",
         freezeTokens: 1,
-        lastPeriodEnd: "2026-06-06",
+        lastPeriodEnd: "2026-06-18",
       });
       const select = vi
         .fn()

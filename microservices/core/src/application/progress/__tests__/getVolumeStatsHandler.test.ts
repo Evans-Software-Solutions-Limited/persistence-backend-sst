@@ -59,6 +59,7 @@ describe("getVolumeStatsHandler", () => {
       "Europe/London",
       "month",
       "2026-06-01",
+      expect.any(String), // bounded windowEndISO
     );
   });
 
@@ -75,6 +76,7 @@ describe("getVolumeStatsHandler", () => {
       "u1",
       expect.any(String),
       "quarter",
+      expect.any(String),
       expect.any(String),
     );
   });
