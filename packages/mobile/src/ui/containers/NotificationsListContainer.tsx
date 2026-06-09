@@ -181,7 +181,11 @@ export function NotificationsListContainer() {
         // Count from the (pending-read-applied) page so a page-2+ mark-read
         // isn't bounced up, and a pending mark-all leaves only post-mark-all
         // arrivals counted.
-        const unread = optimisticUnread(result.value.unreadCount, page, storage);
+        const unread = optimisticUnread(
+          result.value.unreadCount,
+          page,
+          storage,
+        );
         setUnreadCount(unread);
         return unread;
       } finally {
