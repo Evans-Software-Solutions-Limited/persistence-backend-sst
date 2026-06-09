@@ -245,9 +245,11 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
    * with 0 tokens left — making the button strictly worse than doing nothing
    * (Inspector finding, PR #116).
    *
-   * Returns null (→ handler 400) when: the streak isn't owned by `userId`, has
-   * no token to spend, OR isn't actually behind (spending then would waste a
-   * token the cron would otherwise auto-apply on a real miss).
+   * Returns null (→ handler 400) when: the streak isn't owned by `userId`, is
+   * not `active` (a broken/paused streak keeps its leftover tokens, but reviving
+   * it would just mint a zombie active/count=0 streak), has no token to spend,
+   * OR isn't actually behind (spending then would waste a token the cron would
+   * otherwise auto-apply on a real miss).
    *
    * `now` is injectable for deterministic tests.
    */
@@ -260,7 +262,13 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     const existing = await db
       .select()
       .from(userStreaks)
-      .where(and(eq(userStreaks.id, streakId), eq(userStreaks.userId, userId)))
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.status, "active"),
+        ),
+      )
       .limit(1);
     const streak = existing[0];
     if (!streak || streak.freezeTokens <= 0) return null;
@@ -286,6 +294,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         and(
           eq(userStreaks.id, streakId),
           eq(userStreaks.userId, userId),
+          eq(userStreaks.status, "active"),
           sql`${userStreaks.freezeTokens} > 0`,
         ),
       )

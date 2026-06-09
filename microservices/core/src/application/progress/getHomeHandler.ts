@@ -9,7 +9,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { loadRings } from "./loadRings";
 import { weekStartISO } from "./window";
-import { addDaysISO } from "../streaks/period";
+import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 import { buildHabitsGrid } from "../habits/habitsView";
 
@@ -91,7 +91,12 @@ export const getHomeHandler = new Elysia()
         rings,
         micro: { streak, water: null, strain: null, sleep: null },
         weeklyVolume: {
-          days: fillWeekDays(daily, thisWeekStart, thisWeekEnd),
+          days: fillWeekDays(
+            daily,
+            thisWeekStart,
+            thisWeekEnd,
+            localDateISO(now, tz),
+          ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
           workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },

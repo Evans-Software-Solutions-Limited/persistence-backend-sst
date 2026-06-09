@@ -30,6 +30,21 @@ describe("fillWeekDays", () => {
       { date: "2026-06-10", volumeKg: 0, isToday: true, isRest: false },
     ]);
   });
+
+  it("flags the explicit todayISO, not the trailing day (calendar-week window)", () => {
+    // Week Mon 06-08 … Sun 06-14, but today is Tue 06-09 → only Tuesday is
+    // `isToday`; the trailing Sunday is a future, dimmable rest day.
+    const days = fillWeekDays(
+      [{ date: "2026-06-09", volumeKg: 0 }],
+      "2026-06-08",
+      "2026-06-14",
+      "2026-06-09",
+    );
+    expect(days.find((d) => d.isToday)?.date).toBe("2026-06-09");
+    expect(days.find((d) => d.date === "2026-06-09")?.isRest).toBe(false);
+    expect(days.find((d) => d.date === "2026-06-14")?.isToday).toBe(false);
+    expect(days.find((d) => d.date === "2026-06-14")?.isRest).toBe(true);
+  });
 });
 
 describe("computeDeltaPct", () => {

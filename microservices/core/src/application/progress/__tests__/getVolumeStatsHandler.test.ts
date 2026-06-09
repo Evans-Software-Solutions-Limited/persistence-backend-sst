@@ -52,20 +52,31 @@ describe("getVolumeStatsHandler", () => {
     expect(data.byMuscle[0]).toEqual({ muscle: "legs", kg: 14460, pct: 1 });
     expect(data.byMuscle[1].pct).toBe(0.5);
     expect(data.adherencePct).not.toBeNull();
-    expect(repoMock.recomputeVolumeByMuscle).not.toHaveBeenCalled();
+    // Always recomputes the requested window before reading so by-muscle never
+    // goes stale vs the live workouts/totalKg headline (Inspector finding).
+    expect(repoMock.recomputeVolumeByMuscle).toHaveBeenCalledWith(
+      "u1",
+      "Europe/London",
+      "month",
+      "2026-06-01",
+    );
   });
 
-  it("recomputes on a cold materialised miss", async () => {
-    repoMock.getVolumeByMuscle
-      .mockResolvedValueOnce([]) // cold
-      .mockResolvedValueOnce([{ muscle: "back", kg: 100 }]); // after recompute
+  it("recomputes the requested window then reads it", async () => {
+    repoMock.getVolumeByMuscle.mockResolvedValue([{ muscle: "back", kg: 100 }]);
     const res = await getVolumeStatsHandler.handle(
-      new Request("http://localhost/users/me/volume-stats", {
+      new Request("http://localhost/users/me/volume-stats?window=quarter", {
         headers: { authorization: "Bearer t" },
       }),
     );
     expect(res.status).toBe(200);
     expect(repoMock.recomputeVolumeByMuscle).toHaveBeenCalledTimes(1);
+    expect(repoMock.recomputeVolumeByMuscle).toHaveBeenCalledWith(
+      "u1",
+      expect.any(String),
+      "quarter",
+      expect.any(String),
+    );
   });
 
   it("returns null adherence for a lifetime window", async () => {

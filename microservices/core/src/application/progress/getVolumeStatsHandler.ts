@@ -39,30 +39,25 @@ export const getVolumeStatsHandler = new Elysia()
       const start = windowStartISO(now, kind, tz);
       const end = localDateISO(now, tz);
 
-      const [workouts, totalKg] = await Promise.all([
-        ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
-        ctx.VolumeRepository.totalVolume(userId, tz, start, end),
-      ]);
-
-      let byMuscleRaw = await ctx.VolumeRepository.getVolumeByMuscle(
+      // Recompute the requested window's by-muscle materialisation on every
+      // read. `workouts`/`totalKg` below are computed live from the source
+      // tables, so a stale materialised row would visibly disagree with the
+      // headline — and the cron only refreshes `month` (Inspector finding:
+      // quarter/year/lifetime would never update after their first cold write).
+      // This is the low-frequency You/Progress path, so a recompute-on-read
+      // (a small delete+insert of per-muscle rows) is cheap + always consistent.
+      await ctx.VolumeRepository.recomputeVolumeByMuscle(
         userId,
+        tz,
         kind,
         start,
       );
-      if (byMuscleRaw.length === 0) {
-        // Cold materialised table — recompute once so the read isn't empty.
-        await ctx.VolumeRepository.recomputeVolumeByMuscle(
-          userId,
-          tz,
-          kind,
-          start,
-        );
-        byMuscleRaw = await ctx.VolumeRepository.getVolumeByMuscle(
-          userId,
-          kind,
-          start,
-        );
-      }
+
+      const [workouts, totalKg, byMuscleRaw] = await Promise.all([
+        ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
+        ctx.VolumeRepository.totalVolume(userId, tz, start, end),
+        ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
+      ]);
 
       const adherence =
         kind === "lifetime"

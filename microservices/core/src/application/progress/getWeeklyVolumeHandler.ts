@@ -5,7 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { addDaysISO } from "../streaks/period";
+import { addDaysISO, localDateISO } from "../streaks/period";
 import { weekStartISO } from "./window";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 
@@ -71,7 +71,12 @@ export const getWeeklyVolumeHandler = new Elysia()
 
       return {
         data: {
-          days: fillWeekDays(daily, thisWeekStart, thisWeekEnd),
+          days: fillWeekDays(
+            daily,
+            thisWeekStart,
+            thisWeekEnd,
+            localDateISO(now, tz),
+          ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
           workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },

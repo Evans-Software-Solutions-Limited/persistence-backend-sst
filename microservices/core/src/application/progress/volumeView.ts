@@ -19,13 +19,19 @@ export interface WeeklyVolumeDay {
 
 /**
  * Expand a sparse daily-volume list into a dense [startISO..endISO] array,
- * filling gaps with 0. `isToday` marks the trailing day; `isRest` marks a
- * zero-volume non-today day (the prototype dims + shrinks those bars).
+ * filling gaps with 0. `isToday` marks the row whose date === `todayISO`;
+ * `isRest` marks a zero-volume non-today day (the prototype dims + shrinks
+ * those bars).
+ *
+ * `todayISO` is explicit because the window is the calendar week (Mon–Sun), so
+ * the trailing day is Sunday — NOT today on Mon–Sat. Defaulting it to `endISO`
+ * preserves the old behaviour only for callers that genuinely end on today.
  */
 export function fillWeekDays(
   rows: DailyVolume[],
   startISO: string,
   endISO: string,
+  todayISO: string = endISO,
 ): WeeklyVolumeDay[] {
   const byDate = new Map(rows.map((r) => [r.date, r.volumeKg]));
   const out: WeeklyVolumeDay[] = [];
@@ -33,7 +39,7 @@ export function fillWeekDays(
   // Guard against a malformed range (cap at 366 iterations).
   for (let i = 0; i < 366; i += 1) {
     const volumeKg = byDate.get(cursor) ?? 0;
-    const isToday = cursor === endISO;
+    const isToday = cursor === todayISO;
     out.push({
       date: cursor,
       volumeKg,
