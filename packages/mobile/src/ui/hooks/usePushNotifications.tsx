@@ -30,10 +30,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
-import {
-  refreshNotifications,
-  refreshUnreadCount,
-} from "@/application/notifications";
+import { refreshNotifications } from "@/application/notifications";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -132,12 +129,14 @@ export function usePushNotifications(enabled = true): void {
     return unsubscribe;
   }, [enabled, userId, notifications, registerToken]);
 
-  // Foreground receive → refresh cache + unread count (STORY-001 AC 1.5).
+  // Foreground receive → refresh the cached list. That write-through also
+  // feeds the unread badge (getCachedUnreadCount reads the cached rows), so
+  // a separate count fetch would be a wasted, result-discarded round-trip
+  // (STORY-001 AC 1.5).
   useEffect(() => {
     if (!enabled || !userId) return;
     const unsubscribe = notifications.addNotificationReceivedListener(() => {
       void refreshNotifications(api, storage);
-      void refreshUnreadCount(api, storage);
     });
     return unsubscribe;
   }, [enabled, userId, notifications, api, storage]);

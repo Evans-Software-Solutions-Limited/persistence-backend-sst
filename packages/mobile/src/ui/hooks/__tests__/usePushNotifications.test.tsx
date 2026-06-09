@@ -13,6 +13,7 @@ import { fail, ok, type Result } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { usePushNotifications } from "@/ui/hooks/usePushNotifications";
+import { makeNotification } from "@/application/notifications/__tests__/notification.fixture";
 
 class StubPushNotifications implements NotificationsPort {
   status: "granted" | "denied" | "not_determined" = "granted";
@@ -255,7 +256,7 @@ describe("usePushNotifications", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const notifications = new StubPushNotifications();
-    api.notificationsUnreadCount = 3;
+    api.notifications = [makeNotification({ id: "pushed" })];
     const adapters = makeAdapters(api, storage, notifications, SESSION);
 
     renderHook(() => usePushNotifications(true), {
@@ -269,9 +270,12 @@ describe("usePushNotifications", () => {
       notifications.emitReceived();
       await Promise.resolve();
     });
-    // refreshNotifications + refreshUnreadCount both hit the API
+    // The receive triggers a single list refresh that writes through to the
+    // cache (which also feeds the unread badge) — no extra count fetch.
     await waitFor(() =>
-      expect(api.getNotificationsCalls.length).toBeGreaterThanOrEqual(2),
+      expect(
+        storage.getCachedNotifications().some((n) => n.id === "pushed"),
+      ).toBe(true),
     );
   });
 
