@@ -248,6 +248,25 @@ describe("StreakRepository", () => {
       ).toBe(updated);
     });
 
+    it("returns null when the conditional UPDATE matches nothing (lost the race to tryAdvance)", async () => {
+      const behind = streak({
+        period: "daily",
+        freezeTokens: 1,
+        lastPeriodEnd: "2026-06-06",
+      });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([behind]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+      // A concurrent advance bumped last_period_end past lastCompletedEnd, so
+      // the `last_period_end < lastCompletedEnd` guard in the UPDATE WHERE
+      // matches no row → returns null (no regression, no token burned).
+      (getDb as any).mockReturnValue({ select, update: () => updateChain([]) });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBeNull();
+    });
+
     it("returns null when the streak is not behind (no token wasted)", async () => {
       const upToDate = streak({
         period: "daily",

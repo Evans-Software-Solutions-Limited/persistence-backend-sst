@@ -69,10 +69,21 @@ export class VolumeRepository {
         ),
       )
       .groupBy(dayExpr);
-    return rows.map((r) => ({
-      date: String(r.day).slice(0, 10),
-      volumeKg: Number(r.volume) || 0,
-    }));
+    return rows.map((r) => {
+      // postgres-js parses a `::date` (OID 1082) result into a JS Date, so
+      // `String(date).slice(0,10)` would yield "Mon Jun 08" — breaking the
+      // ISO-keyed Map lookup in fillWeekDays (every bar → 0). Normalise both
+      // the Date (real driver) and string (test mock) shapes (Inspector). The
+      // column is sql<string>-typed, so widen via unknown to runtime-check.
+      const day = r.day as unknown;
+      return {
+        date:
+          day instanceof Date
+            ? day.toISOString().slice(0, 10)
+            : String(day).slice(0, 10),
+        volumeKg: Number(r.volume) || 0,
+      };
+    });
   }
 
   async totalVolume(

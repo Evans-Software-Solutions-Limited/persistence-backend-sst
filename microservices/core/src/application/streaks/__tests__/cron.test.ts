@@ -68,9 +68,10 @@ describe("streakCron", () => {
     expect(summary.upToDate).toBe(1);
   });
 
-  it("spends a freeze token on a missed period and notifies", async () => {
+  it("spends one token for a single missed period and notifies", async () => {
+    // lastPeriodEnd 06-08, daily, now 06-10 → last completed = 06-09 → 1 missed
     const data = makeData([
-      makeStreak({ lastPeriodEnd: "2026-06-07", freezeTokens: 2 }),
+      makeStreak({ lastPeriodEnd: "2026-06-08", freezeTokens: 2 }),
     ]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
@@ -81,8 +82,40 @@ describe("streakCron", () => {
     });
     expect(notifier.calls[0]).toMatchObject({
       type: "freeze_token_applied",
-      data: { freezeTokensRemaining: 1 },
+      data: { periodsMissed: 1, tokensSpent: 1, freezeTokensRemaining: 1 },
     });
+  });
+
+  it("spends ONE token PER missed period (N tokens for N periods)", async () => {
+    // lastPeriodEnd 06-06 → missed 06-07/08/09 = 3 periods; 3 tokens cover them
+    const data = makeData([
+      makeStreak({ lastPeriodEnd: "2026-06-06", freezeTokens: 3 }),
+    ]);
+    const notifier = makeNotifier();
+    const summary = await streakCron({ data, notifier, now: NOW });
+    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 1, broken: 0 });
+    expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
+      freezeTokens: 0,
+      lastPeriodEnd: "2026-06-09",
+    });
+    expect(notifier.calls[0]).toMatchObject({
+      data: { periodsMissed: 3, tokensSpent: 3, freezeTokensRemaining: 0 },
+    });
+  });
+
+  it("breaks when there aren't enough tokens to cover every missed period", async () => {
+    // 3 missed periods but only 1 token → can't cover all → break
+    const data = makeData([
+      makeStreak({ lastPeriodEnd: "2026-06-06", freezeTokens: 1 }),
+    ]);
+    const notifier = makeNotifier();
+    const summary = await streakCron({ data, notifier, now: NOW });
+    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 0, broken: 1 });
+    expect(data.persistBreak).toHaveBeenCalledWith("s1", {
+      lastPeriodEnd: "2026-06-09",
+    });
+    expect(data.persistFreezeSpend).not.toHaveBeenCalled();
+    expect(notifier.notify).not.toHaveBeenCalled();
   });
 
   it("breaks a missed streak with no tokens and does not notify", async () => {

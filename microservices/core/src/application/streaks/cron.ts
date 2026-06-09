@@ -4,9 +4,9 @@
  *
  * The on-write engine (engine.ts) advances `last_period_end` whenever a period
  * is satisfied. So at sweep time, any active streak whose `last_period_end` is
- * behind the most-recently-completed user-local period must have MISSED that
- * period. For each miss:
- *   - freeze_tokens > 0  → spend one, keep the streak alive, emit
+ * behind the most-recently-completed user-local period has MISSED one or more
+ * periods. One freeze token shields ONE missed period (§ 3.5), so for N missed:
+ *   - freeze_tokens >= N → spend N, keep the streak alive, emit
  *     `freeze_token_applied`, fast-forward last_period_end. (Quiet recovery —
  *     no celebration; § 3.5.)
  *   - else               → break it (status='broken', current_count=0). No
@@ -17,7 +17,11 @@
  */
 
 import type { UserStreak } from "@persistence/db";
-import { lastCompletedPeriodEndISO, compareISO, type Period } from "./period";
+import {
+  lastCompletedPeriodEndISO,
+  periodsBetween,
+  type Period,
+} from "./period";
 import type { StreakNotifier } from "./engine";
 
 export interface StreakCronDataPort {
@@ -73,16 +77,26 @@ export async function streakCron(
     const tz = await tzFor(streak.userId);
     const lastCompletedEnd = lastCompletedPeriodEndISO(deps.now, period, tz);
 
+    // How many whole periods were missed since last_period_end. One freeze
+    // token shields ONE missed period (cross-cuts § 3.5), so N missed periods
+    // cost N tokens — and the streak breaks if there aren't enough to cover
+    // them all. (Previously a single token absorbed an arbitrary gap.)
+    const missed = periodsBetween(
+      streak.lastPeriodEnd,
+      lastCompletedEnd,
+      period,
+    );
+
     // Up to date: last_period_end is at or beyond the last completed period.
-    if (compareISO(streak.lastPeriodEnd, lastCompletedEnd) >= 0) {
+    if (missed <= 0) {
       summary.upToDate += 1;
       continue;
     }
 
-    // Missed at least one period.
-    if (streak.freezeTokens > 0) {
+    if (streak.freezeTokens >= missed) {
+      const remaining = streak.freezeTokens - missed;
       await deps.data.persistFreezeSpend(streak.id, {
-        freezeTokens: streak.freezeTokens - 1,
+        freezeTokens: remaining,
         lastPeriodEnd: lastCompletedEnd,
       });
       summary.frozen += 1;
@@ -91,15 +105,20 @@ export async function streakCron(
         type: "freeze_token_applied",
         title: "Streak protected",
         message:
-          "You missed a period, so a freeze token kept your streak alive.",
+          missed === 1
+            ? "You missed a period, so a freeze token kept your streak alive."
+            : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
         data: {
           streakType: streak.streakType,
           streakId: streak.id,
-          freezeTokensRemaining: streak.freezeTokens - 1,
+          periodsMissed: missed,
+          tokensSpent: missed,
+          freezeTokensRemaining: remaining,
         },
         relatedEntityId: streak.id,
       });
     } else {
+      // Not enough tokens to cover every missed period → the streak breaks.
       await deps.data.persistBreak(streak.id, {
         lastPeriodEnd: lastCompletedEnd,
       });

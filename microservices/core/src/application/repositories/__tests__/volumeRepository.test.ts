@@ -62,6 +62,23 @@ describe("VolumeRepository", () => {
     ]);
   });
 
+  it("dailyVolume normalises a JS Date day (postgres-js ::date parse)", async () => {
+    // The real driver parses `::date` (OID 1082) into a Date, not a string.
+    // `String(date).slice(0,10)` would yield "Mon Jun 08" and break the
+    // ISO-keyed bar lookup; the repo must toISOString it.
+    (getDb as any).mockReturnValue({
+      select: () =>
+        chain([{ day: new Date("2026-06-08T00:00:00.000Z"), volume: 600 }]),
+    });
+    const out = await new VolumeRepository().dailyVolume(
+      "u1",
+      "Europe/London",
+      "2026-06-04",
+      "2026-06-10",
+    );
+    expect(out).toEqual([{ date: "2026-06-08", volumeKg: 600 }]);
+  });
+
   it("totalVolume + completedSessionCount coerce to numbers", async () => {
     (getDb as any).mockReturnValue({ select: () => chain([{ v: 1234.5 }]) });
     expect(

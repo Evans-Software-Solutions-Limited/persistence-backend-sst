@@ -296,6 +296,12 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
           eq(userStreaks.userId, userId),
           eq(userStreaks.status, "active"),
           sql`${userStreaks.freezeTokens} > 0`,
+          // Conditional write: only spend if the row is STILL behind. Guards a
+          // TOCTOU race where evaluateStreaks/tryAdvance commits a newer
+          // last_period_end between our SELECT and this UPDATE — without it we
+          // would overwrite that advance with the older lastCompletedEnd and
+          // silently regress the streak by a period (Inspector finding).
+          sql`${userStreaks.lastPeriodEnd} < ${lastCompletedEnd}`,
         ),
       )
       .returning();

@@ -126,3 +126,28 @@ export function lastCompletedPeriodEndISO(
   // daily: yesterday relative to today-local
   return addDaysISO(localDate, -1);
 }
+
+/**
+ * The number of COMPLETED periods strictly after `fromEndISO` up to and
+ * including `toEndISO` — i.e. how many periods elapsed since a streak's
+ * `last_period_end`. Both arguments must be period-end dates of the same
+ * grain (Sundays for weekly, last-of-month for monthly, any day for daily).
+ * Returns 0 when `fromEndISO >= toEndISO`. Used by the cron to spend one freeze
+ * token PER missed period (cross-cuts § 3.5), not one regardless of the gap.
+ */
+export function periodsBetween(
+  fromEndISO: string,
+  toEndISO: string,
+  period: Period,
+): number {
+  if (compareISO(fromEndISO, toEndISO) >= 0) return 0;
+  if (period === "monthly") {
+    const [fy, fm] = fromEndISO.split("-").map(Number);
+    const [ty, tm] = toEndISO.split("-").map(Number);
+    return ty * 12 + tm - (fy * 12 + fm);
+  }
+  const fromMs = new Date(`${fromEndISO}T00:00:00.000Z`).getTime();
+  const toMs = new Date(`${toEndISO}T00:00:00.000Z`).getTime();
+  const dayDiff = Math.round((toMs - fromMs) / 86400000);
+  return period === "weekly" ? Math.round(dayDiff / 7) : dayDiff;
+}
