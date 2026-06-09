@@ -59,6 +59,7 @@ function makeAdapters(
     getDevicePushToken: jest.fn(async () => ok("device-token")),
     scheduleLocalNotification: jest.fn(async () => "notif-1"),
     cancelLocalNotification: jest.fn(async () => undefined),
+    setBadgeCount: jest.fn(async () => undefined),
     addPushTokenListener: jest.fn(() => () => {}),
     addNotificationReceivedListener: jest.fn(() => () => {}),
     addNotificationResponseListener: jest.fn(() => () => {}),

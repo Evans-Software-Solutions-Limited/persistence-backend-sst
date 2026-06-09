@@ -55,6 +55,9 @@ class StubNotifications implements NotificationsPort {
   async cancelLocalNotification() {
     return;
   }
+  async setBadgeCount() {
+    return;
+  }
   addPushTokenListener() {
     return () => {};
   }

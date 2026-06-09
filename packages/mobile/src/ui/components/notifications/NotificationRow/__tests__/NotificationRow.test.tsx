@@ -74,33 +74,38 @@ describe("NotificationRowPresenter", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("flags unread rows via accessibilityState.selected", () => {
+  it("prefixes the a11y label with 'Unread' for unread rows", () => {
     const { getByTestId } = renderWithTheme(
       <NotificationRowPresenter
-        notification={makeNotification({ id: "u", readAt: null })}
+        notification={makeNotification({
+          id: "u",
+          title: "Workout assigned",
+          readAt: null,
+        })}
         onPress={jest.fn()}
         now={NOW}
       />,
     );
-    expect(getByTestId("notification-row-u").props.accessibilityState).toEqual(
-      expect.objectContaining({ selected: true }),
+    expect(getByTestId("notification-row-u").props.accessibilityLabel).toBe(
+      "Unread. Workout assigned",
     );
   });
 
-  it("read rows are not flagged selected", () => {
+  it("read rows use a plain a11y label (no 'Unread', no selected state)", () => {
     const { getByTestId } = renderWithTheme(
       <NotificationRowPresenter
         notification={makeNotification({
           id: "r",
+          title: "Workout assigned",
           readAt: "2026-06-06T00:00:00.000Z",
         })}
         onPress={jest.fn()}
         now={NOW}
       />,
     );
-    expect(getByTestId("notification-row-r").props.accessibilityState).toEqual(
-      expect.objectContaining({ selected: false }),
-    );
+    const row = getByTestId("notification-row-r");
+    expect(row.props.accessibilityLabel).toBe("Workout assigned");
+    expect(row.props.accessibilityState?.selected).toBeUndefined();
   });
 
   it("omits the relative time when createdAt is unparseable", () => {

@@ -144,4 +144,8 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
   async cancelLocalNotification(id: string): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(id);
   }
+
+  async setBadgeCount(count: number): Promise<void> {
+    await Notifications.setBadgeCountAsync(Math.max(0, count));
+  }
 }

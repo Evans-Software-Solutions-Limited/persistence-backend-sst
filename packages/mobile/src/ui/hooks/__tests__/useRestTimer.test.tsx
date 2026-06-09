@@ -49,6 +49,7 @@ class StubNotifications implements NotificationsPort {
   async cancelLocalNotification(id: string): Promise<void> {
     this.cancelledIds.push(id);
   }
+  async setBadgeCount(): Promise<void> {}
   addPushTokenListener(): () => void {
     return () => {};
   }

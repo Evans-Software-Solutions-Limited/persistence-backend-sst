@@ -57,6 +57,7 @@ function makeNotificationsStub() {
       received.push(l);
       return () => {};
     }),
+    setBadgeCount: jest.fn(async () => undefined),
     emitReceived: () => received.forEach((l) => l()),
   };
 }
@@ -172,26 +173,22 @@ describe("NotificationsListContainer", () => {
     expect(storage.getPendingMutations()).toHaveLength(0);
   });
 
-  it("does not mark notifications that arrive after a pending mark-all as read (#8)", async () => {
+  it("marks arriving push notifications read when the screen is open (mark-on-view, #8)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.initialize();
-    // An old (pre-mark-all) unread row. Far-past/future dates make the
-    // comparison vs the mark-all moment (real "now") deterministic.
+    // An old (pre-mark-all) unread row.
     api.notifications = [
       makeNotification({ id: "old", createdAt: "2020-01-01T00:00:00.000Z" }),
     ];
     api.notificationsUnreadCount = 1;
 
     const { getByTestId, notifications } = renderContainer(api, storage);
-    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
-
-    // Mark all read → optimistic 0; /notifications/all queued (createdAt now).
-    fireEvent.press(getByTestId("mark-all"));
+    // Mark-on-view: opening the list automatically marks all read → 0.
     await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
 
-    // A push arrives AFTER the mark-all (future createdAt); server now counts
-    // both because the mark-all hasn't flushed.
+    // A push arrives while the screen is still open (future createdAt).
+    // Since the user is actively viewing the list, this gets marked read too.
     api.notifications = [
       makeNotification({ id: "new", createdAt: "2099-01-01T00:00:00.000Z" }),
       makeNotification({ id: "old", createdAt: "2020-01-01T00:00:00.000Z" }),
@@ -199,8 +196,8 @@ describe("NotificationsListContainer", () => {
     api.notificationsUnreadCount = 2;
     act(() => notifications.emitReceived());
 
-    // The post-mark-all arrival stays unread → count 1 (not blanketed to 0).
-    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+    // The user is viewing → mark-on-view clears the badge again → 0.
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
   });
 
   it("tap falls back to Home when the notification has no deep link", async () => {
@@ -447,13 +444,13 @@ describe("NotificationsListContainer", () => {
     api.notificationsUnreadCount = 2;
 
     const { getByTestId, notifications } = renderContainer(api, storage);
-    // After the mount refresh: 2 (server) − 1 (pending read for p2row) = 1,
-    // NOT bounced back to 2.
-    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+    // Mark-on-view: the optimistic unread is 1 (server 2 minus pending read
+    // for p2row), then markAllRead fires immediately → settles at 0.
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
 
-    // A push re-runs the merge — the page-2 read must still be subtracted.
+    // A push re-runs the merge — mark-all is pending so everything stays 0.
     act(() => notifications.emitReceived());
-    await waitFor(() => expect(getByTestId("unread").props.children).toBe("1"));
+    await waitFor(() => expect(getByTestId("unread").props.children).toBe("0"));
   });
 
   it("load-more ignores a repeat fire while a page is in flight (no dup append)", async () => {

@@ -27,6 +27,13 @@ export interface NotificationsPort {
   cancelLocalNotification(id: string): Promise<void>;
 
   /**
+   * Set the OS app-icon (springboard) badge to the given count. `0` clears
+   * it. Drives the "unread count on the app icon, even when the app is
+   * closed" behaviour (STORY-001 — Revised 2026-06-08).
+   */
+  setBadgeCount(count: number): Promise<void>;
+
+  /**
    * Subscribe to device push-token rotation (Expo emits a new token when
    * the OS rotates it). The listener receives the new token string. Used
    * by `usePushNotifications` (09.2) to re-register with the backend.

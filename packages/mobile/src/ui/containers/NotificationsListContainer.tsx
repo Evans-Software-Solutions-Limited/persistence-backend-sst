@@ -154,14 +154,14 @@ export function NotificationsListContainer() {
    *   must not collapse pagination (Inspector Brad #7).
    */
   const loadPageOne = useCallback(
-    async (mode: "reset" | "merge") => {
+    async (mode: "reset" | "merge"): Promise<number> => {
       if (mode === "reset") setIsRefreshing(true);
       setError(null);
       try {
         const result = await refreshNotifications(api, storage);
         if (!result.ok) {
           setError(new Error(result.error.message));
-          return;
+          return 0;
         }
         const page = applyPendingReads(
           result.value.notifications,
@@ -181,9 +181,9 @@ export function NotificationsListContainer() {
         // Count from the (pending-read-applied) page so a page-2+ mark-read
         // isn't bounced up, and a pending mark-all leaves only post-mark-all
         // arrivals counted.
-        setUnreadCount(
-          optimisticUnread(result.value.unreadCount, page, storage),
-        );
+        const unread = optimisticUnread(result.value.unreadCount, page, storage);
+        setUnreadCount(unread);
+        return unread;
       } finally {
         if (mode === "reset") setIsRefreshing(false);
         setIsLoading(false);
@@ -192,30 +192,56 @@ export function NotificationsListContainer() {
     [api, storage],
   );
 
+  // Mark every notification read + clear the OS badge. Used by the header
+  // "mark all" action AND by mark-all-on-view (opening the screen). Optimistic
+  // on the visible list + cache + a queued PATCH /notifications/all.
+  const markAllRead = useCallback(() => {
+    markAllNotificationsReadCommand(storage);
+    const now = new Date().toISOString();
+    setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })));
+    setUnreadCount(0);
+    void notifications.setBadgeCount(0);
+  }, [storage, notifications]);
+
+  // Load page 1, then — per Brad's "viewing the list marks everything read"
+  // decision — mark all read if anything is unread (clears the badge).
+  const loadAndAcknowledge = useCallback(
+    async (mode: "reset" | "merge") => {
+      const unread = await loadPageOne(mode);
+      if (unread > 0) markAllRead();
+    },
+    [loadPageOne, markAllRead],
+  );
+
   // Explicit pull-to-refresh → full reset to page 1 (expected for a manual
   // gesture). Returns a promise so the RefreshControl can await it.
-  const refresh = useCallback(() => loadPageOne("reset"), [loadPageOne]);
+  const refresh = useCallback(
+    () => loadAndAcknowledge("reset"),
+    [loadAndAcknowledge],
+  );
 
   // First focus loads + anchors the cursor; subsequent focuses only merge
   // new rows in, so returning to the screen never resets a paginated list.
+  // Either way, opening/returning marks everything read (mark-on-view).
   useFocusEffect(
     useCallback(() => {
       if (initialLoadedRef.current) {
-        void loadPageOne("merge");
+        void loadAndAcknowledge("merge");
       } else {
         initialLoadedRef.current = true;
-        void loadPageOne("reset");
+        void loadAndAcknowledge("reset");
       }
-    }, [loadPageOne]),
+    }, [loadAndAcknowledge]),
   );
 
-  // A push while the screen is open merges new rows in (never a reset).
+  // A push while the screen is open merges new rows in (never a reset) — and
+  // since the screen is being viewed, marks them read too.
   useEffect(() => {
     const unsubscribe = notifications.addNotificationReceivedListener(() => {
-      void loadPageOne("merge");
+      void loadAndAcknowledge("merge");
     });
     return unsubscribe;
-  }, [notifications, loadPageOne]);
+  }, [notifications, loadAndAcknowledge]);
 
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
@@ -244,13 +270,6 @@ export function NotificationsListContainer() {
       nextCursorRef.current = cursor;
     }
   }, [api, storage]);
-
-  const markAllRead = useCallback(() => {
-    markAllNotificationsReadCommand(storage);
-    const now = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })));
-    setUnreadCount(0);
-  }, [storage]);
 
   const onTap = useCallback(
     (notification: Notification) => {

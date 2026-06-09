@@ -110,8 +110,9 @@ export function NotificationRowPresenter({
       testID={`notification-row-${notification.id}`}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityState={{ selected: unread }}
+      // Fold unread into the label rather than `accessibilityState.selected`
+      // (which screen readers announce as multi-select, the wrong semantic).
+      accessibilityLabel={unread ? `Unread. ${title}` : title}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
       <View

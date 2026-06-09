@@ -3,6 +3,7 @@ import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverl
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
@@ -47,6 +48,9 @@ export default function AppLayout() {
   // 09.6: route notification taps (cold-start + background) to their deep
   // link. Mounted in the authenticated tree so router targets resolve.
   useNotificationDeepLink();
+  // Keep the OS app-icon badge in sync with the unread count (launch /
+  // foreground / push).
+  useNotificationBadge();
 
   return (
     <ExerciseFiltersProvider>
