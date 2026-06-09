@@ -35,4 +35,25 @@ describe("updateNotificationPreferencesCommand", () => {
       friend_request: false,
     });
   });
+
+  it("coalesces rapid toggles into a single queued POST (Inspector #14)", () => {
+    const storage = new InMemoryStorageAdapter();
+
+    updateNotificationPreferencesCommand(storage, { goal_milestone: false });
+    updateNotificationPreferencesCommand(storage, { workout_assigned: false });
+    updateNotificationPreferencesCommand(storage, { goal_milestone: true }); // flip back
+
+    // One queued mutation, payload = the merged latest-wins partial.
+    const queued = storage.getPendingMutations();
+    expect(queued).toHaveLength(1);
+    expect(JSON.parse(queued[0].payload)).toEqual({
+      goal_milestone: true,
+      workout_assigned: false,
+    });
+    // Cache reflects the same end state.
+    expect(storage.getCachedNotificationPreferences()).toEqual({
+      goal_milestone: true,
+      workout_assigned: false,
+    });
+  });
 });

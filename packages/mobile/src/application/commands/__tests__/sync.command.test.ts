@@ -99,6 +99,44 @@ describe("processSyncQueue", () => {
     });
   });
 
+  it("does not clobber a still-queued toggle when an earlier one flushes (Inspector #13)", async () => {
+    // Two separate toggles queued (simulating one made while the first was
+    // mid-flush, so they didn't coalesce). Optimistic cache has both.
+    storage.cacheNotificationPreferences({
+      workout_assigned: false,
+      goal_milestone: false,
+    });
+    storage.enqueueMutation({
+      entityType: "notification-preferences",
+      operation: "update",
+      payload: { workout_assigned: false },
+      endpoint: "/notifications/preferences",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "notification-preferences",
+      operation: "update",
+      payload: { goal_milestone: false },
+      endpoint: "/notifications/preferences",
+      method: "POST",
+    });
+
+    // Only the FIRST POST gets a response; its merged column doesn't yet
+    // reflect the second toggle (still queued).
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { workout_assigned: false } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    // The second toggle's optimistic value survives the first's capture.
+    expect(storage.getCachedNotificationPreferences()).toMatchObject({
+      workout_assigned: false,
+      goal_milestone: false,
+    });
+  });
+
   it("keeps the optimistic preferences value when the response carries no data", async () => {
     storage.cacheNotificationPreferences({ goal_milestone: false });
     storage.enqueueMutation({

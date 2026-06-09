@@ -27,6 +27,29 @@ export function updateNotificationPreferencesCommand(
 ): void {
   const current = storage.getCachedNotificationPreferences() ?? {};
   storage.cacheNotificationPreferences({ ...current, ...partial });
+
+  // Coalesce rapid toggles: if a preferences POST is already queued (and
+  // not yet in-flight), merge this partial into it rather than enqueuing a
+  // second round-trip. Mirrors the offline edit-coalescing used for
+  // exercises — `updateMutationPayload` only touches pending/failed entries.
+  const queued = storage
+    .getPendingMutations()
+    .find(
+      (m) =>
+        m.entityType === "notification-preferences" &&
+        m.endpoint === "/notifications/preferences",
+    );
+  if (queued) {
+    let existing: NotificationPreferences = {};
+    try {
+      existing = JSON.parse(queued.payload) as NotificationPreferences;
+    } catch {
+      existing = {};
+    }
+    storage.updateMutationPayload(queued.id, { ...existing, ...partial });
+    return;
+  }
+
   storage.enqueueMutation({
     entityType: "notification-preferences",
     operation: "update",

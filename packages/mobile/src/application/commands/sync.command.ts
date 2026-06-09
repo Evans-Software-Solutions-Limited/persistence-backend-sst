@@ -6,6 +6,7 @@ import type {
 } from "@/domain/ports/storage.port";
 import type { EntitlementVerdict } from "@/domain/ports/sync.types";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
+import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 
 export type SyncResult = {
@@ -220,9 +221,13 @@ export async function processSyncQueue(
             data?: Record<string, unknown>;
           };
           if (body.data) {
-            storage.cacheNotificationPreferences(
-              normalizePreferences(body.data),
-            );
+            // Re-apply toggles still queued behind this one (this entry is
+            // already in_flight, so it's excluded) so a concurrent toggle
+            // isn't clobbered by this response's merged column.
+            storage.cacheNotificationPreferences({
+              ...normalizePreferences(body.data),
+              ...pendingPreferenceOverrides(storage),
+            });
           }
         } catch (err) {
           console.warn(

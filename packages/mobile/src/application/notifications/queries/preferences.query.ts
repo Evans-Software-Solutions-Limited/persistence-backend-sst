@@ -22,9 +22,11 @@ export function getPreferencesQuery(
 
 /**
  * Collect un-flushed optimistic preference toggles from the sync queue,
- * merged latest-wins into a single partial map.
+ * merged latest-wins into a single partial map. Exported so the sync-flush
+ * response-capture (sync.command) can re-apply still-pending toggles on top
+ * of a server merged column it just received, instead of clobbering them.
  */
-function pendingPreferenceOverrides(
+export function pendingPreferenceOverrides(
   storage: StoragePort,
 ): NotificationPreferences {
   let merged: NotificationPreferences = {};
