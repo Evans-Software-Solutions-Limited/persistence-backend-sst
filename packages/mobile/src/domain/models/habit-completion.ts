@@ -17,7 +17,12 @@ export type HabitCompletion = {
  * A single habit row for the 7-day Home grid (STORY-004). `days` is length-7
  * with TODAY last; `tone` maps to a `<HabitTile>` tone (set by the container).
  */
-export type HabitTileTone = "primary" | "gold" | "trainer" | "ember" | "success";
+export type HabitTileTone =
+  | "primary"
+  | "gold"
+  | "trainer"
+  | "ember"
+  | "success";
 
 export type Habit = {
   id: string; // goalId

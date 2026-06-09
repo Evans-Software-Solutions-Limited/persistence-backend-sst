@@ -115,10 +115,7 @@ export {
   type HabitTileTone,
 } from "./habit-completion";
 
-export {
-  type Achievement,
-  type AchievementCategory,
-} from "./achievement";
+export { type Achievement, type AchievementCategory } from "./achievement";
 
 export {
   type RingDatum,

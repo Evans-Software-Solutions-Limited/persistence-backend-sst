@@ -51,9 +51,9 @@ describe("toggleHabitDayCommand", () => {
       done: false,
     });
 
-    expect(storage.getCachedHabitCompletions("u1", { goalId: "g1" })).toHaveLength(
-      0,
-    );
+    expect(
+      storage.getCachedHabitCompletions("u1", { goalId: "g1" }),
+    ).toHaveLength(0);
     const queued = storage.getPendingMutations();
     expect(queued[0].method).toBe("DELETE");
     expect(queued[0].endpoint).toContain("goalId=g1");
