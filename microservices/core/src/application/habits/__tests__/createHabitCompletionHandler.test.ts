@@ -82,4 +82,14 @@ describe("createHabitCompletionHandler", () => {
     expect(arg.completedAt).toBeInstanceOf(Date);
     expect(arg.value).toBeNull();
   });
+
+  it("rejects a malformed date with 400 (not a 500)", async () => {
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "not-a-date" }),
+    );
+    expect(res.status).toBe(400);
+    expect(habitMock.create).not.toHaveBeenCalled();
+  });
 });

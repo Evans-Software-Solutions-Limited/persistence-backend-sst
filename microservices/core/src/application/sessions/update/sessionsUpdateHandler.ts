@@ -6,7 +6,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { safeEvaluateStreaks } from "../../streaks/evaluate";
+import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
 
 export const sessionsUpdateHandler = new Elysia()
@@ -102,13 +102,14 @@ export const sessionsUpdateHandler = new Elysia()
         }
 
         // Advance the workout streak (STORY-006). Fire-and-forget +
-        // error-tolerant — same posture as PR detection above. Uses
-        // completedAt when supplied, else now.
-        const completedTs =
-          typeof body.completedAt === "string"
-            ? new Date(body.completedAt)
-            : new Date();
-        await safeEvaluateStreaks(userId, "workout_logged", completedTs);
+        // error-tolerant — same posture as PR detection above. completedAt is
+        // clamped to now (never future) so it can't push the streak past
+        // genuinely-missed periods.
+        await safeEvaluateStreaks(
+          userId,
+          "workout_logged",
+          resolveEventTs(body.completedAt),
+        );
         await safeRecomputeVolume(userId);
       }
 

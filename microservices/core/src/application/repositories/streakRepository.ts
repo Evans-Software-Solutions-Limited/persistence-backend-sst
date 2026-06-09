@@ -17,6 +17,11 @@ import type {
   StreakType,
 } from "../streaks/engine";
 import type { StreakCronDataPort } from "../streaks/cron";
+import {
+  compareISO,
+  lastCompletedPeriodEndISO,
+  type Period,
+} from "../streaks/period";
 
 /**
  * DB-backed implementation of the streak engine + cron data ports
@@ -232,21 +237,49 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
   }
 
   /**
-   * Manual freeze-token spend (06.5 — the You/Progress "Use" button). Decrements
-   * one token only when the streak is owned by `userId` AND has a token to
-   * spend — ownership + the `freeze_tokens > 0` guard are folded into the WHERE
-   * so a cross-user or empty-balance spend simply updates nothing. Returns the
-   * updated row, or null when the WHERE matched nothing.
+   * Manual freeze-token spend (06.5 — the You/Progress "Use" button). Spends one
+   * token to PROTECT a behind streak: it both decrements `freeze_tokens` AND
+   * fast-forwards `last_period_end` to the last completed user-local period
+   * (mirroring the cron's `persistFreezeSpend`). Without the `last_period_end`
+   * advance the nightly cron would re-detect the same miss and break the streak
+   * with 0 tokens left — making the button strictly worse than doing nothing
+   * (Inspector finding, PR #116).
+   *
+   * Returns null (→ handler 400) when: the streak isn't owned by `userId`, has
+   * no token to spend, OR isn't actually behind (spending then would waste a
+   * token the cron would otherwise auto-apply on a real miss).
+   *
+   * `now` is injectable for deterministic tests.
    */
   async spendTokenManually(
     userId: string,
     streakId: string,
+    now: Date = new Date(),
   ): Promise<UserStreak | null> {
     const db = getDb();
+    const existing = await db
+      .select()
+      .from(userStreaks)
+      .where(and(eq(userStreaks.id, streakId), eq(userStreaks.userId, userId)))
+      .limit(1);
+    const streak = existing[0];
+    if (!streak || streak.freezeTokens <= 0) return null;
+
+    const tz = await this.getUserTimezone(userId);
+    const lastCompletedEnd = lastCompletedPeriodEndISO(
+      now,
+      streak.period as Period,
+      tz,
+    );
+    // Not behind → nothing to protect; don't waste the token.
+    if (compareISO(streak.lastPeriodEnd, lastCompletedEnd) >= 0) return null;
+
     const rows = await db
       .update(userStreaks)
       .set({
         freezeTokens: sql`${userStreaks.freezeTokens} - 1`,
+        lastPeriodEnd: lastCompletedEnd,
+        status: "active",
         updatedAt: new Date(),
       })
       .where(

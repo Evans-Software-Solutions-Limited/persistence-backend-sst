@@ -8,9 +8,29 @@ vi.mock("../engine", async (importOriginal) => {
 });
 
 import { evaluateStreaks } from "../engine";
-import { safeEvaluateStreaks } from "../evaluate";
+import { safeEvaluateStreaks, resolveEventTs } from "../evaluate";
 
 const TS = new Date("2026-06-07T12:00:00Z");
+
+describe("resolveEventTs", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+
+  it("keeps a valid past timestamp", () => {
+    expect(resolveEventTs("2026-06-09T08:00:00Z", now).toISOString()).toBe(
+      "2026-06-09T08:00:00.000Z",
+    );
+  });
+  it("clamps a future timestamp to now", () => {
+    expect(resolveEventTs("2026-06-21T00:00:00Z", now)).toBe(now);
+  });
+  it("falls back to now for a malformed string", () => {
+    expect(resolveEventTs("not-a-date", now)).toBe(now);
+  });
+  it("falls back to now for a non-string (undefined / null)", () => {
+    expect(resolveEventTs(undefined, now)).toBe(now);
+    expect(resolveEventTs(null, now)).toBe(now);
+  });
+});
 
 describe("safeEvaluateStreaks", () => {
   beforeEach(() => vi.clearAllMocks());

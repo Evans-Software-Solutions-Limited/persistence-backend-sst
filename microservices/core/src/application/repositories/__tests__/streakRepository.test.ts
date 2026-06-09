@@ -225,18 +225,61 @@ describe("StreakRepository", () => {
     });
   });
 
-  it("spendTokenManually decrements a token or returns null", async () => {
-    const updated = streak({ freezeTokens: 1 });
-    (getDb as any).mockReturnValue({ update: () => updateChain([updated]) });
-    expect(await new StreakRepository().spendTokenManually("u1", "s1")).toBe(
-      updated,
-    );
+  describe("spendTokenManually", () => {
+    const now = new Date("2026-06-20T12:00:00Z"); // daily last-completed = 06-19
 
-    // WHERE matched nothing (wrong user or no tokens) → null
-    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
-    expect(
-      await new StreakRepository().spendTokenManually("u1", "s1"),
-    ).toBeNull();
+    it("advances last_period_end + decrements when behind", async () => {
+      const behind = streak({
+        period: "daily",
+        freezeTokens: 1,
+        lastPeriodEnd: "2026-06-06",
+      });
+      const updated = streak({ freezeTokens: 0, lastPeriodEnd: "2026-06-19" });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([behind])) // load streak
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }])); // tz
+      (getDb as any).mockReturnValue({
+        select,
+        update: () => updateChain([updated]),
+      });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBe(updated);
+    });
+
+    it("returns null when the streak is not behind (no token wasted)", async () => {
+      const upToDate = streak({
+        period: "daily",
+        freezeTokens: 2,
+        lastPeriodEnd: "2026-06-19",
+      });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([upToDate]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+      (getDb as any).mockReturnValue({ select });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBeNull();
+    });
+
+    it("returns null when there is no token to spend", async () => {
+      const noTokens = streak({ freezeTokens: 0 });
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([noTokens]),
+      });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBeNull();
+    });
+
+    it("returns null when the streak isn't found / owned", async () => {
+      (getDb as any).mockReturnValue({ select: () => selectWhereLimit([]) });
+      expect(
+        await new StreakRepository().spendTokenManually("u1", "s1", now),
+      ).toBeNull();
+    });
   });
 
   it("persistFreezeSpend / persistBreak update and return the row", async () => {

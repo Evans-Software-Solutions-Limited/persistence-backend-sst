@@ -25,6 +25,12 @@ export const deleteHabitCompletionHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { goalId, date } = ctx.query;
       const completedAt = date ? new Date(date) : new Date();
+      // Reject a malformed date with 400 rather than 500ing on the
+      // downstream `.toISOString()` RangeError (Inspector finding).
+      if (Number.isNaN(completedAt.getTime())) {
+        ctx.set.status = 400;
+        return { error: "Invalid date" };
+      }
 
       const deleted = await ctx.HabitRepository.remove(
         userId,

@@ -8,7 +8,7 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { loadRings } from "./loadRings";
-import { trailingRange, weekStartISO } from "./window";
+import { weekStartISO } from "./window";
 import { addDaysISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 import { buildHabitsGrid } from "../habits/habitsView";
@@ -47,7 +47,9 @@ export const getHomeHandler = new Elysia()
       now,
     );
 
-    const { start, end } = trailingRange(now, 7, tz);
+    // Bars + totals both span the current calendar week so `Σ bars === totalKg`
+    // (Inspector finding — a trailing 7-day window disagreed with the Mon–Sun
+    // total on any non-Sunday).
     const thisWeekStart = weekStartISO(now, tz);
     const thisWeekEnd = addDaysISO(thisWeekStart, 6);
     const lastWeekStart = addDaysISO(thisWeekStart, -7);
@@ -55,7 +57,12 @@ export const getHomeHandler = new Elysia()
 
     const [daily, thisKg, lastKg, completed, streak, recentPRs, completions] =
       await Promise.all([
-        ctx.VolumeRepository.dailyVolume(userId, tz, start, end),
+        ctx.VolumeRepository.dailyVolume(
+          userId,
+          tz,
+          thisWeekStart,
+          thisWeekEnd,
+        ),
         ctx.VolumeRepository.totalVolume(
           userId,
           tz,
@@ -84,7 +91,7 @@ export const getHomeHandler = new Elysia()
         rings,
         micro: { streak, water: null, strain: null, sleep: null },
         weeklyVolume: {
-          days: fillWeekDays(daily, start, end),
+          days: fillWeekDays(daily, thisWeekStart, thisWeekEnd),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
           workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },

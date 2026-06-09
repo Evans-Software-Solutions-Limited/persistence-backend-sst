@@ -27,6 +27,12 @@ export const createHabitCompletionHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { goalId, date, value } = ctx.body;
       const completedAt = date ? new Date(date) : new Date();
+      // Reject a malformed date with 400 rather than letting the downstream
+      // `.toISOString()` throw a RangeError → 500 (Inspector finding).
+      if (Number.isNaN(completedAt.getTime())) {
+        ctx.set.status = 400;
+        return { error: "Invalid date" };
+      }
 
       const completion = await ctx.HabitRepository.create(userId, {
         goalId,

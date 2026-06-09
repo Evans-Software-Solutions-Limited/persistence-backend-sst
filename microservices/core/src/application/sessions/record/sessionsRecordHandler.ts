@@ -12,7 +12,7 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
-import { safeEvaluateStreaks } from "../../streaks/evaluate";
+import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
 
 /**
@@ -120,10 +120,13 @@ export const sessionsRecordHandler = new Elysia()
       // Cancelled sessions don't count. Fire-and-forget + error-tolerant:
       // the session + PRs already committed in the transaction above.
       if (payload.status === "completed") {
-        const completedTs = payload.completedAt
-          ? new Date(payload.completedAt)
-          : new Date();
-        await safeEvaluateStreaks(userId, "workout_logged", completedTs);
+        // completedAt clamped to now (never future) so it can't skip the
+        // streak past genuinely-missed periods (Inspector finding, PR #116).
+        await safeEvaluateStreaks(
+          userId,
+          "workout_logged",
+          resolveEventTs(payload.completedAt),
+        );
         // Backup volume recompute so Home/You weekly volume is fresh before
         // the 03:00 cron (design.md § Risks — two-write redundancy).
         await safeRecomputeVolume(userId);

@@ -54,4 +54,17 @@ describe("deleteHabitCompletionHandler", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it("rejects a malformed date with 400 (not a 500)", async () => {
+    const { deleteHabitCompletionHandler } =
+      await import("../deleteHabitCompletionHandler");
+    const res = await deleteHabitCompletionHandler.handle(
+      new Request("http://localhost/habit-completions?goalId=g1&date=foo", {
+        method: "DELETE",
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(habitMock.remove).not.toHaveBeenCalled();
+  });
 });

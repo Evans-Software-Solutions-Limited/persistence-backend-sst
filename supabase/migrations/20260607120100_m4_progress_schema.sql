@@ -98,21 +98,29 @@ CREATE INDEX IF NOT EXISTS user_streaks_user_status
   ON user_streaks (user_id, status);
 
 -- ─── 5. habit_completions ──────────────────────────────────────────────────
+-- `local_completed_date` is the USER-LOCAL calendar date of `completed_at`,
+-- computed by the writer from profiles.timezone (HabitRepository.create).
+-- Uniqueness AND the streak engine both bucket on this user-local grain.
+--
+-- Why NOT a UTC-day expression index (the original design): the streak engine
+-- + Home grid bucket by user-local day (`completed_at AT TIME ZONE <user tz>`),
+-- so for any non-UTC user two distinct local days can collapse onto one UTC day
+-- — the second insert would be silently dropped by ON CONFLICT and the streak
+-- would break on a day the user actually completed (Inspector finding, PR #116).
+-- Bucketing uniqueness on the same user-local day the engine reads removes the
+-- mismatch; a plain-column unique index is IMMUTABLE-safe with no cast tricks.
 CREATE TABLE IF NOT EXISTS habit_completions (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  goal_id         uuid NOT NULL REFERENCES user_goals(id) ON DELETE CASCADE,
-  completed_at    timestamptz NOT NULL,
-  value           numeric
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  goal_id              uuid NOT NULL REFERENCES user_goals(id) ON DELETE CASCADE,
+  completed_at         timestamptz NOT NULL,
+  local_completed_date date NOT NULL,
+  value                numeric
 );
 
--- One completion per user / goal / UTC day. The expression must be IMMUTABLE:
--- two-arg date_trunc(text, timestamptz) is only STABLE (session-TZ dependent),
--- so we cast through AT TIME ZONE 'UTC' to the timestamp-without-tz overload,
--- which IS immutable and index-safe. The streak engine re-buckets to
--- user-local time at query time (see design.md § habit_completions note).
-CREATE UNIQUE INDEX IF NOT EXISTS habit_completions_user_goal_day_uq
-  ON habit_completions (user_id, goal_id, (date_trunc('day', completed_at AT TIME ZONE 'UTC')));
+-- One completion per user / goal / user-local day.
+CREATE UNIQUE INDEX IF NOT EXISTS habit_completions_user_goal_local_day_uq
+  ON habit_completions (user_id, goal_id, local_completed_date);
 CREATE INDEX IF NOT EXISTS habit_completions_user_goal_ts
   ON habit_completions (user_id, goal_id, completed_at DESC);
 

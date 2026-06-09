@@ -5,10 +5,12 @@ import {
   dailyActivityData,
   exercises,
   personalRecords,
+  profiles,
   userAchievements,
   userStreaks,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { localDateISO } from "../streaks/period";
 
 export interface RecentPR {
   id: string;
@@ -137,10 +139,26 @@ export class HomeReadRepository {
     }));
   }
 
-  /** Body-measurement series within the window, oldest-first (for sparklines). */
+  async getUserTimezone(userId: string): Promise<string> {
+    const db = getDb();
+    const rows = await db
+      .select({ tz: profiles.timezone })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1);
+    return rows[0]?.tz ?? "Europe/London";
+  }
+
+  /**
+   * Body-measurement series within the window, oldest-first (for sparklines).
+   * `date` is bucketed to the USER-LOCAL day (via `tz`), not UTC, so a weigh-in
+   * logged late evening in a non-UTC zone lands on the right calendar day
+   * (Inspector finding, PR #116).
+   */
   async getBodyTrend(
     userId: string,
     windowDays: number,
+    tz: string,
   ): Promise<BodyTrendPoint[]> {
     const db = getDb();
     const rows = await db
@@ -161,9 +179,7 @@ export class HomeReadRepository {
       )
       .orderBy(bodyMeasurements.measuredAt);
     return rows.map((r) => ({
-      date: r.measuredAt
-        ? new Date(r.measuredAt).toISOString().slice(0, 10)
-        : "",
+      date: r.measuredAt ? localDateISO(new Date(r.measuredAt), tz) : "",
       weightKg: r.weightKg != null ? Number(r.weightKg) : null,
       bodyFat: r.bodyFat != null ? Number(r.bodyFat) : null,
     }));

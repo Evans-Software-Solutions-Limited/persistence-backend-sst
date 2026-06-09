@@ -8,6 +8,7 @@ const volMock = vi.hoisted(() => ({
   completedSessionCount: vi.fn(async () => 4),
 }));
 const homeMock = vi.hoisted(() => ({
+  getUserTimezone: vi.fn(async () => "Europe/London"),
   getTodaySteps: vi.fn(async () => 7420),
   getActiveWorkoutStreakCount: vi.fn(async () => 23),
   getRecentPRs: vi.fn(async () => [{ id: "pr1" }] as any[]),
@@ -106,7 +107,11 @@ describe("Home/You endpoints", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(homeMock.getBodyTrend).toHaveBeenCalledWith("u1", 90);
+    expect(homeMock.getBodyTrend).toHaveBeenCalledWith(
+      "u1",
+      90,
+      "Europe/London",
+    );
   });
 
   it("GET /users/me/achievements returns unlocked achievements", async () => {

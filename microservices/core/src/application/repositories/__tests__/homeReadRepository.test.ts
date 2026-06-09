@@ -100,11 +100,50 @@ describe("HomeReadRepository", () => {
           },
         ]),
     });
-    const series = await new HomeReadRepository().getBodyTrend("u1", 30);
+    // 08:00 UTC on 06-01 is still 06-01 in Sydney (UTC+10/11) → user-local
+    // bucketing keeps the date stable here.
+    const series = await new HomeReadRepository().getBodyTrend(
+      "u1",
+      30,
+      "Australia/Sydney",
+    );
     expect(series[0]).toEqual({
       date: "2026-06-01",
       weightKg: 82.5,
       bodyFat: null,
     });
+  });
+
+  it("getBodyTrend buckets the date by user-local day, not UTC", async () => {
+    (getDb as any).mockReturnValue({
+      select: () =>
+        chain([
+          {
+            // 22:00 UTC 06-01 = 08:00 06-02 in Sydney → local day is 06-02.
+            measuredAt: new Date("2026-06-01T22:00:00Z"),
+            weightKg: "80.00",
+            bodyFat: null,
+          },
+        ]),
+    });
+    const series = await new HomeReadRepository().getBodyTrend(
+      "u1",
+      30,
+      "Australia/Sydney",
+    );
+    expect(series[0].date).toBe("2026-06-02");
+  });
+
+  it("getUserTimezone returns the profile tz, default Europe/London", async () => {
+    (getDb as any).mockReturnValue({
+      select: () => chain([{ tz: "America/New_York" }]),
+    });
+    expect(await new HomeReadRepository().getUserTimezone("u1")).toBe(
+      "America/New_York",
+    );
+    (getDb as any).mockReturnValue({ select: () => chain([]) });
+    expect(await new HomeReadRepository().getUserTimezone("u1")).toBe(
+      "Europe/London",
+    );
   });
 });

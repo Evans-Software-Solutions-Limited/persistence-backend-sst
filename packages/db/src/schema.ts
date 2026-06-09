@@ -838,15 +838,18 @@ export const habitCompletions = pgTable(
       .notNull()
       .references(() => userGoals.id, { onDelete: "cascade" }),
     completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    // User-local calendar date of completed_at, computed by the writer from
+    // profiles.timezone. Uniqueness buckets on this (not a UTC day) so non-UTC
+    // users' completions aren't dropped — see migration comment + PR #116.
+    localCompletedDate: date("local_completed_date").notNull(),
     value: numeric("value"),
   },
   (t) => [
-    // One completion per user / goal / UTC day. Expression must be IMMUTABLE,
-    // hence the AT TIME ZONE 'UTC' cast (see migration comment).
-    uniqueIndex("habit_completions_user_goal_day_uq").on(
+    // One completion per user / goal / user-local day.
+    uniqueIndex("habit_completions_user_goal_local_day_uq").on(
       t.userId,
       t.goalId,
-      sql`date_trunc('day', ${t.completedAt} AT TIME ZONE 'UTC')`,
+      t.localCompletedDate,
     ),
     index("habit_completions_user_goal_ts").on(
       t.userId,

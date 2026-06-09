@@ -29,9 +29,11 @@ export const getBodyTrendHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const windowDays = parseBodyTrendWindow(ctx.query.window);
+      const tz = await ctx.HomeReadRepository.getUserTimezone(userId);
       const series = await ctx.HomeReadRepository.getBodyTrend(
         userId,
         windowDays,
+        tz,
       );
       return { data: series };
     },

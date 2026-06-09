@@ -6,18 +6,11 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { addDaysISO } from "../streaks/period";
-import { trailingRange, weekStartISO } from "./window";
+import { weekStartISO } from "./window";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 
 /** Default weekly workout target (the "/5" in the prototype) until goal wiring. */
 const WORKOUTS_TARGET_DEFAULT = 5;
-
-function parseDays(window: string | undefined): number {
-  if (!window) return 7;
-  const m = /^(\d+)d$/.exec(window);
-  const n = m ? Number(m[1]) : NaN;
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 31) : 7;
-}
 
 /**
  * GET /users/me/weekly-volume?window=7d — the Home WeeklyVolume card
@@ -38,19 +31,22 @@ export const getWeeklyVolumeHandler = new Elysia()
       const tz = await ctx.VolumeRepository.getUserTimezone(userId);
       const now = new Date();
 
-      const days = parseDays(ctx.query.window);
-      const { start, end } = trailingRange(now, days, tz);
-      const daily = await ctx.VolumeRepository.dailyVolume(
-        userId,
-        tz,
-        start,
-        end,
-      );
-
+      // Bars AND header totals both span the current calendar week (Mon–Sun,
+      // user-local) so `Σ bars === totalKg` and the prototype's fixed M–S
+      // layout holds (Inspector finding — a trailing window made them disagree
+      // on any non-Sunday). `window` is accepted for API compatibility but the
+      // bar set is always the current week.
       const thisWeekStart = weekStartISO(now, tz);
       const thisWeekEnd = addDaysISO(thisWeekStart, 6);
       const lastWeekStart = addDaysISO(thisWeekStart, -7);
       const lastWeekEnd = addDaysISO(thisWeekStart, -1);
+
+      const daily = await ctx.VolumeRepository.dailyVolume(
+        userId,
+        tz,
+        thisWeekStart,
+        thisWeekEnd,
+      );
 
       const [thisKg, lastKg, completed] = await Promise.all([
         ctx.VolumeRepository.totalVolume(
@@ -75,7 +71,7 @@ export const getWeeklyVolumeHandler = new Elysia()
 
       return {
         data: {
-          days: fillWeekDays(daily, start, end),
+          days: fillWeekDays(daily, thisWeekStart, thisWeekEnd),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
           workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },
