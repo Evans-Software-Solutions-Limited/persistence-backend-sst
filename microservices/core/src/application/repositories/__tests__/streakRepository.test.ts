@@ -182,6 +182,20 @@ describe("StreakRepository", () => {
     expect(result).toBe(updated);
   });
 
+  it("persistAdvance returns null when the conditional WHERE misses (lost race)", async () => {
+    // A concurrent cron write moved last_period_end past our target — the
+    // `last_period_end < target` guard matches no row.
+    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
+    expect(
+      await new StreakRepository().persistAdvance("s1", {
+        currentCount: 2,
+        longestCount: 2,
+        lastPeriodEnd: "2026-06-07",
+        freezeTokens: 0,
+      }),
+    ).toBeNull();
+  });
+
   describe("unlockAchievement", () => {
     it("inserts a new user_achievement and reports newlyUnlocked=true", async () => {
       (getDb as any).mockReturnValue({

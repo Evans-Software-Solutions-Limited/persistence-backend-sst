@@ -162,10 +162,24 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     return Number.isFinite(tv) && tv > 0 ? Math.ceil(tv) : 1;
   }
 
+  /**
+   * Conditional advance — the TOCTOU guard the other three streak writers
+   * already carry (Inspector finding, PR #116). Without it the engine could
+   * write a snapshot-derived advance OVER a cron break/spend that landed
+   * between its SELECT and this UPDATE, resurrecting a legitimately-broken
+   * streak (status back to 'active' with a stale count) or double-spending
+   * tokens. `last_period_end < target` is always true for an un-raced row
+   * (the engine only advances to a strictly-later period), so a null return
+   * can only mean "a concurrent writer got there first" — the engine bails.
+   *
+   * No status filter: the engine legitimately advances BOTH active and broken
+   * rows (broken-revive restarts at 1), and `status: "active"` in the SET is
+   * the revive itself.
+   */
   async persistAdvance(
     streakId: string,
     fields: StreakAdvanceFields,
-  ): Promise<UserStreak> {
+  ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
       .update(userStreaks)
@@ -177,9 +191,14 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         status: "active",
         updatedAt: new Date(),
       })
-      .where(eq(userStreaks.id, streakId))
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+        ),
+      )
       .returning();
-    return rows[0];
+    return rows[0] ?? null;
   }
 
   async unlockAchievement(

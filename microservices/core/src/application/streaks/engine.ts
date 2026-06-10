@@ -86,10 +86,17 @@ export interface StreakDataPort {
     endDate: string,
     tz: string,
   ): Promise<boolean>;
+  /**
+   * Conditional advance (WHERE last_period_end < fields.lastPeriodEnd) —
+   * returns null when a concurrent cron/manual write already moved the row
+   * past the engine's snapshot, so a lost race is a clean no-op instead of
+   * resurrecting a just-broken streak or double-spending tokens (same TOCTOU
+   * guard as persistFreezeSpend / persistBreak / spendTokenManually).
+   */
   persistAdvance(
     streakId: string,
     fields: StreakAdvanceFields,
-  ): Promise<UserStreak>;
+  ): Promise<UserStreak | null>;
   /**
    * Resolve the achievement for (streakType, threshold) and insert a
    * user_achievements row idempotently. Returns the achievementId +
@@ -176,30 +183,15 @@ async function tryAdvance(
     : periodsBetween(streak.lastPeriodEnd, previousEnd, period);
   let tokensAfterGap = streak.freezeTokens;
   let restart = wasBroken;
+  let gapTokensSpent = 0;
   if (missed > 0) {
     if (streak.freezeTokens < missed) {
       // Gap can't be covered — streak breaks, restarting at 1 from today.
       // Tokens are kept (the cron's break doesn't drain them either).
       restart = true;
     } else {
+      gapTokensSpent = missed;
       tokensAfterGap = streak.freezeTokens - missed;
-      await deps.notifier.notify({
-        userId: streak.userId,
-        type: "freeze_token_applied",
-        title: "Streak protected",
-        message:
-          missed === 1
-            ? "You missed a period, so a freeze token kept your streak alive."
-            : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
-        data: {
-          streakType: streak.streakType,
-          streakId: streak.id,
-          periodsMissed: missed,
-          tokensSpent: missed,
-          freezeTokensRemaining: tokensAfterGap,
-        },
-        relatedEntityId: streak.id,
-      });
     }
   }
 
@@ -212,7 +204,37 @@ async function tryAdvance(
     freezeTokens: freezeTokensAfterAdvance(tokensAfterGap, newCount),
   };
 
+  // Conditional write (WHERE last_period_end < currentEnd) — null means a
+  // concurrent cron/manual write already moved the row past our snapshot, so
+  // everything computed above is stale: bail with NO side effects. The
+  // triggering event is durable, so the cron (or the user's next event)
+  // re-evaluates against the fresh row (Inspector finding, PR #116).
   const updated = await deps.data.persistAdvance(streak.id, fields);
+  if (!updated) return null;
+
+  // Notify only AFTER the persist commits — emitting first meant a failed or
+  // raced advance left a "Streak protected" notification describing a spend
+  // that never happened (Inspector finding; the cron already ordered these
+  // correctly).
+  if (gapTokensSpent > 0) {
+    await deps.notifier.notify({
+      userId: streak.userId,
+      type: "freeze_token_applied",
+      title: "Streak protected",
+      message:
+        gapTokensSpent === 1
+          ? "You missed a period, so a freeze token kept your streak alive."
+          : `You missed ${gapTokensSpent} periods, so ${gapTokensSpent} freeze tokens kept your streak alive.`,
+      data: {
+        streakType: streak.streakType,
+        streakId: streak.id,
+        periodsMissed: gapTokensSpent,
+        tokensSpent: gapTokensSpent,
+        freezeTokensRemaining: tokensAfterGap,
+      },
+      relatedEntityId: streak.id,
+    });
+  }
 
   const milestones: UnlockedMilestone[] = [];
   for (const threshold of crossedMilestones(prevCount, newCount, period)) {

@@ -235,6 +235,38 @@ describe("evaluateStreaks", () => {
       type: "freeze_token_applied",
       data: { periodsMissed: 2, tokensSpent: 2, freezeTokensRemaining: 0 },
     });
+    // Phantom-notify guard: the freeze notification must commit AFTER the
+    // advance persists, never before (Inspector finding).
+    const persistOrder = (data.persistAdvance as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0];
+    const notifyOrder = (notifier.notify as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0];
+    expect(persistOrder).toBeLessThan(notifyOrder);
+  });
+
+  it("bails with no side effects when persistAdvance loses the TOCTOU race", async () => {
+    // A concurrent cron break/spend moved the row past our snapshot — the
+    // conditional UPDATE matches nothing. No advance, no freeze notification
+    // (despite the gap-spend path being taken), no milestone unlock.
+    const data = makeData({
+      streaks: [
+        makeStreak({
+          currentCount: 5,
+          lastPeriodEnd: "2026-06-04",
+          freezeTokens: 2,
+        }),
+      ],
+    });
+    (data.persistAdvance as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const notifier = makeNotifier();
+    const result = await evaluateStreaks("u1", "habit_completed", TS, {
+      data,
+      notifier,
+    });
+    expect(result.advanced).toHaveLength(0);
+    expect(result.milestones).toHaveLength(0);
+    expect(notifier.notify).not.toHaveBeenCalled();
+    expect(data.unlockAchievement).not.toHaveBeenCalled();
   });
 
   it("breaks-and-restarts at 1 when the gap exceeds the token balance", async () => {
