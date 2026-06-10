@@ -28,7 +28,12 @@ function makeData(
   return {
     getActiveStreaks: vi.fn(async () => streaks),
     getUserTimezone: vi.fn(async () => tz),
-    persistFreezeSpend: vi.fn(async (id) => makeStreak({ id })),
+    // Echo back a row whose token balance reflects the relative spend, so the
+    // notification's freezeTokensRemaining (read off the returned row) is real.
+    persistFreezeSpend: vi.fn(async (id, fields) => {
+      const before = streaks.find((s) => s.id === id)?.freezeTokens ?? 0;
+      return makeStreak({ id, freezeTokens: before - fields.tokensSpent });
+    }),
     persistBreak: vi.fn(async (id) => makeStreak({ id, status: "broken" })),
   };
 }
@@ -77,13 +82,40 @@ describe("streakCron", () => {
     const summary = await streakCron({ data, notifier, now: NOW });
     expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 1, broken: 0 });
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
-      freezeTokens: 1,
+      tokensSpent: 1,
       lastPeriodEnd: "2026-06-09",
     });
     expect(notifier.calls[0]).toMatchObject({
       type: "freeze_token_applied",
       data: { periodsMissed: 1, tokensSpent: 1, freezeTokensRemaining: 1 },
     });
+  });
+
+  it("counts a lost spend race as up to date (engine advanced mid-sweep)", async () => {
+    const data = makeData([
+      makeStreak({ lastPeriodEnd: "2026-06-08", freezeTokens: 2 }),
+    ]);
+    // Conditional UPDATE matched nothing — on-write advance won the race.
+    (data.persistFreezeSpend as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null,
+    );
+    const notifier = makeNotifier();
+    const summary = await streakCron({ data, notifier, now: NOW });
+    expect(summary).toEqual({ swept: 1, upToDate: 1, frozen: 0, broken: 0 });
+    expect(notifier.notify).not.toHaveBeenCalled();
+  });
+
+  it("counts a lost break race as up to date", async () => {
+    const data = makeData([
+      makeStreak({ lastPeriodEnd: "2026-06-06", freezeTokens: 0 }),
+    ]);
+    (data.persistBreak as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const summary = await streakCron({
+      data,
+      notifier: makeNotifier(),
+      now: NOW,
+    });
+    expect(summary).toEqual({ swept: 1, upToDate: 1, frozen: 0, broken: 0 });
   });
 
   it("spends ONE token PER missed period (N tokens for N periods)", async () => {
@@ -95,7 +127,7 @@ describe("streakCron", () => {
     const summary = await streakCron({ data, notifier, now: NOW });
     expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 1, broken: 0 });
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
-      freezeTokens: 0,
+      tokensSpent: 3,
       lastPeriodEnd: "2026-06-09",
     });
     expect(notifier.calls[0]).toMatchObject({

@@ -62,23 +62,29 @@ export function compareISO(a: string, b: string): number {
 }
 
 /**
- * The local-date on which the period CONTAINING `ts` ends.
+ * The local-date on which the period CONTAINING the calendar date `dateISO`
+ * ends. Date-only arithmetic — no timezone involved, so it is also the right
+ * tool for date-only inputs (e.g. a habit grid cell's YYYY-MM-DD).
  *   daily   → that day
  *   weekly  → the upcoming (or current) Sunday (week is Mon–Sun per § 3.4)
  *   monthly → the last day of that month
  */
-export function periodEndISO(ts: Date, period: Period, tz: string): string {
-  const localDate = localDateISO(ts, tz);
-  if (period === "daily") return localDate;
+export function periodEndForDateISO(dateISO: string, period: Period): string {
+  if (period === "daily") return dateISO;
   if (period === "weekly") {
-    const wd = localWeekday(ts, tz);
+    const wd = new Date(`${dateISO}T00:00:00.000Z`).getUTCDay(); // 0=Sun..6=Sat
     const daysToSunday = (7 - wd) % 7; // Sun→0, Mon→6, … Sat→1
-    return addDaysISO(localDate, daysToSunday);
+    return addDaysISO(dateISO, daysToSunday);
   }
   // monthly
-  const [y, m] = localDate.split("-").map(Number);
+  const [y, m] = dateISO.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-based
-  return `${localDate.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+  return `${dateISO.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+}
+
+/** The local-date on which the period CONTAINING `ts` (in `tz`) ends. */
+export function periodEndISO(ts: Date, period: Period, tz: string): string {
+  return periodEndForDateISO(localDateISO(ts, tz), period);
 }
 
 /** The local-date on which the period ending `endISO` started. */

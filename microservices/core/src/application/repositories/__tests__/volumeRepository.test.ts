@@ -136,17 +136,19 @@ describe("VolumeRepository", () => {
     expect(onConflictDoUpdate).toHaveBeenCalled();
   });
 
-  it("recomputeVolumeByMuscle aggregates per muscle and replaces the window", async () => {
-    const insertValues = vi.fn(() => Promise.resolve(undefined));
+  it("recomputeVolumeByMuscle aggregates per exercise in SQL then upserts + prunes", async () => {
+    const onConflict = vi.fn(() => Promise.resolve(undefined));
+    const insertValues = vi.fn(() => ({ onConflictDoUpdate: onConflict }));
     const txInsert = vi.fn(() => ({ values: insertValues }));
     const txDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
     const select = vi
       .fn()
-      // join query: two sets; first hits chest+back, second hits chest
+      // grouped-by-exercise query: bench (chest+back) 700kg, row (chest) ... no —
+      // ex1 hits chest+back at 500, ex2 hits chest at 200.
       .mockReturnValueOnce(
         chain([
-          { weightKg: "50", reps: 10, primaryMuscles: ["m-chest", "m-back"] },
-          { weightKg: "40", reps: 5, primaryMuscles: ["m-chest"] },
+          { primaryMuscles: ["m-chest", "m-back"], vol: 500 },
+          { primaryMuscles: ["m-chest"], vol: 200 },
         ]),
       )
       // resolveMuscleNames
@@ -169,21 +171,23 @@ describe("VolumeRepository", () => {
       "2026-06-30",
     );
 
-    expect(txDelete).toHaveBeenCalled();
     const inserted = (insertValues.mock.calls[0] as any[])[0] as any[];
     const chest = inserted.find((r) => r.muscleGroup === "Chest");
     const back = inserted.find((r) => r.muscleGroup === "back");
-    expect(chest.volumeKg).toBe(String(50 * 10 + 40 * 5)); // 700
-    expect(back.volumeKg).toBe(String(50 * 10)); // 500
+    expect(chest.volumeKg).toBe(String(500 + 200)); // 700
+    expect(back.volumeKg).toBe(String(500));
     expect(chest.windowKind).toBe("month");
+    // Race-safe shape: upsert (not plain insert) + prune of absent muscles.
+    expect(onConflict).toHaveBeenCalled();
+    expect(txDelete).toHaveBeenCalled();
   });
 
-  it("recomputeVolumeByMuscle skips insert when there is no volume", async () => {
+  it("recomputeVolumeByMuscle skips insert (prunes all) when there is no volume", async () => {
     const txInsert = vi.fn();
     const txDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
     const select = vi
       .fn()
-      .mockReturnValueOnce(chain([])) // no sets
+      .mockReturnValueOnce(chain([])) // no exercises
       .mockReturnValueOnce(chain([])); // no muscles
     const transaction = vi.fn(async (cb: any) =>
       cb({ delete: txDelete, insert: txInsert }),

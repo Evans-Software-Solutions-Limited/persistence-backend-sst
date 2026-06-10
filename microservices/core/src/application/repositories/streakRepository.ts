@@ -20,6 +20,9 @@ import type { StreakCronDataPort } from "../streaks/cron";
 import {
   lastCompletedPeriodEndISO,
   periodsBetween,
+  periodEndForDateISO,
+  periodStartFromEndISO,
+  previousPeriodEndISO,
   type Period,
 } from "../streaks/period";
 
@@ -45,6 +48,15 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     return rows[0]?.tz ?? "Europe/London";
   }
 
+  /**
+   * Streaks the on-write engine should evaluate: `active` AND `broken`.
+   * Broken streaks are included so the next satisfied period RESTARTS them at
+   * count 1 (persistBreak zeroes current_count, so the engine's `+1` lands on
+   * 1 and persistAdvance flips status back to 'active') — without this a
+   * broken streak was a terminal dead end, since nothing else creates or
+   * revives user_streaks rows (Inspector finding, PR #116). `paused` stays
+   * excluded — pause semantics are explicit user intent (cross-cuts § 3.5).
+   */
   async getActiveStreaksByType(
     userId: string,
     streakType: StreakType,
@@ -57,7 +69,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         and(
           eq(userStreaks.userId, userId),
           eq(userStreaks.streakType, streakType),
-          eq(userStreaks.status, "active"),
+          sql`${userStreaks.status} IN ('active','broken')`,
         ),
       );
   }
@@ -96,7 +108,12 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     }
 
     if (streak.streakType === "habit_streak") {
-      // ≥ 1 completion for the source goal in the window.
+      // ≥ 1 completion for the source goal in the window. Buckets by the
+      // STORED local_completed_date (written from the user's tz at insert
+      // time) rather than re-deriving from completed_at — re-deriving with the
+      // CURRENT profile tz desyncs from the dedup key after a timezone change
+      // (Inspector finding, PR #116), and the stored column is what the
+      // unique index + grid use.
       const rows = await db
         .select({ c: sql<number>`count(*)::int` })
         .from(habitCompletions)
@@ -106,7 +123,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
             streak.sourceGoalId
               ? eq(habitCompletions.goalId, streak.sourceGoalId)
               : sql`true`,
-            sql`(${habitCompletions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}`,
+            sql`${habitCompletions.localCompletedDate} BETWEEN ${startDate} AND ${endDate}`,
           ),
         );
       return (rows[0]?.c ?? 0) >= 1;
@@ -200,28 +217,50 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     return { achievementId, newlyUnlocked: inserted.length > 0 };
   }
 
+  /**
+   * Cron freeze-spend. Conditional + relative: the cron sweeps a snapshot
+   * taken at run start, so by the time it reaches a row the on-write engine
+   * may already have spent the gap tokens and advanced `last_period_end`
+   * (02:00 UTC is late morning across Asia/Oceania — peak logging time).
+   * Guarding on `last_period_end < target` + decrementing relatively makes a
+   * lost race a clean no-op (returns null) instead of regressing the streak
+   * and double-spending (Inspector finding, PR #116).
+   */
   async persistFreezeSpend(
     streakId: string,
-    fields: { freezeTokens: number; lastPeriodEnd: string },
-  ): Promise<UserStreak> {
+    fields: { tokensSpent: number; lastPeriodEnd: string },
+  ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
       .update(userStreaks)
       .set({
-        freezeTokens: fields.freezeTokens,
+        freezeTokens: sql`${userStreaks.freezeTokens} - ${fields.tokensSpent}`,
         lastPeriodEnd: fields.lastPeriodEnd,
         status: "active",
         updatedAt: new Date(),
       })
-      .where(eq(userStreaks.id, streakId))
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.status, "active"),
+          sql`${userStreaks.freezeTokens} >= ${fields.tokensSpent}`,
+          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+        ),
+      )
       .returning();
-    return rows[0];
+    return rows[0] ?? null;
   }
 
+  /**
+   * Break a streak that fell behind. Conditional for the same snapshot-race
+   * reason as persistFreezeSpend: if the engine advanced the row past the
+   * cron's target while the sweep was running, breaking it now would zero a
+   * streak the user just satisfied — the guard turns that into a no-op null.
+   */
   async persistBreak(
     streakId: string,
     fields: { lastPeriodEnd: string },
-  ): Promise<UserStreak> {
+  ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
       .update(userStreaks)
@@ -231,9 +270,83 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         lastPeriodEnd: fields.lastPeriodEnd,
         updatedAt: new Date(),
       })
-      .where(eq(userStreaks.id, streakId))
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.status, "active"),
+          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+        ),
+      )
       .returning();
-    return rows[0];
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Conditionally roll back a habit-streak advance after a completion is
+   * untoggled (DELETE /habit-completions). Fires only when (a) the streak's
+   * `last_period_end` is exactly the period the deleted completion satisfied
+   * and (b) no OTHER completion still satisfies that period — then decrements
+   * `current_count` and regresses `last_period_end` one period. Without this,
+   * tap-untap left a permanently advanced streak with zero completion rows
+   * behind it — an empty grid next to a climbing counter (Inspector finding,
+   * PR #116). Earned freeze tokens are NOT clawed back (conservative; the cap
+   * limits the upside). Returns the rolled-back row or null (nothing to do).
+   */
+  async rollbackHabitAdvance(
+    userId: string,
+    goalId: string,
+    localDay: string,
+  ): Promise<UserStreak | null> {
+    const db = getDb();
+
+    // The period grain (daily vs weekly) lives on the streak row.
+    const streaks = await db
+      .select()
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.sourceGoalId, goalId),
+          eq(userStreaks.streakType, "habit_streak"),
+          eq(userStreaks.status, "active"),
+        ),
+      )
+      .limit(1);
+    const streak = streaks[0];
+    if (!streak) return null;
+
+    const period = streak.period as Period;
+    const periodEnd = periodEndForDateISO(localDay, period);
+    // Only the MOST RECENTLY counted period can be rolled back — earlier
+    // periods are already locked into current_count history.
+    if (streak.lastPeriodEnd !== periodEnd) return null;
+
+    const periodStart = periodStartFromEndISO(periodEnd, period);
+    const prevPeriodEnd = previousPeriodEndISO(periodEnd, period);
+
+    const rows = await db
+      .update(userStreaks)
+      .set({
+        currentCount: sql`GREATEST(${userStreaks.currentCount} - 1, 0)`,
+        lastPeriodEnd: prevPeriodEnd,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userStreaks.id, streak.id),
+          eq(userStreaks.status, "active"),
+          // Re-checked in the WHERE for race safety vs a concurrent advance.
+          eq(userStreaks.lastPeriodEnd, periodEnd),
+          sql`NOT EXISTS (
+            SELECT 1 FROM habit_completions hc
+            WHERE hc.user_id = ${userId}
+              AND hc.goal_id = ${goalId}
+              AND hc.local_completed_date BETWEEN ${periodStart} AND ${periodEnd}
+          )`,
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
   }
 
   /**

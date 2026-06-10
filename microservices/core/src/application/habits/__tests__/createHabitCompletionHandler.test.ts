@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const habitMock = { create: vi.fn(), list: vi.fn(), remove: vi.fn() };
+const habitMock = {
+  create: vi.fn(),
+  list: vi.fn(),
+  remove: vi.fn(),
+  goalBelongsToUser: vi.fn(async () => true),
+};
 const evaluateMock = vi
   .fn()
   .mockResolvedValue({ advanced: [], milestones: [] });
@@ -113,5 +118,43 @@ describe("createHabitCompletionHandler", () => {
     expect(stored.getTime()).toBeLessThanOrEqual(Date.now());
     expect(stored.getTime()).toBeGreaterThanOrEqual(before);
     expect(evaluateMock).toHaveBeenCalledWith("u1", "habit_completed", stored);
+  });
+
+  it("passes a date-only day through as the authoritative localDate", async () => {
+    habitMock.create.mockResolvedValue({ id: "h4", goalId: "g1" });
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-06-04" }),
+    );
+    expect(res.status).toBe(201);
+    const arg = habitMock.create.mock.calls[0][1];
+    // The tapped cell IS the user-local day — never converted via an instant.
+    expect(arg.localDate).toBe("2026-06-04");
+    // Stored instant anchored at noon UTC of that day.
+    expect((arg.completedAt as Date).toISOString()).toBe(
+      "2026-06-04T12:00:00.000Z",
+    );
+  });
+
+  it("rejects a future date-only day with 400", async () => {
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2099-01-01" }),
+    );
+    expect(res.status).toBe(400);
+    expect(habitMock.create).not.toHaveBeenCalled();
+  });
+
+  it("404s when the goal is not owned by the caller", async () => {
+    habitMock.goalBelongsToUser.mockResolvedValueOnce(false);
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "someone-elses-goal" }),
+    );
+    expect(res.status).toBe(404);
+    expect(habitMock.create).not.toHaveBeenCalled();
   });
 });

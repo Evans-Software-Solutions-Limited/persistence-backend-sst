@@ -1,18 +1,29 @@
 import Elysia, { t } from "elysia";
 import { HabitService } from "../repositories/habitService";
+import { StreakReadService } from "../repositories/streakReadService";
 import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { resolveEventTs } from "../streaks/evaluate";
+import { parseHabitDay } from "./habitDay";
 
 /**
  * DELETE /habit-completions?goalId=&date= — toggle a habit OFF for a
  * user-local day (STORY-004 tap-to-untoggle). Idempotent: deleting a
  * non-existent completion returns deleted=false without erroring, so the sync
- * queue can replay safely. Streak reversal is left to the nightly cron's
- * reconcile (engine is advance-only on-write; server-wins per design.md).
+ * queue can replay safely. `date` follows the same contract as POST: a
+ * date-only string is the authoritative user-local day; a full timestamp is
+ * converted via profiles.timezone.
+ *
+ * Streak reversal: when the deleted completion was the one that satisfied the
+ * streak's MOST RECENT counted period (and nothing else still satisfies it),
+ * the advance is conditionally rolled back via
+ * StreakRepository.rollbackHabitAdvance — without this, tap-untap left a
+ * permanently advanced streak with an empty grid behind it (Inspector
+ * finding, PR #116; the previous comment claiming "the nightly cron
+ * reconciles" was wrong — the cron never re-checks satisfied periods).
  */
 export const deleteHabitCompletionHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -20,27 +31,44 @@ export const deleteHabitCompletionHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(HabitService)
+  .use(StreakReadService)
   .delete(
     "/habit-completions",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const { goalId, date } = ctx.query;
-      // Reject a malformed date with 400 rather than letting the downstream
-      // `.toISOString()` throw a RangeError → 500 (Inspector finding).
-      if (date !== undefined && Number.isNaN(new Date(date).getTime())) {
+
+      const day = parseHabitDay(date);
+      if (day.kind === "invalid") {
         ctx.set.status = 400;
         return { error: "Invalid date" };
       }
-      // Clamp future dates to now — mirrors createHabitCompletionHandler so
-      // the lookup key matches what the create path actually stored.
-      const completedAt = resolveEventTs(date);
 
-      const deleted = await ctx.HabitRepository.remove(
+      // Clamp future instants to now — mirrors the create path so the lookup
+      // key matches what create actually stored.
+      const completedAt =
+        day.kind === "day"
+          ? resolveEventTs(`${day.localDate}T12:00:00.000Z`)
+          : resolveEventTs(date);
+
+      const deletedDay = await ctx.HabitRepository.remove(
         userId,
         goalId,
         completedAt,
+        day.kind === "day" ? day.localDate : undefined,
       );
-      return { data: { deleted } };
+
+      // Conditional streak rollback — no-op unless this delete emptied the
+      // streak's most recently counted period.
+      if (deletedDay) {
+        await ctx.StreakRepository.rollbackHabitAdvance(
+          userId,
+          goalId,
+          deletedDay,
+        );
+      }
+
+      return { data: { deleted: deletedDay !== null } };
     },
     {
       query: t.Object({

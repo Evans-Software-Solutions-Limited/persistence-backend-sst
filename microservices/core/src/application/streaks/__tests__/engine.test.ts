@@ -47,9 +47,6 @@ function makeData(opts: {
       persisted.push(fields);
       return makeStreak({ id, ...fields });
     }),
-    persistBreak: vi.fn(async (id: string, fields: { lastPeriodEnd: string }) =>
-      makeStreak({ id, status: "broken", currentCount: 0, ...fields }),
-    ),
     unlockAchievement: vi.fn(async () =>
       opts.unlock === undefined
         ? { achievementId: "a1", newlyUnlocked: true }
@@ -238,16 +235,17 @@ describe("evaluateStreaks", () => {
       type: "freeze_token_applied",
       data: { periodsMissed: 2, tokensSpent: 2, freezeTokensRemaining: 0 },
     });
-    expect(data.persistBreak).not.toHaveBeenCalled();
   });
 
-  it("breaks instead of advancing when the gap exceeds the token balance", async () => {
-    // 2 missed periods, 1 token → cron rule says break; the on-write path
-    // must not silently coalesce the gap into a single +1.
+  it("breaks-and-restarts at 1 when the gap exceeds the token balance", async () => {
+    // 2 missed periods, 1 token → the old streak breaks per § 3.5, but the
+    // satisfied current period seeds the new streak at 1 instead of being
+    // discarded into a dead row. Tokens are kept (break never drains them).
     const data = makeData({
       streaks: [
         makeStreak({
           currentCount: 5,
+          longestCount: 5,
           lastPeriodEnd: "2026-06-04",
           freezeTokens: 1,
         }),
@@ -258,12 +256,42 @@ describe("evaluateStreaks", () => {
       data,
       notifier,
     });
-    expect(result.advanced).toHaveLength(0);
-    expect(data.persistBreak).toHaveBeenCalledWith("s1", {
+    expect(result.advanced).toHaveLength(1);
+    expect(data._persisted[0]).toMatchObject({
+      currentCount: 1, // restarted, not 6
+      longestCount: 5, // history preserved
       lastPeriodEnd: "2026-06-07",
+      freezeTokens: 1, // NOT spent — the gap wasn't covered
     });
-    expect(data.persistAdvance).not.toHaveBeenCalled();
-    expect(notifier.notify).not.toHaveBeenCalled();
+    expect(notifier.notify).not.toHaveBeenCalled(); // no freeze applied
+  });
+
+  it("revives a broken streak at 1 on the next satisfied period", async () => {
+    // Cron broke it (count 0); today's completion restarts it without any
+    // creation endpoint — broken is no longer a terminal dead end.
+    const data = makeData({
+      streaks: [
+        makeStreak({
+          status: "broken",
+          currentCount: 0,
+          longestCount: 9,
+          lastPeriodEnd: "2026-06-06",
+          freezeTokens: 2,
+        }),
+      ],
+    });
+    const notifier = makeNotifier();
+    const result = await evaluateStreaks("u1", "habit_completed", TS, {
+      data,
+      notifier,
+    });
+    expect(result.advanced).toHaveLength(1);
+    expect(data._persisted[0]).toMatchObject({
+      currentCount: 1,
+      longestCount: 9,
+      lastPeriodEnd: "2026-06-07",
+      freezeTokens: 2, // untouched — no gap maths for a broken streak
+    });
   });
 
   it("handles a mix of advancing and skipped streaks", async () => {

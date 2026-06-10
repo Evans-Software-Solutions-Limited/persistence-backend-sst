@@ -1,7 +1,12 @@
 /**
  * Build the 7-day Home habits grid (06-progress-goals, Phase 06.5; STORY-004)
- * from raw habit_completions. Pure — buckets each completion into a user-local
- * day so the grid lines up with the user's calendar (cross-cuts § 3.4).
+ * from raw habit_completions rows.
+ *
+ * Buckets each completion by its STORED `local_completed_date` — the day the
+ * writer fixed from the user's timezone at insert time and the same key the
+ * dedup index + streak engine use. Re-deriving the day from `completed_at`
+ * with the CURRENT profile timezone desyncs the grid from the dedup key after
+ * a timezone change, producing stuck toggles (Inspector finding, PR #116).
  *
  * `days` is length-7 with TODAY last (per design.md § HabitsGridProps).
  */
@@ -15,7 +20,7 @@ export interface HabitGridRow {
 
 export interface CompletionLike {
   goalId: string;
-  completedAt: Date | string;
+  localCompletedDate: string; // YYYY-MM-DD, authoritative user-local day
 }
 
 export function buildHabitsGrid(
@@ -30,9 +35,8 @@ export function buildHabitsGrid(
 
   const byGoal = new Map<string, Set<string>>();
   for (const c of completions) {
-    const day = localDateISO(new Date(c.completedAt), tz);
     const set = byGoal.get(c.goalId) ?? new Set<string>();
-    set.add(day);
+    set.add(c.localCompletedDate);
     byGoal.set(c.goalId, set);
   }
 

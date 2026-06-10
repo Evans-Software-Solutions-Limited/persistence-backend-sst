@@ -209,11 +209,15 @@ export class VolumeRepository {
   ): Promise<void> {
     const db = getDb();
 
+    // Aggregate IN SQL, grouped per exercise — the result is bounded by the
+    // user's distinct-exercise count, not their lifetime set count. The
+    // previous shape pulled every completed set row into Lambda memory, which
+    // for `window=lifetime` grew without bound on every read (Inspector
+    // finding, PR #116).
     const rows = await db
       .select({
-        weightKg: exerciseSets.weightKg,
-        reps: exerciseSets.reps,
         primaryMuscles: exercises.primaryMuscles,
+        vol: sql<number>`COALESCE(SUM(${exerciseSets.weightKg} * ${exerciseSets.reps}), 0)::float`,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -236,12 +240,13 @@ export class VolumeRepository {
           // live headline excludes it, so `Σ byMuscle > totalKg` (Inspector).
           sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${windowStartISO} AND ${windowEndISO}`,
         ),
-      );
+      )
+      .groupBy(exercises.id, exercises.primaryMuscles);
 
-    // Each set's volume contributes to every primary muscle of its exercise.
+    // Each exercise's volume contributes to every primary muscle it targets.
     const byMuscleId = new Map<string, number>();
     for (const r of rows) {
-      const vol = (Number(r.weightKg) || 0) * (Number(r.reps) || 0);
+      const vol = Number(r.vol) || 0;
       if (vol <= 0) continue;
       for (const muscleId of r.primaryMuscles ?? []) {
         byMuscleId.set(muscleId, (byMuscleId.get(muscleId) ?? 0) + vol);
@@ -259,8 +264,38 @@ export class VolumeRepository {
       byName.set(name, (byName.get(name) ?? 0) + vol);
     }
 
-    // Replace the window's rows atomically so stale muscles don't linger.
+    // Upsert-then-prune (NOT delete-then-insert): two concurrent recomputes of
+    // the same window used to race — A's insert landed, then B's insert hit
+    // the unique index → 500 (Inspector finding). ON CONFLICT makes concurrent
+    // writers converge; the trailing prune drops muscles absent from the new
+    // set.
     await db.transaction(async (tx) => {
+      if (byName.size > 0) {
+        await tx
+          .insert(volumeByMusclePerUser)
+          .values(
+            [...byName.entries()].map(([muscle, kg]) => ({
+              userId,
+              windowStart: windowStartISO,
+              windowKind,
+              muscleGroup: muscle,
+              volumeKg: String(kg),
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [
+              volumeByMusclePerUser.userId,
+              volumeByMusclePerUser.windowStart,
+              volumeByMusclePerUser.windowKind,
+              volumeByMusclePerUser.muscleGroup,
+            ],
+            set: {
+              volumeKg: sql`excluded.volume_kg`,
+              computedAt: new Date(),
+            },
+          });
+      }
+      const keep = [...byName.keys()];
       await tx
         .delete(volumeByMusclePerUser)
         .where(
@@ -268,19 +303,11 @@ export class VolumeRepository {
             eq(volumeByMusclePerUser.userId, userId),
             eq(volumeByMusclePerUser.windowKind, windowKind),
             eq(volumeByMusclePerUser.windowStart, windowStartISO),
+            keep.length > 0
+              ? sql`${volumeByMusclePerUser.muscleGroup} NOT IN ${keep}`
+              : sql`true`,
           ),
         );
-      if (byName.size > 0) {
-        await tx.insert(volumeByMusclePerUser).values(
-          [...byName.entries()].map(([muscle, kg]) => ({
-            userId,
-            windowStart: windowStartISO,
-            windowKind,
-            muscleGroup: muscle,
-            volumeKg: String(kg),
-          })),
-        );
-      }
     });
   }
 

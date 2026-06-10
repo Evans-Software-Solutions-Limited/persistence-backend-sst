@@ -342,7 +342,7 @@ describe("StreakRepository", () => {
     (getDb as any).mockReturnValue({ update: () => updateChain([frozen]) });
     expect(
       await new StreakRepository().persistFreezeSpend("s1", {
-        freezeTokens: 0,
+        tokensSpent: 1,
         lastPeriodEnd: "2026-06-09",
       }),
     ).toBe(frozen);
@@ -354,5 +354,72 @@ describe("StreakRepository", () => {
         lastPeriodEnd: "2026-06-09",
       }),
     ).toBe(broken);
+  });
+
+  it("persistFreezeSpend / persistBreak return null when the conditional WHERE misses (lost race)", async () => {
+    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
+    expect(
+      await new StreakRepository().persistFreezeSpend("s1", {
+        tokensSpent: 1,
+        lastPeriodEnd: "2026-06-09",
+      }),
+    ).toBeNull();
+    expect(
+      await new StreakRepository().persistBreak("s1", {
+        lastPeriodEnd: "2026-06-09",
+      }),
+    ).toBeNull();
+  });
+
+  describe("rollbackHabitAdvance", () => {
+    it("decrements + regresses when the deleted day was the counted period", async () => {
+      const active = streak({
+        period: "daily",
+        currentCount: 6,
+        lastPeriodEnd: "2026-06-10",
+      });
+      const rolled = streak({ currentCount: 5, lastPeriodEnd: "2026-06-09" });
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([active]),
+        update: () => updateChain([rolled]),
+      });
+      expect(
+        await new StreakRepository().rollbackHabitAdvance(
+          "u1",
+          "g1",
+          "2026-06-10",
+        ),
+      ).toBe(rolled);
+    });
+
+    it("no-ops when the deleted day is not the most recent counted period", async () => {
+      const active = streak({
+        period: "daily",
+        currentCount: 6,
+        lastPeriodEnd: "2026-06-10",
+      });
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([active]),
+      });
+      // Deleting 06-08 (already locked into history) → null, no UPDATE.
+      expect(
+        await new StreakRepository().rollbackHabitAdvance(
+          "u1",
+          "g1",
+          "2026-06-08",
+        ),
+      ).toBeNull();
+    });
+
+    it("no-ops when no active habit streak exists for the goal", async () => {
+      (getDb as any).mockReturnValue({ select: () => selectWhereLimit([]) });
+      expect(
+        await new StreakRepository().rollbackHabitAdvance(
+          "u1",
+          "g1",
+          "2026-06-10",
+        ),
+      ).toBeNull();
+    });
   });
 });

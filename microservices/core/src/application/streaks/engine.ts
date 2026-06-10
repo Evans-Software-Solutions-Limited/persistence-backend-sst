@@ -91,16 +91,6 @@ export interface StreakDataPort {
     fields: StreakAdvanceFields,
   ): Promise<UserStreak>;
   /**
-   * Break a streak (status='broken', current_count=0) whose missed-period gap
-   * exceeds its freeze-token balance. Same writer the cron uses — the on-write
-   * path needs it because an event can arrive after a missed period but BEFORE
-   * the nightly sweep (StreakRepository implements both ports).
-   */
-  persistBreak(
-    streakId: string,
-    fields: { lastPeriodEnd: string },
-  ): Promise<UserStreak>;
-  /**
    * Resolve the achievement for (streakType, threshold) and insert a
    * user_achievements row idempotently. Returns the achievementId +
    * whether it was newly unlocked (false on a duplicate), or null when no
@@ -171,37 +161,49 @@ async function tryAdvance(
   // single +1 and the cron would then see the streak as up to date, bypassing
   // the freeze-token mechanic entirely (Inspector finding, PR #116). Same
   // 1-token-per-missed-period rule as the cron (cross-cuts § 3.5).
+  //
+  // A `broken` streak (cron already zeroed it) skips the gap maths entirely —
+  // there is no count left to protect, so spending tokens would be waste. The
+  // satisfied current period simply RESTARTS it at 1 (persistAdvance flips
+  // status back to 'active'); same restart when an active streak's gap exceeds
+  // its token balance: the streak breaks per § 3.5, but today's satisfied
+  // period immediately seeds the new streak rather than being discarded into
+  // a dead row (Inspector finding — broken was otherwise terminal).
+  const wasBroken = streak.status === "broken";
   const previousEnd = previousPeriodEndISO(currentEnd, period);
-  const missed = periodsBetween(streak.lastPeriodEnd, previousEnd, period);
+  const missed = wasBroken
+    ? 0
+    : periodsBetween(streak.lastPeriodEnd, previousEnd, period);
   let tokensAfterGap = streak.freezeTokens;
+  let restart = wasBroken;
   if (missed > 0) {
     if (streak.freezeTokens < missed) {
-      // Can't cover the gap — the streak breaks, exactly as the cron would
-      // have ruled. No notification (streak_lost is not a defined type).
-      await deps.data.persistBreak(streak.id, { lastPeriodEnd: currentEnd });
-      return null;
+      // Gap can't be covered — streak breaks, restarting at 1 from today.
+      // Tokens are kept (the cron's break doesn't drain them either).
+      restart = true;
+    } else {
+      tokensAfterGap = streak.freezeTokens - missed;
+      await deps.notifier.notify({
+        userId: streak.userId,
+        type: "freeze_token_applied",
+        title: "Streak protected",
+        message:
+          missed === 1
+            ? "You missed a period, so a freeze token kept your streak alive."
+            : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
+        data: {
+          streakType: streak.streakType,
+          streakId: streak.id,
+          periodsMissed: missed,
+          tokensSpent: missed,
+          freezeTokensRemaining: tokensAfterGap,
+        },
+        relatedEntityId: streak.id,
+      });
     }
-    tokensAfterGap = streak.freezeTokens - missed;
-    await deps.notifier.notify({
-      userId: streak.userId,
-      type: "freeze_token_applied",
-      title: "Streak protected",
-      message:
-        missed === 1
-          ? "You missed a period, so a freeze token kept your streak alive."
-          : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
-      data: {
-        streakType: streak.streakType,
-        streakId: streak.id,
-        periodsMissed: missed,
-        tokensSpent: missed,
-        freezeTokensRemaining: tokensAfterGap,
-      },
-      relatedEntityId: streak.id,
-    });
   }
 
-  const prevCount = streak.currentCount;
+  const prevCount = restart ? 0 : streak.currentCount;
   const newCount = prevCount + 1;
   const fields: StreakAdvanceFields = {
     currentCount: newCount,

@@ -2,6 +2,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   habitCompletions,
   profiles,
+  userGoals,
   type HabitCompletion,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
@@ -33,17 +34,45 @@ export class HabitRepository {
   }
 
   /**
-   * Mark a habit complete for the user-local day of `completedAt`. Idempotent:
-   * the unique index on (user_id, goal_id, local_completed_date) makes a
-   * same-local-day re-toggle a no-op via ON CONFLICT DO NOTHING. Returns the
-   * existing or new row.
+   * Whether `goalId` belongs to `userId`. The habit-completion insert's FK
+   * only proves the goal EXISTS — without this check any authenticated user
+   * could log completions against another user's goal UUID (Inspector
+   * finding, PR #116; violates the repo's ownership rule).
+   */
+  async goalBelongsToUser(userId: string, goalId: string): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: userGoals.id })
+      .from(userGoals)
+      .where(and(eq(userGoals.id, goalId), eq(userGoals.userId, userId)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Mark a habit complete for a user-local day. Idempotent: the unique index
+   * on (user_id, goal_id, local_completed_date) makes a same-local-day
+   * re-toggle a no-op via ON CONFLICT DO NOTHING. Returns the existing or new
+   * row.
+   *
+   * `localDate` (YYYY-MM-DD), when supplied, is AUTHORITATIVE for the dedup
+   * day — the handler passes it through for date-only client input, where the
+   * tapped grid cell IS the user-local day and converting via an instant would
+   * shift it a day for any user west of UTC (Inspector finding, PR #116).
+   * Without it, the day is derived from `completedAt` + profiles.timezone.
    */
   async create(
     userId: string,
-    data: { goalId: string; completedAt: Date; value?: number | null },
+    data: {
+      goalId: string;
+      completedAt: Date;
+      localDate?: string;
+      value?: number | null;
+    },
   ): Promise<HabitCompletion> {
     const db = getDb();
-    const localCompletedDate = await this.localDate(userId, data.completedAt);
+    const localCompletedDate =
+      data.localDate ?? (await this.localDate(userId, data.completedAt));
 
     const inserted = await db
       .insert(habitCompletions)
@@ -75,18 +104,23 @@ export class HabitRepository {
   }
 
   /**
-   * Remove the completion for the user-local day of `completedAt` (toggle-off).
-   * Returns true if a row was deleted. Streak reversal is left to the nightly
-   * cron's reconcile (server-wins per design.md § Offline behaviour) — the
-   * engine is advance-only on-write.
+   * Remove the completion for a user-local day (toggle-off). Returns the
+   * deleted row's local day, or null when nothing matched. `localDate` is
+   * authoritative when supplied (same date-only contract as `create`). The
+   * HANDLER owns the conditional streak rollback via
+   * StreakRepository.rollbackHabitAdvance — the old comment claiming "the
+   * nightly cron reconciles" was wrong: the cron never re-checks satisfaction
+   * for periods at/behind last_period_end (Inspector finding, PR #116).
    */
   async remove(
     userId: string,
     goalId: string,
     completedAt: Date,
-  ): Promise<boolean> {
+    localDate?: string,
+  ): Promise<string | null> {
     const db = getDb();
-    const localCompletedDate = await this.localDate(userId, completedAt);
+    const localCompletedDate =
+      localDate ?? (await this.localDate(userId, completedAt));
     const deleted = await db
       .delete(habitCompletions)
       .where(
@@ -97,7 +131,7 @@ export class HabitRepository {
         ),
       )
       .returning({ id: habitCompletions.id });
-    return deleted.length > 0;
+    return deleted.length > 0 ? localCompletedDate : null;
   }
 
   /**

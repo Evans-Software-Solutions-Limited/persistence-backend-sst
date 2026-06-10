@@ -61,18 +61,44 @@ describe("HabitRepository", () => {
     expect(result).toBe(existing);
   });
 
-  it("remove reports whether a row was deleted", async () => {
+  it("remove returns the deleted local day, or null when nothing matched", async () => {
     (getDb as any).mockReturnValue({
       select: () => selectWhereLimit(TZ),
       delete: () => deleteChain([{ id: "h1" }]),
     });
-    expect(await new HabitRepository().remove("u1", "g1", TS)).toBe(true);
+    // TS = 2026-06-07T12:00Z → London local day 2026-06-07
+    expect(await new HabitRepository().remove("u1", "g1", TS)).toBe(
+      "2026-06-07",
+    );
 
     (getDb as any).mockReturnValue({
       select: () => selectWhereLimit(TZ),
       delete: () => deleteChain([]),
     });
-    expect(await new HabitRepository().remove("u1", "g1", TS)).toBe(false);
+    expect(await new HabitRepository().remove("u1", "g1", TS)).toBeNull();
+  });
+
+  it("remove honours an explicit authoritative localDate (date-only input)", async () => {
+    // No tz lookup needed — the date-only day IS the dedup key.
+    (getDb as any).mockReturnValue({
+      delete: () => deleteChain([{ id: "h1" }]),
+    });
+    expect(
+      await new HabitRepository().remove("u1", "g1", TS, "2026-06-05"),
+    ).toBe("2026-06-05");
+  });
+
+  it("goalBelongsToUser reflects ownership", async () => {
+    (getDb as any).mockReturnValue({
+      select: () => selectWhereLimit([{ id: "g1" }]),
+    });
+    expect(await new HabitRepository().goalBelongsToUser("u1", "g1")).toBe(
+      true,
+    );
+    (getDb as any).mockReturnValue({ select: () => selectWhereLimit([]) });
+    expect(await new HabitRepository().goalBelongsToUser("u1", "g1")).toBe(
+      false,
+    );
   });
 
   it("list returns rows (default window) and accepts a goal filter", async () => {
