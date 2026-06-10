@@ -6,11 +6,8 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { addDaysISO, localDateISO } from "../streaks/period";
-import { weekStartISO } from "./window";
+import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
-
-/** Default weekly workout target (the "/5" in the prototype) until goal wiring. */
-const WORKOUTS_TARGET_DEFAULT = 5;
 
 /**
  * GET /users/me/weekly-volume?window=7d — the Home WeeklyVolume card
@@ -79,7 +76,7 @@ export const getWeeklyVolumeHandler = new Elysia()
           ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
-          workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },
+          workouts: { completed, target: DEFAULT_WORKOUTS_PER_WEEK },
         },
       };
     },

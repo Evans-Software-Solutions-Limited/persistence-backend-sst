@@ -20,6 +20,8 @@ import type { UserStreak } from "@persistence/db";
 import {
   periodEndISO,
   periodStartFromEndISO,
+  previousPeriodEndISO,
+  periodsBetween,
   compareISO,
   type Period,
 } from "./period";
@@ -89,6 +91,16 @@ export interface StreakDataPort {
     fields: StreakAdvanceFields,
   ): Promise<UserStreak>;
   /**
+   * Break a streak (status='broken', current_count=0) whose missed-period gap
+   * exceeds its freeze-token balance. Same writer the cron uses — the on-write
+   * path needs it because an event can arrive after a missed period but BEFORE
+   * the nightly sweep (StreakRepository implements both ports).
+   */
+  persistBreak(
+    streakId: string,
+    fields: { lastPeriodEnd: string },
+  ): Promise<UserStreak>;
+  /**
    * Resolve the achievement for (streakType, threshold) and insert a
    * user_achievements row idempotently. Returns the achievementId +
    * whether it was newly unlocked (false on a duplicate), or null when no
@@ -152,13 +164,50 @@ async function tryAdvance(
   );
   if (!satisfied) return null;
 
+  // Missed periods strictly between last_period_end and the period being
+  // advanced. An on-write event can land AFTER a missed period but BEFORE the
+  // nightly cron sweeps it (any user east of UTC logging before the 02:00 UTC
+  // cron) — without this the advance would silently coalesce the gap into a
+  // single +1 and the cron would then see the streak as up to date, bypassing
+  // the freeze-token mechanic entirely (Inspector finding, PR #116). Same
+  // 1-token-per-missed-period rule as the cron (cross-cuts § 3.5).
+  const previousEnd = previousPeriodEndISO(currentEnd, period);
+  const missed = periodsBetween(streak.lastPeriodEnd, previousEnd, period);
+  let tokensAfterGap = streak.freezeTokens;
+  if (missed > 0) {
+    if (streak.freezeTokens < missed) {
+      // Can't cover the gap — the streak breaks, exactly as the cron would
+      // have ruled. No notification (streak_lost is not a defined type).
+      await deps.data.persistBreak(streak.id, { lastPeriodEnd: currentEnd });
+      return null;
+    }
+    tokensAfterGap = streak.freezeTokens - missed;
+    await deps.notifier.notify({
+      userId: streak.userId,
+      type: "freeze_token_applied",
+      title: "Streak protected",
+      message:
+        missed === 1
+          ? "You missed a period, so a freeze token kept your streak alive."
+          : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
+      data: {
+        streakType: streak.streakType,
+        streakId: streak.id,
+        periodsMissed: missed,
+        tokensSpent: missed,
+        freezeTokensRemaining: tokensAfterGap,
+      },
+      relatedEntityId: streak.id,
+    });
+  }
+
   const prevCount = streak.currentCount;
   const newCount = prevCount + 1;
   const fields: StreakAdvanceFields = {
     currentCount: newCount,
     longestCount: Math.max(streak.longestCount, newCount),
     lastPeriodEnd: currentEnd,
-    freezeTokens: freezeTokensAfterAdvance(streak.freezeTokens, newCount),
+    freezeTokens: freezeTokensAfterAdvance(tokensAfterGap, newCount),
   };
 
   const updated = await deps.data.persistAdvance(streak.id, fields);

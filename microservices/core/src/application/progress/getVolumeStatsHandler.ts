@@ -6,15 +6,16 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { localDateISO } from "../streaks/period";
-import { parseWindowKind, windowStartISO } from "./window";
+import {
+  parseWindowKind,
+  windowStartISO,
+  DEFAULT_WORKOUTS_PER_WEEK,
+} from "./window";
 import {
   withMusclePct,
   adherencePct,
   daysBetweenInclusive,
 } from "./volumeView";
-
-/** Default weekly target used for the adherence % until goal wiring lands. */
-const WEEKLY_TARGET_DEFAULT = 4;
 
 /**
  * GET /users/me/volume-stats?window=month — the You/Progress VolumeStats card
@@ -65,7 +66,7 @@ export const getVolumeStatsHandler = new Elysia()
           ? null
           : adherencePct(
               workouts,
-              WEEKLY_TARGET_DEFAULT,
+              DEFAULT_WORKOUTS_PER_WEEK,
               daysBetweenInclusive(start, end),
             );
 

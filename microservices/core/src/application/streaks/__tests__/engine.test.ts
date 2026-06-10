@@ -47,6 +47,9 @@ function makeData(opts: {
       persisted.push(fields);
       return makeStreak({ id, ...fields });
     }),
+    persistBreak: vi.fn(async (id: string, fields: { lastPeriodEnd: string }) =>
+      makeStreak({ id, status: "broken", currentCount: 0, ...fields }),
+    ),
     unlockAchievement: vi.fn(async () =>
       opts.unlock === undefined
         ? { achievementId: "a1", newlyUnlocked: true }
@@ -207,6 +210,60 @@ describe("evaluateStreaks", () => {
       longestCount: 10, // preserved (3+1 < 10)
       freezeTokens: 1, // 4th period → +1
     });
+  });
+
+  it("spends one token per missed period in the gap before advancing", async () => {
+    // lastPeriodEnd 06-04, event on 06-07 → gap = 06-05 + 06-06 = 2 missed.
+    const data = makeData({
+      streaks: [
+        makeStreak({
+          currentCount: 5,
+          lastPeriodEnd: "2026-06-04",
+          freezeTokens: 2,
+        }),
+      ],
+    });
+    const notifier = makeNotifier();
+    const result = await evaluateStreaks("u1", "habit_completed", TS, {
+      data,
+      notifier,
+    });
+    expect(result.advanced).toHaveLength(1);
+    expect(data._persisted[0]).toMatchObject({
+      currentCount: 6,
+      lastPeriodEnd: "2026-06-07",
+      freezeTokens: 0, // both tokens spent on the gap
+    });
+    expect(notifier.calls[0]).toMatchObject({
+      type: "freeze_token_applied",
+      data: { periodsMissed: 2, tokensSpent: 2, freezeTokensRemaining: 0 },
+    });
+    expect(data.persistBreak).not.toHaveBeenCalled();
+  });
+
+  it("breaks instead of advancing when the gap exceeds the token balance", async () => {
+    // 2 missed periods, 1 token → cron rule says break; the on-write path
+    // must not silently coalesce the gap into a single +1.
+    const data = makeData({
+      streaks: [
+        makeStreak({
+          currentCount: 5,
+          lastPeriodEnd: "2026-06-04",
+          freezeTokens: 1,
+        }),
+      ],
+    });
+    const notifier = makeNotifier();
+    const result = await evaluateStreaks("u1", "habit_completed", TS, {
+      data,
+      notifier,
+    });
+    expect(result.advanced).toHaveLength(0);
+    expect(data.persistBreak).toHaveBeenCalledWith("s1", {
+      lastPeriodEnd: "2026-06-07",
+    });
+    expect(data.persistAdvance).not.toHaveBeenCalled();
+    expect(notifier.notify).not.toHaveBeenCalled();
   });
 
   it("handles a mix of advancing and skipped streaks", async () => {

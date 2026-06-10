@@ -8,14 +8,12 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { loadRings } from "./loadRings";
-import { weekStartISO } from "./window";
+import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
 import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 import { buildHabitsGrid } from "../habits/habitsView";
 
 const RECENT_PR_LIMIT = 5;
-const WORKOUTS_TARGET_DEFAULT = 5;
-
 /**
  * GET /users/me/home — single-request aggregate for the Home cold-start render
  * (STORY-001/002): rings, micro-pills, the weekly-volume card, recent PRs, and
@@ -99,7 +97,7 @@ export const getHomeHandler = new Elysia()
           ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
-          workouts: { completed, target: WORKOUTS_TARGET_DEFAULT },
+          workouts: { completed, target: DEFAULT_WORKOUTS_PER_WEEK },
         },
         recentPRs,
         habits: buildHabitsGrid(completions, now, tz),

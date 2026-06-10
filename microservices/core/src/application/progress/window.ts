@@ -8,6 +8,15 @@ import { localDateISO, addDaysISO } from "../streaks/period";
 
 export type WindowKind = "month" | "quarter" | "year" | "lifetime";
 
+/**
+ * Default weekly workout target (the "/5" in the prototype) until goal wiring
+ * lands. Shared by getHomeHandler / getWeeklyVolumeHandler (workouts target)
+ * AND getVolumeStatsHandler (adherence %) so Home and You/Progress never
+ * disagree on the same number (Inspector finding, PR #116). Goal wiring later
+ * replaces this in exactly one place.
+ */
+export const DEFAULT_WORKOUTS_PER_WEEK = 5;
+
 export function parseWindowKind(value: string | undefined): WindowKind {
   if (value === "quarter" || value === "year" || value === "lifetime") {
     return value;
