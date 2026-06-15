@@ -1,9 +1,10 @@
 import { RefreshControl, ScrollView } from "react-native";
 import Animated from "react-native-reanimated";
 import { Text, View } from "@tamagui/core";
-import { Avatar, HeaderBar, Pill } from "@/ui/components/foundation";
+import { Avatar, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
 import { Section } from "@/ui/components/composite";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
+import { IconBell } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
 import type { HomePayload } from "@/domain/models/progress";
 import type { PersonalRecord } from "@/domain/models/record";
@@ -45,6 +46,7 @@ export type HomePresenterProps = {
 
   onRefresh: () => void;
   onOpenDrawer: () => void;
+  onOpenNotifications: () => void;
   onOpenTab: (tab: "train" | "fuel" | "you") => void;
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
@@ -69,6 +71,7 @@ export function HomePresenter(props: HomePresenterProps) {
     animationStyles = [],
     onRefresh,
     onOpenDrawer,
+    onOpenNotifications,
     onOpenTab,
     onOpenWeighIn,
     onOpenMealLog,
@@ -108,6 +111,15 @@ export function HomePresenter(props: HomePresenterProps) {
         eyebrow="TODAY"
         title={user.name ? `Hi, ${user.name}` : "Home"}
         leading={<Avatar initials={user.initials} onPress={onOpenDrawer} />}
+        trailing={
+          <IconBtn
+            icon={<IconBell size={18} />}
+            tone="ghost"
+            onPress={onOpenNotifications}
+            accessibilityLabel="Notifications"
+            testID="home-bell"
+          />
+        }
       />
 
       <View paddingHorizontal={16} gap={16}>

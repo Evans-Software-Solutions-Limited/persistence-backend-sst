@@ -81,6 +81,13 @@ export function HomeContainer() {
     [toggle],
   );
 
+  // Home bell → notifications list (home.jsx HomeHeader; the 09.5-intended
+  // entry point — the route docstring at app/(app)/notifications.tsx names the
+  // Home bell as its pusher). Pushes over the tab bar.
+  const onOpenNotifications = useCallback(() => {
+    router.push("/(app)/notifications" as never);
+  }, [router]);
+
   const noop = useCallback(() => {}, []);
   const openWeighIn = useCallback(() => setWeighInOpen(true), []);
   const closeWeighIn = useCallback(() => setWeighInOpen(false), []);
@@ -101,6 +108,7 @@ export function HomeContainer() {
         animationStyles={animationStyles}
         onRefresh={onRefresh}
         onOpenDrawer={openDrawer}
+        onOpenNotifications={onOpenNotifications}
         onOpenTab={onOpenTab}
         onOpenWeighIn={openWeighIn}
         onOpenMealLog={noop}

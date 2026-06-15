@@ -1,3 +1,4 @@
+import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { HomePresenter, type HomePresenterProps } from "../HomePresenter";
 import type { HomePayload } from "@/domain/models/progress";
@@ -67,6 +68,7 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     isRefreshing: false,
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
+    onOpenNotifications: jest.fn(),
     onOpenTab: jest.fn(),
     onOpenWeighIn: jest.fn(),
     onOpenMealLog: jest.fn(),
@@ -116,5 +118,12 @@ describe("HomePresenter (V2)", () => {
   it("hides the PR carousel when there are no recent PRs", () => {
     const { queryByTestId } = render({ recentPRs: [] });
     expect(queryByTestId("home-prs")).toBeNull();
+  });
+
+  it("renders the header bell and fires onOpenNotifications on press", () => {
+    const onOpenNotifications = jest.fn();
+    const { getByTestId } = render({ onOpenNotifications });
+    fireEvent.press(getByTestId("home-bell"));
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
   });
 });

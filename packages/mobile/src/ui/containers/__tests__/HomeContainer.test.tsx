@@ -116,6 +116,18 @@ describe("HomeContainer (V2)", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/you");
   });
 
+  it("opens the notifications list via the header bell", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last?.onOpenNotifications());
+    expect(mockPush).toHaveBeenCalledWith("/(app)/notifications");
+  });
+
   it("toggling a habit writes the optimistic completion to cache", async () => {
     const { adapters, storage } = makeAdapters();
     render(
