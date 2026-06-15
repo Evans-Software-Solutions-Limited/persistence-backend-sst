@@ -25,6 +25,7 @@ import {
   previousPeriodEndISO,
   type Period,
 } from "../streaks/period";
+import { PERIODS_PER_FREEZE_TOKEN } from "../streaks/milestones";
 
 /**
  * DB-backed implementation of the streak engine + cron data ports
@@ -241,13 +242,24 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
    * taken at run start, so by the time it reaches a row the on-write engine
    * may already have spent the gap tokens and advanced `last_period_end`
    * (02:00 UTC is late morning across Asia/Oceania — peak logging time).
-   * Guarding on `last_period_end < target` + decrementing relatively makes a
-   * lost race a clean no-op (returns null) instead of regressing the streak
-   * and double-spending (Inspector finding, PR #116).
+   *
+   * The guard pins the row to the EXACT snapshot `last_period_end` the cron
+   * computed `tokensSpent` against — not merely `last_period_end < target`. A
+   * `< target` guard only catches the engine racing PAST the target; it misses
+   * the engine advancing PARTWAY into the gap (snapshot < new < target), where
+   * the stale `tokensSpent` would over-spend (e.g. a 1-period gap charged 2
+   * tokens) — and on a streak at the freeze-token cap that lost token is real,
+   * uncapped earnings can't make it back. Pinning to the snapshot turns any
+   * concurrent advance into a clean no-op null; the next cron run sweeps the
+   * fresh row (Inspector finding, PR #116).
    */
   async persistFreezeSpend(
     streakId: string,
-    fields: { tokensSpent: number; lastPeriodEnd: string },
+    fields: {
+      tokensSpent: number;
+      lastPeriodEnd: string;
+      snapshotLastPeriodEnd: string;
+    },
   ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
@@ -263,7 +275,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
           eq(userStreaks.id, streakId),
           eq(userStreaks.status, "active"),
           sql`${userStreaks.freezeTokens} >= ${fields.tokensSpent}`,
-          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+          eq(userStreaks.lastPeriodEnd, fields.snapshotLastPeriodEnd),
         ),
       )
       .returning();
@@ -271,14 +283,19 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
   }
 
   /**
-   * Break a streak that fell behind. Conditional for the same snapshot-race
-   * reason as persistFreezeSpend: if the engine advanced the row past the
-   * cron's target while the sweep was running, breaking it now would zero a
-   * streak the user just satisfied — the guard turns that into a no-op null.
+   * Break a streak that fell behind. Pinned to the snapshot `last_period_end`
+   * for the same reason as persistFreezeSpend — and the partial-race case is
+   * even sharper here: if the engine advanced PARTWAY into the gap (e.g. a
+   * just-revived streak that restarted at count 1 mid-sweep), a `< target`
+   * guard would still match and zero a streak the user actively kept alive,
+   * silently (the on-write run is fire-and-forget, so nothing surfaces the
+   * loss). Pinning to the exact snapshot makes any concurrent advance a no-op
+   * null; the next cron run re-evaluates the fresh row (Inspector finding,
+   * PR #116).
    */
   async persistBreak(
     streakId: string,
-    fields: { lastPeriodEnd: string },
+    fields: { lastPeriodEnd: string; snapshotLastPeriodEnd: string },
   ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
@@ -293,7 +310,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         and(
           eq(userStreaks.id, streakId),
           eq(userStreaks.status, "active"),
-          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+          eq(userStreaks.lastPeriodEnd, fields.snapshotLastPeriodEnd),
         ),
       )
       .returning();
@@ -308,8 +325,20 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
    * `current_count` and regresses `last_period_end` one period. Without this,
    * tap-untap left a permanently advanced streak with zero completion rows
    * behind it — an empty grid next to a climbing counter (Inspector finding,
-   * PR #116). Earned freeze tokens are NOT clawed back (conservative; the cap
-   * limits the upside). Returns the rolled-back row or null (nothing to do).
+   * PR #116).
+   *
+   * The freeze token the rolled-back advance EARNED is clawed back too. An
+   * advance mints a token whenever it lands `current_count` on a multiple of
+   * PERIODS_PER_FREEZE_TOKEN (see freezeTokensAfterAdvance), so the rolled-back
+   * period earned one exactly when the pre-rollback `current_count` is such a
+   * multiple — decremented in a CASE on the column so it's atomic with the
+   * count regress. Without this, tap-untap-tap re-runs the advance each time
+   * and re-earns at the boundary, minting free tokens to the cap on demand
+   * (Inspector finding, PR #116). Edge case: if the user was already AT the cap
+   * when the boundary advance ran, the mint was a no-op, so this over-claws by
+   * one — an acceptable conservative loss (a single legitimate advance re-earns
+   * it) and the only way to fully avoid it would be to persist the pre-advance
+   * balance. Returns the rolled-back row or null (nothing to do).
    */
   async rollbackHabitAdvance(
     userId: string,
@@ -347,6 +376,9 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       .update(userStreaks)
       .set({
         currentCount: sql`GREATEST(${userStreaks.currentCount} - 1, 0)`,
+        // Claw back the token this advance earned (only at a token-earning
+        // boundary), bounded at 0. CASE on the column → atomic with the regress.
+        freezeTokens: sql`CASE WHEN ${userStreaks.currentCount} % ${PERIODS_PER_FREEZE_TOKEN} = 0 THEN GREATEST(${userStreaks.freezeTokens} - 1, 0) ELSE ${userStreaks.freezeTokens} END`,
         lastPeriodEnd: prevPeriodEnd,
         updatedAt: new Date(),
       })

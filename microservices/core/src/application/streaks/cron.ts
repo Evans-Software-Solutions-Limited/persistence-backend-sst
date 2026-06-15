@@ -28,19 +28,27 @@ export interface StreakCronDataPort {
   getActiveStreaks(): Promise<UserStreak[]>;
   getUserTimezone(userId: string): Promise<string>;
   /**
-   * Both writers are CONDITIONAL (WHERE last_period_end < target …) and return
-   * null when no row matched — the cron sweeps a snapshot taken at run start,
-   * so the on-write engine may have already advanced a row mid-sweep (02:00
-   * UTC is late morning across Asia/Oceania). A null means "advanced
-   * concurrently — nothing to protect/break", never an error.
+   * Both writers are CONDITIONAL and return null when no row matched — the
+   * cron sweeps a snapshot taken at run start, so the on-write engine may have
+   * already advanced a row mid-sweep (02:00 UTC is late morning across
+   * Asia/Oceania). The guard pins the row to `snapshotLastPeriodEnd` (the
+   * `last_period_end` the cron read and computed `tokensSpent`/the break
+   * decision against), so a concurrent advance ANYWHERE — past the target OR
+   * partway into the gap — yields a clean null rather than landing stale
+   * arithmetic. A null means "advanced concurrently — nothing to
+   * protect/break", never an error.
    */
   persistFreezeSpend(
     streakId: string,
-    fields: { tokensSpent: number; lastPeriodEnd: string },
+    fields: {
+      tokensSpent: number;
+      lastPeriodEnd: string;
+      snapshotLastPeriodEnd: string;
+    },
   ): Promise<UserStreak | null>;
   persistBreak(
     streakId: string,
-    fields: { lastPeriodEnd: string },
+    fields: { lastPeriodEnd: string; snapshotLastPeriodEnd: string },
   ): Promise<UserStreak | null>;
 }
 
@@ -119,6 +127,7 @@ export async function streakCron(
         const spent = await deps.data.persistFreezeSpend(streak.id, {
           tokensSpent: missed,
           lastPeriodEnd: lastCompletedEnd,
+          snapshotLastPeriodEnd: streak.lastPeriodEnd,
         });
         if (!spent) {
           // Lost the race to an on-write advance — the row is no longer behind.
@@ -148,6 +157,7 @@ export async function streakCron(
         // A null here likewise means an on-write advance landed mid-sweep.
         const broke = await deps.data.persistBreak(streak.id, {
           lastPeriodEnd: lastCompletedEnd,
+          snapshotLastPeriodEnd: streak.lastPeriodEnd,
         });
         if (!broke) {
           summary.upToDate += 1;

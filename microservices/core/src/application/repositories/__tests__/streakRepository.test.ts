@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { UserStreak } from "@persistence/db";
 
 vi.mock("@persistence/db/client", () => ({
@@ -358,6 +359,7 @@ describe("StreakRepository", () => {
       await new StreakRepository().persistFreezeSpend("s1", {
         tokensSpent: 1,
         lastPeriodEnd: "2026-06-09",
+        snapshotLastPeriodEnd: "2026-06-07",
       }),
     ).toBe(frozen);
 
@@ -366,6 +368,7 @@ describe("StreakRepository", () => {
     expect(
       await new StreakRepository().persistBreak("s1", {
         lastPeriodEnd: "2026-06-09",
+        snapshotLastPeriodEnd: "2026-06-04",
       }),
     ).toBe(broken);
   });
@@ -376,13 +379,53 @@ describe("StreakRepository", () => {
       await new StreakRepository().persistFreezeSpend("s1", {
         tokensSpent: 1,
         lastPeriodEnd: "2026-06-09",
+        snapshotLastPeriodEnd: "2026-06-07",
       }),
     ).toBeNull();
     expect(
       await new StreakRepository().persistBreak("s1", {
         lastPeriodEnd: "2026-06-09",
+        snapshotLastPeriodEnd: "2026-06-04",
       }),
     ).toBeNull();
+  });
+
+  it("persistFreezeSpend / persistBreak pin the WHERE to the snapshot last_period_end (not `< target`)", async () => {
+    // A partial mid-gap advance (snapshot < new < target) must NOT match — the
+    // pin is exact equality, so stale arithmetic can't land (Inspector finding).
+    let freezeWhere: unknown;
+    let breakWhere: unknown;
+    (getDb as any).mockReturnValue({
+      update: () => ({
+        set: () => ({
+          where: (w: unknown) => {
+            // first call → freeze, second → break (set per invocation below)
+            if (freezeWhere === undefined) freezeWhere = w;
+            else breakWhere = w;
+            return { returning: () => Promise.resolve([streak()]) };
+          },
+        }),
+      }),
+    });
+    await new StreakRepository().persistFreezeSpend("s1", {
+      tokensSpent: 1,
+      lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-07",
+    });
+    await new StreakRepository().persistBreak("s1", {
+      lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-04",
+    });
+    const dialect = new PgDialect();
+    const freezeSql = dialect.sqlToQuery(freezeWhere as never);
+    const breakSql = dialect.sqlToQuery(breakWhere as never);
+    // Equality pin present, and the loose `<` comparison gone.
+    expect(freezeSql.sql).toContain('"last_period_end" = ');
+    expect(freezeSql.sql).not.toContain('"last_period_end" < ');
+    expect(freezeSql.params).toContain("2026-06-07");
+    expect(breakSql.sql).toContain('"last_period_end" = ');
+    expect(breakSql.sql).not.toContain('"last_period_end" < ');
+    expect(breakSql.params).toContain("2026-06-04");
   });
 
   describe("rollbackHabitAdvance", () => {
@@ -423,6 +466,38 @@ describe("StreakRepository", () => {
           "2026-06-08",
         ),
       ).toBeNull();
+    });
+
+    it("claws back the freeze token earned at a token-earning boundary", async () => {
+      // count 8 → rolling back the 8th period (a multiple of 4) un-earns the
+      // token that advance minted; the SET must decrement freeze_tokens too.
+      const active = streak({
+        period: "daily",
+        currentCount: 8,
+        lastPeriodEnd: "2026-06-10",
+      });
+      let setPayload: Record<string, unknown> | undefined;
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([active]),
+        update: () => ({
+          set: (p: Record<string, unknown>) => {
+            setPayload = p;
+            return { where: () => ({ returning: () => Promise.resolve([]) }) };
+          },
+        }),
+      });
+      await new StreakRepository().rollbackHabitAdvance(
+        "u1",
+        "g1",
+        "2026-06-10",
+      );
+      // Render the freezeTokens expression: a CASE keyed on `current_count % 4`
+      // that decrements (bounded at 0) only at the boundary.
+      const sql = new PgDialect().sqlToQuery(setPayload!.freezeTokens as never);
+      expect(sql.sql.toLowerCase()).toContain("case when");
+      expect(sql.sql).toContain('"current_count" % ');
+      expect(sql.sql.toLowerCase()).toContain("greatest");
+      expect(sql.params).toContain(4); // PERIODS_PER_FREEZE_TOKEN
     });
 
     it("no-ops when no active habit streak exists for the goal", async () => {

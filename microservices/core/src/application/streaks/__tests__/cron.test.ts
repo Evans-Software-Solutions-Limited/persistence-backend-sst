@@ -96,6 +96,7 @@ describe("streakCron", () => {
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
       tokensSpent: 1,
       lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-08",
     });
     expect(notifier.calls[0]).toMatchObject({
       type: "freeze_token_applied",
@@ -159,6 +160,7 @@ describe("streakCron", () => {
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
       tokensSpent: 3,
       lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-06",
     });
     expect(notifier.calls[0]).toMatchObject({
       data: { periodsMissed: 3, tokensSpent: 3, freezeTokensRemaining: 0 },
@@ -181,6 +183,7 @@ describe("streakCron", () => {
     });
     expect(data.persistBreak).toHaveBeenCalledWith("s1", {
       lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-06",
     });
     expect(data.persistFreezeSpend).not.toHaveBeenCalled();
     expect(notifier.notify).not.toHaveBeenCalled();
@@ -201,6 +204,7 @@ describe("streakCron", () => {
     });
     expect(data.persistBreak).toHaveBeenCalledWith("s1", {
       lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-07",
     });
     expect(notifier.notify).not.toHaveBeenCalled();
   });
@@ -245,6 +249,7 @@ describe("streakCron", () => {
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("ok", {
       tokensSpent: 1,
       lastPeriodEnd: "2026-06-09",
+      snapshotLastPeriodEnd: "2026-06-08",
     });
     expect(errSpy).toHaveBeenCalledTimes(1);
     errSpy.mockRestore();
@@ -267,6 +272,7 @@ describe("streakCron", () => {
     expect(summary.broken).toBe(1);
     expect(data.persistBreak).toHaveBeenCalledWith("s1", {
       lastPeriodEnd: "2026-06-07",
+      snapshotLastPeriodEnd: "2026-05-31",
     });
   });
 });
