@@ -35,9 +35,17 @@ export function toggleHabitDayCommand(
   input: ToggleHabitInput,
 ): void {
   const { storage, userId } = deps;
-  // Noon-UTC midpoint keeps the timestamp inside the intended calendar day
-  // for every timezone the user is plausibly in.
+  // Noon-UTC midpoint keeps the LOCAL cache row's instant inside the intended
+  // calendar day for every timezone the user is plausibly in. This instant is
+  // only persisted locally; the wire payload sends the date-only `day` instead
+  // (see below).
   const completedAt = `${input.day}T12:00:00.000Z`;
+  // The wire MUST carry the date-only `day` (YYYY-MM-DD), NOT an ISO instant.
+  // The backend treats a date-only string as the authoritative user-local day
+  // and the on-write streak engine evaluates that local day directly. Sending
+  // a noon-UTC instant instead would route through the tz-conversion path and
+  // drift to the next local day for tz ≥ +12 (backend sweep 11).
+  const wireDate = input.day;
 
   if (input.done) {
     storage.upsertHabitCompletion({
@@ -52,7 +60,7 @@ export function toggleHabitDayCommand(
       entityType: "habit_completion",
       entityId: `${input.goalId}:${input.day}`,
       operation: "create",
-      payload: { goalId: input.goalId, date: completedAt },
+      payload: { goalId: input.goalId, date: wireDate },
       endpoint: "/habit-completions",
       method: "POST",
     });
@@ -62,10 +70,10 @@ export function toggleHabitDayCommand(
       entityType: "habit_completion",
       entityId: `${input.goalId}:${input.day}`,
       operation: "delete",
-      payload: { goalId: input.goalId, date: completedAt },
+      payload: { goalId: input.goalId, date: wireDate },
       endpoint: `/habit-completions?goalId=${encodeURIComponent(
         input.goalId,
-      )}&date=${encodeURIComponent(completedAt)}`,
+      )}&date=${encodeURIComponent(wireDate)}`,
       method: "DELETE",
     });
   }

@@ -31,6 +31,11 @@ describe("toggleHabitDayCommand", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0].endpoint).toBe("/habit-completions");
     expect(queued[0].method).toBe("POST");
+    // Wire payload MUST be the date-only local day, NOT a noon-UTC ISO instant
+    // (backend treats date-only as the authoritative user-local day; sweep 11).
+    expect((JSON.parse(queued[0].payload) as { date: string }).date).toBe(
+      "2026-06-10",
+    );
 
     expect(storage.getCachedHome("u1")).toBeNull(); // invalidated
   });
@@ -57,5 +62,11 @@ describe("toggleHabitDayCommand", () => {
     const queued = storage.getPendingMutations();
     expect(queued[0].method).toBe("DELETE");
     expect(queued[0].endpoint).toContain("goalId=g1");
+    // Date-only local day on the wire, not a noon-UTC ISO instant.
+    expect(queued[0].endpoint).toContain("date=2026-06-10");
+    expect(queued[0].endpoint).not.toContain("T12%3A00");
+    expect((JSON.parse(queued[0].payload) as { date: string }).date).toBe(
+      "2026-06-10",
+    );
   });
 });
