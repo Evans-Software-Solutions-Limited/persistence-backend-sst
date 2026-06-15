@@ -244,6 +244,33 @@ describe("evaluateStreaks", () => {
     expect(persistOrder).toBeLessThan(notifyOrder);
   });
 
+  it("reports the POST-mint balance when a gap-spend advance hits a token boundary", async () => {
+    // count 3, 3 tokens, lastPeriodEnd 06-04 → gap = 06-05/06-06 (2 missed).
+    // Cover spends 2 (tokensAfterGap=1); newCount=4 mints +1 → persisted 2.
+    // The notification must report the persisted 2, not the pre-mint 1
+    // (Inspector finding — freezeTokensRemaining was read pre-mint).
+    const data = makeData({
+      streaks: [
+        makeStreak({
+          currentCount: 3,
+          longestCount: 3,
+          lastPeriodEnd: "2026-06-04",
+          freezeTokens: 3,
+        }),
+      ],
+    });
+    const notifier = makeNotifier();
+    await evaluateStreaks("u1", "habit_completed", TS, { data, notifier });
+    expect(data._persisted[0]).toMatchObject({
+      currentCount: 4,
+      freezeTokens: 2, // 1 left after the gap + 1 minted at the boundary
+    });
+    expect(notifier.calls[0]).toMatchObject({
+      type: "freeze_token_applied",
+      data: { periodsMissed: 2, tokensSpent: 2, freezeTokensRemaining: 2 },
+    });
+  });
+
   it("bails with no side effects when persistAdvance loses the TOCTOU race", async () => {
     // A concurrent cron break/spend moved the row past our snapshot — the
     // conditional UPDATE matches nothing. No advance, no freeze notification

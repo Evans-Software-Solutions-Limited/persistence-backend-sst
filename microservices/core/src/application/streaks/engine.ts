@@ -243,7 +243,12 @@ async function tryAdvance(
         streakId: streak.id,
         periodsMissed: gapTokensSpent,
         tokensSpent: gapTokensSpent,
-        freezeTokensRemaining: tokensAfterGap,
+        // Read the remaining balance off the PERSISTED row, not `tokensAfterGap`
+        // — the latter is pre-mint, so an advance that both covers a gap AND
+        // lands on a token-earning boundary (newCount % 4 === 0) would
+        // underreport by 1 vs the row. Matches the cron's `spent.freezeTokens`
+        // read (Inspector finding, PR #116).
+        freezeTokensRemaining: updated.freezeTokens,
       },
       relatedEntityId: streak.id,
     });
