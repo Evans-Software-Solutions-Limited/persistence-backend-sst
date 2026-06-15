@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 
@@ -140,7 +141,13 @@ describe("VolumeRepository", () => {
     const onConflict = vi.fn(() => Promise.resolve(undefined));
     const insertValues = vi.fn(() => ({ onConflictDoUpdate: onConflict }));
     const txInsert = vi.fn(() => ({ values: insertValues }));
-    const txDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
+    let pruneWhere: any;
+    const txDelete = vi.fn(() => ({
+      where: (w: any) => {
+        pruneWhere = w;
+        return Promise.resolve(undefined);
+      },
+    }));
     const select = vi
       .fn()
       // grouped-by-exercise query: bench (chest+back) 700kg, row (chest) ... no —
@@ -180,6 +187,13 @@ describe("VolumeRepository", () => {
     // Race-safe shape: upsert (not plain insert) + prune of absent muscles.
     expect(onConflict).toHaveBeenCalled();
     expect(txDelete).toHaveBeenCalled();
+    // Render the prune predicate to real SQL: the keepers MUST expand into one
+    // placeholder each (`not in ($n, $m)`) — proving `notInArray`, not a raw
+    // `NOT IN ${array}` that binds the whole array as a single param and that
+    // Postgres rejects on the hot path (Inspector finding, PR #116).
+    const { sql: pruneSql, params } = new PgDialect().sqlToQuery(pruneWhere);
+    expect(pruneSql).toMatch(/not in \(\$\d+, \$\d+\)/i);
+    expect(params).toEqual(expect.arrayContaining(["Chest", "back"]));
   });
 
   it("recomputeVolumeByMuscle skips insert (prunes all) when there is no volume", async () => {

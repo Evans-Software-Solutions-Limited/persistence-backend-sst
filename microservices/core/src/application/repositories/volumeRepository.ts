@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   exerciseSets,
   exercises,
@@ -304,7 +304,7 @@ export class VolumeRepository {
             eq(volumeByMusclePerUser.windowKind, windowKind),
             eq(volumeByMusclePerUser.windowStart, windowStartISO),
             keep.length > 0
-              ? sql`${volumeByMusclePerUser.muscleGroup} NOT IN ${keep}`
+              ? notInArray(volumeByMusclePerUser.muscleGroup, keep)
               : sql`true`,
           ),
         );
