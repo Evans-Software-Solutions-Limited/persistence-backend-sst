@@ -73,12 +73,23 @@ describe("Home/You endpoints", () => {
   });
 
   it("GET /users/me/home aggregates rings + micro + volume + PRs + habits", async () => {
+    // Distinct per-window values prove the ring's train.current AND the card's
+    // totalKg both read the SAME this-week total (8400), and the call-count
+    // assertion proves it's queried ONCE — not duplicated across loadRings +
+    // the card as it used to be (Inspector finding, PR #116).
+    volMock.totalVolume
+      .mockResolvedValueOnce(8400) // this week
+      .mockResolvedValueOnce(7000); // last week
     const res = await getHomeHandler.handle(
       new Request("http://localhost/users/me/home", { headers: AUTH }),
     );
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as any;
     expect(data.rings.train.current).toBe(8400);
+    expect(data.weeklyVolume.totalKg).toBe(8400);
+    // Exactly two totalVolume round-trips: this week + last week. (Was three —
+    // loadRings re-issued the this-week query.)
+    expect(volMock.totalVolume).toHaveBeenCalledTimes(2);
     expect(data.micro.streak).toBe(23);
     expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: 5 });
     expect(data.recentPRs).toHaveLength(1);
