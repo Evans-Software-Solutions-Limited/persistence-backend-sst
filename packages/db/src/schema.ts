@@ -1,8 +1,12 @@
 import {
   boolean,
+  check,
+  date,
   decimal,
+  index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -146,6 +150,21 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "workout_reminder",
   "goal_milestone",
   "trainer_feedback",
+  // M4 (06-progress-goals) streak events. Companion enum migration:
+  // 20260607120000_m4_notification_type_streak_values.sql. Enum ownership is
+  // 09-notifications-social's per cross-cuts § 5; M4 sequences the ADD VALUE.
+  "streak_milestone",
+  "streak_at_risk",
+  "freeze_token_applied",
+]);
+
+// M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
+// Migration: 20260607120100_m4_progress_schema.sql.
+export const streakTypeEnum = pgEnum("streak_type_enum", [
+  "workout_streak", // weekly
+  "habit_streak", // daily
+  "measurement_streak", // weekly
+  "nutrition_streak", // daily (M9-gated)
 ]);
 
 export const noteTypeEnum = pgEnum("note_type", [
@@ -227,6 +246,9 @@ export const profiles = pgTable("profiles", {
   availableEquipment: uuid("available_equipment").array().default([]),
   accessibilityNeeds: uuid("accessibility_needs").array().default([]),
   preferredUnits: text("preferred_units").default("metric"),
+  // M4: IANA timezone identifier for user-local streak period rollover
+  // (cross-cuts § 3.4). Migration 20260607120100_m4_progress_schema.sql.
+  timezone: text("timezone").notNull().default("Europe/London"),
   isProfilePublic: boolean("is_profile_public").default(false),
   subscriptionId: uuid("subscription_id"),
   hasUsedUserTrial: boolean("has_used_user_trial").default(false),
@@ -476,6 +498,9 @@ export const workoutSessions = pgTable("workout_sessions", {
   workoutId: uuid("workout_id").references(() => workouts.id, {
     onDelete: "set null",
   }),
+  // M4 / cross-cuts § 1.1: NULL = self-logged; non-NULL = trainer logged on
+  // behalf of user_id. M8 populates. Migration in m4_progress_schema.sql.
+  loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
   name: text("name"),
   status: sessionStatusEnum("status").default("in_progress"),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
@@ -562,6 +587,9 @@ export const bodyMeasurements = pgTable("body_measurements", {
   userId: uuid("user_id")
     .notNull()
     .references(() => profiles.id, { onDelete: "cascade" }),
+  // M4 / cross-cuts § 1.1: NULL = self-logged; non-NULL = trainer logged on
+  // behalf. M8 populates. Migration in m4_progress_schema.sql.
+  loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
   bodyFatPercentage: decimal("body_fat_percentage", { precision: 4, scale: 2 }),
   chestCm: decimal("chest_cm", { precision: 5, scale: 2 }),
@@ -743,11 +771,151 @@ export const userGoals = pgTable(
     isActive: boolean("is_active").default(true),
     targetDate: text("target_date"),
     notes: text("notes"),
+    // M4 / cross-cuts § 2: NULL = self-set; non-NULL = trainer who assigned.
+    assignedByUserId: uuid("assigned_by_user_id").references(() => profiles.id),
+    // M4: goal-progress extension (nullable; existing goals unaffected).
+    targetValue: numeric("target_value"),
+    currentValue: numeric("current_value"),
+    unit: text("unit"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
     uniqueIndex("user_goals_user_goal_type_idx").on(t.userId, t.goalTypeId),
+    index("user_goals_assigned_by_idx").on(t.assignedByUserId),
+  ],
+);
+
+// ─── Streaks / Habits / Volume (M4 — 06-progress-goals) ─────────────────────
+// cross-cuts § 3. Migration 20260607120100_m4_progress_schema.sql.
+
+export const userStreaks = pgTable(
+  "user_streaks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    streakType: streakTypeEnum("streak_type").notNull(),
+    sourceGoalId: uuid("source_goal_id").references(() => userGoals.id, {
+      onDelete: "cascade",
+    }),
+    period: text("period").notNull(), // 'daily' | 'weekly' | 'monthly'
+    currentCount: integer("current_count").notNull().default(0),
+    longestCount: integer("longest_count").notNull().default(0),
+    lastPeriodEnd: date("last_period_end").notNull(),
+    freezeTokens: integer("freeze_tokens").notNull().default(0),
+    status: text("status").notNull().default("active"), // active | broken | paused
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    // Partial unique: one goal-driven streak per (user, goal); ad-hoc streaks
+    // (source_goal_id IS NULL) are exempt.
+    uniqueIndex("user_streaks_user_source_goal_uq")
+      .on(t.userId, t.sourceGoalId)
+      .where(sql`${t.sourceGoalId} IS NOT NULL`),
+    index("user_streaks_user_status").on(t.userId, t.status),
+    check(
+      "user_streaks_period_chk",
+      sql`${t.period} IN ('daily','weekly','monthly')`,
+    ),
+    check(
+      "user_streaks_status_chk",
+      sql`${t.status} IN ('active','broken','paused')`,
+    ),
+  ],
+);
+
+export const habitCompletions = pgTable(
+  "habit_completions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    goalId: uuid("goal_id")
+      .notNull()
+      .references(() => userGoals.id, { onDelete: "cascade" }),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    // User-local calendar date of completed_at, computed by the writer from
+    // profiles.timezone. Uniqueness buckets on this (not a UTC day) so non-UTC
+    // users' completions aren't dropped — see migration comment + PR #116.
+    localCompletedDate: date("local_completed_date").notNull(),
+    value: numeric("value"),
+  },
+  (t) => [
+    // One completion per user / goal / user-local day.
+    uniqueIndex("habit_completions_user_goal_local_day_uq").on(
+      t.userId,
+      t.goalId,
+      t.localCompletedDate,
+    ),
+    index("habit_completions_user_goal_ts").on(
+      t.userId,
+      t.goalId,
+      sql`${t.completedAt} DESC`,
+    ),
+  ],
+);
+
+export const weeklyVolumePerUser = pgTable(
+  "weekly_volume_per_user",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    weekStart: date("week_start").notNull(), // Monday 00:00 user-local
+    volumeKg: numeric("volume_kg").notNull().default("0"),
+    sessionCount: integer("session_count").notNull().default(0),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("weekly_volume_per_user_user_week_uq").on(
+      t.userId,
+      t.weekStart,
+    ),
+    index("weekly_volume_per_user_user_week").on(
+      t.userId,
+      sql`${t.weekStart} DESC`,
+    ),
+  ],
+);
+
+export const volumeByMusclePerUser = pgTable(
+  "volume_by_muscle_per_user",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    windowStart: date("window_start").notNull(),
+    windowKind: text("window_kind").notNull(), // month|quarter|year|lifetime
+    muscleGroup: text("muscle_group").notNull(), // muscle_groups.name (lowercase)
+    volumeKg: numeric("volume_kg").notNull().default("0"),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("volume_by_muscle_per_user_uq").on(
+      t.userId,
+      t.windowStart,
+      t.windowKind,
+      t.muscleGroup,
+    ),
+    index("volume_by_muscle_per_user_user_window").on(
+      t.userId,
+      t.windowKind,
+      sql`${t.windowStart} DESC`,
+    ),
+    check(
+      "volume_by_muscle_window_kind_chk",
+      sql`${t.windowKind} IN ('month','quarter','year','lifetime')`,
+    ),
   ],
 );
 
@@ -1052,6 +1220,19 @@ export type NewProgramWorkout = typeof programWorkouts.$inferInsert;
 
 export type UserGoal = typeof userGoals.$inferSelect;
 export type NewUserGoal = typeof userGoals.$inferInsert;
+
+export type UserStreak = typeof userStreaks.$inferSelect;
+export type NewUserStreak = typeof userStreaks.$inferInsert;
+
+export type HabitCompletion = typeof habitCompletions.$inferSelect;
+export type NewHabitCompletion = typeof habitCompletions.$inferInsert;
+
+export type WeeklyVolumePerUser = typeof weeklyVolumePerUser.$inferSelect;
+export type NewWeeklyVolumePerUser = typeof weeklyVolumePerUser.$inferInsert;
+
+export type VolumeByMusclePerUser = typeof volumeByMusclePerUser.$inferSelect;
+export type NewVolumeByMusclePerUser =
+  typeof volumeByMusclePerUser.$inferInsert;
 
 export type AiGoal = typeof aiGoals.$inferSelect;
 export type NewAiGoal = typeof aiGoals.$inferInsert;

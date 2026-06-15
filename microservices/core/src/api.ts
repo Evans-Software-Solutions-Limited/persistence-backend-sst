@@ -39,6 +39,9 @@ import { recordsListHandler } from "./application/records/list/recordsListHandle
 import { personalRecordsListHandler } from "./application/personalRecords/list/personalRecordsListHandler";
 import { measurementsCreateHandler } from "./application/measurements/create/measurementsCreateHandler";
 import { measurementsListHandler } from "./application/measurements/list/measurementsListHandler";
+import { createHabitCompletionHandler } from "./application/habits/createHabitCompletionHandler";
+import { listHabitCompletionsHandler } from "./application/habits/listHabitCompletionsHandler";
+import { deleteHabitCompletionHandler } from "./application/habits/deleteHabitCompletionHandler";
 import { goalsCreateHandler } from "./application/goals/create/goalsCreateHandler";
 import { goalsListHandler } from "./application/goals/list/goalsListHandler";
 import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
@@ -48,6 +51,14 @@ import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
 import { progressHistoryHandler } from "./application/progress/progressHistoryHandler";
+import { getWeeklyVolumeHandler } from "./application/progress/getWeeklyVolumeHandler";
+import { getVolumeStatsHandler } from "./application/progress/getVolumeStatsHandler";
+import { getTodayRingsHandler } from "./application/progress/getTodayRingsHandler";
+import { getHomeHandler } from "./application/progress/getHomeHandler";
+import { getRecentPRsHandler } from "./application/progress/getRecentPRsHandler";
+import { getBodyTrendHandler } from "./application/progress/getBodyTrendHandler";
+import { getAchievementsHandler } from "./application/progress/getAchievementsHandler";
+import { useFreezeTokenHandler } from "./application/progress/useFreezeTokenHandler";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
 import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
@@ -101,6 +112,9 @@ const app = new Elysia()
   .use(personalRecordsListHandler)
   .use(measurementsCreateHandler)
   .use(measurementsListHandler)
+  .use(createHabitCompletionHandler)
+  .use(listHabitCompletionsHandler)
+  .use(deleteHabitCompletionHandler)
   .use(goalsCreateHandler)
   .use(goalsListHandler)
   .use(goalsGetHandler)
@@ -110,6 +124,14 @@ const app = new Elysia()
   .use(progressStatsHandler)
   .use(progressRecordsHandler)
   .use(progressHistoryHandler)
+  .use(getWeeklyVolumeHandler)
+  .use(getVolumeStatsHandler)
+  .use(getTodayRingsHandler)
+  .use(getHomeHandler)
+  .use(getRecentPRsHandler)
+  .use(getBodyTrendHandler)
+  .use(getAchievementsHandler)
+  .use(useFreezeTokenHandler)
   .use(subscriptionsTiersHandler)
   .use(subscriptionsMeHandler)
   .use(subscriptionsCreateHandler)

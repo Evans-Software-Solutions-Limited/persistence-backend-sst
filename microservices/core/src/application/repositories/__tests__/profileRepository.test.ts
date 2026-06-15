@@ -760,6 +760,10 @@ describe("defaultNotificationPreferences", () => {
       workout_reminder: true,
       goal_milestone: true,
       trainer_feedback: true,
+      // M4 (06-progress-goals) streak events — default opt-in "on".
+      streak_milestone: true,
+      streak_at_risk: true,
+      freeze_token_applied: true,
     });
   });
 
@@ -875,6 +879,10 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       workout_reminder: true,
       goal_milestone: true,
       trainer_feedback: true,
+      // M4 (06-progress-goals) streak events — default opt-in "on".
+      streak_milestone: true,
+      streak_at_risk: true,
+      freeze_token_applied: true,
     });
   });
 

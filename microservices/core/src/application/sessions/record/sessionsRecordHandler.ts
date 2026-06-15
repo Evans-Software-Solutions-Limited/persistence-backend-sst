@@ -12,6 +12,8 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
+import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
+import { safeRecomputeVolume } from "../../progress/recompute";
 
 /**
  * POST /sessions/record
@@ -113,6 +115,22 @@ export const sessionsRecordHandler = new Elysia()
         (uid, sessionId, tx) =>
           ctx.PersonalRecordsRepository.recordPRsForSession(uid, sessionId, tx),
       );
+
+      // Advance the workout streak for a completed session (STORY-006).
+      // Cancelled sessions don't count. Fire-and-forget + error-tolerant:
+      // the session + PRs already committed in the transaction above.
+      if (payload.status === "completed") {
+        // completedAt clamped to now (never future) so it can't skip the
+        // streak past genuinely-missed periods (Inspector finding, PR #116).
+        await safeEvaluateStreaks(
+          userId,
+          "workout_logged",
+          resolveEventTs(payload.completedAt),
+        );
+        // Backup volume recompute so Home/You weekly volume is fresh before
+        // the 03:00 cron (design.md § Risks — two-write redundancy).
+        await safeRecomputeVolume(userId);
+      }
 
       ctx.set.status = 201;
       return { data: recorded };

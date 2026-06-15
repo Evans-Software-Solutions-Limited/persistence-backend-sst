@@ -5,6 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { safeEvaluateStreaks } from "../../streaks/evaluate";
 
 export const measurementsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -40,6 +41,10 @@ export const measurementsCreateHandler = new Elysia()
             : undefined,
         notes: body.notes as string | undefined,
       });
+
+      // Advance the measurement streak (STORY-008). Fire-and-forget +
+      // error-tolerant — the measurement already committed above.
+      await safeEvaluateStreaks(userId, "measurement_logged", new Date());
 
       ctx.set.status = 201;
       return { data: measurement };
