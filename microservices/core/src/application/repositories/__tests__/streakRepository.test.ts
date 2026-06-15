@@ -174,27 +174,68 @@ describe("StreakRepository", () => {
   it("persistAdvance updates and returns the row", async () => {
     const updated = streak({ currentCount: 2 });
     (getDb as any).mockReturnValue({ update: () => updateChain([updated]) });
-    const result = await new StreakRepository().persistAdvance("s1", {
-      currentCount: 2,
-      longestCount: 2,
-      lastPeriodEnd: "2026-06-07",
-      freezeTokens: 0,
-    });
-    expect(result).toBe(updated);
-  });
-
-  it("persistAdvance returns null when the conditional WHERE misses (lost race)", async () => {
-    // A concurrent cron write moved last_period_end past our target — the
-    // `last_period_end < target` guard matches no row.
-    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
-    expect(
-      await new StreakRepository().persistAdvance("s1", {
+    const result = await new StreakRepository().persistAdvance(
+      "s1",
+      {
         currentCount: 2,
         longestCount: 2,
         lastPeriodEnd: "2026-06-07",
         freezeTokens: 0,
-      }),
+      },
+      "2026-06-06", // snapshot lpe
+    );
+    expect(result).toBe(updated);
+  });
+
+  it("persistAdvance returns null when the conditional WHERE misses (lost race)", async () => {
+    // A concurrent writer (cron spend/break, manual spend, or a tap-untap
+    // rollback) moved last_period_end off our snapshot — the
+    // `last_period_end = snapshot` pin matches no row.
+    (getDb as any).mockReturnValue({ update: () => updateChain([]) });
+    expect(
+      await new StreakRepository().persistAdvance(
+        "s1",
+        {
+          currentCount: 2,
+          longestCount: 2,
+          lastPeriodEnd: "2026-06-07",
+          freezeTokens: 0,
+        },
+        "2026-06-06",
+      ),
     ).toBeNull();
+  });
+
+  it("persistAdvance pins the WHERE to the snapshot last_period_end (not `< target`)", async () => {
+    // A concurrent rollback regresses lpe BELOW the snapshot; a `< target`
+    // guard would still match and clobber it with the stale absolute count.
+    // The exact pin makes any off-snapshot row a clean no-op (Inspector finding).
+    let updateWhere: unknown;
+    (getDb as any).mockReturnValue({
+      update: () => ({
+        set: () => ({
+          where: (w: unknown) => {
+            updateWhere = w;
+            return { returning: () => Promise.resolve([streak()]) };
+          },
+        }),
+      }),
+    });
+    await new StreakRepository().persistAdvance(
+      "s1",
+      {
+        currentCount: 2,
+        longestCount: 2,
+        lastPeriodEnd: "2026-06-07",
+        freezeTokens: 0,
+      },
+      "2026-06-06", // snapshot lpe
+    );
+    const { sql, params } = new PgDialect().sqlToQuery(updateWhere as never);
+    expect(sql).toContain('"last_period_end" = ');
+    expect(sql).not.toContain('"last_period_end" < ');
+    expect(params).toContain("2026-06-06"); // the snapshot, not the new target
+    expect(params).not.toContain("2026-06-07");
   });
 
   describe("unlockAchievement", () => {

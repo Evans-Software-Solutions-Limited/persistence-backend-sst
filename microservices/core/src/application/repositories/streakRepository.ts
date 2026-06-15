@@ -164,22 +164,35 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
   }
 
   /**
-   * Conditional advance — the TOCTOU guard the other three streak writers
-   * already carry (Inspector finding, PR #116). Without it the engine could
-   * write a snapshot-derived advance OVER a cron break/spend that landed
-   * between its SELECT and this UPDATE, resurrecting a legitimately-broken
-   * streak (status back to 'active' with a stale count) or double-spending
-   * tokens. `last_period_end < target` is always true for an un-raced row
-   * (the engine only advances to a strictly-later period), so a null return
-   * can only mean "a concurrent writer got there first" — the engine bails.
+   * Conditional advance — pinned to the EXACT snapshot `last_period_end` the
+   * engine read, like every other streak writer (Inspector findings, PR #116).
+   *
+   * The engine SETs ABSOLUTE snapshot-derived values (currentCount =
+   * snapshot.count + 1, etc.), so the write is only correct if the row is still
+   * exactly as the engine SELECTed it. A `last_period_end < target` guard was
+   * too lenient: it bails when a concurrent writer raced PAST the target, but
+   * NOT when one moved the row elsewhere within `(-∞, target)`. Two real races
+   * slipped through that gap:
+   *   - a concurrent `rollbackHabitAdvance` (tap-untap) regresses lpe AND
+   *     current_count; `lpe < target` still matched, so the engine wrote its
+   *     stale absolute count back over the rollback — drifting current_count
+   *     and permanently inflating longest_count (never decremented); and
+   *   - a cron `persistFreezeSpend` that covered PART of the same gap leaves an
+   *     intermediate `lpe` still `< target`, so the engine advanced anyway and
+   *     emitted a SECOND `freeze_token_applied` for the period the cron already
+   *     notified (02:00 UTC is peak logging time across Asia/Oceania).
+   * Pinning to `= snapshotLastPeriodEnd` makes ANY concurrent writer a clean
+   * no-op null; the triggering event is durable, so the cron or the user's next
+   * event re-evaluates against the fresh row.
    *
    * No status filter: the engine legitimately advances BOTH active and broken
    * rows (broken-revive restarts at 1), and `status: "active"` in the SET is
-   * the revive itself.
+   * the revive itself — the lpe pin alone is the race guard.
    */
   async persistAdvance(
     streakId: string,
     fields: StreakAdvanceFields,
+    snapshotLastPeriodEnd: string,
   ): Promise<UserStreak | null> {
     const db = getDb();
     const rows = await db
@@ -195,7 +208,7 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       .where(
         and(
           eq(userStreaks.id, streakId),
-          sql`${userStreaks.lastPeriodEnd} < ${fields.lastPeriodEnd}`,
+          eq(userStreaks.lastPeriodEnd, snapshotLastPeriodEnd),
         ),
       )
       .returning();

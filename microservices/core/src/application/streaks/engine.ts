@@ -88,15 +88,19 @@ export interface StreakDataPort {
     tz: string,
   ): Promise<boolean>;
   /**
-   * Conditional advance (WHERE last_period_end < fields.lastPeriodEnd) —
-   * returns null when a concurrent cron/manual write already moved the row
-   * past the engine's snapshot, so a lost race is a clean no-op instead of
-   * resurrecting a just-broken streak or double-spending tokens (same TOCTOU
-   * guard as persistFreezeSpend / persistBreak / spendTokenManually).
+   * Conditional advance (WHERE last_period_end = snapshotLastPeriodEnd) —
+   * returns null when ANY concurrent writer (cron spend/break, manual spend, or
+   * a tap-untap rollback) has moved the row off the engine's snapshot. Because
+   * the engine SETs absolute snapshot-derived values, a pin to the exact
+   * snapshot lpe is required: a `< target` guard would let the engine clobber a
+   * concurrent rollback (drifting current_count / inflating longest_count) or
+   * double-notify a gap the cron already covered. Same TOCTOU discipline as
+   * persistFreezeSpend / persistBreak / spendTokenManually.
    */
   persistAdvance(
     streakId: string,
     fields: StreakAdvanceFields,
+    snapshotLastPeriodEnd: string,
   ): Promise<UserStreak | null>;
   /**
    * Resolve the achievement for (streakType, threshold) and insert a
@@ -217,12 +221,18 @@ async function tryAdvance(
     freezeTokens: freezeTokensAfterAdvance(tokensAfterGap, newCount),
   };
 
-  // Conditional write (WHERE last_period_end < currentEnd) — null means a
-  // concurrent cron/manual write already moved the row past our snapshot, so
-  // everything computed above is stale: bail with NO side effects. The
-  // triggering event is durable, so the cron (or the user's next event)
-  // re-evaluates against the fresh row (Inspector finding, PR #116).
-  const updated = await deps.data.persistAdvance(streak.id, fields);
+  // Conditional write pinned to the snapshot (WHERE last_period_end =
+  // streak.lastPeriodEnd) — null means ANY concurrent writer (cron spend/break,
+  // manual spend, tap-untap rollback) moved the row off our snapshot, so
+  // everything computed above is stale: bail with NO side effects (no notify,
+  // no milestone). The triggering event is durable, so the cron (or the user's
+  // next event) re-evaluates against the fresh row (Inspector findings, PR
+  // #116).
+  const updated = await deps.data.persistAdvance(
+    streak.id,
+    fields,
+    streak.lastPeriodEnd,
+  );
   if (!updated) return null;
 
   // Notify only AFTER the persist commits — emitting first meant a failed or

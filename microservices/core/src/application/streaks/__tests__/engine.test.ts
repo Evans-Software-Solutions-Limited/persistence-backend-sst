@@ -102,6 +102,13 @@ describe("evaluateStreaks", () => {
       freezeTokens: 0,
     });
     expect(result.advanced).toHaveLength(1);
+    // The engine pins the conditional advance to the SNAPSHOT last_period_end
+    // (3rd arg) so a concurrent rollback/cron write can't be clobbered.
+    expect(data.persistAdvance).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ lastPeriodEnd: "2026-06-07" }),
+      "2026-06-06", // snapshot lpe, not the new target
+    );
     // count 1 is not a daily milestone (7,14,…) → no notification
     expect(notifier.notify).not.toHaveBeenCalled();
   });
