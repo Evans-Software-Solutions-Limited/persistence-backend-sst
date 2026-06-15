@@ -309,13 +309,44 @@ describe("StreakRepository", () => {
         .fn()
         .mockReturnValueOnce(selectWhereLimit([behind]))
         .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
-      // A concurrent advance bumped last_period_end past lastCompletedEnd, so
-      // the `last_period_end < lastCompletedEnd` guard in the UPDATE WHERE
-      // matches no row → returns null (no regression, no token burned).
+      // A concurrent advance moved last_period_end off the snapshot, so the
+      // `last_period_end = <snapshot>` pin in the UPDATE WHERE matches no row →
+      // returns null (no regression, no token over-burned).
       (getDb as any).mockReturnValue({ select, update: () => updateChain([]) });
       expect(
         await new StreakRepository().spendTokenManually("u1", "s1", now),
       ).toBeNull();
+    });
+
+    it("pins the UPDATE WHERE to the snapshot last_period_end (not `< target`)", async () => {
+      // A partial mid-gap advance (snapshot < new < target) must NOT match, so
+      // the stale `missed` can't over-debit the user (Inspector finding).
+      const behind = streak({
+        period: "daily",
+        freezeTokens: 3,
+        lastPeriodEnd: "2026-06-16", // snapshot
+      });
+      let updateWhere: unknown;
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([behind]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+      (getDb as any).mockReturnValue({
+        select,
+        update: () => ({
+          set: () => ({
+            where: (w: unknown) => {
+              updateWhere = w;
+              return { returning: () => Promise.resolve([behind]) };
+            },
+          }),
+        }),
+      });
+      await new StreakRepository().spendTokenManually("u1", "s1", now);
+      const { sql, params } = new PgDialect().sqlToQuery(updateWhere as never);
+      expect(sql).toContain('"last_period_end" = ');
+      expect(sql).not.toContain('"last_period_end" < ');
+      expect(params).toContain("2026-06-16"); // the snapshot, not the target
     });
 
     it("returns null when the streak is not behind (no token wasted)", async () => {

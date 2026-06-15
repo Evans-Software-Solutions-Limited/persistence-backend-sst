@@ -467,12 +467,18 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
           eq(userStreaks.userId, userId),
           eq(userStreaks.status, "active"),
           sql`${userStreaks.freezeTokens} >= ${missed}`,
-          // Conditional write: only spend if the row is STILL behind. Guards a
-          // TOCTOU race where evaluateStreaks/tryAdvance commits a newer
-          // last_period_end between our SELECT and this UPDATE — without it we
-          // would overwrite that advance with the older lastCompletedEnd and
-          // silently regress the streak (Inspector finding).
-          sql`${userStreaks.lastPeriodEnd} < ${lastCompletedEnd}`,
+          // Conditional write pinned to the EXACT snapshot last_period_end (not
+          // `< lastCompletedEnd`). `missed` was computed from the SELECTed row,
+          // so the spend is only correct if the row is unchanged. A `<` guard
+          // catches an advance racing PAST the target but not one landing
+          // PARTWAY into the gap (snapshot < new < target): there the engine's
+          // own gap was 0 (it didn't decrement tokens), so `freezeTokens >=
+          // missed` still passes and the stale `missed` over-debits the user
+          // (e.g. a real 1-period gap charged 2). Pinning to the snapshot turns
+          // any concurrent advance into a clean no-op null (→ handler 400); the
+          // user retries against the fresh row with the correct `missed`. Same
+          // discipline as persistFreezeSpend/persistBreak (Inspector finding).
+          eq(userStreaks.lastPeriodEnd, streak.lastPeriodEnd),
         ),
       )
       .returning();
