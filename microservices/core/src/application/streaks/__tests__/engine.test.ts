@@ -421,6 +421,32 @@ describe("evaluateStreaks", () => {
     });
     expect(result.advanced.map((s) => s.id)).toEqual(["adv"]);
   });
+
+  it("isolates a throwing streak and still evaluates the rest", async () => {
+    // streak[0]'s isPeriodSatisfied blips (transient DB error); streak[1] must
+    // still advance, not be abandoned — otherwise it stays a period behind and
+    // the cron punishes the user for an unrelated error (Inspector finding).
+    const data = makeData({
+      streaks: [
+        makeStreak({ id: "bad", lastPeriodEnd: "2026-06-06" }),
+        makeStreak({ id: "ok", lastPeriodEnd: "2026-06-06" }),
+      ],
+    });
+    (data.isPeriodSatisfied as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("db blip"))
+      .mockResolvedValue(true);
+    const notifier = makeNotifier();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await evaluateStreaks("u1", "habit_completed", TS, {
+      data,
+      notifier,
+    });
+
+    expect(result.advanced.map((s) => s.id)).toEqual(["ok"]);
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
 });
 
 describe("milestoneMessage", () => {

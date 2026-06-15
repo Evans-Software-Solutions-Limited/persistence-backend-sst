@@ -328,10 +328,25 @@ export async function evaluateStreaks(
   const advanced: UserStreak[] = [];
   const milestones: UnlockedMilestone[] = [];
   for (const streak of streaks) {
-    const result = await tryAdvance(streak, ts, tz, deps, opts.localDate);
-    if (result) {
-      advanced.push(result.updated);
-      milestones.push(...result.milestones);
+    // Per-streak isolation: a habit_completed event runs the engine over EVERY
+    // habit_streak the user owns (the type filter doesn't narrow by goal), so a
+    // transient blip evaluating streak[0] (a DB error in isPeriodSatisfied /
+    // persistAdvance / unlockAchievement, or a notify insert failure) must not
+    // skip streak[1..N] — otherwise those stay a period behind and the 02:00
+    // cron punishes the user (spend/break) for an unrelated internal error.
+    // Mirrors the cron's per-iteration guard (sweep 10, Inspector finding).
+    try {
+      const result = await tryAdvance(streak, ts, tz, deps, opts.localDate);
+      if (result) {
+        advanced.push(result.updated);
+        milestones.push(...result.milestones);
+      }
+    } catch (err) {
+      console.error("[streaks] tryAdvance failed for streak", {
+        streakId: streak.id,
+        userId,
+        error: err,
+      });
     }
   }
 

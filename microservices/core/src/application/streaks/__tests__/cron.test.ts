@@ -104,6 +104,33 @@ describe("streakCron", () => {
     });
   });
 
+  it("counts a frozen streak ONCE even when its notification throws", async () => {
+    // The persist committed (streak protected) → frozen. A notify insert
+    // failure must NOT also unwind to the outer catch and bump `failed`, which
+    // would double-count the row and push the buckets past `swept` (Inspector
+    // finding — stats hygiene).
+    const data = makeData([
+      makeStreak({ lastPeriodEnd: "2026-06-08", freezeTokens: 2 }),
+    ]);
+    const notifier = makeNotifier();
+    (notifier.notify as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("notify blip"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const summary = await streakCron({ data, notifier, now: NOW });
+
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 0,
+      frozen: 1,
+      broken: 0,
+      failed: 0, // NOT double-counted as failed
+    });
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
+
   it("counts a lost spend race as up to date (engine advanced mid-sweep)", async () => {
     const data = makeData([
       makeStreak({ lastPeriodEnd: "2026-06-08", freezeTokens: 2 }),

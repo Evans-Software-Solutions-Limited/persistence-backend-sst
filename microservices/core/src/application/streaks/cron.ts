@@ -134,24 +134,39 @@ export async function streakCron(
           summary.upToDate += 1;
           continue;
         }
+        // The persist committed — the streak IS protected, so it counts as
+        // `frozen` regardless of whether the notification lands. Isolate the
+        // notify in its own try/catch: without it, a notify insert failure
+        // would unwind to the outer catch and ALSO increment `failed`, so the
+        // same row is double-counted and the summary buckets exceed `swept`
+        // (Inspector finding — stats hygiene; CloudWatch alarms on the summary
+        // line could double-fire).
         summary.frozen += 1;
-        await deps.notifier.notify({
-          userId: streak.userId,
-          type: "freeze_token_applied",
-          title: "Streak protected",
-          message:
-            missed === 1
-              ? "You missed a period, so a freeze token kept your streak alive."
-              : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
-          data: {
-            streakType: streak.streakType,
+        try {
+          await deps.notifier.notify({
+            userId: streak.userId,
+            type: "freeze_token_applied",
+            title: "Streak protected",
+            message:
+              missed === 1
+                ? "You missed a period, so a freeze token kept your streak alive."
+                : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
+            data: {
+              streakType: streak.streakType,
+              streakId: streak.id,
+              periodsMissed: missed,
+              tokensSpent: missed,
+              freezeTokensRemaining: spent.freezeTokens,
+            },
+            relatedEntityId: streak.id,
+          });
+        } catch (err) {
+          console.error("[streak-cron] freeze notification failed", {
             streakId: streak.id,
-            periodsMissed: missed,
-            tokensSpent: missed,
-            freezeTokensRemaining: spent.freezeTokens,
-          },
-          relatedEntityId: streak.id,
-        });
+            userId: streak.userId,
+            error: err,
+          });
+        }
       } else {
         // Not enough tokens to cover every missed period → the streak breaks.
         // A null here likewise means an on-write advance landed mid-sweep.
