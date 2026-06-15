@@ -58,7 +58,13 @@ describe("streakCron", () => {
     const data = makeData([makeStreak({ lastPeriodEnd: "2026-06-09" })]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 1, frozen: 0, broken: 0 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 1,
+      frozen: 0,
+      broken: 0,
+      failed: 0,
+    });
     expect(data.persistFreezeSpend).not.toHaveBeenCalled();
     expect(data.persistBreak).not.toHaveBeenCalled();
   });
@@ -80,7 +86,13 @@ describe("streakCron", () => {
     ]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 1, broken: 0 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 0,
+      frozen: 1,
+      broken: 0,
+      failed: 0,
+    });
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
       tokensSpent: 1,
       lastPeriodEnd: "2026-06-09",
@@ -101,7 +113,13 @@ describe("streakCron", () => {
     );
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 1, frozen: 0, broken: 0 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 1,
+      frozen: 0,
+      broken: 0,
+      failed: 0,
+    });
     expect(notifier.notify).not.toHaveBeenCalled();
   });
 
@@ -115,7 +133,13 @@ describe("streakCron", () => {
       notifier: makeNotifier(),
       now: NOW,
     });
-    expect(summary).toEqual({ swept: 1, upToDate: 1, frozen: 0, broken: 0 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 1,
+      frozen: 0,
+      broken: 0,
+      failed: 0,
+    });
   });
 
   it("spends ONE token PER missed period (N tokens for N periods)", async () => {
@@ -125,7 +149,13 @@ describe("streakCron", () => {
     ]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 1, broken: 0 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 0,
+      frozen: 1,
+      broken: 0,
+      failed: 0,
+    });
     expect(data.persistFreezeSpend).toHaveBeenCalledWith("s1", {
       tokensSpent: 3,
       lastPeriodEnd: "2026-06-09",
@@ -142,7 +172,13 @@ describe("streakCron", () => {
     ]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 0, broken: 1 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 0,
+      frozen: 0,
+      broken: 1,
+      failed: 0,
+    });
     expect(data.persistBreak).toHaveBeenCalledWith("s1", {
       lastPeriodEnd: "2026-06-09",
     });
@@ -156,7 +192,13 @@ describe("streakCron", () => {
     ]);
     const notifier = makeNotifier();
     const summary = await streakCron({ data, notifier, now: NOW });
-    expect(summary).toEqual({ swept: 1, upToDate: 0, frozen: 0, broken: 1 });
+    expect(summary).toEqual({
+      swept: 1,
+      upToDate: 0,
+      frozen: 0,
+      broken: 1,
+      failed: 0,
+    });
     expect(data.persistBreak).toHaveBeenCalledWith("s1", {
       lastPeriodEnd: "2026-06-09",
     });
@@ -170,6 +212,42 @@ describe("streakCron", () => {
     ]);
     await streakCron({ data, notifier: makeNotifier(), now: NOW });
     expect(data.getUserTimezone).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates a throwing row — counts it failed and sweeps the rest", async () => {
+    // First row's tz lookup throws (e.g. a bad IANA `profiles.timezone` would
+    // surface as a RangeError downstream); the second row must still be swept.
+    const data = makeData([
+      makeStreak({
+        id: "poison",
+        lastPeriodEnd: "2026-06-08",
+        freezeTokens: 2,
+      }),
+      makeStreak({ id: "ok", lastPeriodEnd: "2026-06-08", freezeTokens: 2 }),
+    ]);
+    (data.getUserTimezone as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new RangeError("Invalid time zone: Mars/Olympus"))
+      .mockResolvedValue("Europe/London");
+    const notifier = makeNotifier();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const summary = await streakCron({ data, notifier, now: NOW });
+
+    // Poison row → failed; the second row still spends its token + notifies.
+    expect(summary).toEqual({
+      swept: 2,
+      upToDate: 0,
+      frozen: 1,
+      broken: 0,
+      failed: 1,
+    });
+    expect(data.persistFreezeSpend).toHaveBeenCalledTimes(1);
+    expect(data.persistFreezeSpend).toHaveBeenCalledWith("ok", {
+      tokensSpent: 1,
+      lastPeriodEnd: "2026-06-09",
+    });
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
   });
 
   it("handles a weekly missed period boundary", async () => {

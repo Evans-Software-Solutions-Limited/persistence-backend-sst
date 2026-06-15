@@ -56,6 +56,13 @@ export interface StreakCronSummary {
   upToDate: number;
   frozen: number;
   broken: number;
+  /**
+   * Rows whose per-iteration processing threw (bad IANA `profiles.timezone`
+   * → `RangeError`, a transient postgres error on the conditional UPDATE, or
+   * a notification insert failure). Isolated so one poison row can't abort the
+   * rest of the snapshot — same per-item discipline as `volumeCron`.
+   */
+  failed: number;
 }
 
 export async function streakCron(
@@ -67,6 +74,7 @@ export async function streakCron(
     upToDate: 0,
     frozen: 0,
     broken: 0,
+    failed: 0,
   };
 
   // Memoise tz per user across the sweep — many streaks share a user.
@@ -80,65 +88,80 @@ export async function streakCron(
   };
 
   for (const streak of streaks) {
-    const period = streak.period as Period;
-    const tz = await tzFor(streak.userId);
-    const lastCompletedEnd = lastCompletedPeriodEndISO(deps.now, period, tz);
+    // Per-iteration isolation: a bad IANA tz (`RangeError`), a transient
+    // postgres error on the conditional UPDATE, or a notification insert
+    // failure must not abort the rest of the snapshot. Mirrors `volumeCron`'s
+    // per-user try/catch (Inspector finding, PR #116) — without it a single
+    // poison row aborts `streakCron` at the same index every night and nothing
+    // past it ever gets swept.
+    try {
+      const period = streak.period as Period;
+      const tz = await tzFor(streak.userId);
+      const lastCompletedEnd = lastCompletedPeriodEndISO(deps.now, period, tz);
 
-    // How many whole periods were missed since last_period_end. One freeze
-    // token shields ONE missed period (cross-cuts § 3.5), so N missed periods
-    // cost N tokens — and the streak breaks if there aren't enough to cover
-    // them all. (Previously a single token absorbed an arbitrary gap.)
-    const missed = periodsBetween(
-      streak.lastPeriodEnd,
-      lastCompletedEnd,
-      period,
-    );
+      // How many whole periods were missed since last_period_end. One freeze
+      // token shields ONE missed period (cross-cuts § 3.5), so N missed periods
+      // cost N tokens — and the streak breaks if there aren't enough to cover
+      // them all. (Previously a single token absorbed an arbitrary gap.)
+      const missed = periodsBetween(
+        streak.lastPeriodEnd,
+        lastCompletedEnd,
+        period,
+      );
 
-    // Up to date: last_period_end is at or beyond the last completed period.
-    if (missed <= 0) {
-      summary.upToDate += 1;
-      continue;
-    }
-
-    if (streak.freezeTokens >= missed) {
-      const spent = await deps.data.persistFreezeSpend(streak.id, {
-        tokensSpent: missed,
-        lastPeriodEnd: lastCompletedEnd,
-      });
-      if (!spent) {
-        // Lost the race to an on-write advance — the row is no longer behind.
+      // Up to date: last_period_end is at or beyond the last completed period.
+      if (missed <= 0) {
         summary.upToDate += 1;
         continue;
       }
-      summary.frozen += 1;
-      await deps.notifier.notify({
-        userId: streak.userId,
-        type: "freeze_token_applied",
-        title: "Streak protected",
-        message:
-          missed === 1
-            ? "You missed a period, so a freeze token kept your streak alive."
-            : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
-        data: {
-          streakType: streak.streakType,
-          streakId: streak.id,
-          periodsMissed: missed,
+
+      if (streak.freezeTokens >= missed) {
+        const spent = await deps.data.persistFreezeSpend(streak.id, {
           tokensSpent: missed,
-          freezeTokensRemaining: spent.freezeTokens,
-        },
-        relatedEntityId: streak.id,
-      });
-    } else {
-      // Not enough tokens to cover every missed period → the streak breaks.
-      // A null here likewise means an on-write advance landed mid-sweep.
-      const broke = await deps.data.persistBreak(streak.id, {
-        lastPeriodEnd: lastCompletedEnd,
-      });
-      if (!broke) {
-        summary.upToDate += 1;
-        continue;
+          lastPeriodEnd: lastCompletedEnd,
+        });
+        if (!spent) {
+          // Lost the race to an on-write advance — the row is no longer behind.
+          summary.upToDate += 1;
+          continue;
+        }
+        summary.frozen += 1;
+        await deps.notifier.notify({
+          userId: streak.userId,
+          type: "freeze_token_applied",
+          title: "Streak protected",
+          message:
+            missed === 1
+              ? "You missed a period, so a freeze token kept your streak alive."
+              : `You missed ${missed} periods, so ${missed} freeze tokens kept your streak alive.`,
+          data: {
+            streakType: streak.streakType,
+            streakId: streak.id,
+            periodsMissed: missed,
+            tokensSpent: missed,
+            freezeTokensRemaining: spent.freezeTokens,
+          },
+          relatedEntityId: streak.id,
+        });
+      } else {
+        // Not enough tokens to cover every missed period → the streak breaks.
+        // A null here likewise means an on-write advance landed mid-sweep.
+        const broke = await deps.data.persistBreak(streak.id, {
+          lastPeriodEnd: lastCompletedEnd,
+        });
+        if (!broke) {
+          summary.upToDate += 1;
+          continue;
+        }
+        summary.broken += 1;
       }
-      summary.broken += 1;
+    } catch (err) {
+      summary.failed += 1;
+      console.error("[streak-cron] sweep failed for streak", {
+        streakId: streak.id,
+        userId: streak.userId,
+        error: err,
+      });
     }
   }
 
