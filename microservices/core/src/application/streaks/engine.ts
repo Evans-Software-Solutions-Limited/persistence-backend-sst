@@ -19,6 +19,7 @@
 import type { UserStreak } from "@persistence/db";
 import {
   periodEndISO,
+  periodEndForDateISO,
   periodStartFromEndISO,
   previousPeriodEndISO,
   periodsBetween,
@@ -144,9 +145,21 @@ async function tryAdvance(
   ts: Date,
   tz: string,
   deps: StreakEngineDeps,
+  localDate: string | undefined,
 ): Promise<{ updated: UserStreak; milestones: UnlockedMilestone[] } | null> {
   const period = streak.period as Period;
-  const currentEnd = periodEndISO(ts, period, tz);
+  // When the caller already knows the authoritative user-local day (a date-only
+  // habit backfill — the tapped grid cell), use it directly instead of
+  // re-deriving the local day from the instant. The noon-UTC anchor the handler
+  // stamps on a date-only completion drifts to the NEXT local day for any tz
+  // ≥ +12 (Pacific/Auckland, Fiji, Tongatapu, Kiritimati), so re-deriving via
+  // periodEndISO(ts, …) would evaluate the wrong period — the just-stored row
+  // (keyed on the authoritative localDate) wouldn't satisfy it, the advance
+  // would silently no-op, and the cron would later treat the logged day as
+  // missed and spend a freeze token to "cover" it (Inspector finding, PR #116).
+  const currentEnd = localDate
+    ? periodEndForDateISO(localDate, period)
+    : periodEndISO(ts, period, tz);
 
   // Already advanced for this (or a later) period — idempotent no-op. Also
   // guards against an event arriving for a period at/behind last_period_end.
@@ -289,6 +302,7 @@ export async function evaluateStreaks(
   eventType: StreakEventType,
   ts: Date,
   deps: StreakEngineDeps,
+  opts: { localDate?: string } = {},
 ): Promise<EvaluateResult> {
   const streakType = EVENT_TO_STREAK_TYPE[eventType];
   const streaks = await deps.data.getActiveStreaksByType(userId, streakType);
@@ -299,7 +313,7 @@ export async function evaluateStreaks(
   const advanced: UserStreak[] = [];
   const milestones: UnlockedMilestone[] = [];
   for (const streak of streaks) {
-    const result = await tryAdvance(streak, ts, tz, deps);
+    const result = await tryAdvance(streak, ts, tz, deps, opts.localDate);
     if (result) {
       advanced.push(result.updated);
       milestones.push(...result.milestones);

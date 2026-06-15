@@ -77,6 +77,7 @@ describe("createHabitCompletionHandler", () => {
       "u1",
       "habit_completed",
       new Date("2026-06-07T12:00:00Z"),
+      undefined, // full ISO instant → engine derives the local day from tz
     );
   });
 
@@ -117,7 +118,12 @@ describe("createHabitCompletionHandler", () => {
     const stored = habitMock.create.mock.calls[0][1].completedAt as Date;
     expect(stored.getTime()).toBeLessThanOrEqual(Date.now());
     expect(stored.getTime()).toBeGreaterThanOrEqual(before);
-    expect(evaluateMock).toHaveBeenCalledWith("u1", "habit_completed", stored);
+    expect(evaluateMock).toHaveBeenCalledWith(
+      "u1",
+      "habit_completed",
+      stored,
+      undefined,
+    );
   });
 
   it("passes a date-only day through as the authoritative localDate", async () => {
@@ -134,6 +140,15 @@ describe("createHabitCompletionHandler", () => {
     // Stored instant anchored at noon UTC of that day.
     expect((arg.completedAt as Date).toISOString()).toBe(
       "2026-06-04T12:00:00.000Z",
+    );
+    // …and the SAME authoritative day is threaded to the streak engine, so a
+    // tz ≥ +12 user's backfill is evaluated for 06-04 — not the 06-05 the
+    // noon-UTC instant would re-derive (Inspector finding, PR #116).
+    expect(evaluateMock).toHaveBeenCalledWith(
+      "u1",
+      "habit_completed",
+      expect.any(Date),
+      "2026-06-04",
     );
   });
 

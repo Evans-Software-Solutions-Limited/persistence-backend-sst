@@ -50,6 +50,22 @@ describe("safeEvaluateStreaks", () => {
         data: expect.anything(),
         notifier: expect.anything(),
       }),
+      { localDate: undefined },
+    );
+  });
+
+  it("forwards an authoritative localDate to the engine for date-only events", async () => {
+    (evaluateStreaks as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      advanced: [],
+      milestones: [],
+    } as never);
+    await safeEvaluateStreaks("u1", "habit_completed", TS, "2026-06-04");
+    expect(evaluateStreaks).toHaveBeenCalledWith(
+      "u1",
+      "habit_completed",
+      TS,
+      expect.anything(),
+      { localDate: "2026-06-04" },
     );
   });
 

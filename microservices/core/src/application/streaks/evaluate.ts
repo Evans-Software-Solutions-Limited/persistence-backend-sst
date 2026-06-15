@@ -32,16 +32,30 @@ export function resolveEventTs(value: unknown, now: Date = new Date()): Date {
   return d;
 }
 
+/**
+ * @param localDate Optional authoritative user-local day (YYYY-MM-DD) for
+ *   date-only events (a habit grid cell). When supplied, the engine evaluates
+ *   the period against this day instead of re-deriving it from `ts` — the
+ *   handler's noon-UTC anchor drifts to the next local day for any tz ≥ +12, so
+ *   re-deriving would target the wrong period (Inspector finding, PR #116).
+ */
 export async function safeEvaluateStreaks(
   userId: string,
   eventType: StreakEventType,
   ts: Date,
+  localDate?: string,
 ): Promise<EvaluateResult> {
   try {
-    return await evaluateStreaks(userId, eventType, ts, {
-      data: new StreakRepository(),
-      notifier: new StreakNotificationDispatcher(),
-    });
+    return await evaluateStreaks(
+      userId,
+      eventType,
+      ts,
+      {
+        data: new StreakRepository(),
+        notifier: new StreakNotificationDispatcher(),
+      },
+      { localDate },
+    );
   } catch (err) {
     console.error("[streaks] on-write evaluation failed", {
       userId,

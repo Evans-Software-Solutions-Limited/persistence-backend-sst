@@ -326,6 +326,53 @@ describe("evaluateStreaks", () => {
     });
   });
 
+  it("evaluates the authoritative localDate for date-only events, not the drifted instant", async () => {
+    // A Pacific/Auckland (+12) user backfills 2026-06-04. The handler anchors
+    // the stored instant at noon UTC — 2026-06-04T12:00Z — which is already
+    // 2026-06-05 in Auckland. Without the threaded localDate the engine would
+    // evaluate the 06-05 period (and the just-stored 06-04 row wouldn't satisfy
+    // it). With it, the engine evaluates 06-04 exactly.
+    const driftInstant = new Date("2026-06-04T12:00:00.000Z");
+    const data = makeData({
+      streaks: [makeStreak({ period: "daily", lastPeriodEnd: "2026-06-03" })],
+      tz: "Pacific/Auckland",
+      satisfied: true,
+    });
+    const notifier = makeNotifier();
+    const result = await evaluateStreaks(
+      "u1",
+      "habit_completed",
+      driftInstant,
+      { data, notifier },
+      { localDate: "2026-06-04" },
+    );
+    expect(result.advanced).toHaveLength(1);
+    expect(data._persisted[0].lastPeriodEnd).toBe("2026-06-04");
+    // Threshold query targeted the tapped cell, never the drifted 06-05.
+    expect(data.isPeriodSatisfied).toHaveBeenCalledWith(
+      expect.anything(),
+      "2026-06-04",
+      "2026-06-04",
+      "Pacific/Auckland",
+    );
+  });
+
+  it("falls back to deriving the local day from the instant when no localDate is given", async () => {
+    // Same +12 user, no authoritative day → the engine derives 06-05 from the
+    // noon-UTC instant (the pre-fix behaviour, exercised by full-ISO events).
+    const driftInstant = new Date("2026-06-04T12:00:00.000Z");
+    const data = makeData({
+      streaks: [makeStreak({ period: "daily", lastPeriodEnd: "2026-06-03" })],
+      tz: "Pacific/Auckland",
+      satisfied: true,
+    });
+    await evaluateStreaks("u1", "habit_completed", driftInstant, {
+      data,
+      notifier: makeNotifier(),
+    });
+    expect(data._persisted[0].lastPeriodEnd).toBe("2026-06-05");
+  });
+
   it("handles a mix of advancing and skipped streaks", async () => {
     const data = makeData({
       streaks: [

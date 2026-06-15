@@ -58,22 +58,35 @@ export const createHabitCompletionHandler = new Elysia()
         return { error: "Goal not found" };
       }
 
-      // For a date-only day, anchor the stored instant at noon UTC of that
-      // day (clamped to now) — inside the day for every tz in (-12, +12);
-      // the authoritative local day is carried separately via `localDate`.
+      // For a date-only day, anchor the stored instant at noon UTC of that day
+      // (clamped to now). Noon UTC keeps the instant inside the day for tz in
+      // (-12, +12), but drifts to the next local day for tz ≥ +12 — so the
+      // instant is NOT a reliable source for the user-local day. The
+      // authoritative local day is carried separately via `localDate` (to the
+      // dedup column AND to the streak engine), so the anchor only needs to be
+      // a reasonable stored timestamp, not a tz-exact one.
       const completedAt =
         day.kind === "day"
           ? resolveEventTs(`${day.localDate}T12:00:00.000Z`)
           : resolveEventTs(date);
+      const localDate = day.kind === "day" ? day.localDate : undefined;
 
       const completion = await ctx.HabitRepository.create(userId, {
         goalId,
         completedAt,
-        localDate: day.kind === "day" ? day.localDate : undefined,
+        localDate,
         value: value ?? null,
       });
 
-      await safeEvaluateStreaks(userId, "habit_completed", completedAt);
+      // Pass the authoritative local day through so the engine evaluates the
+      // period for the tapped cell, never the (possibly drifted) noon-UTC
+      // instant (Inspector finding, PR #116).
+      await safeEvaluateStreaks(
+        userId,
+        "habit_completed",
+        completedAt,
+        localDate,
+      );
 
       ctx.set.status = 201;
       return { data: completion };
