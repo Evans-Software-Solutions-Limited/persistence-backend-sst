@@ -32,6 +32,8 @@ the on-device manual e2e (06.11.4) is the reviewer's step.
 - [ ] Weigh-in offline → sparkline reflects on next You open; syncs on reconnect.
 - [ ] Complete a session → return to Home → PR appears in carousel; streak advances.
 - [ ] Force eligibility loss (mock downgrade) → trainer-mode streaks paused if any.
+- [ ] Tap the Home header bell → notifications list opens over the tab bar.
+- [ ] (tz) Set device to US-Pacific evening / Auckland morning → the highlighted "today" column + a toggle record the device-local day, not the UTC day.
 
 ## Flags raised during the build (decisions/conflicts for review)
 
@@ -43,5 +45,17 @@ the on-device manual e2e (06.11.4) is the reviewer's step.
 6. **Sheets-at-root** (`feedback_sheets_mount_at_root`): WeighInSheet mounts in HomeContainer per design.md T-06.9.3 — verify it overlays the tab bar; else move to a root-mounted zustand store.
 7. **`streak_at_risk`** emission deferred (needs an end-of-day trigger); enum value in place.
 8. Defaulted pending data sources: ring step/volume/workout targets (10k / 20t / 5), VolumeStats adherence (4/wk), lifetime workout count, per-PR delta, muscle display labels, workout-carousel data (`useGetMyWorkouts`), user display name, coach-peek content (spec 10).
+
+## Post-merge reconciliation (PR #117 finalize — 2026-06-16)
+
+Replayed onto the merged M4 backend (PR #116, 17 review sweeps) and reconciled against the final contracts:
+
+1. **Habit toggle wire = date-only.** `toggle-habit.command` now POSTs/DELETEs the date-only `day` (`YYYY-MM-DD`), not a noon-UTC ISO instant. The backend treats date-only as the authoritative user-local day (sweep 11); an instant would drift a day for tz ≥ +12 and defeat the local-day logic.
+2. **User-local "today" anchors.** Added `shared/utils/localDayISO` (device-local date) and applied it to the Home week grid, `buildHabitGrid` (today + `since`), `useLogMeasurement` default day, and the WeighInSheet default day — they previously used the UTC date, which records the wrong local day near midnight (now load-bearing because of #1).
+3. **Same-day weigh-in merge.** A body-fat-only (or weight-only) same-day weigh-in no longer nulls the sibling field in the optimistic body-trend cache.
+4. **Home notification bell restored** (design `home.jsx` HomeHeader + spec 09.5 intent) → pushes `/(app)/notifications`. Mirrors the You-screen header convention. (Notification access was always reachable via the profile drawer; this is the design-intended direct entry.)
+5. **Deferred:** `TodayHeroPresenter` recomputes the centre `todayPct` instead of using the server's authoritative value — zero impact today (identical formula until M9 Fuel ships); revisit in the M9 Fuel slice.
+
+Contracts re-verified as already-correct (no change): sync-queue 404 → failed-not-retry-forever (`retry_count < max_retries`); freeze-token 400 race → soft refresh-and-retry (no error toast); `freezeTokensRemaining` rendered as-is (no client recompute); weekly-volume renders generically from `days[]` (Mon–Sun); `workouts.target` = 5; `deriveStreak` models no token economics; empty `user_streaks` renders gracefully.
 
 _End — 06-progress-goals/PHASE_06_VERIFICATION.md_

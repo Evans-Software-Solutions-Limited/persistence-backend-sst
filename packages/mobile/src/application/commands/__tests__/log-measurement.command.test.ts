@@ -56,7 +56,9 @@ describe("logMeasurementCommand", () => {
     ]);
     // Body-fat only — must NOT null out the existing 80 kg reading.
     logMeasurementCommand(deps(), { bodyFatPercentage: 18 });
-    const point = storage.getCachedBodyTrend("u1").find((p) => p.date === "2026-06-10");
+    const point = storage
+      .getCachedBodyTrend("u1")
+      .find((p) => p.date === "2026-06-10");
     expect(point).toEqual({ date: "2026-06-10", weightKg: 80, bodyFat: 18 });
   });
 
@@ -65,7 +67,9 @@ describe("logMeasurementCommand", () => {
       { date: "2026-06-10", weightKg: 80, bodyFat: 17.5 },
     ]);
     logMeasurementCommand(deps(), { weightKg: 81 });
-    const point = storage.getCachedBodyTrend("u1").find((p) => p.date === "2026-06-10");
+    const point = storage
+      .getCachedBodyTrend("u1")
+      .find((p) => p.date === "2026-06-10");
     expect(point).toEqual({ date: "2026-06-10", weightKg: 81, bodyFat: 17.5 });
   });
 });
