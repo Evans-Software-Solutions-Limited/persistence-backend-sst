@@ -37,12 +37,16 @@ export function logMeasurementCommand(
   }
 
   // Optimistic body-trend append (or replace same-day point) so the sparkline
-  // reflects the weigh-in before the queue drains.
+  // reflects the weigh-in before the queue drains. A weight-only OR
+  // body-fat-only weigh-in must NOT wipe the other field on the same day —
+  // merge onto the prior same-day point so a body-fat-only log keeps the
+  // morning's weight in the cache until the server reconciles.
   const series = deps.storage.getCachedBodyTrend(deps.userId);
+  const prior = series.find((p) => p.date === deps.day);
   const point: BodyTrendPoint = {
     date: deps.day,
-    weightKg: input.weightKg ?? null,
-    bodyFat: input.bodyFatPercentage ?? null,
+    weightKg: input.weightKg ?? prior?.weightKg ?? null,
+    bodyFat: input.bodyFatPercentage ?? prior?.bodyFat ?? null,
   };
   const next = [...series.filter((p) => p.date !== deps.day), point].sort(
     (a, b) => a.date.localeCompare(b.date),

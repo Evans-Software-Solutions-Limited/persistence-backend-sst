@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Habit, HabitCompletion } from "@/domain/models/habit-completion";
+import { localDayISO } from "@/shared/utils";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -25,7 +26,12 @@ export function buildHabitGrid(
   completions: readonly HabitCompletion[],
   today: Date,
 ): Habit[] {
-  const todayKey = dayISO(today);
+  // Device-local "today" so the grid's last column is the user's calendar day,
+  // not the UTC day (the toggle persists this day as the authoritative local
+  // day — see toggle-habit.command). Completions bucket via dayISO(completedAt)
+  // which equals the local day because each completedAt is anchored at noon-UTC
+  // of its local day, so the window + buckets stay aligned.
+  const todayKey = localDayISO(today);
   const window: string[] = [];
   for (let i = 6; i >= 0; i -= 1) window.push(addDays(todayKey, -i));
 
@@ -51,7 +57,7 @@ export function buildHabitGrid(
 export function useGetHabits(): HabitsState {
   const res = useCachedResource<HabitCompletion[]>({
     read: (storage, userId) => {
-      const since = addDays(new Date().toISOString().slice(0, 10), -6);
+      const since = addDays(localDayISO(), -6);
       return {
         value: storage.getCachedHabitCompletions(userId, { since }),
         isStale: true,

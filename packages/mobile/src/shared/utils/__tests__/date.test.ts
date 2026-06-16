@@ -1,4 +1,25 @@
-import { isIsoDateString } from "../date";
+import { isIsoDateString, localDayISO } from "../date";
+
+describe("localDayISO", () => {
+  it("returns the device-local calendar date as YYYY-MM-DD", () => {
+    // `new Date(y, m, d)` builds LOCAL midnight, so getFullYear/Month/Date
+    // round-trip the same components regardless of the runner's timezone.
+    expect(localDayISO(new Date(2026, 5, 10))).toBe("2026-06-10"); // month is 0-based
+    expect(localDayISO(new Date(2026, 0, 1))).toBe("2026-01-01");
+    expect(localDayISO(new Date(2026, 11, 31))).toBe("2026-12-31");
+  });
+
+  it("zero-pads single-digit months and days", () => {
+    expect(localDayISO(new Date(2026, 2, 5))).toBe("2026-03-05");
+  });
+
+  it("uses local components, not the UTC date, near midnight", () => {
+    // 23:30 local on Jun 10 is still Jun 10 locally even though it may be
+    // Jun 11 in UTC (positive offsets). The local date is what we want.
+    const lateLocal = new Date(2026, 5, 10, 23, 30, 0);
+    expect(localDayISO(lateLocal)).toBe("2026-06-10");
+  });
+});
 
 describe("isIsoDateString", () => {
   it("accepts a valid YYYY-MM-DD date", () => {

@@ -16,6 +16,7 @@ import {
   IconCalendar,
   IconCheck,
 } from "@/ui/components/icons";
+import { localDayISO } from "@/shared/utils";
 import { computePath } from "./charts";
 
 /**
@@ -89,7 +90,7 @@ export function WeighInSheetPresenter({
     setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
   };
 
-  const todayISO = today.toISOString().slice(0, 10);
+  const todayISO = localDayISO(today);
   const day = addDaysISO(todayISO, dayOffset);
   const dateLabel =
     dayOffset === 0

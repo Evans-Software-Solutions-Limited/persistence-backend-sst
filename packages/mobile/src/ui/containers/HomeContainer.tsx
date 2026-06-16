@@ -7,7 +7,7 @@ import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
-import { initialsOf } from "@/shared/utils";
+import { initialsOf, localDayISO } from "@/shared/utils";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
 
@@ -37,7 +37,7 @@ export function HomeContainer() {
   const [weighInOpen, setWeighInOpen] = useState(false);
 
   const weekDates = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     return Array.from({ length: 7 }, (_, i) => addDaysISO(today, i - 6));
   }, []);
 

@@ -5,6 +5,7 @@ import { logMeasurementCommand } from "@/application/commands/log-measurement.co
 import type { LogMeasurementInput } from "@/domain/ports/api.port";
 import type { Result, ValidationError } from "@/shared/errors";
 import { fail } from "@/shared/errors";
+import { localDayISO } from "@/shared/utils";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -32,7 +33,7 @@ export function useLogMeasurement(): {
         });
       }
       const result = logMeasurementCommand(
-        { storage, userId, day: day ?? new Date().toISOString().slice(0, 10) },
+        { storage, userId, day: day ?? localDayISO() },
         input,
       );
       if (!result.ok) return result;
