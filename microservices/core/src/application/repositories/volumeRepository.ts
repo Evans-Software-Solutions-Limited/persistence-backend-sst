@@ -68,7 +68,13 @@ export class VolumeRepository {
           sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${startISO} AND ${endISO}`,
         ),
       )
-      .groupBy(dayExpr);
+      // GROUP BY the select-list ordinal, NOT a second copy of `dayExpr`.
+      // Re-rendering `dayExpr` here would emit `AT TIME ZONE $N` with a *new*
+      // bind-parameter slot than the one in the SELECT, so Postgres treats the
+      // two as different expressions and rejects with 42803 ("column ...
+      // must appear in the GROUP BY clause"). Positional grouping references
+      // the exact SELECT expression, with no duplicate parameter.
+      .groupBy(sql`1`);
     return rows.map((r) => {
       // postgres-js parses a `::date` (OID 1082) result into a JS Date, so
       // `String(date).slice(0,10)` would yield "Mon Jun 08" — breaking the
