@@ -69,6 +69,20 @@ type AuthDataTypes = {
   toRead?: readonly string[];
 };
 
+/**
+ * v14 `saveQuantitySample(identifier, unit, value, start, end, metadata?)`.
+ * Typed loosely here (the library's generic write type is keyed on a
+ * writeable-identifier union); the concrete identifiers we pass (BODY_MASS,
+ * BODY_FAT_PERCENTAGE) are both in the WRITE scope.
+ */
+type SaveQuantitySample = (
+  identifier: string,
+  unit: string,
+  value: number,
+  start: Date,
+  end: Date,
+) => Promise<unknown>;
+
 /** Matches the library's AuthorizationStatus enum. 0 notDetermined, 1 sharingDenied, 2 sharingAuthorized. */
 const AUTH_STATUS_AUTHORIZED = 2;
 const AUTH_STATUS_DENIED = 1;
@@ -136,6 +150,7 @@ type HealthKitLike = {
   queryStatisticsForQuantity: StatisticsQuery;
   queryStatisticsCollectionForQuantity?: StatisticsCollectionQuery;
   getMostRecentQuantitySample: MostRecentQuery;
+  saveQuantitySample: SaveQuantitySample;
 };
 
 function loadHealthKit(): HealthKitLike {
@@ -400,14 +415,69 @@ export class ExpoHealthKitAdapter implements HealthPort {
     }
   }
 
-  async writeBodyWeight(): Promise<Result<void, HealthError>> {
-    // M1 stub — lights up in M6 when the measurement editor ships.
-    return fail<HealthError>({
-      kind: "health",
-      code: "unavailable",
-      message:
-        "writeBodyWeight is not implemented in M1 — see specs/07 Phase 6.",
-    });
+  async getLatestBodyFat(): Promise<Result<number | null, HealthError>> {
+    try {
+      const sample = await this.healthkit.getMostRecentQuantitySample(
+        IDENTIFIER.BODY_FAT_PERCENTAGE,
+      );
+      if (!sample || typeof sample.quantity !== "number") return ok(null);
+      // HealthKit stores body fat as a fraction (0.18 = 18%). Surface a
+      // percentage so the UI + the measurements API speak the same unit.
+      return ok(sample.quantity * 100);
+    } catch (err) {
+      return fail(
+        readFailure(
+          err instanceof Error ? err.message : "Failed to read body fat",
+        ),
+      );
+    }
+  }
+
+  async writeBodyWeight(
+    weight: number,
+    date: Date,
+  ): Promise<Result<void, HealthError>> {
+    try {
+      await this.healthkit.saveQuantitySample(
+        IDENTIFIER.BODY_MASS,
+        "kg",
+        weight,
+        date,
+        date,
+      );
+      return ok(undefined);
+    } catch (err) {
+      return fail<HealthError>({
+        kind: "health",
+        code: "write_failed",
+        message:
+          err instanceof Error ? err.message : "Failed to write body weight",
+      });
+    }
+  }
+
+  async writeBodyFat(
+    percentage: number,
+    date: Date,
+  ): Promise<Result<void, HealthError>> {
+    try {
+      // HealthKit's percent unit is a 0..1 fraction — convert from 0..100.
+      await this.healthkit.saveQuantitySample(
+        IDENTIFIER.BODY_FAT_PERCENTAGE,
+        "%",
+        percentage / 100,
+        date,
+        date,
+      );
+      return ok(undefined);
+    } catch (err) {
+      return fail<HealthError>({
+        kind: "health",
+        code: "write_failed",
+        message:
+          err instanceof Error ? err.message : "Failed to write body fat",
+      });
+    }
   }
 
   async disconnect(): Promise<void> {
