@@ -34,6 +34,10 @@ the on-device manual e2e (06.11.4) is the reviewer's step.
 - [ ] Force eligibility loss (mock downgrade) → trainer-mode streaks paused if any.
 - [ ] Tap the Home header bell → notifications list opens over the tab bar.
 - [ ] (tz) Set device to US-Pacific evening / Auckland morning → the highlighted "today" column + a toggle record the device-local day, not the UTC day.
+- [ ] Home + You clear the notch (SafeAreaView); ring legend swatches are square + glow; TodayHero card shows the corner glow.
+- [ ] Home shows the "TODAY" workouts carousel (tap a card → workout detail); Recent-PRs shows an empty state when there are no PRs.
+- [ ] (HealthKit, on device) Open weigh-in → weight + body-fat prefill from Apple Health; Save → both write back to Apple Health (check the Health app) AND the body-trend updates.
+- [ ] Weigh-in: enter body-fat only on a day that already has a weight → the weight is preserved (not wiped).
 
 ## Flags raised during the build (decisions/conflicts for review)
 
@@ -57,5 +61,15 @@ Replayed onto the merged M4 backend (PR #116, 17 review sweeps) and reconciled a
 5. **Deferred:** `TodayHeroPresenter` recomputes the centre `todayPct` instead of using the server's authoritative value — zero impact today (identical formula until M9 Fuel ships); revisit in the M9 Fuel slice.
 
 Contracts re-verified as already-correct (no change): sync-queue 404 → failed-not-retry-forever (`retry_count < max_retries`); freeze-token 400 race → soft refresh-and-retry (no error toast); `freezeTokensRemaining` rendered as-is (no client recompute); weekly-volume renders generically from `days[]` (Mon–Sun); `workouts.target` = 5; `deriveStreak` models no token economics; empty `user_streaks` renders gracefully.
+
+## On-device feedback round (2026-06-17 — Brad)
+
+Prototype is the first source of truth (see `feedback_prototype_first_source_of_truth`). Fixes:
+
+1. **Fidelity (compose signed-off components, don't rebuild):** square RingLegend swatch + glow (was a circular dot; corrected the contradictory `01-design-system/design.md § 4` "circle dot" line); TodayHero corner glow via `expo-linear-gradient` (cyan TR + gold BL, matching `home.jsx:87`); `SafeAreaView` on Home + You; the missing "TODAY" workouts carousel wired via `useWorkouts` → the signed-off `<WorkoutCarouselCard>`; Recent-PRs now shows an empty state instead of hiding.
+2. **Apple Health (07-health):** HealthKit was read-only with a `writeBodyWeight` stub. Implemented weight + body-fat read/write on the existing write scope; the weigh-in prefills from Health on open and writes weight + body fat back on save (best-effort, iOS-only). **HealthKit writes verify on device only** — unit tests assert the `saveQuantitySample` call shape, not the OS write.
+3. **Body fat:** added an optional body-fat field to the weigh-in (a product-approved deviation from the weight-only prototype). Logged to the measurements API (`bodyFatPercentage`) + written to Apple Health.
+
+Still open (not this PR): water/strain/sleep micro-pill data (backend returns null — needs water-log + HealthKit strain/sleep wiring); habit labels show goalId until the goals slice seeds names; a "set up your streak" flow + richer streak empty state; Mood→Sleep quick-log question; the check-in banner.
 
 _End — 06-progress-goals/PHASE_06_VERIFICATION.md_
