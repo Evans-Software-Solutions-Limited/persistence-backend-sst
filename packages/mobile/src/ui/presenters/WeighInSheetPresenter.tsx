@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TextInput } from "react-native";
 import Svg, {
   Path,
@@ -39,6 +39,8 @@ export type WeighInUnit = "kg" | "lb";
 
 export type WeighInSaveInput = {
   weightKg: number;
+  /** Body-fat %, 0..100. Null when the user left it blank. */
+  bodyFatPercentage: number | null;
   day: string; // YYYY-MM-DD
   unit: WeighInUnit;
 };
@@ -50,6 +52,10 @@ export type WeighInSheetProps = {
   defaultUnit?: WeighInUnit;
   /** Recent body-weight history in kg, oldest-first, for the sparkline. */
   history?: number[];
+  /** Seed the weight input (e.g. latest Apple Health / cached reading). */
+  defaultWeightKg?: number;
+  /** Seed the body-fat input (latest Apple Health / cached reading). */
+  defaultBodyFat?: number | null;
   saving?: boolean;
   /** Injected for deterministic tests; defaults to now. */
   today?: Date;
@@ -68,13 +74,48 @@ export function WeighInSheetPresenter({
   onSave,
   defaultUnit = "kg",
   history = [],
+  defaultWeightKg,
+  defaultBodyFat = null,
   saving = false,
   today = new Date(),
   testID = "weigh-in-sheet",
 }: WeighInSheetProps) {
   const [unit, setUnit] = useState<WeighInUnit>(defaultUnit);
-  const [kg, setKg] = useState<number>(history[history.length - 1] ?? 80);
+  const [kg, setKg] = useState<number>(
+    defaultWeightKg ?? history[history.length - 1] ?? 80,
+  );
+  const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
+
+  // The sheet stays mounted (visibility is a prop). Reset the chosen day on
+  // each open…
+  const wasVisible = useRef(false);
+  useEffect(() => {
+    if (visible && !wasVisible.current) setDayOffset(0);
+    wasVisible.current = visible;
+  }, [visible]);
+
+  // …and seed weight/body-fat from the prefill. This runs again when the
+  // prefill values land (the Apple Health read resolves async, AFTER the
+  // open), so the freshest reading populates the form. Stable while the user
+  // edits (the seed deps don't change on input), so it won't clobber typing.
+  useEffect(() => {
+    if (!visible) return;
+    setKg(defaultWeightKg ?? history[history.length - 1] ?? 80);
+    setBodyFat(defaultBodyFat);
+  }, [visible, defaultWeightKg, defaultBodyFat, history]);
+
+  const onTypeBodyFat = (text: string) => {
+    if (text.trim() === "") {
+      setBodyFat(null);
+      return;
+    }
+    const v = parseFloat(text);
+    if (Number.isNaN(v)) return;
+    // Clamp to a sane 0..100 range so a fat-finger entry can't poison the
+    // optimistic cache or the HealthKit write.
+    setBodyFat(Math.min(100, Math.max(0, v)));
+  };
 
   const display = unit === "kg" ? kg : kg / KG_PER_LB;
   const step = unit === "kg" ? 0.1 : 0.2;
@@ -226,6 +267,49 @@ export function WeighInSheetPresenter({
           </View>
         </Card>
 
+        {/* Body fat — optional. Not in the weight-only prototype; added per
+            product (read/write to Apple Health both weight + body fat). */}
+        <Card pad={16} radius={16}>
+          <View
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <Text
+              fontSize={10.5}
+              fontWeight="600"
+              letterSpacing={1.5}
+              color="$text3"
+            >
+              BODY FAT
+            </Text>
+            <View flexDirection="row" alignItems="baseline" gap={4}>
+              <TextInput
+                value={bodyFat === null ? "" : String(bodyFat)}
+                onChangeText={onTypeBodyFat}
+                inputMode="decimal"
+                placeholder="—"
+                placeholderTextColor="#8A8A98"
+                accessibilityLabel="Body fat percentage"
+                testID="weigh-in-bodyfat-input"
+                style={{
+                  minWidth: 56,
+                  textAlign: "right",
+                  color: "#F4F4F8",
+                  fontFamily: "Geist Mono",
+                  fontWeight: "600",
+                  fontSize: 22,
+                  letterSpacing: -0.5,
+                  padding: 0,
+                }}
+              />
+              <Text fontFamily="$mono" color="$text3" fontSize={14}>
+                %
+              </Text>
+            </View>
+          </View>
+        </Card>
+
         {/* Date chips */}
         <View>
           <Text
@@ -349,7 +433,9 @@ export function WeighInSheetPresenter({
           size="lg"
           disabled={saving}
           icon={<IconCheck size={16} color={toneHex("primary").ink} />}
-          onPress={() => onSave({ weightKg: kg, day, unit })}
+          onPress={() =>
+            onSave({ weightKg: kg, bodyFatPercentage: bodyFat, day, unit })
+          }
         >
           {saving ? "Logged ✓" : `Log ${fmt(display)} ${unit} · ${dateLabel}`}
         </Btn>

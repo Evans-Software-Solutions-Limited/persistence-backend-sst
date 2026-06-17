@@ -32,9 +32,28 @@ describe("WeighInSheetPresenter", () => {
     fireEvent.press(getByText(/Log 79.8 kg · Today/));
     expect(onSave).toHaveBeenCalledWith({
       weightKg: 79.8,
+      bodyFatPercentage: null,
       day: "2026-06-10",
       unit: "kg",
     });
+  });
+
+  it("includes a typed body-fat percentage in the save payload", () => {
+    const { getByTestId, getByText, onSave } = render();
+    fireEvent.changeText(getByTestId("weigh-in-bodyfat-input"), "18.5");
+    fireEvent.press(getByText(/Log 79.8 kg · Today/));
+    expect(onSave).toHaveBeenCalledWith({
+      weightKg: 79.8,
+      bodyFatPercentage: 18.5,
+      day: "2026-06-10",
+      unit: "kg",
+    });
+  });
+
+  it("clamps an out-of-range body-fat entry to 0..100", () => {
+    const { getByTestId } = render();
+    fireEvent.changeText(getByTestId("weigh-in-bodyfat-input"), "150");
+    expect(getByTestId("weigh-in-bodyfat-input").props.value).toBe("100");
   });
 
   it("converts the displayed value when toggled to lb but stores kg", () => {
@@ -58,6 +77,7 @@ describe("WeighInSheetPresenter", () => {
     fireEvent.press(getByText(/Log 79.8 kg · Yesterday/));
     expect(onSave).toHaveBeenCalledWith({
       weightKg: 79.8,
+      bodyFatPercentage: null,
       day: "2026-06-09",
       unit: "kg",
     });
