@@ -63,6 +63,44 @@ describe("VolumeRepository", () => {
     ]);
   });
 
+  it("dailyVolume groups by the SELECT ordinal, not a re-bound tz expression (Postgres 42803 guard)", async () => {
+    // Regression: grouping by a second copy of the `(completed_at AT TIME ZONE
+    // <tz>)::date` expression re-binds <tz> in a NEW parameter slot than the
+    // SELECT, so Postgres rejects with 42803 ("column ... must appear in the
+    // GROUP BY clause"). The fix groups by the select-list ordinal (GROUP BY 1).
+    let groupByArg: unknown;
+    const capturing = (result: unknown) => {
+      const c: any = {};
+      for (const k of [
+        "from",
+        "innerJoin",
+        "leftJoin",
+        "where",
+        "orderBy",
+        "limit",
+        "offset",
+      ]) {
+        c[k] = () => c;
+      }
+      c.groupBy = (arg: unknown) => {
+        groupByArg = arg;
+        return c;
+      };
+      c.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
+      return c;
+    };
+    (getDb as any).mockReturnValue({ select: () => capturing([]) });
+    await new VolumeRepository().dailyVolume(
+      "u1",
+      "Europe/London",
+      "2026-06-04",
+      "2026-06-10",
+    );
+    const { sql: groupSql } = new PgDialect().sqlToQuery(groupByArg as any);
+    expect(groupSql.trim()).toBe("1");
+    expect(groupSql.toLowerCase()).not.toContain("time zone");
+  });
+
   it("dailyVolume normalises a JS Date day (postgres-js ::date parse)", async () => {
     // The real driver parses `::date` (OID 1082) into a Date, not a string.
     // `String(date).slice(0,10)` would yield "Mon Jun 08" and break the
