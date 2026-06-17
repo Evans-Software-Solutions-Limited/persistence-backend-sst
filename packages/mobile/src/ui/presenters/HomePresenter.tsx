@@ -15,24 +15,29 @@ import { QuickLogStripPresenter } from "./QuickLogStripPresenter";
 import { WeeklyVolumePresenter } from "./WeeklyVolumePresenter";
 import { PRCarouselPresenter } from "./PRCarouselPresenter";
 import { CoachQuickPeekPresenter } from "./CoachQuickPeekPresenter";
+import {
+  WorkoutCarouselPresenter,
+  type WorkoutCarouselItem,
+} from "./WorkoutCarouselPresenter";
 
 /**
  * <HomePresenter> — V2 Home re-skin (06-progress-goals, STORY-001/002;
- * home.jsx:21–63). Status-first dashboard: TodayHero rings → habits grid →
- * quick-log strip → weekly volume → recent-PR carousel → optional
- * CoachQuickPeek. Pure presentational; the container wires the hooks.
+ * home.jsx:21–63). Status-first dashboard: TodayHero rings → workouts carousel
+ * → habits grid → quick-log strip → weekly volume → recent-PR carousel →
+ * optional CoachQuickPeek. Pure presentational; the container wires the hooks.
  *
  * Cache-first: renders whatever `home` is present immediately; a background
  * refresh updates in place. Blocking loader/error only when there's no cache.
  *
  * (Replaces the M1 Greeting/Goals/Workouts/Progress/Activity composition per
- * the migration re-skin. The workout carousel data (useGetMyWorkouts) is wired
- * in a follow-up — the aggregate's todayWorkout slot is reserved.)
+ * the migration re-skin.)
  */
 
 export type HomePresenterProps = {
   user: { name: string | null; initials: string };
   home: HomePayload | null;
+  workouts: WorkoutCarouselItem[];
+  workoutsLoading: boolean;
   habits: HabitVM[];
   weekDates: string[];
   recentPRs: PersonalRecord[];
@@ -48,6 +53,7 @@ export type HomePresenterProps = {
   onRefresh: () => void;
   onOpenDrawer: () => void;
   onOpenNotifications: () => void;
+  onOpenWorkout: (workoutId: string) => void;
   onOpenTab: (tab: "train" | "fuel" | "you") => void;
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
@@ -61,6 +67,8 @@ export function HomePresenter(props: HomePresenterProps) {
   const {
     user,
     home,
+    workouts,
+    workoutsLoading,
     habits,
     weekDates,
     recentPRs,
@@ -73,6 +81,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onRefresh,
     onOpenDrawer,
     onOpenNotifications,
+    onOpenWorkout,
     onOpenTab,
     onOpenWeighIn,
     onOpenMealLog,
@@ -137,7 +146,29 @@ export function HomePresenter(props: HomePresenterProps) {
           </Animated.View>
         )}
 
-        <Animated.View style={style(1)} testID="home-habits">
+        <Animated.View style={style(1)} testID="home-workouts">
+          <Section
+            eyebrow="TODAY"
+            title="Your workouts"
+            action={
+              <Text
+                fontSize={12}
+                color="$primary"
+                onPress={() => onOpenTab("train")}
+              >
+                View all
+              </Text>
+            }
+          >
+            <WorkoutCarouselPresenter
+              workouts={workouts}
+              isLoading={workoutsLoading}
+              onOpenWorkout={onOpenWorkout}
+            />
+          </Section>
+        </Animated.View>
+
+        <Animated.View style={style(2)} testID="home-habits">
           <Section
             eyebrow="STREAK"
             title="This week"
@@ -155,7 +186,7 @@ export function HomePresenter(props: HomePresenterProps) {
           </Section>
         </Animated.View>
 
-        <Animated.View style={style(2)} testID="home-quicklog">
+        <Animated.View style={style(3)} testID="home-quicklog">
           <Section eyebrow="LOG" title="Quick capture" hideHr>
             <QuickLogStripPresenter
               onWeighIn={onOpenWeighIn}
@@ -167,7 +198,7 @@ export function HomePresenter(props: HomePresenterProps) {
         </Animated.View>
 
         {home && (
-          <Animated.View style={style(3)} testID="home-volume">
+          <Animated.View style={style(4)} testID="home-volume">
             <Section
               eyebrow="THIS WEEK"
               title="Volume"
@@ -186,28 +217,38 @@ export function HomePresenter(props: HomePresenterProps) {
           </Animated.View>
         )}
 
-        {recentPRs.length > 0 && (
-          <Animated.View style={style(4)} testID="home-prs">
-            <Section
-              eyebrow="ACHIEVEMENTS"
-              title="Recent PRs"
-              action={
-                <Text
-                  fontSize={12}
-                  color="$primary"
-                  onPress={() => onOpenTab("you")}
-                >
-                  All
-                </Text>
-              }
-            >
+        <Animated.View style={style(5)} testID="home-prs">
+          <Section
+            eyebrow="ACHIEVEMENTS"
+            title="Recent PRs"
+            action={
+              <Text
+                fontSize={12}
+                color="$primary"
+                onPress={() => onOpenTab("you")}
+              >
+                All
+              </Text>
+            }
+          >
+            {recentPRs.length > 0 ? (
               <PRCarouselPresenter prs={recentPRs} />
-            </Section>
-          </Animated.View>
-        )}
+            ) : (
+              <View
+                paddingVertical={18}
+                alignItems="center"
+                testID="home-prs-empty"
+              >
+                <Text fontFamily="$body" fontSize={13} color="$text3">
+                  No PRs yet — finish a session to set your first.
+                </Text>
+              </View>
+            )}
+          </Section>
+        </Animated.View>
 
         {showCoachPeek && coachPeek && (
-          <Animated.View style={style(5)} testID="home-coach-peek">
+          <Animated.View style={style(6)} testID="home-coach-peek">
             <CoachQuickPeekPresenter
               clientCount={coachPeek.clientCount}
               needAttention={coachPeek.needAttention}

@@ -45,6 +45,10 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
   const props: HomePresenterProps = {
     user: { name: "Alex", initials: "AL" },
     home: makeHome(),
+    workouts: [
+      { id: "w1", title: "Push Day", mins: 45, sub: "Chest + tris", chips: [] },
+    ],
+    workoutsLoading: false,
     habits: [
       {
         id: "g1",
@@ -69,6 +73,7 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
     onOpenNotifications: jest.fn(),
+    onOpenWorkout: jest.fn(),
     onOpenTab: jest.fn(),
     onOpenWeighIn: jest.fn(),
     onOpenMealLog: jest.fn(),
@@ -115,9 +120,24 @@ describe("HomePresenter (V2)", () => {
     expect(getByTestId("home-coach-peek")).toBeTruthy();
   });
 
-  it("hides the PR carousel when there are no recent PRs", () => {
-    const { queryByTestId } = render({ recentPRs: [] });
-    expect(queryByTestId("home-prs")).toBeNull();
+  it("keeps the PR section but shows an empty state when there are no recent PRs", () => {
+    const { getByTestId, queryByTestId } = render({ recentPRs: [] });
+    expect(getByTestId("home-prs")).toBeTruthy();
+    expect(getByTestId("home-prs-empty")).toBeTruthy();
+    expect(queryByTestId("pr-carousel")).toBeNull();
+  });
+
+  it("renders the workouts carousel + fires onOpenWorkout on a card press", () => {
+    const onOpenWorkout = jest.fn();
+    const { getByTestId } = render({ onOpenWorkout });
+    expect(getByTestId("home-workouts")).toBeTruthy();
+    fireEvent.press(getByTestId("workout-carousel-card-0"));
+    expect(onOpenWorkout).toHaveBeenCalledWith("w1");
+  });
+
+  it("shows the workouts empty state when the user has none", () => {
+    const { getByTestId } = render({ workouts: [] });
+    expect(getByTestId("workout-carousel-empty")).toBeTruthy();
   });
 
   it("renders the header bell and fires onOpenNotifications on press", () => {
