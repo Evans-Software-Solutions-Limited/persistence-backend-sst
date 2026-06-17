@@ -1,4 +1,5 @@
 import { Text, View } from "@tamagui/core";
+import { LinearGradient } from "expo-linear-gradient";
 import { Card, MultiRing, Stat } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { MicroPill, RingLegend } from "@/ui/components/composite";
@@ -62,7 +63,45 @@ export function TodayHeroPresenter({
         alignItems="center"
         padding={20}
         paddingBottom={18}
+        position="relative"
       >
+        {/* Hero glow — the prototype's two radial washes (home.jsx:87:
+            cyan `120% 100% at 100% 0%` @0.10 + gold `140% 100% at 0% 100%`
+            @0.06). RN has no radial gradient, so approximate with two diagonal
+            `expo-linear-gradient`s (same tool/idiom as WorkoutCarouselCard):
+            cyan from the top-right corner, gold from the bottom-left. */}
+        <LinearGradient
+          colors={["rgba(34,211,238,0.10)", "rgba(34,211,238,0)"]}
+          locations={[0, 0.5]}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+          }}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={["rgba(245,197,24,0)", "rgba(245,197,24,0.06)"]}
+          locations={[0.4, 1]}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+          }}
+          pointerEvents="none"
+        />
         <MultiRing
           size={120}
           stroke={9}

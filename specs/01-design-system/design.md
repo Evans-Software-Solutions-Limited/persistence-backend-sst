@@ -414,7 +414,9 @@ type RingLegendProps = {
 };
 ```
 
-8pt circle dot + label + `$mono` value + percent + optional sub. Vertical stack inside TodayHero legend column.
+8×8 **square** swatch (`borderRadius: 2`) with a colored glow (`shadowColor = color`, ~6pt radius) + label + `$mono` value + percent + optional sub. Vertical stack inside TodayHero legend column.
+
+> **Corrected 2026-06-17 (prototype-first).** This line previously read "8pt circle dot," which contradicted the cited source `home.jsx:124` (an 8×8 `borderRadius: 2` square with `boxShadow: 0 0 6px color`). The prototype is the source of truth — the swatch is a glowing **square**, not a round dot. `RingLegend.tsx` corrected to match.
 
 ### 5. `<PRCard>` — `home.jsx:341` + `progress.jsx:227`
 

@@ -38,7 +38,19 @@ export function RingLegend({
       gap={8}
       accessibilityLabel={`${label} ${value} ${percent}`}
     >
-      <View width={8} height={8} borderRadius={9999} backgroundColor={color} />
+      {/* Square swatch (8×8, r2) with a colored glow — matches the prototype
+          source home.jsx:124 (`borderRadius: 2` + `boxShadow: 0 0 6px color`),
+          which is the first source of truth over the spec's "circle dot" prose. */}
+      <View
+        width={8}
+        height={8}
+        borderRadius={2}
+        backgroundColor={color}
+        shadowColor={color}
+        shadowOpacity={0.9}
+        shadowRadius={6}
+        shadowOffset={{ width: 0, height: 0 }}
+      />
       <View flex={1}>
         <Text
           fontFamily="$display"

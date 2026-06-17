@@ -1,4 +1,5 @@
 import { RefreshControl, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 import { Text, View } from "@tamagui/core";
 import { Avatar, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
@@ -82,6 +83,7 @@ export function HomePresenter(props: HomePresenterProps) {
   } = props;
 
   const style = (i: number) => animationStyles[i] ?? {};
+  const insets = useSafeAreaInsets();
 
   if (isLoading && !home) {
     return (
@@ -101,7 +103,7 @@ export function HomePresenter(props: HomePresenterProps) {
   return (
     <ScrollView
       testID="home-scroll"
-      contentContainerStyle={{ paddingBottom: 140 }}
+      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 140 }}
       refreshControl={
         <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
       }

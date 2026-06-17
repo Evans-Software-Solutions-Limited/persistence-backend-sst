@@ -1,4 +1,5 @@
 import { RefreshControl, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { Avatar, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { Section } from "@/ui/components/composite";
@@ -71,6 +72,7 @@ export function YouPresenter(props: YouPresenterProps) {
 
   const hasAny =
     streak !== null || volumeStats !== null || prHistory.length > 0;
+  const insets = useSafeAreaInsets();
 
   if (isLoading && !hasAny) {
     return (
@@ -93,7 +95,7 @@ export function YouPresenter(props: YouPresenterProps) {
   return (
     <ScrollView
       testID="you-scroll"
-      contentContainerStyle={{ paddingBottom: 140 }}
+      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 140 }}
       refreshControl={
         <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
       }
