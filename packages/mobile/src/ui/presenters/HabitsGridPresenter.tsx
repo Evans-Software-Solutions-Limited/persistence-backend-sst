@@ -70,38 +70,19 @@ export function HabitsGridPresenter({
       </View>
 
       {habits.length === 0 ? (
+        // Simple prompt — the habit-setup page (Water / Gym / Sleep / Calories
+        // categories + streak definition) is a follow-up; this links into it.
         <View
-          gap={10}
-          paddingTop={14}
-          paddingBottom={6}
+          paddingTop={16}
+          paddingBottom={8}
+          alignItems="center"
           borderTopWidth={1}
           borderColor="$border"
           testID="habits-grid-empty"
         >
-          {/* Ghost grid — a faded week of empty cells, RIGHT-aligned (flex
-              spacer) so the columns sit under the day-letter header, exactly
-              like a populated habit row. */}
-          <View flexDirection="row" alignItems="center" paddingHorizontal={4}>
-            <View flex={1} />
-            <View flexDirection="row" gap={8} opacity={0.35}>
-              {weekDates.map((iso) => (
-                <HabitTile
-                  key={iso}
-                  state="locked"
-                  tone="primary"
-                  size={CELL}
-                />
-              ))}
-            </View>
-          </View>
-          <View alignItems="center" gap={2}>
-            <Text fontSize={13} fontWeight="600" color="$text2">
-              No habits yet
-            </Text>
-            <Text fontSize={11.5} color="$text3" textAlign="center">
-              Add a goal to start a weekly streak.
-            </Text>
-          </View>
+          <Text fontSize={13} fontWeight="600" color="$primary">
+            Get started by setting your habits
+          </Text>
         </View>
       ) : null}
 
