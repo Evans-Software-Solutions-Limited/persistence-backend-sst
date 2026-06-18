@@ -74,6 +74,7 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     onOpenDrawer: jest.fn(),
     onOpenNotifications: jest.fn(),
     onOpenWorkout: jest.fn(),
+    onOpenWorkoutsList: jest.fn(),
     onOpenTab: jest.fn(),
     onOpenWeighIn: jest.fn(),
     onOpenMealLog: jest.fn(),
@@ -138,6 +139,13 @@ describe("HomePresenter (V2)", () => {
   it("shows the workouts empty state when the user has none", () => {
     const { getByTestId } = render({ workouts: [] });
     expect(getByTestId("workout-carousel-empty")).toBeTruthy();
+  });
+
+  it("workouts 'View all' fires onOpenWorkoutsList (pins the Workouts segment)", () => {
+    const onOpenWorkoutsList = jest.fn();
+    const { getByText } = render({ onOpenWorkoutsList });
+    fireEvent.press(getByText("View all"));
+    expect(onOpenWorkoutsList).toHaveBeenCalledTimes(1);
   });
 
   it("renders the header bell and fires onOpenNotifications on press", () => {

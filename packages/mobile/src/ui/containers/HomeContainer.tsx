@@ -5,6 +5,7 @@ import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
@@ -96,6 +97,14 @@ export function HomeContainer() {
     [router],
   );
 
+  // Workouts "View all" → Train tab, pinned to the Workouts segment. The Train
+  // hub persists its last segment (useTrainSegment), so without forcing it the
+  // tab can open on Exercises if that was last viewed.
+  const onOpenWorkoutsList = useCallback(() => {
+    useTrainSegment.getState().setSegment("Workouts");
+    router.push("/(app)/(tabs)/train" as never);
+  }, [router]);
+
   const onOpenTab = useCallback(
     (tab: "train" | "fuel" | "you") => {
       // `fuel` has no dedicated tab until M9 — route to train for now.
@@ -143,6 +152,7 @@ export function HomeContainer() {
         onOpenDrawer={openDrawer}
         onOpenNotifications={onOpenNotifications}
         onOpenWorkout={onOpenWorkout}
+        onOpenWorkoutsList={onOpenWorkoutsList}
         onOpenTab={onOpenTab}
         onOpenWeighIn={openWeighIn}
         onOpenMealLog={noop}

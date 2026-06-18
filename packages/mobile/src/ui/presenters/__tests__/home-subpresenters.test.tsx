@@ -120,7 +120,7 @@ describe("HabitsGridPresenter", () => {
       />,
     );
     expect(getByTestId("habits-grid-empty")).toBeTruthy();
-    expect(getByText("Set up your habits")).toBeTruthy();
+    expect(getByText("No habits yet")).toBeTruthy();
   });
 });
 

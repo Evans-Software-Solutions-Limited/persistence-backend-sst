@@ -30,6 +30,10 @@ const DOW = ["S", "M", "T", "W", "T", "F", "S"];
 const letterFor = (iso: string) =>
   DOW[new Date(`${iso}T00:00:00.000Z`).getUTCDay()] ?? "";
 
+// Dense, prototype-style cell (home.jsx HabitsGrid ≈ 18pt squares), not the
+// 36pt design-system default. Header letters share the width so columns align.
+const CELL = 18;
+
 export function HabitsGridPresenter({
   habits,
   weekDates,
@@ -52,11 +56,11 @@ export function HabitsGridPresenter({
           {weekDates.map((iso, i) => (
             <Text
               key={iso}
-              width={36}
+              width={CELL}
               textAlign="center"
-              fontSize={10.5}
+              fontSize={10}
               fontWeight="600"
-              letterSpacing={1}
+              letterSpacing={0.5}
               color={i === 6 ? "$primary" : "$text3"}
             >
               {letterFor(iso)}
@@ -67,21 +71,28 @@ export function HabitsGridPresenter({
 
       {habits.length === 0 ? (
         <View
-          flexDirection="row"
           alignItems="center"
-          paddingVertical={4}
-          paddingHorizontal={4}
+          gap={10}
+          paddingTop={14}
+          paddingBottom={6}
           borderTopWidth={1}
           borderColor="$border"
           testID="habits-grid-empty"
         >
-          <Text flex={1} fontSize={13} fontWeight="500" color="$text3">
-            Set up your habits
-          </Text>
-          <View flexDirection="row" gap={8}>
+          {/* Ghost grid — a faded week of empty cells so the empty state still
+              reads as "a habit tracker", per the prototype-grid intent. */}
+          <View flexDirection="row" gap={8} opacity={0.35}>
             {weekDates.map((iso) => (
-              <HabitTile key={iso} state="locked" tone="primary" />
+              <HabitTile key={iso} state="locked" tone="primary" size={CELL} />
             ))}
+          </View>
+          <View alignItems="center" gap={2}>
+            <Text fontSize={13} fontWeight="600" color="$text2">
+              No habits yet
+            </Text>
+            <Text fontSize={11.5} color="$text3" textAlign="center">
+              Add a goal to start a weekly streak.
+            </Text>
           </View>
         </View>
       ) : null}
@@ -108,6 +119,7 @@ export function HabitsGridPresenter({
                   key={weekDates[i]}
                   state={state}
                   tone={h.tone}
+                  size={CELL}
                   onPress={() => onToggle(h.id, weekDates[i], !done)}
                   accessibilityLabel={`${h.label} ${weekDates[i]} ${
                     done ? "done" : "not done"

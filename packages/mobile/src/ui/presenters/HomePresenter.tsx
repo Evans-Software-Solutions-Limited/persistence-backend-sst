@@ -53,6 +53,8 @@ export type HomePresenterProps = {
   onOpenDrawer: () => void;
   onOpenNotifications: () => void;
   onOpenWorkout: (workoutId: string) => void;
+  /** Open the Train tab pinned to the Workouts segment (workouts "View all"). */
+  onOpenWorkoutsList: () => void;
   onOpenTab: (tab: "train" | "fuel" | "you") => void;
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
@@ -81,6 +83,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onOpenDrawer,
     onOpenNotifications,
     onOpenWorkout,
+    onOpenWorkoutsList,
     onOpenTab,
     onOpenWeighIn,
     onOpenMealLog,
@@ -149,11 +152,7 @@ export function HomePresenter(props: HomePresenterProps) {
             eyebrow="TODAY"
             title="Your workouts"
             action={
-              <Text
-                fontSize={12}
-                color="$primary"
-                onPress={() => onOpenTab("train")}
-              >
+              <Text fontSize={12} color="$primary" onPress={onOpenWorkoutsList}>
                 View all
               </Text>
             }
