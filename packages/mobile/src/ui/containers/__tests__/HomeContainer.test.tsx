@@ -104,6 +104,20 @@ describe("HomeContainer (V2)", () => {
     expect(mockProbe.last?.showCoachPeek).toBe(false); // default athlete mode
   });
 
+  it("clears the workouts loading state once the fetch resolves (no stuck skeleton)", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    // After the workouts fetch settles (here: an empty list), the carousel must
+    // drop out of the loading posture so it shows the empty state rather than
+    // spinning the skeleton forever (regression: isStale stays true on a failed
+    // fetch, so loading must gate on isRefreshing/error, not stale+empty).
+    await waitFor(() => expect(mockProbe.last?.workoutsLoading).toBe(false));
+  });
+
   it("routes to the You tab via onOpenTab", async () => {
     const { adapters } = makeAdapters();
     render(

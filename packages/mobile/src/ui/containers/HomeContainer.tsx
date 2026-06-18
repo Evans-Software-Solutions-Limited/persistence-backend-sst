@@ -52,8 +52,16 @@ export function HomeContainer() {
       })),
     [workoutsState.mine.workouts],
   );
+  // Loading posture: actively fetching, OR stale with no error yet (cold
+  // start). Crucially NOT "stale && empty" — useWorkouts leaves `isStale: true`
+  // when a fetch FAILS (it only clears on success), so that would spin the
+  // carousel skeleton forever on a failing GET. Gating on `isRefreshing` /
+  // `error` means a resolved fetch (success OR failure) falls back to the
+  // empty state instead. (The presenter only shows the skeleton when also
+  // empty, so a refresh with cached workouts still renders them.)
   const workoutsLoading =
-    workoutsState.mine.isStale && workoutsState.mine.workouts.length === 0;
+    workoutsState.isRefreshing ||
+    (workoutsState.mine.isStale && workoutsState.error === null);
 
   const weekDates = useMemo(() => {
     // Fixed Mon→Sun calendar week (not a rolling today-last window) so the grid
