@@ -216,8 +216,10 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     ];
     const { result } = renderHook(() => useGetHabits(), { wrapper });
     await waitFor(() => expect(result.current.habits.length).toBe(1));
+    // Mon→Sun grid: today's single completion lands on exactly one day (today),
+    // wherever it falls in the week — no longer always the last column.
     expect(result.current.habits[0].days).toHaveLength(7);
-    expect(result.current.habits[0].days[6]).toBe(true); // today
+    expect(result.current.habits[0].days.filter(Boolean)).toHaveLength(1);
   });
 });
 

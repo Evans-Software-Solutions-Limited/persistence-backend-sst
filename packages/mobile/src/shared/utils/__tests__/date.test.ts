@@ -1,4 +1,19 @@
-import { isIsoDateString, localDayISO } from "../date";
+import { isIsoDateString, localDayISO, weekStartMondayISO } from "../date";
+
+describe("weekStartMondayISO", () => {
+  it("returns the Monday of the week for any day", () => {
+    // 2026-06-15 is a Monday.
+    expect(weekStartMondayISO("2026-06-15")).toBe("2026-06-15"); // Mon → itself
+    expect(weekStartMondayISO("2026-06-17")).toBe("2026-06-15"); // Wed → Mon
+    expect(weekStartMondayISO("2026-06-21")).toBe("2026-06-15"); // Sun → Mon
+    expect(weekStartMondayISO("2026-06-14")).toBe("2026-06-08"); // Sun (prev wk)
+  });
+
+  it("crosses a month boundary correctly", () => {
+    // 2026-07-01 is a Wednesday → Monday 2026-06-29.
+    expect(weekStartMondayISO("2026-07-01")).toBe("2026-06-29");
+  });
+});
 
 describe("localDayISO", () => {
   it("returns the device-local calendar date as YYYY-MM-DD", () => {

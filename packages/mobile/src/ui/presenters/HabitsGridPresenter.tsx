@@ -1,27 +1,26 @@
 import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation";
 import { HabitTile, type HabitTone } from "@/ui/components/composite";
+import { localDayISO } from "@/shared/utils";
 
 /**
- * <HabitsGridPresenter> — Home 7-day habit grid (06-progress-goals, STORY-004;
- * home.jsx:227–268). Each cell is a <HabitTile> (per design.md § HabitsGrid).
- * `weekDates` is 7 YYYY-MM-DD, today last; tapping a cell toggles that day.
- *
- * NB vs prototype: the prototype draws a denser 18px custom grid; design.md
- * mandates <HabitTile> (36px, with done/today/missed/locked states + tones).
- * Followed the spec — flag the cell density for the on-device fidelity pass.
+ * <HabitsGridPresenter> — Home Mon→Sun habit grid (06-progress-goals,
+ * STORY-004; home.jsx:227–268). Dense 18pt <HabitTile> cells. `weekDates` is
+ * the 7 YYYY-MM-DD of the current week, Monday-first; tapping a cell toggles
+ * that day. Today is highlighted wherever it falls; days after today are locked
+ * (upcoming), days before today without a completion read as missed.
  */
 
 export type HabitVM = {
   id: string; // goalId
   label: string;
   tone: HabitTone;
-  days: boolean[]; // length 7, today last
+  days: boolean[]; // length 7, Mon→Sun (aligns with weekDates)
 };
 
 export type HabitsGridProps = {
   habits: HabitVM[];
-  weekDates: string[]; // 7 YYYY-MM-DD, today last
+  weekDates: string[]; // 7 YYYY-MM-DD, Monday-first
   onToggle: (goalId: string, day: string, done: boolean) => void;
   testID?: string;
 };
@@ -40,6 +39,7 @@ export function HabitsGridPresenter({
   onToggle,
   testID = "habits-grid",
 }: HabitsGridProps) {
+  const todayISO = localDayISO();
   return (
     <Card pad={14} radius={16} testID={testID}>
       <View
@@ -53,7 +53,7 @@ export function HabitsGridPresenter({
           Habits
         </Text>
         <View flexDirection="row" gap={8}>
-          {weekDates.map((iso, i) => (
+          {weekDates.map((iso) => (
             <Text
               key={iso}
               width={CELL}
@@ -61,7 +61,7 @@ export function HabitsGridPresenter({
               fontSize={10}
               fontWeight="600"
               letterSpacing={0.5}
-              color={i === 6 ? "$primary" : "$text3"}
+              color={iso === todayISO ? "$primary" : "$text3"}
             >
               {letterFor(iso)}
             </Text>
@@ -71,7 +71,6 @@ export function HabitsGridPresenter({
 
       {habits.length === 0 ? (
         <View
-          alignItems="center"
           gap={10}
           paddingTop={14}
           paddingBottom={6}
@@ -79,12 +78,21 @@ export function HabitsGridPresenter({
           borderColor="$border"
           testID="habits-grid-empty"
         >
-          {/* Ghost grid — a faded week of empty cells so the empty state still
-              reads as "a habit tracker", per the prototype-grid intent. */}
-          <View flexDirection="row" gap={8} opacity={0.35}>
-            {weekDates.map((iso) => (
-              <HabitTile key={iso} state="locked" tone="primary" size={CELL} />
-            ))}
+          {/* Ghost grid — a faded week of empty cells, RIGHT-aligned (flex
+              spacer) so the columns sit under the day-letter header, exactly
+              like a populated habit row. */}
+          <View flexDirection="row" alignItems="center" paddingHorizontal={4}>
+            <View flex={1} />
+            <View flexDirection="row" gap={8} opacity={0.35}>
+              {weekDates.map((iso) => (
+                <HabitTile
+                  key={iso}
+                  state="locked"
+                  tone="primary"
+                  size={CELL}
+                />
+              ))}
+            </View>
           </View>
           <View alignItems="center" gap={2}>
             <Text fontSize={13} fontWeight="600" color="$text2">
@@ -112,8 +120,17 @@ export function HabitsGridPresenter({
           </Text>
           <View flexDirection="row" gap={8}>
             {h.days.map((done, i) => {
-              const isToday = i === 6;
-              const state = done ? "done" : isToday ? "today" : "missed";
+              const iso = weekDates[i];
+              // YYYY-MM-DD compares lexicographically = chronologically.
+              const isToday = iso === todayISO;
+              const isFuture = iso > todayISO;
+              const state = done
+                ? "done"
+                : isToday
+                  ? "today"
+                  : isFuture
+                    ? "locked" // upcoming day this week — not "missed"
+                    : "missed";
               return (
                 <HabitTile
                   key={weekDates[i]}

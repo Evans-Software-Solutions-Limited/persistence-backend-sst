@@ -9,7 +9,7 @@ import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
-import { initialsOf, localDayISO } from "@/shared/utils";
+import { initialsOf, localDayISO, weekStartMondayISO } from "@/shared/utils";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
 
@@ -56,8 +56,10 @@ export function HomeContainer() {
     workoutsState.mine.isStale && workoutsState.mine.workouts.length === 0;
 
   const weekDates = useMemo(() => {
-    const today = localDayISO();
-    return Array.from({ length: 7 }, (_, i) => addDaysISO(today, i - 6));
+    // Fixed Mon→Sun calendar week (not a rolling today-last window) so the grid
+    // always reads Monday-first; today is highlighted wherever it falls.
+    const monday = weekStartMondayISO(localDayISO());
+    return Array.from({ length: 7 }, (_, i) => addDaysISO(monday, i));
   }, []);
 
   const user = useMemo(

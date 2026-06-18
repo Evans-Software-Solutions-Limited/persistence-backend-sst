@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import type { Habit, HabitCompletion } from "@/domain/models/habit-completion";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, weekStartMondayISO } from "@/shared/utils";
 import {
   useCachedResource,
   type CachedResourceState,
 } from "./useCachedResource";
 
 export type HabitsState = CachedResourceState<HabitCompletion[]> & {
-  /** Derived 7-day grid (today last); container maps label/tone from goals. */
+  /** Derived Mon→Sun grid (matches HomeContainer's weekDates); container maps
+   *  label/tone from goals. */
   habits: Habit[];
 };
 
@@ -21,19 +22,18 @@ function addDays(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Build the 7-day boolean grid per goal (today last). */
+/** Build the Mon→Sun boolean grid per goal (aligns with the grid header). */
 export function buildHabitGrid(
   completions: readonly HabitCompletion[],
   today: Date,
 ): Habit[] {
-  // Device-local "today" so the grid's last column is the user's calendar day,
-  // not the UTC day (the toggle persists this day as the authoritative local
-  // day — see toggle-habit.command). Completions bucket via dayISO(completedAt)
-  // which equals the local day because each completedAt is anchored at noon-UTC
-  // of its local day, so the window + buckets stay aligned.
-  const todayKey = localDayISO(today);
+  // Fixed Mon→Sun week of the device-local "today" (NOT a rolling today-last
+  // window), so days[i] lines up with HomeContainer's Mon→Sun weekDates[i].
+  // Completions bucket via dayISO(completedAt), which equals the local day
+  // because each completedAt is anchored at noon-UTC of its local day.
+  const monday = weekStartMondayISO(localDayISO(today));
   const window: string[] = [];
-  for (let i = 6; i >= 0; i -= 1) window.push(addDays(todayKey, -i));
+  for (let i = 0; i < 7; i += 1) window.push(addDays(monday, i));
 
   const byGoal = new Map<string, Set<string>>();
   for (const c of completions) {
@@ -57,7 +57,7 @@ export function buildHabitGrid(
 export function useGetHabits(): HabitsState {
   const res = useCachedResource<HabitCompletion[]>({
     read: (storage, userId) => {
-      const since = addDays(localDayISO(), -6);
+      const since = weekStartMondayISO(localDayISO());
       return {
         value: storage.getCachedHabitCompletions(userId, { since }),
         isStale: true,

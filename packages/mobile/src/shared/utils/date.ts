@@ -37,6 +37,22 @@ export function localDayISO(d: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * weekStartMondayISO — the Monday (YYYY-MM-DD) of the week containing `dayISO`.
+ *
+ * Pure date-string arithmetic on an already-resolved calendar day (parse +
+ * weekday + step in UTC so it's tz-independent — same approach as the
+ * `addDaysISO` helpers). Used to render the habit grid as a fixed Mon→Sun week
+ * (the cells + the day-letter header share this anchor so they align).
+ */
+export function weekStartMondayISO(dayISO: string): string {
+  const d = new Date(`${dayISO}T00:00:00.000Z`);
+  const weekday = d.getUTCDay(); // 0=Sun .. 6=Sat
+  const sinceMonday = (weekday + 6) % 7; // days since Monday
+  d.setUTCDate(d.getUTCDate() - sinceMonday);
+  return d.toISOString().slice(0, 10);
+}
+
 export function isIsoDateString(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
 
