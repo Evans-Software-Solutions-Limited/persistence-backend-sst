@@ -44,6 +44,7 @@ function makeHome(overrides: Partial<HomePayload> = {}): HomePayload {
 function render(overrides: Partial<HomePresenterProps> = {}) {
   const props: HomePresenterProps = {
     user: { name: "Alex", initials: "AL" },
+    greeting: "Good morning",
     home: makeHome(),
     workouts: [
       { id: "w1", title: "Push Day", mins: 45, sub: "Chest + tris", chips: [] },
@@ -96,6 +97,24 @@ describe("HomePresenter (V2)", () => {
     expect(getByTestId("home-quicklog")).toBeTruthy();
     expect(getByTestId("home-volume")).toBeTruthy();
     expect(getByTestId("home-prs")).toBeTruthy();
+  });
+
+  it("renders the time-of-day greeting + first name as the title", () => {
+    const { getByText } = render({
+      greeting: "Good morning",
+      user: { name: "Alex", initials: "AL" },
+    });
+    expect(getByText(/Good morning/)).toBeTruthy();
+    expect(getByText("Alex")).toBeTruthy(); // colored-name node
+  });
+
+  it("falls back to just the greeting when the name isn't loaded", () => {
+    const { getByText, queryByText } = render({
+      greeting: "Good evening",
+      user: { name: null, initials: "?" },
+    });
+    expect(getByText("Good evening")).toBeTruthy();
+    expect(queryByText(/,\s*$/)).toBeNull(); // no dangling "greeting, "
   });
 
   it("shows the blocking loader only when there is no cache", () => {

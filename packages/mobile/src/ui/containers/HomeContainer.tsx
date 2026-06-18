@@ -9,7 +9,13 @@ import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
-import { initialsOf, localDayISO, weekStartMondayISO } from "@/shared/utils";
+import {
+  initialsOf,
+  localDayISO,
+  weekStartMondayISO,
+  timeGreeting,
+} from "@/shared/utils";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
 
@@ -38,6 +44,7 @@ export function HomeContainer() {
   const habitsState = useGetHabits();
   const toggle = useToggleHabitDay();
   const workoutsState = useWorkouts();
+  const profile = useProfilePage();
   const [weighInOpen, setWeighInOpen] = useState(false);
 
   // Map the user's own workouts → carousel items (home.jsx WorkoutCarousel).
@@ -70,13 +77,18 @@ export function HomeContainer() {
     return Array.from({ length: 7 }, (_, i) => addDaysISO(monday, i));
   }, []);
 
+  // First name from the cached profile (offline-first via useProfilePage);
+  // null until it resolves, so the header shows just the greeting meanwhile.
+  const firstName =
+    profile.payload?.profile.fullName?.trim().split(/\s+/)[0] ?? null;
   const user = useMemo(
     () => ({
-      name: null as string | null,
+      name: firstName,
       initials: initialsOf(session?.email ?? "") || "?",
     }),
-    [session?.email],
+    [firstName, session?.email],
   );
+  const greeting = timeGreeting();
 
   // Per-section staggered entry (hero, workouts, habits, quicklog, volume,
   // prs, coach).
@@ -146,6 +158,7 @@ export function HomeContainer() {
     <>
       <HomePresenter
         user={user}
+        greeting={greeting}
         home={home.data}
         workouts={workoutItems}
         workoutsLoading={workoutsLoading}

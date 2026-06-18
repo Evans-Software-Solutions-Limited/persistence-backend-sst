@@ -1,4 +1,22 @@
-import { isIsoDateString, localDayISO, weekStartMondayISO } from "../date";
+import {
+  isIsoDateString,
+  localDayISO,
+  weekStartMondayISO,
+  timeGreeting,
+} from "../date";
+
+describe("timeGreeting", () => {
+  const at = (h: number) => new Date(2026, 5, 10, h, 0, 0); // local hour h
+  it("picks the greeting by local hour", () => {
+    expect(timeGreeting(at(6))).toBe("Good morning"); // 06:00
+    expect(timeGreeting(at(11))).toBe("Good morning"); // 11:59-ish
+    expect(timeGreeting(at(12))).toBe("Good afternoon"); // noon
+    expect(timeGreeting(at(17))).toBe("Good afternoon");
+    expect(timeGreeting(at(18))).toBe("Good evening");
+    expect(timeGreeting(at(23))).toBe("Good evening");
+    expect(timeGreeting(at(4))).toBe("Good evening"); // pre-dawn
+  });
+});
 
 describe("weekStartMondayISO", () => {
   it("returns the Monday of the week for any day", () => {

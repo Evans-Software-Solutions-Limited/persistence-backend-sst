@@ -11,7 +11,10 @@ import type { ReactNode } from "react";
  */
 
 export type HeaderBarProps = {
-  title?: string;
+  /** String, or rich inline content (e.g. a greeting with a colored name).
+   *  Rendered inside the header's styled <Text>, so nested <Text> inherits the
+   *  title typography and can override just the color. */
+  title?: ReactNode;
   eyebrow?: string;
   sub?: string;
   leading?: ReactNode;

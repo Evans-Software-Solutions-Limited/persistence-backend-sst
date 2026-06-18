@@ -38,6 +38,19 @@ export function localDayISO(d: Date = new Date()): string {
 }
 
 /**
+ * timeGreeting — "Good morning" / "Good afternoon" / "Good evening" for the
+ * given local time (defaults to now). Matches the Home header greeting
+ * (home.jsx HomeHeader). Boundaries: morning [05:00, 12:00), afternoon
+ * [12:00, 18:00), evening otherwise.
+ */
+export function timeGreeting(d: Date = new Date()): string {
+  const h = d.getHours();
+  if (h >= 5 && h < 12) return "Good morning";
+  if (h >= 12 && h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/**
  * weekStartMondayISO — the Monday (YYYY-MM-DD) of the week containing `dayISO`.
  *
  * Pure date-string arithmetic on an already-resolved calendar day (parse +

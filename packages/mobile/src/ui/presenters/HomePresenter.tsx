@@ -34,6 +34,8 @@ import {
 
 export type HomePresenterProps = {
   user: { name: string | null; initials: string };
+  /** Time-of-day greeting, e.g. "Good morning" (container-computed). */
+  greeting: string;
   home: HomePayload | null;
   workouts: WorkoutCarouselItem[];
   workoutsLoading: boolean;
@@ -67,6 +69,7 @@ export type HomePresenterProps = {
 export function HomePresenter(props: HomePresenterProps) {
   const {
     user,
+    greeting,
     home,
     workouts,
     workoutsLoading,
@@ -121,7 +124,16 @@ export function HomePresenter(props: HomePresenterProps) {
       <HeaderBar
         large
         eyebrow="TODAY"
-        title={user.name ? `Hi, ${user.name}` : "Home"}
+        title={
+          user.name ? (
+            <>
+              {`${greeting}, `}
+              <Text color="$primary">{user.name}</Text>
+            </>
+          ) : (
+            greeting
+          )
+        }
         leading={<Avatar initials={user.initials} onPress={onOpenDrawer} />}
         trailing={
           <IconBtn
