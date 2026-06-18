@@ -1,4 +1,5 @@
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CoachHomeContainer } from "../../../src/ui/containers/CoachHomeContainer";
 import { HomeContainer } from "../../../src/ui/containers/HomeContainer";
 import { SyncBlockedBannerMount } from "../../../src/ui/containers/SyncBlockedBannerMount";
@@ -24,9 +25,13 @@ import { useUserMode } from "../../../src/state/user-mode";
  */
 export default function Home() {
   const mode = useUserMode((s) => s.mode);
+  // Own the top safe-area HERE (not in HomePresenter) so it also clears the
+  // status bar for the SyncBlockedBannerMount, which renders ABOVE the home
+  // body. Padding it in the presenter too would double-offset the content.
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, paddingTop: insets.top }}>
       <SyncBlockedBannerMount />
       {mode === "coach" ? <CoachHomeContainer /> : <HomeContainer />}
     </View>
