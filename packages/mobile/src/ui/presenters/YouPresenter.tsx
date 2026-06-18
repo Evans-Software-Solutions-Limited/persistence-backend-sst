@@ -93,78 +93,80 @@ export function YouPresenter(props: YouPresenterProps) {
   }
 
   return (
-    <ScrollView
-      testID="you-scroll"
-      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 140 }}
-      refreshControl={
-        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-      }
-    >
-      <HeaderBar
-        large
-        eyebrow={workoutsLabel}
-        title="Progress"
-        leading={<Avatar initials={initials} onPress={onOpenDrawer} />}
-        trailing={
-          <IconBtn
-            icon={<IconCalendar size={18} />}
-            tone="ghost"
-            onPress={onOpenCalendar}
-            accessibilityLabel="Open calendar"
-          />
+    <View flex={1} paddingTop={insets.top}>
+      <ScrollView
+        testID="you-scroll"
+        contentContainerStyle={{ paddingBottom: 140 }}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
-      />
-
-      <View paddingHorizontal={16} gap={16}>
-        {streak && (
-          <View testID="you-streak">
-            <StreakHeroPresenter
-              current={streak.current}
-              longest={streak.longest}
-              freezeTokens={streak.freezeTokens}
-              unit={streak.unit}
-              onUseToken={onUseToken}
-              busy={busyToken}
+      >
+        <HeaderBar
+          large
+          eyebrow={workoutsLabel}
+          title="Progress"
+          leading={<Avatar initials={initials} onPress={onOpenDrawer} />}
+          trailing={
+            <IconBtn
+              icon={<IconCalendar size={18} />}
+              tone="ghost"
+              onPress={onOpenCalendar}
+              accessibilityLabel="Open calendar"
             />
-          </View>
-        )}
-
-        <Section
-          eyebrow="MILESTONES"
-          title="Badges"
-          action={
-            <Text fontSize={12} color="$text3">
-              {earnedCount} of {milestones.length}
-            </Text>
           }
-          testID="you-milestones"
-        >
-          <MilestonesRowPresenter tiers={milestones} />
-        </Section>
+        />
 
-        <Section eyebrow="BODY" title="Trend" testID="you-body">
-          <BodyTrendPresenter
-            weight={bodyTrend.weight}
-            bodyFat={bodyTrend.bodyFat}
-          />
-        </Section>
+        <View paddingHorizontal={16} gap={16}>
+          {streak && (
+            <View testID="you-streak">
+              <StreakHeroPresenter
+                current={streak.current}
+                longest={streak.longest}
+                freezeTokens={streak.freezeTokens}
+                unit={streak.unit}
+                onUseToken={onUseToken}
+                busy={busyToken}
+              />
+            </View>
+          )}
 
-        {volumeStats && (
-          <Section eyebrow="TRAINING" title="Volume" testID="you-volume">
-            <VolumeStatsPresenter stats={volumeStats} />
-          </Section>
-        )}
-
-        {prHistory.length > 0 && (
           <Section
-            eyebrow="PERSONAL RECORDS"
-            title="Top lifts"
-            testID="you-prs"
+            eyebrow="MILESTONES"
+            title="Badges"
+            action={
+              <Text fontSize={12} color="$text3">
+                {earnedCount} of {milestones.length}
+              </Text>
+            }
+            testID="you-milestones"
           >
-            <PRHistoryPresenter prs={prHistory} />
+            <MilestonesRowPresenter tiers={milestones} />
           </Section>
-        )}
-      </View>
-    </ScrollView>
+
+          <Section eyebrow="BODY" title="Trend" testID="you-body">
+            <BodyTrendPresenter
+              weight={bodyTrend.weight}
+              bodyFat={bodyTrend.bodyFat}
+            />
+          </Section>
+
+          {volumeStats && (
+            <Section eyebrow="TRAINING" title="Volume" testID="you-volume">
+              <VolumeStatsPresenter stats={volumeStats} />
+            </Section>
+          )}
+
+          {prHistory.length > 0 && (
+            <Section
+              eyebrow="PERSONAL RECORDS"
+              title="Top lifts"
+              testID="you-prs"
+            >
+              <PRHistoryPresenter prs={prHistory} />
+            </Section>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }

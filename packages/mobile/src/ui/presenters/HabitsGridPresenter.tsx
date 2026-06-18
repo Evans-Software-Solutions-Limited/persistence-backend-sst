@@ -65,6 +65,27 @@ export function HabitsGridPresenter({
         </View>
       </View>
 
+      {habits.length === 0 ? (
+        <View
+          flexDirection="row"
+          alignItems="center"
+          paddingVertical={4}
+          paddingHorizontal={4}
+          borderTopWidth={1}
+          borderColor="$border"
+          testID="habits-grid-empty"
+        >
+          <Text flex={1} fontSize={13} fontWeight="500" color="$text3">
+            Set up your habits
+          </Text>
+          <View flexDirection="row" gap={8}>
+            {weekDates.map((iso) => (
+              <HabitTile key={iso} state="locked" tone="primary" />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {habits.map((h) => (
         <View
           key={h.id}

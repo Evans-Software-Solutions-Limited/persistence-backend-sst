@@ -110,154 +110,156 @@ export function HomePresenter(props: HomePresenterProps) {
   }
 
   return (
-    <ScrollView
-      testID="home-scroll"
-      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 140 }}
-      refreshControl={
-        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-      }
-    >
-      <HeaderBar
-        large
-        eyebrow="TODAY"
-        title={user.name ? `Hi, ${user.name}` : "Home"}
-        leading={<Avatar initials={user.initials} onPress={onOpenDrawer} />}
-        trailing={
-          <IconBtn
-            icon={<IconBell size={18} />}
-            tone="ghost"
-            onPress={onOpenNotifications}
-            accessibilityLabel="Notifications"
-            testID="home-bell"
-          />
+    <View flex={1} paddingTop={insets.top}>
+      <ScrollView
+        testID="home-scroll"
+        contentContainerStyle={{ paddingBottom: 140 }}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
-      />
-
-      <View paddingHorizontal={16} gap={16}>
-        {home && (
-          <Animated.View style={style(0)} testID="home-hero">
-            <TodayHeroPresenter
-              rings={home.rings}
-              micro={home.micro}
-              onOpenMove={() => onOpenTab("you")}
-              onOpenTrain={() => onOpenTab("train")}
-              onOpenFuel={() => onOpenTab("fuel")}
+      >
+        <HeaderBar
+          large
+          eyebrow="TODAY"
+          title={user.name ? `Hi, ${user.name}` : "Home"}
+          leading={<Avatar initials={user.initials} onPress={onOpenDrawer} />}
+          trailing={
+            <IconBtn
+              icon={<IconBell size={18} />}
+              tone="ghost"
+              onPress={onOpenNotifications}
+              accessibilityLabel="Notifications"
+              testID="home-bell"
             />
-          </Animated.View>
-        )}
+          }
+        />
 
-        <Animated.View style={style(1)} testID="home-workouts">
-          <Section
-            eyebrow="TODAY"
-            title="Your workouts"
-            action={
-              <Text
-                fontSize={12}
-                color="$primary"
-                onPress={() => onOpenTab("train")}
-              >
-                View all
-              </Text>
-            }
-          >
-            <WorkoutCarouselPresenter
-              workouts={workouts}
-              isLoading={workoutsLoading}
-              onOpenWorkout={onOpenWorkout}
-            />
-          </Section>
-        </Animated.View>
+        <View paddingHorizontal={16} gap={16}>
+          {home && (
+            <Animated.View style={style(0)} testID="home-hero">
+              <TodayHeroPresenter
+                rings={home.rings}
+                micro={home.micro}
+                onOpenMove={() => onOpenTab("you")}
+                onOpenTrain={() => onOpenTab("train")}
+                onOpenFuel={() => onOpenTab("fuel")}
+              />
+            </Animated.View>
+          )}
 
-        <Animated.View style={style(2)} testID="home-habits">
-          <Section
-            eyebrow="STREAK"
-            title="This week"
-            action={
-              <Pill tone="ember" size="xs">
-                🔥 {home?.micro.streak ?? 0}
-              </Pill>
-            }
-          >
-            <HabitsGridPresenter
-              habits={habits}
-              weekDates={weekDates}
-              onToggle={onToggleHabitDay}
-            />
-          </Section>
-        </Animated.View>
-
-        <Animated.View style={style(3)} testID="home-quicklog">
-          <Section eyebrow="LOG" title="Quick capture" hideHr>
-            <QuickLogStripPresenter
-              onWeighIn={onOpenWeighIn}
-              onLogMeal={onOpenMealLog}
-              onLogWater={onLogWater}
-              onLogMood={onLogMood}
-            />
-          </Section>
-        </Animated.View>
-
-        {home && (
-          <Animated.View style={style(4)} testID="home-volume">
+          <Animated.View style={style(1)} testID="home-workouts">
             <Section
-              eyebrow="THIS WEEK"
-              title="Volume"
+              eyebrow="TODAY"
+              title="Your workouts"
+              action={
+                <Text
+                  fontSize={12}
+                  color="$primary"
+                  onPress={() => onOpenTab("train")}
+                >
+                  View all
+                </Text>
+              }
+            >
+              <WorkoutCarouselPresenter
+                workouts={workouts}
+                isLoading={workoutsLoading}
+                onOpenWorkout={onOpenWorkout}
+              />
+            </Section>
+          </Animated.View>
+
+          <Animated.View style={style(2)} testID="home-habits">
+            <Section
+              eyebrow="STREAK"
+              title="This week"
+              action={
+                <Pill tone="ember" size="xs">
+                  🔥 {home?.micro.streak ?? 0}
+                </Pill>
+              }
+            >
+              <HabitsGridPresenter
+                habits={habits}
+                weekDates={weekDates}
+                onToggle={onToggleHabitDay}
+              />
+            </Section>
+          </Animated.View>
+
+          <Animated.View style={style(3)} testID="home-quicklog">
+            <Section eyebrow="LOG" title="Quick capture" hideHr>
+              <QuickLogStripPresenter
+                onWeighIn={onOpenWeighIn}
+                onLogMeal={onOpenMealLog}
+                onLogWater={onLogWater}
+                onLogMood={onLogMood}
+              />
+            </Section>
+          </Animated.View>
+
+          {home && (
+            <Animated.View style={style(4)} testID="home-volume">
+              <Section
+                eyebrow="THIS WEEK"
+                title="Volume"
+                action={
+                  <Text
+                    fontSize={12}
+                    color="$primary"
+                    onPress={() => onOpenTab("you")}
+                  >
+                    Details
+                  </Text>
+                }
+              >
+                <WeeklyVolumePresenter weeklyVolume={home.weeklyVolume} />
+              </Section>
+            </Animated.View>
+          )}
+
+          <Animated.View style={style(5)} testID="home-prs">
+            <Section
+              eyebrow="ACHIEVEMENTS"
+              title="Recent PRs"
               action={
                 <Text
                   fontSize={12}
                   color="$primary"
                   onPress={() => onOpenTab("you")}
                 >
-                  Details
+                  All
                 </Text>
               }
             >
-              <WeeklyVolumePresenter weeklyVolume={home.weeklyVolume} />
+              {recentPRs.length > 0 ? (
+                <PRCarouselPresenter prs={recentPRs} />
+              ) : (
+                <View
+                  paddingVertical={18}
+                  alignItems="center"
+                  testID="home-prs-empty"
+                >
+                  <Text fontFamily="$body" fontSize={13} color="$text3">
+                    No PRs yet — finish a session to set your first.
+                  </Text>
+                </View>
+              )}
             </Section>
           </Animated.View>
-        )}
 
-        <Animated.View style={style(5)} testID="home-prs">
-          <Section
-            eyebrow="ACHIEVEMENTS"
-            title="Recent PRs"
-            action={
-              <Text
-                fontSize={12}
-                color="$primary"
-                onPress={() => onOpenTab("you")}
-              >
-                All
-              </Text>
-            }
-          >
-            {recentPRs.length > 0 ? (
-              <PRCarouselPresenter prs={recentPRs} />
-            ) : (
-              <View
-                paddingVertical={18}
-                alignItems="center"
-                testID="home-prs-empty"
-              >
-                <Text fontFamily="$body" fontSize={13} color="$text3">
-                  No PRs yet — finish a session to set your first.
-                </Text>
-              </View>
-            )}
-          </Section>
-        </Animated.View>
-
-        {showCoachPeek && coachPeek && (
-          <Animated.View style={style(6)} testID="home-coach-peek">
-            <CoachQuickPeekPresenter
-              clientCount={coachPeek.clientCount}
-              needAttention={coachPeek.needAttention}
-              newPRs={coachPeek.newPRs}
-              onOpenCoach={onOpenCoach}
-            />
-          </Animated.View>
-        )}
-      </View>
-    </ScrollView>
+          {showCoachPeek && coachPeek && (
+            <Animated.View style={style(6)} testID="home-coach-peek">
+              <CoachQuickPeekPresenter
+                clientCount={coachPeek.clientCount}
+                needAttention={coachPeek.needAttention}
+                newPRs={coachPeek.newPRs}
+                onOpenCoach={onOpenCoach}
+              />
+            </Animated.View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
