@@ -75,17 +75,22 @@ export function WeighInSheetContainer({
         },
         input.day,
       );
-      // Mirror the reading into Apple Health (best-effort, iOS-only). Anchor at
-      // local noon of the chosen day so the HealthKit sample lands on the right
-      // calendar day. Fire-and-forget — a Health write failure must not block
-      // the offline-first log that already succeeded.
+      setSaving(false);
+      // Only mirror into Apple Health once the offline-first log ACCEPTED the
+      // values. logMeasurementCommand rejects empty/non-positive/over-999
+      // weights, and an invalid HealthKit sample (e.g. a negative body mass) is
+      // awkward for the user to delete from the Health app. On rejection we keep
+      // the sheet open so the value can be corrected.
+      if (!res.ok) return;
+      // Anchor at local noon of the chosen day so the HealthKit sample lands on
+      // the right calendar day. Fire-and-forget — a Health write failure must
+      // not block the log that already succeeded.
       const when = new Date(`${input.day}T12:00:00`);
       void health.writeBodyWeight(input.weightKg, when);
       if (input.bodyFatPercentage != null) {
         void health.writeBodyFat(input.bodyFatPercentage, when);
       }
-      setSaving(false);
-      if (res.ok) onClose();
+      onClose();
     },
     [log, health, onClose],
   );

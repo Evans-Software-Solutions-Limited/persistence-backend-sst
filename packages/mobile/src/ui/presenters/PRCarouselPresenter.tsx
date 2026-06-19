@@ -1,7 +1,7 @@
 import { ScrollView } from "react-native";
 import { View } from "@tamagui/core";
 import { PRCard } from "@/ui/components/composite";
-import type { PersonalRecord } from "@/domain/models/record";
+import { type PersonalRecord, unitForRecordType } from "@/domain/models/record";
 
 /**
  * <PRCarouselPresenter> — Home recent-PRs carousel (06-progress-goals,
@@ -42,7 +42,7 @@ export function PRCarouselPresenter({
           <PRCard
             exerciseName={pr.exerciseName}
             value={pr.value}
-            unit="kg"
+            unit={unitForRecordType(pr.recordType)}
             date={relativeDate(pr.achievedAt)}
           />
         </View>

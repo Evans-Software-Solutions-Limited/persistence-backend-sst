@@ -145,4 +145,26 @@ describe("PRCarouselPresenter", () => {
     );
     expect(getByTestId("pr-carousel")).toBeTruthy();
   });
+
+  it("labels non-weight PR types with the right unit (reps, not kg)", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <PRCarouselPresenter
+        prs={[
+          {
+            id: "pr1",
+            userId: "u1",
+            exerciseId: "e1",
+            exerciseName: "Pull Up",
+            recordType: "max_reps",
+            value: 15,
+            achievedAt: "2026-06-08T00:00:00.000Z",
+            sessionId: null,
+            setId: null,
+          },
+        ]}
+      />,
+    );
+    expect(getByText("reps")).toBeTruthy();
+    expect(queryByText("kg")).toBeNull();
+  });
 });

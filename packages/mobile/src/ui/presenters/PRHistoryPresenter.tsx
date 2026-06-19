@@ -2,7 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconMedal } from "@/ui/components/icons";
-import type { PersonalRecord } from "@/domain/models/record";
+import { type PersonalRecord, unitForRecordType } from "@/domain/models/record";
 import { relativeDate } from "./PRCarouselPresenter";
 
 /**
@@ -61,7 +61,7 @@ export function PRHistoryPresenter({
               {p.value}
             </Text>
             <Text fontFamily="$mono" fontSize={11} color="$text3">
-              kg
+              {unitForRecordType(p.recordType)}
             </Text>
           </View>
         </View>

@@ -54,4 +54,26 @@ describe("PRHistoryPresenter", () => {
     const { getByTestId } = renderWithTheme(<PRHistoryPresenter prs={[]} />);
     expect(getByTestId("pr-history")).toBeTruthy();
   });
+
+  it("labels each row's unit by record type (s for best_time, not kg)", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <PRHistoryPresenter
+        prs={[
+          {
+            id: "pr1",
+            userId: "u1",
+            exerciseId: "e1",
+            exerciseName: "5k Run",
+            recordType: "best_time",
+            value: 1800,
+            achievedAt: "2026-06-08T00:00:00.000Z",
+            sessionId: null,
+            setId: null,
+          },
+        ]}
+      />,
+    );
+    expect(getByText("s")).toBeTruthy();
+    expect(queryByText("kg")).toBeNull();
+  });
 });

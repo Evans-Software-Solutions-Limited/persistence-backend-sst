@@ -1,4 +1,4 @@
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -109,5 +109,29 @@ describe("WeighInSheetContainer", () => {
       expect.any(Date),
     );
     expect(writeBodyFat).toHaveBeenCalledWith(18.5, expect.any(Date));
+  });
+
+  it("does not write to Apple Health when the log is rejected", async () => {
+    const { adapters } = makeAdapters();
+    const writeBodyWeight = jest.fn(async () => ok(undefined));
+    const writeBodyFat = jest.fn(async () => ok(undefined));
+    Object.assign(adapters.health, { writeBodyWeight, writeBodyFat });
+    const onClose = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <WeighInSheetContainer visible onClose={onClose} />
+      </AdapterProvider>,
+    );
+    // A negative weight is rejected by logMeasurementCommand (weightKg <= 0).
+    fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
+    await act(async () => {
+      fireEvent.press(getByText(/Log/));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    // The bad value never reaches Apple Health, and the sheet stays open so the
+    // user can correct it.
+    expect(writeBodyWeight).not.toHaveBeenCalled();
+    expect(writeBodyFat).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
