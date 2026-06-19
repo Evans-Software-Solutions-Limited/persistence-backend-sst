@@ -77,16 +77,18 @@ export function HomeContainer() {
     return Array.from({ length: 7 }, (_, i) => addDaysISO(monday, i));
   }, []);
 
-  // First name from the cached profile (offline-first via useProfilePage);
-  // null until it resolves, so the header shows just the greeting meanwhile.
-  const firstName =
-    profile.payload?.profile.fullName?.trim().split(/\s+/)[0] ?? null;
+  // First name + initials from the cached profile (offline-first via
+  // useProfilePage); null until it resolves, so the header shows just the
+  // greeting meanwhile. Initials prefer the profile name (legacy parity) and
+  // only fall back to the email until the profile lands.
+  const fullName = profile.payload?.profile.fullName ?? null;
+  const firstName = fullName?.trim().split(/\s+/)[0] ?? null;
   const user = useMemo(
     () => ({
       name: firstName,
-      initials: initialsOf(session?.email ?? "") || "?",
+      initials: initialsOf(fullName ?? session?.email ?? "") || "?",
     }),
-    [firstName, session?.email],
+    [firstName, fullName, session?.email],
   );
   const greeting = timeGreeting();
 
@@ -167,7 +169,10 @@ export function HomeContainer() {
         recentPRs={home.data?.recentPRs ?? []}
         showCoachPeek={mode === "coach"}
         coachPeek={undefined}
-        isLoading={home.isStale && home.data === null}
+        isLoading={
+          (home.isRefreshing || (home.isStale && home.error === null)) &&
+          home.data === null
+        }
         isRefreshing={home.isRefreshing}
         error={home.error}
         animationStyles={animationStyles}

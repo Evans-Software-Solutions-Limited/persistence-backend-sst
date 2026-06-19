@@ -87,25 +87,37 @@ export function WeighInSheetPresenter({
   const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
 
-  // The sheet stays mounted (visibility is a prop). Reset the chosen day on
-  // each open…
+  // The sheet stays mounted (visibility is a prop). Reset the chosen day AND
+  // the per-field "user has edited" sentinels on each open. The sentinels gate
+  // the async prefill below: the HealthKit reads resolve AFTER the open, so a
+  // late value may seed a field the user hasn't touched, but must never
+  // overwrite one they have.
+  const editedWeight = useRef(false);
+  const editedBodyFat = useRef(false);
   const wasVisible = useRef(false);
   useEffect(() => {
-    if (visible && !wasVisible.current) setDayOffset(0);
+    if (visible && !wasVisible.current) {
+      setDayOffset(0);
+      editedWeight.current = false;
+      editedBodyFat.current = false;
+    }
     wasVisible.current = visible;
   }, [visible]);
 
   // …and seed weight/body-fat from the prefill. This runs again when the
-  // prefill values land (the Apple Health read resolves async, AFTER the
-  // open), so the freshest reading populates the form. Stable while the user
-  // edits (the seed deps don't change on input), so it won't clobber typing.
+  // prefill values land (the Apple Health read resolves async, AFTER the open),
+  // so the freshest reading populates the form — but only for a field the user
+  // hasn't typed into yet, so an in-progress edit is never clobbered.
   useEffect(() => {
     if (!visible) return;
-    setKg(defaultWeightKg ?? history[history.length - 1] ?? 80);
-    setBodyFat(defaultBodyFat);
+    if (!editedWeight.current) {
+      setKg(defaultWeightKg ?? history[history.length - 1] ?? 80);
+    }
+    if (!editedBodyFat.current) setBodyFat(defaultBodyFat);
   }, [visible, defaultWeightKg, defaultBodyFat, history]);
 
   const onTypeBodyFat = (text: string) => {
+    editedBodyFat.current = true;
     if (text.trim() === "") {
       setBodyFat(null);
       return;
@@ -122,12 +134,14 @@ export function WeighInSheetPresenter({
   const fmt = (v: number) => v.toFixed(1);
 
   const adjust = (dir: number) => {
+    editedWeight.current = true;
     const next = display + dir * step;
     setKg(unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3));
   };
   const onType = (text: string) => {
     const v = parseFloat(text);
     if (Number.isNaN(v)) return;
+    editedWeight.current = true;
     setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
   };
 

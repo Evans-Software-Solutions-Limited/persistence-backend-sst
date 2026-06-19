@@ -165,7 +165,10 @@ export function YouContainer() {
       bodyTrend={bodyTrend}
       volumeStats={volume.data}
       prHistory={prs.data ?? []}
-      isLoading={streaks.isStale && streaks.data === null}
+      isLoading={
+        (streaks.isRefreshing || (streaks.isStale && streaks.error === null)) &&
+        streaks.data === null
+      }
       isRefreshing={streaks.isRefreshing}
       error={streaks.error}
       busyToken={freeze.isPending}

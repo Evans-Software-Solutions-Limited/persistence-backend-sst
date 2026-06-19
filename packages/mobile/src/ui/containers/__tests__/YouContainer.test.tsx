@@ -129,4 +129,18 @@ describe("YouContainer", () => {
       mockProbe.last?.onRefresh();
     });
   });
+
+  it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {
+    const { api, adapters } = makeAdapters();
+    api.shouldFail = true; // empty cache + failing GET
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    // Same loader-trap guard as Home: once the failed streaks fetch settles,
+    // isLoading must drop to false so YouPresenter can render its error state.
+    await waitFor(() => expect(mockProbe.last?.error).not.toBeNull());
+    expect(mockProbe.last?.isLoading).toBe(false);
+  });
 });

@@ -53,7 +53,19 @@ export function TodayHeroPresenter({
   testID = "today-hero",
 }: TodayHeroProps) {
   const fuel = rings.fuel === "gated" ? null : rings.fuel;
-  const todayPct = Math.round(((rings.move.pct + rings.train.pct) / 2) * 100);
+  // Centre %: average of the NON-GATED rings (per the file header). Kept a
+  // local recompute rather than the server's `rings.todayPct` (prototype-first
+  // by decision), but Fuel is included once it ships (M9) so the label isn't
+  // silently low — e.g. Move 60 / Train 60 / Fuel 100 reads 73%, not 60%.
+  // While Fuel is gated `fuel` is null and this stays the Move/Train average.
+  const ringPcts = [
+    rings.move.pct,
+    rings.train.pct,
+    ...(fuel ? [fuel.pct] : []),
+  ];
+  const todayPct = Math.round(
+    (ringPcts.reduce((a, b) => a + b, 0) / ringPcts.length) * 100,
+  );
 
   return (
     <Card pad={0} radius={20} testID={testID}>
