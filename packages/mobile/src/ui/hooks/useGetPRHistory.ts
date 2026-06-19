@@ -17,6 +17,10 @@ export function useGetPRHistory(
       isStale: true,
     }),
     fetcher: (api) => api.getRecentPRs(limit),
+    // Shares the `personal_records` slot with the Home carousel — safe because
+    // cachePersonalRecords upserts by (userId, exerciseId, recordType) (see
+    // StoragePort), so the 5-PR Home window updates those keys without dropping
+    // the deeper rows this 20-window wrote.
     write: (storage, userId, value) =>
       storage.cachePersonalRecords(userId, value),
   });

@@ -137,21 +137,38 @@ export function YouContainer() {
     ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`
     : "LIFETIME";
 
+  // Pull out the stable callbacks so the handlers memoise on THOSE, not the
+  // hook-result objects (fresh literals each render, which would defeat the
+  // useCallbacks — bugbot regression on PR #37). exhaustive-deps can't see that
+  // `streaks.refresh` etc. are stable, so destructuring keeps it correct AND
+  // lint-clean.
+  const refreshStreaks = streaks.refresh;
+  const refreshAchievements = achievements.refresh;
+  const refreshVolume = volume.refresh;
+  const refreshBody = body.refresh;
+  const refreshPRs = prs.refresh;
+  const spendFreezeToken = freeze.mutate;
   const onRefresh = useCallback(() => {
     void Promise.all([
-      streaks.refresh(),
-      achievements.refresh(),
-      volume.refresh(),
-      body.refresh(),
-      prs.refresh(),
+      refreshStreaks(),
+      refreshAchievements(),
+      refreshVolume(),
+      refreshBody(),
+      refreshPRs(),
     ]);
-  }, [streaks, achievements, volume, body, prs]);
+  }, [
+    refreshStreaks,
+    refreshAchievements,
+    refreshVolume,
+    refreshBody,
+    refreshPRs,
+  ]);
 
   const onUseToken = useCallback(async () => {
     if (!primary) return;
-    await freeze.mutate(primary.id);
-    void streaks.refresh();
-  }, [freeze, primary, streaks]);
+    await spendFreezeToken(primary.id);
+    void refreshStreaks();
+  }, [spendFreezeToken, primary, refreshStreaks]);
 
   const noop = useCallback(() => {}, []);
 

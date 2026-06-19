@@ -130,6 +130,26 @@ describe("YouContainer", () => {
     });
   });
 
+  it("keeps onRefresh referentially stable across re-renders", async () => {
+    // Regression (PR #37): the useCallback deps were the whole hook-result
+    // objects (fresh literals each render), defeating memoisation. Depending on
+    // the stable .refresh callbacks fixes it.
+    const { adapters } = makeAdapters();
+    const { rerender } = render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    const first = mockProbe.last?.onRefresh;
+    rerender(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    expect(mockProbe.last?.onRefresh).toBe(first);
+  });
+
   it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {
     const { api, adapters } = makeAdapters();
     api.shouldFail = true; // empty cache + failing GET

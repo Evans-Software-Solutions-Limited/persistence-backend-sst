@@ -88,13 +88,17 @@ export function HomeContainer() {
     [s0, s1, s2, s3, s4, s5, s6],
   );
 
+  // Pull out the stable refresh callbacks so onRefresh memoises on THOSE, not
+  // the hook-result objects (fresh literals each render, which would defeat the
+  // useCallback — bugbot regression on PR #37). exhaustive-deps can't see that
+  // `home.refresh` is stable, so destructuring is what keeps it both correct
+  // and lint-clean.
+  const refreshHome = home.refresh;
+  const refreshHabits = habitsState.refresh;
+  const refreshWorkouts = workoutsState.refresh;
   const onRefresh = useCallback(() => {
-    void Promise.all([
-      home.refresh(),
-      habitsState.refresh(),
-      workoutsState.refresh(),
-    ]);
-  }, [home, habitsState, workoutsState]);
+    void Promise.all([refreshHome(), refreshHabits(), refreshWorkouts()]);
+  }, [refreshHome, refreshHabits, refreshWorkouts]);
 
   const onOpenWorkout = useCallback(
     (workoutId: string) => {

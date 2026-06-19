@@ -134,6 +134,26 @@ describe("HomeContainer (V2)", () => {
     expect(mockProbe.last?.home).toBeNull();
   });
 
+  it("keeps onRefresh referentially stable across re-renders", async () => {
+    // Regression (PR #37): the useCallback deps were the whole hook-result
+    // objects, which are fresh literals each render, so the handler was rebuilt
+    // every render. Depending on the stable .refresh callbacks fixes it.
+    const { adapters } = makeAdapters();
+    const { rerender } = render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    const first = mockProbe.last?.onRefresh;
+    rerender(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.onRefresh).toBe(first);
+  });
+
   it("routes to the You tab via onOpenTab", async () => {
     const { adapters } = makeAdapters();
     render(
