@@ -221,6 +221,36 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     expect(result.current.habits[0].days).toHaveLength(7);
     expect(result.current.habits[0].days.filter(Boolean)).toHaveLength(1);
   });
+
+  it("useGetHabits exposes a Mon→Sun weekDates window aligned with the grid", async () => {
+    const { api, wrapper } = setup();
+    const today = new Date().toISOString().slice(0, 10);
+    api.habitCompletions = [
+      {
+        id: "h1",
+        userId: USER,
+        goalId: "g1",
+        completedAt: new Date().toISOString(),
+        value: null,
+      },
+    ];
+    const { result } = renderHook(() => useGetHabits(), { wrapper });
+    await waitFor(() => expect(result.current.habits.length).toBe(1));
+    const { weekDates, habits } = result.current;
+    expect(weekDates).toHaveLength(7);
+    // Monday-first + strictly ascending (lexicographic == chronological here).
+    expect([...weekDates].sort()).toEqual(weekDates);
+    // The single `true` column is exactly the one weekDates labels as today —
+    // weekDates and the grid columns are built from one shared window, so they
+    // can never index different weeks (regression: weekDates was frozen at
+    // mount while the grid re-captured the day, drifting after midnight).
+    const idx = weekDates.indexOf(today);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const trueCols = habits[0].days
+      .map((d, i) => (d ? i : -1))
+      .filter((i) => i >= 0);
+    expect(trueCols).toEqual([idx]);
+  });
 });
 
 describe("Progress/Home mutation hooks", () => {

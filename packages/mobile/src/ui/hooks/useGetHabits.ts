@@ -7,9 +7,12 @@ import {
 } from "./useCachedResource";
 
 export type HabitsState = CachedResourceState<HabitCompletion[]> & {
-  /** Derived Mon→Sun grid (matches HomeContainer's weekDates); container maps
-   *  label/tone from goals. */
+  /** Derived Mon→Sun grid; container maps label/tone from goals. */
   habits: Habit[];
+  /** The Mon→Sun ISO window habits[*].days[i] is indexed against. Consumed by
+   *  the grid header so the two halves share one source and can never drift
+   *  apart (e.g. across a midnight refresh). */
+  weekDates: string[];
 };
 
 function dayISO(value: string | Date): string {
@@ -22,19 +25,15 @@ function addDays(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Build the Mon→Sun boolean grid per goal (aligns with the grid header). */
+/** Build the per-goal boolean grid over the supplied Mon→Sun ISO window. */
 export function buildHabitGrid(
   completions: readonly HabitCompletion[],
-  today: Date,
+  weekDates: readonly string[],
 ): Habit[] {
-  // Fixed Mon→Sun week of the device-local "today" (NOT a rolling today-last
-  // window), so days[i] lines up with HomeContainer's Mon→Sun weekDates[i].
-  // Completions bucket via dayISO(completedAt), which equals the local day
-  // because each completedAt is anchored at noon-UTC of its local day.
-  const monday = weekStartMondayISO(localDayISO(today));
-  const window: string[] = [];
-  for (let i = 0; i < 7; i += 1) window.push(addDays(monday, i));
-
+  // `weekDates` is the shared Mon→Sun window (NOT a rolling today-last one), so
+  // days[i] lines up verbatim with the grid header's weekDates[i]. Completions
+  // bucket via dayISO(completedAt), which equals the local day because each
+  // completedAt is anchored at noon-UTC of its local day.
   const byGoal = new Map<string, Set<string>>();
   for (const c of completions) {
     const set = byGoal.get(c.goalId) ?? new Set<string>();
@@ -45,7 +44,7 @@ export function buildHabitGrid(
     id: goalId,
     label: goalId,
     tone: "primary" as const,
-    days: window.map((d) => days.has(d)),
+    days: weekDates.map((d) => days.has(d)),
   }));
 }
 
@@ -68,9 +67,20 @@ export function useGetHabits(): HabitsState {
       storage.cacheHabitCompletions(userId, value),
   });
 
+  // The Mon→Sun ISO window, recomputed only when the device-local day actually
+  // changes (todayISO is a primitive, so ordinary re-renders are stable). Both
+  // `weekDates` and `habits` derive from it, so the grid header and the
+  // completion columns are always built from the same week — they can't drift
+  // apart, including across a midnight refresh or a Home→You→Home round trip.
+  const todayISO = localDayISO();
+  const weekDates = useMemo(() => {
+    const monday = weekStartMondayISO(todayISO);
+    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  }, [todayISO]);
+
   const habits = useMemo(
-    () => buildHabitGrid(res.data ?? [], new Date()),
-    [res.data],
+    () => buildHabitGrid(res.data ?? [], weekDates),
+    [res.data, weekDates],
   );
-  return { ...res, habits };
+  return { ...res, habits, weekDates };
 }

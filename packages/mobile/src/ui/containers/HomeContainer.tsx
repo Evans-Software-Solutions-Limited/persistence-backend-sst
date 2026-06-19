@@ -9,21 +9,10 @@ import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
-import {
-  initialsOf,
-  localDayISO,
-  weekStartMondayISO,
-  timeGreeting,
-} from "@/shared/utils";
+import { initialsOf, timeGreeting } from "@/shared/utils";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
-
-function addDaysISO(iso: string, delta: number): string {
-  const d = new Date(`${iso}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * V2 Home container (06-progress-goals, STORY-001/002). Wires the cache-first
@@ -69,13 +58,6 @@ export function HomeContainer() {
   const workoutsLoading =
     workoutsState.isRefreshing ||
     (workoutsState.mine.isStale && workoutsState.error === null);
-
-  const weekDates = useMemo(() => {
-    // Fixed Mon→Sun calendar week (not a rolling today-last window) so the grid
-    // always reads Monday-first; today is highlighted wherever it falls.
-    const monday = weekStartMondayISO(localDayISO());
-    return Array.from({ length: 7 }, (_, i) => addDaysISO(monday, i));
-  }, []);
 
   // First name + initials from the cached profile (offline-first via
   // useProfilePage); null until it resolves, so the header shows just the
@@ -165,7 +147,7 @@ export function HomeContainer() {
         workouts={workoutItems}
         workoutsLoading={workoutsLoading}
         habits={habitsState.habits}
-        weekDates={weekDates}
+        weekDates={habitsState.weekDates}
         recentPRs={home.data?.recentPRs ?? []}
         showCoachPeek={mode === "coach"}
         coachPeek={undefined}
