@@ -118,9 +118,10 @@ Authoritative references:
 **Acceptance Criteria:**
 
 - 8.1 [ ] Route `(app)/fuel/recipes/import.tsx` renders `<ImportRecipeURLContainer>` per `recipes.jsx ImportFromURL`.
-- 8.2 [ ] URL input → submit → server scrapes structured recipe data (Schema.org Recipe microformat).
+- 8.2 [ ] URL input → submit → server scrapes structured recipe data (Schema.org Recipe microformat / `ld+json`). M9 ships the **deterministic scrape only** (Conflict C3); no AI pill, no LLM fallback.
 - 8.3 [ ] Pre-fills the manual-create form with scraped data; user reviews + saves.
-- 8.4 [ ] Endpoint: `POST /recipes/import` (Server-side recipe-scraping service).
+- 8.4 [ ] Endpoint: `POST /recipes/import` (server-side recipe-scraping service, SSRF-hardened per design.md § Recipe-import SSRF guards).
+- 8.5 [ ] A page with no `Recipe` microdata → server returns `422 no_recipe_microdata`; the FE shows a graceful "couldn't read this page" state (no crash). The LLM fallback defers to M9.5.
 
 ### STORY-009: As an athlete, I want to log water intake
 
@@ -137,8 +138,8 @@ Authoritative references:
 **Acceptance Criteria:**
 
 - 10.1 [ ] Per cross-cuts § 3.1, `nutrition_streak` is daily; period satisfied when daily total within target ± 10% tolerance.
-- 10.2 [ ] On daily rollover (user-local midnight + buffer for late-night logging), backend `evaluateStreaks(userId, 'nutrition_in_target', ts)` fires.
-- 10.3 [ ] Achievement triggers + notifications per the same pattern as other streaks.
+- 10.2 [ ] The nightly 02:00 UTC streak cron evaluates `nutrition_streak`: it computes the most-recently-completed user-local day's kcal total vs `nutrition_targets.daily_kcal ± 10%` and advances the streak when satisfied (then runs the standard miss/freeze/break sweep). No on-write evaluation on `POST /nutrition/entries` — the daily total is volatile until the day ends.
+- 10.3 [ ] Achievement triggers + `streak_milestone` notifications per the same pattern as other streaks. On a satisfied day a `daily_nutrition_target_hit` notification fires **only when the user's preference is on** (default off per cross-cuts § 5). The `daily_nutrition_target_hit` enum value is added by an M9 `ALTER TYPE` migration sequenced before the cron emit.
 
 ## User stories — M9.5 Tier B
 
