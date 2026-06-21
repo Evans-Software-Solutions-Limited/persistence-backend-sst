@@ -222,6 +222,35 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     expect(result.current.habits[0].days.filter(Boolean)).toHaveLength(1);
   });
 
+  it("buckets a habit by its local day, not the completedAt UTC slice (tz≥+12)", async () => {
+    const { api, wrapper } = setup();
+    const today = new Date().toISOString().slice(0, 10);
+    // completedAt is the PRIOR calendar day in UTC, but the server's
+    // authoritative local day is today — a tz≥+12 morning toggle the server
+    // clamped back. The grid must mark today's column, not the prior day's.
+    const prior = new Date(`${today}T00:00:00.000Z`);
+    prior.setUTCDate(prior.getUTCDate() - 1);
+    api.habitCompletions = [
+      {
+        id: "h1",
+        userId: USER,
+        goalId: "g1",
+        completedAt: `${prior.toISOString().slice(0, 10)}T19:00:00.000Z`,
+        localCompletedDate: today,
+        value: null,
+      },
+    ];
+    const { result } = renderHook(() => useGetHabits(), { wrapper });
+    await waitFor(() => expect(result.current.habits.length).toBe(1));
+    const { weekDates, habits } = result.current;
+    const todayIdx = weekDates.indexOf(today);
+    expect(todayIdx).toBeGreaterThanOrEqual(0);
+    const trueCols = habits[0].days
+      .map((d, i) => (d ? i : -1))
+      .filter((i) => i >= 0);
+    expect(trueCols).toEqual([todayIdx]);
+  });
+
   it("useGetHabits exposes a Mon→Sun weekDates window aligned with the grid", async () => {
     const { api, wrapper } = setup();
     const today = new Date().toISOString().slice(0, 10);

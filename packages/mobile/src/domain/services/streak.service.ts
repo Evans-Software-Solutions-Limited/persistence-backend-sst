@@ -7,8 +7,11 @@
  * wins** (e.g. a freeze-token spend the client can't see). See
  * design.md § Offline behaviour.
  *
- * Day bucketing uses the calendar date portion of `completedAt` (YYYY-MM-DD),
- * matching how the SQLite cache stores `day`. A "grace" rule mirrors every
+ * Day bucketing prefers each completion's authoritative `localCompletedDate`
+ * (the user-local day the server counts it for) and falls back to the calendar
+ * date of `completedAt` only when absent — slicing `completedAt` alone drops
+ * tz ≥ +12 toggles the server clamped to a different UTC day. A "grace" rule
+ * mirrors every
  * streak app: a period the user simply hasn't completed *yet today* doesn't
  * break a streak that was alive in the previous period — the walk starts one
  * period back when the current period has no completion.
@@ -18,6 +21,8 @@ export type StreakDerivationPeriod = "daily" | "weekly";
 
 export interface DeriveStreakCompletion {
   completedAt: string | Date;
+  /** Authoritative user-local day (YYYY-MM-DD); preferred over `completedAt`. */
+  localCompletedDate?: string;
 }
 
 /** YYYY-MM-DD (UTC calendar date) for an ISO string or Date. */
@@ -61,9 +66,13 @@ export function deriveStreak(
       : (dayISO: string) => weekStart(dayISO);
   const step = period === "daily" ? 1 : 7;
 
-  // Set of satisfied period keys.
+  // Set of satisfied period keys. Bucket by the authoritative user-local day
+  // (localCompletedDate) when present; fall back to the UTC slice of
+  // completedAt only for rows that predate it.
   const satisfied = new Set<string>();
-  for (const c of completions) satisfied.add(keyOf(toDayISO(c.completedAt)));
+  for (const c of completions) {
+    satisfied.add(keyOf(c.localCompletedDate ?? toDayISO(c.completedAt)));
+  }
 
   const todayISO = toDayISO(today);
   let cursorKey = keyOf(todayISO);

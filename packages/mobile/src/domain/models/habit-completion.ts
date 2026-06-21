@@ -10,6 +10,16 @@ export type HabitCompletion = {
   goalId: string;
   /** ISO timestamp the habit was completed (user-local day is what matters). */
   completedAt: string;
+  /**
+   * Authoritative user-local calendar day (YYYY-MM-DD) the completion counts
+   * for — the backend's `local_completed_date`, the same grain its dedup index
+   * + streak engine use. Prefer this for bucketing: `completedAt` is a
+   * noon-UTC-ish anchor the server may clamp to a *different* UTC day for tz
+   * ≥ +12, so slicing it would drop the toggle. Optional only because an older
+   * cache row / a freshly-built optimistic row may lack it (fall back to
+   * `completedAt.slice(0, 10)` then).
+   */
+  localCompletedDate?: string;
   value: number | null;
 };
 

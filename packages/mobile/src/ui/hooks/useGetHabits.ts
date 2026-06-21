@@ -32,12 +32,13 @@ export function buildHabitGrid(
 ): Habit[] {
   // `weekDates` is the shared Mon→Sun window (NOT a rolling today-last one), so
   // days[i] lines up verbatim with the grid header's weekDates[i]. Completions
-  // bucket via dayISO(completedAt), which equals the local day because each
-  // completedAt is anchored at noon-UTC of its local day.
+  // bucket by the authoritative user-local day (localCompletedDate) when
+  // present; slicing completedAt alone would drop tz ≥ +12 toggles the server
+  // clamped to a different UTC day.
   const byGoal = new Map<string, Set<string>>();
   for (const c of completions) {
     const set = byGoal.get(c.goalId) ?? new Set<string>();
-    set.add(dayISO(c.completedAt));
+    set.add(c.localCompletedDate ?? dayISO(c.completedAt));
     byGoal.set(c.goalId, set);
   }
   return [...byGoal.entries()].map(([goalId, days]) => ({

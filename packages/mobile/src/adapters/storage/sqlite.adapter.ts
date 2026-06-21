@@ -1156,13 +1156,14 @@ export class SQLiteStorageAdapter implements StoragePort {
       params.push(opts.since);
     }
     const rows = db.getAllSync(
-      `SELECT id, user_id, goal_id, completed_at, value FROM cached_habit_completions
+      `SELECT id, user_id, goal_id, day, completed_at, value FROM cached_habit_completions
        WHERE ${clauses.join(" AND ")} ORDER BY day DESC`,
       params,
     ) as {
       id: string;
       user_id: string;
       goal_id: string;
+      day: string;
       completed_at: string;
       value: number | null;
     }[];
@@ -1171,6 +1172,10 @@ export class SQLiteStorageAdapter implements StoragePort {
       userId: r.user_id,
       goalId: r.goal_id,
       completedAt: r.completed_at,
+      // The `day` column IS the authoritative user-local day (server's
+      // local_completed_date, or the optimistic toggle's `day`). Surface it so
+      // consumers bucket by it instead of re-slicing completedAt as UTC.
+      localCompletedDate: r.day,
       value: r.value,
     }));
   }
@@ -1180,7 +1185,10 @@ export class SQLiteStorageAdapter implements StoragePort {
       userId,
     ]);
     for (const r of rows) {
-      const day = r.completedAt.slice(0, 10);
+      // Prefer the server's authoritative user-local day; only fall back to a
+      // UTC slice when a row predates the field. (Slicing alone drops tz ≥ +12
+      // toggles the server clamped to a different UTC day.)
+      const day = r.localCompletedDate ?? r.completedAt.slice(0, 10);
       db.runSync(
         `INSERT INTO cached_habit_completions (id, user_id, goal_id, day, completed_at, value)
          VALUES (?, ?, ?, ?, ?, ?)

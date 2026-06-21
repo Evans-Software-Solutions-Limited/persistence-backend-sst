@@ -70,3 +70,31 @@ describe("deriveStreak — weekly", () => {
     expect(deriveStreak([c("2026-05-20")], TODAY, "weekly")).toBe(0);
   });
 });
+
+describe("deriveStreak — prefers localCompletedDate over the completedAt UTC slice", () => {
+  it("buckets by the authoritative local day, not the clamped UTC day", () => {
+    // Two completions on consecutive LOCAL days (06-10 today + 06-09), but both
+    // completedAt instants UTC-slice to 06-09 — the 06-10 one is a tz≥+12
+    // morning toggle the server clamped back to the prior UTC day.
+    const rows = [
+      {
+        completedAt: "2026-06-09T19:00:00.000Z",
+        localCompletedDate: "2026-06-10",
+      },
+      {
+        completedAt: "2026-06-09T05:00:00.000Z",
+        localCompletedDate: "2026-06-09",
+      },
+    ];
+    // Correct: {06-10, 06-09} → streak ending today = 2.
+    expect(deriveStreak(rows, TODAY, "daily")).toBe(2);
+    // Without the local day both collide to 06-09 → only 1 (proves it's used).
+    expect(
+      deriveStreak(
+        rows.map((r) => ({ completedAt: r.completedAt })),
+        TODAY,
+        "daily",
+      ),
+    ).toBe(1);
+  });
+});

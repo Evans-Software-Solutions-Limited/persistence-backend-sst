@@ -715,7 +715,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     let rows = this.habitCompletionsCache.get(userId) ?? [];
     if (opts?.goalId) rows = rows.filter((r) => r.goalId === opts.goalId);
     if (opts?.since) {
-      rows = rows.filter((r) => r.completedAt.slice(0, 10) >= opts.since!);
+      rows = rows.filter((r) => dayOf(r) >= opts.since!);
     }
     return rows;
   }
@@ -732,14 +732,14 @@ export class InMemoryStorageAdapter implements StoragePort {
   }): void {
     const rows = this.habitCompletionsCache.get(row.userId) ?? [];
     const filtered = rows.filter(
-      (r) =>
-        !(r.goalId === row.goalId && r.completedAt.slice(0, 10) === row.day),
+      (r) => !(r.goalId === row.goalId && dayOf(r) === row.day),
     );
     filtered.push({
       id: row.id,
       userId: row.userId,
       goalId: row.goalId,
       completedAt: row.completedAt,
+      localCompletedDate: row.day,
       value: row.value,
     });
     this.habitCompletionsCache.set(row.userId, filtered);
@@ -748,11 +748,18 @@ export class InMemoryStorageAdapter implements StoragePort {
     const rows = this.habitCompletionsCache.get(userId) ?? [];
     this.habitCompletionsCache.set(
       userId,
-      rows.filter(
-        (r) => !(r.goalId === goalId && r.completedAt.slice(0, 10) === day),
-      ),
+      rows.filter((r) => !(r.goalId === goalId && dayOf(r) === day)),
     );
   }
+}
+
+/**
+ * Authoritative user-local day for a cached completion — mirrors the SQLite
+ * adapter's `day` column. Prefer localCompletedDate; fall back to a UTC slice
+ * only for rows that predate it.
+ */
+function dayOf(r: HabitCompletion): string {
+  return r.localCompletedDate ?? r.completedAt.slice(0, 10);
 }
 
 function cloneSession(session: WorkoutSession): WorkoutSession {
