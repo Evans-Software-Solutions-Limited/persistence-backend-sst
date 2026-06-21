@@ -1,7 +1,8 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
+import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
@@ -30,6 +31,7 @@ export function HomeContainer() {
   const mode = useUserMode((s) => s.mode);
 
   const home = useGetHome();
+  const health = useHealthData();
   const habitsState = useGetHabits();
   const toggle = useToggleHabitDay();
   const workoutsState = useWorkouts();
@@ -58,6 +60,37 @@ export function HomeContainer() {
   const workoutsLoading =
     workoutsState.isRefreshing ||
     (workoutsState.mine.isStale && workoutsState.error === null);
+
+  // Overlay HealthKit steps onto the MOVE ring. The backend derives `move`
+  // from `daily_activity_data` (empty unless something writes steps), so the
+  // device's HealthKit reading is the live source. When health steps aren't
+  // available (not granted / simulator / Android stub) we keep the backend
+  // value untouched. Recompute pct here; TodayHero recomputes the centre %
+  // from the ring pcts, so the dial follows automatically.
+  // Spec: 07-health-integration/design.md § "Values merge into the presenter
+  // view-model beside the backend payload".
+  const healthSteps = health.stepsToday;
+  const homeData = useMemo(() => {
+    const data = home.data;
+    if (!data || healthSteps == null) return data;
+    const move = data.rings.move;
+    const target = move.target > 0 ? move.target : 10000;
+    const pct = Math.min(1, Math.max(0, healthSteps / target));
+    return {
+      ...data,
+      rings: { ...data.rings, move: { ...move, current: healthSteps, pct } },
+    };
+  }, [home.data, healthSteps]);
+
+  // Refresh HealthKit on focus so the rings reflect a fresh reading the moment
+  // the user returns from the Health connect screen (granting permission there
+  // doesn't unmount this tab, so a mount-only read would stay stale).
+  const refreshHealth = health.refresh;
+  useFocusEffect(
+    useCallback(() => {
+      void refreshHealth();
+    }, [refreshHealth]),
+  );
 
   // First name + initials from the cached profile (offline-first via
   // useProfilePage); null until it resolves, so the header shows just the
@@ -147,7 +180,7 @@ export function HomeContainer() {
       <HomePresenter
         user={user}
         greeting={greeting}
-        home={home.data}
+        home={homeData}
         workouts={workoutItems}
         workoutsLoading={workoutsLoading}
         habits={habitsState.habits}

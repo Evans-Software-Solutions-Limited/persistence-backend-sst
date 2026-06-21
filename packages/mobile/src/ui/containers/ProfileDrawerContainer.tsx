@@ -105,7 +105,7 @@ export function ProfileDrawerContainer() {
       onOpenAchievements={() =>
         pushFrom("/(app)/coming-soon?feature=achievements")
       }
-      onOpenHealth={() => pushFrom("/(app)/coming-soon?feature=health")}
+      onOpenHealth={() => pushFrom("/(app)/profile/health")}
       onOpenSubscription={() =>
         pushFrom("/(app)/coming-soon?feature=subscription")
       }

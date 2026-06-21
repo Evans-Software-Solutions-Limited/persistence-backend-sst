@@ -16,7 +16,15 @@ const mockPush = jest.fn();
 // render count. Returns null (we assert on props, not output).
 const mockProbe: { last: HomePresenterProps | null } = { last: null };
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    // Run the focus callback once on mount so HomeContainer's focus-refresh
+    // path (HealthKit re-read) is exercised under test.
+    useFocusEffect: (cb: () => void | (() => void)) => React.useEffect(cb, [cb]),
+  };
+});
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
   getApiBaseUrl: () => "https://api.test",
@@ -67,7 +75,17 @@ function makeAdapters(): {
       api,
       auth,
       storage,
-      health: {} as Adapters["health"],
+      // Minimal HealthPort stub: unavailable so useHealthData() short-circuits
+      // after the availability gate (no steps overlay onto the MOVE ring).
+      health: {
+        isAvailable: async () => false,
+        getPermissionStatus: async () => ({
+          steps: "not_determined",
+          calories: "not_determined",
+          bodyWeight: "not_determined",
+          heartRate: "not_determined",
+        }),
+      } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
