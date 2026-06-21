@@ -446,22 +446,69 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     expect(verdict).toEqual({ allowed: true });
   });
 
-  it("denies cancelled-with-past-expires_at as reason='cancelled'", async () => {
+  // ── Revert-to-free behaviour (the over-block fix) ──────────────────
+  //
+  // A cancelled/expired sub does NOT cut the user off — they fall back
+  // to free-tier rules (3 workouts/mo). Under the free allowance →
+  // allowed; over it → denied with the cancelled/expired reason (so
+  // mobile shows reinstate / fix-payment, not "upgrade").
+  //
+  // Queue for these paths: profile → sub → FREE tier (the revert-to-free
+  // load) → limits. buildDenyVerdict short-circuits to upgradeTo=null for
+  // cancelled/expired, so NO extra upgrade-tier load is queued.
+
+  it("ALLOWS a cancelled-with-past-expires_at sub when still under the free allowance", async () => {
+    // Regression for #117: a premium-cancelled account was 402'd on every
+    // create regardless of usage. Now it reverts to free (3/mo) and a
+    // user with 1 workout this month is allowed.
     (getDb as any).mockReturnValue(
-      makeQueueDb([PROFILE_USER, CANCELLED_SUB_EXPIRED]),
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        FREE_TIER_ROW,
+        [{ currentCount: 1 }],
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "create_workout");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("ALLOWS a cancelled sub with no current-month usage row (count defaults to 0)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        FREE_TIER_ROW,
+        [], // no current-month limit row → count 0
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "create_workout");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("denies cancelled-with-past-expires_at as reason='cancelled' once the free allowance is exhausted", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        FREE_TIER_ROW,
+        [{ currentCount: 3 }],
+      ]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
     expect(verdict).toEqual({
       allowed: false,
       reason: "cancelled",
-      currentTier: "premium",
+      currentTier: "premium", // actual tier preserved for the reinstate CTA
       upgradeTo: null,
       upgradePriceMonthly: null,
     });
   });
 
-  it("denies cancelled-with-null-expires_at as reason='cancelled'", async () => {
+  it("denies cancelled-with-null-expires_at as reason='cancelled' when over the free allowance", async () => {
     const cancelledNoExpiry = [
       {
         tierName: "premium",
@@ -471,15 +518,32 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
       },
     ];
     (getDb as any).mockReturnValue(
-      makeQueueDb([PROFILE_USER, cancelledNoExpiry]),
+      makeQueueDb([
+        PROFILE_USER,
+        cancelledNoExpiry,
+        FREE_TIER_ROW,
+        [{ currentCount: 4 }],
+      ]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
-    expect(verdict).toMatchObject({ allowed: false, reason: "cancelled" });
+    expect(verdict).toMatchObject({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "premium",
+      upgradeTo: null,
+    });
   });
 
-  it("denies past_due sub as reason='expired'", async () => {
-    (getDb as any).mockReturnValue(makeQueueDb([PROFILE_USER, PAST_DUE_SUB]));
+  it("denies past_due sub as reason='expired' once the free allowance is exhausted", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PAST_DUE_SUB,
+        FREE_TIER_ROW,
+        [{ currentCount: 3 }],
+      ]),
+    );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
     expect(verdict).toEqual({
@@ -491,7 +555,21 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     });
   });
 
-  it("denies unknown payment_status as reason='expired' (conservative default)", async () => {
+  it("ALLOWS a past_due sub when still under the free allowance", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PAST_DUE_SUB,
+        FREE_TIER_ROW,
+        [{ currentCount: 2 }],
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "create_workout");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("denies unknown payment_status as reason='expired' (conservative default) when over the free allowance", async () => {
     const exotic = [
       {
         tierName: "premium",
@@ -500,10 +578,42 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
         workoutLimit: null,
       },
     ];
-    (getDb as any).mockReturnValue(makeQueueDb([PROFILE_USER, exotic]));
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, exotic, FREE_TIER_ROW, [{ currentCount: 9 }]]),
+    );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
     expect(verdict).toMatchObject({ allowed: false, reason: "expired" });
+  });
+
+  it("reverts to free even when free is configured unlimited (catalog drift → allowed)", async () => {
+    // Defensive: if free's workout_limit were NULL, revert-to-free yields
+    // unlimited → allowed. Exercises the workoutLimit===null branch on the
+    // reverted path.
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        [{ tierName: "free", workoutLimit: null, priceMonthly: "0.00" }],
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "create_workout");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("throws when the free tier is missing while reverting a cancelled sub", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        [], // free tier row missing during revert-to-free
+      ]),
+    );
+
+    await expect(assertEntitlement("user-1", "create_workout")).rejects.toThrow(
+      /free.*missing/,
+    );
   });
 });
 

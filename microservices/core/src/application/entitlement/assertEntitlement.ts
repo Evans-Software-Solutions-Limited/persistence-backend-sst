@@ -87,11 +87,14 @@ export type SubscriptionTierName =
  *     (only reachable through stubs today; e.g. `gym_buddy` on basic).
  *   - `limit`: feature flag is on but the per-month counter is at cap.
  *   - `cancelled`: sub was cancelled and the grace expires_at has
- *     passed — user reverts to free tier rules, but mobile shows the
- *     "your sub was cancelled" CTA rather than "upgrade".
+ *     passed — the user reverts to free-tier rules, so this reason only
+ *     surfaces once they have ALSO exhausted the free allowance; mobile
+ *     shows the "your sub was cancelled" reinstate CTA rather than
+ *     "upgrade".
  *   - `expired`: payment_status indicates failure (`past_due`, `unpaid`,
- *     `incomplete_expired`) — user needs to update payment, not pick a
- *     new tier.
+ *     `incomplete_expired`) — likewise revert-to-free, and this reason
+ *     surfaces once the free allowance is gone; user needs to update
+ *     payment, not pick a new tier.
  */
 export type EntitlementDenyReason = "tier" | "limit" | "cancelled" | "expired";
 
@@ -167,14 +170,21 @@ export class EntitlementError extends Error {
  *
  * Verdict logic for `create_workout`:
  *   - `payment_status NOT IN ('active', 'trialing')` AND (no
- *     `expires_at` OR `expires_at <= NOW()`) → deny with reason
- *     `'cancelled'` (for cancelled) or `'expired'` (for past_due /
- *     unpaid / incomplete_expired). Cancelled-with-future-expires_at is
- *     treated as still entitled until that expiry — the user paid
- *     through that date.
- *   - `tier.workout_limit IS NULL` → unlimited → allowed.
- *   - `current_count >= tier.workout_limit` → deny with reason
- *     `'limit'`, upgrade_to = cheapest tier that satisfies (per role).
+ *     `expires_at` OR `expires_at <= NOW()`) → sub is cancelled /
+ *     expired. The user is NOT cut off: they *revert to free-tier
+ *     rules*. The effective limit is clamped to the free tier's
+ *     `workout_limit` (3) and the count check runs as for a free user,
+ *     EXCEPT the deny reason carries `'cancelled'` / `'expired'` (not
+ *     `'limit'`) so mobile shows the reinstate / fix-payment CTA.
+ *     Cancelled-with-future-expires_at is still fully entitled until
+ *     that expiry — the user paid through that date.
+ *   - `tier.workout_limit IS NULL` (active premium / trainer) →
+ *     unlimited → allowed.
+ *   - `current_count >= effective workout_limit` → deny. Reason is
+ *     `'limit'` for an active tier at cap (upgrade_to = cheapest tier
+ *     that satisfies, per role), or `'cancelled'` / `'expired'` for a
+ *     reverted sub that has also exhausted its free allowance
+ *     (upgrade_to = null — reinstate / fix payment instead).
  *   - Otherwise → allowed.
  *
  * Stub features (`ai_workout`, `gym_buddy`, `unlimited_exercise_library`,
@@ -262,26 +272,49 @@ export async function assertEntitlement(
     workoutLimit = subRow.workoutLimit ?? null;
   }
 
-  // 3. Status check BEFORE the count check — a cancelled or expired
-  //    sub should produce the cancelled/expired reason rather than
-  //    misleadingly being denied for 'limit'. Mobile picks different
-  //    copy for each branch.
+  // 3. Status check BEFORE the count check. A cancelled or expired sub
+  //    does NOT cut the user off entirely — per AC 9.3 + AC 9.6 the
+  //    JWT's (possibly stale) premium claim is not trusted and the user
+  //    *reverts to free-tier rules*. We therefore clamp the effective
+  //    workout limit DOWN to the free tier's limit (3) and remember the
+  //    status as the deny *reason* — so:
+  //      - a cancelled/expired user still under the free allowance is
+  //        ALLOWED (previously they were hard-denied 402 on every create
+  //        regardless of usage — the over-block bug surfaced in #117
+  //        device testing on a premium-cancelled account); and
+  //      - one who is over it is denied with the cancelled / expired
+  //        reason (upgradeTo=null), so mobile shows the reinstate /
+  //        fix-payment CTA rather than a plain "upgrade" prompt.
+  //    `currentTier` in the verdict stays the user's *actual* tier
+  //    (e.g. 'premium') so mobile can offer to reinstate the right plan.
+  //
+  //    Cancelled-but-still-within-paid-period (`expires_at` in the
+  //    future) returns null from classifySubscriptionStatus and keeps
+  //    full entitlement until that date — handled above, not here.
+  let denyReason: EntitlementDenyReason = "limit";
   if (subRow !== null) {
     const statusDeny = classifySubscriptionStatus(
       subRow.paymentStatus,
       subRow.expiresAt,
     );
     if (statusDeny !== null) {
-      return buildDenyVerdict({
-        reason: statusDeny,
-        currentTier: effectiveTierName,
-        role,
-      });
+      const freeTier = await loadTier(db, "free");
+      if (!freeTier) {
+        // Same catalog-misconfig guard as the no-sub branch: free MUST
+        // exist for revert-to-free to have a limit to enforce.
+        throw new Error(
+          "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+        );
+      }
+      workoutLimit = freeTier.workoutLimit ?? null;
+      denyReason = statusDeny;
     }
   }
 
-  // 4. Tier with no workout limit → unlimited. Free has limit=3 by
-  //    default; basic/premium/all-trainer tiers have NULL = unlimited.
+  // 4. No workout limit → unlimited → allowed. Reachable for an active
+  //    premium / trainer tier (tier limit NULL), and — only if the free
+  //    tier itself were configured with a NULL limit (it is 3 today) —
+  //    for a reverted cancelled/expired user. We don't hardcode free=3.
   if (workoutLimit === null) {
     return { allowed: true };
   }
@@ -316,7 +349,9 @@ export async function assertEntitlement(
 
   if (currentCount >= workoutLimit) {
     return buildDenyVerdict({
-      reason: "limit",
+      // 'limit' for an active tier at cap; 'cancelled' / 'expired' for a
+      // reverted sub that has also used up its free allowance.
+      reason: denyReason,
       currentTier: effectiveTierName,
       role,
     });
