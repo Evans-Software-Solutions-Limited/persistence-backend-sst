@@ -36,6 +36,27 @@ export const RECORD_TYPES = [
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 
+/**
+ * Display unit for a PR value, keyed off its record type. The weight types
+ * (`*rm`, `max_weight`, `max_volume`) carry a kilogram value; `max_reps` is a
+ * count, `best_time` is seconds, `longest_distance` is metres. Mirrors the
+ * legacy mapping (persistence-mobile `progressQueries.ts` §"Determine unit")
+ * so a 15-rep PR never renders as "15 kg". Imperial conversion is a separate
+ * concern not wired at this layer.
+ */
+export function unitForRecordType(recordType: RecordType): string {
+  switch (recordType) {
+    case "max_reps":
+      return "reps";
+    case "best_time":
+      return "s";
+    case "longest_distance":
+      return "m";
+    default:
+      return "kg"; // 1rm/3rm/5rm/10rm/max_weight/max_volume
+  }
+}
+
 export type PersonalRecord = {
   id: string;
   userId: string;

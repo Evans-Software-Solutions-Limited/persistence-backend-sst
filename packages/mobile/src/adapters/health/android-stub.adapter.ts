@@ -81,7 +81,15 @@ export class AndroidStubHealthAdapter implements HealthPort {
     return fail(UNAVAILABLE);
   }
 
+  async getLatestBodyFat(): Promise<Result<number | null, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
   async writeBodyWeight(): Promise<Result<void, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
+  async writeBodyFat(): Promise<Result<void, HealthError>> {
     return fail(UNAVAILABLE);
   }
 

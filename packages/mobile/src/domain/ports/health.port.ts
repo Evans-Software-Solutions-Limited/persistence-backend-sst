@@ -76,8 +76,22 @@ export interface HealthPort {
    *       § M1 scope: platform adapter matrix
    */
   getHeartRateLatest(): Promise<Result<number | null, HealthError>>;
+  /**
+   * Most recent body-fat sample as a PERCENTAGE (0..100), or null when no
+   * samples exist. HealthKit stores body fat as a fraction (0.18 = 18%); the
+   * adapter converts to a percentage so callers don't juggle the unit.
+   */
+  getLatestBodyFat(): Promise<Result<number | null, HealthError>>;
   writeBodyWeight(
     weight: number,
+    date: Date,
+  ): Promise<Result<void, HealthError>>;
+  /**
+   * Write a body-fat sample. `percentage` is 0..100 (e.g. 18 for 18%); the
+   * adapter converts to HealthKit's 0..1 fraction.
+   */
+  writeBodyFat(
+    percentage: number,
     date: Date,
   ): Promise<Result<void, HealthError>>;
   disconnect(): Promise<void>;

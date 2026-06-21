@@ -37,6 +37,14 @@ import type {
   RecordResponseSummary,
   RestTimerState,
 } from "@/domain/ports/storage.port";
+import type {
+  HomePayload,
+  BodyTrendPoint,
+  VolumeStats,
+} from "@/domain/models/progress";
+import type { Streak } from "@/domain/models/streak";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
 
 /**
@@ -649,6 +657,109 @@ export class InMemoryStorageAdapter implements StoragePort {
     const entry = this.queue.find((e) => e.id === id);
     if (entry) entry.status = status;
   }
+
+  // -- Home / Progress cache (M4 — 06-progress-goals) --
+  private homeCache: Map<string, { payload: HomePayload; syncedAt: string }> =
+    new Map();
+  private streaksCache: Map<string, Streak[]> = new Map();
+  private achievementsCache: Map<string, Achievement[]> = new Map();
+  private habitCompletionsCache: Map<string, HabitCompletion[]> = new Map();
+
+  getCachedHome(userId: string): HomePayload | null {
+    return this.homeCache.get(userId)?.payload ?? null;
+  }
+  getHomeAge(userId: string): string | null {
+    return this.homeCache.get(userId)?.syncedAt ?? null;
+  }
+  cacheHome(userId: string, payload: HomePayload): void {
+    this.homeCache.set(userId, { payload, syncedAt: new Date().toISOString() });
+  }
+  invalidateHome(userId: string): void {
+    this.homeCache.delete(userId);
+  }
+
+  getCachedStreaks(userId: string): Streak[] {
+    return this.streaksCache.get(userId) ?? [];
+  }
+  cacheStreaks(userId: string, streaks: Streak[]): void {
+    this.streaksCache.set(userId, streaks);
+  }
+
+  getCachedAchievements(userId: string): Achievement[] {
+    return this.achievementsCache.get(userId) ?? [];
+  }
+  cacheAchievements(userId: string, achievements: Achievement[]): void {
+    this.achievementsCache.set(userId, achievements);
+  }
+
+  private bodyTrendCache: Map<string, BodyTrendPoint[]> = new Map();
+  getCachedBodyTrend(userId: string): BodyTrendPoint[] {
+    return this.bodyTrendCache.get(userId) ?? [];
+  }
+  cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void {
+    this.bodyTrendCache.set(userId, [...series]);
+  }
+
+  private volumeStatsCache: Map<string, VolumeStats> = new Map();
+  getCachedVolumeStats(userId: string): VolumeStats | null {
+    return this.volumeStatsCache.get(userId) ?? null;
+  }
+  cacheVolumeStats(userId: string, stats: VolumeStats): void {
+    this.volumeStatsCache.set(userId, stats);
+  }
+
+  getCachedHabitCompletions(
+    userId: string,
+    opts?: { goalId?: string; since?: string },
+  ): HabitCompletion[] {
+    let rows = this.habitCompletionsCache.get(userId) ?? [];
+    if (opts?.goalId) rows = rows.filter((r) => r.goalId === opts.goalId);
+    if (opts?.since) {
+      rows = rows.filter((r) => dayOf(r) >= opts.since!);
+    }
+    return rows;
+  }
+  cacheHabitCompletions(userId: string, rows: HabitCompletion[]): void {
+    this.habitCompletionsCache.set(userId, [...rows]);
+  }
+  upsertHabitCompletion(row: {
+    id: string;
+    userId: string;
+    goalId: string;
+    day: string;
+    completedAt: string;
+    value: number | null;
+  }): void {
+    const rows = this.habitCompletionsCache.get(row.userId) ?? [];
+    const filtered = rows.filter(
+      (r) => !(r.goalId === row.goalId && dayOf(r) === row.day),
+    );
+    filtered.push({
+      id: row.id,
+      userId: row.userId,
+      goalId: row.goalId,
+      completedAt: row.completedAt,
+      localCompletedDate: row.day,
+      value: row.value,
+    });
+    this.habitCompletionsCache.set(row.userId, filtered);
+  }
+  removeHabitCompletion(userId: string, goalId: string, day: string): void {
+    const rows = this.habitCompletionsCache.get(userId) ?? [];
+    this.habitCompletionsCache.set(
+      userId,
+      rows.filter((r) => !(r.goalId === goalId && dayOf(r) === day)),
+    );
+  }
+}
+
+/**
+ * Authoritative user-local day for a cached completion — mirrors the SQLite
+ * adapter's `day` column. Prefer localCompletedDate; fall back to a UTC slice
+ * only for rows that predate it.
+ */
+function dayOf(r: HabitCompletion): string {
+  return r.localCompletedDate ?? r.completedAt.slice(0, 10);
 }
 
 function cloneSession(session: WorkoutSession): WorkoutSession {

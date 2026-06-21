@@ -99,3 +99,34 @@ export {
   isTypeEnabled,
   normalizePreferences,
 } from "./notification-preferences";
+
+// ── M4 (06-progress-goals) ──────────────────────────────────────────────────
+export {
+  type Streak,
+  type StreakType,
+  type StreakPeriod,
+  type StreakStatus,
+  STREAK_TYPES,
+} from "./streak";
+
+export {
+  type HabitCompletion,
+  type Habit,
+  type HabitTileTone,
+} from "./habit-completion";
+
+export { type Achievement, type AchievementCategory } from "./achievement";
+
+export {
+  type RingDatum,
+  type Rings,
+  type MicroPills,
+  type WeeklyVolumeDay,
+  type WeeklyVolume,
+  type MuscleVolume,
+  type VolumeStats,
+  type BodyTrendPoint,
+  type HomePayload,
+  HOME_STALE_AFTER_MS,
+  isHomeStale,
+} from "./progress";

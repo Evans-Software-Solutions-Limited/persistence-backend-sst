@@ -1,347 +1,272 @@
-import React from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
 import Animated from "react-native-reanimated";
-import type {
-  HealthPermissionStatus,
-  HealthWeight,
-} from "@/domain/ports/health.port";
-import type { ApiError } from "@/shared/errors";
+import { Text, View } from "@tamagui/core";
+import { Avatar, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
+import { Section } from "@/ui/components/composite";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
-import { GoalsSection, type Goal } from "@/ui/components/home/GoalsSection";
-import { GreetingSection } from "@/ui/components/home/GreetingSection";
-import { MyProgressSection } from "@/ui/components/home/MyProgressSection";
-import { RecentActivitySection } from "@/ui/components/home/RecentActivitySection";
-import { YourWorkoutsSection } from "@/ui/components/home/YourWorkoutsSection";
-import type { WorkoutCardWorkout } from "@/ui/components/home/WorkoutCard";
-import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
-import { colorPalette } from "@/ui/theme/tokens";
+import { IconBell } from "@/ui/components/icons";
+import type { ApiError } from "@/shared/errors";
+import type { HomePayload } from "@/domain/models/progress";
+import type { PersonalRecord } from "@/domain/models/record";
+import { TodayHeroPresenter } from "./TodayHeroPresenter";
+import { HabitsGridPresenter, type HabitVM } from "./HabitsGridPresenter";
+import { QuickLogStripPresenter } from "./QuickLogStripPresenter";
+import { WeeklyVolumePresenter } from "./WeeklyVolumePresenter";
+import { PRCarouselPresenter } from "./PRCarouselPresenter";
+import { CoachQuickPeekPresenter } from "./CoachQuickPeekPresenter";
+import {
+  WorkoutCarouselPresenter,
+  type WorkoutCarouselItem,
+} from "./WorkoutCarouselPresenter";
 
 /**
- * Pure Home presenter. Receives the full view-model from
- * `HomeContainer`; renders nothing that needs hooks or context.
+ * <HomePresenter> — V2 Home re-skin (06-progress-goals, STORY-001/002;
+ * home.jsx:21–63). Status-first dashboard: TodayHero rings → workouts carousel
+ * → habits grid → quick-log strip → weekly volume → recent-PR carousel →
+ * optional CoachQuickPeek. Pure presentational; the container wires the hooks.
  *
- * Each section component was ported verbatim from the legacy app
- * (`persistence-mobile/components/home/*`). This presenter wires
- * them together in the same section order as the legacy HomePresenter:
- * Greeting → Goals → YourWorkouts → MyProgress → RecentActivity.
+ * Cache-first: renders whatever `home` is present immediately; a background
+ * refresh updates in place. Blocking loader/error only when there's no cache.
  *
- * Spec: specs/06-progress-goals/design.md § Dashboard mobile architecture
- *       (M1) > UI structure · requirements.md STORY-005 AC 5.1–5.12
+ * (Replaces the M1 Greeting/Goals/Workouts/Progress/Activity composition per
+ * the migration re-skin.)
  */
-
-type SectionAnimationStyle = Parameters<typeof Animated.View>[0]["style"];
-
-export type HomePresenterRecentActivity = {
-  workout_session_id: string;
-  workout_name: string;
-  completed_at: string;
-};
-
-export type HomePresenterViewModel = {
-  /**
-   * The signed-in user's first name. `null` signals "not yet known"
-   * — either the cache is empty or the API hasn't returned a profile.
-   * The container surfaces an error / loader for the null case rather
-   * than letting the presenter render a fallback string. Removing the
-   * `"Lifter"` fallback closed the silent-API-failure bug Brad
-   * flagged on PR #37.
-   */
-  userName: string | null;
-  subscriptionTier: string | null;
-  isFreeTier: boolean;
-  /** Initials for the profile avatar that opens the ProfileDrawer (08). */
-  avatarInitials: string;
-  goals: readonly Goal[];
-  workouts: readonly WorkoutCardWorkout[];
-  currentUserId?: string;
-  workoutsThisMonth: number;
-  workoutsLastMonth: number;
-  activeEnergy: number;
-  basalEnergy: number;
-  standTime: number;
-  bodyWeight: number | null;
-  bodyWeightUnit: "kg" | "lbs";
-  bodyWeightHistory: { date: Date; value: number }[];
-  bodyFat: number | null;
-  bodyFatHistory: { date: Date; value: number }[];
-  stepsToday: number;
-  stepsHistory: { date: Date; steps: number }[];
-  recentActivity: readonly HomePresenterRecentActivity[];
-  latestBodyWeight: HealthWeight | null;
-  healthIsAvailable: boolean;
-  healthPermissionStatus: HealthPermissionStatus;
-};
 
 export type HomePresenterProps = {
-  viewModel: HomePresenterViewModel;
-  /** Five per-section animated styles; indices match section order. */
-  animationStyles: readonly SectionAnimationStyle[];
-  /**
-   * Cold-start loading state — no cached payload yet + a background
-   * refresh is in flight. Renders the custom P-logo loader full-screen
-   * (matches the legacy app's first-open behaviour).
-   */
+  user: { name: string | null; initials: string };
+  /** Time-of-day greeting, e.g. "Good morning" (container-computed). */
+  greeting: string;
+  home: HomePayload | null;
+  workouts: WorkoutCarouselItem[];
+  workoutsLoading: boolean;
+  habits: HabitVM[];
+  weekDates: string[];
+  recentPRs: PersonalRecord[];
+  showCoachPeek: boolean;
+  coachPeek?: { clientCount: number; needAttention: number; newPRs: number };
+
   isLoading: boolean;
-  /**
-   * True once the load has been spinning long enough to deserve a
-   * reassurance caption ("Taking longer than usual…"). The container
-   * arms a 5-second timer when `isLoading` flips on; this prop fires
-   * when it elapses. The 10-second adapter timeout follows shortly
-   * after, at which point `error` takes over.
-   */
-  showSlowLoaderCaption?: boolean;
-  /**
-   * Last refresh error from `useDashboard`. The presenter routes by
-   * cache state:
-   * - cache empty + error → full-screen `ErrorState` with retry.
-   * - cache present + error → inline banner above the scroll
-   *   ("Couldn't refresh — showing cached data").
-   * Both branches keep `onRefresh` available so the user can retry.
-   *
-   * Spec: specs/06-progress-goals/requirements.md STORY-005 AC 5.9
-   */
-  error?: ApiError | null;
   isRefreshing: boolean;
+  error?: ApiError | null;
+  /** Per-section staggered entry styles (container-computed). */
+  animationStyles?: readonly object[];
+
   onRefresh: () => void;
-  onUpgradePress: () => void;
-  onManageSubscriptionPress?: () => void;
-  onWorkoutPress: (workoutId: string) => void;
-  onWorkoutStart: (workoutId: string) => void;
-  onWorkoutEdit?: (workoutId: string) => void;
-  onWorkoutDelete?: (workoutId: string) => void;
-  onViewAllWorkoutsPress: () => void;
-  onViewAllProgressPress: () => void;
-  onConnectHealthPress: () => void;
-  onActivityPress?: (sessionId: string) => void;
-  /** Opens the ProfileDrawer from the greeting avatar (08-profile-settings). */
-  onOpenProfileDrawer?: () => void;
+  onOpenDrawer: () => void;
+  onOpenNotifications: () => void;
+  onOpenWorkout: (workoutId: string) => void;
+  /** Open the Train tab pinned to the Workouts segment (workouts "View all"). */
+  onOpenWorkoutsList: () => void;
+  onOpenTab: (tab: "train" | "fuel" | "you") => void;
+  onOpenWeighIn: () => void;
+  onOpenMealLog: () => void;
+  onLogWater: () => void;
+  onLogMood: () => void;
+  onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
+  onOpenCoach: () => void;
 };
 
-/**
- * Plain-and-direct copy for refresh failures. Brand voice tuned with
- * Brad: trustworthy, no jargon, no apology cascade. The message is
- * tailored to the error code so the user gets a meaningful next step
- * (timeout = check connection; everything else = generic recovery).
- */
-function describeError(error: ApiError): { title: string; message: string } {
-  switch (error.code) {
-    case "timeout":
-      return {
-        title: "Couldn't load your dashboard",
-        message:
-          "The request took too long. Check your connection and tap Retry.",
-      };
-    case "unauthorized":
-      return {
-        title: "Session expired",
-        message: "Sign back in to continue. Tap Retry to try again first.",
-      };
-    case "network":
-      return {
-        title: "No connection",
-        message:
-          "We couldn't reach the server. Check your connection and tap Retry.",
-      };
-    default:
-      return {
-        title: "Couldn't load your dashboard",
-        message:
-          error.message ||
-          "Something went wrong on our side. Tap Retry to try again.",
-      };
-  }
-}
+export function HomePresenter(props: HomePresenterProps) {
+  const {
+    user,
+    greeting,
+    home,
+    workouts,
+    workoutsLoading,
+    habits,
+    weekDates,
+    recentPRs,
+    showCoachPeek,
+    coachPeek,
+    isLoading,
+    isRefreshing,
+    error,
+    animationStyles = [],
+    onRefresh,
+    onOpenDrawer,
+    onOpenNotifications,
+    onOpenWorkout,
+    onOpenWorkoutsList,
+    onOpenTab,
+    onOpenWeighIn,
+    onOpenMealLog,
+    onLogWater,
+    onLogMood,
+    onToggleHabitDay,
+    onOpenCoach,
+  } = props;
 
-export function HomePresenter({
-  viewModel,
-  animationStyles,
-  isLoading,
-  showSlowLoaderCaption = false,
-  error = null,
-  isRefreshing,
-  onRefresh,
-  onUpgradePress,
-  onManageSubscriptionPress,
-  onWorkoutPress,
-  onWorkoutStart,
-  onWorkoutEdit,
-  onWorkoutDelete,
-  onViewAllWorkoutsPress,
-  onViewAllProgressPress,
-  onConnectHealthPress,
-  onActivityPress,
-  onOpenProfileDrawer,
-}: HomePresenterProps) {
-  if (isLoading) {
+  const style = (i: number) => animationStyles[i] ?? {};
+
+  if (isLoading && !home) {
     return (
-      <View
-        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        testID="home-loader"
-      >
+      <View flex={1} testID="home-loader">
         <PLogoDrawLoader />
-        {showSlowLoaderCaption && (
-          <Text style={loaderStyles.caption} testID="home-loader-caption">
-            Taking longer than usual…
-          </Text>
-        )}
       </View>
     );
   }
-
-  // Cache empty + refresh failed → blocking error. The presenter never
-  // tries to render the section tree from a null userName because the
-  // container has already collapsed both "no payload" and "payload but
-  // null firstName" into this single error branch.
-  if (error !== null && viewModel.userName === null) {
-    const { title, message } = describeError(error);
+  if (error && !home) {
     return (
-      <View style={{ flex: 1 }} testID="home-error-blocking">
-        <ErrorState
-          title={title}
-          message={message}
-          onRetry={onRefresh}
-          testID="home-error-state"
-        />
+      <View flex={1} testID="home-error-state">
+        <ErrorState message="Couldn't load your home." onRetry={onRefresh} />
       </View>
     );
   }
-
-  const [
-    greetingStyle,
-    goalsStyle,
-    workoutsStyle,
-    progressStyle,
-    activityStyle,
-  ] = animationStyles;
-
-  // Cache present + refresh failed → non-blocking inline banner above
-  // the section tree. Modelled on M0's ExerciseListPresenter stale
-  // strip so the muscle memory across screens is consistent. Stays
-  // visible until the next successful refresh clears `error`.
-  const showInlineErrorBanner = error !== null && viewModel.userName !== null;
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 20,
-          paddingBottom: 32,
-          gap: 24,
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor={colorPalette.primary500}
-            colors={[colorPalette.primary500]}
+    <ScrollView
+      testID="home-scroll"
+      contentContainerStyle={{ paddingBottom: 140 }}
+      refreshControl={
+        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+      }
+    >
+      <HeaderBar
+        large
+        eyebrow="TODAY"
+        title={
+          user.name ? (
+            <>
+              {`${greeting}, `}
+              <Text color="$primary">{user.name}</Text>
+            </>
+          ) : (
+            greeting
+          )
+        }
+        leading={<Avatar initials={user.initials} onPress={onOpenDrawer} />}
+        trailing={
+          <IconBtn
+            icon={<IconBell size={18} />}
+            tone="ghost"
+            onPress={onOpenNotifications}
+            accessibilityLabel="Notifications"
+            testID="home-bell"
           />
         }
-        testID="home-scroll"
-      >
-        {showInlineErrorBanner && (
-          <View style={bannerStyles.container} testID="home-error-banner">
-            <View style={bannerStyles.dot} />
-            <Text style={bannerStyles.text}>
-              {"Couldn't refresh — showing cached data. Pull to retry."}
-            </Text>
-          </View>
+      />
+
+      <View paddingHorizontal={16} gap={16}>
+        {home && (
+          <Animated.View style={style(0)} testID="home-hero">
+            <TodayHeroPresenter
+              rings={home.rings}
+              micro={home.micro}
+              onOpenMove={() => onOpenTab("you")}
+              onOpenTrain={() => onOpenTab("train")}
+              onOpenFuel={() => onOpenTab("fuel")}
+            />
+          </Animated.View>
         )}
-        <Animated.View style={greetingStyle}>
-          <GreetingSection
-            userName={viewModel.userName ?? ""}
-            subscriptionTier={viewModel.subscriptionTier}
-            isFreeTier={viewModel.isFreeTier}
-            onUpgradePress={onUpgradePress}
-            onManageSubscription={onManageSubscriptionPress}
-            avatarInitials={viewModel.avatarInitials}
-            onAvatarPress={onOpenProfileDrawer}
-          />
+
+        <Animated.View style={style(1)} testID="home-workouts">
+          <Section
+            eyebrow="TODAY"
+            title="Your workouts"
+            action={
+              <Text fontSize={12} color="$primary" onPress={onOpenWorkoutsList}>
+                View all
+              </Text>
+            }
+          >
+            <WorkoutCarouselPresenter
+              workouts={workouts}
+              isLoading={workoutsLoading}
+              onOpenWorkout={onOpenWorkout}
+            />
+          </Section>
         </Animated.View>
 
-        <Animated.View style={goalsStyle}>
-          <GoalsSection goals={[...viewModel.goals]} />
+        <Animated.View style={style(2)} testID="home-habits">
+          <Section
+            eyebrow="STREAK"
+            title="This week"
+            action={
+              <Pill tone="ember" size="xs">
+                🔥 {home?.micro.streak ?? 0}
+              </Pill>
+            }
+          >
+            <HabitsGridPresenter
+              habits={habits}
+              weekDates={weekDates}
+              onToggle={onToggleHabitDay}
+            />
+          </Section>
         </Animated.View>
 
-        <Animated.View style={workoutsStyle}>
-          <YourWorkoutsSection
-            workouts={viewModel.workouts}
-            currentUserId={viewModel.currentUserId}
-            onWorkoutPress={onWorkoutPress}
-            onWorkoutStart={onWorkoutStart}
-            onWorkoutEdit={onWorkoutEdit}
-            onWorkoutDelete={onWorkoutDelete}
-            onViewAllPress={onViewAllWorkoutsPress}
-          />
+        <Animated.View style={style(3)} testID="home-quicklog">
+          <Section eyebrow="LOG" title="Quick capture" hideHr>
+            <QuickLogStripPresenter
+              onWeighIn={onOpenWeighIn}
+              onLogMeal={onOpenMealLog}
+              onLogWater={onLogWater}
+              onLogMood={onLogMood}
+            />
+          </Section>
         </Animated.View>
 
-        <Animated.View style={progressStyle}>
-          <MyProgressSection
-            workoutsThisMonth={viewModel.workoutsThisMonth}
-            workoutsLastMonth={viewModel.workoutsLastMonth}
-            activeEnergy={viewModel.activeEnergy}
-            basalEnergy={viewModel.basalEnergy}
-            standTime={viewModel.standTime}
-            bodyWeight={viewModel.bodyWeight}
-            bodyWeightUnit={viewModel.bodyWeightUnit}
-            bodyWeightHistory={viewModel.bodyWeightHistory}
-            bodyFat={viewModel.bodyFat}
-            bodyFatHistory={viewModel.bodyFatHistory}
-            stepsToday={viewModel.stepsToday}
-            stepsHistory={viewModel.stepsHistory}
-            healthIsAvailable={viewModel.healthIsAvailable}
-            healthPermissionStatus={viewModel.healthPermissionStatus}
-            latestBodyWeight={viewModel.latestBodyWeight}
-            onConnectHealthPress={onConnectHealthPress}
-            onViewAllPress={onViewAllProgressPress}
-          />
+        {home && (
+          <Animated.View style={style(4)} testID="home-volume">
+            <Section
+              eyebrow="THIS WEEK"
+              title="Volume"
+              action={
+                <Text
+                  fontSize={12}
+                  color="$primary"
+                  onPress={() => onOpenTab("you")}
+                >
+                  Details
+                </Text>
+              }
+            >
+              <WeeklyVolumePresenter weeklyVolume={home.weeklyVolume} />
+            </Section>
+          </Animated.View>
+        )}
+
+        <Animated.View style={style(5)} testID="home-prs">
+          <Section
+            eyebrow="ACHIEVEMENTS"
+            title="Recent PRs"
+            action={
+              <Text
+                fontSize={12}
+                color="$primary"
+                onPress={() => onOpenTab("you")}
+              >
+                All
+              </Text>
+            }
+          >
+            {recentPRs.length > 0 ? (
+              <PRCarouselPresenter prs={recentPRs} />
+            ) : (
+              <View
+                paddingVertical={18}
+                alignItems="center"
+                testID="home-prs-empty"
+              >
+                <Text fontFamily="$body" fontSize={13} color="$text3">
+                  No PRs yet — finish a session to set your first.
+                </Text>
+              </View>
+            )}
+          </Section>
         </Animated.View>
 
-        <Animated.View style={activityStyle}>
-          <RecentActivitySection
-            activities={viewModel.recentActivity}
-            onActivityPress={onActivityPress}
-          />
-        </Animated.View>
-      </ScrollView>
-    </View>
+        {showCoachPeek && coachPeek && (
+          <Animated.View style={style(6)} testID="home-coach-peek">
+            <CoachQuickPeekPresenter
+              clientCount={coachPeek.clientCount}
+              needAttention={coachPeek.needAttention}
+              newPRs={coachPeek.newPRs}
+              onOpenCoach={onOpenCoach}
+            />
+          </Animated.View>
+        )}
+      </View>
+    </ScrollView>
   );
 }
-
-const loaderStyles = StyleSheet.create({
-  caption: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
-    marginTop: Spacing.md,
-  },
-});
-
-const bannerStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.warning.light,
-    borderRadius: 8,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.warning.DEFAULT,
-  },
-  text: {
-    ...Typography.caption,
-    color: Colors.text.primary,
-    flex: 1,
-  },
-});

@@ -59,6 +59,7 @@ import { getRecentPRsHandler } from "./application/progress/getRecentPRsHandler"
 import { getBodyTrendHandler } from "./application/progress/getBodyTrendHandler";
 import { getAchievementsHandler } from "./application/progress/getAchievementsHandler";
 import { useFreezeTokenHandler } from "./application/progress/useFreezeTokenHandler";
+import { getStreaksHandler } from "./application/progress/getStreaksHandler";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
 import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
@@ -131,6 +132,7 @@ const app = new Elysia()
   .use(getRecentPRsHandler)
   .use(getBodyTrendHandler)
   .use(getAchievementsHandler)
+  .use(getStreaksHandler)
   .use(useFreezeTokenHandler)
   .use(subscriptionsTiersHandler)
   .use(subscriptionsMeHandler)

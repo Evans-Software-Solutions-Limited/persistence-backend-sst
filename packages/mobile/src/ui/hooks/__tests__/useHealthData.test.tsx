@@ -54,8 +54,11 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     getLatestBodyWeight: async () =>
       ok({ value: 74.5, unit: "kg" as const, date: "2026-04-20T07:00:00Z" }),
     getHeartRateLatest: async () => ok(62),
+    getLatestBodyFat: async () => ok(18.2),
     writeBodyWeight: async () =>
       ok(undefined) as Awaited<ReturnType<HealthPort["writeBodyWeight"]>>,
+    writeBodyFat: async () =>
+      ok(undefined) as Awaited<ReturnType<HealthPort["writeBodyFat"]>>,
     disconnect: async () => {},
   };
   // Wrap every function in a jest.fn so tests can count calls / override.
@@ -70,7 +73,9 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     getStandTimeTodayMinutes: jest.fn(base.getStandTimeTodayMinutes),
     getLatestBodyWeight: jest.fn(base.getLatestBodyWeight),
     getHeartRateLatest: jest.fn(base.getHeartRateLatest),
+    getLatestBodyFat: jest.fn(base.getLatestBodyFat),
     writeBodyWeight: jest.fn(base.writeBodyWeight),
+    writeBodyFat: jest.fn(base.writeBodyFat),
     disconnect: jest.fn(base.disconnect),
   };
   return { ...wrapped, ...overrides };

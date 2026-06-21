@@ -32,3 +32,9 @@ export {
   shouldShowTrialBanner,
   getSubscriptionDisplayInfo,
 } from "./subscriptionService";
+
+export {
+  deriveStreak,
+  type StreakDerivationPeriod,
+  type DeriveStreakCompletion,
+} from "./streak.service";

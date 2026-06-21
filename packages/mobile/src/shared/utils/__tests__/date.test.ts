@@ -1,4 +1,58 @@
-import { isIsoDateString } from "../date";
+import {
+  isIsoDateString,
+  localDayISO,
+  weekStartMondayISO,
+  timeGreeting,
+} from "../date";
+
+describe("timeGreeting", () => {
+  const at = (h: number) => new Date(2026, 5, 10, h, 0, 0); // local hour h
+  it("picks the greeting by local hour", () => {
+    expect(timeGreeting(at(6))).toBe("Good morning"); // 06:00
+    expect(timeGreeting(at(11))).toBe("Good morning"); // 11:59-ish
+    expect(timeGreeting(at(12))).toBe("Good afternoon"); // noon
+    expect(timeGreeting(at(17))).toBe("Good afternoon");
+    expect(timeGreeting(at(18))).toBe("Good evening");
+    expect(timeGreeting(at(23))).toBe("Good evening");
+    expect(timeGreeting(at(4))).toBe("Good evening"); // pre-dawn
+  });
+});
+
+describe("weekStartMondayISO", () => {
+  it("returns the Monday of the week for any day", () => {
+    // 2026-06-15 is a Monday.
+    expect(weekStartMondayISO("2026-06-15")).toBe("2026-06-15"); // Mon → itself
+    expect(weekStartMondayISO("2026-06-17")).toBe("2026-06-15"); // Wed → Mon
+    expect(weekStartMondayISO("2026-06-21")).toBe("2026-06-15"); // Sun → Mon
+    expect(weekStartMondayISO("2026-06-14")).toBe("2026-06-08"); // Sun (prev wk)
+  });
+
+  it("crosses a month boundary correctly", () => {
+    // 2026-07-01 is a Wednesday → Monday 2026-06-29.
+    expect(weekStartMondayISO("2026-07-01")).toBe("2026-06-29");
+  });
+});
+
+describe("localDayISO", () => {
+  it("returns the device-local calendar date as YYYY-MM-DD", () => {
+    // `new Date(y, m, d)` builds LOCAL midnight, so getFullYear/Month/Date
+    // round-trip the same components regardless of the runner's timezone.
+    expect(localDayISO(new Date(2026, 5, 10))).toBe("2026-06-10"); // month is 0-based
+    expect(localDayISO(new Date(2026, 0, 1))).toBe("2026-01-01");
+    expect(localDayISO(new Date(2026, 11, 31))).toBe("2026-12-31");
+  });
+
+  it("zero-pads single-digit months and days", () => {
+    expect(localDayISO(new Date(2026, 2, 5))).toBe("2026-03-05");
+  });
+
+  it("uses local components, not the UTC date, near midnight", () => {
+    // 23:30 local on Jun 10 is still Jun 10 locally even though it may be
+    // Jun 11 in UTC (positive offsets). The local date is what we want.
+    const lateLocal = new Date(2026, 5, 10, 23, 30, 0);
+    expect(localDayISO(lateLocal)).toBe("2026-06-10");
+  });
+});
 
 describe("isIsoDateString", () => {
   it("accepts a valid YYYY-MM-DD date", () => {

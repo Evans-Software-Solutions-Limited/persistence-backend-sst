@@ -17,6 +17,14 @@ import type { NotificationPreferences } from "@/domain/models/notification-prefe
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
+  HomePayload,
+  BodyTrendPoint,
+  VolumeStats,
+} from "@/domain/models/progress";
+import type { Streak } from "@/domain/models/streak";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type {
   ReferenceEntry,
   ReferenceList,
   ReferenceListKind,
@@ -303,6 +311,50 @@ export class SQLiteStorageAdapter implements StoragePort {
         prefs_json TEXT NOT NULL,
         synced_at  TEXT NOT NULL
       );
+
+      -- M4 (06-progress-goals): per-user JSON-blob slots, same shape as
+      -- cached_dashboard. 5-min TTL enforced by the query/hook layer.
+      CREATE TABLE IF NOT EXISTS cached_home (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_streaks (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_achievements (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_body_trend (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_volume_stats (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- M4: row-level habit-completion cache. \`day\` is the user-local
+      -- YYYY-MM-DD (computed by the optimistic writer) so deriveStreak can
+      -- walk back by day without re-bucketing timestamps. One row per
+      -- (user, goal, day) — the unique index makes the optimistic toggle
+      -- idempotent and the sync replay safe.
+      CREATE TABLE IF NOT EXISTS cached_habit_completions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        completed_at TEXT NOT NULL,
+        value REAL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_completions_user_goal_day
+        ON cached_habit_completions(user_id, goal_id, day);
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
@@ -1043,6 +1095,152 @@ export class SQLiteStorageAdapter implements StoragePort {
          prefs_json = excluded.prefs_json,
          synced_at = excluded.synced_at`,
       [JSON.stringify(preferences), syncedAt],
+    );
+  }
+
+  // -- Home / Progress cache (M4 — 06-progress-goals) --
+  getCachedHome(userId: string): HomePayload | null {
+    return this.readBlob<HomePayload>("cached_home", userId);
+  }
+  getHomeAge(userId: string): string | null {
+    return this.readBlobSyncedAt("cached_home", userId);
+  }
+  cacheHome(userId: string, payload: HomePayload): void {
+    this.writeBlob("cached_home", userId, payload);
+  }
+  invalidateHome(userId: string): void {
+    this.getDb().runSync(`DELETE FROM cached_home WHERE user_id = ?`, [userId]);
+  }
+
+  getCachedStreaks(userId: string): Streak[] {
+    return this.readBlob<Streak[]>("cached_streaks", userId) ?? [];
+  }
+  cacheStreaks(userId: string, streaks: Streak[]): void {
+    this.writeBlob("cached_streaks", userId, streaks);
+  }
+
+  getCachedAchievements(userId: string): Achievement[] {
+    return this.readBlob<Achievement[]>("cached_achievements", userId) ?? [];
+  }
+  cacheAchievements(userId: string, achievements: Achievement[]): void {
+    this.writeBlob("cached_achievements", userId, achievements);
+  }
+
+  getCachedBodyTrend(userId: string): BodyTrendPoint[] {
+    return this.readBlob<BodyTrendPoint[]>("cached_body_trend", userId) ?? [];
+  }
+  cacheBodyTrend(userId: string, series: BodyTrendPoint[]): void {
+    this.writeBlob("cached_body_trend", userId, series);
+  }
+
+  getCachedVolumeStats(userId: string): VolumeStats | null {
+    return this.readBlob<VolumeStats>("cached_volume_stats", userId);
+  }
+  cacheVolumeStats(userId: string, stats: VolumeStats): void {
+    this.writeBlob("cached_volume_stats", userId, stats);
+  }
+
+  getCachedHabitCompletions(
+    userId: string,
+    opts?: { goalId?: string; since?: string },
+  ): HabitCompletion[] {
+    const db = this.getDb();
+    const clauses = ["user_id = ?"];
+    const params: (string | number)[] = [userId];
+    if (opts?.goalId) {
+      clauses.push("goal_id = ?");
+      params.push(opts.goalId);
+    }
+    if (opts?.since) {
+      clauses.push("day >= ?");
+      params.push(opts.since);
+    }
+    const rows = db.getAllSync(
+      `SELECT id, user_id, goal_id, day, completed_at, value FROM cached_habit_completions
+       WHERE ${clauses.join(" AND ")} ORDER BY day DESC`,
+      params,
+    ) as {
+      id: string;
+      user_id: string;
+      goal_id: string;
+      day: string;
+      completed_at: string;
+      value: number | null;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      goalId: r.goal_id,
+      completedAt: r.completed_at,
+      // The `day` column IS the authoritative user-local day (server's
+      // local_completed_date, or the optimistic toggle's `day`). Surface it so
+      // consumers bucket by it instead of re-slicing completedAt as UTC.
+      localCompletedDate: r.day,
+      value: r.value,
+    }));
+  }
+  cacheHabitCompletions(userId: string, rows: HabitCompletion[]): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_habit_completions WHERE user_id = ?`, [
+      userId,
+    ]);
+    for (const r of rows) {
+      // Prefer the server's authoritative user-local day; only fall back to a
+      // UTC slice when a row predates the field. (Slicing alone drops tz ≥ +12
+      // toggles the server clamped to a different UTC day.)
+      const day = r.localCompletedDate ?? r.completedAt.slice(0, 10);
+      db.runSync(
+        `INSERT INTO cached_habit_completions (id, user_id, goal_id, day, completed_at, value)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, goal_id, day) DO UPDATE SET
+           id = excluded.id, completed_at = excluded.completed_at, value = excluded.value`,
+        [r.id, r.userId, r.goalId, day, r.completedAt, r.value],
+      );
+    }
+  }
+  upsertHabitCompletion(row: {
+    id: string;
+    userId: string;
+    goalId: string;
+    day: string;
+    completedAt: string;
+    value: number | null;
+  }): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_habit_completions (id, user_id, goal_id, day, completed_at, value)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, goal_id, day) DO UPDATE SET
+         completed_at = excluded.completed_at, value = excluded.value`,
+      [row.id, row.userId, row.goalId, row.day, row.completedAt, row.value],
+    );
+  }
+  removeHabitCompletion(userId: string, goalId: string, day: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_habit_completions WHERE user_id = ? AND goal_id = ? AND day = ?`,
+      [userId, goalId, day],
+    );
+  }
+
+  /** Shared JSON-blob slot read (cached_home/streaks/achievements). */
+  private readBlob<T>(table: string, userId: string): T | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM ${table} WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as T) : null;
+  }
+  private readBlobSyncedAt(table: string, userId: string): string | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT synced_at FROM ${table} WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+  private writeBlob(table: string, userId: string, payload: unknown): void {
+    this.getDb().runSync(
+      `INSERT INTO ${table} (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), new Date().toISOString()],
     );
   }
 

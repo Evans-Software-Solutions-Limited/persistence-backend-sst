@@ -21,12 +21,15 @@ export type HabitTileProps = {
   state: HabitState;
   tone: HabitTone;
   label?: string;
+  /** Cell edge in pt. Default 36; the Home grid passes a denser size to match
+   *  the prototype's tiny-square grid (home.jsx HabitsGrid ≈ 18). */
+  size?: number;
   onPress?: () => void;
   testID?: string;
   accessibilityLabel?: string;
 };
 
-const SIZE = 36;
+const DEFAULT_SIZE = 36;
 
 export function habitTilePressStyle({ pressed }: { pressed: boolean }) {
   return { opacity: pressed ? 0.7 : 1 };
@@ -36,11 +39,19 @@ export function HabitTile({
   state,
   tone,
   label,
+  size = DEFAULT_SIZE,
   onPress,
   testID,
   accessibilityLabel,
 }: HabitTileProps) {
   const t = toneTokens(tone);
+
+  // Scale the radius + check glyph to the cell so a dense (≈18pt) grid keeps
+  // proportions; keep the effective touch target ≥44pt via hitSlop.
+  const radius = size >= 32 ? 10 : Math.max(4, Math.round(size / 3.5));
+  // IconSize is a constrained union (min 14); 14 fits the dense ≈18pt cell.
+  const iconSize = size <= 24 ? 14 : 16;
+  const slop = Math.max(4, Math.ceil((44 - size) / 2));
 
   // Per-state visual contract.
   const isDone = state === "done";
@@ -57,9 +68,9 @@ export function HabitTile({
 
   const cell = (
     <View
-      width={SIZE}
-      height={SIZE}
-      borderRadius={10}
+      width={size}
+      height={size}
+      borderRadius={radius}
       alignItems="center"
       justifyContent="center"
       backgroundColor={backgroundColor}
@@ -69,7 +80,7 @@ export function HabitTile({
     >
       {isDone ? (
         <IconCheck
-          {...iconDefaults({ size: 14, active: true })}
+          {...iconDefaults({ size: iconSize, active: true })}
           color={resolveInk(tone)}
         />
       ) : null}
@@ -97,8 +108,9 @@ export function HabitTile({
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
       accessibilityState={{ selected: isDone }}
-      // 36x36 cell + 4pt slop on each edge = 44pt effective touch target.
-      hitSlop={4}
+      // Slop expands the visual cell to a ≥44pt effective touch target — more
+      // slop the smaller the cell (a dense 18pt grid still taps comfortably).
+      hitSlop={slop}
       style={habitTilePressStyle}
     >
       {cell}

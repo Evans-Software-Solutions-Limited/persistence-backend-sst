@@ -40,7 +40,22 @@ import type {
   UploadAvatarInput,
   CreateSubscriptionInput,
   CancelSubscriptionInput,
+  ApiMeasurement,
+  LogMeasurementInput,
+  CreateHabitCompletionInput,
+  DeleteHabitCompletionInput,
 } from "@/domain/ports/api.port";
+import type { PersonalRecord } from "@/domain/models/record";
+import type { Achievement } from "@/domain/models/achievement";
+import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { Streak } from "@/domain/models/streak";
+import type {
+  HomePayload,
+  Rings,
+  WeeklyVolume,
+  VolumeStats,
+  BodyTrendPoint,
+} from "@/domain/models/progress";
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionResult,
@@ -869,5 +884,132 @@ export class InMemoryApiAdapter implements ApiPort {
       id: `device-${this.registeredDevices.length}`,
       registered: true,
     });
+  }
+
+  // -- Progress / Home (M4 — 06-progress-goals) --
+  public habitCompletions: HabitCompletion[] = [];
+  public measurements: ApiMeasurement[] = [];
+  public recentPRs: PersonalRecord[] = [];
+  public achievements: Achievement[] = [];
+  public bodyTrend: BodyTrendPoint[] = [];
+  public nextRings: Rings = {
+    move: { current: 0, target: 10000, pct: 0, unit: "steps" },
+    train: { current: 0, target: 20000, pct: 0, unit: "kg" },
+    fuel: "gated",
+    todayPct: 0,
+  };
+  public nextWeeklyVolume: WeeklyVolume = {
+    days: [],
+    totalKg: 0,
+    deltaPct: null,
+    workouts: { completed: 0, target: 5 },
+  };
+  public nextVolumeStats: VolumeStats = {
+    window: "month",
+    workouts: 0,
+    totalKg: 0,
+    totalTonnes: 0,
+    adherencePct: null,
+    byMuscle: [],
+  };
+
+  async getHome() {
+    return this.mayFail<HomePayload>({
+      rings: this.nextRings,
+      micro: { streak: 0, water: null, strain: null, sleep: null },
+      weeklyVolume: this.nextWeeklyVolume,
+      recentPRs: this.recentPRs,
+      habits: [],
+      todayWorkout: [],
+    });
+  }
+  async getTodayRings() {
+    return this.mayFail<Rings>(this.nextRings);
+  }
+  async getWeeklyVolume(_window?: string) {
+    return this.mayFail<WeeklyVolume>(this.nextWeeklyVolume);
+  }
+  async getVolumeStats(_window?: string) {
+    return this.mayFail<VolumeStats>(this.nextVolumeStats);
+  }
+  async getRecentPRs(limit?: number) {
+    return this.mayFail<PersonalRecord[]>(
+      limit != null ? this.recentPRs.slice(0, limit) : this.recentPRs,
+    );
+  }
+  async getBodyTrend(_window?: string) {
+    return this.mayFail<BodyTrendPoint[]>(this.bodyTrend);
+  }
+  async getAchievements() {
+    return this.mayFail<Achievement[]>(this.achievements);
+  }
+  public streaks: Streak[] = [];
+  async getStreaks() {
+    return this.mayFail<Streak[]>(this.streaks);
+  }
+  async getHabitCompletions(params?: { goalId?: string; window?: string }) {
+    const rows = params?.goalId
+      ? this.habitCompletions.filter((h) => h.goalId === params.goalId)
+      : this.habitCompletions;
+    return this.mayFail<HabitCompletion[]>(rows);
+  }
+  async createHabitCompletion(input: CreateHabitCompletionInput) {
+    const row: HabitCompletion = {
+      id: `habit-${this.habitCompletions.length + 1}`,
+      userId: "test-user",
+      goalId: input.goalId,
+      completedAt: input.date ?? new Date().toISOString(),
+      value: input.value ?? null,
+    };
+    this.habitCompletions.push(row);
+    return this.mayFail<HabitCompletion>(row);
+  }
+  async deleteHabitCompletion(input: DeleteHabitCompletionInput) {
+    const before = this.habitCompletions.length;
+    this.habitCompletions = this.habitCompletions.filter(
+      (h) => h.goalId !== input.goalId,
+    );
+    return this.mayFail<{ deleted: boolean }>({
+      deleted: this.habitCompletions.length < before,
+    });
+  }
+  async useFreezeToken(streakId: string) {
+    return this.mayFail<Streak>({
+      id: streakId,
+      userId: "test-user",
+      streakType: "workout_streak",
+      sourceGoalId: null,
+      period: "weekly",
+      currentCount: 1,
+      longestCount: 1,
+      lastPeriodEnd: "2026-06-07",
+      freezeTokens: 0,
+      status: "active",
+    });
+  }
+  async getMeasurements(_params?: PaginationParams) {
+    return this.mayFail<ApiMeasurement[]>(this.measurements);
+  }
+  async logMeasurement(input: LogMeasurementInput) {
+    const row: ApiMeasurement = {
+      id: `measurement-${this.measurements.length + 1}`,
+      userId: "test-user",
+      weightKg: input.weightKg != null ? String(input.weightKg) : null,
+      bodyFatPercentage:
+        input.bodyFatPercentage != null
+          ? String(input.bodyFatPercentage)
+          : null,
+      chestCm: null,
+      waistCm: null,
+      hipsCm: null,
+      leftArmCm: null,
+      rightArmCm: null,
+      leftThighCm: null,
+      rightThighCm: null,
+      notes: input.notes ?? null,
+      measuredAt: new Date().toISOString(),
+    };
+    this.measurements.push(row);
+    return this.mayFail<ApiMeasurement>(row);
   }
 }

@@ -2,5 +2,10 @@
 
 export { computeAge } from "./age";
 export { initialsOf } from "./initials";
-export { isIsoDateString } from "./date";
+export {
+  isIsoDateString,
+  localDayISO,
+  weekStartMondayISO,
+  timeGreeting,
+} from "./date";
 export { newIdempotencyKey } from "./idempotency";

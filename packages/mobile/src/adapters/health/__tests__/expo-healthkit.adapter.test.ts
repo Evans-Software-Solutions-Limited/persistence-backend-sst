@@ -17,6 +17,7 @@ describe("ExpoHealthKitAdapter", () => {
         unit: "kg",
         endDate: new Date("2026-04-20T07:00:00Z"),
       })),
+      saveQuantitySample: jest.fn(async () => ({})),
       ...overrides,
     };
   }
@@ -412,12 +413,72 @@ describe("ExpoHealthKitAdapter", () => {
     expect(hk.queryStatisticsCollectionForQuantity).not.toHaveBeenCalled();
   });
 
-  it("stubs writeBodyWeight as unavailable in M1", async () => {
+  it("writeBodyWeight saves a BodyMass sample in kg", async () => {
     const hk = makeHealthKit();
     const adapter = new ExpoHealthKitAdapter(hk as never);
-    const result = await adapter.writeBodyWeight();
+    const date = new Date("2026-06-10T08:00:00Z");
+    const result = await adapter.writeBodyWeight(80.5, date);
+    expect(result.ok).toBe(true);
+    expect(hk.saveQuantitySample).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierBodyMass",
+      "kg",
+      80.5,
+      date,
+      date,
+    );
+  });
+
+  it("writeBodyFat converts a percentage to HealthKit's 0..1 fraction", async () => {
+    const hk = makeHealthKit();
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const date = new Date("2026-06-10T08:00:00Z");
+    const result = await adapter.writeBodyFat(18, date);
+    expect(result.ok).toBe(true);
+    expect(hk.saveQuantitySample).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierBodyFatPercentage",
+      "%",
+      0.18,
+      date,
+      date,
+    );
+  });
+
+  it("writeBodyWeight surfaces a write_failed error when the library throws", async () => {
+    const hk = makeHealthKit({
+      saveQuantitySample: jest.fn(async () => {
+        throw new Error("denied");
+      }),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.writeBodyWeight(80, new Date());
     if (result.ok) throw new Error("expected failure");
-    expect(result.error.code).toBe("unavailable");
+    expect(result.error.code).toBe("write_failed");
+  });
+
+  it("getLatestBodyFat returns the sample as a percentage (fraction × 100)", async () => {
+    const hk = makeHealthKit({
+      getMostRecentQuantitySample: jest.fn(async () => ({
+        quantity: 0.182,
+        unit: "%",
+        endDate: new Date("2026-06-10T08:00:00Z"),
+      })),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getLatestBodyFat();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeCloseTo(18.2, 5);
+  });
+
+  it("getLatestBodyFat returns null when there is no sample", async () => {
+    const hk = makeHealthKit({
+      getMostRecentQuantitySample: jest.fn(async () => null),
+    });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    const result = await adapter.getLatestBodyFat();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeNull();
   });
 
   it("has a no-op disconnect", async () => {
