@@ -7,6 +7,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import type { YouPresenterProps } from "@/ui/presenters/YouPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-page.fixture";
 import { YouContainer, buildMilestoneTiers } from "../YouContainer";
 
 jest.mock("@/adapters/api", () => ({
@@ -128,6 +129,33 @@ describe("YouContainer", () => {
     await act(async () => {
       mockProbe.last?.onRefresh();
     });
+  });
+
+  it("derives avatar initials from the profile name once it resolves", async () => {
+    // §2: initials should prefer the profile full name (legacy parity), not the
+    // email. The fixture's "Brad Simms" → "BS"; without the profile the email
+    // ("alex@example.com") would yield "A".
+    const { api, adapters } = makeAdapters();
+    api.profilePage = PROFILE_PAGE_FIXTURE;
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.initials).toBe("BS"));
+  });
+
+  it("falls back to the email initial until the profile resolves", async () => {
+    // No profile fixture configured → getProfilePage 404s → initials fall back
+    // to the email ("alex@example.com" → "A").
+    const { adapters } = makeAdapters();
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(mockProbe.last?.initials).toBe("A");
   });
 
   it("keeps onRefresh referentially stable across re-renders", async () => {

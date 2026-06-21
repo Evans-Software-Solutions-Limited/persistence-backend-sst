@@ -35,6 +35,17 @@ const W = 320;
 const H = 64;
 const PRIMARY = toneHex("primary").base;
 
+// Stepper bounds mirror logMeasurementCommand, which rejects `<= 0 || > 999`.
+// Flooring the +/- stepper stops minus-spam from parking the sheet on a
+// non-positive weight that Save silently rejects (a dead-end). Typed input is
+// left unclamped on purpose: a deliberate out-of-range entry still flows to the
+// command, which rejects it and keeps the sheet open to correct (the existing
+// gate since PR #117). The prototype has no command, hence no floor — V2 guard.
+const MIN_KG = 1;
+const MAX_KG = 999;
+
+const clampKg = (kg: number) => Math.min(MAX_KG, Math.max(MIN_KG, kg));
+
 export type WeighInUnit = "kg" | "lb";
 
 export type WeighInSaveInput = {
@@ -136,12 +147,16 @@ export function WeighInSheetPresenter({
   const adjust = (dir: number) => {
     editedWeight.current = true;
     const next = display + dir * step;
-    setKg(unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3));
+    const nextKg =
+      unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3);
+    setKg(clampKg(nextKg));
   };
   const onType = (text: string) => {
     const v = parseFloat(text);
     if (Number.isNaN(v)) return;
     editedWeight.current = true;
+    // Not clamped: an out-of-range typed value flows to logMeasurementCommand,
+    // which rejects it and leaves the sheet open to correct (see MIN/MAX above).
     setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
   };
 

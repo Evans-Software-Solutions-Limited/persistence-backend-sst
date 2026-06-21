@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
 import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
 import { useGetVolumeStats } from "@/ui/hooks/useGetVolumeStats";
@@ -76,7 +77,13 @@ function pickPrimaryStreak(streaks: Streak[]): Streak | null {
  */
 export function YouContainer() {
   const { session } = useAuth();
+  const profile = useProfilePage();
   const openDrawer = useDrawer((s) => s.openDrawer);
+
+  // Avatar initials prefer the profile name (legacy parity, mirrors
+  // HomeContainer); cache-first via useProfilePage, with the email as a
+  // fallback until the profile resolves.
+  const fullName = profile.payload?.profile.fullName ?? null;
 
   const streaks = useGetStreaks();
   const achievements = useGetAchievements();
@@ -174,7 +181,7 @@ export function YouContainer() {
 
   return (
     <YouPresenter
-      initials={initialsOf(session?.email ?? "") || "?"}
+      initials={initialsOf(fullName ?? session?.email ?? "") || "?"}
       workoutsLabel={workoutsLabel}
       streak={streak}
       milestones={milestones}

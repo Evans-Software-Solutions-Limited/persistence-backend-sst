@@ -109,9 +109,16 @@ export function HomeContainer() {
 
   // Workouts "View all" → Train tab, pinned to the Workouts segment. The Train
   // hub persists its last segment (useTrainSegment), so without forcing it the
-  // tab can open on Exercises if that was last viewed.
+  // tab can open on Exercises if that was last viewed. Set a one-shot
+  // pendingSegment that the hub consumes in a focus effect AND write the
+  // segment now: the immediate write covers a still-live hub, the pending
+  // value re-asserts "Workouts" when react-native-screens has frozen the
+  // backgrounded hub on its last-rendered (Exercises) frame. (Not a route
+  // param — tab params are sticky and would fight a later manual toggle.)
   const onOpenWorkoutsList = useCallback(() => {
-    useTrainSegment.getState().setSegment("Workouts");
+    const train = useTrainSegment.getState();
+    train.setPendingSegment("Workouts");
+    train.setSegment("Workouts");
     router.push("/(app)/(tabs)/train" as never);
   }, [router]);
 

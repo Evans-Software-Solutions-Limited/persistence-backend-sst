@@ -112,6 +112,27 @@ describe("WeighInSheetPresenter", () => {
     expect(getByTestId("weigh-in-bodyfat-input").props.value).toBe("16");
   });
 
+  it("floors the stepper so minus can't drive the weight non-positive", () => {
+    // §3: seeded just above the floor, spamming Decrease must clamp at MIN (1
+    // kg) — never 0 or negative, which logMeasurementCommand rejects (silent
+    // dead-end before this guard).
+    const { getByLabelText, getByTestId } = render({ defaultWeightKg: 1.0 });
+    expect(getByTestId("weigh-in-input").props.value).toBe("1.0");
+    fireEvent.press(getByLabelText("Decrease weight"));
+    fireEvent.press(getByLabelText("Decrease weight"));
+    fireEvent.press(getByLabelText("Decrease weight"));
+    expect(getByTestId("weigh-in-input").props.value).toBe("1.0");
+  });
+
+  it("leaves a typed out-of-range weight unclamped (the command gates it on save)", () => {
+    // §3: only the stepper is floored. A deliberately-typed bad value still
+    // flows through so logMeasurementCommand can reject it and the container
+    // can keep the sheet open to correct (gate covered by WeighInSheetContainer).
+    const { getByTestId } = render();
+    fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
+    expect(getByTestId("weigh-in-input").props.value).toBe("-50.0");
+  });
+
   it("picks a past day via the date chips", () => {
     const { getByLabelText, getByText, onSave } = render();
     fireEvent.press(getByLabelText("Yesterday"));
