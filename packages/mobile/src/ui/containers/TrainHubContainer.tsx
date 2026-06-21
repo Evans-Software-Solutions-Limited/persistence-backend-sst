@@ -1,5 +1,6 @@
 import { Text, View } from "@tamagui/core";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
@@ -35,6 +36,19 @@ import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
+  const consumePendingSegment = useTrainSegment((s) => s.consumePendingSegment);
+
+  // Apply a one-shot pending segment on focus (e.g. Home "View all" → always
+  // Workouts). Re-asserts intent even when react-native-screens froze this hub
+  // on its last-rendered (Exercises) frame while it was backgrounded. Returns
+  // null on an ordinary re-focus, so a manual toggle to Exercises still sticks.
+  useFocusEffect(
+    useCallback(() => {
+      const pending = consumePendingSegment();
+      if (pending) setSegment(pending);
+    }, [consumePendingSegment, setSegment]),
+  );
+
   const openCreateExercise = () => router.push("/(app)/exercises/create");
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (battery/clock).

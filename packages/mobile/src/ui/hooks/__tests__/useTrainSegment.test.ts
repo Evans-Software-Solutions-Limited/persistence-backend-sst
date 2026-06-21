@@ -132,6 +132,35 @@ describe("useTrainSegment", () => {
     expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 
+  it("setPendingSegment + consumePendingSegment manage the one-shot target", async () => {
+    mockGetItem.mockResolvedValue(null);
+    const { useTrainSegment } = await loadFresh();
+
+    // Unset → consume returns null and leaves state alone.
+    expect(useTrainSegment.getState().pendingSegment).toBeNull();
+    expect(useTrainSegment.getState().consumePendingSegment()).toBeNull();
+
+    useTrainSegment.getState().setPendingSegment("Workouts");
+    expect(useTrainSegment.getState().pendingSegment).toBe("Workouts");
+
+    // Consume returns the target AND clears it (one-shot) — a second consume
+    // yields null so an ordinary re-focus won't re-apply it.
+    expect(useTrainSegment.getState().consumePendingSegment()).toBe("Workouts");
+    expect(useTrainSegment.getState().pendingSegment).toBeNull();
+    expect(useTrainSegment.getState().consumePendingSegment()).toBeNull();
+  });
+
+  it("setPendingSegment does NOT touch the active segment", async () => {
+    mockGetItem.mockResolvedValue(null);
+    const { useTrainSegment } = await loadFresh();
+
+    useTrainSegment.getState().setPendingSegment("Workouts");
+    // The pending one-shot is intent-only; the live segment is unchanged until
+    // a consumer applies it via setSegment.
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(mockSetItem).not.toHaveBeenCalled();
+  });
+
   it("marks hydrated even when the disk read rejects", async () => {
     mockGetItem.mockRejectedValue(new Error("disk gone"));
     const { useTrainSegment } = await loadFresh();
@@ -140,16 +169,21 @@ describe("useTrainSegment", () => {
     expect(useTrainSegment.getState().segment).toBe("Workouts");
   });
 
-  it("reset() clears segment + pendingCreate + drops the persisted key", async () => {
+  it("reset() clears segment + pendingCreate + pendingSegment + drops the persisted key", async () => {
     mockGetItem.mockResolvedValue(null);
     const { useTrainSegment } = await loadFresh();
-    useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+    useTrainSegment.setState({
+      segment: "Exercises",
+      pendingCreate: true,
+      pendingSegment: "Exercises",
+    });
 
     useTrainSegment.getState().reset();
 
     const s = useTrainSegment.getState();
     expect(s.segment).toBe("Workouts");
     expect(s.pendingCreate).toBe(false);
+    expect(s.pendingSegment).toBeNull();
     expect(mockRemoveItem).toHaveBeenCalledWith(KEY);
   });
 

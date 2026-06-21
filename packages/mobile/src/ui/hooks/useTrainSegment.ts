@@ -21,10 +21,22 @@ export interface TrainSegmentState {
   segment: TrainSegment;
   /** One-shot flag set by the /exercises/create deep-link redirect. */
   pendingCreate: boolean;
+  /**
+   * One-shot target segment set by a cross-tab navigation (e.g. Home
+   * "View all"). The Train hub consumes it in a focus effect and applies it
+   * via `setSegment`, re-asserting intent even when react-native-screens has
+   * frozen the backgrounded hub on its last-rendered (possibly Exercises)
+   * frame. NOT a route param — expo-router tab params are sticky and would
+   * fight the user's later manual segment toggle. Mirrors `pendingCreate`.
+   */
+  pendingSegment: TrainSegment | null;
   hydrated: boolean;
   setSegment: (next: TrainSegment) => void;
   setPendingCreate: (next: boolean) => void;
   clearPendingCreate: () => void;
+  setPendingSegment: (next: TrainSegment | null) => void;
+  /** Read + clear the one-shot pending segment (returns null when unset). */
+  consumePendingSegment: () => TrainSegment | null;
   /**
    * Return the slice to its signed-out defaults and clear the persisted key.
    * Called from `useAuth.signOut()` so the Train segment + the one-shot
@@ -40,9 +52,10 @@ function isTrainSegment(value: string | null): value is TrainSegment {
   return value === "Workouts" || value === "Exercises";
 }
 
-export const useTrainSegment = create<TrainSegmentState>((set) => ({
+export const useTrainSegment = create<TrainSegmentState>((set, get) => ({
   segment: "Workouts",
   pendingCreate: false,
+  pendingSegment: null,
   hydrated: false,
   setSegment: (next) => {
     // Flip `hydrated: true` here so a late-resolving module-load hydration
@@ -55,11 +68,22 @@ export const useTrainSegment = create<TrainSegmentState>((set) => ({
   },
   setPendingCreate: (next) => set({ pendingCreate: next }),
   clearPendingCreate: () => set({ pendingCreate: false }),
+  setPendingSegment: (next) => set({ pendingSegment: next }),
+  consumePendingSegment: () => {
+    const { pendingSegment } = get();
+    if (pendingSegment !== null) set({ pendingSegment: null });
+    return pendingSegment;
+  },
   reset: () => {
     // Back to signed-out defaults + drop the persisted key. `hydrated: true`
     // so the next account's module-load hydration (if it re-runs) doesn't
     // resurrect the prior segment. Disk clear is best-effort (fire-and-forget).
-    set({ segment: "Workouts", pendingCreate: false, hydrated: true });
+    set({
+      segment: "Workouts",
+      pendingCreate: false,
+      pendingSegment: null,
+      hydrated: true,
+    });
     AsyncStorage.removeItem(KEY).catch(() => undefined);
   },
 }));

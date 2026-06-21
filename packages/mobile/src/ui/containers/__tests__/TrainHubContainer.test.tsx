@@ -17,9 +17,17 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
  */
 
 const mockPush = jest.fn();
-jest.mock("expo-router", () => ({
-  router: { push: (...args: unknown[]) => mockPush(...args) },
-}));
+jest.mock("expo-router", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  return {
+    router: { push: (...args: unknown[]) => mockPush(...args) },
+    // Run the focus callback on mount (and whenever it changes), mirroring a
+    // screen gaining focus. Honour any returned cleanup like the real hook.
+    useFocusEffect: (cb: () => undefined | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
 
 jest.mock("@/ui/containers/WorkoutsListContainer", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -60,6 +68,7 @@ beforeEach(() => {
   useTrainSegment.setState({
     segment: "Workouts",
     pendingCreate: false,
+    pendingSegment: null,
     hydrated: true,
   });
 });
@@ -113,5 +122,43 @@ describe("TrainHubContainer", () => {
     fireEvent.press(getByText("Create"));
 
     expect(mockPush).toHaveBeenCalledWith("/(app)/exercises/create");
+  });
+
+  // §1: the Home "View all" one-shot. The hub was last on Exercises (the
+  // freeze-on-blur frame); a pending "Workouts" must win on focus and the
+  // one-shot must be consumed so it doesn't fight a later manual toggle.
+  it("consumes a pending segment on focus and lands on Workouts", () => {
+    useTrainSegment.setState({
+      segment: "Exercises",
+      pendingSegment: "Workouts",
+      hydrated: true,
+    });
+
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <TrainHubContainer />,
+    );
+
+    const header = within(getByTestId("train-header"));
+    expect(header.getByText("Workouts")).toBeTruthy();
+    expect(getByTestId("workouts-body")).toBeTruthy();
+    expect(queryByTestId("exercises-body")).toBeNull();
+    // One-shot drained.
+    expect(useTrainSegment.getState().pendingSegment).toBeNull();
+  });
+
+  it("leaves the manual segment alone on focus when no pending is set", () => {
+    // Manual toggle to Exercises with no pending one-shot — an ordinary
+    // re-focus must NOT snap back to Workouts.
+    useTrainSegment.setState({
+      segment: "Exercises",
+      pendingSegment: null,
+      hydrated: true,
+    });
+
+    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
+
+    const header = within(getByTestId("train-header"));
+    expect(header.getByText("Exercises")).toBeTruthy();
+    expect(getByTestId("exercises-body")).toBeTruthy();
   });
 });
