@@ -3,6 +3,8 @@ import {
   achievements,
   bodyMeasurements,
   habitCompletions,
+  nutritionEntries,
+  nutritionTargets,
   profiles,
   userAchievements,
   userGoals,
@@ -94,6 +96,25 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       );
   }
 
+  /**
+   * Distinct user ids with an active-or-broken `nutrition_streak` — the set the
+   * nightly nutrition advance pass evaluates (M9). Includes `broken` so a
+   * satisfied day can restart a broken streak via the engine's restart path.
+   */
+  async getNutritionStreakUserIds(): Promise<string[]> {
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ userId: userStreaks.userId })
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.streakType, "nutrition_streak"),
+          sql`${userStreaks.status} IN ('active','broken')`,
+        ),
+      );
+    return rows.map((r) => r.userId);
+  }
+
   async isPeriodSatisfied(
     streak: UserStreak,
     startDate: string,
@@ -155,9 +176,34 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       return (rows[0]?.c ?? 0) >= 1;
     }
 
-    // nutrition_streak — M9-gated. No nutrition_entries table yet, so it can
-    // never be satisfied; nutrition streaks simply won't advance until M9.
-    return false;
+    // nutrition_streak (M9, 13-nutrition-tracking) — the day's total kcal must
+    // fall within the user's target ± 10% (cross-cuts § 3.1). Needs a target
+    // set; with none we can't evaluate "in range", so the day can't satisfy.
+    const targetRows = await db
+      .select({ daily: nutritionTargets.dailyKcal })
+      .from(nutritionTargets)
+      .where(eq(nutritionTargets.userId, streak.userId))
+      .limit(1);
+    const target = targetRows[0]?.daily;
+    if (target == null) return false;
+    const t = Number(target);
+    if (!Number.isFinite(t) || t <= 0) return false;
+
+    const sumRows = await db
+      .select({
+        total: sql<number>`coalesce(sum(${nutritionEntries.kcal}), 0)::float8`,
+      })
+      .from(nutritionEntries)
+      .where(
+        and(
+          eq(nutritionEntries.userId, streak.userId),
+          sql`(${nutritionEntries.loggedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}`,
+        ),
+      );
+    const total = Number(sumRows[0]?.total ?? 0);
+    // A day with no logging totals 0 → below 90% of any positive target → not
+    // satisfied (correctly counts as a miss the cron then sweeps).
+    return total >= t * 0.9 && total <= t * 1.1;
   }
 
   private async resolveWorkoutThreshold(

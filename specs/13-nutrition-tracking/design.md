@@ -509,7 +509,18 @@ Unlike workout/habit/measurement streaks (which the on-write engine advances), n
 
 On a satisfied day the cron also emits a `daily_nutrition_target_hit` notification **only if the user's `notification_preferences` opt-in is on** (default **off** per cross-cuts § 5 — effectively opt-in). The `ALTER TYPE … ADD VALUE 'daily_nutrition_target_hit'` migration MUST be applied (own statement, not in a using-transaction) before this emit, or the first `INSERT INTO notifications` 500s with `invalid input value for enum`.
 
-Real-time evaluation on `POST /nutrition/entries`: skip — daily total volatile until day ends. Cron handles both advance and miss-sweep.
+Real-time evaluation on `POST /nutrition/entries`: skip the **durable** streak advance — the daily total is volatile until the day ends (more logging can push an in-range day to over), so a server-side advance can't commit until day-close without risking a retract. Cron owns the durable count + miss-sweep.
+
+### Immediate in-app reward (instant — decoupled from the durable streak)
+
+> **Revised 2026-06-23 (Brad):** The durable streak waits for day-close, but the _reward_ must not — a 2am-next-day acknowledgement demotivates. The two are separate concerns.
+
+The Fuel screen already has `consumed` + `targets` + `remainingKcal` from `GET /nutrition/today`, so the **client** detects, the instant a logged entry brings the day's total into `daily_kcal ± 10%` (and likewise per-macro), and fires an **immediate optimistic celebration** ("Calorie goal hit") + marks today's ring as _hit_. This is purely reactive on the mobile side — no server round-trip beyond the log itself, no new endpoint. If subsequent logging pushes the day back out of range, the optimistic mark clears.
+
+- **Immediate layer (frontend, optimistic):** crossing into ±10% → in-app celebration + today marked hit. Zero delay. Self-corrects if the day later goes out of range. See `FRONTEND_BRIEF § Immediate goal-hit reward`.
+- **Durable layer (backend cron, authoritative):** confirms the day _closed_ in range → advances `nutrition_streak`, mints tokens, unlocks milestones. The `daily_nutrition_target_hit` **push** stays here (end-of-day) so it never claims a goal-hit the user later blew past.
+
+This mirrors MyFitnessPal / MacroFactor: instant "goal reached" feedback, persistent streak as the day-close record.
 
 ---
 
