@@ -47,25 +47,8 @@ import { goalsListHandler } from "./application/goals/list/goalsListHandler";
 import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
 import { goalsUpdateHandler } from "./application/goals/update/goalsUpdateHandler";
 import { goalsDeleteHandler } from "./application/goals/delete/goalsDeleteHandler";
-// M9 — nutrition (Fuel) Tier A
-import { nutritionEntriesListHandler } from "./application/nutrition/entries/list/nutritionEntriesListHandler";
-import { nutritionEntriesCreateHandler } from "./application/nutrition/entries/create/nutritionEntriesCreateHandler";
-import { nutritionEntriesUpdateHandler } from "./application/nutrition/entries/update/nutritionEntriesUpdateHandler";
-import { nutritionEntriesDeleteHandler } from "./application/nutrition/entries/delete/nutritionEntriesDeleteHandler";
-import { nutritionTodayHandler } from "./application/nutrition/today/nutritionTodayHandler";
-import { nutritionTargetsGetHandler } from "./application/nutrition/targets/get/nutritionTargetsGetHandler";
-import { nutritionTargetsSetHandler } from "./application/nutrition/targets/set/nutritionTargetsSetHandler";
-import { nutritionWaterGetHandler } from "./application/nutrition/water/get/nutritionWaterGetHandler";
-import { nutritionWaterPatchHandler } from "./application/nutrition/water/patch/nutritionWaterPatchHandler";
-import { nutritionBarcodeResolveHandler } from "./application/nutrition/barcode/nutritionBarcodeResolveHandler";
-import { foodsListHandler } from "./application/foods/list/foodsListHandler";
-import { foodsCreateHandler } from "./application/foods/create/foodsCreateHandler";
-import { recipesListHandler } from "./application/recipes/list/recipesListHandler";
-import { recipesCreateHandler } from "./application/recipes/create/recipesCreateHandler";
-import { recipesImportHandler } from "./application/recipes/import/recipesImportHandler";
-import { recipesGetHandler } from "./application/recipes/get/recipesGetHandler";
-import { recipesUpdateHandler } from "./application/recipes/update/recipesUpdateHandler";
-import { recipesDeleteHandler } from "./application/recipes/delete/recipesDeleteHandler";
+// M9 — nutrition (Fuel) Tier A (grouped sub-app)
+import { nutritionRoutes } from "./application/nutritionRoutes";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
@@ -179,29 +162,10 @@ const app = new Elysia()
   .use(trainersInvitationsListHandler)
   .use(trainersInvitationsCreateHandler)
   .use(trainersInvitationsDeleteHandler)
-  // M9 — nutrition (Fuel) Tier A. entries CRUD; literal /nutrition/entries
-  // (GET/POST) and parameterised /nutrition/entries/:id (PUT/DELETE) don't
-  // collide because they differ by HTTP method.
-  .use(nutritionTodayHandler)
-  .use(nutritionEntriesListHandler)
-  .use(nutritionEntriesCreateHandler)
-  .use(nutritionEntriesUpdateHandler)
-  .use(nutritionEntriesDeleteHandler)
-  .use(nutritionTargetsGetHandler)
-  .use(nutritionTargetsSetHandler)
-  .use(nutritionWaterGetHandler)
-  .use(nutritionWaterPatchHandler)
-  .use(nutritionBarcodeResolveHandler)
-  .use(foodsListHandler)
-  .use(foodsCreateHandler)
-  // recipes — GET /recipes (list) registered before GET /recipes/:id (get)
-  .use(recipesListHandler)
-  .use(recipesCreateHandler)
-  // POST /recipes/import (literal) before the /recipes/:id handlers
-  .use(recipesImportHandler)
-  .use(recipesGetHandler)
-  .use(recipesUpdateHandler)
-  .use(recipesDeleteHandler);
+  // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
+  // ./application/nutritionRoutes) — keeps the Eden Treaty type in
+  // packages/web under TS's instantiation-depth ceiling.
+  .use(nutritionRoutes);
 
 export type CoreApi = typeof app;
 

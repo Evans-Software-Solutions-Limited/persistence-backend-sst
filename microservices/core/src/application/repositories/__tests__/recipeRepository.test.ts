@@ -133,4 +133,30 @@ describe("RecipeRepository", () => {
     });
     expect(await new RecipeRepository().delete("r1", "u1")).toBe(true);
   });
+
+  describe("getMacroSummaries", () => {
+    it("returns an empty map for no ids (no query)", async () => {
+      const select = vi.fn();
+      (getDb as any).mockReturnValue({ select });
+      const out = await new RecipeRepository().getMacroSummaries([], "u1");
+      expect(out.size).toBe(0);
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it("maps owned recipe ids to parsed macro summaries", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          from: () => ({ where: () => Promise.resolve([recipeRow]) }),
+        }),
+      });
+      const out = await new RecipeRepository().getMacroSummaries(["r1"], "u1");
+      expect(out.get("r1")).toEqual({
+        totalKcal: 300,
+        totalProteinG: 20,
+        totalCarbsG: 40,
+        totalFatG: 10,
+        servings: 2,
+      });
+    });
+  });
 });

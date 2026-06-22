@@ -1,4 +1,4 @@
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import {
   recipes,
   recipeIngredients,
@@ -112,6 +112,54 @@ export class RecipeRepository {
       .from(recipeIngredients)
       .where(eq(recipeIngredients.recipeId, id));
     return toRecipeDTO(found[0], ings);
+  }
+
+  /**
+   * Batch macro summaries for the caller's recipes — used to materialise meal
+   * totals (STORY-007). Scoped to `userId`; unknown / unowned ids are absent
+   * from the returned map.
+   */
+  async getMacroSummaries(
+    ids: string[],
+    userId: string,
+  ): Promise<
+    Map<
+      string,
+      {
+        totalKcal: number;
+        totalProteinG: number;
+        totalCarbsG: number;
+        totalFatG: number;
+        servings: number;
+      }
+    >
+  > {
+    const map = new Map<
+      string,
+      {
+        totalKcal: number;
+        totalProteinG: number;
+        totalCarbsG: number;
+        totalFatG: number;
+        servings: number;
+      }
+    >();
+    if (ids.length === 0) return map;
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(recipes)
+      .where(and(inArray(recipes.id, ids), eq(recipes.userId, userId)));
+    for (const r of rows) {
+      map.set(r.id, {
+        totalKcal: Number(r.totalKcal ?? 0),
+        totalProteinG: Number(r.totalProteinG ?? 0),
+        totalCarbsG: Number(r.totalCarbsG ?? 0),
+        totalFatG: Number(r.totalFatG ?? 0),
+        servings: Number(r.servings),
+      });
+    }
+    return map;
   }
 
   async create(
