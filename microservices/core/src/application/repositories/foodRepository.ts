@@ -1,4 +1,4 @@
-import { and, eq, ilike, or, desc } from "drizzle-orm";
+import { and, eq, ilike, or, desc, inArray } from "drizzle-orm";
 import { foods, type Food } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -62,6 +62,14 @@ export class FoodRepository {
       .where(eq(foods.id, id))
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
+  }
+
+  /** Batch fetch by id — used to materialise recipe/meal macros. */
+  async getByIds(ids: string[]): Promise<FoodDTO[]> {
+    if (ids.length === 0) return [];
+    const db = getDb();
+    const rows = await db.select().from(foods).where(inArray(foods.id, ids));
+    return rows.map(toFoodDTO);
   }
 
   async getByBarcode(barcode: string): Promise<FoodDTO | null> {

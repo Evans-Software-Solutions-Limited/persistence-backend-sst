@@ -60,6 +60,11 @@ import { nutritionWaterPatchHandler } from "./application/nutrition/water/patch/
 import { nutritionBarcodeResolveHandler } from "./application/nutrition/barcode/nutritionBarcodeResolveHandler";
 import { foodsListHandler } from "./application/foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./application/foods/create/foodsCreateHandler";
+import { recipesListHandler } from "./application/recipes/list/recipesListHandler";
+import { recipesCreateHandler } from "./application/recipes/create/recipesCreateHandler";
+import { recipesGetHandler } from "./application/recipes/get/recipesGetHandler";
+import { recipesUpdateHandler } from "./application/recipes/update/recipesUpdateHandler";
+import { recipesDeleteHandler } from "./application/recipes/delete/recipesDeleteHandler";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
@@ -187,7 +192,13 @@ const app = new Elysia()
   .use(nutritionWaterPatchHandler)
   .use(nutritionBarcodeResolveHandler)
   .use(foodsListHandler)
-  .use(foodsCreateHandler);
+  .use(foodsCreateHandler)
+  // recipes — GET /recipes (list) registered before GET /recipes/:id (get)
+  .use(recipesListHandler)
+  .use(recipesCreateHandler)
+  .use(recipesGetHandler)
+  .use(recipesUpdateHandler)
+  .use(recipesDeleteHandler);
 
 export type CoreApi = typeof app;
 
