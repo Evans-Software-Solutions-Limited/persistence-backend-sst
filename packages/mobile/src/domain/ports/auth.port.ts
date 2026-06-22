@@ -22,6 +22,19 @@ export interface AuthPort {
   signInWithOAuth(
     provider: OAuthProvider,
   ): Promise<Result<AuthSession, AuthError>>;
+  /**
+   * Native Sign in with Apple (iOS). Uses Apple's Authentication Services
+   * to obtain an identity token, then exchanges it with Supabase via
+   * `signInWithIdToken`. This is the App Store–compliant path — Apple
+   * requires native Sign in with Apple when other social logins are
+   * offered, and it gives the native sheet (Face ID, Hide My Email)
+   * rather than a browser pop-up.
+   *
+   * Only meaningful on iOS; non-iOS callers should fall back to
+   * `signInWithOAuth("apple")`. Returns an `AuthError` with code
+   * `"cancelled"` when the user dismisses the sheet.
+   */
+  signInWithApple(): Promise<Result<AuthSession, AuthError>>;
   signOut(): Promise<Result<void, AuthError>>;
   getSession(): Promise<Result<AuthSession | null, AuthError>>;
   onAuthStateChange(

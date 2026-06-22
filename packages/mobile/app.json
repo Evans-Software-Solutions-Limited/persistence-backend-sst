@@ -10,6 +10,7 @@
       "supportsTablet": true,
       "icon": "./assets/icons/ios.png",
       "bundleIdentifier": "com.bradleyevans96.persistence",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Persistence needs access to your health data to track your fitness progress, including steps, workouts, and activity levels.",
@@ -94,7 +95,8 @@
           "cameraPermission": "Persistence needs access to your camera so you can take a profile picture."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true

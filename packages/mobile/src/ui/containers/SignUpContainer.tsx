@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { Platform } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import type { OAuthProvider } from "@/domain/ports/auth.port";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -6,7 +7,7 @@ import { SignUpPresenter } from "@/ui/presenters/SignUpPresenter";
 
 export function SignUpContainer() {
   const router = useRouter();
-  const { signUp, signInWithOAuth } = useAuth();
+  const { signUp, signInWithOAuth, signInWithApple } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -59,14 +60,20 @@ export function SignUpContainer() {
       setError(null);
       setOauthLoading(provider);
       try {
-        await signInWithOAuth(provider);
+        // On iOS, Apple goes through the native Sign in with Apple sheet
+        // (App Store requirement); everything else uses the web OAuth flow.
+        if (provider === "apple" && Platform.OS === "ios") {
+          await signInWithApple();
+        } else {
+          await signInWithOAuth(provider);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Sign in failed");
       } finally {
         setOauthLoading(null);
       }
     },
-    [signInWithOAuth],
+    [signInWithOAuth, signInWithApple],
   );
 
   const handleSignIn = useCallback(() => {

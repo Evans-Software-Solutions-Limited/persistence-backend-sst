@@ -232,6 +232,88 @@ describe("useAuth", () => {
     ).rejects.toThrow("Test auth error");
   });
 
+  it("signs in with native Apple", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.signInWithApple();
+    });
+
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.email).toBe("apple@example.com");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("throws and sets error when native Apple sign-in fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.shouldFail = true;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.signInWithApple();
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("Test auth error");
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.kind).toBe("auth");
+  });
+
+  it("treats native Apple cancellation as a silent no-op", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.shouldFail = true;
+    auth.failError = {
+      kind: "auth",
+      code: "cancelled",
+      message: "Sign in with Apple was cancelled",
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Cancellation must not throw and must not surface an error banner.
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.signInWithApple();
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.session).toBeNull();
+  });
+
   it("isAuthenticated is true after sign-in, false after sign-out", async () => {
     const { adapters } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (

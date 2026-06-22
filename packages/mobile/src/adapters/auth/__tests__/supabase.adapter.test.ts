@@ -30,6 +30,8 @@ const mockOnAuthStateChange = jest.fn();
 const mockResetPasswordForEmail = jest.fn();
 const mockRefreshSession = jest.fn();
 const mockSetSession = jest.fn();
+const mockSignInWithIdToken = jest.fn();
+const mockUpdateUser = jest.fn();
 const mockStartAutoRefresh = jest.fn();
 const mockStopAutoRefresh = jest.fn();
 
@@ -39,6 +41,8 @@ jest.mock("@supabase/supabase-js", () => ({
       signInWithPassword: mockSignInWithPassword,
       signUp: mockSignUp,
       signInWithOAuth: mockSignInWithOAuth,
+      signInWithIdToken: mockSignInWithIdToken,
+      updateUser: mockUpdateUser,
       signOut: mockSignOut,
       getSession: mockGetSession,
       onAuthStateChange: mockOnAuthStateChange,
@@ -50,6 +54,11 @@ jest.mock("@supabase/supabase-js", () => ({
     },
   }),
   processLock: jest.fn(),
+}));
+
+jest.mock("expo-apple-authentication", () => ({
+  signInAsync: jest.fn(),
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
 }));
 
 jest.mock("expo-constants", () => ({
@@ -71,6 +80,8 @@ jest.mock("expo-web-browser", () => ({
 
 // eslint-disable-next-line import/first
 import * as WebBrowser from "expo-web-browser";
+// eslint-disable-next-line import/first
+import * as AppleAuthentication from "expo-apple-authentication";
 // eslint-disable-next-line import/first
 import { SupabaseAuthAdapter } from "../supabase.adapter";
 
@@ -399,6 +410,132 @@ describe("SupabaseAuthAdapter", () => {
         expect.any(String),
         { preferEphemeralSession: true },
       );
+    });
+  });
+
+  // -- signInWithApple (native) --
+
+  describe("signInWithApple", () => {
+    const signInAsync = AppleAuthentication.signInAsync as jest.Mock;
+
+    it("exchanges the Apple identity token for a Supabase session", async () => {
+      signInAsync.mockResolvedValue({
+        identityToken: "apple-id-token",
+        fullName: null,
+      });
+      mockSignInWithIdToken.mockResolvedValue({
+        data: { session: MOCK_SUPABASE_SESSION },
+        error: null,
+      });
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual(EXPECTED_AUTH_SESSION);
+      }
+      expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+        provider: "apple",
+        token: "apple-id-token",
+      });
+      // No name returned → no metadata write.
+      expect(mockUpdateUser).not.toHaveBeenCalled();
+    });
+
+    it("persists the full name to user metadata on first sign-in", async () => {
+      signInAsync.mockResolvedValue({
+        identityToken: "apple-id-token",
+        fullName: {
+          givenName: "Ada",
+          middleName: null,
+          familyName: "Lovelace",
+        },
+      });
+      mockSignInWithIdToken.mockResolvedValue({
+        data: { session: MOCK_SUPABASE_SESSION },
+        error: null,
+      });
+      mockUpdateUser.mockResolvedValue({ data: {}, error: null });
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateUser).toHaveBeenCalledWith({
+        data: {
+          full_name: "Ada Lovelace",
+          given_name: "Ada",
+          family_name: "Lovelace",
+        },
+      });
+    });
+
+    it("still signs in when the metadata write fails", async () => {
+      signInAsync.mockResolvedValue({
+        identityToken: "apple-id-token",
+        fullName: { givenName: "Ada", middleName: null, familyName: null },
+      });
+      mockSignInWithIdToken.mockResolvedValue({
+        data: { session: MOCK_SUPABASE_SESSION },
+        error: null,
+      });
+      mockUpdateUser.mockRejectedValue(new Error("metadata write failed"));
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(true);
+    });
+
+    it("returns an error when Apple provides no identity token", async () => {
+      signInAsync.mockResolvedValue({ identityToken: null, fullName: null });
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("No identity token");
+      }
+      expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+    });
+
+    it("returns an error when the token exchange fails", async () => {
+      signInAsync.mockResolvedValue({
+        identityToken: "apple-id-token",
+        fullName: null,
+      });
+      mockSignInWithIdToken.mockResolvedValue({
+        data: { session: null },
+        error: { message: "Apple provider not enabled" },
+      });
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe("Apple provider not enabled");
+      }
+    });
+
+    it("maps a user cancellation to the 'cancelled' code (silent no-op)", async () => {
+      signInAsync.mockRejectedValue({ code: "ERR_REQUEST_CANCELED" });
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("cancelled");
+      }
+    });
+
+    it("returns an unknown error for other native failures", async () => {
+      signInAsync.mockRejectedValue(new Error("Apple services unavailable"));
+
+      const result = await adapter.signInWithApple();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("unknown");
+        expect(result.error.message).toBe("Apple services unavailable");
+      }
     });
   });
 

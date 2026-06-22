@@ -68,6 +68,19 @@ export class InMemoryAuthAdapter implements AuthPort {
     return ok(this.currentSession);
   }
 
+  async signInWithApple(): Promise<Result<AuthSession, AuthError>> {
+    if (this.shouldFail) return fail(this.failError);
+    this.currentSession = {
+      accessToken: "apple-token",
+      refreshToken: "apple-refresh",
+      userId: "apple-user",
+      email: "apple@example.com",
+      expiresAt: Date.now() / 1000 + 3600,
+    };
+    this.notify();
+    return ok(this.currentSession);
+  }
+
   async signOut(): Promise<Result<void, AuthError>> {
     if (this.shouldFail) return fail(this.failError);
     this.currentSession = null;

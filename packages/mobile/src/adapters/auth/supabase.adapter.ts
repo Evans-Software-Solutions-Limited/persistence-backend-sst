@@ -4,6 +4,7 @@ import {
   processLock,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import * as AppleAuthentication from "expo-apple-authentication";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -225,6 +226,91 @@ export class SupabaseAuthAdapter implements AuthPort {
         kind: "auth",
         code: "unknown",
         message: err instanceof Error ? err.message : "OAuth failed",
+      });
+    }
+  }
+
+  async signInWithApple(): Promise<Result<AuthSession, AuthError>> {
+    try {
+      // Native Apple sheet (Face ID / Hide My Email). FULL_NAME + EMAIL
+      // are only returned on the *first* authorization for this app.
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: "No identity token returned from Apple",
+        });
+      }
+
+      // Exchange the Apple identity token for a Supabase session. Requires
+      // the Apple provider enabled in Supabase with this app's bundle ID
+      // registered under "Client IDs" (see auth-apple Supabase docs).
+      const { data, error } = await this.client.auth.signInWithIdToken({
+        provider: "apple",
+        token: credential.identityToken,
+      });
+
+      if (error || !data.session) {
+        return fail({
+          kind: "auth",
+          code: "unknown",
+          message: error?.message ?? "Failed to sign in with Apple",
+        });
+      }
+
+      // Apple only sends the full name on the first sign-in and it is NOT
+      // in the identity token's claims, so Supabase can't populate it for
+      // us. Persist it to user metadata when present (best-effort — never
+      // fail the sign-in if the metadata write fails).
+      if (credential.fullName) {
+        const { givenName, middleName, familyName } = credential.fullName;
+        const fullName = [givenName, middleName, familyName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (fullName) {
+          try {
+            await this.client.auth.updateUser({
+              data: {
+                full_name: fullName,
+                given_name: givenName ?? undefined,
+                family_name: familyName ?? undefined,
+              },
+            });
+          } catch {
+            // Best-effort metadata write; the user is already signed in.
+          }
+        }
+      }
+
+      return ok(this.mapSession(data.session));
+    } catch (err) {
+      // User dismissed the native sheet — not a real failure. Surface a
+      // distinct code so callers can treat it as a silent no-op.
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code?: string }).code === "ERR_REQUEST_CANCELED"
+      ) {
+        return fail({
+          kind: "auth",
+          code: "cancelled",
+          message: "Sign in with Apple was cancelled",
+        });
+      }
+      return fail({
+        kind: "auth",
+        code: "unknown",
+        message:
+          err instanceof Error ? err.message : "Sign in with Apple failed",
       });
     }
   }

@@ -16,6 +16,7 @@ export type AuthState = {
     password: string,
   ) => Promise<{ confirmationRequired: boolean }>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 };
@@ -104,6 +105,18 @@ export function useAuth(): AuthState {
     [auth],
   );
 
+  const signInWithApple = useCallback(async () => {
+    setError(null);
+    const result = await auth.signInWithApple();
+    if (!result.ok) {
+      // Cancellation is a user dismissing the native sheet — treat it as
+      // a silent no-op (no error banner, no throw).
+      if (result.error.code === "cancelled") return;
+      setError(result.error);
+      throw new Error(result.error.message);
+    }
+  }, [auth]);
+
   const signUp = useCallback(
     async (
       email: string,
@@ -171,6 +184,7 @@ export function useAuth(): AuthState {
     signIn,
     signUp,
     signInWithOAuth,
+    signInWithApple,
     signOut,
     resetPassword,
   };
