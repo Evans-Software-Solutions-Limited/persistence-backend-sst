@@ -1,7 +1,8 @@
 import { router } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDrawer } from "@/state/drawer";
+import { useHealthSync } from "@/state/health-sync";
 import { useUserMode } from "@/state/user-mode";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useHealthData } from "@/ui/hooks/useHealthData";
@@ -41,6 +42,22 @@ export function ProfileDrawerContainer() {
     health.isAvailable &&
     (health.permissionStatus.steps === "granted" ||
       health.permissionStatus.bodyWeight === "granted");
+
+  // The drawer is mounted permanently (sibling of the Stack), so its own
+  // useHealthData() instance only re-reads on mount / AppState='active' — it
+  // wouldn't notice a grant made on the Health connect screen, leaving the
+  // "connected" badge stale until the app next foregrounds. Subscribe to the
+  // shared grant signal and force a fresh read when it bumps (same bridge
+  // HomeContainer uses for the rings). Bypass is fine here: it fires only on
+  // an actual grant, not on every render.
+  const refreshHealth = health.refresh;
+  const healthRevision = useHealthSync((s) => s.revision);
+  const seenHealthRevisionRef = useRef(healthRevision);
+  useEffect(() => {
+    if (seenHealthRevisionRef.current === healthRevision) return;
+    seenHealthRevisionRef.current = healthRevision;
+    void refreshHealth();
+  }, [healthRevision, refreshHealth]);
 
   // Close the drawer then navigate to the sub-page.
   const pushFrom = useCallback(
