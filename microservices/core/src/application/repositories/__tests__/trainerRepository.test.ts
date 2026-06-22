@@ -929,6 +929,45 @@ describe("TrainerRepository", () => {
       ]);
     });
 
+    it("IDLE flag is inclusive at the threshold — 4d fires, 3d does not (prototype '4d IDLE')", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const now = new Date("2026-05-15T00:00:00Z");
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "c1",
+            clientName: "Four Days",
+            avatarUrl: null,
+            status: "active",
+          },
+          {
+            clientId: "c2",
+            clientName: "Three Days",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [
+          { clientId: "c1", completed: 9, total: 10 },
+          { clientId: "c2", completed: 9, total: 10 },
+        ],
+        lastSeen: new Map([
+          // exactly 4 whole days ago → "4d IDLE" (inclusive threshold).
+          ["c1", "2026-05-11T00:00:00.000Z"],
+          // 3 whole days ago → no IDLE flag.
+          ["c2", "2026-05-12T00:00:00.000Z"],
+        ]),
+        missed: new Map(),
+        prs: new Set(),
+      });
+      const byId = Object.fromEntries(
+        (await repo.getClients("t1", now)).map((c) => [c.id, c]),
+      );
+      expect(byId["c1"].flags).toEqual([{ tone: "error", label: "4d IDLE" }]);
+      expect(byId["c2"].flags).toEqual([]);
+    });
+
     it("omits each flag when it does not apply (no PR, 0 missed, recent/absent last-seen)", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();

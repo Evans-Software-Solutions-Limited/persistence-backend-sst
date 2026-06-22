@@ -167,7 +167,11 @@ const BAND_STRONG_MIN = 85;
 const BAND_WOBBLING_MIN = 65;
 const BAND_AT_RISK_MIN = 40;
 
-/** Whole days after which a client with no completed session is "idle". */
+/**
+ * Whole days idle (no completed session) AT OR AFTER which a client is flagged.
+ * Inclusive: exactly 4 whole days → "4d IDLE", matching the prototype's
+ * canonical idle row (`ClientRowV2` Tom · 4d).
+ */
 const IDLE_DAYS = 4;
 
 // ─── Pure helpers (exported for unit testing) ──────────────────────────────────
@@ -1051,7 +1055,7 @@ export class TrainerRepository {
       }
       if (lastSeenAt !== null) {
         const idleDays = wholeDaysBetween(new Date(lastSeenAt), now);
-        if (idleDays > IDLE_DAYS) {
+        if (idleDays >= IDLE_DAYS) {
           flags.push({ tone: "error", label: `${idleDays}d IDLE` });
         }
       }
