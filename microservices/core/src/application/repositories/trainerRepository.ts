@@ -438,11 +438,14 @@ export class TrainerRepository {
   }
 
   /**
-   * Per-client count of THIS trainer's missed assignments in the window —
-   * status='skipped', OR past-due-and-not-completed (same predicate as the
-   * recent-activity feed). Trainer-scoped: a co-trainer's missed assignment for
-   * a jointly-coached client is not something this trainer scheduled and must
-   * not inflate their "N MISSED" flag (PR #123 review lesson).
+   * Per-client count of THIS trainer's missed assignments in the window — a
+   * past-due assignment (dueDate in [windowStart, now)) that was not completed
+   * (covers both 'skipped' and still-'assigned'/'started' rows). A future-dated
+   * 'skipped' row (e.g. a trainer pre-cancelling next week's sessions) is NOT
+   * missed yet, so the `dueDate < now` bound applies to every status — skipped
+   * included (PR #125 review). Trainer-scoped: a co-trainer's missed assignment
+   * for a jointly-coached client must not inflate this trainer's "N MISSED"
+   * flag (PR #123 review lesson).
    */
   async getMissedCountsByClient(
     trainerId: string,
@@ -467,13 +470,10 @@ export class TrainerRepository {
           inArray(workoutAssignments.clientId, clientIds),
           sql`${workoutAssignments.dueDate} is not null`,
           sql`${workoutAssignments.dueDate} >= ${startDate}`,
-          sql`(
-            ${workoutAssignments.status} = 'skipped'
-            OR (
-              ${workoutAssignments.status} not in ('completed')
-              AND ${workoutAssignments.dueDate} < ${nowDate}
-            )
-          )`,
+          // Past-due only — excludes future-dated 'skipped' rows. 'skipped' is a
+          // subset of "not completed", so the OR collapses to this single pair.
+          sql`${workoutAssignments.status} not in ('completed')`,
+          sql`${workoutAssignments.dueDate} < ${nowDate}`,
         ),
       )
       .groupBy(workoutAssignments.clientId);
@@ -827,10 +827,12 @@ export class TrainerRepository {
       .orderBy(desc(personalRecords.achievedAt))
       .limit(RECENT_ACTIVITY_LIMIT);
 
-    // 3. Missed assignments — status='skipped', OR past-due-and-not-completed.
-    //    Scoped to this trainer's own assignments: a co-trainer's missed
-    //    assignment for a shared client isn't something THIS trainer scheduled
-    //    or can act on, so it must not appear in their feed.
+    // 3. Missed assignments — past-due (dueDate < now) and not completed.
+    //    Covers 'skipped' and still-'assigned'/'started' rows; a future-dated
+    //    'skipped' (pre-cancelled session) is not missed yet, so the dueDate
+    //    bound applies to every status (PR #125 review). Scoped to this
+    //    trainer's own assignments: a co-trainer's missed assignment for a
+    //    shared client isn't something THIS trainer scheduled or can act on.
     const nowDate = now.toISOString().slice(0, 10);
     const missed = await db
       .select({
@@ -843,14 +845,9 @@ export class TrainerRepository {
         and(
           eq(workoutAssignments.trainerId, trainerId),
           inArray(workoutAssignments.clientId, clientIds),
-          sql`(
-            ${workoutAssignments.status} = 'skipped'
-            OR (
-              ${workoutAssignments.status} not in ('completed')
-              AND ${workoutAssignments.dueDate} is not null
-              AND ${workoutAssignments.dueDate} < ${nowDate}
-            )
-          )`,
+          sql`${workoutAssignments.status} not in ('completed')`,
+          sql`${workoutAssignments.dueDate} is not null`,
+          sql`${workoutAssignments.dueDate} < ${nowDate}`,
         ),
       )
       .orderBy(desc(workoutAssignments.dueDate))
