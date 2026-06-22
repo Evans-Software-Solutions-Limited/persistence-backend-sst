@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
@@ -82,14 +83,33 @@ export function HomeContainer() {
     };
   }, [home.data, healthSteps]);
 
-  // Refresh HealthKit on focus so the rings reflect a fresh reading the moment
-  // the user returns from the Health connect screen (granting permission there
-  // doesn't unmount this tab, so a mount-only read would stay stale).
+  // Re-read HealthKit on focus so the rings stay current. Two guards keep this
+  // from defeating the hook's 5-min rate limit (AC 7.6):
+  //   • The first focus (= mount) is skipped — useHealthData's own mount
+  //     effect already does the initial read, so firing here too would double
+  //     it (~16 native calls + racing setState pairs).
+  //   • Ordinary tab returns use the rate-limited `read()`; only a focus that
+  //     follows a fresh permission grant (signalled via useHealthSync.revision)
+  //     forces the bypassing `refresh()`, so the just-connected rings light up
+  //     immediately without otherwise burning the window on every return.
+  const readHealth = health.read;
   const refreshHealth = health.refresh;
+  const healthRevision = useHealthSync((s) => s.revision);
+  const firstFocusRef = useRef(true);
+  const seenHealthRevisionRef = useRef(healthRevision);
   useFocusEffect(
     useCallback(() => {
-      void refreshHealth();
-    }, [refreshHealth]),
+      if (firstFocusRef.current) {
+        firstFocusRef.current = false;
+        return;
+      }
+      if (seenHealthRevisionRef.current !== healthRevision) {
+        seenHealthRevisionRef.current = healthRevision;
+        void refreshHealth();
+      } else {
+        void readHealth();
+      }
+    }, [healthRevision, readHealth, refreshHealth]),
   );
 
   // First name + initials from the cached profile (offline-first via

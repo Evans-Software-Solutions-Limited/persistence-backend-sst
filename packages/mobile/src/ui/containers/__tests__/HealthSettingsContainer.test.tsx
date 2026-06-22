@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 import { Pressable, Text, View } from "react-native";
+import { useHealthSync } from "@/state/health-sync";
 import type { HealthDataState } from "@/ui/hooks/useHealthData";
 import { HealthSettingsPresenter } from "@/ui/presenters/HealthSettingsPresenter";
 import { useHealthData } from "@/ui/hooks/useHealthData";
@@ -50,6 +51,7 @@ function healthState(over: Partial<HealthDataState> = {}): HealthDataState {
     isReading: false,
     lastReadAt: null,
     requestPermissions: jest.fn(async () => {}),
+    read: jest.fn(async () => {}),
     refresh: jest.fn(async () => {}),
     ...over,
   };
@@ -59,6 +61,7 @@ describe("HealthSettingsContainer", () => {
   beforeEach(() => {
     probe.last = null;
     mockBack.mockClear();
+    useHealthSync.setState({ revision: 0 });
   });
 
   it("maps the health state onto the presenter", () => {
@@ -90,6 +93,8 @@ describe("HealthSettingsContainer", () => {
       resolve();
     });
     expect(getByTestId("p-requesting").props.children).toBe("false");
+    // A successful grant signals Home to force-refresh its rings on next focus.
+    expect(useHealthSync.getState().revision).toBe(1);
   });
 
   it("navigates back from the header", () => {

@@ -148,6 +148,29 @@ describe("useHealthData", () => {
     expect(health.getStepsToday).toHaveBeenCalledTimes(2);
   });
 
+  it("read() respects the rate limit (unlike refresh)", async () => {
+    const health = makeHealthAdapter();
+    const { result } = renderHook(() => useHealthData(), {
+      wrapper: wrap(makeAdapters(health)),
+    });
+
+    await waitFor(() => {
+      expect(health.getStepsToday).toHaveBeenCalledTimes(1);
+    });
+
+    // Within the 5-min window since the mount read → read() is a no-op.
+    await act(async () => {
+      await result.current.read();
+    });
+    expect(health.getStepsToday).toHaveBeenCalledTimes(1);
+
+    // refresh() still bypasses the window.
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(health.getStepsToday).toHaveBeenCalledTimes(2);
+  });
+
   it("requestPermissions() updates status and triggers a fresh read", async () => {
     const health = makeHealthAdapter();
     const { result } = renderHook(() => useHealthData(), {

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 
+import { useHealthSync } from "@/state/health-sync";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { HealthSettingsPresenter } from "@/ui/presenters/HealthSettingsPresenter";
 
@@ -26,6 +27,10 @@ export function HealthSettingsContainer() {
     setIsRequesting(true);
     try {
       await health.requestPermissions();
+      // Signal Home to force-refresh its own HealthKit instance on next
+      // focus so the activity rings reflect the just-granted data without
+      // waiting out the 5-min rate-limit window.
+      useHealthSync.getState().markConnected();
     } finally {
       setIsRequesting(false);
     }
