@@ -75,6 +75,7 @@ MockSignUpPresenter.mockImplementation((props) => (
     />
     <Pressable testID="sign-up" onPress={props.onSubmit} />
     <Pressable testID="google-oauth" onPress={() => props.onOAuth("google")} />
+    <Pressable testID="apple-oauth" onPress={() => props.onOAuth("apple")} />
     <Pressable testID="sign-in-link" onPress={props.onSignIn} />
     {props.error && <Text testID="error-message">{props.error}</Text>}
     {props.confirmationSent && <Text testID="confirmation-message" />}
@@ -127,6 +128,30 @@ describe("SignUpContainer", () => {
     await waitFor(() => {
       expect(getByTestId("error-message")).toBeTruthy();
     });
+  });
+
+  it("routes Apple through the native flow on iOS, not web OAuth", async () => {
+    const { adapters, auth } = createTestAdapters();
+    const appleSpy = jest.spyOn(auth, "signInWithApple");
+    const oauthSpy = jest.spyOn(auth, "signInWithOAuth");
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <SignUpContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("apple-oauth")).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("apple-oauth"));
+    });
+
+    // Platform.OS defaults to "ios" under the RN test preset.
+    expect(appleSpy).toHaveBeenCalledTimes(1);
+    expect(oauthSpy).not.toHaveBeenCalled();
   });
 
   it("shows error when passwords do not match", async () => {

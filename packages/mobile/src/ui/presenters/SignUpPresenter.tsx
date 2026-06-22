@@ -10,6 +10,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { OAuthProvider } from "@/domain/ports/auth.port";
 import { Text, Input, Button, Column, Row, OAuthButton } from "@/ui/components";
+import { useBrandTitleStyle } from "@/ui/hooks/useBrandTitleStyle";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
 type SignUpPresenterProps = {
@@ -44,6 +45,8 @@ export function SignUpPresenter({
   confirmationSent,
 }: SignUpPresenterProps) {
   const isAnyLoading = isLoading || oauthLoading !== null;
+
+  const brandTitle = useBrandTitleStyle();
 
   const brandStyle = useStaggeredEntry(0);
   const oauthStyle = useStaggeredEntry(1);
@@ -84,10 +87,12 @@ export function SignUpPresenter({
               <View alignItems="center" marginBottom={40}>
                 <TamaguiText
                   fontFamily="$heading"
-                  fontSize={34}
+                  fontSize={brandTitle.fontSize}
                   fontWeight="700"
                   color="$color"
-                  letterSpacing={6}
+                  letterSpacing={brandTitle.letterSpacing}
+                  numberOfLines={1}
+                  testID="brand-title"
                 >
                   PERSISTENCE
                 </TamaguiText>

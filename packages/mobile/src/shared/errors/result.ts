@@ -82,6 +82,9 @@ export type AuthError = {
     | "email_confirmation_required"
     | "token_expired"
     | "network_error"
+    // User dismissed a native/OAuth sign-in sheet. Not a real failure —
+    // callers should treat it as a silent no-op (no error banner).
+    | "cancelled"
     | "unknown";
   readonly message: string;
 };
