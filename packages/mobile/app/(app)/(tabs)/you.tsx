@@ -1,15 +1,20 @@
+import { CoachYouContainer } from "@/ui/containers/CoachYouContainer";
 import { YouContainer } from "@/ui/containers/YouContainer";
+import { useUserMode } from "@/state/user-mode";
 
 /**
- * You tab — athlete Progress + identity surface (absorbs the legacy
- * Progress tab; Profile moves to the ProfileDrawer).
+ * You tab — branches on `useUserMode().mode` (mirrors index.tsx).
+ *
+ * Athletes get the Progress/identity surface (`YouContainer`, owned by
+ * 06-progress-goals). Coaches get the Coach You dashboard (`CoachYouContainer`,
+ * 10-trainer-features) — "Your practice" with business stats, client health,
+ * the coach's own training peek, programmes, recent activity, and the invite
+ * affordance.
  *
  * Spec: specs/14-navigation/design.md § Route migration table (you.tsx)
- *       specs/14-navigation/requirements.md STORY-001 (AC 1.2)
- *
- * Content owned by `06-progress-goals` (athlete) / `10-trainer-features`
- * (coach). This spec reserves the slot; YouContainer is a stub until then.
+ *       specs/10-trainer-features/requirements.md STORY-012
  */
 export default function YouTab() {
-  return <YouContainer />;
+  const mode = useUserMode((s) => s.mode);
+  return mode === "coach" ? <CoachYouContainer /> : <YouContainer />;
 }

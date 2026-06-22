@@ -3,6 +3,7 @@ import type {
   CachedDashboard,
   DashboardPayload,
 } from "@/domain/models/dashboard";
+import type { CoachOverview } from "@/domain/models/coachOverview";
 import {
   deriveExerciseOwnership,
   type Exercise,
@@ -265,6 +266,15 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- full JSON-serialised ProfilePageData. 5-minute TTL
       -- (PROFILE_PAGE_STALE_AFTER_MS) enforced by the query layer.
       CREATE TABLE IF NOT EXISTS cached_profile_page (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- 10-trainer-features: Coach You overview cache. One row per
+      -- trainer userId; payload is the full JSON-serialised CoachOverview.
+      -- Same shape as cached_dashboard; staleness enforced by the hook.
+      CREATE TABLE IF NOT EXISTS cached_coach_overview (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -966,6 +976,38 @@ export class SQLiteStorageAdapter implements StoragePort {
   invalidateDashboard(userId: string): void {
     const db = this.getDb();
     db.runSync(`DELETE FROM cached_dashboard WHERE user_id = ?`, [userId]);
+  }
+
+  // -- Coach You Cache (10-trainer-features) --
+
+  getCachedCoachOverview(userId: string): CoachOverview | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT payload FROM cached_coach_overview WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return JSON.parse(row.payload) as CoachOverview;
+  }
+
+  cacheCoachOverview(userId: string, payload: CoachOverview): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_coach_overview (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getCoachOverviewAge(userId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_coach_overview WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
   }
 
   // -- Notifications Cache (09) --
@@ -1730,6 +1772,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM reference_lists;
       DELETE FROM cached_dashboard;
       DELETE FROM cached_profile_page;
+      DELETE FROM cached_coach_overview;
       DELETE FROM cached_notifications;
       DELETE FROM cached_notification_preferences;
     `);

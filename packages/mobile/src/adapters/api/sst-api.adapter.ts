@@ -23,6 +23,7 @@ import type {
 } from "@/domain/models/reference-list";
 import type {
   ApiPort,
+  InviteApiError,
   ApiNotification,
   ApiNotificationListResponse,
   GetNotificationsParams,
@@ -66,6 +67,13 @@ import type {
   VolumeStats,
   BodyTrendPoint,
 } from "@/domain/models/progress";
+import type { CoachOverview } from "@/domain/models/coachOverview";
+import type {
+  InviteClientRequest,
+  InviteClientResult,
+  InviteErrorCode,
+  TrainerInvitation,
+} from "@/domain/models/trainerInvitation";
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionResult,
@@ -1111,6 +1119,105 @@ export class SSTApiAdapter implements ApiPort {
       method: "POST",
       body: input,
     });
+  }
+
+  // -- Trainers / Coach You (10-trainer-features) --
+  //
+  // GET overview + GET invitations are single `{ data }` envelopes (camelCase
+  // == domain shape, passthrough). POST invite is special-cased: a domain
+  // failure returns a flat `{ code, message }` body (NOT an envelope), so the
+  // adapter parses the `code` and stamps it on `InviteApiError.inviteCode`.
+
+  async getCoachOverview(): Promise<Result<CoachOverview, ApiError>> {
+    return this.requestEnvelope<CoachOverview>("/trainers/me/overview");
+  }
+
+  async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {
+    return this.requestEnvelope<TrainerInvitation[]>(
+      "/trainers/me/invitations",
+    );
+  }
+
+  async inviteClient(
+    req: InviteClientRequest,
+  ): Promise<Result<InviteClientResult, InviteApiError>> {
+    const body: Record<string, unknown> = { clientEmail: req.clientEmail };
+    if (req.relationshipReason !== undefined) {
+      body.relationshipReason = req.relationshipReason;
+    }
+    // The success body is `{ data: InviteClientResult }`; an error body is
+    // flat `{ code, message }`. `request` returns the raw JSON on 2xx and
+    // maps non-2xx to a generic ApiError — but it doesn't expose the parsed
+    // error body's `code`, so we fetch the body directly here to capture it.
+    const result = await this.requestRaw<
+      { data: InviteClientResult } | { code: string; message: string }
+    >("/trainers/me/invitations", { method: "POST", body });
+    if (!result.ok) {
+      // Transport / auth failure with no domain body parsed.
+      return fail<InviteApiError>(result.error);
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+    // Non-2xx (or unexpected shape) — map to an InviteApiError carrying the
+    // domain code when present.
+    const code =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as InviteErrorCode)
+        : undefined;
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : "Failed to send invitation";
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<InviteApiError>(
+      code !== undefined ? { ...base, inviteCode: code } : base,
+    );
+  }
+
+  async cancelInvitation(
+    id: string,
+  ): Promise<Result<{ success: true }, ApiError>> {
+    return this.requestEnvelope<{ success: true }>(
+      `/trainers/me/invitations/${id}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Like `request<T>` but returns the HTTP status + parsed JSON body on a
+   * settled response (success OR error) so callers that need the structured
+   * error body (e.g. the invite flow's `{ code }`) can read it. Only true
+   * transport failures (network / abort) return `Result.err`.
+   */
+  private async requestRaw<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<Result<{ status: number; json: T | null }, ApiError>> {
+    const { method = "GET", body, params } = options;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.tokenProvider) {
+      const token = await this.tokenProvider();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    }
+    try {
+      const response = await fetch(this.buildUrl(path, params), {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const json = (await response.json().catch(() => null)) as T | null;
+      return ok({ status: response.status, json });
+    } catch (err) {
+      return fail({
+        kind: "api",
+        code: "network",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    }
   }
 }
 

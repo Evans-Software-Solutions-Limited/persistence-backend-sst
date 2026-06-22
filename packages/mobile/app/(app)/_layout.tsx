@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
+import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
@@ -175,6 +176,15 @@ export default function AppLayout() {
         Spec: specs/05-active-session/design.md § <ActiveWorkoutBarPresenter>
       */}
       <ActiveWorkoutOverlay />
+      {/*
+        AddClientSheetContainer — the coach invite-client bottom sheet
+        (10-trainer-features). Root-mounted (sibling of the Stack) so it
+        overlays the tab bar; its <BottomSheet> reads useAddClientSheet().open
+        to drive the slide animation. The Coach You "Invite" button opens it.
+
+        Spec: feedback_sheets_mount_at_root
+      */}
+      <AddClientSheetContainer />
     </ExerciseFiltersProvider>
   );
 }
