@@ -52,6 +52,11 @@ import { nutritionEntriesListHandler } from "./application/nutrition/entries/lis
 import { nutritionEntriesCreateHandler } from "./application/nutrition/entries/create/nutritionEntriesCreateHandler";
 import { nutritionEntriesUpdateHandler } from "./application/nutrition/entries/update/nutritionEntriesUpdateHandler";
 import { nutritionEntriesDeleteHandler } from "./application/nutrition/entries/delete/nutritionEntriesDeleteHandler";
+import { nutritionTodayHandler } from "./application/nutrition/today/nutritionTodayHandler";
+import { nutritionTargetsGetHandler } from "./application/nutrition/targets/get/nutritionTargetsGetHandler";
+import { nutritionTargetsSetHandler } from "./application/nutrition/targets/set/nutritionTargetsSetHandler";
+import { nutritionWaterGetHandler } from "./application/nutrition/water/get/nutritionWaterGetHandler";
+import { nutritionWaterPatchHandler } from "./application/nutrition/water/patch/nutritionWaterPatchHandler";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
@@ -168,10 +173,15 @@ const app = new Elysia()
   // M9 — nutrition (Fuel) Tier A. entries CRUD; literal /nutrition/entries
   // (GET/POST) and parameterised /nutrition/entries/:id (PUT/DELETE) don't
   // collide because they differ by HTTP method.
+  .use(nutritionTodayHandler)
   .use(nutritionEntriesListHandler)
   .use(nutritionEntriesCreateHandler)
   .use(nutritionEntriesUpdateHandler)
-  .use(nutritionEntriesDeleteHandler);
+  .use(nutritionEntriesDeleteHandler)
+  .use(nutritionTargetsGetHandler)
+  .use(nutritionTargetsSetHandler)
+  .use(nutritionWaterGetHandler)
+  .use(nutritionWaterPatchHandler);
 
 export type CoreApi = typeof app;
 
