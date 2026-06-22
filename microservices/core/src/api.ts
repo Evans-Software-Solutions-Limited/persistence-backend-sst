@@ -62,6 +62,7 @@ import { foodsListHandler } from "./application/foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./application/foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./application/recipes/list/recipesListHandler";
 import { recipesCreateHandler } from "./application/recipes/create/recipesCreateHandler";
+import { recipesImportHandler } from "./application/recipes/import/recipesImportHandler";
 import { recipesGetHandler } from "./application/recipes/get/recipesGetHandler";
 import { recipesUpdateHandler } from "./application/recipes/update/recipesUpdateHandler";
 import { recipesDeleteHandler } from "./application/recipes/delete/recipesDeleteHandler";
@@ -196,6 +197,8 @@ const app = new Elysia()
   // recipes — GET /recipes (list) registered before GET /recipes/:id (get)
   .use(recipesListHandler)
   .use(recipesCreateHandler)
+  // POST /recipes/import (literal) before the /recipes/:id handlers
+  .use(recipesImportHandler)
   .use(recipesGetHandler)
   .use(recipesUpdateHandler)
   .use(recipesDeleteHandler);
