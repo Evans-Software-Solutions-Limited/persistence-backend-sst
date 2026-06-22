@@ -518,6 +518,57 @@ describe("SubscriptionRepository", () => {
       expect(Date.parse(result!.startsAt)).not.toBeNaN();
     });
 
+    it("treats a lapsed (cancelled-most-recent) trainer as free — no stale entitlement", async () => {
+      // The LIVE_SUBSCRIPTION_STATUSES filter on the sub-join means a trainer
+      // whose most-recent row is `cancelled`/`expired` matches NO live row, so
+      // the join returns empty and we synthesise free. Without the filter this
+      // would return the stale trainer tier (isTrainerTier: true) and keep
+      // coach mode enabled on mobile after the subscription lapsed.
+      const mockDb = {
+        select: makeSequentialSelectMock([
+          // profile slice — note the user's role is still personal_trainer
+          [
+            {
+              role: "personal_trainer",
+              hasUsedUserTrial: true,
+              hasUsedTrainerTrial: true,
+            },
+          ],
+          // sub join → empty: the cancelled row is filtered out by the
+          // live-status WHERE clause.
+          [],
+          // free-tier fallback
+          [
+            {
+              id: "tier-uuid",
+              tierName: "free",
+              displayName: "Free",
+              description: null,
+              workoutLimit: 5,
+              aiAccess: false,
+              aiWorkoutLimit: 0,
+              gymBuddyAccess: false,
+              trainerClientLimit: null,
+              isTrainerTier: false,
+            },
+          ],
+        ]),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      const result = await repo.findForUser("lapsed-trainer");
+      expect(result).toMatchObject({
+        subscriptionId: null,
+        tierName: "free",
+        isTrainerTier: false,
+        trainerClientLimit: null,
+        // role still reflects profiles.role — entitlement is what changes
+        role: "personal_trainer",
+      });
+    });
+
     it("throws when the free tier is missing from the catalog (deploy misconfig)", async () => {
       const mockDb = {
         select: makeSequentialSelectMock([

@@ -16,6 +16,7 @@ import {
   type TrainerInvitation,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { LIVE_SUBSCRIPTION_STATUSES } from "./subscriptionRepository";
 
 // ─── Wire shapes ──────────────────────────────────────────────────────────────
 
@@ -115,20 +116,6 @@ const TOP_PROGRAMS_LIMIT = 3;
 
 const ADHERENCE_STRONG_MIN = 85;
 const ADHERENCE_WOBBLING_MIN = 65;
-
-/**
- * Subscription `payment_status` values that grant live entitlement. Mirrors the
- * `user_subscriptions_active_unique` partial index in schema.ts (which is
- * `payment_status IN ('active','pending','trialing','past_due')`) — only these
- * count toward a trainer's slot allowance. cancelled / expired /
- * incomplete_expired subscriptions must NOT surface phantom slots.
- */
-const LIVE_SUBSCRIPTION_STATUSES = [
-  "active",
-  "pending",
-  "trialing",
-  "past_due",
-] as const;
 
 // ─── Pure helpers (exported for unit testing) ──────────────────────────────────
 
