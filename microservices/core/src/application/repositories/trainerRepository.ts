@@ -116,6 +116,20 @@ const TOP_PROGRAMS_LIMIT = 3;
 const ADHERENCE_STRONG_MIN = 85;
 const ADHERENCE_WOBBLING_MIN = 65;
 
+/**
+ * Subscription `payment_status` values that grant live entitlement. Mirrors the
+ * `user_subscriptions_active_unique` partial index in schema.ts (which is
+ * `payment_status IN ('active','pending','trialing','past_due')`) — only these
+ * count toward a trainer's slot allowance. cancelled / expired /
+ * incomplete_expired subscriptions must NOT surface phantom slots.
+ */
+const LIVE_SUBSCRIPTION_STATUSES = [
+  "active",
+  "pending",
+  "trialing",
+  "past_due",
+] as const;
+
 // ─── Pure helpers (exported for unit testing) ──────────────────────────────────
 
 export function initialsFromName(name: string | null | undefined): string {
@@ -287,7 +301,16 @@ export class TrainerRepository {
         subscriptionTiers,
         eq(userSubscriptions.tierName, subscriptionTiers.tierName),
       )
-      .where(eq(userSubscriptions.userId, trainerId))
+      .where(
+        and(
+          eq(userSubscriptions.userId, trainerId),
+          // Only LIVE subscriptions grant slots — a cancelled/expired trainer
+          // who previously held a 25-slot tier must NOT keep that allowance.
+          inArray(userSubscriptions.paymentStatus, [
+            ...LIVE_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
       .orderBy(desc(userSubscriptions.createdAt))
       .limit(1);
     return rows[0]?.limit ?? null;
@@ -647,7 +670,10 @@ export class TrainerRepository {
     // Adherence: this 28d window and the previous 28d window.
     const win1End = now;
     const win1Start = daysAgo(now, ADHERENCE_WINDOW_DAYS);
-    const win0End = daysAgo(now, ADHERENCE_WINDOW_DAYS);
+    // Previous window ends the day BEFORE the current window's start — both
+    // bounds are date-inclusive in getAdherenceRows, so sharing the boundary
+    // date would double-count assignments due exactly on the cutoff.
+    const win0End = daysAgo(now, ADHERENCE_WINDOW_DAYS + 1);
     const win0Start = daysAgo(now, ADHERENCE_WINDOW_DAYS * 2);
 
     const [
@@ -780,17 +806,11 @@ export class TrainerRepository {
       }
 
       // Slot check: slotsTotal from tier, activeClients from active non-AI rels.
-      const limitRows = await tx
-        .select({ limit: subscriptionTiers.trainerClientLimit })
-        .from(userSubscriptions)
-        .innerJoin(
-          subscriptionTiers,
-          eq(userSubscriptions.tierName, subscriptionTiers.tierName),
-        )
-        .where(eq(userSubscriptions.userId, trainerId))
-        .orderBy(desc(userSubscriptions.createdAt))
-        .limit(1);
-      const slotsTotal = limitRows[0]?.limit ?? null;
+      // Single source of truth for the limit (filters to LIVE subscriptions) —
+      // read via getDb() rather than the tx because tier config is static and
+      // never mutated mid-invite; only the active-client COUNT below needs the
+      // transaction's read consistency.
+      const slotsTotal = await this.getTrainerClientLimit(trainerId);
 
       const activeRows = await tx
         .select({ total: sql<number>`count(*)::int` })
@@ -824,19 +844,36 @@ export class TrainerRepository {
       const client = clientRows[0];
 
       if (client) {
-        // Existing user → create a pending relationship (unless one exists).
+        // Existing user → create or revive a pending relationship.
+        //
+        // The `pt_client_relationships_trainer_client_idx` unique index is
+        // UNCONDITIONAL on (trainer_id, client_id) — there is at most one row
+        // per pair regardless of status. So we must inspect ANY existing row,
+        // not just active/pending ones: a blind INSERT for a pair that was
+        // previously inactive/terminated would hit the unique constraint and
+        // escape as a 500. Instead:
+        //   - active/pending  → 409 (already a live relationship)
+        //   - inactive/terminated → revive the existing row back to pending
+        //   - none → insert fresh
         const existing = await tx
-          .select({ id: ptClientRelationships.id })
+          .select({
+            id: ptClientRelationships.id,
+            status: ptClientRelationships.status,
+          })
           .from(ptClientRelationships)
           .where(
             and(
               eq(ptClientRelationships.trainerId, trainerId),
               eq(ptClientRelationships.clientId, client.id),
-              inArray(ptClientRelationships.status, ["active", "pending"]),
             ),
           )
           .limit(1);
-        if (existing[0]) {
+
+        const existingRel = existing[0];
+        if (
+          existingRel &&
+          (existingRel.status === "active" || existingRel.status === "pending")
+        ) {
           throw new InviteError(
             409,
             "exists",
@@ -844,20 +881,37 @@ export class TrainerRepository {
           );
         }
 
-        const inserted = await tx
-          .insert(ptClientRelationships)
-          .values({
-            trainerId,
-            clientId: client.id,
-            status: "pending",
-            relationshipReason,
-          } as NewPtClientRelationship)
-          .returning({ id: ptClientRelationships.id });
+        let relationshipId: string;
+        if (existingRel) {
+          // Revive the dormant (inactive/terminated) relationship in place —
+          // the unique index forbids a second row for this pair.
+          await tx
+            .update(ptClientRelationships)
+            .set({
+              status: "pending",
+              relationshipReason,
+              endDate: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(ptClientRelationships.id, existingRel.id));
+          relationshipId = existingRel.id;
+        } else {
+          const inserted = await tx
+            .insert(ptClientRelationships)
+            .values({
+              trainerId,
+              clientId: client.id,
+              status: "pending",
+              relationshipReason,
+            } as NewPtClientRelationship)
+            .returning({ id: ptClientRelationships.id });
+          relationshipId = inserted[0].id;
+        }
 
         return {
           success: true as const,
           action: "relationship_created" as const,
-          relationshipId: inserted[0].id,
+          relationshipId,
           clientId: client.id,
           clientName: client.fullName ?? null,
           message: `Training request sent to ${client.fullName ?? clientEmail}`,

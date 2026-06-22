@@ -663,6 +663,11 @@ describe("TrainerRepository", () => {
               .mockResolvedValue(opts.inserts?.[ii++] ?? [{ id: "new-id" }]),
           }),
         })),
+        update: vi.fn(() => ({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        })),
       };
       return {
         db: {
@@ -680,22 +685,23 @@ describe("TrainerRepository", () => {
         selects: [[{ email: "ME@X.io" }]], // trainer email matches
       });
       (getDb as any).mockReturnValue(db);
-      await expect(
-        repo.inviteClientByEmail("t1", "  me@x.io ", null),
-      ).rejects.toMatchObject({ status: 400, code: "self_invite" });
-      // also assert it's an InviteError instance
-      await expect(
-        repo.inviteClientByEmail("t1", "me@x.io", null),
-      ).rejects.toBeInstanceOf(InviteError);
+      // Self-invite throws before any slot/profile lookup; assert both the
+      // structured fields and the InviteError type on the same rejection.
+      const err = await repo
+        .inviteClientByEmail("t1", "  me@x.io ", null)
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteError);
+      expect(err).toMatchObject({ status: 400, code: "self_invite" });
     });
 
     it("rejects when no slots (403 no_slots) — null limit", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      // limit unknown (no live subscription) → slotsTotal null → full
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(null);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }], // trainer email (no match)
-          [], // limit unknown → slotsTotal null → full
           [{ total: 0 }], // active count
         ],
       });
@@ -708,10 +714,10 @@ describe("TrainerRepository", () => {
     it("rejects when no slots (403) — limit reached", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(2);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 2 }],
           [{ total: 2 }], // full
         ],
       });
@@ -724,10 +730,10 @@ describe("TrainerRepository", () => {
     it("creates a relationship when the client profile exists", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db, tx } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 10 }],
           [{ total: 1 }],
           [{ id: "c1", fullName: "Client Name" }], // profile found
           [], // no existing relationship
@@ -754,13 +760,14 @@ describe("TrainerRepository", () => {
     it("rejects duplicate relationship (409 exists)", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 10 }],
           [{ total: 1 }],
           [{ id: "c1", fullName: "Client" }],
-          [{ id: "rel-existing" }], // existing relationship
+          // existing LIVE relationship (active) → 409, not a revive
+          [{ id: "rel-existing", status: "active" }],
         ],
       });
       (getDb as any).mockReturnValue(db);
@@ -772,10 +779,10 @@ describe("TrainerRepository", () => {
     it("creates an invitation when no profile exists", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 10 }],
           [{ total: 1 }],
           [], // no profile
           [], // no existing invitation
@@ -796,10 +803,10 @@ describe("TrainerRepository", () => {
     it("uses email fallback in relationship message when name is null", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 10 }],
           [{ total: 0 }],
           [{ id: "c2", fullName: null }],
           [],
@@ -815,10 +822,10 @@ describe("TrainerRepository", () => {
     it("rejects duplicate pending invitation (409 exists)", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db } = txDb({
         selects: [
           [{ email: "trainer@x.io" }],
-          [{ limit: 10 }],
           [{ total: 0 }],
           [], // no profile
           [{ id: "inv-existing" }], // existing invitation
@@ -833,10 +840,10 @@ describe("TrainerRepository", () => {
     it("does not treat a missing trainer email as a self-invite", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
       const { db } = txDb({
         selects: [
           [{ email: null }], // no trainer email on record
-          [{ limit: 10 }],
           [{ total: 0 }],
           [], // no profile
           [], // no existing invitation
@@ -846,6 +853,39 @@ describe("TrainerRepository", () => {
       (getDb as any).mockReturnValue(db);
       const result = await repo.inviteClientByEmail("t1", "x@y.io", null);
       expect(result.action).toBe("invitation_created");
+    });
+
+    it("revives a terminated relationship instead of crashing on the unique index", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
+      const { db, tx } = txDb({
+        selects: [
+          [{ email: "trainer@x.io" }],
+          [{ total: 1 }],
+          [{ id: "c9", fullName: "Returning Client" }], // profile found
+          // dormant relationship for this pair — must be revived in place,
+          // NOT re-inserted (the unique index forbids a second row).
+          [{ id: "rel-old", status: "terminated" }],
+        ],
+      });
+      (getDb as any).mockReturnValue(db);
+      const result = await repo.inviteClientByEmail(
+        "t1",
+        "returning@x.io",
+        "Back for another block",
+      );
+      expect(result).toEqual({
+        success: true,
+        action: "relationship_created",
+        relationshipId: "rel-old",
+        clientId: "c9",
+        clientName: "Returning Client",
+        message: "Training request sent to Returning Client",
+      });
+      // Revived via UPDATE, not a duplicate INSERT.
+      expect(tx.update).toHaveBeenCalledTimes(1);
+      expect(tx.insert).not.toHaveBeenCalled();
     });
   });
 });
