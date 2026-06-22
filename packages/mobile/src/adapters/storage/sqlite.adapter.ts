@@ -4,6 +4,7 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 import {
   deriveExerciseOwnership,
   type Exercise,
@@ -275,6 +276,15 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- trainer userId; payload is the full JSON-serialised CoachOverview.
       -- Same shape as cached_dashboard; staleness enforced by the hook.
       CREATE TABLE IF NOT EXISTS cached_coach_overview (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- 10-trainer-features: Clients roster cache. One row per trainer
+      -- userId; payload is the full JSON-serialised TrainerClient[].
+      -- Same shape as cached_coach_overview; staleness enforced by the hook.
+      CREATE TABLE IF NOT EXISTS cached_trainer_clients (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -1005,6 +1015,38 @@ export class SQLiteStorageAdapter implements StoragePort {
     const db = this.getDb();
     const rows = db.getAllSync(
       `SELECT synced_at FROM cached_coach_overview WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  // -- Clients Roster Cache (10-trainer-features) --
+
+  getCachedTrainerClients(userId: string): TrainerClient[] | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT payload FROM cached_trainer_clients WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return JSON.parse(row.payload) as TrainerClient[];
+  }
+
+  cacheTrainerClients(userId: string, payload: TrainerClient[]): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_trainer_clients (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getTrainerClientsAge(userId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_trainer_clients WHERE user_id = ?`,
       [userId],
     ) as { synced_at: string }[];
     return rows[0]?.synced_at ?? null;
@@ -1773,6 +1815,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_dashboard;
       DELETE FROM cached_profile_page;
       DELETE FROM cached_coach_overview;
+      DELETE FROM cached_trainer_clients;
       DELETE FROM cached_notifications;
       DELETE FROM cached_notification_preferences;
     `);

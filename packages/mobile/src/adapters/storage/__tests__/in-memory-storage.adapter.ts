@@ -14,6 +14,7 @@ import type {
 import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { PersonalRecord } from "@/domain/models/record";
 import type {
   ReferenceEntry,
@@ -62,6 +63,10 @@ export class InMemoryStorageAdapter implements StoragePort {
   private coachOverviewCache: Map<
     string,
     { payload: CoachOverview; syncedAt: string }
+  > = new Map();
+  private trainerClientsCache: Map<
+    string,
+    { payload: TrainerClient[]; syncedAt: string }
   > = new Map();
   private profilePageCache: Map<string, CachedProfilePage> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
@@ -326,6 +331,23 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   getCoachOverviewAge(userId: string): string | null {
     return this.coachOverviewCache.get(userId)?.syncedAt ?? null;
+  }
+
+  // -- Clients Roster Cache (10-trainer-features) --
+
+  getCachedTrainerClients(userId: string): TrainerClient[] | null {
+    return this.trainerClientsCache.get(userId)?.payload ?? null;
+  }
+
+  cacheTrainerClients(userId: string, payload: TrainerClient[]): void {
+    this.trainerClientsCache.set(userId, {
+      payload,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getTrainerClientsAge(userId: string): string | null {
+    return this.trainerClientsCache.get(userId)?.syncedAt ?? null;
   }
 
   // -- Notifications Cache (09) --
@@ -664,6 +686,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.referenceLists.clear();
     this.dashboardCache.clear();
     this.coachOverviewCache.clear();
+    this.trainerClientsCache.clear();
     this.profilePageCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();

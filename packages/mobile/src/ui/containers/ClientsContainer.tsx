@@ -1,50 +1,67 @@
-import React from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { ComingSoon } from "@/ui/components/ComingSoon";
+import { router } from "expo-router";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
 import { useFeatureGate } from "@/ui/hooks/useFeatureGate";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
+import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
+import { useAddClientSheet } from "@/state/add-client-sheet";
 import { Colors } from "@/ui/theme/subscriptionLegacyTheme";
+import {
+  ClientsListPresenter,
+  type ClientSegment,
+} from "@/ui/presenters/coach/ClientsListPresenter";
 
 /**
- * Trainer "Clients" tab container — M10.5 Wave 2 stub gate.
+ * Trainer "Clients" tab container — the client roster (M8 / 10-trainer-features
+ * Clients-list slice). Replaces the M10.5 Wave 2 `ComingSoon` placeholder with
+ * the real roster, behind the unchanged feature gate.
  *
- * Spec: specs/11-payments-subscriptions/design.md
- *       § Per-screen feature-gate integration (Wave 2)
- *       § Trainer routes — stub gate when accessed by non-trainer or free
- *       trainer tier
- * Closes: specs/11-payments-subscriptions/tasks.md Phase 12 (m105-gates-trainer)
- * Satisfies: specs/11-payments-subscriptions/requirements.md AC 4.6, 6.1
- *
- * Wave 2 only wires the gate primitive on this surface. M8 owns the
- * actual client-management UI; until then we render a `ComingSoon`-style
- * placeholder for entitled trainers and the `FeatureGatePrompt` for
- * non-trainer (or unentitled) users.
- *
- * Three rendering branches:
+ * Three rendering branches (the first two are UNCHANGED from the Wave 2 stub):
  *
  *  - Subscription cache hasn't loaded → spinner.
  *  - `useFeatureGate('trainer_clients')` denies → paywall card.
- *    `useFeatureGate` already wires `onUpgrade` to push into Selection
- *    with the right tier query param; we pass `gateProps` straight to
- *    the prompt.
- *  - Allowed → M8 "Coming Soon" placeholder.
+ *  - Allowed → the live roster: cache-first `useGetTrainerClients()` wired into
+ *    <ClientsListPresenter> with local search + segmented-filter state.
  *
- * The container intentionally never renders a "you're a trainer but
- * we hid the tab" fallback — the tab-bar visibility lives in
- * `_layout.tsx` and trainer users see the tab. Non-trainer users only
- * reach this route if they followed a direct link (e.g. the Manage
- * Clients button on the post-payment Success screen when their tier
- * isn't actually a trainer tier; an edge case that shouldn't happen
- * but is defended against here).
+ * The header `+` opens the existing root-mounted AddClient sheet
+ * (`useAddClientSheet`, shipped in #123); a successful invite refreshes the
+ * roster via the registered `onInvited` callback. Row press pushes the (stub)
+ * per-client detail route — Client Detail proper is the next slice (10.9.3).
+ *
+ * Spec: specs/10-trainer-features/requirements.md STORY-002;
+ *       specs/milestones/M8-coach/CLIENTS_LIST_BRIEF.md (Frontend slice).
  */
 export function ClientsContainer() {
   const subQuery = useMySubscription();
   const gate = useFeatureGate("trainer_clients");
+  const roster = useGetTrainerClients();
+  const openSheet = useAddClientSheet((s) => s.openSheet);
 
-  // Subscription cache not resolved yet — defensive spinner. Once the
-  // query lands the gate's `reason: 'unknown'` falls through to a real
-  // verdict on the next render.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [segment, setSegment] = useState<ClientSegment>("Active");
+
+  const clients = useMemo(() => roster.data ?? [], [roster.data]);
+  const activeCount = useMemo(
+    () => clients.filter((c) => c.status === "active").length,
+    [clients],
+  );
+
+  const refreshRoster = roster.refresh;
+  const onInvite = useCallback(() => {
+    // Register the roster refresh so a successful invite re-pulls the list.
+    openSheet(() => {
+      void refreshRoster();
+    });
+  }, [openSheet, refreshRoster]);
+
+  const onOpenClient = useCallback((id: string) => {
+    router.push(`/(app)/clients/${id}`);
+  }, []);
+
+  // Subscription cache not resolved yet — defensive spinner. Once the query
+  // lands the gate's `reason: 'unknown'` falls through to a real verdict on
+  // the next render.
   if (subQuery.isPending) {
     return (
       <View style={styles.loading} testID="clients-loading">
@@ -62,11 +79,22 @@ export function ClientsContainer() {
   }
 
   return (
-    <ComingSoon
-      icon="people-outline"
-      title="Clients"
-      description="Trainer client management arrives in milestone M8."
-      testID="clients-coming-soon"
+    <ClientsListPresenter
+      clients={clients}
+      activeCount={activeCount}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      segment={segment}
+      onSegmentChange={setSegment}
+      isLoading={
+        (roster.isRefreshing || (roster.isStale && roster.error === null)) &&
+        roster.data === null
+      }
+      isRefreshing={roster.isRefreshing}
+      error={roster.error}
+      onRefresh={refreshRoster}
+      onInvite={onInvite}
+      onOpenClient={onOpenClient}
     />
   );
 }

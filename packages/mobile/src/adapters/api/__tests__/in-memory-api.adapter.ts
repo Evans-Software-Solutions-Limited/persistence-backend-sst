@@ -70,6 +70,7 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   InviteClientRequest,
   InviteClientResult,
@@ -1047,6 +1048,10 @@ export class InMemoryApiAdapter implements ApiPort {
   public getCoachOverviewCalls = 0;
   /** Count of `getInvitations` calls (dedup-guard assertions). */
   public getInvitationsCalls = 0;
+  /** Roster fixture returned by `getTrainerClients`. Defaults to empty. */
+  public trainerClients: TrainerClient[] = [];
+  /** Count of `getTrainerClients` calls (refresh-path assertions). */
+  public getTrainerClientsCalls = 0;
 
   async getCoachOverview(): Promise<Result<CoachOverview, ApiError>> {
     this.getCoachOverviewCalls += 1;
@@ -1058,6 +1063,11 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return this.mayFail<CoachOverview>(this.coachOverview);
+  }
+
+  async getTrainerClients(): Promise<Result<TrainerClient[], ApiError>> {
+    this.getTrainerClientsCalls += 1;
+    return this.mayFail<TrainerClient[]>([...this.trainerClients]);
   }
 
   async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {
