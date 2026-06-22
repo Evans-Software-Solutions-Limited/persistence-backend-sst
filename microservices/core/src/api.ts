@@ -71,6 +71,10 @@ import { notificationsUpdateHandler } from "./application/notifications/update/n
 import { preferencesGetHandler } from "./application/notifications/preferences/get/preferencesGetHandler";
 import { preferencesSetHandler } from "./application/notifications/preferences/set/preferencesSetHandler";
 import { devicesRegisterHandler } from "./application/devices/register/devicesRegisterHandler";
+import { trainersOverviewHandler } from "./application/trainers/overview/trainersOverviewHandler";
+import { trainersInvitationsListHandler } from "./application/trainers/invitations/trainersInvitationsListHandler";
+import { trainersInvitationsCreateHandler } from "./application/trainers/invitations/trainersInvitationsCreateHandler";
+import { trainersInvitationsDeleteHandler } from "./application/trainers/invitations/trainersInvitationsDeleteHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -148,7 +152,12 @@ const app = new Elysia()
   .use(notificationsUpdateHandler)
   .use(preferencesGetHandler)
   .use(preferencesSetHandler)
-  .use(devicesRegisterHandler);
+  .use(devicesRegisterHandler)
+  // M8 — trainer / Coach You.
+  .use(trainersOverviewHandler)
+  .use(trainersInvitationsListHandler)
+  .use(trainersInvitationsCreateHandler)
+  .use(trainersInvitationsDeleteHandler);
 
 export type CoreApi = typeof app;
 

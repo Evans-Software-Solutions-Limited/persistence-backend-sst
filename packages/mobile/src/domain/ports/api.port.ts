@@ -42,6 +42,13 @@ import type {
   VolumeStats,
   BodyTrendPoint,
 } from "@/domain/models/progress";
+import type { CoachOverview } from "@/domain/models/coachOverview";
+import type {
+  InviteClientRequest,
+  InviteClientResult,
+  InviteErrorCode,
+  TrainerInvitation,
+} from "@/domain/models/trainerInvitation";
 
 /**
  * Port for remote SST API operations.
@@ -471,7 +478,49 @@ export interface ApiPort {
   logMeasurement(
     input: LogMeasurementInput,
   ): Promise<Result<ApiMeasurement, ApiError>>;
+
+  // -- Trainers / Coach You (10-trainer-features) --
+  /**
+   * Fetch the Coach You aggregate (`GET /trainers/me/overview`). Single
+   * `{ data: CoachOverview }` envelope — the adapter unwraps once. Trainer-
+   * role-gated server-side (403 for non-trainers). camelCase wire shape ==
+   * domain shape, so no field mapping is needed.
+   */
+  getCoachOverview(): Promise<Result<CoachOverview, ApiError>>;
+
+  /**
+   * List the trainer's pending invitations (`GET /trainers/me/invitations`).
+   * `{ data: TrainerInvitation[] }` envelope.
+   */
+  getInvitations(): Promise<Result<TrainerInvitation[], ApiError>>;
+
+  /**
+   * Invite a client by email (`POST /trainers/me/invitations`). On success
+   * returns the `InviteClientResult` (action discriminates relationship vs
+   * email-invitation). On a domain failure the backend returns
+   * `{ code, message }` with code ∈ self_invite (400) | no_slots (403) |
+   * exists (409); the adapter surfaces that code on `InviteApiError.inviteCode`
+   * so the sheet can map it to the legacy copy without string-matching.
+   */
+  inviteClient(
+    req: InviteClientRequest,
+  ): Promise<Result<InviteClientResult, InviteApiError>>;
+
+  /**
+   * Cancel a pending invitation (`DELETE /trainers/me/invitations/:id`),
+   * ownership-scoped. 404 when not found / not pending / not owned.
+   */
+  cancelInvitation(id: string): Promise<Result<{ success: true }, ApiError>>;
 }
+
+/**
+ * `ApiError` extended with the structured invite-domain `code` the backend
+ * returns on the invite error body. `inviteCode` is undefined for transport /
+ * auth errors that don't carry a domain code.
+ */
+export type InviteApiError = ApiError & {
+  inviteCode?: InviteErrorCode;
+};
 
 // -- API data shapes (mirror backend response types) --
 

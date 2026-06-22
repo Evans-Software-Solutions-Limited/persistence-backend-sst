@@ -36,6 +36,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { CoachOverview } from "@/domain/models/coachOverview";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -273,6 +274,23 @@ export interface StoragePort {
    * fresh fetch instead of showing the pre-mutation snapshot.
    */
   invalidateDashboard(userId: string): void;
+
+  // -- Coach You Cache (10-trainer-features) --
+  /**
+   * Read the cached Coach You overview for a trainer, or null if none.
+   * One row per userId; same JSON-blob shape as `cached_dashboard`. The
+   * query/hook layer enforces staleness (cache-first then refresh).
+   */
+  getCachedCoachOverview(userId: string): CoachOverview | null;
+  /**
+   * Write-through the latest backend overview for a trainer, stamping
+   * `syncedAt = now()`.
+   */
+  cacheCoachOverview(userId: string, payload: CoachOverview): void;
+  /**
+   * Age of the cached overview as an ISO timestamp, or null when no row.
+   */
+  getCoachOverviewAge(userId: string): string | null;
 
   // -- Notifications Cache (09) --
   /**

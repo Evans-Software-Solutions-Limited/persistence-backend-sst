@@ -44,6 +44,7 @@ import type {
   LogMeasurementInput,
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
+  InviteApiError,
 } from "@/domain/ports/api.port";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
@@ -68,6 +69,13 @@ import type {
   Workout,
   WorkoutQuota,
 } from "@/domain/models/workout";
+import type { CoachOverview } from "@/domain/models/coachOverview";
+import type {
+  InviteClientRequest,
+  InviteClientResult,
+  InviteErrorCode,
+  TrainerInvitation,
+} from "@/domain/models/trainerInvitation";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -1011,5 +1019,85 @@ export class InMemoryApiAdapter implements ApiPort {
     };
     this.measurements.push(row);
     return this.mayFail<ApiMeasurement>(row);
+  }
+
+  // -- Trainers / Coach You (10-trainer-features) --
+  public coachOverview: CoachOverview | null = null;
+  public invitations: TrainerInvitation[] = [];
+  /** Captures every inviteClient request for assertions. */
+  public inviteClientCalls: InviteClientRequest[] = [];
+  /**
+   * Next response from `inviteClient`. Defaults to a happy-path
+   * relationship_created; tests swap to invitation_created or set
+   * `nextInviteError` to force a domain failure.
+   */
+  public nextInviteResult: InviteClientResult = {
+    success: true,
+    action: "relationship_created",
+    relationshipId: "rel-1",
+    clientId: "client-1",
+    clientName: "Test Client",
+    message: "Training request sent to Test Client",
+  };
+  /** When set, `inviteClient` returns this domain error instead of success. */
+  public nextInviteError: { code: InviteErrorCode; message: string } | null =
+    null;
+  public cancelInvitationCalls: string[] = [];
+  /** Count of `getCoachOverview` calls (refresh-path assertions). */
+  public getCoachOverviewCalls = 0;
+  /** Count of `getInvitations` calls (dedup-guard assertions). */
+  public getInvitationsCalls = 0;
+
+  async getCoachOverview(): Promise<Result<CoachOverview, ApiError>> {
+    this.getCoachOverviewCalls += 1;
+    if (this.coachOverview === null) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No coach overview fixture configured",
+      });
+    }
+    return this.mayFail<CoachOverview>(this.coachOverview);
+  }
+
+  async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {
+    this.getInvitationsCalls += 1;
+    return this.mayFail<TrainerInvitation[]>([...this.invitations]);
+  }
+
+  async inviteClient(
+    req: InviteClientRequest,
+  ): Promise<Result<InviteClientResult, InviteApiError>> {
+    this.inviteClientCalls.push(req);
+    if (this.shouldFail) {
+      return fail<InviteApiError>(this.failError as InviteApiError);
+    }
+    if (this.nextInviteError !== null) {
+      const status =
+        this.nextInviteError.code === "self_invite"
+          ? 400
+          : this.nextInviteError.code === "no_slots"
+            ? 403
+            : 409;
+      return fail<InviteApiError>({
+        kind: "api",
+        code: "server",
+        message: this.nextInviteError.message,
+        status,
+        inviteCode: this.nextInviteError.code,
+      });
+    }
+    return ok(this.nextInviteResult);
+  }
+
+  async cancelInvitation(
+    id: string,
+  ): Promise<Result<{ success: true }, ApiError>> {
+    this.cancelInvitationCalls.push(id);
+    const result = this.mayFail<{ success: true }>({ success: true });
+    if (result.ok) {
+      this.invitations = this.invitations.filter((inv) => inv.id !== id);
+    }
+    return result;
   }
 }

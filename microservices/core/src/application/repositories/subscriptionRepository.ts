@@ -1,10 +1,26 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   profiles,
   subscriptionTiers,
   userSubscriptions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+
+/**
+ * Subscription `payment_status` values that grant LIVE entitlement — the
+ * single source of truth, mirroring the `user_subscriptions_active_unique`
+ * partial index in schema.ts (`payment_status IN ('active','pending',
+ * 'trialing','past_due')`). Only these resolve the user's tier; cancelled /
+ * expired / incomplete subscriptions must fall back to the free tier rather
+ * than reporting a lapsed entitlement. Consumed here by `findForUser` and by
+ * `trainerRepository.getTrainerClientLimit`.
+ */
+export const LIVE_SUBSCRIPTION_STATUSES = [
+  "active",
+  "pending",
+  "trialing",
+  "past_due",
+] as const;
 
 /**
  * Drizzle-inferred row type for `user_subscriptions`. Includes every column
@@ -230,9 +246,10 @@ export class SubscriptionRepository {
    *   1. SELECT profile row (we need it regardless for role + trial flags).
    *      Returns `null` if no profile (handler maps to 500 — JWT was
    *      verified but the profile is missing → schema corruption).
-   *   2. LEFT JOIN user_subscriptions (ordered by createdAt DESC, latest
+   *   2. JOIN user_subscriptions (LIVE statuses only — see
+   *      LIVE_SUBSCRIPTION_STATUSES — ordered by createdAt DESC, latest
    *      row only) with subscription_tiers (INNER on tier_name).
-   *      Returns 0 or 1 rows.
+   *      Returns 0 or 1 rows; a lapsed-only user yields 0 → free tier.
    *   3. If no sub row → look up the `free` tier metadata separately
    *      and synthesise the response. The free tier MUST exist in the
    *      seeded catalog; missing it is a deploy-misconfig 500 condition.
@@ -298,7 +315,20 @@ export class SubscriptionRepository {
         subscriptionTiers,
         eq(userSubscriptions.tierName, subscriptionTiers.tierName),
       )
-      .where(eq(userSubscriptions.userId, userId))
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          // Only LIVE subscriptions resolve the user's tier. A trainer who
+          // cancelled (most-recent row is `cancelled`/`expired`) must NOT keep
+          // reporting their old tier — without this filter `isTrainerTier` /
+          // `trainerClientLimit` / `workoutLimit` stay set after lapse and the
+          // mobile app leaves coach mode enabled. Excluded rows fall through to
+          // the synthesised free tier below, exactly like a brand-new user.
+          inArray(userSubscriptions.paymentStatus, [
+            ...LIVE_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
       .orderBy(desc(userSubscriptions.createdAt))
       .limit(1);
 
