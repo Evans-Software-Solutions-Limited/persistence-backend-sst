@@ -43,6 +43,7 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   InviteClientRequest,
   InviteClientResult,
@@ -487,6 +488,16 @@ export interface ApiPort {
    * domain shape, so no field mapping is needed.
    */
   getCoachOverview(): Promise<Result<CoachOverview, ApiError>>;
+
+  /**
+   * Fetch the trainer's client roster (`GET /trainers/me/clients`). Single
+   * `{ data: TrainerClient[] }` envelope — the adapter unwraps once. Trainer-
+   * role-gated server-side (403 for non-trainers). Rows arrive pre-sorted by
+   * adherence ascending (null last) and the full roster (active + pending);
+   * the Clients screen filters by status client-side. camelCase wire shape ==
+   * domain shape, so no field mapping is needed.
+   */
+  getTrainerClients(): Promise<Result<TrainerClient[], ApiError>>;
 
   /**
    * List the trainer's pending invitations (`GET /trainers/me/invitations`).

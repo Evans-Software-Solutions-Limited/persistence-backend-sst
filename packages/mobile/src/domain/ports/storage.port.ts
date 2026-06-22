@@ -37,6 +37,7 @@ import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -291,6 +292,23 @@ export interface StoragePort {
    * Age of the cached overview as an ISO timestamp, or null when no row.
    */
   getCoachOverviewAge(userId: string): string | null;
+
+  // -- Clients Roster Cache (10-trainer-features) --
+  /**
+   * Read the cached client roster for a trainer, or null if none. One row per
+   * userId; `payload` is the full JSON-serialised `TrainerClient[]`. Staleness
+   * is enforced by the hook (cache-first then refresh).
+   */
+  getCachedTrainerClients(userId: string): TrainerClient[] | null;
+  /**
+   * Write-through the latest backend roster for a trainer, stamping
+   * `syncedAt = now()`.
+   */
+  cacheTrainerClients(userId: string, payload: TrainerClient[]): void;
+  /**
+   * Age of the cached roster as an ISO timestamp, or null when no row.
+   */
+  getTrainerClientsAge(userId: string): string | null;
 
   // -- Notifications Cache (09) --
   /**

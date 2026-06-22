@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,6 +7,7 @@ import {
 } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TamaguiProvider } from "@tamagui/core";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { ReactNode } from "react";
 import config from "../../../../tamagui.config";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -18,11 +20,35 @@ import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNet
 import type { MySubscription } from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { useAddClientSheet } from "@/state/add-client-sheet";
 import { ClientsContainer } from "@/ui/containers/ClientsContainer";
+import { makeTrainerClients } from "@/ui/presenters/coach/__tests__/trainerClients.fixture";
+
+const mockFetch = jest.fn(async () => ({
+  ok: true,
+  status: 200,
+  headers: { get: () => null },
+  json: async () => ({ data: [] }),
+}));
+(globalThis as Record<string, unknown>).fetch = mockFetch;
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn() }),
+  __esModule: true,
+  useRouter: () => ({
+    push: (...args: unknown[]) => mockPush(...args),
+    replace: jest.fn(),
+    back: jest.fn(),
+  }),
+  router: {
+    push: (...args: unknown[]) => mockPush(...args),
+    replace: jest.fn(),
+    back: jest.fn(),
+  },
+}));
+jest.mock("@/adapters/api", () => ({
+  ...jest.requireActual("@/adapters/api"),
+  getApiBaseUrl: () => "https://api.test",
 }));
 
 function makeAdapters(sub: MySubscription | null): {
@@ -67,11 +93,18 @@ function Wrapper({
   children: ReactNode;
 }) {
   return (
-    <TamaguiProvider config={config} defaultTheme="dark">
-      <QueryClientProvider client={queryClient}>
-        <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
-      </QueryClientProvider>
-    </TamaguiProvider>
+    <SafeAreaProvider
+      initialMetrics={{
+        frame: { x: 0, y: 0, width: 390, height: 844 },
+        insets: { top: 44, left: 0, right: 0, bottom: 34 },
+      }}
+    >
+      <TamaguiProvider config={config} defaultTheme="dark">
+        <QueryClientProvider client={queryClient}>
+          <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+        </QueryClientProvider>
+      </TamaguiProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -104,8 +137,20 @@ function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   };
 }
 
+function makeTrainerSub(): MySubscription {
+  return makeSub({
+    tierName: "individual_trainer",
+    isTrainerTier: true,
+    role: "personal_trainer",
+    workoutLimit: null,
+    trainerClientLimit: 5,
+  });
+}
+
 beforeEach(() => {
   mockPush.mockReset();
+  mockFetch.mockClear();
+  useAddClientSheet.setState({ open: false, onInvited: null });
 });
 
 describe("ClientsContainer", () => {
@@ -162,51 +207,65 @@ describe("ClientsContainer", () => {
     );
   });
 
-  it("renders the M8 Coming Soon placeholder for a trainer-standard user", async () => {
-    const { adapters } = makeAdapters(
-      makeSub({
-        tierName: "individual_trainer",
-        isTrainerTier: true,
-        role: "personal_trainer",
-        workoutLimit: null,
-        trainerClientLimit: 5,
-      }),
-    );
+  it("renders the live roster for an entitled trainer (gate passes)", async () => {
+    const { adapters, api } = makeAdapters(makeTrainerSub());
+    api.trainerClients = makeTrainerClients();
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <ClientsContainer />
       </Wrapper>,
     );
+    // The roster header + an active row land once the cache-first hook
+    // refreshes from the in-memory adapter.
     await waitFor(() =>
-      expect(screen.getByTestId("clients-coming-soon")).toBeTruthy(),
+      expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
     );
     expect(screen.getByText("Clients")).toBeTruthy();
-    expect(
-      screen.getByText(/Trainer client management arrives in milestone M8/i),
-    ).toBeTruthy();
+    // Five active clients in the fixture → the eyebrow counts active only.
+    expect(screen.getByText("COACHING · 5 ACTIVE")).toBeTruthy();
     expect(screen.queryByTestId("clients-gate")).toBeNull();
+    expect(screen.queryByTestId("clients-coming-soon")).toBeNull();
   });
 
-  it("renders the M8 Coming Soon placeholder for a trainer-pro user", async () => {
-    const { adapters } = makeAdapters(
-      makeSub({
-        tierName: "individual_trainer",
-        isTrainerTier: true,
-        role: "personal_trainer",
-        workoutLimit: null,
-        aiAccess: true,
-        gymBuddyAccess: true,
-        trainerClientLimit: null,
-      }),
-    );
+  it("opens the AddClient sheet from the header + (registering a refresh)", async () => {
+    const { adapters, api } = makeAdapters(makeTrainerSub());
+    api.trainerClients = makeTrainerClients();
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <ClientsContainer />
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("clients-coming-soon")).toBeTruthy(),
+      expect(screen.getByTestId("clients-invite-btn")).toBeTruthy(),
     );
+    fireEvent.press(screen.getByTestId("clients-invite-btn"));
+    const state = useAddClientSheet.getState();
+    expect(state.open).toBe(true);
+    expect(typeof state.onInvited).toBe("function");
+
+    // Firing the registered callback re-pulls the roster (slot/flag refresh).
+    const before = api.getTrainerClientsCalls;
+    await act(async () => {
+      state.onInvited?.();
+    });
+    await waitFor(() =>
+      expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+    );
+  });
+
+  it("pushes the per-client detail route on a row tap", async () => {
+    const { adapters, api } = makeAdapters(makeTrainerSub());
+    api.trainerClients = makeTrainerClients();
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <ClientsContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("client-row-c-priya"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/clients/c-priya");
   });
 
   it("upgrade CTA from the gate routes into the Selection screen with the next-tier query params", async () => {

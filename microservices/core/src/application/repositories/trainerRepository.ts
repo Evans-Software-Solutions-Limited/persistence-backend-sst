@@ -45,6 +45,50 @@ export interface RecentActivityEvent {
 
 export type ClientHealthBand = "strong" | "wobbling" | "atRisk";
 
+// ─── Clients roster (GET /trainers/me/clients) wire shapes ──────────────────────
+
+export type ClientStatus = "active" | "pending";
+
+/**
+ * 5-level roster band (distinct from the 3-level `ClientHealthBand` the Coach
+ * You donut uses). Mirrors the prototype `ClientRowV2` thresholds.
+ */
+export type ClientBand =
+  | "stellar"
+  | "strong"
+  | "wobbling"
+  | "atRisk"
+  | "crisis";
+
+export interface ClientFlag {
+  tone: "gold" | "ember" | "error" | "trainer";
+  label: string;
+}
+
+export interface TrainerClient {
+  /** clientId (profiles.id). */
+  id: string;
+  name: string;
+  initials: string;
+  avatarUrl: string | null;
+  /** pt_client_relationships.status — only active | pending reach the roster. */
+  status: ClientStatus;
+  /**
+   * v1: ALWAYS null. The prototype's "Strength · Wk 4 / 12" needs a
+   * `program_assignments` table, which doesn't exist until the Programs slice
+   * (10.4). The field stays in the contract; the presenter hides the segment
+   * when null. Do NOT fabricate it.
+   */
+  programLabel: string | null;
+  /** v1 28-day adherence %, or null when the client has no in-window assignments. */
+  adherence: number | null;
+  /** null when adherence is null (no band without a number). */
+  band: ClientBand | null;
+  /** Most recent completed-session completedAt as ISO, or null. */
+  lastSeenAt: string | null;
+  flags: ClientFlag[];
+}
+
 export interface CoachOverview {
   trainer: {
     name: string;
@@ -117,6 +161,19 @@ const TOP_PROGRAMS_LIMIT = 3;
 const ADHERENCE_STRONG_MIN = 85;
 const ADHERENCE_WOBBLING_MIN = 65;
 
+// 5-band roster thresholds (prototype ClientRowV2).
+const BAND_STELLAR_MIN = 95;
+const BAND_STRONG_MIN = 85;
+const BAND_WOBBLING_MIN = 65;
+const BAND_AT_RISK_MIN = 40;
+
+/**
+ * Whole days idle (no completed session) AT OR AFTER which a client is flagged.
+ * Inclusive: exactly 4 whole days → "4d IDLE", matching the prototype's
+ * canonical idle row (`ClientRowV2` Tom · 4d).
+ */
+const IDLE_DAYS = 4;
+
 // ─── Pure helpers (exported for unit testing) ──────────────────────────────────
 
 export function initialsFromName(name: string | null | undefined): string {
@@ -173,6 +230,34 @@ export function clientAdherence(
 ): number | null {
   if (total === 0) return null;
   return Math.round((completed / total) * 100);
+}
+
+/**
+ * v1 5-level roster band for a client adherence percentage (prototype
+ * `ClientRowV2`). Kept separate from the 3-level `adherenceBand()` — the Coach
+ * You donut still uses that one.
+ *   stellar  ≥ 95
+ *   strong   85–94
+ *   wobbling 65–84
+ *   atRisk   40–64
+ *   crisis   < 40
+ */
+export function clientRosterBand(pct: number): ClientBand {
+  if (pct >= BAND_STELLAR_MIN) return "stellar";
+  if (pct >= BAND_STRONG_MIN) return "strong";
+  if (pct >= BAND_WOBBLING_MIN) return "wobbling";
+  if (pct >= BAND_AT_RISK_MIN) return "atRisk";
+  return "crisis";
+}
+
+/**
+ * Whole days between two instants (floor). Negative deltas clamp to 0 so a
+ * future `lastSeenAt` (clock skew) never produces a nonsense idle flag.
+ */
+export function wholeDaysBetween(from: Date, to: Date): number {
+  const ms = to.getTime() - from.getTime();
+  if (ms <= 0) return 0;
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
 }
 
 export function mean(values: number[]): number | null {
@@ -271,6 +356,159 @@ export class TrainerRepository {
       clientName: r.clientName ?? "",
       createdAt: r.createdAt ?? null,
     }));
+  }
+
+  /**
+   * Roster client set for the Clients tab: active AND pending non-AI
+   * relationships, left-joined to `profiles` for name + avatarUrl + status.
+   *
+   * Distinct from `getActiveClients` (active-only, no avatar/status) which the
+   * Coach You aggregates depend on — that one is left untouched. The roster
+   * shows pending clients too (prototype "All" filter + pending state).
+   */
+  async getRosterClients(trainerId: string): Promise<
+    {
+      clientId: string;
+      clientName: string;
+      avatarUrl: string | null;
+      status: ClientStatus;
+    }[]
+  > {
+    const db = getDb();
+    const rows = await db
+      .select({
+        clientId: ptClientRelationships.clientId,
+        clientName: profiles.fullName,
+        avatarUrl: profiles.avatarUrl,
+        status: ptClientRelationships.status,
+      })
+      .from(ptClientRelationships)
+      .leftJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
+      .where(
+        and(
+          eq(ptClientRelationships.trainerId, trainerId),
+          inArray(ptClientRelationships.status, ["active", "pending"]),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      );
+    return rows.map((r) => ({
+      clientId: r.clientId,
+      clientName: r.clientName ?? "",
+      avatarUrl: r.avatarUrl ?? null,
+      // status is enum-typed nullable in the schema (default 'pending'); the
+      // WHERE constrains it to active|pending, so the coalesce is just a
+      // type-narrowing safety net.
+      status: (r.status as ClientStatus | null) ?? "pending",
+    }));
+  }
+
+  /**
+   * Most recent completed-session `completedAt` per client (status='completed').
+   * These are the client's OWN sessions (scoped by clientId via
+   * `workout_sessions.user_id`), so no trainer filter is needed — this is the
+   * client's own activity, not a per-trainer assignment.
+   */
+  async getLastSeenByClient(
+    clientIds: string[],
+  ): Promise<Map<string, string | null>> {
+    const result = new Map<string, string | null>();
+    if (clientIds.length === 0) return result;
+    const db = getDb();
+    const rows = await db
+      .select({
+        clientId: workoutSessions.userId,
+        // max() of the timestamp per client. Grouped by the column ref below
+        // (NOT a reused parameterised sql`` expr) — safe re. the Drizzle
+        // GROUP BY 42803 bug (reference_drizzle_groupby_param_bug).
+        lastSeenAt: sql<string | null>`max(${workoutSessions.completedAt})`,
+      })
+      .from(workoutSessions)
+      .where(
+        and(
+          inArray(workoutSessions.userId, clientIds),
+          eq(workoutSessions.status, "completed"),
+          sql`${workoutSessions.completedAt} is not null`,
+        ),
+      )
+      .groupBy(workoutSessions.userId);
+    for (const r of rows) {
+      result.set(r.clientId, toIsoString(r.lastSeenAt));
+    }
+    return result;
+  }
+
+  /**
+   * Per-client count of THIS trainer's missed assignments in the window — a
+   * past-due assignment (dueDate in [windowStart, now)) that was not completed
+   * (covers both 'skipped' and still-'assigned'/'started' rows). A future-dated
+   * 'skipped' row (e.g. a trainer pre-cancelling next week's sessions) is NOT
+   * missed yet, so the `dueDate < now` bound applies to every status — skipped
+   * included (PR #125 review). Trainer-scoped: a co-trainer's missed assignment
+   * for a jointly-coached client must not inflate this trainer's "N MISSED"
+   * flag (PR #123 review lesson).
+   */
+  async getMissedCountsByClient(
+    trainerId: string,
+    clientIds: string[],
+    windowStart: Date,
+    now: Date,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (clientIds.length === 0) return result;
+    const db = getDb();
+    const startDate = windowStart.toISOString().slice(0, 10);
+    const nowDate = now.toISOString().slice(0, 10);
+    const rows = await db
+      .select({
+        clientId: workoutAssignments.clientId,
+        missed: sql<number>`count(*)::int`,
+      })
+      .from(workoutAssignments)
+      .where(
+        and(
+          eq(workoutAssignments.trainerId, trainerId),
+          inArray(workoutAssignments.clientId, clientIds),
+          sql`${workoutAssignments.dueDate} is not null`,
+          sql`${workoutAssignments.dueDate} >= ${startDate}`,
+          // Past-due only — excludes future-dated 'skipped' rows. 'skipped' is a
+          // subset of "not completed", so the OR collapses to this single pair.
+          sql`${workoutAssignments.status} not in ('completed')`,
+          sql`${workoutAssignments.dueDate} < ${nowDate}`,
+        ),
+      )
+      .groupBy(workoutAssignments.clientId);
+    for (const r of rows) {
+      result.set(r.clientId, r.missed);
+    }
+    return result;
+  }
+
+  /**
+   * Set of clients with ≥1 personal_record this month (powers the gold "NEW PR"
+   * flag). PRs are the client's own data (scoped by clientId via
+   * `personal_records.user_id`), so no trainer filter — correct per spec.
+   */
+  async getClientsWithPRsThisMonth(
+    clientIds: string[],
+    monthStart: Date,
+  ): Promise<Set<string>> {
+    const result = new Set<string>();
+    if (clientIds.length === 0) return result;
+    const db = getDb();
+    const rows = await db
+      .select({ clientId: personalRecords.userId })
+      .from(personalRecords)
+      .where(
+        and(
+          inArray(personalRecords.userId, clientIds),
+          sql`${personalRecords.achievedAt} >= ${monthStart.toISOString()}`,
+        ),
+      )
+      .groupBy(personalRecords.userId);
+    for (const r of rows) {
+      result.add(r.clientId);
+    }
+    return result;
   }
 
   /**
@@ -589,10 +827,12 @@ export class TrainerRepository {
       .orderBy(desc(personalRecords.achievedAt))
       .limit(RECENT_ACTIVITY_LIMIT);
 
-    // 3. Missed assignments — status='skipped', OR past-due-and-not-completed.
-    //    Scoped to this trainer's own assignments: a co-trainer's missed
-    //    assignment for a shared client isn't something THIS trainer scheduled
-    //    or can act on, so it must not appear in their feed.
+    // 3. Missed assignments — past-due (dueDate < now) and not completed.
+    //    Covers 'skipped' and still-'assigned'/'started' rows; a future-dated
+    //    'skipped' (pre-cancelled session) is not missed yet, so the dueDate
+    //    bound applies to every status (PR #125 review). Scoped to this
+    //    trainer's own assignments: a co-trainer's missed assignment for a
+    //    shared client isn't something THIS trainer scheduled or can act on.
     const nowDate = now.toISOString().slice(0, 10);
     const missed = await db
       .select({
@@ -605,14 +845,9 @@ export class TrainerRepository {
         and(
           eq(workoutAssignments.trainerId, trainerId),
           inArray(workoutAssignments.clientId, clientIds),
-          sql`(
-            ${workoutAssignments.status} = 'skipped'
-            OR (
-              ${workoutAssignments.status} not in ('completed')
-              AND ${workoutAssignments.dueDate} is not null
-              AND ${workoutAssignments.dueDate} < ${nowDate}
-            )
-          )`,
+          sql`${workoutAssignments.status} not in ('completed')`,
+          sql`${workoutAssignments.dueDate} is not null`,
+          sql`${workoutAssignments.dueDate} < ${nowDate}`,
         ),
       )
       .orderBy(desc(workoutAssignments.dueDate))
@@ -760,6 +995,90 @@ export class TrainerRepository {
       programStats,
       recentActivity,
     };
+  }
+
+  /**
+   * Assemble the Clients-tab roster. One row per active/pending non-AI
+   * relationship, decorated with v1 28-day adherence + band, last-seen, and
+   * the three derivable flags (NEW PR / N MISSED / Nd IDLE).
+   *
+   * v1 assumptions (confirm on PR):
+   *  - adherence: reuse `getAdherenceRows` over the last 28 days; null when the
+   *    client has zero in-window assignments → null band.
+   *  - programLabel: always null (no program_assignments table until 10.4).
+   *  - flags + adherence are trainer-scoped on the assignment side so a
+   *    co-trainer's data for a jointly-coached client can't leak.
+   *
+   * Sort: adherence ascending (lowest/at-risk first, matching the prototype
+   * "SORTED BY · ADHERENCE"); null-adherence clients sort LAST.
+   */
+  async getClients(
+    trainerId: string,
+    now: Date = new Date(),
+  ): Promise<TrainerClient[]> {
+    const monthStart = startOfMonth(now);
+    const winStart = daysAgo(now, ADHERENCE_WINDOW_DAYS);
+
+    const roster = await this.getRosterClients(trainerId);
+    if (roster.length === 0) return [];
+
+    const clientIds = roster.map((c) => c.clientId);
+
+    const [adherenceRows, lastSeenByClient, missedByClient, clientsWithPRs] =
+      await Promise.all([
+        this.getAdherenceRows(trainerId, clientIds, winStart, now),
+        this.getLastSeenByClient(clientIds),
+        this.getMissedCountsByClient(trainerId, clientIds, winStart, now),
+        this.getClientsWithPRsThisMonth(clientIds, monthStart),
+      ]);
+
+    const adherenceByClient = new Map<string, number | null>();
+    for (const r of adherenceRows) {
+      adherenceByClient.set(r.clientId, clientAdherence(r.completed, r.total));
+    }
+
+    const clients: TrainerClient[] = roster.map((c) => {
+      const adherence = adherenceByClient.get(c.clientId) ?? null;
+      const band = adherence === null ? null : clientRosterBand(adherence);
+      const lastSeenAt = lastSeenByClient.get(c.clientId) ?? null;
+
+      const flags: ClientFlag[] = [];
+      if (clientsWithPRs.has(c.clientId)) {
+        flags.push({ tone: "gold", label: "NEW PR" });
+      }
+      const missed = missedByClient.get(c.clientId) ?? 0;
+      if (missed > 0) {
+        flags.push({ tone: "ember", label: `${missed} MISSED` });
+      }
+      if (lastSeenAt !== null) {
+        const idleDays = wholeDaysBetween(new Date(lastSeenAt), now);
+        if (idleDays >= IDLE_DAYS) {
+          flags.push({ tone: "error", label: `${idleDays}d IDLE` });
+        }
+      }
+
+      return {
+        id: c.clientId,
+        name: c.clientName,
+        initials: initialsFromName(c.clientName),
+        avatarUrl: c.avatarUrl,
+        status: c.status,
+        // v1: no program_assignments table yet — see field doc.
+        programLabel: null,
+        adherence,
+        band,
+        lastSeenAt,
+        flags,
+      };
+    });
+
+    // Adherence ascending; null-adherence clients sort last.
+    return clients.sort((a, b) => {
+      if (a.adherence === null && b.adherence === null) return 0;
+      if (a.adherence === null) return 1;
+      if (b.adherence === null) return -1;
+      return a.adherence - b.adherence;
+    });
   }
 
   // ─── Invitations ──────────────────────────────────────────────────────────

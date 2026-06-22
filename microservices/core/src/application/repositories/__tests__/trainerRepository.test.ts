@@ -90,6 +90,30 @@ describe("TrainerRepository", () => {
       expect(mean([80, 90])).toBe(85);
     });
 
+    it("clientRosterBand buckets all 5 levels at the thresholds", async () => {
+      const { clientRosterBand } = await import("../trainerRepository");
+      expect(clientRosterBand(100)).toBe("stellar");
+      expect(clientRosterBand(95)).toBe("stellar");
+      expect(clientRosterBand(94)).toBe("strong");
+      expect(clientRosterBand(85)).toBe("strong");
+      expect(clientRosterBand(84)).toBe("wobbling");
+      expect(clientRosterBand(65)).toBe("wobbling");
+      expect(clientRosterBand(64)).toBe("atRisk");
+      expect(clientRosterBand(40)).toBe("atRisk");
+      expect(clientRosterBand(39)).toBe("crisis");
+      expect(clientRosterBand(0)).toBe("crisis");
+    });
+
+    it("wholeDaysBetween floors and clamps negatives to 0", async () => {
+      const { wholeDaysBetween } = await import("../trainerRepository");
+      const base = new Date("2026-05-15T00:00:00Z");
+      expect(wholeDaysBetween(new Date("2026-05-10T00:00:00Z"), base)).toBe(5);
+      // 5d 23h → floors to 5.
+      expect(wholeDaysBetween(new Date("2026-05-09T01:00:00Z"), base)).toBe(5);
+      // future "from" (clock skew) → 0, never negative.
+      expect(wholeDaysBetween(new Date("2026-05-20T00:00:00Z"), base)).toBe(0);
+    });
+
     it("startOfMonth / startOfQuarter / daysAgo compute UTC boundaries", async () => {
       const { startOfMonth, startOfQuarter, daysAgo } =
         await import("../trainerRepository");
@@ -177,6 +201,153 @@ describe("TrainerRepository", () => {
         { clientId: "c1", clientName: "A B", createdAt: null },
         { clientId: "c2", clientName: "", createdAt: null },
       ]);
+    });
+  });
+
+  describe("getRosterClients", () => {
+    it("maps active+pending rows, defaulting nulls and narrowing status", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      (getDb as any).mockReturnValue(
+        dbWithSelects([
+          [
+            {
+              clientId: "c1",
+              clientName: "A B",
+              avatarUrl: "http://img/1",
+              status: "active",
+            },
+            {
+              clientId: "c2",
+              clientName: null,
+              avatarUrl: null,
+              status: "pending",
+            },
+            // null status (shouldn't happen given the WHERE) → defaults pending.
+            {
+              clientId: "c3",
+              clientName: "C D",
+              avatarUrl: null,
+              status: null,
+            },
+          ],
+        ]),
+      );
+      const result = await repo.getRosterClients("t1");
+      expect(result).toEqual([
+        {
+          clientId: "c1",
+          clientName: "A B",
+          avatarUrl: "http://img/1",
+          status: "active",
+        },
+        {
+          clientId: "c2",
+          clientName: "",
+          avatarUrl: null,
+          status: "pending",
+        },
+        {
+          clientId: "c3",
+          clientName: "C D",
+          avatarUrl: null,
+          status: "pending",
+        },
+      ]);
+    });
+  });
+
+  describe("getLastSeenByClient", () => {
+    it("returns an empty map without querying for no clients", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const db = dbWithSelects([]);
+      (getDb as any).mockReturnValue(db);
+      const result = await repo.getLastSeenByClient([]);
+      expect(result.size).toBe(0);
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it("maps the max completedAt per client to ISO", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const seen = new Date("2026-05-12T10:00:00Z");
+      (getDb as any).mockReturnValue(
+        dbWithSelects([
+          [
+            { clientId: "c1", lastSeenAt: seen },
+            { clientId: "c2", lastSeenAt: null },
+          ],
+        ]),
+      );
+      const result = await repo.getLastSeenByClient(["c1", "c2"]);
+      expect(result.get("c1")).toBe(seen.toISOString());
+      expect(result.get("c2")).toBeNull();
+    });
+  });
+
+  describe("getMissedCountsByClient", () => {
+    it("returns an empty map without querying for no clients", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const db = dbWithSelects([]);
+      (getDb as any).mockReturnValue(db);
+      const result = await repo.getMissedCountsByClient(
+        "t1",
+        [],
+        new Date(),
+        new Date(),
+      );
+      expect(result.size).toBe(0);
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it("maps the missed count per client", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      (getDb as any).mockReturnValue(
+        dbWithSelects([
+          [
+            { clientId: "c1", missed: 2 },
+            { clientId: "c2", missed: 1 },
+          ],
+        ]),
+      );
+      const result = await repo.getMissedCountsByClient(
+        "t1",
+        ["c1", "c2"],
+        new Date("2026-04-17"),
+        new Date("2026-05-15"),
+      );
+      expect(result.get("c1")).toBe(2);
+      expect(result.get("c2")).toBe(1);
+    });
+  });
+
+  describe("getClientsWithPRsThisMonth", () => {
+    it("returns an empty set without querying for no clients", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const db = dbWithSelects([]);
+      (getDb as any).mockReturnValue(db);
+      const result = await repo.getClientsWithPRsThisMonth([], new Date());
+      expect(result.size).toBe(0);
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it("collects the distinct clients with a PR this month", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      (getDb as any).mockReturnValue(
+        dbWithSelects([[{ clientId: "c1" }, { clientId: "c3" }]]),
+      );
+      const result = await repo.getClientsWithPRsThisMonth(
+        ["c1", "c2", "c3"],
+        new Date("2026-05-01"),
+      );
+      expect(result.has("c1")).toBe(true);
+      expect(result.has("c2")).toBe(false);
+      expect(result.has("c3")).toBe(true);
     });
   });
 
@@ -601,6 +772,292 @@ describe("TrainerRepository", () => {
         { band: "wobbling", count: 1 },
         { band: "atRisk", count: 0 },
       ]);
+    });
+  });
+
+  // ─── Clients roster orchestration ────────────────────────────────────────
+
+  describe("getClients", () => {
+    // Like getOverview, getClients fans sub-queries through Promise.all, so we
+    // stub the already-individually-tested sub-methods and assert the pure
+    // fold (band, flags, sort).
+    function stubRoster(
+      repo: any,
+      over: {
+        roster: {
+          clientId: string;
+          clientName: string;
+          avatarUrl: string | null;
+          status: "active" | "pending";
+        }[];
+        adherence: { clientId: string; completed: number; total: number }[];
+        lastSeen: Map<string, string | null>;
+        missed: Map<string, number>;
+        prs: Set<string>;
+      },
+    ) {
+      vi.spyOn(repo, "getRosterClients").mockResolvedValue(over.roster);
+      vi.spyOn(repo, "getAdherenceRows").mockResolvedValue(over.adherence);
+      vi.spyOn(repo, "getLastSeenByClient").mockResolvedValue(over.lastSeen);
+      vi.spyOn(repo, "getMissedCountsByClient").mockResolvedValue(over.missed);
+      vi.spyOn(repo, "getClientsWithPRsThisMonth").mockResolvedValue(over.prs);
+    }
+
+    it("returns [] for an empty roster without fanning out", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const getRoster = vi
+        .spyOn(repo, "getRosterClients")
+        .mockResolvedValue([]);
+      const getAdh = vi.spyOn(repo, "getAdherenceRows");
+      expect(await repo.getClients("t1")).toEqual([]);
+      expect(getRoster).toHaveBeenCalledTimes(1);
+      expect(getAdh).not.toHaveBeenCalled();
+    });
+
+    it("maps all 5 bands, programLabel null, sorts adherence asc with null last", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "stel",
+            clientName: "S R",
+            avatarUrl: "a",
+            status: "active",
+          },
+          {
+            clientId: "str",
+            clientName: "St R",
+            avatarUrl: null,
+            status: "active",
+          },
+          {
+            clientId: "wob",
+            clientName: "W B",
+            avatarUrl: null,
+            status: "pending",
+          },
+          {
+            clientId: "atr",
+            clientName: "A R",
+            avatarUrl: null,
+            status: "active",
+          },
+          {
+            clientId: "cri",
+            clientName: "C I",
+            avatarUrl: null,
+            status: "active",
+          },
+          // zero in-window assignments → null adherence/band, sorts last.
+          {
+            clientId: "non",
+            clientName: "No Ne",
+            avatarUrl: null,
+            status: "pending",
+          },
+        ],
+        adherence: [
+          { clientId: "stel", completed: 10, total: 10 }, // 100 → stellar
+          { clientId: "str", completed: 9, total: 10 }, // 90 → strong
+          { clientId: "wob", completed: 7, total: 10 }, // 70 → wobbling
+          { clientId: "atr", completed: 5, total: 10 }, // 50 → atRisk
+          { clientId: "cri", completed: 1, total: 10 }, // 10 → crisis
+          // "non" absent → null
+        ],
+        lastSeen: new Map(),
+        missed: new Map(),
+        prs: new Set(),
+      });
+
+      const result = await repo.getClients(
+        "t1",
+        new Date("2026-05-15T00:00:00Z"),
+      );
+
+      // Sorted ascending by adherence; null-adherence client last.
+      expect(result.map((c: any) => c.id)).toEqual([
+        "cri",
+        "atr",
+        "wob",
+        "str",
+        "stel",
+        "non",
+      ]);
+      const byId = new Map(result.map((c: any) => [c.id, c]));
+      expect(byId.get("stel").band).toBe("stellar");
+      expect(byId.get("str").band).toBe("strong");
+      expect(byId.get("wob").band).toBe("wobbling");
+      expect(byId.get("atr").band).toBe("atRisk");
+      expect(byId.get("cri").band).toBe("crisis");
+      expect(byId.get("non").adherence).toBeNull();
+      expect(byId.get("non").band).toBeNull();
+      // programLabel always null in v1; status + initials + avatar passthrough.
+      expect(byId.get("stel").programLabel).toBeNull();
+      expect(byId.get("stel").initials).toBe("SR");
+      expect(byId.get("stel").avatarUrl).toBe("a");
+      expect(byId.get("wob").status).toBe("pending");
+      // No flags when none apply.
+      expect(byId.get("stel").flags).toEqual([]);
+    });
+
+    it("derives NEW PR / N MISSED / Nd IDLE flags when they apply", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const now = new Date("2026-05-15T00:00:00Z");
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "c1",
+            clientName: "Al Pha",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [{ clientId: "c1", completed: 4, total: 10 }], // 40 → atRisk
+        // last seen 6 whole days ago → "6d IDLE".
+        lastSeen: new Map([["c1", "2026-05-09T00:00:00.000Z"]]),
+        missed: new Map([["c1", 3]]),
+        prs: new Set(["c1"]),
+      });
+      const result = await repo.getClients("t1", now);
+      expect(result[0].flags).toEqual([
+        { tone: "gold", label: "NEW PR" },
+        { tone: "ember", label: "3 MISSED" },
+        { tone: "error", label: "6d IDLE" },
+      ]);
+    });
+
+    it("IDLE flag is inclusive at the threshold — 4d fires, 3d does not (prototype '4d IDLE')", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const now = new Date("2026-05-15T00:00:00Z");
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "c1",
+            clientName: "Four Days",
+            avatarUrl: null,
+            status: "active",
+          },
+          {
+            clientId: "c2",
+            clientName: "Three Days",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [
+          { clientId: "c1", completed: 9, total: 10 },
+          { clientId: "c2", completed: 9, total: 10 },
+        ],
+        lastSeen: new Map([
+          // exactly 4 whole days ago → "4d IDLE" (inclusive threshold).
+          ["c1", "2026-05-11T00:00:00.000Z"],
+          // 3 whole days ago → no IDLE flag.
+          ["c2", "2026-05-12T00:00:00.000Z"],
+        ]),
+        missed: new Map(),
+        prs: new Set(),
+      });
+      const byId = Object.fromEntries(
+        (await repo.getClients("t1", now)).map((c) => [c.id, c]),
+      );
+      expect(byId["c1"].flags).toEqual([{ tone: "error", label: "4d IDLE" }]);
+      expect(byId["c2"].flags).toEqual([]);
+    });
+
+    it("omits each flag when it does not apply (no PR, 0 missed, recent/absent last-seen)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const now = new Date("2026-05-15T00:00:00Z");
+      stubRoster(repo, {
+        roster: [
+          // recently seen (2 days ago, ≤ IDLE threshold) → no IDLE flag.
+          {
+            clientId: "c1",
+            clientName: "Al Pha",
+            avatarUrl: null,
+            status: "active",
+          },
+          // never seen (no last-seen entry) → no IDLE flag.
+          {
+            clientId: "c2",
+            clientName: "Be Ta",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [
+          { clientId: "c1", completed: 9, total: 10 },
+          { clientId: "c2", completed: 9, total: 10 },
+        ],
+        lastSeen: new Map([["c1", "2026-05-13T00:00:00.000Z"]]),
+        missed: new Map([["c1", 0]]), // 0 missed → no ember flag
+        prs: new Set(), // no PR → no gold flag
+      });
+      const result = await repo.getClients("t1", now);
+      for (const c of result) {
+        expect(c.flags).toEqual([]);
+      }
+    });
+
+    it("trainer-scopes missed via getMissedCountsByClient (co-trainer data cannot leak)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      const now = new Date("2026-05-15T00:00:00Z");
+      const missedSpy = vi
+        .spyOn(repo, "getMissedCountsByClient")
+        .mockResolvedValue(new Map());
+      vi.spyOn(repo, "getRosterClients").mockResolvedValue([
+        {
+          clientId: "c1",
+          clientName: "Al Pha",
+          avatarUrl: null,
+          status: "active",
+        },
+      ]);
+      // Adherence query is also trainer-scoped at its own SQL level; here we
+      // assert the orchestration passes trainerId + the in-window start to the
+      // missed-count query so a co-trainer's assignment can't inflate the flag.
+      const adhSpy = vi
+        .spyOn(repo, "getAdherenceRows")
+        .mockResolvedValue([{ clientId: "c1", completed: 5, total: 10 }]);
+      vi.spyOn(repo, "getLastSeenByClient").mockResolvedValue(new Map());
+      vi.spyOn(repo, "getClientsWithPRsThisMonth").mockResolvedValue(new Set());
+
+      const result = await repo.getClients("t1", now);
+      expect(result[0].flags).toEqual([]); // no missed → no ember flag
+      expect(missedSpy).toHaveBeenCalledWith(
+        "t1",
+        ["c1"],
+        expect.any(Date),
+        now,
+      );
+      expect(adhSpy).toHaveBeenCalledWith("t1", ["c1"], expect.any(Date), now);
+    });
+
+    it("uses the Date.now() default when no `now` is supplied", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "c1",
+            clientName: "Al Pha",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [{ clientId: "c1", completed: 9, total: 10 }],
+        lastSeen: new Map(),
+        missed: new Map(),
+        prs: new Set(),
+      });
+      const result = await repo.getClients("t1");
+      expect(result).toHaveLength(1);
+      expect(result[0].band).toBe("strong");
     });
   });
 

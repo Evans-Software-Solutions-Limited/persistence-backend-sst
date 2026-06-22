@@ -68,6 +68,7 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   InviteClientRequest,
   InviteClientResult,
@@ -1130,6 +1131,10 @@ export class SSTApiAdapter implements ApiPort {
 
   async getCoachOverview(): Promise<Result<CoachOverview, ApiError>> {
     return this.requestEnvelope<CoachOverview>("/trainers/me/overview");
+  }
+
+  async getTrainerClients(): Promise<Result<TrainerClient[], ApiError>> {
+    return this.requestEnvelope<TrainerClient[]>("/trainers/me/clients");
   }
 
   async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {

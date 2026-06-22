@@ -84,6 +84,10 @@ export default function AppLayout() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
+          name="clients/[id]/index"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="exercises/[id]/edit"
           options={{ headerShown: false }}
         />

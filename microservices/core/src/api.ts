@@ -72,6 +72,7 @@ import { preferencesGetHandler } from "./application/notifications/preferences/g
 import { preferencesSetHandler } from "./application/notifications/preferences/set/preferencesSetHandler";
 import { devicesRegisterHandler } from "./application/devices/register/devicesRegisterHandler";
 import { trainersOverviewHandler } from "./application/trainers/overview/trainersOverviewHandler";
+import { trainersClientsListHandler } from "./application/trainers/clients/trainersClientsListHandler";
 import { trainersInvitationsListHandler } from "./application/trainers/invitations/trainersInvitationsListHandler";
 import { trainersInvitationsCreateHandler } from "./application/trainers/invitations/trainersInvitationsCreateHandler";
 import { trainersInvitationsDeleteHandler } from "./application/trainers/invitations/trainersInvitationsDeleteHandler";
@@ -155,6 +156,7 @@ const app = new Elysia()
   .use(devicesRegisterHandler)
   // M8 — trainer / Coach You.
   .use(trainersOverviewHandler)
+  .use(trainersClientsListHandler)
   .use(trainersInvitationsListHandler)
   .use(trainersInvitationsCreateHandler)
   .use(trainersInvitationsDeleteHandler);
