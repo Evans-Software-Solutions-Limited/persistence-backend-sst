@@ -57,6 +57,9 @@ import { nutritionTargetsGetHandler } from "./application/nutrition/targets/get/
 import { nutritionTargetsSetHandler } from "./application/nutrition/targets/set/nutritionTargetsSetHandler";
 import { nutritionWaterGetHandler } from "./application/nutrition/water/get/nutritionWaterGetHandler";
 import { nutritionWaterPatchHandler } from "./application/nutrition/water/patch/nutritionWaterPatchHandler";
+import { nutritionBarcodeResolveHandler } from "./application/nutrition/barcode/nutritionBarcodeResolveHandler";
+import { foodsListHandler } from "./application/foods/list/foodsListHandler";
+import { foodsCreateHandler } from "./application/foods/create/foodsCreateHandler";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
@@ -181,7 +184,10 @@ const app = new Elysia()
   .use(nutritionTargetsGetHandler)
   .use(nutritionTargetsSetHandler)
   .use(nutritionWaterGetHandler)
-  .use(nutritionWaterPatchHandler);
+  .use(nutritionWaterPatchHandler)
+  .use(nutritionBarcodeResolveHandler)
+  .use(foodsListHandler)
+  .use(foodsCreateHandler);
 
 export type CoreApi = typeof app;
 
