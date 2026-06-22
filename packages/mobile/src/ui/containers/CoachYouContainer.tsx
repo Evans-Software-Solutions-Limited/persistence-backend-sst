@@ -89,8 +89,12 @@ export function CoachYouContainer() {
     if (since) {
       const d = new Date(since);
       if (!Number.isNaN(d.getTime())) {
+        // coachSince is a UTC ISO string (server: profiles.created_at). Read it
+        // with UTC accessors so the month/year match what the server wrote —
+        // local accessors shift it for negative-UTC viewers near a boundary
+        // (e.g. 2024-01-01T00:00Z → "Dec 2023" in UTC-8).
         parts.push(
-          `Coach since ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`,
+          `Coach since ${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCFullYear()}`,
         );
       }
     }
