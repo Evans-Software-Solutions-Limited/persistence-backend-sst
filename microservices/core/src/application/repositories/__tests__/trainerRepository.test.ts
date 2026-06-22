@@ -236,9 +236,9 @@ describe("TrainerRepository", () => {
       const repo = new TrainerRepository();
       const db = dbWithSelects([]);
       (getDb as any).mockReturnValue(db);
-      expect(await repo.getAdherenceRows([], new Date(), new Date())).toEqual(
-        [],
-      );
+      expect(
+        await repo.getAdherenceRows("t1", [], new Date(), new Date()),
+      ).toEqual([]);
       expect(db.select).not.toHaveBeenCalled();
     });
 
@@ -254,6 +254,7 @@ describe("TrainerRepository", () => {
         ]),
       );
       const rows = await repo.getAdherenceRows(
+        "t1",
         ["c1", "c2"],
         new Date("2026-01-01"),
         new Date("2026-02-01"),
@@ -363,7 +364,7 @@ describe("TrainerRepository", () => {
       const repo = new TrainerRepository();
       const db = dbWithSelects([]);
       (getDb as any).mockReturnValue(db);
-      expect(await repo.getRecentActivity([], new Date())).toEqual([]);
+      expect(await repo.getRecentActivity("t1", [], new Date())).toEqual([]);
       expect(db.select).not.toHaveBeenCalled();
     });
 
@@ -392,6 +393,7 @@ describe("TrainerRepository", () => {
         ]),
       );
       const events = await repo.getRecentActivity(
+        "t1",
         [{ clientId: "c1", clientName: "Jane Smith" }],
         new Date("2026-05-15T00:00:00Z"),
       );
@@ -415,6 +417,7 @@ describe("TrainerRepository", () => {
         ]),
       );
       const events = await repo.getRecentActivity(
+        "t1",
         [{ clientId: "c1", clientName: "Jane" }],
         new Date("2026-05-15T00:00:00Z"),
       );

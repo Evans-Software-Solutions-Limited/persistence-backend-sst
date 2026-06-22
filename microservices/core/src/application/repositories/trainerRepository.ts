@@ -379,8 +379,14 @@ export class TrainerRepository {
    * Per-client adherence counters over a window (assignments whose `due_date`
    * is within [windowStart, windowEnd]). `due_date` is stored as a `text`
    * column (YYYY-MM-DD) so we compare on the date literal.
+   *
+   * Scoped to `trainerId`: a client can be jointly coached (multiple active
+   * `pt_client_relationships` rows differing only by `trainer_id`), so without
+   * this filter another trainer's assignments to the same client would skew
+   * THIS trainer's adherence / health bands.
    */
   async getAdherenceRows(
+    trainerId: string,
     clientIds: string[],
     windowStart: Date,
     windowEnd: Date,
@@ -398,6 +404,7 @@ export class TrainerRepository {
       .from(workoutAssignments)
       .where(
         and(
+          eq(workoutAssignments.trainerId, trainerId),
           inArray(workoutAssignments.clientId, clientIds),
           sql`${workoutAssignments.dueDate} is not null`,
           sql`${workoutAssignments.dueDate} >= ${startDate}`,
@@ -484,6 +491,10 @@ export class TrainerRepository {
         )
         .where(
           and(
+            // Only count assignments THIS trainer made — a workout can appear
+            // in another trainer's program too, which would otherwise leak a
+            // co-trainer's assignment into this program's active-client count.
+            eq(workoutAssignments.trainerId, trainerId),
             inArray(programWeeks.programId, programIds),
             inArray(workoutAssignments.clientId, clientIds),
             inArray(workoutAssignments.status, ["assigned", "started"]),
@@ -521,6 +532,7 @@ export class TrainerRepository {
    * the per-branch limit keeps the row counts small).
    */
   async getRecentActivity(
+    trainerId: string,
     clients: { clientId: string; clientName: string }[],
     now: Date,
   ): Promise<RecentActivityEvent[]> {
@@ -578,6 +590,9 @@ export class TrainerRepository {
       .limit(RECENT_ACTIVITY_LIMIT);
 
     // 3. Missed assignments — status='skipped', OR past-due-and-not-completed.
+    //    Scoped to this trainer's own assignments: a co-trainer's missed
+    //    assignment for a shared client isn't something THIS trainer scheduled
+    //    or can act on, so it must not appear in their feed.
     const nowDate = now.toISOString().slice(0, 10);
     const missed = await db
       .select({
@@ -588,6 +603,7 @@ export class TrainerRepository {
       .from(workoutAssignments)
       .where(
         and(
+          eq(workoutAssignments.trainerId, trainerId),
           inArray(workoutAssignments.clientId, clientIds),
           sql`(
             ${workoutAssignments.status} = 'skipped'
@@ -678,11 +694,11 @@ export class TrainerRepository {
       this.countNewClientsThisMonth(trainerId, monthStart),
       this.countChurnThisQuarter(trainerId, quarterStart),
       this.getRetention(trainerId, daysAgo(now, RETENTION_WINDOW_DAYS)),
-      this.getAdherenceRows(clientIds, win1Start, win1End),
-      this.getAdherenceRows(clientIds, win0Start, win0End),
+      this.getAdherenceRows(trainerId, clientIds, win1Start, win1End),
+      this.getAdherenceRows(trainerId, clientIds, win0Start, win0End),
       this.getClientPRsThisMonth(clientIds, monthStart),
       this.getProgramStats(trainerId, clientIds),
-      this.getRecentActivity(activeClients, now),
+      this.getRecentActivity(trainerId, activeClients, now),
     ]);
 
     const activeCount = activeClients.length;

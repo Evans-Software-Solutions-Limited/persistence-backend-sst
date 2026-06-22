@@ -103,7 +103,10 @@ export function CoachYouContainer() {
     return parts.join(" · ");
   }, [trainer?.coachSince, overview.data?.businessStats.activeClients]);
 
-  const monthLabel = MONTHS[new Date().getMonth()];
+  // UTC month to match the backend's "this month" buckets (newClientsThisMonth,
+  // clientPRsThisMonth use startOfMonth() in UTC). A local month here would
+  // disagree with those numbers for negative-UTC viewers near a boundary.
+  const monthLabel = MONTHS[new Date().getUTCMonth()];
 
   // Own-training peek — reuse the athlete-side streak + latest cached session.
   const primaryStreak = useMemo(
