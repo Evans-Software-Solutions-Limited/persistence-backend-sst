@@ -69,6 +69,7 @@ export default function AppLayout() {
           options={{ headerShown: false }}
         />
         <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/health" options={{ headerShown: false }} />
         <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
         <Stack.Screen
           name="profile/privacy-settings"

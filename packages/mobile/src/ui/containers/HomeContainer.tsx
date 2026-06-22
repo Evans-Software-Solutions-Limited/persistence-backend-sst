@@ -1,7 +1,9 @@
-import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
+import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
@@ -30,6 +32,7 @@ export function HomeContainer() {
   const mode = useUserMode((s) => s.mode);
 
   const home = useGetHome();
+  const health = useHealthData();
   const habitsState = useGetHabits();
   const toggle = useToggleHabitDay();
   const workoutsState = useWorkouts();
@@ -58,6 +61,56 @@ export function HomeContainer() {
   const workoutsLoading =
     workoutsState.isRefreshing ||
     (workoutsState.mine.isStale && workoutsState.error === null);
+
+  // Overlay HealthKit steps onto the MOVE ring. The backend derives `move`
+  // from `daily_activity_data` (empty unless something writes steps), so the
+  // device's HealthKit reading is the live source. When health steps aren't
+  // available (not granted / simulator / Android stub) we keep the backend
+  // value untouched. Recompute pct here; TodayHero recomputes the centre %
+  // from the ring pcts, so the dial follows automatically.
+  // Spec: 07-health-integration/design.md § "Values merge into the presenter
+  // view-model beside the backend payload".
+  const healthSteps = health.stepsToday;
+  const homeData = useMemo(() => {
+    const data = home.data;
+    if (!data || healthSteps == null) return data;
+    const move = data.rings.move;
+    const target = move.target > 0 ? move.target : 10000;
+    const pct = Math.min(1, Math.max(0, healthSteps / target));
+    return {
+      ...data,
+      rings: { ...data.rings, move: { ...move, current: healthSteps, pct } },
+    };
+  }, [home.data, healthSteps]);
+
+  // Re-read HealthKit on focus so the rings stay current. Two guards keep this
+  // from defeating the hook's 5-min rate limit (AC 7.6):
+  //   • The first focus (= mount) is skipped — useHealthData's own mount
+  //     effect already does the initial read, so firing here too would double
+  //     it (~16 native calls + racing setState pairs).
+  //   • Ordinary tab returns use the rate-limited `read()`; only a focus that
+  //     follows a fresh permission grant (signalled via useHealthSync.revision)
+  //     forces the bypassing `refresh()`, so the just-connected rings light up
+  //     immediately without otherwise burning the window on every return.
+  const readHealth = health.read;
+  const refreshHealth = health.refresh;
+  const healthRevision = useHealthSync((s) => s.revision);
+  const firstFocusRef = useRef(true);
+  const seenHealthRevisionRef = useRef(healthRevision);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocusRef.current) {
+        firstFocusRef.current = false;
+        return;
+      }
+      if (seenHealthRevisionRef.current !== healthRevision) {
+        seenHealthRevisionRef.current = healthRevision;
+        void refreshHealth();
+      } else {
+        void readHealth();
+      }
+    }, [healthRevision, readHealth, refreshHealth]),
+  );
 
   // First name + initials from the cached profile (offline-first via
   // useProfilePage); null until it resolves, so the header shows just the
@@ -154,7 +207,7 @@ export function HomeContainer() {
       <HomePresenter
         user={user}
         greeting={greeting}
-        home={home.data}
+        home={homeData}
         workouts={workoutItems}
         workoutsLoading={workoutsLoading}
         habits={habitsState.habits}

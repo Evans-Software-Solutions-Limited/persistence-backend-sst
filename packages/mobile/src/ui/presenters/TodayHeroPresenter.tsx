@@ -36,9 +36,6 @@ export type TodayHeroProps = {
     strain: number | null;
     sleep: string | null;
   };
-  onOpenMove?: () => void;
-  onOpenTrain?: () => void;
-  onOpenFuel?: () => void;
   testID?: string;
 };
 
@@ -47,9 +44,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 export function TodayHeroPresenter({
   rings,
   micro,
-  onOpenMove,
-  onOpenTrain,
-  onOpenFuel,
   testID = "today-hero",
 }: TodayHeroProps) {
   const fuel = rings.fuel === "gated" ? null : rings.fuel;
@@ -136,34 +130,31 @@ export function TodayHeroPresenter({
           </View>
         </MultiRing>
 
+        {/* Legend rows are display-only for now — the rings card is not
+            interactive (per Brad 2026-06-21). A single tap → detail-stats page
+            may replace this later; until then no per-ring navigation. */}
         <View flex={1} gap={12}>
-          <View onPress={onOpenMove} accessibilityLabel="Open Move detail">
-            <RingLegend
-              color={toneHex("primary").base}
-              label="MOVE"
-              value={fmt(rings.move.current)}
-              sub={rings.move.unit}
-              pct={rings.move.pct}
-            />
-          </View>
-          <View onPress={onOpenTrain} accessibilityLabel="Open Train detail">
-            <RingLegend
-              color={toneHex("ember").base}
-              label="TRAIN"
-              value={fmt(rings.train.current)}
-              sub={rings.train.unit}
-              pct={rings.train.pct}
-            />
-          </View>
-          <View onPress={onOpenFuel} accessibilityLabel="Open Fuel detail">
-            <RingLegend
-              color={toneHex("gold").base}
-              label="FUEL"
-              value={fuel ? fmt(fuel.current) : "--"}
-              sub={fuel?.unit ?? "kcal"}
-              pct={fuel?.pct ?? 0}
-            />
-          </View>
+          <RingLegend
+            color={toneHex("primary").base}
+            label="MOVE"
+            value={fmt(rings.move.current)}
+            sub={rings.move.unit}
+            pct={rings.move.pct}
+          />
+          <RingLegend
+            color={toneHex("ember").base}
+            label="TRAIN"
+            value={fmt(rings.train.current)}
+            sub={rings.train.unit}
+            pct={rings.train.pct}
+          />
+          <RingLegend
+            color={toneHex("gold").base}
+            label="FUEL"
+            value={fuel ? fmt(fuel.current) : "--"}
+            sub={fuel?.unit ?? "kcal"}
+            pct={fuel?.pct ?? 0}
+          />
         </View>
       </View>
 

@@ -48,6 +48,12 @@ export type HealthDataState = {
   lastReadAt: string | null;
   /** Request permissions and immediately attempt a fresh read. */
   requestPermissions: () => Promise<void>;
+  /**
+   * Rate-limited read (≤ one per 5 min). Use for focus / background
+   * re-reads where the 5-min window (AC 7.6) must be respected — unlike
+   * `refresh()`, which bypasses it.
+   */
+  read: () => Promise<void>;
   /** Force a read, bypassing the rate limit. */
   refresh: () => Promise<void>;
 };
@@ -141,6 +147,7 @@ export function useHealthData(): HealthDataState {
     [health],
   );
 
+  const read = useCallback(() => doRead(false), [doRead]);
   const refresh = useCallback(() => doRead(true), [doRead]);
 
   const requestPermissions = useCallback(async () => {
@@ -184,6 +191,7 @@ export function useHealthData(): HealthDataState {
     isReading,
     lastReadAt,
     requestPermissions,
+    read,
     refresh,
   };
 }

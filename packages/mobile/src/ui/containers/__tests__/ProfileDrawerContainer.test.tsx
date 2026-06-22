@@ -68,9 +68,11 @@ jest.mock("@/ui/hooks/useMySubscription", () => ({
   useMySubscription: () => ({ data: mockSubscription }),
 }));
 
+const mockRefresh = jest.fn();
 let mockHealth = {
   isAvailable: true,
   permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
+  refresh: mockRefresh,
 };
 jest.mock("@/ui/hooks/useHealthData", () => ({
   useHealthData: () => mockHealth,
@@ -78,6 +80,8 @@ jest.mock("@/ui/hooks/useHealthData", () => ({
 
 // eslint-disable-next-line import/first
 import { useDrawer } from "@/state/drawer";
+// eslint-disable-next-line import/first
+import { useHealthSync } from "@/state/health-sync";
 // eslint-disable-next-line import/first
 import { useUserMode } from "@/state/user-mode";
 // eslint-disable-next-line import/first
@@ -88,9 +92,17 @@ beforeEach(() => {
   mockPush.mockClear();
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
-  // Default to closed drawer state.
+  mockRefresh.mockClear();
+  // Reset cross-screen health grant signal + drawer/mode state.
+  useHealthSync.setState({ revision: 0 });
   useDrawer.setState({ open: false });
   useUserMode.setState({ mode: "athlete", isTrainerEligible: false });
+  // Restore the default granted health mock (some tests reassign it).
+  mockHealth = {
+    isAvailable: true,
+    permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
+    refresh: mockRefresh,
+  };
 });
 
 describe("ProfileDrawerContainer", () => {
@@ -154,7 +166,7 @@ describe("ProfileDrawerContainer", () => {
     const cases: [string, string][] = [
       ["onOpenProfile", "/(app)/profile/edit"],
       ["onOpenAchievements", "/(app)/coming-soon?feature=achievements"],
-      ["onOpenHealth", "/(app)/coming-soon?feature=health"],
+      ["onOpenHealth", "/(app)/profile/health"],
       ["onOpenSubscription", "/(app)/coming-soon?feature=subscription"],
       ["onOpenNotifications", "/(app)/profile/notifications"],
       ["onOpenSettings", "/(app)/profile/privacy"],
@@ -274,13 +286,22 @@ describe("ProfileDrawerContainer", () => {
     mockHealth = {
       isAvailable: true,
       permissionStatus: { steps: "not_determined", bodyWeight: "denied" },
+      refresh: mockRefresh,
     };
     renderWithTheme(<ProfileDrawerContainer />);
     expect(lastProps?.healthConnected).toBe(false);
-    mockHealth = {
-      isAvailable: true,
-      permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
-    };
+  });
+
+  it("refreshes its health read when a grant bumps useHealthSync", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    // No read on mount — useHealthData's own mount effect already covers it.
+    expect(mockRefresh).not.toHaveBeenCalled();
+    // A grant on the Health screen bumps the shared signal; the mounted drawer
+    // (subscribed to the store) force-refreshes so its badge stops lagging.
+    act(() => {
+      useHealthSync.getState().markConnected();
+    });
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("onSignOut swallows a sign-out failure without throwing", async () => {

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
+import type { HealthPort } from "@/domain/ports/health.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import type { HomePresenterProps } from "@/ui/presenters/HomePresenter";
@@ -16,7 +17,16 @@ const mockPush = jest.fn();
 // render count. Returns null (we assert on props, not output).
 const mockProbe: { last: HomePresenterProps | null } = { last: null };
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    // Run the focus callback once on mount so HomeContainer's focus-refresh
+    // path (HealthKit re-read) is exercised under test.
+    useFocusEffect: (cb: () => void | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
   getApiBaseUrl: () => "https://api.test",
@@ -38,7 +48,29 @@ const mockFetch = jest.fn(async () => ({
 
 const USER = "user-1";
 
-function makeAdapters(): {
+// HealthPort stub. Defaults to unavailable (most home tests don't exercise
+// HealthKit); pass overrides to drive the MOVE-ring overlay. Every read
+// method is stubbed so an available adapter completes its mount read cleanly.
+function makeHealthStub(over: Partial<HealthPort> = {}): HealthPort {
+  return {
+    isAvailable: async () => false,
+    getPermissionStatus: async () => ({
+      steps: "not_determined",
+      calories: "not_determined",
+      bodyWeight: "not_determined",
+      heartRate: "not_determined",
+    }),
+    getStepsToday: async () => ok(0),
+    getStepsLastNDays: async () => ok([]),
+    getActiveCaloriesToday: async () => ok(0),
+    getBasalCaloriesToday: async () => ok(0),
+    getStandTimeTodayMinutes: async () => ok(0),
+    getLatestBodyWeight: async () => ok(null),
+    ...over,
+  } as unknown as HealthPort;
+}
+
+function makeAdapters(healthOverride: Partial<HealthPort> = {}): {
   adapters: Adapters;
   api: InMemoryApiAdapter;
   storage: InMemoryStorageAdapter;
@@ -67,7 +99,7 @@ function makeAdapters(): {
       api,
       auth,
       storage,
-      health: {} as Adapters["health"],
+      health: makeHealthStub(healthOverride),
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
@@ -102,6 +134,30 @@ describe("HomeContainer (V2)", () => {
     expect(mockProbe.last?.user.initials).toBe("A"); // from alex@example.com
     expect(mockProbe.last?.weekDates).toHaveLength(7);
     expect(mockProbe.last?.showCoachPeek).toBe(false); // default athlete mode
+  });
+
+  it("overlays HealthKit steps onto the MOVE ring", async () => {
+    // Granted + a live reading → the backend's 0-step MOVE ring is replaced by
+    // the device value, and pct is recomputed against the 10000 target.
+    const { adapters } = makeAdapters({
+      isAvailable: async () => true,
+      getPermissionStatus: async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+      }),
+      getStepsToday: async () => ok(8421),
+    });
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last?.home?.rings.move.current).toBe(8421),
+    );
+    expect(mockProbe.last?.home?.rings.move.pct).toBeCloseTo(0.8421, 4);
   });
 
   it("clears the workouts loading state once the fetch resolves (no stuck skeleton)", async () => {

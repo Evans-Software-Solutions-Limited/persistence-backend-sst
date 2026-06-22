@@ -149,13 +149,7 @@ export function HomePresenter(props: HomePresenterProps) {
       <View paddingHorizontal={16} gap={16}>
         {home && (
           <Animated.View style={style(0)} testID="home-hero">
-            <TodayHeroPresenter
-              rings={home.rings}
-              micro={home.micro}
-              onOpenMove={() => onOpenTab("you")}
-              onOpenTrain={() => onOpenTab("train")}
-              onOpenFuel={() => onOpenTab("fuel")}
-            />
+            <TodayHeroPresenter rings={home.rings} micro={home.micro} />
           </Animated.View>
         )}
 
