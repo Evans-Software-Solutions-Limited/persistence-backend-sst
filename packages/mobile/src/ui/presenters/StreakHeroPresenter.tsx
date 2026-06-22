@@ -57,6 +57,7 @@ export function StreakHeroPresenter({
               fontSize={40}
               fontWeight="700"
               color="$text"
+              numberOfLines={1}
             >
               {current}
             </Text>

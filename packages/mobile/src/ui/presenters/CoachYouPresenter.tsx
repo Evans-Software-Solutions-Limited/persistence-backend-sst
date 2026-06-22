@@ -138,6 +138,7 @@ export function CoachYouPresenter(props: CoachYouPresenterProps) {
               fontSize={32}
               letterSpacing={-1}
               color="$text"
+              numberOfLines={1}
             >
               Your practice
             </Text>

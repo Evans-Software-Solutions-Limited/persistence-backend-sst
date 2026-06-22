@@ -190,10 +190,18 @@ export function ProfileDrawerPresenter({
             fontSize={24}
             letterSpacing={-0.5}
             color="$text"
+            numberOfLines={1}
+            ellipsizeMode="tail"
           >
             {profile.name}
           </Text>
-          <Text fontFamily="$body" fontSize={12} color="$text3">
+          <Text
+            fontFamily="$body"
+            fontSize={12}
+            color="$text3"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {profile.email}
           </Text>
           <View flexDirection="row" gap={6} marginTop={6}>

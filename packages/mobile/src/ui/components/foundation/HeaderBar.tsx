@@ -98,6 +98,8 @@ export function HeaderBar({
               fontSize={32}
               letterSpacing={-1}
               color="$text"
+              numberOfLines={1}
+              ellipsizeMode="tail"
             >
               {title}
             </Text>
