@@ -22,7 +22,8 @@
     "hono": "^4.11.9",
     "jwt-decode": "^4.0.0",
     "sst": "*",
-    "stripe": "^22.1.1"
+    "stripe": "^22.1.1",
+    "undici": "^6.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

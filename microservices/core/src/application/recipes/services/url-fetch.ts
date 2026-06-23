@@ -1,4 +1,6 @@
 import { promises as dnsPromises } from "node:dns";
+import type { LookupFunction } from "node:net";
+import { Agent } from "undici";
 
 /**
  * SSRF-hardened fetch for the user-supplied recipe-import URL. Implements every
@@ -8,6 +10,13 @@ import { promises as dnsPromises } from "node:dns";
  * and a Content-Type allowlist. Trust-boundary parity with the iOS receipt
  * handler — the URL is user-controlled input driving a network hop, so nothing
  * is assumed.
+ *
+ * DNS-rebinding (TOCTOU): the validate-then-fetch pattern alone lets a
+ * malicious resolver return a public IP to the check and a private IP to the
+ * connect. On the real network path we close that gap by PINNING the socket to
+ * the already-validated address — an undici `Agent` whose `connect.lookup`
+ * returns only that IP, so `fetch` can't re-resolve. Re-pinned on every hop.
+ * (PR #124 review.)
  */
 
 const ALLOWED_SCHEMES = new Set(["http:", "https:"]);
@@ -105,7 +114,7 @@ const defaultLookup: LookupFn = async (hostname) => {
 async function assertHostnameIsPublic(
   hostname: string,
   lookup: LookupFn,
-): Promise<void> {
+): Promise<LookupResult[]> {
   let addrs: LookupResult[];
   try {
     addrs = await lookup(hostname);
@@ -118,6 +127,28 @@ async function assertHostnameIsPublic(
       throw new RecipeFetchError("hostname_resolves_to_private_address");
     }
   }
+  return addrs;
+}
+
+/**
+ * A connector `lookup` that resolves EVERY hostname to the one validated IP —
+ * so the socket connects to exactly the address the CIDR check approved,
+ * defeating a rebind between the lookup and the connect. Exported for testing
+ * the rebind-defeat invariant directly.
+ */
+export function makePinnedLookup(addr: LookupResult): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options && options.all) {
+      callback(null, [{ address: addr.address, family: addr.family }]);
+    } else {
+      callback(null, addr.address, addr.family);
+    }
+  };
+}
+
+/** An undici Agent pinned to a single validated IP for the whole connection. */
+function pinnedDispatcher(addr: LookupResult): Agent {
+  return new Agent({ connect: { lookup: makePinnedLookup(addr) } });
 }
 
 async function readCapped(
@@ -149,6 +180,9 @@ export async function safeRecipeFetch(
 ): Promise<{ html: string; finalUrl: string }> {
   const fetcher = deps.fetcher ?? fetch;
   const lookup = deps.lookup ?? defaultLookup;
+  // Pin the socket to the validated IP only on the real fetch path. An injected
+  // fetcher (tests) drives resolution itself, so no dispatcher is built there.
+  const pinSocket = !deps.fetcher;
 
   let currentUrl: URL;
   try {
@@ -165,43 +199,60 @@ export async function safeRecipeFetch(
   // hold the Lambda well past the 29s API Gateway ceiling.
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
 
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertHostnameIsPublic(currentUrl.hostname, lookup);
+  let dispatcher: Agent | undefined;
+  try {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const addrs = await assertHostnameIsPublic(currentUrl.hostname, lookup);
 
-    let res: Response;
-    try {
-      res = await fetcher(currentUrl, {
+      // Re-pin to THIS hop's validated address so a redirect can't smuggle in a
+      // host that re-resolves private (the per-hop check + the per-hop pin move
+      // together).
+      if (pinSocket) {
+        await dispatcher?.close().catch(() => {});
+        dispatcher = pinnedDispatcher(addrs[0]);
+      }
+
+      const init: RequestInit & { dispatcher?: Agent } = {
         redirect: "manual",
         signal: deadline,
         headers: { Accept: ALLOWED_CONTENT_TYPES.join(", ") },
-      });
-    } catch {
-      throw new RecipeFetchError("fetch_failed");
-    }
+      };
+      if (dispatcher) init.dispatcher = dispatcher;
 
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) throw new RecipeFetchError("redirect_without_location");
+      let res: Response;
       try {
-        currentUrl = new URL(loc, currentUrl);
+        res = await fetcher(currentUrl, init);
       } catch {
-        throw new RecipeFetchError("invalid_redirect_url");
+        throw new RecipeFetchError("fetch_failed");
       }
-      if (!ALLOWED_SCHEMES.has(currentUrl.protocol)) {
-        throw new RecipeFetchError("scheme_not_allowed_after_redirect");
+
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) throw new RecipeFetchError("redirect_without_location");
+        try {
+          currentUrl = new URL(loc, currentUrl);
+        } catch {
+          throw new RecipeFetchError("invalid_redirect_url");
+        }
+        if (!ALLOWED_SCHEMES.has(currentUrl.protocol)) {
+          throw new RecipeFetchError("scheme_not_allowed_after_redirect");
+        }
+        continue; // re-validate the new host on the next iteration
       }
-      continue; // re-validate the new host on the next iteration
+
+      if (!res.ok) throw new RecipeFetchError(`upstream_status_${res.status}`);
+
+      const ct = res.headers.get("content-type")?.split(";")[0].trim();
+      if (!ct || !ALLOWED_CONTENT_TYPES.includes(ct)) {
+        throw new RecipeFetchError("content_type_not_allowed");
+      }
+
+      const html = await readCapped(res.body, MAX_BODY_BYTES);
+      return { html, finalUrl: currentUrl.toString() };
     }
-
-    if (!res.ok) throw new RecipeFetchError(`upstream_status_${res.status}`);
-
-    const ct = res.headers.get("content-type")?.split(";")[0].trim();
-    if (!ct || !ALLOWED_CONTENT_TYPES.includes(ct)) {
-      throw new RecipeFetchError("content_type_not_allowed");
-    }
-
-    const html = await readCapped(res.body, MAX_BODY_BYTES);
-    return { html, finalUrl: currentUrl.toString() };
+    throw new RecipeFetchError("too_many_redirects");
+  } finally {
+    // Body is fully read into a string before we return, so closing here is safe.
+    await dispatcher?.close().catch(() => {});
   }
-  throw new RecipeFetchError("too_many_redirects");
 }

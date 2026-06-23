@@ -4,6 +4,7 @@ import {
   RecipeFetchError,
   isPrivateIpv4,
   isPrivateIpv6,
+  makePinnedLookup,
 } from "../url-fetch";
 
 const PUBLIC: { address: string; family: number }[] = [
@@ -54,6 +55,24 @@ describe("isPrivateIpv6", () => {
   });
   it("allows a public v6", () => {
     expect(isPrivateIpv6("2606:2800:220:1:248:1893:25c8:1946")).toBe(false);
+  });
+});
+
+describe("makePinnedLookup (DNS-rebinding defeat)", () => {
+  it("returns the validated IP for ANY hostname (single-address form)", () => {
+    const lookup = makePinnedLookup({ address: "93.184.216.34", family: 4 });
+    const cb = vi.fn();
+    lookup("attacker.internal", {}, cb);
+    expect(cb).toHaveBeenCalledWith(null, "93.184.216.34", 4);
+  });
+
+  it("returns the validated IP in the all-addresses form", () => {
+    const lookup = makePinnedLookup({ address: "93.184.216.34", family: 4 });
+    const cb = vi.fn();
+    lookup("attacker.internal", { all: true }, cb);
+    expect(cb).toHaveBeenCalledWith(null, [
+      { address: "93.184.216.34", family: 4 },
+    ]);
   });
 });
 
