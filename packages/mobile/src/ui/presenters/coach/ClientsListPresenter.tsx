@@ -56,6 +56,12 @@ export type ClientsListPresenterProps = {
   onRefresh: () => void;
   onInvite: () => void;
   onOpenClient: (id: string) => void;
+  /**
+   * Strand-guard escape: switch back to athlete mode. The roster 403s for a
+   * non-trainer who reached coach mode, and the error state is otherwise a
+   * dead end (Retry just re-403s) — this offers the way out.
+   */
+  onSwitchToAthlete: () => void;
   /** Injected clock for deterministic relative-time tests. */
   now?: number;
   testID?: string;
@@ -153,6 +159,7 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
     onRefresh,
     onInvite,
     onOpenClient,
+    onSwitchToAthlete,
     now = Date.now(),
     testID,
   } = props;
@@ -172,7 +179,12 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
 
   if (isLoading && clients.length === 0) {
     return (
-      <View flex={1} testID="clients-loader">
+      <View
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        testID="clients-loader"
+      >
         <PLogoDrawLoader />
       </View>
     );
@@ -180,7 +192,12 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
   if (error && clients.length === 0) {
     return (
       <View flex={1} testID="clients-error-state">
-        <ErrorState message="Couldn't load your clients." onRetry={onRefresh} />
+        <ErrorState
+          message="Couldn't load your clients."
+          onRetry={onRefresh}
+          secondaryLabel="Switch to athlete mode"
+          onSecondary={onSwitchToAthlete}
+        />
       </View>
     );
   }

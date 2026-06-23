@@ -5,6 +5,7 @@ import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePromp
 import { useFeatureGate } from "@/ui/hooks/useFeatureGate";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
+import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useAddClientSheet } from "@/state/add-client-sheet";
 import { Colors } from "@/ui/theme/subscriptionLegacyTheme";
 import {
@@ -37,6 +38,7 @@ export function ClientsContainer() {
   const gate = useFeatureGate("trainer_clients");
   const roster = useGetTrainerClients();
   const openSheet = useAddClientSheet((s) => s.openSheet);
+  const { switchMode } = useModeSwitch();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [segment, setSegment] = useState<ClientSegment>("Active");
@@ -58,6 +60,10 @@ export function ClientsContainer() {
   const onOpenClient = useCallback((id: string) => {
     router.push(`/(app)/clients/${id}`);
   }, []);
+
+  const onSwitchToAthlete = useCallback(() => {
+    void switchMode("athlete", "clients");
+  }, [switchMode]);
 
   // Subscription cache not resolved yet — defensive spinner. Once the query
   // lands the gate's `reason: 'unknown'` falls through to a real verdict on
@@ -95,6 +101,7 @@ export function ClientsContainer() {
       onRefresh={refreshRoster}
       onInvite={onInvite}
       onOpenClient={onOpenClient}
+      onSwitchToAthlete={onSwitchToAthlete}
     />
   );
 }

@@ -156,6 +156,36 @@ describe("ExpoHealthKitAdapter", () => {
     expect(result.value).toBe(4813);
   });
 
+  it("bounds the steps query to today via a v14 filter.date predicate", async () => {
+    // Regression: @kingstinct/react-native-healthkit@14 nests the date
+    // range under `filter.date`. The v12 shape (top-level
+    // filter.startDate/endDate) is silently ignored, so the cumulativeSum
+    // covers ALL time → lifetime steps (~millions) on the ring. Assert the
+    // nested predicate is present and bounded to a single day.
+    const query = jest.fn(async () => ({ sumQuantity: { quantity: 1 } }));
+    const hk = makeHealthKit({ queryStatisticsForQuantity: query });
+    const adapter = new ExpoHealthKitAdapter(hk as never);
+    await adapter.getStepsToday();
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [, , options] = query.mock.calls[0] as unknown as [
+      string,
+      readonly string[],
+      { filter?: { date?: { startDate: Date; endDate: Date } } },
+    ];
+    const date = options?.filter?.date;
+    expect(date).toBeDefined();
+    expect(date?.startDate).toBeInstanceOf(Date);
+    expect(date?.endDate).toBeInstanceOf(Date);
+    // start is local midnight; the window is under 24h and non-negative.
+    const start = date!.startDate;
+    expect(start.getHours()).toBe(0);
+    expect(start.getMinutes()).toBe(0);
+    const spanMs = date!.endDate.getTime() - start.getTime();
+    expect(spanMs).toBeGreaterThanOrEqual(0);
+    expect(spanMs).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+
   it("returns 0 when no step samples are in the window", async () => {
     const hk = makeHealthKit({
       queryStatisticsForQuantity: jest.fn(async () => null),
@@ -390,6 +420,14 @@ describe("ExpoHealthKitAdapter", () => {
     expect(result.value[0].steps).toBe(4200);
     expect(result.value[2].steps).toBe(4812);
     expect(hk.queryStatisticsCollectionForQuantity).toHaveBeenCalledTimes(1);
+    // Same v14 filter.date shape as the single-stat queries (line above).
+    const call = (hk.queryStatisticsCollectionForQuantity as jest.Mock).mock
+      .calls[0] as unknown[];
+    const options = call[4] as {
+      filter?: { date?: { startDate: Date; endDate: Date } };
+    };
+    expect(options?.filter?.date?.startDate).toBeInstanceOf(Date);
+    expect(options?.filter?.date?.endDate).toBeInstanceOf(Date);
   });
 
   it("falls back to empty step-history when the library build lacks collection query", async () => {

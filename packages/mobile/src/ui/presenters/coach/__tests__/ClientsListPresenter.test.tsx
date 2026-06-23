@@ -30,6 +30,7 @@ function baseProps(
     onRefresh: jest.fn(),
     onInvite: jest.fn(),
     onOpenClient: jest.fn(),
+    onSwitchToAthlete: jest.fn(),
     now: FIXED_NOW,
     ...overrides,
   };
@@ -117,6 +118,22 @@ describe("ClientsListPresenter", () => {
       <ClientsListPresenter {...baseProps({ error, clients: [] })} />,
     );
     expect(getByTestId("clients-error-state")).toBeTruthy();
+  });
+
+  it("offers a switch-to-athlete escape from the error state (strand-guard)", () => {
+    const error: ApiError = {
+      kind: "api",
+      code: "unauthorized",
+      message: "403",
+    };
+    const onSwitchToAthlete = jest.fn();
+    const { getByText } = renderWithTheme(
+      <ClientsListPresenter
+        {...baseProps({ error, clients: [], onSwitchToAthlete })}
+      />,
+    );
+    fireEvent.press(getByText("Switch to athlete mode"));
+    expect(onSwitchToAthlete).toHaveBeenCalledTimes(1);
   });
 
   it("renders the invite empty state when the roster is wholly empty", () => {

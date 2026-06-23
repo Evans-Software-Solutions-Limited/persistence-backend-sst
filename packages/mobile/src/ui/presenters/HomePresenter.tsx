@@ -100,7 +100,12 @@ export function HomePresenter(props: HomePresenterProps) {
 
   if (isLoading && !home) {
     return (
-      <View flex={1} testID="home-loader">
+      <View
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        testID="home-loader"
+      >
         <PLogoDrawLoader />
       </View>
     );

@@ -82,7 +82,12 @@ export function CoachYouPresenter(props: CoachYouPresenterProps) {
 
   if (isLoading && overview === null) {
     return (
-      <View flex={1} testID="coach-you-loader">
+      <View
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        testID="coach-you-loader"
+      >
         <PLogoDrawLoader />
       </View>
     );
@@ -93,6 +98,8 @@ export function CoachYouPresenter(props: CoachYouPresenterProps) {
         <ErrorState
           message="Couldn't load your practice."
           onRetry={onRefresh}
+          secondaryLabel="Switch to athlete mode"
+          onSecondary={onSwitchToAthlete}
         />
       </View>
     );
