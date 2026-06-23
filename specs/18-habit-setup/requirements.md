@@ -19,7 +19,7 @@ Habit Setup is one scrollable screen where an athlete enables/disables and tunes
 The streak is a property of the **whole collection**, not any single habit ("All habits together"). Forgiveness has three layers, none of them a per-habit "cheat day":
 
 1. **Per-habit days/week** — a daily habit's week is met when its daily target is hit on **≥ its days/week target** (e.g. Water 5/7). This is the built-in slack that replaces an explicit cheat-day budget.
-2. **Freeze token** — _earned_ automatically (1 per 4 successive completed weeks, cap 4). Spending one **skips the whole week** for every habit (7-day freeze). Auto-applied to save an at-risk streak, or spent manually from this screen.
+2. **Freeze token** — _earned_ automatically (1 per 4 successive completed weeks, cap 4). Because the streak is weekly, one token **covers one missed week** for the whole collection — the M4 engine already spends 1 token per missed period. Auto-applied to save an at-risk streak, or spent manually ("skip this week") from this screen.
 3. **Holiday / skip week** — a free, user-scheduled pause that lives on **Home** (not this screen), applies to **all** habits, declared **≥ 24 h in advance**, and can be ended early.
 
 **Who can set habits:** the athlete, **and their coach** if an active relationship exists. Coach-set habits are **complete-only** for the client (the client logs them but can't retune/disable them) — reusing the locked trainer-assigned-goal pattern (cross-cuts § 2). The lock is conditioned on an **active** relationship, so when the relationship ends the habits **transfer to the client** (stay active, streak unbroken, attribution kept as history).
@@ -89,7 +89,7 @@ This spec **extends** the locked streak model. The amendment is appended to `spe
 - 3.1 [ ] A single collection `habit` streak is shown (`StreakSection`): current days/weeks, longest, and an at-risk state.
 - 3.2 [ ] A week counts toward the collection streak when **every enabled habit meets its weekly target** (daily habits: daily target hit on ≥ its days/week; Gym: ≥ sessions/week; Calories: gated until M9). _(Streak-satisfaction rule — flagged as a tunable assumption in `design.md § 4`.)_
 - 3.3 [ ] Freeze tokens are **earned** 1 per 4 successive completed weeks, cap 4 (cross-cuts § 3.5); the count is surfaced as 4 slots.
-- 3.4 [ ] Spending a freeze token **skips the current week for all habits** (a 7-day freeze): no break, no count change, emits `freeze_token_applied`. Manual spend from this screen (`onSpendFreeze`) or auto-applied when at risk (`design.md § 4`). Only one freeze window active at a time.
+- 3.4 [ ] Spending a freeze token **skips a week for all habits**: no break, no count change, emits `freeze_token_applied`. Auto-applied per missed week by the M4 engine, or spent proactively from this screen (`onSpendFreeze` → advances `last_period_end` over the current week, −1 token, no count change). Reuses the existing weekly token machinery — no per-day freeze window (`design.md § 4.2`).
 - 3.5 [ ] When the streak is at risk (this week not yet safe and slack exhausted), the `StreakSection` surfaces the warning + promotes the freeze CTA; a `streak_at_risk` notification fires (cross-cuts § 5).
 
 ### STORY-004: As an athlete, I want each habit's completion to count correctly
@@ -147,7 +147,7 @@ This spec **extends** the locked streak model. The amendment is appended to `spe
 - 9.1 [ ] Habit configs cached in SQLite, read cache-first.
 - 9.2 [ ] Enable/edit/disable + freeze-spend writes are optimistic and queue (idempotent; server wins on reconcile).
 - 9.3 [ ] A habit created offline gets a `local-` id, reconciles to its server id on drain without duplicating the grid row (de-dupe on `category`).
-- 9.4 [ ] `deriveStreak` recomputes the collection streak from cached completions + configs (+ holidays + freeze window) until the engine reconciles. HealthKit reads/writes work offline (on-device); the resulting completion still syncs via the queue.
+- 9.4 [ ] `deriveStreak` recomputes the collection streak from cached completions + configs (+ holidays) until the engine reconciles. HealthKit reads/writes work offline (on-device); the resulting completion still syncs via the queue.
 
 ---
 

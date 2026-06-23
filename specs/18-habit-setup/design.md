@@ -18,7 +18,7 @@ user_goals (existing)               ← one per enabled category. assigned_by_us
 habit_configs (NEW)                 ← target_value, unit, period, completion_rule, days_per_week, tolerance_pct
                                        (no cheat-days column — days/week IS the slack)
 
-user_streaks (existing + 1 col)     ← ONE collection row (source_goal_id NULL, habit_streak, weekly) + freeze_until
+user_streaks (existing, REUSED)     ← ONE collection row (source_goal_id NULL, habit_streak, weekly); no new column
 habit_completions (existing)        ← value = litres / steps / hours; the HealthKit↔DB bridge target
 body_measurements (existing)        ← Weight (two-way HK); nutrition_entries (M9) ← Calories
 streak_holidays (NEW)               ← all-habits planned pause, MANAGED FROM HOME
@@ -40,7 +40,7 @@ Tones map to the existing `HabitTileTone` union + the prototype's `theme.css`. G
 
 ## 2. Schema deltas
 
-Owner migration `packages/db/migrations/<ts>_habit_setup.sql` (idempotent, forward/back safe); mirrored in `schema.ts`.
+Owner migration `supabase/migrations/20260623120000_habit_setup_schema.sql` (idempotent, forward/back safe); mirrored in `packages/db/src/schema.ts`. _(Migrations live under `supabase/migrations/` — the DB is Supabase.)_
 
 ### 2.1 New enums
 
@@ -96,13 +96,9 @@ CREATE INDEX streak_holidays_user_idx ON streak_holidays (user_id, start_date);
 
 > The 24 h-advance rule (`start_date >= today + 1 day`, user-local) is handler-enforced, not a SQL CHECK (`today` is tz-relative). The CHECK only guards range ordering. The setup screen does not write this table — **Home** does (locked decision 11); the endpoints live here for cohesion.
 
-### 2.4 `user_streaks` additive column
+### 2.4 `user_streaks` — reused as-is (no new column)
 
-```sql
-ALTER TABLE user_streaks ADD COLUMN IF NOT EXISTS freeze_until date;  -- end of an active freeze-token "week off"
-```
-
-The **collection** habit streak is a single row: `(user_id, streak_type='habit_streak', source_goal_id=NULL, period='weekly')`. A spent token sets `freeze_until = week_end_of(miss) `; weeks fully inside `<= freeze_until` are neutral; a second token can't extend an open window (STORY-003 AC 3.4 / STORY-008 AC 8.4). Existing rows default `NULL` (no backfill).
+The **collection** habit streak is a single existing-shape row: `(user_id, streak_type='habit_streak', source_goal_id=NULL, period='weekly')`. **No schema change.** Because the streak is _weekly_, the M4 engine's existing "1 freeze token per missed period" already implements "a token = a week off" — a `freeze_until` window would be redundant. A proactive "skip this week" is a manual token spend that advances `last_period_end` over the current week without incrementing the count (§ 4.2). Enabling the first habit must **create** this row (nothing seeds `user_streaks` today).
 
 ### 2.5 Seed `goal_types`
 
@@ -124,13 +120,13 @@ Auth via Supabase JWT → `requireAuth` → `getUser(ctx)`; owner-scoped by `use
 
 ### 3.1 Self routes
 
-| Method            | Route                               | Purpose                                                                                                                                                  |
-| ----------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`             | `/users/me/habits/config`           | All five categories with `{ category, enabled, goalId?, assignedByCoach: bool, locked: bool, config? }`.                                                 |
-| `PUT`             | `/users/me/habits/:category/config` | Enable + configure (upsert). Body `{ targetValue, daysPerWeek?, tolerancePct? }`. **403 if the habit is coach-locked** (assigned + active relationship). |
-| `DELETE`          | `/users/me/habits/:category`        | Disable (soft, `is_active=false`). 403 if coach-locked.                                                                                                  |
-| `POST`            | `/users/me/streaks/:id/use-token`   | Manual freeze spend (exists, 06 STORY-008) — sets `freeze_until = end of current week`, single-window guard.                                             |
-| `GET/POST/DELETE` | `/users/me/habits/holidays`         | List / declare (≥24 h-advance 422) / end-early (truncate active → today) or cancel (not-yet-started) / 409 if past. **Called from Home**, not setup.     |
+| Method            | Route                               | Purpose                                                                                                                                                                                                                       |
+| ----------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`             | `/users/me/habits/config`           | All five categories with `{ category, enabled, goalId?, assignedByCoach: bool, locked: bool, config? }`.                                                                                                                      |
+| `PUT`             | `/users/me/habits/:category/config` | Enable + configure (upsert). Body `{ targetValue, daysPerWeek?, tolerancePct? }`. **403 if the habit is coach-locked** (assigned + active relationship).                                                                      |
+| `DELETE`          | `/users/me/habits/:category`        | Disable (soft, `is_active=false`). 403 if coach-locked.                                                                                                                                                                       |
+| `POST`            | `/users/me/streaks/:id/use-token`   | Manual freeze spend (extends 06 STORY-008). Retroactive: covers missed weeks (existing `spendTokenManually`). Proactive "skip this week": spend 1 token, advance `last_period_end` over the current week, no count increment. |
+| `GET/POST/DELETE` | `/users/me/habits/holidays`         | List / declare (≥24 h-advance 422) / end-early (truncate active → today) or cancel (not-yet-started) / 409 if past. **Called from Home**, not setup.                                                                          |
 
 `PUT` transaction: resolve `goal_type_id` from `:category` → upsert `user_goals` (reactivate if soft-deleted) → upsert `habit_configs` (server sets `period` + `completion_rule` from § 1.1; client can't pick) → ensure the single collection `user_streaks` row exists → validate bounds (422). **Edit timing per § 4.5:** a first-time enable writes the live config with `effective_from = next Monday`; an edit to an already-effective habit (incl. disable) writes `pending_config` + `pending_from = next Monday` and leaves the live row untouched so the in-progress week keeps its bar. The response echoes both the live + pending config so the UI can show the new value with a "Starts Monday" tag. Closed weeks are never re-scored (§ 6).
 
@@ -167,17 +163,18 @@ For a given Mon–Sun week and an enabled habit, `weekMet(habit, week)`:
 
 The collection week is **satisfied when every enabled habit's `weekMet` is true** (STORY-003 AC 3.2 — flagged tunable: a softer "≥ N of M habits" rule is a one-line change if Brad wants it later). On the weekly evaluation (nightly cron rollover + on-write), in order:
 
-1. **Holiday pause** — week intersects an active `streak_holidays` range → `status='paused'`, neutral.
-2. **Freeze window** — week `<= freeze_until` → neutral (the spent "week off").
-3. **Satisfied** — every enabled habit met → advance `current_count`, update `longest_count`, maybe earn a token (1 per 4 successive weeks, cap 4), fire `streak_milestone` at thresholds.
-4. **At risk → freeze token** — not satisfied: emit `streak_at_risk`. If `freeze_tokens > 0` (auto or the user already spent one) → set `freeze_until = week_end`, keep `active`, fire `freeze_token_applied`. Windows don't stack.
-5. **Break** — else `status='broken'`, `current_count=0`.
+1. **Holiday pause** — the week intersects an active `streak_holidays` range → `status='paused'`, neutral (no count change, no token spend).
+2. **Satisfied** — every enabled habit met → advance `current_count`, update `longest_count`, maybe earn a token (1 per 4 successive weeks, cap 4), fire `streak_milestone` at thresholds.
+3. **Missed week(s) → freeze token** — not satisfied: the existing M4 engine spends **1 token per missed week** (a weekly streak makes "1 token = 1 week off"). Emit `streak_at_risk` + `freeze_token_applied`, keep `active`, advance `last_period_end` over the covered week(s).
+4. **Break** — not enough tokens → `status='broken'`, `current_count=0` (then the next satisfied week restarts it at 1 per the M4 revive path).
+
+This is the M4 cron/engine behaviour **unchanged** — the only new piece for habits is `weekMet`/collection satisfaction in `isPeriodSatisfied` (§ 4.1). A proactive "skip this week" (the prototype's freeze CTA) is the manual spend in § 3.1 (advance `last_period_end` over the current week, −1 token, no count change).
 
 > `streak_at_risk` is also emitted mid-week (the prototype's at-risk banner): when the remaining days can no longer satisfy every habit's days/week target and no token is queued.
 
-### 4.3 Resume + pending-config promotion
+### 4.3 Pending-config promotion
 
-When the cron crosses a holiday `end_date` or a `freeze_until`, a `paused`/frozen streak returns to `active` with no count change (STORY-003). The same weekly rollover also **promotes pending config edits**: for every `habit_configs` row with `pending_from <= today`, copy `pending_config` into the live columns (and `user_goals.is_active` for an enable/disable), then clear `pending_config`/`pending_from`. This is the single point where deferred edits become effective.
+The nightly cron's weekly rollover **promotes pending config edits**: for every `habit_configs` row with `pending_from <= today`, copy `pending_config` into the live columns (and `user_goals.is_active` for an enable/disable), then clear `pending_config`/`pending_from`. This is the single point where deferred edits become effective. Holiday resume is the existing M4 path (a `paused` streak returns to `active` once the range passes).
 
 ### 4.4 Config-edit timing (anti-gaming — locked decision 12)
 
@@ -208,7 +205,7 @@ No new enum values. Emits existing cross-cuts § 5 events: `streak_at_risk` (sla
 | No future-day / prior-week completion                                                                                 | completion handler (server-local day)                              | 8.1      |
 | Config edits effective next Monday; current week scored at week-start config (closes rescue/ratchet/disable-to-dodge) | pending-config promoted by cron (§ 4.3/4.4); `effective_from` gate | 8.2      |
 | Holidays ≥ 24 h ahead; end-early truncates (never erases)                                                             | `POST`/`DELETE /holidays`                                          | 8.3      |
-| Counts/tokens advance only via engine; freeze windows don't stack                                                     | no client-writable count; `freeze_until` set only when none open   | 8.4      |
+| Counts/tokens advance only via engine                                                                                 | no client-writable count; snapshot-pinned conditional writes (M4)  | 8.4      |
 | `value` range-validated per category                                                                                  | completion handler                                                 | 8.5      |
 | Device de-dupes its own HK writes (echo)                                                                              | health bridge source-tagging                                       | 8.5, § 7 |
 | One completion per user/goal/local-day                                                                                | existing `habit_completions_user_goal_local_day_uq`                | —        |
@@ -262,7 +259,7 @@ Per `_agent.md` § Offline-First; server wins.
 - **Cache:** `cached_habit_configs (user_id, category, goal_id, target_value, unit, period, completion_rule, days_per_week, tolerance_pct, effective_from, pending_config, pending_from, enabled, assigned_by_coach, locked)`. `StoragePort` grows `getHabitConfigs`/`upsertHabitConfig`/`removeHabitConfig`.
 - **Commands** (mirror `toggle-habit.command.ts` — optimistic + enqueue + `invalidateHome`): `configureHabitCommand`, `disableHabitCommand`. An edit writes the **pending** config locally (so the UI shows the new value + "Starts Monday") without changing the value the offline streak scores this week; freeze spend reuses 06's `useFreezeToken`. Holiday commands live on Home.
 - A habit configured offline writes a `local-` goal id; the drain swaps it and the grid de-dupes on `category` (AC 9.3).
-- **`deriveStreak` rework:** computes the **collection** weekly streak from cached completions + configs (+ holidays + `freeze_until`). Per-habit `weekMet` then "all enabled habits met" per week, walking back from the current week; **scores each week against the config effective at that week's start** (`effective_from` + any promoted `pending_config`), honours freeze window + holiday neutrality; preserves `localCompletedDate` precedence (#117). Signature becomes `deriveCollectionStreak(habits[], completionsByGoal, today, { holidays, freezeUntil })`. Best-effort mirror; server reconciles.
+- **`deriveStreak` rework:** computes the **collection** weekly streak from cached completions + configs (+ holidays). Per-habit `weekMet` then "all enabled habits met" per week, walking back from the current week; **scores each week against the config effective at that week's start** (`effective_from` + any promoted `pending_config`), honours holiday neutrality; preserves `localCompletedDate` precedence (#117). Signature becomes `deriveCollectionStreak(habits[], completionsByGoal, today, { holidays })`. Best-effort mirror; server reconciles.
 
 ---
 
@@ -283,7 +280,7 @@ Recreate `~/Downloads/habit_design/habit-setup.jsx` in RN/Tamagui per `_agent.md
 
 ## 10. Test plan
 
-**Backend (Vitest, ≥90% on touched files):** per-habit `weekMet` for each rule incl. days/week thresholds; collection "all enabled met"; forgiveness (holiday → freeze window → satisfied/earn → at-risk/token → break); freeze window no-stack + resume; coach edit-lock (locked rejects self-edit; unlocks when relationship inactive); trainer-route auth via `assertTrainerCanActForClient`; completion value-required/range/future-day/prior-week; migration forward/back + idempotent seed. Render real SQL via `PgDialect` for built queries (mocked-DB blind spot, `reference_drizzle_groupby_param_bug`).
+**Backend (Vitest, ≥90% on touched files):** per-habit `weekMet` for each rule incl. days/week thresholds; collection "all enabled met"; forgiveness (holiday → satisfied/earn → missed-week token spend → break) reusing the M4 engine; proactive skip-week manual spend; coach edit-lock (locked rejects self-edit; unlocks when relationship inactive); trainer-route auth (role + active `pt_client_relationships`); completion value-required/range/future-day/prior-week; pending-config promotion at rollover; migration forward/back + idempotent seed. Render real SQL via `PgDialect` for built queries (mocked-DB blind spot, `reference_drizzle_groupby_param_bug`).
 
 **Health (07, Jest):** Water r/w + Sleep r adapter methods; echo de-dup (app-written samples excluded on read); permission-scope extension; offline read/write.
 

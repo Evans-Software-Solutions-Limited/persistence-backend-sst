@@ -255,7 +255,7 @@ Front-loads engagement in the first 3 months. Beyond 3 months, milestones intent
 
 **Collection streak (amends § 3.1/3.2 — habit streaks are now one weekly collection streak, not per-goal):** a single `user_streaks` row (`streak_type='habit_streak'`, `source_goal_id=NULL`, `period='weekly'`) counts all enabled habits together. A week is satisfied when **every enabled habit's weekly target is met**. Per-goal habit-streak rows are not created (Gym still has its own `workout_streak` for the Train ring).
 
-**Forgiveness (amends § 3.5; complements earned freeze tokens). On weekly evaluation, in order:** (1) **Holiday pause** — week intersects a `streak_holidays` range → `paused`. (2) **Freeze window** — week `<= user_streaks.freeze_until` → neutral. (3) **Satisfied** → advance, maybe earn a token (1 per 4 weeks, cap 4), milestone. (4) **At risk** → emit `streak_at_risk`; if `freeze_tokens > 0` spend one and open a **7-day freeze window** (a token = a full **week off**; refines § 3.5's single-period absorb). Windows don't stack; manual spend via `POST /users/me/streaks/:id/use-token`. (5) **Break**.
+**Forgiveness (reuses the M4 engine — the collection streak is weekly, so its existing "1 token per missed period" already means "1 token = 1 week off"; no new column). On weekly evaluation, in order:** (1) **Holiday pause** — week intersects a `streak_holidays` range → `paused`. (2) **Satisfied** → advance, maybe earn a token (1 per 4 weeks, cap 4), milestone. (3) **Missed** → emit `streak_at_risk`; spend 1 token per missed week if available (`freeze_token_applied`), else **break**. A proactive "skip this week" is a manual spend (`POST /users/me/streaks/:id/use-token`) advancing `last_period_end` over the current week, −1 token, no count change.
 
 **Holiday / skip weeks (resolves the § 3.5 "planned-holiday mode" v2 item):** `streak_holidays (user_id, goal_id NULL=all, start_date, end_date)`, **managed from Home** (not the setup screen), applies to all habits. Scheduled **≥ 24 h in advance** (`start_date >= today + 1 day`, user-local — prevents retro-declaring over a missed week); can be **ended early** (truncate to today); a wholly-past one is immutable.
 
@@ -265,7 +265,7 @@ Front-loads engagement in the first 3 months. Beyond 3 months, milestones intent
 
 **Config-edit timing (anti-gaming):** habit-config edits (raise/lower target, change days/week, enable, disable) take effect at the **next week boundary** — symmetric. The in-progress week is always scored against the config effective at its Monday start (`effective_from` gate + a `pending_config`/`pending_from` promoted by the weekly cron). New values are saved + shown immediately; a fresh habit is loggable now but joins the collection requirement next Monday. Closes mid-week **rescue**, **ratchet**, and **disable-to-dodge**.
 
-**Anti-gaming:** no future-day / prior-week completions (prior weeks immutable); counts/tokens advance only via the engine; freeze windows don't stack; `value` range-validated per category. See `18-habit-setup/design.md § 6`.
+**Anti-gaming:** no future-day / prior-week completions (prior weeks immutable); counts/tokens advance only via the engine; `value` range-validated per category. See `18-habit-setup/design.md § 6`.
 
 **No new notification types.** Habit setup emits only the existing § 5 streak events (`streak_milestone`, `streak_at_risk`, `freeze_token_applied`).
 

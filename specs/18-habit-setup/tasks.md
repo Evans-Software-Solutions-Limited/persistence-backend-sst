@@ -11,13 +11,13 @@
 
 ## Phase 18.1 — Database migrations (1 PR)
 
-- [ ] **T-18.1.1** `habit_category_enum` (water/gym/steps/sleep/calories), `habit_completion_rule_enum`. (`design.md § 2.1`)
-- [ ] **T-18.1.2** `habit_configs` table (incl. `days_per_week`, `tolerance_pct`, `effective_from`, `pending_config`, `pending_from`; **no** cheat-days column). (`design.md § 2.2`; STORY-002)
-- [ ] **T-18.1.3** `streak_holidays` table. (`design.md § 2.3`; STORY-008)
-- [ ] **T-18.1.4** `user_streaks.freeze_until` (additive). (`design.md § 2.4`; STORY-003)
-- [ ] **T-18.1.5** Idempotent seed of 5 `goal_types`. (`design.md § 2.5`)
-- [ ] **T-18.1.6** Mirror in `schema.ts` (enums, tables, types).
-- [ ] **T-18.1.7** Verify forward/back + idempotent; seed upsert runs twice cleanly.
+- [x] **T-18.1.1** `habit_category_enum` (water/gym/steps/sleep/calories), `habit_completion_rule_enum`. (`design.md § 2.1`)
+- [x] **T-18.1.2** `habit_configs` table (incl. `days_per_week`, `tolerance_pct`, `effective_from`, `pending_config`, `pending_from`; **no** cheat-days column). (`design.md § 2.2`; STORY-002)
+- [x] **T-18.1.3** `streak_holidays` table. (`design.md § 2.3`; STORY-008)
+- [x] **T-18.1.4** ~~`user_streaks` column~~ — none needed; the collection streak reuses the existing weekly `user_streaks` row (1 token/missed week = a week off). (`design.md § 2.4`)
+- [x] **T-18.1.5** Idempotent seed of 5 `goal_types`. (`design.md § 2.5`)
+- [x] **T-18.1.6** Mirror in `schema.ts` (enums, tables, types) — `bun run typecheck` green.
+- [x] **T-18.1.7** Idempotent by construction (DO-block enums, IF NOT EXISTS, ON CONFLICT seed); forward/back-safe (all additive). _Forward/back run against a live DB still to do at PR time._
 
 ## Phase 18.2 — Self config handlers (1 PR)
 
@@ -42,9 +42,9 @@
 ## Phase 18.5 — Streak engine (collection model) (1 PR)
 
 - [ ] **T-18.5.1** Per-habit `weekMet` dispatch (`value_gte` days/week, `count` weekly, `within_tolerance` M9-skip). (STORY-004; `design.md § 4.1`)
-- [ ] **T-18.5.2** Collection weekly streak: "all enabled met" → advance/earn-token; forgiveness order holiday → freeze window → satisfied → at-risk/token → break; mid-week at-risk emission. (STORY-003; `design.md § 4.2`)
-- [ ] **T-18.5.3** Freeze window (`freeze_until`) no-stack + resume; holiday pause/resume in `cron.ts`; **promote pending configs at weekly rollover** (`pending_from <= today` → live; set `user_goals.is_active` for enable/disable). Score the open week against the week-start config (`effective_from` gate). (STORY-003 AC 3.4, STORY-002 AC 2.7, STORY-008 AC 8.2; `design.md § 4.3/4.4`)
-- [ ] **T-18.5.4** Manual freeze spend via `POST /users/me/streaks/:id/use-token` → set `freeze_until = week_end`. (STORY-003 AC 3.4)
+- [ ] **T-18.5.2** Collection weekly streak: `isPeriodSatisfied` for the collection `habit_streak` row = "all enabled habits' `weekMet`"; reuses the M4 advance/earn-token/break path (holiday → satisfied → missed-week token spend → break); mid-week at-risk emission. (STORY-003; `design.md § 4.2`)
+- [ ] **T-18.5.3** **Promote pending configs at weekly rollover** in `cron.ts` (`pending_from <= today` → live; set `user_goals.is_active` for enable/disable). Score the open week against the week-start config (`effective_from` gate). (STORY-002 AC 2.7, STORY-008 AC 8.2; `design.md § 4.3/4.4`)
+- [ ] **T-18.5.4** Extend manual spend (`POST /users/me/streaks/:id/use-token`) with a proactive "skip this week": spend 1 token, advance `last_period_end` over the current week, no count increment. (STORY-003 AC 3.4)
 - [ ] **T-18.5.5** Engine tests — render real SQL via `PgDialect`; exhaustive rules/forgiveness/no-stack/resume/closed-week immutability; **deferred-edit timing**: mid-week lower/disable/enable can't change the current week's outcome (rescue/ratchet/disable-to-dodge all fail), and pending promotes correctly at rollover. (STORY-008 AC 8.2, STORY-002 AC 2.7)
 
 ## Phase 18.6 — Health two-way sync (07 + bridge) (1 PR)
