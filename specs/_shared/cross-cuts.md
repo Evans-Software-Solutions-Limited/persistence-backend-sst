@@ -243,6 +243,32 @@ Front-loads engagement in the first 3 months. Beyond 3 months, milestones intent
 
 **Achievement visual:** fitness-themed icons per milestone tier (flame, dumbbell, lightning, medal, crown — concrete asset selection deferred to UI implementation). Data layer stores `achievement_type` + `tier`; presenter maps tier → icon. Displays in the user's achievements grid + a small badge next to their profile name when a fresh milestone is earned.
 
+### 3.7 Revised 2026-06-23 — habit setup: collection streak, coach authorship, two-way sync (owned by `18-habit-setup`)
+
+`18-habit-setup` extends habit streaks. This block amends §§ 3.1–3.6 for habit streaks; workout/measurement/nutrition streaks are unchanged except where noted. Authority for the full design is `specs/18-habit-setup/design.md`. (Supersedes the earlier per-habit / cheat-day draft — the landed prototype settled a collection model with days/week slack instead.)
+
+**Five fixed categories:** Water (daily, litres), Gym (weekly, sessions — reuses `workout_streak`), Steps (daily, steps — HealthKit), Sleep (daily, hours — HealthKit), Calories (daily, kcal ± leniency — reuses `nutrition_streak`, M9-gated). Each is a seeded `goal_types` row (`category='habit'`) + a `user_goals` row + a `habit_configs` row.
+
+**`habit_configs` (new table):** `(user_id, goal_id unique, category, target_value, unit, period, completion_rule, days_per_week, tolerance_pct)`. `period` ∈ {daily, weekly}; `completion_rule` ∈ {`count`, `value_gte`, `within_tolerance`}. **No cheat-days column** — `days_per_week` (1–7, NULL for Gym) is the slack: a daily habit's week is met when its daily target is hit on ≥ `days_per_week` days.
+
+**Per-habit weekly satisfaction (amends § 3.1):** `count` → ≥ `target_value` qualifying events in the week (Gym sessions); `value_gte` → ≥ `days_per_week` days whose summed `value ≥ target_value` (Water/Steps/Sleep; `habit_completions.value` required); `within_tolerance` → ≥ `days_per_week` days within `target ± tolerance_pct%` (Calories, M9-gated — ignored until then).
+
+**Collection streak (amends § 3.1/3.2 — habit streaks are now one weekly collection streak, not per-goal):** a single `user_streaks` row (`streak_type='habit_streak'`, `source_goal_id=NULL`, `period='weekly'`) counts all enabled habits together. A week is satisfied when **every enabled habit's weekly target is met**. Per-goal habit-streak rows are not created (Gym still has its own `workout_streak` for the Train ring).
+
+**Forgiveness (amends § 3.5; complements earned freeze tokens). On weekly evaluation, in order:** (1) **Holiday pause** — week intersects a `streak_holidays` range → `paused`. (2) **Freeze window** — week `<= user_streaks.freeze_until` → neutral. (3) **Satisfied** → advance, maybe earn a token (1 per 4 weeks, cap 4), milestone. (4) **At risk** → emit `streak_at_risk`; if `freeze_tokens > 0` spend one and open a **7-day freeze window** (a token = a full **week off**; refines § 3.5's single-period absorb). Windows don't stack; manual spend via `POST /users/me/streaks/:id/use-token`. (5) **Break**.
+
+**Holiday / skip weeks (resolves the § 3.5 "planned-holiday mode" v2 item):** `streak_holidays (user_id, goal_id NULL=all, start_date, end_date)`, **managed from Home** (not the setup screen), applies to all habits. Scheduled **≥ 24 h in advance** (`start_date >= today + 1 day`, user-local — prevents retro-declaring over a missed week); can be **ended early** (truncate to today); a wholly-past one is immutable.
+
+**Coach authorship (uses § 1.2 trainer-scoped routes + § 2 `assigned_by_user_id`):** a coach with an active relationship sets a client's habits via `/trainers/me/clients/:clientId/habits/...`, stamping `assigned_by_user_id` + a `goal_assigned` audit row. Coach-set habits are **complete-only** for the client; the edit-lock is conditioned on an **active** relationship, so when it ends the habits transfer to the client (stay active, streak unbroken, attribution kept).
+
+**Two-way HealthKit sync — DB is the source of truth:** Water (r/w), Sleep (r), Steps (r), Weight (r/w, M6) and Calories (M9) sync between Apple Health and the backend via the **device acting as a bridge** (the backend never touches HealthKit). The canonical value lives in the DB (`habit_completions.value` / `body_measurements` / `nutrition_entries`) so **trainers read it** via § 1.2 GET routes. The device source-tags its own HK writes to avoid echo double-counting. Health-port/adapter deltas owned by `07-health-integration`.
+
+**Config-edit timing (anti-gaming):** habit-config edits (raise/lower target, change days/week, enable, disable) take effect at the **next week boundary** — symmetric. The in-progress week is always scored against the config effective at its Monday start (`effective_from` gate + a `pending_config`/`pending_from` promoted by the weekly cron). New values are saved + shown immediately; a fresh habit is loggable now but joins the collection requirement next Monday. Closes mid-week **rescue**, **ratchet**, and **disable-to-dodge**.
+
+**Anti-gaming:** no future-day / prior-week completions (prior weeks immutable); counts/tokens advance only via the engine; freeze windows don't stack; `value` range-validated per category. See `18-habit-setup/design.md § 6`.
+
+**No new notification types.** Habit setup emits only the existing § 5 streak events (`streak_milestone`, `streak_at_risk`, `freeze_token_applied`).
+
 ---
 
 ## 4. AI feature entitlement gating
