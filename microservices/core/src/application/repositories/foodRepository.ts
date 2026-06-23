@@ -1,6 +1,7 @@
-import { and, eq, ilike, or, desc, inArray } from "drizzle-orm";
+import { and, eq, ilike, or, desc, inArray, sql } from "drizzle-orm";
 import { foods, type Food } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { OffFoodRow } from "../nutrition/services/offMapper";
 
 /**
  * Wire shape for a food. Macros parsed to numbers at this boundary (Drizzle
@@ -122,5 +123,47 @@ export class FoodRepository {
       })
       .returning();
     return toFoodDTO(result[0]);
+  }
+
+  /**
+   * Idempotent bulk upsert of Open Food Facts rows (seed + delta refresh, M9).
+   * Conflict on `barcode` refreshes the cached macros so the seed/delta can be
+   * re-run safely. Returns the number of rows written. OFF rows stay tagged
+   * `source='openfoodfacts'` + `created_by=null` (segregable for ODbL).
+   */
+  async upsertManyFromOff(rows: OffFoodRow[]): Promise<number> {
+    if (rows.length === 0) return 0;
+    const db = getDb();
+    await db
+      .insert(foods)
+      .values(
+        rows.map((r) => ({
+          name: r.name,
+          brand: r.brand,
+          barcode: r.barcode,
+          kcal: String(r.kcal),
+          proteinG: String(r.proteinG),
+          carbsG: String(r.carbsG),
+          fatG: String(r.fatG),
+          servingSize: String(r.servingSize),
+          servingUnit: r.servingUnit,
+          source: r.source,
+          createdBy: null,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: foods.barcode,
+        set: {
+          name: sql`excluded.name`,
+          brand: sql`excluded.brand`,
+          kcal: sql`excluded.kcal`,
+          proteinG: sql`excluded.protein_g`,
+          carbsG: sql`excluded.carbs_g`,
+          fatG: sql`excluded.fat_g`,
+          servingSize: sql`excluded.serving_size`,
+          servingUnit: sql`excluded.serving_unit`,
+        },
+      });
+    return rows.length;
   }
 }

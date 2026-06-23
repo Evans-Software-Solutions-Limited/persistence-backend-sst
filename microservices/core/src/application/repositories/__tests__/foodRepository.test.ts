@@ -117,4 +117,59 @@ describe("FoodRepository", () => {
       expect(passed.source).toBe("user");
     });
   });
+
+  describe("getByIds", () => {
+    it("returns [] without querying for an empty id list", async () => {
+      const select = vi.fn();
+      (getDb as any).mockReturnValue({ select });
+      expect(await new FoodRepository().getByIds([])).toEqual([]);
+      expect(select).not.toHaveBeenCalled();
+    });
+    it("maps matched rows", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          from: () => ({ where: () => Promise.resolve([rawFood]) }),
+        }),
+      });
+      const out = await new FoodRepository().getByIds(["f1"]);
+      expect(out[0].kcal).toBe(150);
+    });
+  });
+
+  describe("upsertManyFromOff", () => {
+    it("no-ops for an empty batch (no DB call)", async () => {
+      const getDbSpy = getDb as any;
+      getDbSpy.mockReturnValue({ insert: vi.fn() });
+      expect(await new FoodRepository().upsertManyFromOff([])).toBe(0);
+      expect(getDbSpy).not.toHaveBeenCalled();
+    });
+
+    it("bulk-upserts OFF rows on conflict and returns the count", async () => {
+      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+      const valuesSpy = vi.fn().mockReturnValue({ onConflictDoUpdate });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      const n = await new FoodRepository().upsertManyFromOff([
+        {
+          barcode: "123",
+          name: "Oats",
+          brand: "Quaker",
+          kcal: 379,
+          proteinG: 13,
+          carbsG: 67,
+          fatG: 8,
+          servingSize: 100,
+          servingUnit: "g",
+          source: "openfoodfacts",
+        },
+      ]);
+      expect(n).toBe(1);
+      const passed = valuesSpy.mock.calls[0][0];
+      expect(passed[0].source).toBe("openfoodfacts");
+      expect(passed[0].createdBy).toBeNull();
+      expect(passed[0].kcal).toBe("379");
+      expect(onConflictDoUpdate).toHaveBeenCalled();
+    });
+  });
 });
