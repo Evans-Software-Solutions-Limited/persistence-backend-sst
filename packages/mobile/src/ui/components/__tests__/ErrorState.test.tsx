@@ -1,4 +1,4 @@
-import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { fireEvent, renderWithTheme } from "../../../../__tests__/test-utils";
 import { ErrorState } from "../ErrorState";
 
 describe("ErrorState", () => {
@@ -35,5 +35,28 @@ describe("ErrorState", () => {
       <ErrorState message="Error" testID="error" />,
     );
     expect(getByTestId("error")).toBeTruthy();
+  });
+
+  it("renders the secondary action and fires onSecondary when both are provided", () => {
+    const onSecondary = jest.fn();
+    const { getByText } = renderWithTheme(
+      <ErrorState
+        message="Forbidden"
+        secondaryLabel="Switch to athlete mode"
+        onSecondary={onSecondary}
+      />,
+    );
+    fireEvent.press(getByText("Switch to athlete mode"));
+    expect(onSecondary).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the secondary action when only the label is given", () => {
+    const { queryByText } = renderWithTheme(
+      <ErrorState
+        message="Forbidden"
+        secondaryLabel="Switch to athlete mode"
+      />,
+    );
+    expect(queryByText("Switch to athlete mode")).toBeNull();
   });
 });

@@ -332,7 +332,11 @@ export class SSTApiAdapter implements ApiPort {
    * Spec: specs/milestones/M6-profile/BACKEND_BRIEF.md
    */
   async getProfilePage() {
-    return this.requestEnvelope<ProfilePageData>("/profile/page");
+    // Bounded like getHome — a hung profile fetch otherwise leaves the
+    // Home header initials / profile screen loading indefinitely.
+    return this.requestEnvelope<ProfilePageData>("/profile/page", {
+      timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+    });
   }
 
   /**
@@ -1019,7 +1023,13 @@ export class SSTApiAdapter implements ApiPort {
   // -- Progress / Home (M4 — 06-progress-goals) --
 
   async getHome(): Promise<Result<HomePayload, ApiError>> {
-    const res = await this.requestEnvelope<HomePayload>("/users/me/home");
+    // Same client-side timeout as the dashboard: the Home loader is
+    // full-screen, so a request that waits out a slow/cold stage (~30s)
+    // strands the user on a spinner. Time out at 10s → the screen falls
+    // back to its error state (with retry) instead of an indefinite load.
+    const res = await this.requestEnvelope<HomePayload>("/users/me/home", {
+      timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+    });
     if (!res.ok) return res;
     return ok({
       ...res.value,

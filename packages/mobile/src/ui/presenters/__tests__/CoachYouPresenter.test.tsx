@@ -62,6 +62,19 @@ describe("CoachYouPresenter", () => {
     expect(getByTestId("coach-you-error-state")).toBeTruthy();
   });
 
+  it("offers a switch-to-athlete escape from the error state (strand-guard)", () => {
+    const props = baseProps();
+    const { getByText } = renderWithTheme(
+      <CoachYouPresenter
+        {...props}
+        overview={null}
+        error={{ kind: "api", code: "unauthorized", message: "403" }}
+      />,
+    );
+    fireEvent.press(getByText("Switch to athlete mode"));
+    expect(props.onSwitchToAthlete).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps rendering cached data when an error arrives with data present", () => {
     const { getByText, queryByTestId } = renderWithTheme(
       <CoachYouPresenter

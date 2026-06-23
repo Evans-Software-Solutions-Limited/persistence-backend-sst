@@ -12,7 +12,11 @@ import type { MySubscription } from "@/domain/models/subscription";
 
 // Drive the subscription cache by hand so each test controls the
 // resolved/unresolved + trainer-tier branches.
-type MockSubReturn = { data: Partial<MySubscription> | undefined };
+type MockSubReturn = {
+  data: Partial<MySubscription> | undefined;
+  isError?: boolean;
+  error?: { code: string } | null;
+};
 const mockUseMySubscription = jest.fn<MockSubReturn, []>();
 jest.mock("@/ui/hooks/useMySubscription", () => ({
   useMySubscription: () => mockUseMySubscription(),
@@ -118,6 +122,53 @@ describe("useUserModeEligibility", () => {
 
     await waitFor(() => expect(useUserMode.getState().mode).toBe("athlete"));
     expect(useUserMode.getState().isTrainerEligible).toBe(false);
+  });
+
+  it("settles eligibility known-false when the subscription errors non-transiently", async () => {
+    // Server answered (or auth failed) with no usable subscription — we have
+    // no trainer entitlement to confirm, so eligibility becomes known + false.
+    mockUseMySubscription.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: { code: "server" },
+    });
+    renderHook(() => useUserModeEligibility());
+
+    await waitFor(() =>
+      expect(useUserMode.getState().isEligibilityKnown).toBe(true),
+    );
+    expect(useUserMode.getState().isTrainerEligible).toBe(false);
+  });
+
+  it("demotes a stranded coach when the subscription errors non-transiently", async () => {
+    // The "trapped in coach" bug: a non-trainer with a rehydrated coach mode
+    // whose /subscriptions/me failed. The error path must settle eligibility
+    // so the watchdog can reconcile coach → athlete.
+    useUserMode.setState({ mode: "coach" });
+    mockUseMySubscription.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: { code: "unauthorized" },
+    });
+    renderHook(() => useUserModeEligibility());
+
+    await waitFor(() => expect(useUserMode.getState().mode).toBe("athlete"));
+  });
+
+  it("leaves eligibility unknown on a transient (network) error — no offline demotion", async () => {
+    // A legitimate trainer who's merely offline must keep coach mode: a
+    // network/timeout error is NOT a signal that they lost entitlement.
+    useUserMode.setState({ mode: "coach" });
+    mockUseMySubscription.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: { code: "network" },
+    });
+    renderHook(() => useUserModeEligibility());
+    await Promise.resolve();
+
+    expect(useUserMode.getState().isEligibilityKnown).toBe(false);
+    expect(useUserMode.getState().mode).toBe("coach");
   });
 
   it("does not demote a legitimate trainer before the network resolves", async () => {
