@@ -482,6 +482,52 @@ describe("HabitConfigRepository branch coverage", () => {
     expect(promote).toBeTruthy();
   });
 
+  it("isHabitCoachLocked: locked when assigned + active relationship", async () => {
+    const { db } = makeDb({
+      selects: [
+        [{ id: "gt-water" }], // resolveGoalTypeId (via getAssigner)
+        [{ id: "g1", assignedByUserId: "coach1" }], // goal
+        [{ id: "rel1" }], // active pt_client_relationship
+      ],
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+    expect(
+      await new HabitConfigRepository().isHabitCoachLocked("u1", "water"),
+    ).toBe(true);
+  });
+
+  it("isHabitCoachLocked: unlocked when no active relationship", async () => {
+    const { db } = makeDb({
+      selects: [
+        [{ id: "gt-water" }],
+        [{ id: "g1", assignedByUserId: "coach1" }],
+        [], // relationship inactive / ended → lock lifts
+      ],
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+    expect(
+      await new HabitConfigRepository().isHabitCoachLocked("u1", "water"),
+    ).toBe(false);
+  });
+
+  it("isHabitCoachLocked: false for a self-set habit (no assigner)", async () => {
+    const { db } = makeDb({
+      selects: [[{ id: "gt-water" }], [{ id: "g1", assignedByUserId: null }]],
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+    expect(
+      await new HabitConfigRepository().isHabitCoachLocked("u1", "water"),
+    ).toBe(false);
+  });
+
+  it("isHabitCoachLocked: false when the habit goal doesn't exist", async () => {
+    const { db } = makeDb({ selects: [[{ id: "gt-water" }], []] });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+    expect(
+      await new HabitConfigRepository().isHabitCoachLocked("u1", "water"),
+    ).toBe(false);
+  });
+
   it("toView yields null pending when pendingFrom is absent and null days for Gym", async () => {
     const { db } = makeDb({
       selects: [

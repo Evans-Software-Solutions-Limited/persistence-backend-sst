@@ -3,6 +3,7 @@ import {
   goalTypes,
   habitConfigs,
   profiles,
+  ptClientRelationships,
   userGoals,
   userStreaks,
   type HabitConfig,
@@ -161,6 +162,35 @@ export class HabitConfigRepository {
     return g
       ? { goalId: g.id, assignedByUserId: g.assignedByUserId ?? null }
       : null;
+  }
+
+  /**
+   * Whether a habit is LOCKED to the client — i.e. a coach assigned it AND the
+   * relationship is still active (cross-cuts § 2.2; design.md § 5). The lock is
+   * conditioned on an *active* relationship, so when it ends the lock lifts
+   * automatically and the habit transfers to the client (locked decision 6).
+   * The self PUT/DELETE routes 403 when this is true.
+   */
+  async isHabitCoachLocked(
+    userId: string,
+    category: HabitCategory,
+  ): Promise<boolean> {
+    const assigner = await this.getAssigner(userId, category);
+    if (!assigner || !assigner.assignedByUserId) return false;
+    const db = getDb();
+    const rows = await db
+      .select({ id: ptClientRelationships.id })
+      .from(ptClientRelationships)
+      .where(
+        and(
+          eq(ptClientRelationships.trainerId, assigner.assignedByUserId),
+          eq(ptClientRelationships.clientId, userId),
+          eq(ptClientRelationships.status, "active"),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**
