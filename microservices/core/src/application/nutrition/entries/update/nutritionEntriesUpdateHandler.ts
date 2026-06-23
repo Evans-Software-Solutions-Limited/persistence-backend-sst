@@ -46,11 +46,12 @@ export const nutritionEntriesUpdateHandler = new Elysia()
             t.Literal("dinner"),
           ]),
         ),
-        servings: t.Optional(t.Number()),
-        kcal: t.Optional(t.Number()),
-        proteinG: t.Optional(t.Number()),
-        carbsG: t.Optional(t.Number()),
-        fatG: t.Optional(t.Number()),
+        // minimum: 0 — see create handler (no negative servings/macros). PR #124.
+        servings: t.Optional(t.Number({ minimum: 0 })),
+        kcal: t.Optional(t.Number({ minimum: 0 })),
+        proteinG: t.Optional(t.Number({ minimum: 0 })),
+        carbsG: t.Optional(t.Number({ minimum: 0 })),
+        fatG: t.Optional(t.Number({ minimum: 0 })),
       }),
     },
   );

@@ -56,15 +56,17 @@ export const recipesCreateHandler = new Elysia()
       body: t.Object({
         name: t.String({ minLength: 1 }),
         photoUrl: t.Optional(t.String()),
-        servings: t.Number(),
+        // servings must be positive (per-serving = total / servings); quantity
+        // can't be negative (negative factor in materialiseTotals). PR #124.
+        servings: t.Number({ exclusiveMinimum: 0 }),
         instructions: t.Optional(t.String()),
         ingredients: t.Array(
           t.Object({
             foodId: t.Optional(t.String()),
             customName: t.Optional(t.String()),
-            quantity: t.Number(),
+            quantity: t.Number({ minimum: 0 }),
             unit: t.String(),
-            sortOrder: t.Integer(),
+            sortOrder: t.Integer({ minimum: 0 }),
           }),
         ),
       }),

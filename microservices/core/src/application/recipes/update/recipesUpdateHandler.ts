@@ -38,7 +38,7 @@ export const recipesUpdateHandler = new Elysia()
       body: t.Object({
         name: t.Optional(t.String({ minLength: 1 })),
         photoUrl: t.Optional(t.String()),
-        servings: t.Optional(t.Number()),
+        servings: t.Optional(t.Number({ exclusiveMinimum: 0 })), // PR #124
         instructions: t.Optional(t.String()),
       }),
     },

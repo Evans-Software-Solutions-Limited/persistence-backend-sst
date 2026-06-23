@@ -32,11 +32,12 @@ export const nutritionTargetsSetHandler = new Elysia()
     },
     {
       body: t.Object({
-        dailyKcal: t.Number(),
-        proteinG: t.Number(),
-        carbsG: t.Number(),
-        fatG: t.Number(),
-        waterCups: t.Integer(),
+        // minimum: 0 — targets can't be negative. Review fix (PR #124).
+        dailyKcal: t.Number({ minimum: 0 }),
+        proteinG: t.Number({ minimum: 0 }),
+        carbsG: t.Number({ minimum: 0 }),
+        fatG: t.Number({ minimum: 0 }),
+        waterCups: t.Integer({ minimum: 0 }),
         preset: t.Optional(t.String()),
       }),
     },

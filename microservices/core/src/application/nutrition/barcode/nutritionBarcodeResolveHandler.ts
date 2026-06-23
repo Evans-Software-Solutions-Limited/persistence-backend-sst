@@ -49,10 +49,18 @@ export const nutritionBarcodeResolveHandler = new Elysia()
         return { error: "barcode_not_found" };
       }
 
-      const food = await ctx.FoodRepository.create(getUser(ctx).sub, {
-        ...result.food,
-        source: "openfoodfacts",
-      });
+      // Idempotent upsert on the `barcode` UNIQUE rather than a bare INSERT:
+      // two concurrent cache-misses for the same code (multiple users / a
+      // fan-out) would both INSERT and the second would hit a 23505 → 500.
+      // upsert-on-conflict + re-read is race-safe. Review fix (PR #124).
+      await ctx.FoodRepository.upsertManyFromOff([
+        { ...result.food, source: "openfoodfacts" },
+      ]);
+      const food = await ctx.FoodRepository.getByBarcode(code);
+      if (!food) {
+        ctx.set.status = 503;
+        return { error: "food_db_unavailable" };
+      }
       return { data: food };
     },
     {

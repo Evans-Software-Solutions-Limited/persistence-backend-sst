@@ -109,7 +109,7 @@ export async function resolveBarcodeFromOFF(
   if (!res.ok)
     throw new OpenFoodFactsUnavailableError(`off_status_${res.status}`);
 
-  const body = (await res.json()) as {
+  let body: {
     status?: number;
     product?: {
       product_name?: string;
@@ -117,6 +117,17 @@ export async function resolveBarcodeFromOFF(
       nutriments?: OffNutriments;
     };
   };
+  try {
+    // A 2xx with a non-JSON body (captive portal / proxy HTML / truncated
+    // response) would otherwise throw a SyntaxError that escapes the handler's
+    // `instanceof OpenFoodFactsUnavailableError` check → 500. Treat an
+    // unparseable body as OFF being unavailable → 503. Review fix (PR #124).
+    body = (await res.json()) as typeof body;
+  } catch (e) {
+    throw new OpenFoodFactsUnavailableError(
+      `off_invalid_json: ${(e as Error).message}`,
+    );
+  }
 
   if (body.status !== 1 || !body.product) return { found: false };
 

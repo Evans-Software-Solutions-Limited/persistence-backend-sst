@@ -85,11 +85,14 @@ export const nutritionEntriesCreateHandler = new Elysia()
           t.Literal("snack"),
           t.Literal("dinner"),
         ]),
-        servings: t.Number(),
-        kcal: t.Optional(t.Number()),
-        proteinG: t.Optional(t.Number()),
-        carbsG: t.Optional(t.Number()),
-        fatG: t.Optional(t.Number()),
+        // minimum: 0 — negative servings/macros would let a client subtract
+        // kcal from their day (and trivially flip the streak). The DB has no
+        // CHECK, so validate here. Review fix (PR #124).
+        servings: t.Number({ minimum: 0 }),
+        kcal: t.Optional(t.Number({ minimum: 0 })),
+        proteinG: t.Optional(t.Number({ minimum: 0 })),
+        carbsG: t.Optional(t.Number({ minimum: 0 })),
+        fatG: t.Optional(t.Number({ minimum: 0 })),
         loggedAt: t.String(),
       }),
     },

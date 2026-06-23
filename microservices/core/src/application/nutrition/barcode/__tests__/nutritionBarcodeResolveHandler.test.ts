@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const foodMocks = { getByBarcode: vi.fn(), create: vi.fn() };
+const foodMocks = {
+  getByBarcode: vi.fn(),
+  upsertManyFromOff: vi.fn(),
+};
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -65,21 +68,25 @@ describe("nutritionBarcodeResolveHandler", () => {
     expect(resolveBarcodeFromOFF).not.toHaveBeenCalled();
   });
 
-  it("on a cache miss, fetches OFF, persists the food, and returns it", async () => {
-    foodMocks.getByBarcode.mockResolvedValue(null);
+  it("on a cache miss, fetches OFF, upserts (race-safe) and re-reads the food", async () => {
+    // First call = miss; second call = the row landed by the upsert.
+    foodMocks.getByBarcode
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "f2", barcode: "123", kcal: 379 });
+    foodMocks.upsertManyFromOff.mockResolvedValue(1);
     (resolveBarcodeFromOFF as any).mockResolvedValue({
       found: true,
       food: { name: "Oats", barcode: "123", kcal: 379 },
     });
-    foodMocks.create.mockResolvedValue({ id: "f2", barcode: "123" });
     const { nutritionBarcodeResolveHandler } =
       await import("../nutritionBarcodeResolveHandler");
     const res = await nutritionBarcodeResolveHandler.handle(post("123"));
     expect(res.status).toBe(200);
-    expect(foodMocks.create).toHaveBeenCalledWith(
-      "test-user-id",
+    expect(((await res.json()) as any).data.id).toBe("f2");
+    // Upsert-on-conflict (not a bare INSERT) so concurrent misses don't 23505.
+    expect(foodMocks.upsertManyFromOff).toHaveBeenCalledWith([
       expect.objectContaining({ source: "openfoodfacts", barcode: "123" }),
-    );
+    ]);
   });
 
   it("404s when OFF has no such product", async () => {

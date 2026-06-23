@@ -111,4 +111,16 @@ describe("resolveBarcodeFromOFF", () => {
     });
     expect(res.found).toBe(false);
   });
+
+  it("throws Unavailable on a 2xx with a non-JSON body (captive portal / proxy)", async () => {
+    await expect(
+      resolveBarcodeFromOFF("123", {
+        fetcher: async () =>
+          new Response("<html>not json</html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      }),
+    ).rejects.toBeInstanceOf(OpenFoodFactsUnavailableError);
+  });
 });

@@ -84,7 +84,12 @@ export class NutritionEntryRepository {
       .where(
         and(
           eq(nutritionEntries.userId, userId),
-          sql`${nutritionEntries.loggedAt}::date = ${date}::date`,
+          // `logged_at` is timestamptz (UTC); a bare `::date` would bucket in
+          // the Postgres session tz (UTC on Neon), dropping near-midnight
+          // entries into the wrong day for any non-UTC user. Convert to the
+          // user's local day first (profiles.timezone, default Europe/London —
+          // same default as the streak engine). Review fix (PR #124).
+          sql`(${nutritionEntries.loggedAt} AT TIME ZONE COALESCE((SELECT timezone FROM profiles WHERE id = ${userId}), 'Europe/London'))::date = ${date}::date`,
         ),
       )
       .orderBy(desc(nutritionEntries.loggedAt));

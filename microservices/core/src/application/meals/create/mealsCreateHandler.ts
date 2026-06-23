@@ -68,8 +68,8 @@ export const mealsCreateHandler = new Elysia()
           t.Object({
             foodId: t.Optional(t.String()),
             recipeId: t.Optional(t.String()),
-            servings: t.Number(),
-            sortOrder: t.Integer(),
+            servings: t.Number({ minimum: 0 }), // PR #124 — no negative servings
+            sortOrder: t.Integer({ minimum: 0 }),
           }),
         ),
       }),

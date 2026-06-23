@@ -171,4 +171,19 @@ describe("nutritionEntriesCreateHandler", () => {
       "macros_required_for_custom_entry",
     );
   });
+
+  it("rejects negative servings at validation (no row written)", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        foodId: "f1",
+        mealSlot: "breakfast",
+        servings: -3,
+        loggedAt: "2026-06-21T08:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(422); // Elysia body validation (minimum: 0)
+    expect(entryMocks.create).not.toHaveBeenCalled();
+  });
 });

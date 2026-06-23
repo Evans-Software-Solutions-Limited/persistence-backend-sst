@@ -1,4 +1,4 @@
-import { and, eq, ilike, or, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, ne, ilike, or, desc, inArray, sql } from "drizzle-orm";
 import { foods, type Food } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import type { OffFoodRow } from "../nutrition/services/offMapper";
@@ -73,12 +73,19 @@ export class FoodRepository {
     return rows.map(toFoodDTO);
   }
 
+  /**
+   * Resolve a barcode to a SHAREABLE food only. `source='user'` rows are
+   * private custom foods (a user can attach any barcode to a homemade item), so
+   * they must never surface to another user via a barcode scan — restrict to
+   * OFF-derived / curated rows. Review fix (PR #124). The live OFF fallback in
+   * the resolve handler still covers a genuine miss.
+   */
   async getByBarcode(barcode: string): Promise<FoodDTO | null> {
     const db = getDb();
     const result = await db
       .select()
       .from(foods)
-      .where(eq(foods.barcode, barcode))
+      .where(and(eq(foods.barcode, barcode), ne(foods.source, "user")))
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
   }

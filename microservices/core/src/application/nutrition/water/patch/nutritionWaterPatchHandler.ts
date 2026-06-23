@@ -46,8 +46,8 @@ export const nutritionWaterPatchHandler = new Elysia()
     {
       body: t.Object({
         date: t.String(),
-        cups: t.Optional(t.Integer()),
-        delta: t.Optional(t.Integer()),
+        cups: t.Optional(t.Integer({ minimum: 0 })), // absolute set ≥ 0 (PR #124)
+        delta: t.Optional(t.Integer()), // ± convenience; repo clamps the result ≥ 0
       }),
     },
   );

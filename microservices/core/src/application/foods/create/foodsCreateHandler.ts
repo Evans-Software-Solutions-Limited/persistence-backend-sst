@@ -37,11 +37,13 @@ export const foodsCreateHandler = new Elysia()
         name: t.String({ minLength: 1 }),
         brand: t.Optional(t.String()),
         barcode: t.Optional(t.String()),
-        kcal: t.Number(),
-        proteinG: t.Number(),
-        carbsG: t.Number(),
-        fatG: t.Number(),
-        servingSize: t.Number(),
+        // minimum: 0 — no negative macros; serving size must be positive
+        // (a 0/negative size breaks per-serving scaling). Review fix (PR #124).
+        kcal: t.Number({ minimum: 0 }),
+        proteinG: t.Number({ minimum: 0 }),
+        carbsG: t.Number({ minimum: 0 }),
+        fatG: t.Number({ minimum: 0 }),
+        servingSize: t.Number({ exclusiveMinimum: 0 }),
         servingUnit: t.String(),
       }),
     },
