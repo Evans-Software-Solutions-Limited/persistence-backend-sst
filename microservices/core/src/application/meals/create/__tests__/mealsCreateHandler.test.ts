@@ -74,7 +74,7 @@ describe("mealsCreateHandler", () => {
       }),
     );
     expect(res.status).toBe(201);
-    expect(foodMocks.getByIds).toHaveBeenCalledWith(["f1"]);
+    expect(foodMocks.getByIds).toHaveBeenCalledWith(["f1"], "test-user-id");
     expect(recipeMocks.getMacroSummaries).toHaveBeenCalledWith(
       [],
       "test-user-id",

@@ -43,7 +43,7 @@ export const mealsCreateHandler = new Elysia()
       ];
 
       const [foods, recipesById] = await Promise.all([
-        ctx.FoodRepository.getByIds(foodIds),
+        ctx.FoodRepository.getByIds(foodIds, userId),
         ctx.RecipeRepository.getMacroSummaries(recipeIds, userId),
       ]);
       const foodsById = new Map<string, FoodDTO>(foods.map((f) => [f.id, f]));

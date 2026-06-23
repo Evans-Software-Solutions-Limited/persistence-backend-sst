@@ -97,6 +97,19 @@ export class NutritionEntryRepository {
     return rows.map(toDTO);
   }
 
+  /** A single owned entry (ownership in WHERE) — used by the edit re-derivation. */
+  async getById(id: string, userId: string): Promise<NutritionEntryDTO | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(nutritionEntries)
+      .where(
+        and(eq(nutritionEntries.id, id), eq(nutritionEntries.userId, userId)),
+      )
+      .limit(1);
+    return rows[0] ? toDTO(rows[0]) : null;
+  }
+
   async create(
     userId: string,
     input: CreateEntryInput,

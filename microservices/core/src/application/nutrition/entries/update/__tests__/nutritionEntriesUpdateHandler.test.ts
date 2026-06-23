@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const entryMocks = { update: vi.fn() };
+const entryMocks = { getById: vi.fn(), update: vi.fn() };
+const foodMocks = { getById: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -21,6 +22,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
   NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
 }));
+vi.mock("../../../../repositories/foodRepository", () => ({
+  FoodRepository: vi.fn().mockImplementation(() => foodMocks),
+}));
 
 function put(body: unknown, auth = true) {
   return new Request("http://localhost/nutrition/entries/e1", {
@@ -34,7 +38,13 @@ function put(body: unknown, auth = true) {
 }
 
 describe("nutritionEntriesUpdateHandler", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    entryMocks.update.mockImplementation(async (_id, _u, patch) => ({
+      id: "e1",
+      ...patch,
+    }));
+  });
 
   it("requires auth", async () => {
     const { nutritionEntriesUpdateHandler } =
@@ -45,26 +55,51 @@ describe("nutritionEntriesUpdateHandler", () => {
     expect(res.status).toBe(401);
   });
 
-  it("updates an owned entry", async () => {
-    entryMocks.update.mockResolvedValue({ id: "e1", servings: 3 });
-    const { nutritionEntriesUpdateHandler } =
-      await import("../nutritionEntriesUpdateHandler");
-    const res = await nutritionEntriesUpdateHandler.handle(
-      put({ servings: 3 }),
-    );
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as any).data.servings).toBe(3);
-    expect(entryMocks.update).toHaveBeenCalledWith("e1", "test-user-id", {
-      servings: 3,
-    });
-  });
-
   it("404s when the entry is missing or not owned", async () => {
-    entryMocks.update.mockResolvedValue(null);
+    entryMocks.getById.mockResolvedValue(null);
     const { nutritionEntriesUpdateHandler } =
       await import("../nutritionEntriesUpdateHandler");
     const res = await nutritionEntriesUpdateHandler.handle(put({ kcal: 1 }));
     expect(res.status).toBe(404);
-    expect(((await res.json()) as any).error).toBe("entry_not_found");
+    expect(entryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("re-derives macros from the food for a foodId entry, ignoring client macros", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: "f1",
+      servings: 1,
+    });
+    foodMocks.getById.mockResolvedValue({
+      id: "f1",
+      kcal: 150,
+      proteinG: 10,
+      carbsG: 20,
+      fatG: 5,
+      servingSize: 100,
+    });
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    const res = await nutritionEntriesUpdateHandler.handle(
+      put({ servings: 2, kcal: 99999 }), // bogus client kcal must be ignored
+    );
+    expect(res.status).toBe(200);
+    const patch = entryMocks.update.mock.calls[0][2];
+    expect(patch.servings).toBe(2);
+    expect(patch.kcal).toBe(300); // 150 × 2, NOT 99999
+    expect(patch.proteinG).toBe(20);
+  });
+
+  it("trusts client macros for a one-off entry (no foodId)", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: null,
+      servings: 1,
+    });
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    await nutritionEntriesUpdateHandler.handle(put({ kcal: 120 }));
+    expect(foodMocks.getById).not.toHaveBeenCalled();
+    expect(entryMocks.update.mock.calls[0][2]).toEqual({ kcal: 120 });
   });
 });

@@ -27,10 +27,10 @@ export const nutritionBarcodeResolveHandler = new Elysia()
   .post(
     "/nutrition/barcode/resolve",
     async (ctx) => {
-      getUser(ctx); // assert authed
+      const { sub: userId } = getUser(ctx);
       const { code } = ctx.body;
 
-      const cached = await ctx.FoodRepository.getByBarcode(code);
+      const cached = await ctx.FoodRepository.getByBarcode(code, userId);
       if (cached) return { data: cached };
 
       let result;
@@ -49,14 +49,14 @@ export const nutritionBarcodeResolveHandler = new Elysia()
         return { error: "barcode_not_found" };
       }
 
-      // Idempotent upsert on the `barcode` UNIQUE rather than a bare INSERT:
-      // two concurrent cache-misses for the same code (multiple users / a
-      // fan-out) would both INSERT and the second would hit a 23505 → 500.
+      // Idempotent upsert on the partial barcode unique rather than a bare
+      // INSERT: two concurrent cache-misses for the same code (multiple users /
+      // a fan-out) would both INSERT and the second would hit a 23505 → 500.
       // upsert-on-conflict + re-read is race-safe. Review fix (PR #124).
       await ctx.FoodRepository.upsertManyFromOff([
         { ...result.food, source: "openfoodfacts" },
       ]);
-      const food = await ctx.FoodRepository.getByBarcode(code);
+      const food = await ctx.FoodRepository.getByBarcode(code, userId);
       if (!food) {
         ctx.set.status = 503;
         return { error: "food_db_unavailable" };

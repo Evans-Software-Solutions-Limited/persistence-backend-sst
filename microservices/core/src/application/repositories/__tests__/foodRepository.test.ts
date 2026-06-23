@@ -66,19 +66,30 @@ describe("FoodRepository", () => {
     });
   });
 
+  // getByBarcode scopes (or: own / shareable) + orders before limit.
+  const barcodeChain = (resolved: unknown) => ({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(resolved),
+        }),
+      }),
+    }),
+  });
+
   describe("getByBarcode", () => {
     it("returns the matching food", async () => {
       (getDb as any).mockReturnValue({
-        select: vi.fn().mockReturnValue(selectLimitChain([rawFood])),
+        select: vi.fn().mockReturnValue(barcodeChain([rawFood])),
       });
-      const out = await new FoodRepository().getByBarcode("123");
+      const out = await new FoodRepository().getByBarcode("123", "u1");
       expect(out?.barcode).toBe("123");
     });
     it("returns null on a cache miss", async () => {
       (getDb as any).mockReturnValue({
-        select: vi.fn().mockReturnValue(selectLimitChain([])),
+        select: vi.fn().mockReturnValue(barcodeChain([])),
       });
-      expect(await new FoodRepository().getByBarcode("999")).toBeNull();
+      expect(await new FoodRepository().getByBarcode("999", "u1")).toBeNull();
     });
   });
 
@@ -122,7 +133,7 @@ describe("FoodRepository", () => {
     it("returns [] without querying for an empty id list", async () => {
       const select = vi.fn();
       (getDb as any).mockReturnValue({ select });
-      expect(await new FoodRepository().getByIds([])).toEqual([]);
+      expect(await new FoodRepository().getByIds([], "u1")).toEqual([]);
       expect(select).not.toHaveBeenCalled();
     });
     it("maps matched rows", async () => {
@@ -131,7 +142,7 @@ describe("FoodRepository", () => {
           from: () => ({ where: () => Promise.resolve([rawFood]) }),
         }),
       });
-      const out = await new FoodRepository().getByIds(["f1"]);
+      const out = await new FoodRepository().getByIds(["f1"], "u1");
       expect(out[0].kcal).toBe(150);
     });
   });
@@ -169,7 +180,11 @@ describe("FoodRepository", () => {
       expect(passed[0].source).toBe("openfoodfacts");
       expect(passed[0].createdBy).toBeNull();
       expect(passed[0].kcal).toBe("379");
-      expect(onConflictDoUpdate).toHaveBeenCalled();
+      // Conflict-targets the PARTIAL index so it can't overwrite user rows.
+      const conflict = onConflictDoUpdate.mock.calls[0][0];
+      expect(conflict.targetWhere).toBeDefined();
+      expect(conflict.set.createdBy).toBeUndefined();
+      expect(conflict.set.source).toBeUndefined();
     });
   });
 });

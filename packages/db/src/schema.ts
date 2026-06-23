@@ -1281,7 +1281,9 @@ export const foods = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     brand: text("brand"),
-    barcode: text("barcode").unique(),
+    // Not globally unique — the OFF/curated catalogue is deduped by the
+    // partial unique index below; private user foods may reuse a barcode.
+    barcode: text("barcode"),
     kcal: numeric("kcal").notNull(),
     proteinG: numeric("protein_g").notNull(),
     carbsG: numeric("carbs_g").notNull(),
@@ -1293,7 +1295,16 @@ export const foods = pgTable(
     createdBy: uuid("created_by").references(() => profiles.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
-  (t) => [index("foods_source_idx").on(t.source)],
+  (t) => [
+    index("foods_source_idx").on(t.source),
+    // Dedup the shareable (OFF/curated) catalogue by barcode without blocking
+    // private user foods that reuse one. Seed/delta upserts conflict-target
+    // this partial index (PR #124 review — High).
+    uniqueIndex("foods_barcode_shareable_uq")
+      .on(t.barcode)
+      .where(sql`source <> 'user' AND barcode IS NOT NULL`),
+    index("foods_barcode_idx").on(t.barcode),
+  ],
 );
 
 export const recipes = pgTable(
@@ -1360,8 +1371,12 @@ export const mealItems = pgTable(
     mealId: uuid("meal_id")
       .notNull()
       .references(() => meals.id, { onDelete: "cascade" }),
-    foodId: uuid("food_id").references(() => foods.id),
-    recipeId: uuid("recipe_id").references(() => recipes.id),
+    foodId: uuid("food_id").references(() => foods.id, {
+      onDelete: "set null",
+    }),
+    recipeId: uuid("recipe_id").references(() => recipes.id, {
+      onDelete: "set null",
+    }),
     servings: numeric("servings").notNull(),
     sortOrder: integer("sort_order").notNull(),
   },
@@ -1375,9 +1390,18 @@ export const nutritionEntries = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => profiles.id),
-    foodId: uuid("food_id").references(() => foods.id), // nullable one-off
-    recipeId: uuid("recipe_id").references(() => recipes.id),
-    mealId: uuid("meal_id").references(() => meals.id),
+    // ON DELETE SET NULL — macros are denormalised below, so deleting the
+    // source food/recipe/meal preserves logged history (and never 500s the
+    // delete via FK RESTRICT). Review fix (PR #124).
+    foodId: uuid("food_id").references(() => foods.id, {
+      onDelete: "set null",
+    }), // nullable one-off
+    recipeId: uuid("recipe_id").references(() => recipes.id, {
+      onDelete: "set null",
+    }),
+    mealId: uuid("meal_id").references(() => meals.id, {
+      onDelete: "set null",
+    }),
     mealSlot: text("meal_slot").notNull(),
     servings: numeric("servings").notNull(),
     kcal: numeric("kcal").notNull(), // denormalised for fast reads

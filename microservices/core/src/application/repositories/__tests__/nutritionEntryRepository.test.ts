@@ -58,8 +58,37 @@ function makeDeleteChain(resolved: unknown) {
   };
 }
 
+function makeGetByIdChain(resolved: unknown) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(resolved),
+      }),
+    }),
+  };
+}
+
 describe("NutritionEntryRepository", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  describe("getById", () => {
+    it("returns the parsed entry when owned", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeGetByIdChain([rawRow()])),
+      });
+      const out = await new NutritionEntryRepository().getById("e1", "u1");
+      expect(out?.kcal).toBe(300);
+      expect(out?.foodId).toBe("f1");
+    });
+    it("returns null when missing / not owned", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeGetByIdChain([])),
+      });
+      expect(
+        await new NutritionEntryRepository().getById("e1", "other"),
+      ).toBeNull();
+    });
+  });
 
   describe("listByDate", () => {
     it("returns parsed DTOs (numeric columns become numbers, loggedAt ISO)", async () => {

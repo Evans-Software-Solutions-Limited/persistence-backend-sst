@@ -73,7 +73,7 @@ describe("recipesCreateHandler", () => {
       }),
     );
     expect(res.status).toBe(201);
-    expect(foodMocks.getByIds).toHaveBeenCalledWith(["f1"]);
+    expect(foodMocks.getByIds).toHaveBeenCalledWith(["f1"], "test-user-id");
     expect(recipeMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({ name: "Bowl", source: "manual" }),

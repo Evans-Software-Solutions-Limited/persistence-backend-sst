@@ -65,27 +65,47 @@ export class FoodRepository {
     return result[0] ? toFoodDTO(result[0]) : null;
   }
 
-  /** Batch fetch by id — used to materialise recipe/meal macros. */
-  async getByIds(ids: string[]): Promise<FoodDTO[]> {
+  /**
+   * Batch fetch by id, scoped like `search()`: shareable (OFF/curated) rows OR
+   * the caller's own custom foods. Without the scope another user's private
+   * `source='user'` food would leak into a recipe/meal's materialised totals
+   * if its id were supplied in the request body. Review fix (PR #124).
+   */
+  async getByIds(ids: string[], userId: string): Promise<FoodDTO[]> {
     if (ids.length === 0) return [];
     const db = getDb();
-    const rows = await db.select().from(foods).where(inArray(foods.id, ids));
+    const rows = await db
+      .select()
+      .from(foods)
+      .where(
+        and(
+          inArray(foods.id, ids),
+          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+        ),
+      );
     return rows.map(toFoodDTO);
   }
 
   /**
-   * Resolve a barcode to a SHAREABLE food only. `source='user'` rows are
-   * private custom foods (a user can attach any barcode to a homemade item), so
-   * they must never surface to another user via a barcode scan — restrict to
-   * OFF-derived / curated rows. Review fix (PR #124). The live OFF fallback in
-   * the resolve handler still covers a genuine miss.
+   * Resolve a barcode to a food the caller may see: a shareable (OFF/curated)
+   * row OR the caller's OWN custom food with that barcode. Another user's
+   * private `source='user'` row never surfaces (leak fix), while the owner's
+   * own barcoded custom food still resolves on re-scan. When both exist, the
+   * caller's own row wins. Review fix (PR #124). Live OFF fallback covers a miss.
    */
-  async getByBarcode(barcode: string): Promise<FoodDTO | null> {
+  async getByBarcode(barcode: string, userId: string): Promise<FoodDTO | null> {
     const db = getDb();
     const result = await db
       .select()
       .from(foods)
-      .where(and(eq(foods.barcode, barcode), ne(foods.source, "user")))
+      .where(
+        and(
+          eq(foods.barcode, barcode),
+          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+        ),
+      )
+      // Prefer the caller's own custom row over the shared catalogue entry.
+      .orderBy(sql`(${foods.createdBy} = ${userId}) DESC`)
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
   }
@@ -158,8 +178,14 @@ export class FoodRepository {
           createdBy: null,
         })),
       )
+      // Conflict-target the PARTIAL unique index (barcode WHERE source<>'user'),
+      // so this only ever dedups/updates OFF-catalogue rows and can NEVER
+      // overwrite a private user food that happens to share a barcode (the High
+      // finding — a user's homemade row was being silently rewritten by the OFF
+      // delta cron / a concurrent resolve). PR #124 review.
       .onConflictDoUpdate({
         target: foods.barcode,
+        targetWhere: sql`source <> 'user' AND barcode IS NOT NULL`,
         set: {
           name: sql`excluded.name`,
           brand: sql`excluded.brand`,

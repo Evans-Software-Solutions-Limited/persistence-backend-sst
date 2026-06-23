@@ -32,7 +32,7 @@ export const recipesCreateHandler = new Elysia()
           ingredients.map((i) => i.foodId).filter((id): id is string => !!id),
         ),
       ];
-      const foods = await ctx.FoodRepository.getByIds(foodIds);
+      const foods = await ctx.FoodRepository.getByIds(foodIds, userId);
       const foodsById = new Map<string, FoodDTO>(foods.map((f) => [f.id, f]));
       const totals = roundTotals(materialiseTotals(ingredients, foodsById));
 
