@@ -33,10 +33,23 @@ import { fail, ok, type Result } from "@/shared/errors";
  *   tile graph (legacy used the per-day aggregation for the two-week
  *   trend).
  */
+/**
+ * v14 `StatisticsQueryOptions.filter` is a `FilterForSamples` — the date
+ * range lives under a nested `date` predicate, NOT as top-level
+ * `startDate`/`endDate` (that was the v12 shape). Passing the v12 shape
+ * leaves the query with no date predicate, so HealthKit returns the
+ * `cumulativeSum` over ALL time — i.e. lifetime steps (~millions) instead
+ * of today's. This loose type encodes the v14 shape so the call sites
+ * can't silently regress to v12. (Brad spotted ~18.5M steps on the ring.)
+ */
+type DateFilterOptions = {
+  filter?: { date?: { startDate: Date; endDate: Date } };
+};
+
 type StatisticsQuery = (
   identifier: string,
   statistics: readonly string[],
-  options?: { filter?: { startDate: Date; endDate: Date } },
+  options?: DateFilterOptions,
 ) => Promise<{ sumQuantity?: { quantity?: number } } | null | undefined>;
 
 type StatisticsCollectionQuery = (
@@ -44,7 +57,7 @@ type StatisticsCollectionQuery = (
   statistics: readonly string[],
   anchorDate: Date,
   intervalComponents: { day?: number; hour?: number },
-  options?: { filter?: { startDate: Date; endDate: Date } },
+  options?: DateFilterOptions,
 ) => Promise<
   readonly {
     startDate?: Date | string | number;
@@ -251,7 +264,9 @@ export class ExpoHealthKitAdapter implements HealthPort {
       const stats = await this.healthkit.queryStatisticsForQuantity(
         IDENTIFIER.STEPS,
         ["cumulativeSum"],
-        { filter: { startDate: startOfToday(), endDate: new Date() } },
+        {
+          filter: { date: { startDate: startOfToday(), endDate: new Date() } },
+        },
       );
       const value = stats?.sumQuantity?.quantity ?? 0;
       return ok(Math.round(value));
@@ -286,7 +301,7 @@ export class ExpoHealthKitAdapter implements HealthPort {
         ["cumulativeSum"],
         start,
         { day: 1 },
-        { filter: { startDate: start, endDate: end } },
+        { filter: { date: { startDate: start, endDate: end } } },
       );
 
       const out: HealthDailySteps[] = [];
@@ -317,7 +332,9 @@ export class ExpoHealthKitAdapter implements HealthPort {
       const stats = await this.healthkit.queryStatisticsForQuantity(
         IDENTIFIER.ACTIVE_ENERGY,
         ["cumulativeSum"],
-        { filter: { startDate: startOfToday(), endDate: new Date() } },
+        {
+          filter: { date: { startDate: startOfToday(), endDate: new Date() } },
+        },
       );
       const value = stats?.sumQuantity?.quantity ?? 0;
       return ok(Math.round(value));
@@ -335,7 +352,9 @@ export class ExpoHealthKitAdapter implements HealthPort {
       const stats = await this.healthkit.queryStatisticsForQuantity(
         IDENTIFIER.BASAL_ENERGY,
         ["cumulativeSum"],
-        { filter: { startDate: startOfToday(), endDate: new Date() } },
+        {
+          filter: { date: { startDate: startOfToday(), endDate: new Date() } },
+        },
       );
       const value = stats?.sumQuantity?.quantity ?? 0;
       return ok(Math.round(value));
@@ -353,7 +372,9 @@ export class ExpoHealthKitAdapter implements HealthPort {
       const stats = await this.healthkit.queryStatisticsForQuantity(
         IDENTIFIER.STAND_TIME,
         ["cumulativeSum"],
-        { filter: { startDate: startOfToday(), endDate: new Date() } },
+        {
+          filter: { date: { startDate: startOfToday(), endDate: new Date() } },
+        },
       );
       // HKQuantityTypeIdentifierAppleStandTime is stored in minutes;
       // the underlying library normalises the cumulativeSum to the
