@@ -111,7 +111,9 @@ export const habitConfigHandler = new Elysia()
         return { error: "Unknown habit category" };
       }
       // Client can't retune a habit their coach owns (cross-cuts § 2.2).
-      if (await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)) {
+      if (
+        await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)
+      ) {
         ctx.set.status = 403;
         return { error: "This habit is managed by your coach" };
       }
@@ -153,7 +155,9 @@ export const habitConfigHandler = new Elysia()
         ctx.set.status = 404;
         return { error: "Unknown habit category" };
       }
-      if (await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)) {
+      if (
+        await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)
+      ) {
         ctx.set.status = 403;
         return { error: "This habit is managed by your coach" };
       }

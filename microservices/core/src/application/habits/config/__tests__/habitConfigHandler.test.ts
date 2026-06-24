@@ -66,7 +66,9 @@ describe("GET /users/me/habits/config", () => {
       req("/users/me/habits/config", "GET"),
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { category: string; enabled: boolean }[] };
+    const body = (await res.json()) as {
+      data: { category: string; enabled: boolean }[];
+    };
     expect(body.data.map((d) => d.category)).toEqual([
       "water",
       "gym",
