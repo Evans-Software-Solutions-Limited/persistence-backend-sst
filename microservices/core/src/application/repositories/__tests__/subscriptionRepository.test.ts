@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -518,12 +519,14 @@ describe("SubscriptionRepository", () => {
       expect(Date.parse(result!.startsAt)).not.toBeNaN();
     });
 
-    it("treats a lapsed (cancelled-most-recent) trainer as free — no stale entitlement", async () => {
-      // The LIVE_SUBSCRIPTION_STATUSES filter on the sub-join means a trainer
-      // whose most-recent row is `cancelled`/`expired` matches NO live row, so
-      // the join returns empty and we synthesise free. Without the filter this
-      // would return the stale trainer tier (isTrainerTier: true) and keep
-      // coach mode enabled on mobile after the subscription lapsed.
+    it("treats a lapsed (cancelled + expired) trainer as free — no stale entitlement", async () => {
+      // The liveSubscriptionFilter on the sub-join means a trainer whose
+      // most-recent row is cancelled-AND-past-expiry (or expired-trialing)
+      // matches NO live row, so the join returns empty and we synthesise free.
+      // (A cancelled row still inside its grace window WOULD match — that's the
+      // cancelled-grace branch, covered by the liveSubscriptionFilter SQL
+      // tests.) Without the filter this would return the stale trainer tier
+      // (isTrainerTier: true) and keep coach mode enabled after the lapse.
       const mockDb = {
         select: makeSequentialSelectMock([
           // profile slice — note the user's role is still personal_trainer
@@ -832,6 +835,45 @@ describe("SubscriptionRepository", () => {
       expect(result?.role).toBe("personal_trainer");
       expect(result?.isTrainerTier).toBe(true);
       expect(result?.isEligibleForTrainerTrial).toBe(false);
+    });
+  });
+
+  // The mocked getDb chain ignores the WHERE, so behavioural tests above can't
+  // prove the resolver excludes expired rows. Render the predicate's SQL to
+  // guard it directly (cf. the PgDialect pattern in streakRepository.test).
+  describe("liveSubscriptionFilter", () => {
+    it("requires a live payment status AND a non-expired (or null) expiry", async () => {
+      const { liveSubscriptionFilter } =
+        await import("../subscriptionRepository");
+      const { sql, params } = new PgDialect().sqlToQuery(
+        liveSubscriptionFilter() as never,
+      );
+      const normalised = sql.toLowerCase();
+      // Live-status set is still applied…
+      expect(normalised).toContain("payment_status");
+      expect(params).toEqual(
+        expect.arrayContaining(["active", "pending", "trialing", "past_due"]),
+      );
+      // …AND the expiry guard mirrors the DB get_user_subscription() filter,
+      // so an expired-but-still-'trialing' row no longer reads as live.
+      expect(normalised).toContain("expires_at");
+      expect(normalised).toContain("is null");
+      expect(normalised).toContain("now()");
+    });
+
+    it("includes cancelled subscriptions inside their grace window (not-yet-expired)", async () => {
+      const { liveSubscriptionFilter } =
+        await import("../subscriptionRepository");
+      const { sql, params } = new PgDialect().sqlToQuery(
+        liveSubscriptionFilter() as never,
+      );
+      // The cancelled-grace branch: a `cancelled` row with a future expiry is
+      // still live (mirrors the DB's cancelled-but-not-yet-expired clause), so
+      // a user keeps their tier until the period they paid for lapses.
+      expect(params).toContain("cancelled");
+      // `is not null` guards the grace branch — a cancelled row with no expiry
+      // gets no open-ended grace.
+      expect(sql.toLowerCase()).toContain("is not null");
     });
   });
 });

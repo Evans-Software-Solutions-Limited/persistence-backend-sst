@@ -612,6 +612,38 @@ describe("ProfileRepository.getProfilePageData", () => {
     );
   });
 
+  it("does not report a lapsed trainer (expired trialing) as a trainer tier", async () => {
+    // Regression: a trainer-tier row stuck in `trialing` past its expiry is
+    // free-tier by effect, so isTrainerTier must follow. The contradictory
+    // `isFreeTier: true, isTrainerTier: true` left coach mode enabled after the
+    // subscription lapsed (staging: a 4-month-expired individual_trainer trial).
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      subscription: [
+        {
+          tierName: "individual_trainer",
+          paymentStatus: "trialing",
+          expiresAt: new Date("2026-02-15T00:00:00Z"),
+          cancelledAt: null,
+          isTrainerTier: true,
+          tierDbName: "individual_trainer",
+          tierDisplayName: "Individual Trainer",
+          tierFeatures: {},
+          workoutLimit: null,
+        },
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.subscription.isFreeTier).toBe(true);
+    expect(result?.subscription.isTrainerTier).toBe(false);
+  });
+
   it("falls back to title-cased tier_name when display_name is null on the joined row", async () => {
     const mockDb = makeAggregateDb({
       profile: [makeProfileRow()],

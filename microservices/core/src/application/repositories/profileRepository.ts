@@ -420,7 +420,11 @@ export class ProfileRepository {
       tierDisplayName: row.tierDisplayName ?? formatTierDisplayName(tierName),
       status: normaliseSubscriptionStatus(row.paymentStatus ?? null),
       isFreeTier,
-      isTrainerTier: row.isTrainerTier === true,
+      // Gate on the EFFECTIVE tier: a lapsed trainer (cancelled/trialing past
+      // expiry) is on free-tier semantics, so it must not still report as a
+      // trainer — else the contradictory `isFreeTier: true, isTrainerTier: true`
+      // leaves coach mode enabled after the subscription lapsed.
+      isTrainerTier: !isFreeTier && row.isTrainerTier === true,
       expiresAt: toOptionalIsoString(row.expiresAt),
       cancelledAt: toOptionalIsoString(row.cancelledAt),
       workoutLimit: row.workoutLimit ?? null,
