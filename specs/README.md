@@ -6,22 +6,23 @@ Structured feature specifications for the Persistence V2 build (mobile + backend
 
 ## Spec index
 
-| Spec | Feature                                                  | Current state                          | Parent milestone(s) |
-| ---- | -------------------------------------------------------- | -------------------------------------- | ------------------- |
-| 00   | [Guardrails](./00-guardrails/)                           | Complete (39/40)                       | —                   |
-| 01   | [Design system](./01-design-system/)                     | Complete (32/35)                       | M1 polish as needed |
-| 02   | [Auth flow](./02-auth-flow/)                             | Complete (~44/46)                      | —                   |
-| 03   | [Exercise library](./03-exercise-library/)               | Phases 1–4 shipped; 5–8 deferred       | M0, M5              |
-| 04   | [Workout management](./04-workout-management/)           | Not started on mobile; backend present | M2                  |
-| 05   | [Active session](./05-active-session/)                   | Not started on mobile; backend present | M3                  |
-| 06   | [Progress & goals](./06-progress-goals/)                 | Not started on mobile; backend present | M1 (dashboard), M4  |
-| 07   | [Health integration](./07-health-integration/)           | Stub adapter only                      | M1                  |
-| 08   | [Profile & settings](./08-profile-settings/)             | Minimal Profile shell only             | M6                  |
-| 09   | [Notifications & social](./09-notifications-social/)     | Stub adapter; no backend               | M7                  |
-| 10   | [Trainer features](./10-trainer-features/)               | Not started                            | M8                  |
-| 11   | [Payments & subscriptions](./11-payments-subscriptions/) | Stub adapter; no backend               | M10                 |
-| 12   | [Production readiness](./12-production-readiness/)       | Icons/splash only                      | M11                 |
-| 13   | [Nutrition tracking](./13-nutrition-tracking/)           | Stub — requirements pass pending       | M9                  |
+| Spec | Feature                                                  | Current state                                                    | Parent milestone(s) |
+| ---- | -------------------------------------------------------- | ---------------------------------------------------------------- | ------------------- |
+| 00   | [Guardrails](./00-guardrails/)                           | Complete (39/40)                                                 | —                   |
+| 01   | [Design system](./01-design-system/)                     | Complete (32/35)                                                 | M1 polish as needed |
+| 02   | [Auth flow](./02-auth-flow/)                             | Complete (~44/46)                                                | —                   |
+| 03   | [Exercise library](./03-exercise-library/)               | Phases 1–4 shipped; 5–8 deferred                                 | M0, M5              |
+| 04   | [Workout management](./04-workout-management/)           | Not started on mobile; backend present                           | M2                  |
+| 05   | [Active session](./05-active-session/)                   | Not started on mobile; backend present                           | M3                  |
+| 06   | [Progress & goals](./06-progress-goals/)                 | Not started on mobile; backend present                           | M1 (dashboard), M4  |
+| 07   | [Health integration](./07-health-integration/)           | Stub adapter only                                                | M1                  |
+| 08   | [Profile & settings](./08-profile-settings/)             | Minimal Profile shell only                                       | M6                  |
+| 09   | [Notifications & social](./09-notifications-social/)     | Stub adapter; no backend                                         | M7                  |
+| 10   | [Trainer features](./10-trainer-features/)               | Not started                                                      | M8                  |
+| 11   | [Payments & subscriptions](./11-payments-subscriptions/) | Stub adapter; no backend                                         | M10                 |
+| 12   | [Production readiness](./12-production-readiness/)       | Icons/splash only                                                | M11                 |
+| 13   | [Nutrition tracking](./13-nutrition-tracking/)           | Stub — requirements pass pending                                 | M9                  |
+| 18   | [Habit setup](./18-habit-setup/)                         | Spec reconciled 2026-06-23 to hi-fi prototype; awaiting sign-off | TBD (post-M4)       |
 
 ## How to use these specs
 

@@ -117,3 +117,18 @@ The `StubHealthAdapter` from 00-guardrails remains — the Android-stub adapter 
 - **Heart-rate tile on dashboard** — read is implemented (`getHeartRateLatest`) but no M1 UI surfaces it; the data is available for M4 Progress.
 - **Permission-request screen** — Phase 4 scope. M1 renders the "Connect Health" CTA but the destination is a placeholder.
 - **Active calories / basal energy / stand time split** — legacy split these three ways (`activeEnergy`, `moveEnergy`, `standTime`). M1 surfaces `activeEnergy` only via `getActiveCaloriesToday`; other two tiles ship with `0` placeholders in the MyProgress section. M4 Progress revisits.
+
+---
+
+## Revised 2026-06-23 — two-way sync for Habit Setup (cross-cut with `18-habit-setup`)
+
+`18-habit-setup` needs Apple Health data to flow **both ways** with the **DB as the source of truth** (so trainers can read it server-side). The device acts as a bridge; the backend never touches HealthKit. Deltas to this spec's port/adapter:
+
+- **New `HealthPort` methods:** `getDietaryWaterToday()`, `writeDietaryWater(litres, date)`, `getSleepLastNight()` (hours). Steps + body weight read/write already exist here.
+- **Permission scope:** add `HKQuantityTypeIdentifierDietaryWater` (read **+ write**) and `HKCategoryTypeIdentifierSleepAnalysis` (**read**) to the `ExpoHealthKitAdapter` scopes; `HKQuantityTypeIdentifierDietaryEnergyConsumed` (read+write) is added by Nutrition at M9. Requested through the existing permission flow.
+- **Direction:** Water = read+write, Sleep = read-only (Watch/trackers write it), Steps = read, Weight = read+write (the M6 `writeBodyWeight`).
+- **Echo de-dup:** the bridge source-tags the app's own HK writes and excludes them when reading HK back, so a value the app wrote isn't re-imported and double-counted.
+- **Persistence (owned by `18`/`06`/`13`-nutrition):** Water/Sleep/Steps → `habit_completions.value`; Weight → `body_measurements`; Calories → `nutrition_entries` (M9). The DB value is canonical; HealthKit is a mirror.
+- **Android Health Connect** — still deferred (later platform pass).
+
+Full design + sequencing: `specs/18-habit-setup/design.md § 7`.

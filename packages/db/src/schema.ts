@@ -172,6 +172,22 @@ export const streakTypeEnum = pgEnum("streak_type_enum", [
   "nutrition_streak", // daily (M9-gated)
 ]);
 
+// 18-habit-setup — habit categories + completion rules. cross-cuts § 3.7.
+// Migration: 20260623120000_habit_setup_schema.sql.
+export const habitCategoryEnum = pgEnum("habit_category_enum", [
+  "water",
+  "gym",
+  "steps",
+  "sleep",
+  "calories",
+]);
+
+export const habitCompletionRuleEnum = pgEnum("habit_completion_rule_enum", [
+  "count", // ≥ target qualifying events in the period (Gym: weekly sessions)
+  "value_gte", // ≥ days_per_week days whose value ≥ target (Water/Steps/Sleep)
+  "within_tolerance", // ≥ days_per_week days within target ± tolerance% (Calories)
+]);
+
 export const noteTypeEnum = pgEnum("note_type", [
   "progress",
   "injury",
@@ -820,6 +836,13 @@ export const userStreaks = pgTable(
     uniqueIndex("user_streaks_user_source_goal_uq")
       .on(t.userId, t.sourceGoalId)
       .where(sql`${t.sourceGoalId} IS NOT NULL`),
+    // 18-habit-setup: one collection habit streak per user (source_goal_id
+    // NULL is exempt from the index above, so it needs its own guard).
+    uniqueIndex("user_streaks_collection_habit_uq")
+      .on(t.userId)
+      .where(
+        sql`${t.streakType} = 'habit_streak' AND ${t.sourceGoalId} IS NULL`,
+      ),
     index("user_streaks_user_status").on(t.userId, t.status),
     check(
       "user_streaks_period_chk",
@@ -861,6 +884,79 @@ export const habitCompletions = pgTable(
       t.goalId,
       sql`${t.completedAt} DESC`,
     ),
+  ],
+);
+
+// ─── Habit Setup (18-habit-setup) ───────────────────────────────────────────
+// cross-cuts § 3.7. Migration 20260623120000_habit_setup_schema.sql.
+
+// One row per enabled habit (1:1 with its user_goals row). period +
+// completion_rule are server-derived from the category. days_per_week is the
+// weekly slack (NULL for Gym). effective_from gates the first week the habit
+// counts toward the collection streak; pending_config/pending_from carry a
+// deferred edit promoted at the weekly rollover (anti-gaming — an edit never
+// changes the in-progress week's bar).
+export const habitConfigs = pgTable(
+  "habit_configs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    goalId: uuid("goal_id")
+      .notNull()
+      .references(() => userGoals.id, { onDelete: "cascade" }),
+    category: habitCategoryEnum("category").notNull(),
+    targetValue: numeric("target_value").notNull(),
+    unit: text("unit").notNull(),
+    period: text("period").notNull(), // 'daily' | 'weekly'
+    completionRule: habitCompletionRuleEnum("completion_rule").notNull(),
+    daysPerWeek: integer("days_per_week"), // 1..7 for daily habits; NULL for Gym
+    tolerancePct: numeric("tolerance_pct"), // calories leniency; NULL otherwise
+    effectiveFrom: date("effective_from").notNull(),
+    pendingConfig: jsonb("pending_config").$type<Record<string, unknown>>(),
+    pendingFrom: date("pending_from"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("habit_configs_goal_uq").on(t.goalId),
+    uniqueIndex("habit_configs_user_cat_uq").on(t.userId, t.category),
+    index("habit_configs_user_idx").on(t.userId),
+    check("habit_configs_period_chk", sql`${t.period} IN ('daily','weekly')`),
+    check(
+      "habit_configs_dpw_chk",
+      sql`${t.daysPerWeek} IS NULL OR ${t.daysPerWeek} BETWEEN 1 AND 7`,
+    ),
+    check("habit_configs_target_chk", sql`${t.targetValue} > 0`),
+  ],
+);
+
+// Planned pause for the habit collection. goal_id NULL = all habits (default;
+// scheduled from Home). ≥24h-advance + end-early are handler-enforced.
+export const streakHolidays = pgTable(
+  "streak_holidays",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    goalId: uuid("goal_id").references(() => userGoals.id, {
+      onDelete: "cascade",
+    }),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("streak_holidays_user_idx").on(t.userId, t.startDate),
+    check("streak_holidays_range_chk", sql`${t.endDate} >= ${t.startDate}`),
   ],
 );
 
@@ -1231,6 +1327,12 @@ export type NewUserStreak = typeof userStreaks.$inferInsert;
 
 export type HabitCompletion = typeof habitCompletions.$inferSelect;
 export type NewHabitCompletion = typeof habitCompletions.$inferInsert;
+
+export type HabitConfig = typeof habitConfigs.$inferSelect;
+export type NewHabitConfig = typeof habitConfigs.$inferInsert;
+
+export type StreakHoliday = typeof streakHolidays.$inferSelect;
+export type NewStreakHoliday = typeof streakHolidays.$inferInsert;
 
 export type WeeklyVolumePerUser = typeof weeklyVolumePerUser.$inferSelect;
 export type NewWeeklyVolumePerUser = typeof weeklyVolumePerUser.$inferInsert;
