@@ -33,6 +33,13 @@ export interface HabitCategoryMeta {
   daysPerWeek: { min: number; max: number; default: number } | null;
   /** Calorie leniency band (± %); `null` for every other category. */
   tolerancePct: NumericBound | null;
+  /**
+   * When true the target is OWNED ELSEWHERE and read-only here — a
+   * client-supplied target is ignored and the canonical value substituted.
+   * Only Calories (owned by Nutrition Fuel-Targets, M9; AC 2.4 / locked
+   * decision 9). The default stands in until M9 wires the real value through.
+   */
+  targetReadOnly?: boolean;
 }
 
 /** The five fixed habit categories. Order matches the prototype's HABIT_ORDER. */
@@ -81,6 +88,7 @@ export const HABIT_CATEGORIES: Record<HabitCategory, HabitCategoryMeta> = {
     target: { min: 500, max: 20000, default: 2000 },
     daysPerWeek: { min: 1, max: 7, default: 6 },
     tolerancePct: { min: 0, max: 50, default: 10 },
+    targetReadOnly: true,
   },
 };
 
@@ -138,7 +146,14 @@ export function validateHabitConfigInput(
 ): ValidationResult {
   const meta = HABIT_CATEGORIES[category];
 
-  if (!inRange(input.targetValue, meta.target)) {
+  // A read-only target (Calories) is owned by Nutrition — ignore whatever the
+  // client sent and substitute the canonical value (the default until M9 wires
+  // the Fuel-Targets value through), so habit-setup can't write it (AC 2.4).
+  const targetValue = meta.targetReadOnly
+    ? meta.target.default
+    : input.targetValue;
+
+  if (!inRange(targetValue, meta.target)) {
     return {
       ok: false,
       error: `targetValue must be between ${meta.target.min} and ${meta.target.max}`,
@@ -176,7 +191,7 @@ export function validateHabitConfigInput(
       period: meta.period,
       completionRule: meta.completionRule,
       unit: meta.unit,
-      targetValue: input.targetValue,
+      targetValue,
       daysPerWeek,
       tolerancePct,
     },

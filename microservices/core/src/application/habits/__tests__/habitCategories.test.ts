@@ -154,6 +154,34 @@ describe("validateHabitConfigInput", () => {
     expect(r.error).toContain("tolerancePct");
   });
 
+  it("ignores a client-supplied Calories target (read-only, owned by Nutrition)", () => {
+    const r = validateHabitConfigInput("calories", {
+      targetValue: 5000, // client tries to set its calorie goal here
+      tolerancePct: 12,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("expected ok");
+    // Forced to the canonical (Nutrition-owned) value, NOT the client's 5000.
+    expect(r.config.targetValue).toBe(HABIT_CATEGORIES.calories.target.default);
+    expect(r.config.tolerancePct).toBe(12);
+  });
+
+  it("an out-of-bounds Calories target is harmless (ignored, not rejected)", () => {
+    // 999999 would be out of range, but read-only means it's never read.
+    const r = validateHabitConfigInput("calories", { targetValue: 999999 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.config.targetValue).toBe(2000);
+  });
+
+  it("marks only the Calories target read-only", () => {
+    for (const c of HABIT_CATEGORY_ORDER) {
+      expect(Boolean(HABIT_CATEGORIES[c].targetReadOnly)).toBe(
+        c === "calories",
+      );
+    }
+  });
+
   it("accepts the documented bounds + defaults for every category", () => {
     for (const c of HABIT_CATEGORY_ORDER) {
       const meta = HABIT_CATEGORIES[c];
