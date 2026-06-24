@@ -189,6 +189,61 @@ describe("HabitConfigRepository.upsert", () => {
     expect(liveSet).toBeTruthy();
   });
 
+  it("preserves coach attribution on a SELF re-enable (no null-ing)", async () => {
+    const { db, rec } = makeDb({
+      selects: [
+        [{ id: "gt-water" }],
+        [{ tz: TZ }],
+        [{ id: "g1", isActive: false, assignedByUserId: "coach1" }], // was coach-set
+        [cfgRow()],
+        [{ id: "s1" }],
+      ],
+      updates: [
+        [{ id: "g1", isActive: true, assignedByUserId: "coach1" }],
+        [cfgRow()],
+      ],
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+    // Self write (no assignedByUserId) — must NOT touch the column.
+    await new HabitConfigRepository().upsert("u1", "water", validWater(), {
+      now: NOW,
+    });
+    const goalSet = rec.find(
+      (r) => r.op === "set" && "isActive" in (r.arg as object),
+    );
+    expect(goalSet).toBeTruthy();
+    expect("assignedByUserId" in (goalSet!.arg as object)).toBe(false);
+  });
+
+  it("stamps coach attribution on a COACH re-enable", async () => {
+    const { db, rec } = makeDb({
+      selects: [
+        [{ id: "gt-water" }],
+        [{ tz: TZ }],
+        [{ id: "g1", isActive: false, assignedByUserId: "coach1" }],
+        [cfgRow()],
+        [{ id: "s1" }],
+      ],
+      updates: [
+        [{ id: "g1", isActive: true, assignedByUserId: "coach2" }],
+        [cfgRow()],
+      ],
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+    await new HabitConfigRepository().upsert("u1", "water", validWater(), {
+      now: NOW,
+      assignedByUserId: "coach2",
+    });
+    const goalSet = rec.find(
+      (r) => r.op === "set" && "isActive" in (r.arg as object),
+    );
+    expect(
+      (goalSet!.arg as { assignedByUserId: string }).assignedByUserId,
+    ).toBe("coach2");
+  });
+
   it("edits an active habit by QUEUEING a pending change (live untouched)", async () => {
     const { db, rec } = makeDb({
       selects: [

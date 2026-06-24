@@ -81,7 +81,18 @@ CREATE TABLE IF NOT EXISTS streak_holidays (
 
 CREATE INDEX IF NOT EXISTS streak_holidays_user_idx ON streak_holidays (user_id, start_date);
 
--- ─── 4. Seed the five fixed habit goal_types ─────────────────────────────────
+-- ─── 4. Collection-streak uniqueness ─────────────────────────────────────────
+-- The collection habit streak is one row per user (streak_type='habit_streak',
+-- source_goal_id IS NULL). M4's `user_streaks_user_source_goal_uq` is partial on
+-- `source_goal_id IS NOT NULL`, so it does NOT cover this row — without a guard,
+-- concurrent first-enables (a "set up all habits" screen firing several PUTs at
+-- once) each pass the SELECT and INSERT a duplicate. This partial unique index
+-- backs the `ON CONFLICT DO NOTHING` seed in HabitConfigRepository.
+CREATE UNIQUE INDEX IF NOT EXISTS user_streaks_collection_habit_uq
+  ON user_streaks (user_id)
+  WHERE streak_type = 'habit_streak' AND source_goal_id IS NULL;
+
+-- ─── 5. Seed the five fixed habit goal_types ─────────────────────────────────
 -- Stable slugs; handlers resolve category → goal_type_id by name. goal_types.name
 -- is UNIQUE, so the upsert is idempotent across re-runs.
 INSERT INTO goal_types (name, description, category, icon_name) VALUES

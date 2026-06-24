@@ -831,6 +831,13 @@ export const userStreaks = pgTable(
     uniqueIndex("user_streaks_user_source_goal_uq")
       .on(t.userId, t.sourceGoalId)
       .where(sql`${t.sourceGoalId} IS NOT NULL`),
+    // 18-habit-setup: one collection habit streak per user (source_goal_id
+    // NULL is exempt from the index above, so it needs its own guard).
+    uniqueIndex("user_streaks_collection_habit_uq")
+      .on(t.userId)
+      .where(
+        sql`${t.streakType} = 'habit_streak' AND ${t.sourceGoalId} IS NULL`,
+      ),
     index("user_streaks_user_status").on(t.userId, t.status),
     check(
       "user_streaks_period_chk",

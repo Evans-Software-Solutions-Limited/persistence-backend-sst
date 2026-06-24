@@ -198,6 +198,14 @@ export class HabitConfigRepository {
    * (streak_type='habit_streak', source_goal_id NULL, weekly). Seeded
    * "up to date" (last_period_end = the last completed week) so it can't
    * immediately break. Nothing else seeds user_streaks (Inspector note).
+   *
+   * Race-safe: the SELECT is only a fast path. The M4 partial unique index
+   * `(user_id, source_goal_id) WHERE source_goal_id IS NOT NULL` excludes the
+   * collection row, so concurrent first-enables (a "set up all habits" screen
+   * firing Water+Gym+Steps in parallel) would both miss the SELECT and both
+   * INSERT, leaving duplicate collection streaks. The dedicated partial unique
+   * index `user_streaks_collection_habit_uq` + `ON CONFLICT DO NOTHING` make
+   * the loser a no-op (Inspector finding, PR #129).
    */
   private async ensureCollectionStreak(
     userId: string,
@@ -218,17 +226,20 @@ export class HabitConfigRepository {
       .limit(1);
     if (existing.length > 0) return;
 
-    await db.insert(userStreaks).values({
-      userId,
-      streakType: "habit_streak",
-      sourceGoalId: null,
-      period: "weekly",
-      currentCount: 0,
-      longestCount: 0,
-      lastPeriodEnd: lastCompletedPeriodEndISO(now, "weekly", tz),
-      freezeTokens: 0,
-      status: "active",
-    });
+    await db
+      .insert(userStreaks)
+      .values({
+        userId,
+        streakType: "habit_streak",
+        sourceGoalId: null,
+        period: "weekly",
+        currentCount: 0,
+        longestCount: 0,
+        lastPeriodEnd: lastCompletedPeriodEndISO(now, "weekly", tz),
+        freezeTokens: 0,
+        status: "active",
+      })
+      .onConflictDoNothing();
   }
 
   /**
@@ -249,7 +260,11 @@ export class HabitConfigRepository {
   ): Promise<HabitConfigView | null> {
     const db = getDb();
     const now = opts.now ?? new Date();
-    const assignedByUserId = opts.assignedByUserId ?? null;
+    // Distinguish "coach write" (id supplied) from "self write" (omitted).
+    // A self write must NEVER stamp/erase assigned_by_user_id — re-enabling a
+    // habit a coach once set keeps that attribution as history (locked
+    // decision 6 / design.md § 5). Only a coach write sets it.
+    const coachId = opts.assignedByUserId; // string | null | undefined
 
     const goalTypeId = await this.resolveGoalTypeId(category);
     if (!goalTypeId) return null; // unknown category / unseeded goal_type
@@ -269,28 +284,34 @@ export class HabitConfigRepository {
     const isFreshEnable = !goal || goal.isActive !== true;
 
     if (!goal) {
+      // A brand-new goal has no prior attribution: a coach write stamps the
+      // coach, a self write is null.
       const inserted = await db
         .insert(userGoals)
         .values({
           userId,
           goalTypeId,
           isActive: true,
-          assignedByUserId,
+          assignedByUserId: coachId ?? null,
           targetValue: String(config.targetValue),
           unit: config.unit,
         })
         .returning();
       goal = inserted[0];
     } else if (isFreshEnable) {
+      // Reactivate a previously-disabled goal. Only TOUCH assigned_by_user_id
+      // when this is a coach write — a self re-enable must preserve whatever
+      // is stored (incl. a past coach's id kept as history).
+      const goalSet: Record<string, unknown> = {
+        isActive: true,
+        targetValue: String(config.targetValue),
+        unit: config.unit,
+        updatedAt: new Date(),
+      };
+      if (coachId !== undefined) goalSet.assignedByUserId = coachId;
       const reactivated = await db
         .update(userGoals)
-        .set({
-          isActive: true,
-          assignedByUserId,
-          targetValue: String(config.targetValue),
-          unit: config.unit,
-          updatedAt: new Date(),
-        })
+        .set(goalSet)
         .where(eq(userGoals.id, goal.id))
         .returning();
       goal = reactivated[0];
