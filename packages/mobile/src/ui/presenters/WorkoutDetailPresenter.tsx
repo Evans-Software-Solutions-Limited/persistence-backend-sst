@@ -246,7 +246,9 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
   },
   errorContainer: {
+    flex: 1,
     alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xl,
   },
