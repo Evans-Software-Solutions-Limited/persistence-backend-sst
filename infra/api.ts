@@ -115,4 +115,24 @@ export const volumeCron = new sst.aws.Cron("volume-aggregation", {
   },
 });
 
+// ─── Daily Open Food Facts delta refresh (M9 / 13-nutrition-tracking) ───────
+//
+// 04:00 UTC daily. Applies OFF's most-recent published daily delta (gzipped
+// NDJSON) to the curated `foods` slice the one-shot seed loads, so cached
+// barcode macros stay fresh without hitting the rate-limited live product API.
+// Static published data (not the rate-limited API) but still sends the required
+// custom User-Agent. Logs `[off-delta-cron:summary]`. See
+// specs/13-nutrition-tracking/design.md § Data sources + DATA_SOURCING.md § 5.
+export const offDeltaCron = new sst.aws.Cron("off-delta-refresh", {
+  schedule: "cron(0 4 * * ? *)",
+  job: {
+    handler: "microservices/core/src/offDeltaCron.handler",
+    timeout: "120 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+      OFF_CONTACT_EMAIL: "apps@persistence.app",
+    },
+  },
+});
+
 // api.addAuthorizer

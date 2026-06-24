@@ -1,0 +1,29 @@
+-- M9 (13-nutrition-tracking) — extend notification_type enum for the daily
+-- nutrition-target-hit notification.
+--
+-- The nutrition_streak end-of-day cron (design.md § Streak engine integration)
+-- emits one NEW notification type that does not yet exist on the live enum
+-- (packages/db/src/schema.ts lists the original nine + the three M4 streak
+-- values, ending at freeze_token_applied):
+--
+--   daily_nutrition_target_hit — daily kcal landed within target ±10%
+--                                (default opt-in OFF per cross-cuts § 5)
+--
+-- Per specs/13-nutrition-tracking/design.md § Notification triggers and
+-- specs/_shared/cross-cuts.md § 5, the notification_type enum is *owned* by
+-- 09-notifications-social (M7). This migration is the companion enum
+-- extension M9 must sequence BEFORE the cron emit path ships — otherwise the
+-- first `INSERT INTO notifications` for this type fails at runtime with
+-- `invalid input value for enum notification_type`. M7 has already appended
+-- this value to the cross-cuts taxonomy table (PR #76) and to the mobile
+-- NotificationType union; this file lands the DB side.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping ADD VALUE in its own migration
+-- (no usage here) sidesteps that entirely — mirrors the M4 precedent in
+-- 20260607120000_m4_notification_type_streak_values.sql.
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'daily_nutrition_target_hit';

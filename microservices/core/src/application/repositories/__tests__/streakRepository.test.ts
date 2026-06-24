@@ -161,17 +161,90 @@ describe("StreakRepository", () => {
       ).toBe(true);
     });
 
-    it("nutrition: never satisfied (M9-gated, no data source)", async () => {
-      (getDb as any).mockReturnValue({ select: vi.fn() });
+    const nutritionStreak = () =>
+      streak({ streakType: "nutrition_streak", sourceGoalId: null });
+    const nutritionDb = (target: unknown[], total: number) => {
+      const select = vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit(target))
+        .mockReturnValueOnce(selectWhere([{ total }]));
+      return { select };
+    };
+    it("nutrition: satisfied when the day's kcal is within target ±10%", async () => {
+      (getDb as any).mockReturnValue(nutritionDb([{ daily: "2000" }], 2000));
       expect(
         await new StreakRepository().isPeriodSatisfied(
-          streak({ streakType: "nutrition_streak", sourceGoalId: null }),
-          "2026-06-07",
-          "2026-06-07",
+          nutritionStreak(),
+          "2026-06-22",
+          "2026-06-22",
+          "Europe/London",
+        ),
+      ).toBe(true);
+    });
+
+    it("nutrition: satisfied at the lower edge (−10%)", async () => {
+      (getDb as any).mockReturnValue(nutritionDb([{ daily: "2000" }], 1800));
+      expect(
+        await new StreakRepository().isPeriodSatisfied(
+          nutritionStreak(),
+          "2026-06-22",
+          "2026-06-22",
+          "Europe/London",
+        ),
+      ).toBe(true);
+    });
+
+    it("nutrition: unmet when over the +10% band", async () => {
+      (getDb as any).mockReturnValue(nutritionDb([{ daily: "2000" }], 2300));
+      expect(
+        await new StreakRepository().isPeriodSatisfied(
+          nutritionStreak(),
+          "2026-06-22",
+          "2026-06-22",
           "Europe/London",
         ),
       ).toBe(false);
     });
+
+    it("nutrition: unmet when under the −10% band (incl. zero logging)", async () => {
+      (getDb as any).mockReturnValue(nutritionDb([{ daily: "2000" }], 0));
+      expect(
+        await new StreakRepository().isPeriodSatisfied(
+          nutritionStreak(),
+          "2026-06-22",
+          "2026-06-22",
+          "Europe/London",
+        ),
+      ).toBe(false);
+    });
+
+    it("nutrition: unmet when no target is set (can't evaluate)", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValueOnce(selectWhereLimit([])),
+      });
+      expect(
+        await new StreakRepository().isPeriodSatisfied(
+          nutritionStreak(),
+          "2026-06-22",
+          "2026-06-22",
+          "Europe/London",
+        ),
+      ).toBe(false);
+    });
+  });
+
+  it("getNutritionStreakUserIds returns distinct active/broken user ids", async () => {
+    (getDb as any).mockReturnValue({
+      selectDistinct: () => ({
+        from: () => ({
+          where: () => Promise.resolve([{ userId: "u1" }, { userId: "u2" }]),
+        }),
+      }),
+    });
+    expect(await new StreakRepository().getNutritionStreakUserIds()).toEqual([
+      "u1",
+      "u2",
+    ]);
   });
 
   it("persistAdvance updates and returns the row", async () => {

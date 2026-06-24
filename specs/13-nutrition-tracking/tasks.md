@@ -4,13 +4,16 @@
 
 ---
 
-## Phase 13.1 — Database migrations (1 PR)
+> **M9 scoping (2026-06-21).** Phases 13.1, 13.2, 13.3 are **M9 Tier A** (backend) — in scope for the `feat/m9-backend-nutrition` branch. Phase 13.4 (Tier B AI endpoints) is **deferred to M9.5**. The OFF curated seed + delta cron (BACKEND_BRIEF § 9) lands as an additional M9 backend task — see 13.3.5/13.3.6 below.
+
+## Phase 13.1 — Database migrations (1 PR) — M9
 
 - [ ] **T-13.1.1** Migration: `foods`, `nutrition_entries` (incl. `logged_by_user_id` + AI flags), `nutrition_targets` (incl. `set_by_user_id`), `water_log`, `recipes`, `recipe_ingredients`, `meals`, `meal_items` per `design.md § Database schema`.
 - [ ] **T-13.1.2** Migration: `ai_usage_log` table (lands with M9 even though Tier B uses it — establishes contract per cross-cuts § 4.2).
 - [ ] **T-13.1.3** Migrations idempotent + forward/back safe.
+- [ ] **T-13.1.4** `ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'daily_nutrition_target_hit'` — own migration statement (not in a using-transaction), sequenced before the streak cron emit. Mirror in `notificationTypeEnum` (schema.ts) + the `NotificationType` union.
 
-## Phase 13.2 — M9 Tier A backend endpoints (1 PR)
+## Phase 13.2 — M9 Tier A backend endpoints (1 PR) — M9
 
 - [ ] **T-13.2.1** `/nutrition/today`, `/nutrition/entries` CRUD, `/nutrition/targets` GET/PUT. Implements STORY-001 + 003 + 004 ACs.
 - [ ] **T-13.2.2** `/nutrition/water/today` GET + PATCH. Implements STORY-009.
@@ -18,14 +21,16 @@
 - [ ] **T-13.2.4** `/foods` GET (search) + POST (user creates custom).
 - [ ] **T-13.2.5** Streak integration: end-of-day cron evaluates `nutrition_streak` per `design.md § Streak engine integration`. Implements STORY-010.
 
-## Phase 13.3 — Recipes + Meals backend (1 PR)
+## Phase 13.3 — Recipes + Meals backend (1 PR) — M9
 
 - [ ] **T-13.3.1** `/recipes` CRUD. Implements STORY-005 + 006.
-- [ ] **T-13.3.2** `/recipes/import` URL scraper (Schema.org Recipe microformat). Implements STORY-008.
+- [ ] **T-13.3.2** `/recipes/import` URL scraper (deterministic Schema.org / `ld+json` only; SSRF-hardened; `422 no_recipe_microdata` on a scrape miss). Implements STORY-008.
 - [ ] **T-13.3.3** `/meals` CRUD. Implements STORY-007.
-- [ ] **T-13.3.4** Server-side macro materialisation on recipe save (sums ingredients).
+- [ ] **T-13.3.4** Server-side macro materialisation on recipe + meal save (sums ingredients / items).
+- [ ] **T-13.3.5** OFF curated seed ETL script (`seedOpenFoodFacts.ts`) — Parquet-sourced curated subset → `foods` (`source='openfoodfacts'`), idempotent upsert on `barcode`. Own PR. BACKEND_BRIEF § 9a.
+- [ ] **T-13.3.6** OFF delta-refresh cron (`offDeltaCron.ts` + `sst.aws.Cron`) — applies OFF daily deltas; logs `[off-delta:summary]`. BACKEND_BRIEF § 9b.
 
-## Phase 13.4 — M9.5 Tier B backend endpoints (1 PR)
+## Phase 13.4 — M9.5 Tier B backend endpoints (1 PR) — **deferred to M9.5**
 
 - [ ] **T-13.4.1** `/nutrition/ai/recognize-photo` — multipart photo → LLM/vision recognition. AI gating + `ai_usage_log` per cross-cuts § 4. Implements STORY-011.
 - [ ] **T-13.4.2** `/nutrition/ai/estimate-text` — text → macro estimate. Implements STORY-012.

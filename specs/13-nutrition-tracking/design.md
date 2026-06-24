@@ -192,39 +192,107 @@ Migrations land in M9 Tier A PR. `ai_usage_log` lands with M9 even though it's u
 
 ### M9 Tier A
 
-| Method | Path                                 | Description                                                                                                         |
-| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/nutrition/today`                   | Aggregate for Fuel screen: `{ targets, consumed: { kcal, protein, carbs, fat, water }, entries: NutritionEntry[] }` |
-| GET    | `/nutrition/entries?date=YYYY-MM-DD` | Day's entries                                                                                                       |
-| POST   | `/nutrition/entries`                 | Log entry                                                                                                           |
-| PUT    | `/nutrition/entries/:id`             | Edit entry                                                                                                          |
-| DELETE | `/nutrition/entries/:id`             | Remove entry                                                                                                        |
-| GET    | `/nutrition/targets`                 | Current targets                                                                                                     |
-| PUT    | `/nutrition/targets`                 | Update targets (self)                                                                                               |
-| GET    | `/nutrition/water/today`             | Today's water                                                                                                       |
-| PATCH  | `/nutrition/water/today`             | Increment / decrement (delta)                                                                                       |
-| POST   | `/nutrition/barcode/resolve`         | Resolve barcode → Food row (creates from Open Food Facts if not in `foods`)                                         |
-| GET    | `/foods?query=`                      | Search foods                                                                                                        |
-| POST   | `/foods`                             | User creates a custom food                                                                                          |
-| GET    | `/recipes`                           | User's recipes                                                                                                      |
-| POST   | `/recipes`                           | Create recipe (manual)                                                                                              |
-| POST   | `/recipes/import`                    | Import from URL (server scrapes — SSRF-hardened, see § Recipe-import SSRF guards)                                   |
-| GET    | `/recipes/:id`, `PUT`, `DELETE`      | CRUD                                                                                                                |
-| GET    | `/meals`, `POST`, `PUT`, `DELETE`    | CRUD                                                                                                                |
+| Method | Path                                 | Description                                                                       |
+| ------ | ------------------------------------ | --------------------------------------------------------------------------------- |
+| GET    | `/nutrition/today`                   | Aggregate for Fuel screen (see § today shape below)                               |
+| GET    | `/nutrition/entries?date=YYYY-MM-DD` | Day's entries                                                                     |
+| POST   | `/nutrition/entries`                 | Log entry                                                                         |
+| PUT    | `/nutrition/entries/:id`             | Edit entry                                                                        |
+| DELETE | `/nutrition/entries/:id`             | Remove entry                                                                      |
+| GET    | `/nutrition/targets`                 | Current targets                                                                   |
+| PUT    | `/nutrition/targets`                 | Update targets (self)                                                             |
+| GET    | `/nutrition/water/today`             | Today's water                                                                     |
+| PATCH  | `/nutrition/water/today`             | Set / increment water (see § water shape below)                                   |
+| POST   | `/nutrition/barcode/resolve`         | Resolve barcode → Food row (creates from Open Food Facts if not in `foods`)       |
+| GET    | `/foods?query=`                      | Search foods                                                                      |
+| POST   | `/foods`                             | User creates a custom food                                                        |
+| GET    | `/recipes`                           | User's recipes                                                                    |
+| POST   | `/recipes`                           | Create recipe (manual)                                                            |
+| POST   | `/recipes/import`                    | Import from URL (server scrapes — SSRF-hardened, see § Recipe-import SSRF guards) |
+| GET    | `/recipes/:id`, `PUT`, `DELETE`      | CRUD                                                                              |
+| GET    | `/meals`, `POST`, `PUT`, `DELETE`    | CRUD                                                                              |
 
-### M9.5 Tier B (all gate on `aiAccess` via `assertEntitlement` per cross-cuts § 4.1)
+#### Endpoint contracts (M9 Tier A)
 
-| Method | Path                            | Description                         |
-| ------ | ------------------------------- | ----------------------------------- |
-| POST   | `/nutrition/ai/recognize-photo` | Multipart photo → recognised items  |
-| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate          |
-| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe |
+All responses envelope the payload under `{ data: … }`. `userId` is always the
+JWT subject (`getUser(ctx).sub`), never the body. All `numeric` macro columns are
+parsed to JS `number` at the repository boundary (Drizzle returns `numeric` as
+`string`); the wire shape is numeric.
 
-All AI endpoints:
+`Food`, `NutritionEntry`, `NutritionTarget`, `Recipe`, `Meal` are the Drizzle
+row shapes with macro columns coerced to `number`.
+
+- **`GET /nutrition/today?date=YYYY-MM-DD`** (default = server today) →
+
+  ```ts
+  { data: {
+      date: string;                 // YYYY-MM-DD
+      targets: NutritionTarget | null;
+      consumed: { kcal: number; protein_g: number; carbs_g: number; fat_g: number; water_cups: number };
+      remainingKcal: number;        // targets.daily_kcal - consumed.kcal (0 if no target)
+      entriesBySlot: { breakfast: NutritionEntry[]; lunch: NutritionEntry[]; snack: NutritionEntry[]; dinner: NutritionEntry[] };
+  } }
+  ```
+
+  `consumed` is a SUM aggregate over `nutrition_entries (user_id, logged_at::date)`
+  — the GROUP-BY-risk query; rendered through `PgDialect` in a test to guard the
+  Postgres 42803 trap (per `reference_drizzle_groupby_param_bug`). Empty day →
+  all-zero `consumed`, four empty slot arrays.
+
+- **`GET /nutrition/entries?date=YYYY-MM-DD`** → `{ data: NutritionEntry[] }`, `logged_at DESC`.
+- **`POST /nutrition/entries`** body `{ foodId?, recipeId?, mealId?, mealSlot, servings, kcal, protein_g, carbs_g, fat_g, loggedAt }` → `201 { data: NutritionEntry }`. When `foodId`/`recipeId`/`mealId` is present the server **re-derives** the macros from the referenced row × servings (client kcal is not trusted); a true one-off (no reference) accepts the client macros. `logged_by_user_id` = NULL (self-write).
+- **`PUT /nutrition/entries/:id`** edit servings/slot/macros — ownership folded into WHERE; no row → 404.
+- **`DELETE /nutrition/entries/:id`** — ownership in WHERE; no row → 404.
+- **`GET /nutrition/targets`** → `{ data: NutritionTarget | null }`. When `set_by_user_id IS NOT NULL`, includes the setter's `profiles.display_name` as `setByName` for the FE banner (cross-cuts § 1.5).
+- **`PUT /nutrition/targets`** body `{ dailyKcal, proteinG, carbsG, fatG, waterCups, preset }` — upsert on `user_id` (PK). Self-write only: `set_by_user_id` stays untouched (NULL on first self-set; the M8 trainer route is the only writer of a non-null value). → `{ data: NutritionTarget }`.
+- **`GET /nutrition/water/today?date=YYYY-MM-DD`** → `{ data: { cups: number; goal: number } }` (`goal` from `nutrition_targets.water_cups`, default 8).
+- **`PATCH /nutrition/water/today`** body `{ cups: number }` (authoritative absolute set — used by the offline sync-flush path; last-write-wins) **or** `{ delta: 1 | -1 }` (convenience). Upsert on `(user_id, logged_date)`; clamp `cups >= 0`. → `{ data: { cups: number; goal: number } }`.
+- **`POST /nutrition/barcode/resolve`** body `{ code }` → `{ data: Food }`. Cache-first against `foods.barcode`; miss → Open Food Facts fetch (custom User-Agent, 8s timeout, 429 backoff + circuit-breaker) → insert + return; OFF 404/no-product → `404 barcode_not_found`. See § Data sources.
+- **`GET /foods?query=`** → `{ data: Food[] }`, `name ILIKE %query%` + the caller's own `source='user'` rows, limit 50.
+- **`POST /foods`** body `{ name, brand?, kcal, proteinG, carbsG, fatG, servingSize, servingUnit, barcode? }` → `201 { data: Food }` (`source='user'`, `created_by = userId`).
+- **`GET /recipes`** → `{ data: Recipe[] }` (`WHERE user_id = ?`). **`POST /recipes`** body `{ name, photoUrl?, servings, instructions?, ingredients: [{ foodId?, customName?, quantity, unit, sortOrder }] }` → `201 { data: Recipe }`; server materialises `total_*` from ingredient `food` macros × quantity in one transaction.
+- **`GET/PUT/DELETE /recipes/:id`** — ownership in WHERE; no row → 404.
+- **`POST /recipes/import`** body `{ url }` → `{ data: { name, ingredients[], instructions, servings, sourceUrl } }`. First line is `safeRecipeFetch(url)` (every SSRF guard below); deterministic Schema.org / `ld+json` scrape only. No `Recipe` microdata → `422 no_recipe_microdata` (Conflict C3 — no LLM fallback in M9).
+- **`GET/POST/PUT/DELETE /meals`** — ownership in WHERE. `POST /meals` body `{ name, photoUrl?, items: [{ foodId?, recipeId?, servings, sortOrder }] }` → `201 { data: Meal }`; server materialises `total_*` from items in one transaction.
+
+### M9.5 Tier B — **deferred to M9.5** (all gate on `aiAccess` via `assertEntitlement` per cross-cuts § 4.1)
+
+| Method | Path                            | Description                         | Status               |
+| ------ | ------------------------------- | ----------------------------------- | -------------------- |
+| POST   | `/nutrition/ai/recognize-photo` | Multipart photo → recognised items  | **deferred to M9.5** |
+| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate          | **deferred to M9.5** |
+| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe | **deferred to M9.5** |
+
+All AI endpoints (M9.5):
 
 1. First line: `await assertEntitlement(ctx.userId, 'aiAccess')`. On denial → 402 + `ENTITLEMENT_DENIED` payload per cross-cuts § 4.1.
 2. Log to `ai_usage_log` per § 4.2.
 3. Return structured response.
+
+---
+
+## Data sources (M9 Tier A — Open Food Facts)
+
+Outcome of `specs/milestones/M9-nutrition/DATA_SOURCING.md`. The M9 food database is **Open Food Facts (OFF)**:
+
+- **Free, no API key** for reads. Writes need an account (we don't write).
+- **ODbL licence — attribution required.** The OFF-derived `foods` rows are a Derivative Database; serving lookups to users is a "Produced Work" (attribution only, no share-alike on our app/user data). Practical posture: tag OFF rows `source='openfoodfacts'` (segregable for the on-request ODbL offer); the FE must credit Open Food Facts (food-detail sheet + an About/Data-sources line). The BE returns `source` on every `Food` so the FE knows when to show the credit. Do not bulk-redistribute the seeded table publicly.
+- **Rate limit: 15 product reads / min / IP.** Our Lambda concentrates all users' scans on one egress IP, so naive live proxying gets us IP-banned at scale. **Cache-first against `foods` is load-bearing, not an optimisation** — only true misses hit OFF. The live path also has exponential 429 backoff + a circuit-breaker that returns `barcode_not_found` (graceful — user adds manually) rather than retrying into a ban. No unbounded retry loop.
+- **Mandatory custom User-Agent** on every OFF request: `Persistence/<appVersion> (<contact-email>)` — pulled from config (`OFF_USER_AGENT`, public, not a secret), never hard-coded. Missing/generic UA → throttled or banned.
+- **OFF is an external network hop but NOT a user-controlled URL** (the barcode is the only input; the host is fixed `world.openfoodfacts.org`), so it does **not** need the full SSRF guard — just timeout + size cap + error handling. The SSRF guard is for `/recipes/import` only.
+
+### Bulk seed (OFF Parquet → curated `foods` subset) + delta-refresh cron — in scope for M9
+
+Brad confirmed 2026-06-21 (DATA_SOURCING.md § 5, option 2). So offline barcode works at launch and the live rate-limit is a non-issue, `foods` is pre-populated with a curated OFF slice:
+
+- **Seed ETL** (`microservices/core/src/scripts/seedOpenFoodFacts.ts`, runnable via a documented `bun` command — **not** wired into the request path). Source the OFF **Parquet** dump (not the 43 GB JSONL, not the live API). Filter to a curated subset: rows with a non-null `barcode` **and** complete macros (kcal + protein + carbs + fat + serving) **and** target locales (start UK/EN). Map OFF `nutriments`/`code` → `foods` columns; `source='openfoodfacts'`, `created_by=NULL`. Idempotent upsert on `barcode`. DuckDB is the documented filter tool for the Parquet step (operational; the script consumes already-filtered records / a curated NDJSON the operator produces).
+- **Delta-refresh cron** (`microservices/core/src/offDeltaCron.ts`, new `sst.aws.Cron` in `infra/api.ts`, daily off-peak UTC). Applies OFF **daily delta exports** (last-14-days files at `https://static.openfoodfacts.org/data/delta/`), upserting changed products into the curated slice (same filter). Idempotent; logs `[off-delta:summary]`. Custom User-Agent on every fetch; bounded timeout. This is OFF-published static data (not the rate-limited API) but stays polite.
+
+**USDA FoodData Central** (public domain — no ODbL) is a complementary source for generic/whole foods on the search path; optional for M9 (the base `/foods` search hits our own table). Not seeded in M9.
+
+### Offline behaviour — water mutation contract
+
+Because water increments aren't idempotent on replay, the FRONTEND_BRIEF queues an **absolute `{ cups }`** value (last-write-wins), not a delta. `PATCH /nutrition/water/today` accepts both `{ cups }` (the authoritative set used by the sync flush) and `{ delta }` (a convenience the FE may avoid in favour of optimistic-local-then-set).
 
 ---
 
@@ -325,6 +393,18 @@ async function assertHostnameIsPublic(hostname: string): Promise<void> {
 
 The handler at `application/recipes/handlers/import.ts` calls `safeRecipeFetch(body.url)` as the first step (before any parsing); the existing recipe-extraction logic operates on the resulting `html` only. Tests cover every reject branch (`scheme_not_allowed`, every private CIDR, redirect-to-private, oversized body, timeout, disallowed Content-Type).
 
+### Import-URL tier (Conflict C3) — deterministic scrape only in M9
+
+M9 ships a **deterministic Schema.org / `ld+json` `Recipe` scrape only**. The
+parser reads structured recipe data from the fetched HTML (`<script type="application/ld+json">`
+graphs + Schema.org microdata). On a successful parse it pre-fills
+`{ data: { name, ingredients[], instructions, servings, sourceUrl } }`
+(`source='url_import'`). **A page with no `Recipe` microdata → `422 no_recipe_microdata`**;
+the FE renders a graceful "couldn't read this page" state. The LLM fallback
+for non-Schema.org sites (and the prototype's "AI" pill) **defer to M9.5** — the
+M9 import is NOT AI. (See the Risks table note, superseded for M9: no
+`source='ai_extracted'` path ships in M9.)
+
 **TOCTOU note**: a sophisticated DNS-rebinding attack can change the A record between `assertHostnameIsPublic` and the `fetch`. The standard mitigation is to resolve once + fetch by IP literal + set `Host` header to the original hostname — but `fetch` in Node doesn't expose that cleanly, and the realistic threat model (DNS-rebinding requires attacker-controlled DNS with short TTL + the Lambda VPC re-resolving) is marginal vs the cost of a custom socket layer. M9 ships with the resolve-then-fetch pattern; if DNS-rebinding gets exploited the follow-up is a `fetch-by-resolved-IP` patch.
 
 ---
@@ -423,9 +503,24 @@ Layout: header + preset chips + calorie input + macro split sliders + water cups
 
 Per `_shared/cross-cuts.md § 3.1`, `nutrition_streak` is daily. Period satisfied when daily total kcal falls within target ± 10%.
 
-Backend hook: end-of-day cron at 02:00 UTC (sibling of `06-progress-goals § Streak cron`). For each user, compute `dailyKcalTotal(today)` + check against `nutrition_targets.daily_kcal`. Within ±10% → period satisfied → engine advances. Outside → freeze-token check (per § 3.5) or break.
+Backend hook: end-of-day cron at 02:00 UTC (sibling of `06-progress-goals § Streak cron` — the same `streakCron` handler). For each user with a `nutrition_streak` row + a `nutrition_targets` row, compute the prior user-local day's kcal total (`profiles.timezone`, default `Europe/London`) + check against `nutrition_targets.daily_kcal`. Within ±10% → period satisfied → **advance** (`+1`, mint freeze tokens, unlock milestones, fire `streak_milestone`). Outside → the existing freeze-token check (per § 3.5) or break.
 
-Real-time evaluation on `POST /nutrition/entries`: skip — daily total volatile until day ends. Cron handles it.
+Unlike workout/habit/measurement streaks (which the on-write engine advances), nutrition's **advance also lives in the cron**: the daily kcal total is volatile until the day ends, so `isPeriodSatisfied` for `nutrition_streak` evaluates `SUM(kcal)` over `nutrition_entries` for the user-local day window vs `daily_kcal ± 10%`. The cron evaluates the most-recently-completed day, advances if satisfied, then runs the standard miss/freeze/break sweep.
+
+On a satisfied day the cron also emits a `daily_nutrition_target_hit` notification **only if the user's `notification_preferences` opt-in is on** (default **off** per cross-cuts § 5 — effectively opt-in). The `ALTER TYPE … ADD VALUE 'daily_nutrition_target_hit'` migration MUST be applied (own statement, not in a using-transaction) before this emit, or the first `INSERT INTO notifications` 500s with `invalid input value for enum`.
+
+Real-time evaluation on `POST /nutrition/entries`: skip the **durable** streak advance — the daily total is volatile until the day ends (more logging can push an in-range day to over), so a server-side advance can't commit until day-close without risking a retract. Cron owns the durable count + miss-sweep.
+
+### Immediate in-app reward (instant — decoupled from the durable streak)
+
+> **Revised 2026-06-23 (Brad):** The durable streak waits for day-close, but the _reward_ must not — a 2am-next-day acknowledgement demotivates. The two are separate concerns.
+
+The Fuel screen already has `consumed` + `targets` + `remainingKcal` from `GET /nutrition/today`, so the **client** detects, the instant a logged entry brings the day's total into `daily_kcal ± 10%` (and likewise per-macro), and fires an **immediate optimistic celebration** ("Calorie goal hit") + marks today's ring as _hit_. This is purely reactive on the mobile side — no server round-trip beyond the log itself, no new endpoint. If subsequent logging pushes the day back out of range, the optimistic mark clears.
+
+- **Immediate layer (frontend, optimistic):** crossing into ±10% → in-app celebration + today marked hit. Zero delay. Self-corrects if the day later goes out of range. See `FRONTEND_BRIEF § Immediate goal-hit reward`.
+- **Durable layer (backend cron, authoritative):** confirms the day _closed_ in range → advances `nutrition_streak`, mints tokens, unlocks milestones. The `daily_nutrition_target_hit` **push** stays here (end-of-day) so it never claims a goal-hit the user later blew past.
+
+This mirrors MyFitnessPal / MacroFactor: instant "goal reached" feedback, persistent streak as the day-close record.
 
 ---
 

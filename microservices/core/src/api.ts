@@ -47,6 +47,8 @@ import { goalsListHandler } from "./application/goals/list/goalsListHandler";
 import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
 import { goalsUpdateHandler } from "./application/goals/update/goalsUpdateHandler";
 import { goalsDeleteHandler } from "./application/goals/delete/goalsDeleteHandler";
+// M9 — nutrition (Fuel) Tier A (grouped sub-app)
+import { nutritionRoutes } from "./application/nutritionRoutes";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
 import { progressStatsHandler } from "./application/progress/progressStatsHandler";
 import { progressRecordsHandler } from "./application/progress/progressRecordsHandler";
@@ -159,7 +161,11 @@ const app = new Elysia()
   .use(trainersClientsListHandler)
   .use(trainersInvitationsListHandler)
   .use(trainersInvitationsCreateHandler)
-  .use(trainersInvitationsDeleteHandler);
+  .use(trainersInvitationsDeleteHandler)
+  // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
+  // ./application/nutritionRoutes) — keeps the Eden Treaty type in
+  // packages/web under TS's instantiation-depth ceiling.
+  .use(nutritionRoutes);
 
 export type CoreApi = typeof app;
 

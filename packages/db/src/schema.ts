@@ -156,6 +156,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "streak_milestone",
   "streak_at_risk",
   "freeze_token_applied",
+  // M9 (13-nutrition-tracking) nutrition-streak event. Companion enum
+  // migration: 20260621120100_m9_notification_type_target_hit.sql. Enum
+  // ownership is 09-notifications-social's per cross-cuts § 5; M9 sequences
+  // the ADD VALUE before the nutrition-streak cron emits.
+  "daily_nutrition_target_hit",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -1265,6 +1270,227 @@ export type NewSubscriptionPriceHistory =
 
 export type TrainerClientNote = typeof trainerClientNotes.$inferSelect;
 export type NewTrainerClientNote = typeof trainerClientNotes.$inferInsert;
+
+// ─── M9 (13-nutrition-tracking) — Nutrition (Fuel) Tier-A ───────────────────
+// Migration: 20260621120000_m9_nutrition_schema.sql (+ the target-hit enum
+// value in 20260621120100_*). FK-dependency order mirrors the migration.
+
+export const foods = pgTable(
+  "foods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    brand: text("brand"),
+    // Not globally unique — the OFF/curated catalogue is deduped by the
+    // partial unique index below; private user foods may reuse a barcode.
+    barcode: text("barcode"),
+    kcal: numeric("kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    servingSize: numeric("serving_size").notNull(),
+    servingUnit: text("serving_unit").notNull(),
+    // 'user' | 'openfoodfacts' | 'ai_recognized'
+    source: text("source").notNull().default("user"),
+    createdBy: uuid("created_by").references(() => profiles.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    index("foods_source_idx").on(t.source),
+    // Dedup the shareable (OFF/curated) catalogue by barcode without blocking
+    // private user foods that reuse one. Seed/delta upserts conflict-target
+    // this partial index (PR #124 review — High).
+    uniqueIndex("foods_barcode_shareable_uq")
+      .on(t.barcode)
+      .where(sql`source <> 'user' AND barcode IS NOT NULL`),
+    index("foods_barcode_idx").on(t.barcode),
+  ],
+);
+
+export const recipes = pgTable(
+  "recipes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    name: text("name").notNull(),
+    photoUrl: text("photo_url"),
+    servings: numeric("servings").notNull().default("1"),
+    instructions: text("instructions"),
+    // 'manual' | 'url_import' | 'ai_extracted'
+    source: text("source").notNull().default("manual"),
+    sourceUrl: text("source_url"),
+    totalKcal: numeric("total_kcal"), // materialised from ingredients
+    totalProteinG: numeric("total_protein_g"),
+    totalCarbsG: numeric("total_carbs_g"),
+    totalFatG: numeric("total_fat_g"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("recipes_user_idx").on(t.userId)],
+);
+
+export const recipeIngredients = pgTable(
+  "recipe_ingredients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    recipeId: uuid("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    foodId: uuid("food_id").references(() => foods.id),
+    customName: text("custom_name"), // when not linked to a food row
+    quantity: numeric("quantity").notNull(),
+    unit: text("unit").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+  },
+  (t) => [index("recipe_ingredients_recipe_idx").on(t.recipeId)],
+);
+
+export const meals = pgTable(
+  "meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    name: text("name").notNull(),
+    photoUrl: text("photo_url"),
+    totalKcal: numeric("total_kcal").notNull(),
+    totalProteinG: numeric("total_protein_g").notNull(),
+    totalCarbsG: numeric("total_carbs_g").notNull(),
+    totalFatG: numeric("total_fat_g").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("meals_user_idx").on(t.userId)],
+);
+
+export const mealItems = pgTable(
+  "meal_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mealId: uuid("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    foodId: uuid("food_id").references(() => foods.id, {
+      onDelete: "set null",
+    }),
+    recipeId: uuid("recipe_id").references(() => recipes.id, {
+      onDelete: "set null",
+    }),
+    servings: numeric("servings").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+  },
+  (t) => [index("meal_items_meal_idx").on(t.mealId)],
+);
+
+export const nutritionEntries = pgTable(
+  "nutrition_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    // ON DELETE SET NULL — macros are denormalised below, so deleting the
+    // source food/recipe/meal preserves logged history (and never 500s the
+    // delete via FK RESTRICT). Review fix (PR #124).
+    foodId: uuid("food_id").references(() => foods.id, {
+      onDelete: "set null",
+    }), // nullable one-off
+    recipeId: uuid("recipe_id").references(() => recipes.id, {
+      onDelete: "set null",
+    }),
+    mealId: uuid("meal_id").references(() => meals.id, {
+      onDelete: "set null",
+    }),
+    mealSlot: text("meal_slot").notNull(),
+    servings: numeric("servings").notNull(),
+    kcal: numeric("kcal").notNull(), // denormalised for fast reads
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    loggedAt: timestamp("logged_at", { withTimezone: true }).notNull(),
+    // cross-cuts § 1.1 — M8 trainer-on-behalf; NULL = self-logged
+    loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
+    aiEstimated: boolean("ai_estimated").notNull().default(false),
+    aiConfidence: numeric("ai_confidence"), // 0..1, populated when ai_estimated (M9.5)
+  },
+  (t) => [
+    index("nutrition_entries_user_date").on(t.userId, t.loggedAt),
+    index("nutrition_entries_user_slot_date").on(
+      t.userId,
+      t.mealSlot,
+      t.loggedAt,
+    ),
+    check(
+      "nutrition_entries_meal_slot_chk",
+      sql`${t.mealSlot} IN ('breakfast','lunch','snack','dinner')`,
+    ),
+  ],
+);
+
+export const nutritionTargets = pgTable("nutrition_targets", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => profiles.id),
+  dailyKcal: numeric("daily_kcal").notNull(),
+  proteinG: numeric("protein_g").notNull(),
+  carbsG: numeric("carbs_g").notNull(),
+  fatG: numeric("fat_g").notNull(),
+  waterCups: integer("water_cups").notNull().default(8),
+  preset: text("preset").default("custom"),
+  // cross-cuts § 1.5 — trainer attribution (M8 writes via the trainer route)
+  setByUserId: uuid("set_by_user_id").references(() => profiles.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const waterLog = pgTable(
+  "water_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    cups: integer("cups").notNull(),
+    loggedDate: date("logged_date").notNull(),
+  },
+  (t) => [uniqueIndex("water_log_user_date_uq").on(t.userId, t.loggedDate)],
+);
+
+// Contract stub — cross-cuts § 4.2. Table created in M9; written in M9.5.
+export const aiUsageLog = pgTable(
+  "ai_usage_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    endpoint: text("endpoint").notNull(),
+    requestSizeBytes: integer("request_size_bytes"),
+    responseSizeBytes: integer("response_size_bytes"),
+    ms: integer("ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("ai_usage_log_user_ts").on(t.userId, t.createdAt)],
+);
+
+export type Food = typeof foods.$inferSelect;
+export type NewFood = typeof foods.$inferInsert;
+export type Recipe = typeof recipes.$inferSelect;
+export type NewRecipe = typeof recipes.$inferInsert;
+export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
+export type NewRecipeIngredient = typeof recipeIngredients.$inferInsert;
+export type Meal = typeof meals.$inferSelect;
+export type NewMeal = typeof meals.$inferInsert;
+export type MealItem = typeof mealItems.$inferSelect;
+export type NewMealItem = typeof mealItems.$inferInsert;
+export type NutritionEntry = typeof nutritionEntries.$inferSelect;
+export type NewNutritionEntry = typeof nutritionEntries.$inferInsert;
+export type NutritionTarget = typeof nutritionTargets.$inferSelect;
+export type NewNutritionTarget = typeof nutritionTargets.$inferInsert;
+export type WaterLog = typeof waterLog.$inferSelect;
+export type NewWaterLog = typeof waterLog.$inferInsert;
+export type AiUsageLog = typeof aiUsageLog.$inferSelect;
+export type NewAiUsageLog = typeof aiUsageLog.$inferInsert;
 
 // Add missing import for sql
 import { sql } from "drizzle-orm";
