@@ -43,7 +43,7 @@ export const nutritionEntriesUpdateHandler = new Elysia()
       const patch = { ...ctx.body };
       // Server-authoritative re-derivation for food-backed entries.
       if (existing.foodId) {
-        const food = await ctx.FoodRepository.getById(existing.foodId);
+        const food = await ctx.FoodRepository.getById(existing.foodId, userId);
         if (food) {
           const servings = ctx.body.servings ?? existing.servings;
           patch.servings = servings;

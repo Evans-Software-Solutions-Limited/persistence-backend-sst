@@ -53,16 +53,16 @@ describe("FoodRepository", () => {
       (getDb as any).mockReturnValue({
         select: vi.fn().mockReturnValue(selectLimitChain([rawFood])),
       });
-      const out = await new FoodRepository().getById("f1");
+      const out = await new FoodRepository().getById("f1", "u1");
       expect(out?.kcal).toBe(150);
       expect(typeof out?.kcal).toBe("number");
       expect(out?.servingSize).toBe(40);
     });
-    it("returns null when not found", async () => {
+    it("returns null when not found / not visible to the caller", async () => {
       (getDb as any).mockReturnValue({
         select: vi.fn().mockReturnValue(selectLimitChain([])),
       });
-      expect(await new FoodRepository().getById("nope")).toBeNull();
+      expect(await new FoodRepository().getById("nope", "u1")).toBeNull();
     });
   });
 

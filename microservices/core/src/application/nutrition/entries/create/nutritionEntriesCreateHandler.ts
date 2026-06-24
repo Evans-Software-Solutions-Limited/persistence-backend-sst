@@ -36,7 +36,7 @@ export const nutritionEntriesCreateHandler = new Elysia()
       let fatG = body.fatG;
 
       if (body.foodId) {
-        const food = await ctx.FoodRepository.getById(body.foodId);
+        const food = await ctx.FoodRepository.getById(body.foodId, userId);
         if (!food) {
           ctx.set.status = 400;
           return { error: "food_not_found" };

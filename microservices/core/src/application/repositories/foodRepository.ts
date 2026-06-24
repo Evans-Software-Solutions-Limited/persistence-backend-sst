@@ -55,12 +55,24 @@ export function toFoodDTO(row: Food): FoodDTO {
 export class FoodRepository {
   static readonly key = "FoodRepository";
 
-  async getById(id: string): Promise<FoodDTO | null> {
+  /**
+   * Fetch one food, scoped like `search()`/`getByIds`: a shareable (OFF /
+   * curated) row OR the caller's own custom food. Unscoped, the macro
+   * re-derivation in the entries create/update handlers would echo another
+   * user's private `source='user'` food macros for a guessed id. Review fix
+   * (PR #124).
+   */
+  async getById(id: string, userId: string): Promise<FoodDTO | null> {
     const db = getDb();
     const result = await db
       .select()
       .from(foods)
-      .where(eq(foods.id, id))
+      .where(
+        and(
+          eq(foods.id, id),
+          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+        ),
+      )
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
   }

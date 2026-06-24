@@ -107,6 +107,9 @@ describe("nutritionEntriesCreateHandler", () => {
       }),
     );
     expect(res.status).toBe(201);
+    // Scoped lookup — getById must receive the caller's userId so a foreign
+    // private food can't be referenced (PR #124 review).
+    expect(foodMocks.getById).toHaveBeenCalledWith("f1", "test-user-id");
     expect(entryMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({
