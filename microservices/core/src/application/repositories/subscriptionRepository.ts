@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   profiles,
   subscriptionTiers,
@@ -21,6 +21,32 @@ export const LIVE_SUBSCRIPTION_STATUSES = [
   "trialing",
   "past_due",
 ] as const;
+
+/**
+ * WHERE predicate for a *currently-live* `user_subscriptions` row: a live
+ * payment status AND not past its expiry. The DB's `get_user_subscription()`
+ * (which drives the `update_subscription_limits` role-sync trigger) requires
+ * `expires_at IS NULL OR expires_at > NOW()`; this mirrors that so the API and
+ * the trigger agree on what "live" means.
+ *
+ * Without the expiry guard an expired-but-never-transitioned `trialing` row
+ * (the Stripe status transition never fired) reads as live here, so
+ * `isTrainerTier` resolves true and the mobile app enables coach mode — while
+ * the DB function excludes the same row, leaves `profiles.role` un-elevated,
+ * and every coach endpoint 403s. (Staging: a 4-month-expired `trialing`
+ * `individual_trainer` row produced exactly this trap.)
+ *
+ * NOTE: the live-status list deliberately excludes `cancelled` (a cancelled
+ * row maps to the free tier here immediately, slightly stricter than the DB
+ * function's cancelled-but-not-yet-expired grace window — that divergence is
+ * pre-existing and out of scope for this expiry fix).
+ */
+export function liveSubscriptionFilter(): SQL {
+  return and(
+    inArray(userSubscriptions.paymentStatus, [...LIVE_SUBSCRIPTION_STATUSES]),
+    sql`(${userSubscriptions.expiresAt} IS NULL OR ${userSubscriptions.expiresAt} > NOW())`,
+  ) as SQL;
+}
 
 /**
  * Drizzle-inferred row type for `user_subscriptions`. Includes every column
@@ -318,15 +344,15 @@ export class SubscriptionRepository {
       .where(
         and(
           eq(userSubscriptions.userId, userId),
-          // Only LIVE subscriptions resolve the user's tier. A trainer who
-          // cancelled (most-recent row is `cancelled`/`expired`) must NOT keep
-          // reporting their old tier — without this filter `isTrainerTier` /
-          // `trainerClientLimit` / `workoutLimit` stay set after lapse and the
-          // mobile app leaves coach mode enabled. Excluded rows fall through to
-          // the synthesised free tier below, exactly like a brand-new user.
-          inArray(userSubscriptions.paymentStatus, [
-            ...LIVE_SUBSCRIPTION_STATUSES,
-          ]),
+          // Only LIVE, non-expired subscriptions resolve the user's tier. A
+          // trainer who cancelled (most-recent row is `cancelled`/`expired`) or
+          // whose trial lapsed must NOT keep reporting their old tier —
+          // otherwise `isTrainerTier` / `trainerClientLimit` / `workoutLimit`
+          // stay set after lapse and the mobile app leaves coach mode enabled.
+          // The expiry half of the guard mirrors the DB's
+          // get_user_subscription() so the app and the role-sync trigger agree.
+          // Excluded rows fall through to the synthesised free tier below.
+          liveSubscriptionFilter(),
         ),
       )
       .orderBy(desc(userSubscriptions.createdAt))

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -832,6 +833,30 @@ describe("SubscriptionRepository", () => {
       expect(result?.role).toBe("personal_trainer");
       expect(result?.isTrainerTier).toBe(true);
       expect(result?.isEligibleForTrainerTrial).toBe(false);
+    });
+  });
+
+  // The mocked getDb chain ignores the WHERE, so behavioural tests above can't
+  // prove the resolver excludes expired rows. Render the predicate's SQL to
+  // guard it directly (cf. the PgDialect pattern in streakRepository.test).
+  describe("liveSubscriptionFilter", () => {
+    it("requires a live payment status AND a non-expired (or null) expiry", async () => {
+      const { liveSubscriptionFilter } =
+        await import("../subscriptionRepository");
+      const { sql, params } = new PgDialect().sqlToQuery(
+        liveSubscriptionFilter() as never,
+      );
+      const normalised = sql.toLowerCase();
+      // Live-status set is still applied…
+      expect(normalised).toContain("payment_status");
+      expect(params).toEqual(
+        expect.arrayContaining(["active", "pending", "trialing", "past_due"]),
+      );
+      // …AND the expiry guard mirrors the DB get_user_subscription() filter,
+      // so an expired-but-still-'trialing' row no longer reads as live.
+      expect(normalised).toContain("expires_at");
+      expect(normalised).toContain("is null");
+      expect(normalised).toContain("now()");
     });
   });
 });

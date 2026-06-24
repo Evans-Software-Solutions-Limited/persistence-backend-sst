@@ -16,7 +16,7 @@ import {
   type TrainerInvitation,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { LIVE_SUBSCRIPTION_STATUSES } from "./subscriptionRepository";
+import { liveSubscriptionFilter } from "./subscriptionRepository";
 
 // ─── Wire shapes ──────────────────────────────────────────────────────────────
 
@@ -529,11 +529,11 @@ export class TrainerRepository {
       .where(
         and(
           eq(userSubscriptions.userId, trainerId),
-          // Only LIVE subscriptions grant slots — a cancelled/expired trainer
-          // who previously held a 25-slot tier must NOT keep that allowance.
-          inArray(userSubscriptions.paymentStatus, [
-            ...LIVE_SUBSCRIPTION_STATUSES,
-          ]),
+          // Only LIVE, non-expired subscriptions grant slots — a
+          // cancelled/expired trainer (or one whose trial lapsed) who
+          // previously held a 25-slot tier must NOT keep that allowance.
+          // Shares the API/DB-aligned expiry guard (see liveSubscriptionFilter).
+          liveSubscriptionFilter(),
         ),
       )
       .orderBy(desc(userSubscriptions.createdAt))

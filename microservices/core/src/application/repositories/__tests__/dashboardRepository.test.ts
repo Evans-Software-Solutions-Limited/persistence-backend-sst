@@ -565,6 +565,31 @@ describe("DashboardRepository sub-query composition", () => {
       });
     });
 
+    it("does not report a lapsed trainer (expired trialing) as a trainer tier", async () => {
+      // Regression: a trainer-tier row stuck in `trialing` past its expiry is
+      // free-tier by effect — isTrainerTier must follow, not stay true. The
+      // contradictory `isFreeTier: true, isTrainerTier: true` left coach mode
+      // enabled after the subscription lapsed.
+      (getDb as any).mockReturnValue(
+        mockDbWithQueryResults([
+          [
+            {
+              tierName: "individual_trainer",
+              paymentStatus: "trialing",
+              expiresAt: new Date("2026-02-15T00:00:00Z"),
+              cancelledAt: null,
+              isTrainerTier: true,
+              tierDbName: "individual_trainer",
+            },
+          ],
+        ]),
+      );
+
+      const slice = await repository.getSubscriptionSlice("user-1");
+      expect(slice.isFreeTier).toBe(true);
+      expect(slice.isTrainerTier).toBe(false);
+    });
+
     it("collapses pending status to null", async () => {
       (getDb as any).mockReturnValue(
         mockDbWithQueryResults([

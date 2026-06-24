@@ -406,10 +406,15 @@ export class DashboardRepository {
       };
     }
 
+    const isFreeTier = computeIsFreeTier(row);
     return {
       tierName: row.tierName ?? null,
-      isFreeTier: computeIsFreeTier(row),
-      isTrainerTier: row.isTrainerTier === true,
+      isFreeTier,
+      // Gate on the EFFECTIVE tier: a lapsed trainer (cancelled/trialing past
+      // expiry) is on free-tier semantics, so it must not still report as a
+      // trainer — `isFreeTier: true, isTrainerTier: true` was a contradictory
+      // state that left coach mode enabled after the subscription lapsed.
+      isTrainerTier: !isFreeTier && row.isTrainerTier === true,
       status: normaliseSubscriptionStatus(row.paymentStatus),
     };
   }
