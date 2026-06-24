@@ -1,4 +1,13 @@
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   profiles,
   subscriptionTiers,
@@ -36,15 +45,26 @@ export const LIVE_SUBSCRIPTION_STATUSES = [
  * and every coach endpoint 403s. (Staging: a 4-month-expired `trialing`
  * `individual_trainer` row produced exactly this trap.)
  *
- * NOTE: the live-status list deliberately excludes `cancelled` (a cancelled
- * row maps to the free tier here immediately, slightly stricter than the DB
- * function's cancelled-but-not-yet-expired grace window — that divergence is
- * pre-existing and out of scope for this expiry fix).
+ * A `cancelled` row is also live during its grace window — until the paid
+ * period ends (`expires_at` in the future). This mirrors the DB function's
+ * `(payment_status = 'cancelled' AND expires_at IS NOT NULL AND expires_at >
+ * NOW())` branch, so a user who cancels keeps their tier (and trainer
+ * entitlement) until the period they paid for actually lapses, rather than
+ * being dropped to free the instant they cancel. A cancelled row with no
+ * `expires_at` is treated as lapsed (no open-ended grace).
  */
 export function liveSubscriptionFilter(): SQL {
+  const notExpired = sql`(${userSubscriptions.expiresAt} IS NULL OR ${userSubscriptions.expiresAt} > NOW())`;
   return and(
-    inArray(userSubscriptions.paymentStatus, [...LIVE_SUBSCRIPTION_STATUSES]),
-    sql`(${userSubscriptions.expiresAt} IS NULL OR ${userSubscriptions.expiresAt} > NOW())`,
+    or(
+      inArray(userSubscriptions.paymentStatus, [...LIVE_SUBSCRIPTION_STATUSES]),
+      and(
+        eq(userSubscriptions.paymentStatus, "cancelled"),
+        isNotNull(userSubscriptions.expiresAt),
+        sql`${userSubscriptions.expiresAt} > NOW()`,
+      ),
+    ),
+    notExpired,
   ) as SQL;
 }
 
