@@ -9,7 +9,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { HeaderBar, IconBtn } from "@/ui/components/foundation";
-import { IconBack, IconCheck, iconDefaults } from "@/ui/components/icons";
+import {
+  IconBack,
+  IconCheck,
+  IconChevronR,
+  iconDefaults,
+} from "@/ui/components/icons";
 import {
   BorderRadius,
   Colors,
@@ -47,6 +52,8 @@ export type PrivacySettingsPresenterProps = {
   isProfilePublic: boolean;
   onUpdateVisibility: (next: PrivacyVisibility) => void;
   onBack: () => void;
+  onOpenPrivacyPolicy: () => void;
+  onOpenTerms: () => void;
 };
 
 function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
@@ -71,6 +78,8 @@ export function PrivacySettingsPresenter({
   isProfilePublic,
   onUpdateVisibility,
   onBack,
+  onOpenPrivacyPolicy,
+  onOpenTerms,
 }: PrivacySettingsPresenterProps) {
   const insets = useSafeAreaInsets();
 
@@ -157,6 +166,33 @@ export function PrivacySettingsPresenter({
             You can request data export or account deletion at any time by
             contacting support.
           </Text>
+        </View>
+
+        {/* Legal — the Privacy Policy + Terms live here now that the drawer's
+            row points at this settings screen rather than straight at the
+            policy. Keeps the (App Store–required) policy reachable. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Legal</Text>
+          <TouchableOpacity
+            style={styles.option}
+            onPress={onOpenPrivacyPolicy}
+            testID="privacy-settings-policy"
+          >
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Privacy Policy</Text>
+            </View>
+            <IconChevronR {...iconDefaults({ size: 16 })} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.option}
+            onPress={onOpenTerms}
+            testID="privacy-settings-terms"
+          >
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Terms of Service</Text>
+            </View>
+            <IconChevronR {...iconDefaults({ size: 16 })} />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>

@@ -13,6 +13,8 @@ function makeProps(
     isProfilePublic: false,
     onUpdateVisibility: jest.fn(),
     onBack: jest.fn(),
+    onOpenPrivacyPolicy: jest.fn(),
+    onOpenTerms: jest.fn(),
     ...overrides,
   };
 }
@@ -75,6 +77,20 @@ describe("PrivacySettingsPresenter", () => {
     );
     fireEvent.press(getByTestId("privacy-settings-option-private"));
     expect(onUpdateVisibility).toHaveBeenCalledWith("private");
+  });
+
+  it("fires onOpenPrivacyPolicy and onOpenTerms from the Legal links", () => {
+    const onOpenPrivacyPolicy = jest.fn();
+    const onOpenTerms = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <PrivacySettingsPresenter
+        {...makeProps({ onOpenPrivacyPolicy, onOpenTerms })}
+      />,
+    );
+    fireEvent.press(getByTestId("privacy-settings-policy"));
+    expect(onOpenPrivacyPolicy).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByTestId("privacy-settings-terms"));
+    expect(onOpenTerms).toHaveBeenCalledTimes(1);
   });
 
   it("fires onBack from both the loading and loaded states", () => {

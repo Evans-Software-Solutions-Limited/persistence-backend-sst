@@ -169,7 +169,7 @@ describe("ProfileDrawerContainer", () => {
       ["onOpenHealth", "/(app)/profile/health"],
       ["onOpenSubscription", "/(app)/coming-soon?feature=subscription"],
       ["onOpenNotifications", "/(app)/profile/notifications"],
-      ["onOpenSettings", "/(app)/profile/privacy"],
+      ["onOpenSettings", "/(app)/profile/privacy-settings"],
     ];
 
     for (const [handler, route] of cases) {

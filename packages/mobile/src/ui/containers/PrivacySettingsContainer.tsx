@@ -74,12 +74,22 @@ export function PrivacySettingsContainer() {
     router.back();
   }, [router]);
 
+  const onOpenPrivacyPolicy = useCallback(() => {
+    router.push("/(app)/profile/privacy" as never);
+  }, [router]);
+
+  const onOpenTerms = useCallback(() => {
+    router.push("/(app)/profile/terms" as never);
+  }, [router]);
+
   return (
     <PrivacySettingsPresenter
       isLoading={!hydrated}
       isProfilePublic={isProfilePublic}
       onUpdateVisibility={handleUpdateVisibility}
       onBack={onBack}
+      onOpenPrivacyPolicy={onOpenPrivacyPolicy}
+      onOpenTerms={onOpenTerms}
     />
   );
 }
