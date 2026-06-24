@@ -236,6 +236,33 @@ export class SubscriptionRepository {
   }
 
   /**
+   * Cancel every LIVE `user_subscriptions` row for a user (set
+   * `payment_status = 'cancelled'`). Used by the RevenueCat webhook sync
+   * before inserting a fresh RevenueCat-mirror row, so the new active row
+   * doesn't collide with the `user_subscriptions_active_unique` partial index
+   * (one live row per user). RevenueCat is the unifying source of truth across
+   * both rails, so a prior live row (e.g. a Stripe-created mirror) is safely
+   * superseded by the RevenueCat-derived state. No-op when the user has no
+   * live rows. Returns the number of rows cancelled.
+   */
+  async cancelLiveSubscriptions(userId: string): Promise<number> {
+    const db = getDb();
+    const rows = await db
+      .update(userSubscriptions)
+      .set({ paymentStatus: "cancelled", updatedAt: new Date() })
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          inArray(userSubscriptions.paymentStatus, [
+            ...LIVE_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
+      .returning({ id: userSubscriptions.id });
+    return rows.length;
+  }
+
+  /**
    * Fetch the user's current subscription joined with the tier + the
    * profile's role + trial-eligibility flags. Returns a synthesised
    * `free`-tier shape when the user has no `user_subscriptions` row,
