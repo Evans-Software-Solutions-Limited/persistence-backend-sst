@@ -327,8 +327,8 @@ export function ProfileDrawerPresenter({
         />
         <DrawerRow
           icon={<IconSettings {...iconDefaults({ size: 16 })} />}
-          title="Settings"
-          sub="Units · Theme · Privacy"
+          title="Privacy"
+          sub="Profile visibility · Data & policy"
           onPress={onOpenSettings}
           testID="row-settings"
         />

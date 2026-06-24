@@ -8,11 +8,14 @@ import { Text, View } from "@tamagui/core";
 import {
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 
 import { toneHex, toneTokens } from "./tones";
 
@@ -74,6 +77,10 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
   const snapPoints = useMemo(() => [resolveSnap(height)], [height]);
+  // Read the inset context directly (rather than useSafeAreaInsets, which
+  // throws without a provider) so the sheet still renders in tests / any tree
+  // mounted outside a SafeAreaProvider — falls back to 0.
+  const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
 
   // Render the sheet once it has been opened at least once, then keep it
   // mounted so a parent-driven close (`setVisible(false)`) animates DOWN via
@@ -192,7 +199,15 @@ export function BottomSheet({
           // height and overflows — clipped by the sheet's `overflow: hidden`,
           // so the body looked cut off and unscrollable.
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+          // Add the bottom safe-area inset so the last row (e.g. the drawer's
+          // Sign out) clears the home indicator instead of sitting under it —
+          // when the body is ~sheet-height it otherwise looks cut off and
+          // there's nothing to scroll to. The extra height also lets the
+          // scroll view engage when the content is borderline.
+          contentContainerStyle={{
+            padding: 20,
+            paddingBottom: 40 + bottomInset,
+          }}
           keyboardShouldPersistTaps="handled"
         >
           {children}

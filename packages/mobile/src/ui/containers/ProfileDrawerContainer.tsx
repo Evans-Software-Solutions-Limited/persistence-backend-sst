@@ -127,7 +127,7 @@ export function ProfileDrawerContainer() {
         pushFrom("/(app)/coming-soon?feature=subscription")
       }
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
-      onOpenSettings={() => pushFrom("/(app)/profile/privacy")}
+      onOpenSettings={() => pushFrom("/(app)/profile/privacy-settings")}
       onSignOut={onSignOut}
     />
   );

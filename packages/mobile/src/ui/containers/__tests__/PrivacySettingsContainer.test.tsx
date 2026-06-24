@@ -39,12 +39,18 @@ MockPresenter.mockImplementation((props) => (
       onPress={() => props.onUpdateVisibility("private")}
     />
     <Pressable testID="stub-back" onPress={() => props.onBack()} />
+    <Pressable
+      testID="stub-open-policy"
+      onPress={() => props.onOpenPrivacyPolicy()}
+    />
+    <Pressable testID="stub-open-terms" onPress={() => props.onOpenTerms()} />
   </View>
 ));
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: mockBack, push: jest.fn() }),
+  useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
 
 function makeProfilePagePayload(
@@ -134,6 +140,7 @@ describe("PrivacySettingsContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockBack.mockReset();
+    mockPush.mockReset();
     alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
   });
 
@@ -293,5 +300,31 @@ describe("PrivacySettingsContainer", () => {
       fireEvent.press(getByTestId("stub-back"));
     });
     expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("pushes the policy + terms routes from the Legal links", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <PrivacySettingsContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-open-policy"));
+    });
+    expect(mockPush).toHaveBeenCalledWith("/(app)/profile/privacy");
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-open-terms"));
+    });
+    expect(mockPush).toHaveBeenCalledWith("/(app)/profile/terms");
   });
 });
