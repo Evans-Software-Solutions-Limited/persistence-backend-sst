@@ -76,7 +76,12 @@ export function YouPresenter(props: YouPresenterProps) {
 
   if (isLoading && !hasAny) {
     return (
-      <View flex={1} testID="you-loader">
+      <View
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        testID="you-loader"
+      >
         <PLogoDrawLoader />
       </View>
     );

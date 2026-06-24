@@ -235,7 +235,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
   },
   loadingContainer: {
+    flex: 1,
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: Spacing.xl,
   },
   loadingText: {
