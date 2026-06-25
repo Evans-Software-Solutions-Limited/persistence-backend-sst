@@ -38,11 +38,3 @@ export const revenueCatWebhookSecret = new sst.Secret(
 );
 export const revenueCatApiKey = new sst.Secret("RevenueCatApiKey");
 export const revenueCatProjectId = new sst.Secret("RevenueCatProjectId");
-// RevenueCat Stripe-app PUBLIC key (`strp_…`) — used by the Stripe webhook to
-// bind a Stripe subscription to the Supabase user id via v1 /receipts (M12
-// §3b). Distinct from RevenueCatApiKey (the v2 secret used for read calls).
-// Safe server-side (validation is against Stripe via fetch_token), but still
-// kept as a Secret for consistency. Same value across stages.
-export const revenueCatStripePublicKey = new sst.Secret(
-  "RevenueCatStripePublicKey",
-);

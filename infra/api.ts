@@ -2,7 +2,6 @@ import {
   databaseUrl,
   revenueCatApiKey,
   revenueCatProjectId,
-  revenueCatStripePublicKey,
   revenueCatWebhookSecret,
   stripeSecretKey,
   stripeWebhookSecret,
@@ -61,7 +60,6 @@ coreAPI.route("$default", {
     REVENUECAT_WEBHOOK_SECRET: revenueCatWebhookSecret.value,
     REVENUECAT_API_KEY: revenueCatApiKey.value,
     REVENUECAT_PROJECT_ID: revenueCatProjectId.value,
-    REVENUECAT_STRIPE_PUBLIC_KEY: revenueCatStripePublicKey.value,
   },
 });
 

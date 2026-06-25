@@ -6,18 +6,15 @@ vi.mock("@persistence/api-utils/env", () => ({
       REVENUECAT_API_KEY: "sk_test_key",
       REVENUECAT_PROJECT_ID: "proj_123",
       REVENUECAT_WEBHOOK_SECRET: "rc_whsec_test",
-      REVENUECAT_STRIPE_PUBLIC_KEY: "strp_test_key",
     };
     return map[name] ?? "";
   }),
 }));
 
 import {
-  associateStripePurchaseWithRevenueCat,
   fetchActiveEntitlements,
   getRevenueCatApiKey,
   getRevenueCatProjectId,
-  getRevenueCatStripePublicKey,
   getRevenueCatWebhookSecret,
   normalizeEntitlement,
   parseRcTimestamp,
@@ -28,7 +25,6 @@ describe("env getters", () => {
     expect(getRevenueCatApiKey()).toBe("sk_test_key");
     expect(getRevenueCatProjectId()).toBe("proj_123");
     expect(getRevenueCatWebhookSecret()).toBe("rc_whsec_test");
-    expect(getRevenueCatStripePublicKey()).toBe("strp_test_key");
   });
 });
 
@@ -152,49 +148,5 @@ describe("fetchActiveEntitlements", () => {
     await expect(fetchActiveEntitlements("user-1")).rejects.toThrow(
       /RevenueCat active_entitlements failed: 503/,
     );
-  });
-});
-
-describe("associateStripePurchaseWithRevenueCat", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("POSTs the sub id + app_user_id to v1/receipts with the strp_ key + X-Platform: stripe", async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ subscriber: {} }), { status: 200 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await associateStripePurchaseWithRevenueCat("sub_123", "user-1");
-
-    const calls = fetchMock.mock.calls as unknown as Array<
-      [string, RequestInit]
-    >;
-    const [url, init] = calls[0];
-    expect(url).toBe("https://api.revenuecat.com/v1/receipts");
-    expect(init.method).toBe("POST");
-    expect(init.headers).toMatchObject({
-      "Content-Type": "application/json",
-      "X-Platform": "stripe",
-      Authorization: "Bearer strp_test_key",
-    });
-    expect(JSON.parse(init.body as string)).toEqual({
-      app_user_id: "user-1",
-      fetch_token: "sub_123",
-    });
-  });
-
-  it("throws on a non-2xx response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () => new Response("bad", { status: 400, statusText: "Bad" }),
-      ),
-    );
-    await expect(
-      associateStripePurchaseWithRevenueCat("sub_123", "user-1"),
-    ).rejects.toThrow(/RevenueCat receipts \(stripe\) failed: 400/);
   });
 });

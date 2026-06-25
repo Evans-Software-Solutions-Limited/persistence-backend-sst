@@ -30,16 +30,6 @@ export function getRevenueCatWebhookSecret(): string {
   return getEnv("REVENUECAT_WEBHOOK_SECRET");
 }
 
-/**
- * The RevenueCat **Stripe-app PUBLIC key** (`strp_…`) — distinct from the v2
- * secret key above. Required by the v1 `/receipts` "track external purchase"
- * call (`X-Platform: stripe`). Safe to hold server-side: validation happens
- * against Stripe via the `fetch_token`; the public key alone grants nothing.
- */
-export function getRevenueCatStripePublicKey(): string {
-  return getEnv("REVENUECAT_STRIPE_PUBLIC_KEY");
-}
-
 /** Raw shape of one `active_entitlements` list item (parsed defensively). */
 interface RawActiveEntitlement {
   entitlement_id?: unknown;
@@ -118,45 +108,4 @@ export async function fetchActiveEntitlements(
   return items
     .map(normalizeEntitlement)
     .filter((e): e is NormalizedEntitlement => e !== null);
-}
-
-/**
- * Bind a Stripe subscription to a chosen App User ID in RevenueCat — the
- * "Track External Purchases" path (M12 §3b). Without this, RevenueCat's
- * auto-tracked Stripe purchases default to keying the customer on the Stripe
- * customer id (`cus_…`), which would NOT merge with the Apple-side entitlement
- * (keyed on the Supabase user id). Posting the Stripe subscription id as
- * `fetch_token` with `app_user_id = <supabase id>` records the purchase
- * against our id so both rails resolve to one customer / one entitlement.
- *
- * v1 `/receipts` is the only endpoint that ingests an external purchase (no v2
- * equivalent). Auth is the Stripe-app PUBLIC key (`strp_…`), NOT the v2 secret.
- * Idempotent: safe to re-post for the same subscription (RevenueCat re-validates
- * against Stripe and upserts the record). Throws on a non-2xx so the caller can
- * log — binding is best-effort (RevenueCat's own Stripe tracking + the
- * `/revenuecat/webhook` re-fetch are the backstops), so a failure must NOT fail
- * the Stripe webhook.
- */
-export async function associateStripePurchaseWithRevenueCat(
-  stripeSubscriptionId: string,
-  appUserId: string,
-): Promise<void> {
-  const key = getRevenueCatStripePublicKey();
-  const res = await fetch("https://api.revenuecat.com/v1/receipts", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Platform": "stripe",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      app_user_id: appUserId,
-      fetch_token: stripeSubscriptionId,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `RevenueCat receipts (stripe) failed: ${res.status} ${res.statusText}`,
-    );
-  }
 }
