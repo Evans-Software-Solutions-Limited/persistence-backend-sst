@@ -1,13 +1,31 @@
-# M12 Subscriptions — RevenueCat fronts both rails (App Store IAP + Stripe)
+# M12 Subscriptions — Apple IAP + RevenueCat (iOS-only launch)
 
-> **Status: DRAFT — awaiting Brad sign-off. Not dispatched.**
-> Architecture decision (Brad, 2026-06-24): **RevenueCat is the entitlement source-of-truth
-> layer** in front of BOTH the existing Stripe integration (web + business tiers) and NEW native
-> Apple IAP (iOS consumer tiers). This replaces the earlier hand-rolled receipt-verification design
-> (`grantIosSubscription` / `verifyAppleReceipt` / `POST /subscriptions/ios-receipt`) — RevenueCat
-> owns receipt validation, replay defence, renewals, refunds, grace periods.
+> **⚠️ SUPERSEDED 2026-06-25 — iOS-only, SINGLE RAIL.** A later review narrowed the launch to
+> **Apple IAP + RevenueCat only**; the Stripe/web rail is **deferred** until a web rail is actually
+> built. Net effect on this milestone:
 >
-> Vertical slice, backend-then-frontend, shared milestone branch, two agents, gated on a smoke test.
+> - **One billing rail.** The cross-rail `app_user_id` merge, Stripe→RevenueCat seeding, Stripe
+>   product import and Stripe billing-cycle work are **out of scope**. The §3b "bind Stripe purchases
+>   to the Supabase id" commit was **reverted** on this branch.
+> - **Kept (single-rail core):** `POST /revenuecat/webhook` → re-fetch active entitlements →
+>   upsert `user_subscriptions`. RevenueCat keys everything by **App User ID = the Supabase user id**.
+>   The native Stripe webhook handlers stay **dormant** (not removed; not required for iOS-only).
+> - **Purchasable on iOS:** only `premium` + `individual_trainer` (Apple products exist for these).
+>   `small_business` / `medium_enterprise` have **no iOS purchase path** (were for the web rail) —
+>   the entitlement model still supports all four; add Apple products later if they must sell on iOS.
+> - RevenueCat project `b408fd30`, offering `default` (`ofrng79adc3c998`); Apple product ids
+>   `app.persistence.{premium,trainer.individual}.{monthly,annual}`. Mobile configures RevenueCat with
+>   the Supabase user id and reads `getOfferings()` → `default`.
+>
+> The sections below are retained as historical context; where they describe Stripe/cross-rail, the
+> banner above wins.
+
+> **Status (original, 2026-06-24): DRAFT.**
+> Architecture decision: **RevenueCat is the entitlement source-of-truth layer** in front of BOTH
+> the existing Stripe integration (web + business tiers) and NEW native Apple IAP (iOS consumer
+> tiers). This replaces the earlier hand-rolled receipt-verification design (`grantIosSubscription` /
+> `verifyAppleReceipt` / `POST /subscriptions/ios-receipt`) — RevenueCat owns receipt validation,
+> replay defence, renewals, refunds, grace periods.
 
 ## Why this shape (research-backed — see sources at bottom)
 
