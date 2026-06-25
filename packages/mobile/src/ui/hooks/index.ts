@@ -30,3 +30,37 @@ export { useGetHabits, buildHabitGrid, type HabitsState } from "./useGetHabits";
 export { useToggleHabitDay } from "./useToggleHabitDay";
 export { useLogMeasurement } from "./useLogMeasurement";
 export { useUseFreezeToken } from "./useUseFreezeToken";
+
+// ── M9 (13-nutrition-tracking / Fuel) hooks ────────────────────────────────
+export {
+  useGetFuelToday,
+  FUEL_TODAY_STALE_AFTER_MS,
+  type FuelTodayState,
+} from "./useGetFuelToday";
+export {
+  useGetNutritionEntries,
+  type NutritionEntriesState,
+} from "./useGetNutritionEntries";
+export { useGetNutritionTarget } from "./useGetNutritionTarget";
+export { useGetWaterToday, type WaterTodayState } from "./useGetWaterToday";
+export { useGetRecipes } from "./useGetRecipes";
+export { useGetRecipe } from "./useGetRecipe";
+export { useGetMeals } from "./useGetMeals";
+export { useSearchFoods, type SearchFoodsState } from "./useSearchFoods";
+export { useResolveBarcode, type ResolveBarcode } from "./useResolveBarcode";
+export { useLogEntry } from "./useLogEntry";
+export { useEditEntry } from "./useEditEntry";
+export { useDeleteEntry } from "./useDeleteEntry";
+export { useSetWater } from "./useSetWater";
+export { useSetTargets } from "./useSetTargets";
+export { useCreateFood } from "./useCreateFood";
+export { useCreateRecipe } from "./useCreateRecipe";
+export { useCreateMeal } from "./useCreateMeal";
+export {
+  useImportRecipeUrl,
+  type ImportRecipeResult,
+} from "./useImportRecipeUrl";
+// NOTE: useNutritionAiGate is intentionally NOT re-exported here — it pulls in
+// useFeatureGate → expo-router, which would break every barrel consumer that
+// runs without the expo-router test mock (same reason useFeatureGate isn't in
+// the barrel). Import it directly: `@/ui/hooks/useNutritionAiGate`.

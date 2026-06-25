@@ -48,6 +48,13 @@ import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
+import type {
+  Food,
+  FuelToday,
+  Meal,
+  NutritionTarget,
+  Recipe,
+} from "@/domain/models/nutrition";
 
 /**
  * In-memory storage adapter for testing.
@@ -679,6 +686,100 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  // -- Nutrition / Fuel cache (M9) --
+  private fuelTodayCache: Map<
+    string,
+    { payload: FuelToday; syncedAt: string }
+  > = new Map();
+  private foodsCache: Map<string, Food> = new Map();
+  private nutritionTargetCache: Map<
+    string,
+    { payload: NutritionTarget; syncedAt: string }
+  > = new Map();
+  private recipesCache: Map<string, Map<string, Recipe>> = new Map();
+  private mealsCache: Map<string, Map<string, Meal>> = new Map();
+  private fuelKey(userId: string, date: string): string {
+    return `${userId}::${date}`;
+  }
+
+  getCachedFuelToday(userId: string, date: string): FuelToday | null {
+    return this.fuelTodayCache.get(this.fuelKey(userId, date))?.payload ?? null;
+  }
+  getFuelTodayAge(userId: string, date: string): string | null {
+    return (
+      this.fuelTodayCache.get(this.fuelKey(userId, date))?.syncedAt ?? null
+    );
+  }
+  cacheFuelToday(userId: string, date: string, payload: FuelToday): void {
+    this.fuelTodayCache.set(this.fuelKey(userId, date), {
+      payload,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getCachedFoodByBarcode(barcode: string): Food | null {
+    for (const food of this.foodsCache.values()) {
+      if (food.barcode === barcode) return food;
+    }
+    return null;
+  }
+  getCachedFoodById(id: string): Food | null {
+    return this.foodsCache.get(id) ?? null;
+  }
+  cacheFoods(foods: Food[]): void {
+    for (const food of foods) this.foodsCache.set(food.id, food);
+  }
+
+  getCachedNutritionTarget(userId: string): NutritionTarget | null {
+    return this.nutritionTargetCache.get(userId)?.payload ?? null;
+  }
+  getNutritionTargetAge(userId: string): string | null {
+    return this.nutritionTargetCache.get(userId)?.syncedAt ?? null;
+  }
+  cacheNutritionTarget(userId: string, target: NutritionTarget): void {
+    this.nutritionTargetCache.set(userId, {
+      payload: target,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getCachedRecipes(userId: string): Recipe[] {
+    return Array.from(this.recipesCache.get(userId)?.values() ?? []);
+  }
+  getCachedRecipe(userId: string, id: string): Recipe | null {
+    return this.recipesCache.get(userId)?.get(id) ?? null;
+  }
+  cacheRecipes(userId: string, recipes: Recipe[]): void {
+    const map = new Map<string, Recipe>();
+    for (const r of recipes) map.set(r.id, r);
+    this.recipesCache.set(userId, map);
+  }
+  cacheRecipe(userId: string, recipe: Recipe): void {
+    const map = this.recipesCache.get(userId) ?? new Map<string, Recipe>();
+    map.set(recipe.id, recipe);
+    this.recipesCache.set(userId, map);
+  }
+  removeCachedRecipe(userId: string, id: string): void {
+    this.recipesCache.get(userId)?.delete(id);
+  }
+
+  getCachedMeals(userId: string): Meal[] {
+    return Array.from(this.mealsCache.get(userId)?.values() ?? []);
+  }
+  cacheMeals(userId: string, meals: Meal[]): void {
+    const map = new Map<string, Meal>();
+    for (const m of meals) map.set(m.id, m);
+    this.mealsCache.set(userId, map);
+  }
+  cacheMeal(userId: string, meal: Meal): void {
+    const map = this.mealsCache.get(userId) ?? new Map<string, Meal>();
+    map.set(meal.id, meal);
+    this.mealsCache.set(userId, map);
+  }
+  removeCachedMeal(userId: string, id: string): void {
+    this.mealsCache.get(userId)?.delete(id);
+  }
+
   clearAll(): void {
     this.queue = [];
     this.metadata.clear();
@@ -696,6 +797,11 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.restTimers.clear();
     this.notificationsCache.clear();
     this.notificationPreferencesCache = null;
+    this.fuelTodayCache.clear();
+    this.foodsCache.clear();
+    this.nutritionTargetCache.clear();
+    this.recipesCache.clear();
+    this.mealsCache.clear();
     this.nextId = 1;
   }
 

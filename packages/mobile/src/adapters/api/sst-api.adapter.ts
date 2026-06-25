@@ -87,6 +87,22 @@ import type {
   Workout,
   WorkoutQuota,
 } from "@/domain/models/workout";
+import type {
+  CreateFoodInput,
+  CreateMealInput,
+  CreateRecipeInput,
+  EditEntryInput,
+  Food,
+  FuelToday,
+  ImportedRecipe,
+  LogEntryInput,
+  Meal,
+  NutritionEntry,
+  NutritionTarget,
+  Recipe,
+  SetTargetsInput,
+  WaterToday,
+} from "@/domain/models/nutrition";
 import {
   ok,
   fail,
@@ -126,7 +142,7 @@ function validateApiUrl(url: string): void {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   params?: Record<string, string | number | string[] | undefined>;
   /**
@@ -1198,6 +1214,138 @@ export class SSTApiAdapter implements ApiPort {
       `/trainers/me/invitations/${id}`,
       { method: "DELETE" },
     );
+  }
+
+  // -- Nutrition / Fuel (M9 — 13-nutrition-tracking) --
+  //
+  // All single `{ data }` envelopes; camelCase wire == domain shape so the
+  // adapter passes payloads straight through (no field mapping).
+
+  async getFuelToday(date: string): Promise<Result<FuelToday, ApiError>> {
+    return this.requestEnvelope<FuelToday>("/nutrition/today", {
+      params: { date },
+    });
+  }
+
+  async getNutritionEntries(
+    date: string,
+  ): Promise<Result<NutritionEntry[], ApiError>> {
+    return this.requestEnvelope<NutritionEntry[]>("/nutrition/entries", {
+      params: { date },
+    });
+  }
+
+  async getNutritionTarget(): Promise<
+    Result<NutritionTarget | null, ApiError>
+  > {
+    return this.requestEnvelope<NutritionTarget | null>("/nutrition/targets");
+  }
+
+  async getWaterToday(date: string): Promise<Result<WaterToday, ApiError>> {
+    return this.requestEnvelope<WaterToday>("/nutrition/water/today", {
+      params: { date },
+    });
+  }
+
+  async getRecipes(): Promise<Result<Recipe[], ApiError>> {
+    return this.requestEnvelope<Recipe[]>("/recipes");
+  }
+
+  async getRecipe(id: string): Promise<Result<Recipe, ApiError>> {
+    return this.requestEnvelope<Recipe>(`/recipes/${id}`);
+  }
+
+  async getMeals(): Promise<Result<Meal[], ApiError>> {
+    return this.requestEnvelope<Meal[]>("/meals");
+  }
+
+  async searchFoods(query: string): Promise<Result<Food[], ApiError>> {
+    return this.requestEnvelope<Food[]>("/foods", { params: { query } });
+  }
+
+  async resolveBarcode(code: string): Promise<Result<Food, ApiError>> {
+    return this.requestEnvelope<Food>("/nutrition/barcode/resolve", {
+      method: "POST",
+      body: { code },
+    });
+  }
+
+  async logEntry(
+    input: LogEntryInput,
+  ): Promise<Result<NutritionEntry, ApiError>> {
+    return this.requestEnvelope<NutritionEntry>("/nutrition/entries", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async editEntry(
+    id: string,
+    input: EditEntryInput,
+  ): Promise<Result<NutritionEntry, ApiError>> {
+    return this.requestEnvelope<NutritionEntry>(`/nutrition/entries/${id}`, {
+      method: "PUT",
+      body: input,
+    });
+  }
+
+  async deleteEntry(id: string): Promise<Result<void, ApiError>> {
+    return this.requestEnvelope<void>(`/nutrition/entries/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async setTargets(
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>> {
+    return this.requestEnvelope<NutritionTarget>("/nutrition/targets", {
+      method: "PUT",
+      body: input,
+    });
+  }
+
+  async setWater(
+    date: string,
+    cups: number,
+  ): Promise<Result<WaterToday, ApiError>> {
+    // Absolute `{ cups }` set — the authoritative, idempotently-replayable
+    // path (BACKEND_BRIEF § 4). Never a delta.
+    return this.requestEnvelope<WaterToday>("/nutrition/water/today", {
+      method: "PATCH",
+      body: { date, cups },
+    });
+  }
+
+  async createFood(input: CreateFoodInput): Promise<Result<Food, ApiError>> {
+    return this.requestEnvelope<Food>("/foods", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async createRecipe(
+    input: CreateRecipeInput,
+  ): Promise<Result<Recipe, ApiError>> {
+    return this.requestEnvelope<Recipe>("/recipes", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async importRecipeUrl(
+    url: string,
+  ): Promise<Result<ImportedRecipe, ApiError>> {
+    return this.requestEnvelope<ImportedRecipe>("/recipes/import", {
+      method: "POST",
+      body: { url },
+    });
+  }
+
+  async createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>> {
+    return this.requestEnvelope<Meal>("/meals", {
+      method: "POST",
+      body: input,
+    });
   }
 
   /**

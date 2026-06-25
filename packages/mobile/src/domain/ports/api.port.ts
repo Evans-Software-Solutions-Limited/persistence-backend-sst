@@ -50,6 +50,22 @@ import type {
   InviteErrorCode,
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
+import type {
+  CreateFoodInput,
+  CreateMealInput,
+  CreateRecipeInput,
+  EditEntryInput,
+  Food,
+  FuelToday,
+  ImportedRecipe,
+  LogEntryInput,
+  Meal,
+  NutritionEntry,
+  NutritionTarget,
+  Recipe,
+  SetTargetsInput,
+  WaterToday,
+} from "@/domain/models/nutrition";
 
 /**
  * Port for remote SST API operations.
@@ -522,6 +538,101 @@ export interface ApiPort {
    * ownership-scoped. 404 when not found / not pending / not owned.
    */
   cancelInvitation(id: string): Promise<Result<{ success: true }, ApiError>>;
+
+  // -- Nutrition / Fuel (M9 — 13-nutrition-tracking) --
+  //
+  // Single `{ data }` envelopes (camelCase wire == domain shape, passthrough —
+  // the backend parses numeric→number at its repository boundary). Tier-B AI
+  // port methods (recognizePhoto/estimateText/extractRecipePhoto) are NOT in M9.
+
+  /**
+   * Fuel-screen aggregate (`GET /nutrition/today?date=`). One round-trip:
+   * targets + consumed sum + remainingKcal + entriesBySlot. `date` is the
+   * user-local YYYY-MM-DD the screen is showing.
+   */
+  getFuelToday(date: string): Promise<Result<FuelToday, ApiError>>;
+
+  /** A day's entries (`GET /nutrition/entries?date=`), newest first. */
+  getNutritionEntries(
+    date: string,
+  ): Promise<Result<NutritionEntry[], ApiError>>;
+
+  /**
+   * The caller's daily target (`GET /nutrition/targets`). `null` when never
+   * set — the screen shows the "set your targets" empty state.
+   */
+  getNutritionTarget(): Promise<Result<NutritionTarget | null, ApiError>>;
+
+  /** Water cups + goal for a day (`GET /nutrition/water/today?date=`). */
+  getWaterToday(date: string): Promise<Result<WaterToday, ApiError>>;
+
+  /** The caller's saved recipes (`GET /recipes`); list omits ingredients. */
+  getRecipes(): Promise<Result<Recipe[], ApiError>>;
+
+  /** A single recipe with its ingredients (`GET /recipes/:id`). */
+  getRecipe(id: string): Promise<Result<Recipe, ApiError>>;
+
+  /** The caller's saved meal presets (`GET /meals`); list omits items. */
+  getMeals(): Promise<Result<Meal[], ApiError>>;
+
+  /** Food search across the library + the caller's customs (`GET /foods?query=`). */
+  searchFoods(query: string): Promise<Result<Food[], ApiError>>;
+
+  /**
+   * Resolve a barcode to a Food (`POST /nutrition/barcode/resolve`). Cache-
+   * first server-side then live Open Food Facts. `err.code === "not_found"`
+   * (404 `barcode_not_found`) → the user adds the food manually;
+   * `err.status === 503` (`food_db_unavailable`) → OFF was rate-limited/down.
+   * Online-only — the hook handles the offline cache-fallback path.
+   */
+  resolveBarcode(code: string): Promise<Result<Food, ApiError>>;
+
+  /**
+   * Log an entry (`POST /nutrition/entries`). When `foodId`/`recipeId`/`mealId`
+   * is set the server re-derives the authoritative macros from the referenced
+   * row × servings, so the client-supplied macros are advisory (optimistic UI).
+   */
+  logEntry(input: LogEntryInput): Promise<Result<NutritionEntry, ApiError>>;
+
+  /** Edit an owned entry (`PUT /nutrition/entries/:id`); 404 when not owned. */
+  editEntry(
+    id: string,
+    input: EditEntryInput,
+  ): Promise<Result<NutritionEntry, ApiError>>;
+
+  /** Delete an owned entry (`DELETE /nutrition/entries/:id`); 404 when not owned. */
+  deleteEntry(id: string): Promise<Result<void, ApiError>>;
+
+  /** Upsert the caller's daily target (`PUT /nutrition/targets`). Self-write. */
+  setTargets(
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>>;
+
+  /**
+   * Set the day's water cups (`PATCH /nutrition/water/today`) as an ABSOLUTE
+   * value (last-write-wins; the offline queue replays it idempotently — never
+   * a delta, per BACKEND_BRIEF § 4).
+   */
+  setWater(date: string, cups: number): Promise<Result<WaterToday, ApiError>>;
+
+  /** Create a custom food (`POST /foods`) — the manual-add path off a barcode miss. */
+  createFood(input: CreateFoodInput): Promise<Result<Food, ApiError>>;
+
+  /**
+   * Create a recipe (`POST /recipes`). The server materialises macro totals
+   * from the ingredients' linked foods (deterministic, no AI).
+   */
+  createRecipe(input: CreateRecipeInput): Promise<Result<Recipe, ApiError>>;
+
+  /**
+   * Scrape a Schema.org recipe from a URL (`POST /recipes/import`) into a
+   * manual-create pre-fill. Online-only (external fetch). `err.status === 422`
+   * (`no_recipe_microdata`) → the page had no machine-readable recipe.
+   */
+  importRecipeUrl(url: string): Promise<Result<ImportedRecipe, ApiError>>;
+
+  /** Save a meal preset (`POST /meals`); server materialises totals from items. */
+  createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>>;
 }
 
 /**

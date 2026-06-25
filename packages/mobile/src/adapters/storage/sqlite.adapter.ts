@@ -5,6 +5,13 @@ import type {
 } from "@/domain/models/dashboard";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
+import type {
+  Food,
+  FuelToday,
+  Meal,
+  NutritionTarget,
+  Recipe,
+} from "@/domain/models/nutrition";
 import {
   deriveExerciseOwnership,
   type Exercise,
@@ -375,6 +382,52 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_completions_user_goal_day
         ON cached_habit_completions(user_id, goal_id, day);
+
+      -- M9 (13-nutrition-tracking / Fuel). The day aggregate is the Fuel
+      -- screen's primary read — keyed by (user_id, date) so each day rolls
+      -- over independently at user-local midnight. 5-min TTL enforced by the
+      -- hook layer; after an optimistic write the hook recomputes + rewrites
+      -- this row so the ring updates without a round-trip.
+      CREATE TABLE IF NOT EXISTS cached_fuel_today (
+        user_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, date)
+      );
+      -- Resolved foods for the OFFLINE barcode fallback (design.md § Offline
+      -- behaviour). Keyed by id; barcode is indexed for the scan lookup. Not
+      -- user-scoped (foods are shared library rows); wiped on sign-out.
+      CREATE TABLE IF NOT EXISTS cached_foods (
+        id TEXT PRIMARY KEY,
+        barcode TEXT,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cached_foods_barcode ON cached_foods(barcode);
+      -- Recipe list + detail. One row per (user_id, id); the detail upsert
+      -- overwrites the list row with the fuller (ingredient-bearing) payload.
+      CREATE TABLE IF NOT EXISTS cached_recipes (
+        user_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, id)
+      );
+      -- Saved meal presets, one row per (user_id, id).
+      CREATE TABLE IF NOT EXISTS cached_meals (
+        user_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, id)
+      );
+      -- Current daily target (single small row per user).
+      CREATE TABLE IF NOT EXISTS cached_nutrition_target (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
@@ -1798,6 +1851,163 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  // -- Nutrition / Fuel cache (M9) --
+
+  getCachedFuelToday(userId: string, date: string): FuelToday | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_fuel_today WHERE user_id = ? AND date = ?`,
+      [userId, date],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as FuelToday) : null;
+  }
+
+  getFuelTodayAge(userId: string, date: string): string | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT synced_at FROM cached_fuel_today WHERE user_id = ? AND date = ?`,
+      [userId, date],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  cacheFuelToday(userId: string, date: string, payload: FuelToday): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_fuel_today (user_id, date, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, date) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, date, JSON.stringify(payload), new Date().toISOString()],
+    );
+  }
+
+  getCachedFoodByBarcode(barcode: string): Food | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_foods WHERE barcode = ? LIMIT 1`,
+      [barcode],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as Food) : null;
+  }
+
+  getCachedFoodById(id: string): Food | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_foods WHERE id = ?`,
+      [id],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as Food) : null;
+  }
+
+  cacheFoods(foods: Food[]): void {
+    if (foods.length === 0) return;
+    const db = this.getDb();
+    const now = new Date().toISOString();
+    db.withTransactionSync(() => {
+      for (const food of foods) {
+        db.runSync(
+          `INSERT INTO cached_foods (id, barcode, payload, synced_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET barcode = excluded.barcode, payload = excluded.payload, synced_at = excluded.synced_at`,
+          [food.id, food.barcode, JSON.stringify(food), now],
+        );
+      }
+    });
+  }
+
+  getCachedNutritionTarget(userId: string): NutritionTarget | null {
+    return this.readBlob<NutritionTarget>("cached_nutrition_target", userId);
+  }
+
+  getNutritionTargetAge(userId: string): string | null {
+    return this.readBlobSyncedAt("cached_nutrition_target", userId);
+  }
+
+  cacheNutritionTarget(userId: string, target: NutritionTarget): void {
+    this.writeBlob("cached_nutrition_target", userId, target);
+  }
+
+  getCachedRecipes(userId: string): Recipe[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_recipes WHERE user_id = ? ORDER BY rowid DESC`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as Recipe);
+  }
+
+  getCachedRecipe(userId: string, id: string): Recipe | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_recipes WHERE user_id = ? AND id = ?`,
+      [userId, id],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as Recipe) : null;
+  }
+
+  cacheRecipes(userId: string, recipes: Recipe[]): void {
+    const db = this.getDb();
+    const now = new Date().toISOString();
+    db.withTransactionSync(() => {
+      // Server refresh wins: drop the user's slice then re-insert. A detail
+      // row fetched later re-upserts the fuller (ingredient-bearing) payload.
+      db.runSync(`DELETE FROM cached_recipes WHERE user_id = ?`, [userId]);
+      for (const recipe of recipes) {
+        db.runSync(
+          `INSERT INTO cached_recipes (user_id, id, payload, synced_at) VALUES (?, ?, ?, ?)`,
+          [userId, recipe.id, JSON.stringify(recipe), now],
+        );
+      }
+    });
+  }
+
+  cacheRecipe(userId: string, recipe: Recipe): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_recipes (user_id, id, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, recipe.id, JSON.stringify(recipe), new Date().toISOString()],
+    );
+  }
+
+  removeCachedRecipe(userId: string, id: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_recipes WHERE user_id = ? AND id = ?`,
+      [userId, id],
+    );
+  }
+
+  getCachedMeals(userId: string): Meal[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_meals WHERE user_id = ? ORDER BY rowid DESC`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as Meal);
+  }
+
+  cacheMeals(userId: string, meals: Meal[]): void {
+    const db = this.getDb();
+    const now = new Date().toISOString();
+    db.withTransactionSync(() => {
+      db.runSync(`DELETE FROM cached_meals WHERE user_id = ?`, [userId]);
+      for (const meal of meals) {
+        db.runSync(
+          `INSERT INTO cached_meals (user_id, id, payload, synced_at) VALUES (?, ?, ?, ?)`,
+          [userId, meal.id, JSON.stringify(meal), now],
+        );
+      }
+    });
+  }
+
+  cacheMeal(userId: string, meal: Meal): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_meals (user_id, id, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, meal.id, JSON.stringify(meal), new Date().toISOString()],
+    );
+  }
+
+  removeCachedMeal(userId: string, id: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_meals WHERE user_id = ? AND id = ?`,
+      [userId, id],
+    );
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -1818,6 +2028,11 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_trainer_clients;
       DELETE FROM cached_notifications;
       DELETE FROM cached_notification_preferences;
+      DELETE FROM cached_fuel_today;
+      DELETE FROM cached_foods;
+      DELETE FROM cached_recipes;
+      DELETE FROM cached_meals;
+      DELETE FROM cached_nutrition_target;
     `);
   }
 }

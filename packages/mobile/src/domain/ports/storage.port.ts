@@ -38,6 +38,13 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
+import type {
+  Food,
+  FuelToday,
+  Meal,
+  NutritionTarget,
+  Recipe,
+} from "@/domain/models/nutrition";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -608,6 +615,58 @@ export interface StoragePort {
    * no active session.
    */
   clearRestTimerState(userId: string): void;
+
+  // -- Nutrition / Fuel cache (M9 — 13-nutrition-tracking) --
+  /**
+   * Read the cached `GET /nutrition/today` aggregate for `(userId, date)`, or
+   * null when never cached. The Fuel screen's offline-first read source; after
+   * an optimistic write the hook recomputes the aggregate client-side and
+   * writes it back via `cacheFuelToday` so the ring updates with no round-trip.
+   *
+   * Spec: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § SQLite cache
+   */
+  getCachedFuelToday(userId: string, date: string): FuelToday | null;
+  /** Age of the cached day aggregate as an ISO timestamp, or null. */
+  getFuelTodayAge(userId: string, date: string): string | null;
+  /** Write-through the day aggregate for `(userId, date)`; stamps synced_at. */
+  cacheFuelToday(userId: string, date: string, payload: FuelToday): void;
+
+  /**
+   * Resolve a cached food by barcode for the OFFLINE scan fallback, or null on
+   * a miss (the sheet then renders "not in cache — connect to fetch").
+   */
+  getCachedFoodByBarcode(barcode: string): Food | null;
+  /** Read a cached food by id, or null. */
+  getCachedFoodById(id: string): Food | null;
+  /** Upsert a batch of foods into the offline cache (by id; barcode indexed). */
+  cacheFoods(foods: Food[]): void;
+
+  /** Read the cached daily target for a user, or null when none. */
+  getCachedNutritionTarget(userId: string): NutritionTarget | null;
+  /** Age of the cached target as an ISO timestamp, or null. */
+  getNutritionTargetAge(userId: string): string | null;
+  /** Write-through the daily target (single row per user). */
+  cacheNutritionTarget(userId: string, target: NutritionTarget): void;
+
+  /** Cached recipe list for a user (cards show name + totals). */
+  getCachedRecipes(userId: string): Recipe[];
+  /** Cached single recipe (may carry ingredients if its detail was fetched). */
+  getCachedRecipe(userId: string, id: string): Recipe | null;
+  /** Replace the cached recipe list for a user (server refresh — server wins). */
+  cacheRecipes(userId: string, recipes: Recipe[]): void;
+  /** Upsert one recipe (detail fetch / optimistic create). */
+  cacheRecipe(userId: string, recipe: Recipe): void;
+  /** Remove a cached recipe after a delete. No-op when absent. */
+  removeCachedRecipe(userId: string, id: string): void;
+
+  /** Cached meal presets for a user. */
+  getCachedMeals(userId: string): Meal[];
+  /** Replace the cached meal list for a user (server refresh — server wins). */
+  cacheMeals(userId: string, meals: Meal[]): void;
+  /** Upsert one meal (optimistic create / detail). */
+  cacheMeal(userId: string, meal: Meal): void;
+  /** Remove a cached meal after a delete. No-op when absent. */
+  removeCachedMeal(userId: string, id: string): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */
