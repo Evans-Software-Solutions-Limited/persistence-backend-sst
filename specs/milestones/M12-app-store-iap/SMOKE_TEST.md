@@ -6,7 +6,7 @@
 ## A. CI-gateable now (both PRs, no external setup)
 
 1. **Full gate green:** `bun run prettier:check && bun run typecheck && bun run lint &&
-   bun run build && bun run test:unit && bun --filter @persistence/web test:unit`; 90% coverage on
+bun run build && bun run test:unit && bun --filter @persistence/web test:unit`; 90% coverage on
    changed files.
 2. **Webhook auth:** wrong/missing `Authorization` → 401 (constant-time compare); correct → 200.
 3. **Dedup:** same RevenueCat `event.id` delivered twice → second is a no-op.

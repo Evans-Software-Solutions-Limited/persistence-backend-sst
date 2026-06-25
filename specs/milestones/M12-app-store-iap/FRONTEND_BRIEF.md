@@ -36,11 +36,12 @@ Wire it as a small bootstrap sibling to the existing auth bootstraps in `app/_la
 `SubscriptionSelectionPresenter`:
 
 ```tsx
-if (Platform.OS === "ios") return <IOSPurchaseFlow />;   // RevenueCat
-return <StripePaywall />;                                 // existing Web/Android path, UNCHANGED
+if (Platform.OS === "ios") return <IOSPurchaseFlow />; // RevenueCat
+return <StripePaywall />; // existing Web/Android path, UNCHANGED
 ```
 
 `<IOSPurchaseFlow>` renders the same plan cards and, on tier-select:
+
 - `Purchases.getOfferings()` → pick the package for the chosen tier + billing cycle (map our tier →
   RC entitlement/package; mirror backend `entitlements.ts`).
 - `Purchases.purchasePackage(pkg)`; on success read `customerInfo.entitlements.active[...]`.
@@ -89,5 +90,6 @@ the id is present at checkout/webhook time).
 ## Gate (from repo root)
 
 `bun run prettier:check && bun run typecheck && bun run lint && bun run build && bun run test:unit`
-+ `bun --filter @persistence/web test:unit`. Full on-device sandbox e2e closes once Prerequisites
-land — see `SMOKE_TEST.md`.
+
+- `bun --filter @persistence/web test:unit`. Full on-device sandbox e2e closes once Prerequisites
+  land — see `SMOKE_TEST.md`.

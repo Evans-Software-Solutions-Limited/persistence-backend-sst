@@ -14,7 +14,7 @@
 - Apple §3.1.1 still requires real Apple IAP for in-app digital subscriptions. RevenueCat **wraps**
   StoreKit; it does not bypass it. So we still create IAP products in App Store Connect.
 - RevenueCat's **"Stripe Billing + Track External Purchases"** path lets us KEEP our existing
-  Stripe Products / Prices / Customers / checkout / webhook untouched, and just *feed* Stripe
+  Stripe Products / Prices / Customers / checkout / webhook untouched, and just _feed_ Stripe
   subscription ids to RevenueCat so they unlock the same entitlements as Apple purchases. We do
   **NOT** adopt RevenueCat "Web Billing" (that would make RC own our checkout — wrong for us).
 - One entitlement model across platforms; `user_subscriptions` + `assertEntitlement` stay the
@@ -44,13 +44,13 @@ out in both PRs.
 
 ## Tier ↔ entitlement mapping (4 entitlements)
 
-| Tier | RC entitlement | Apple IAP products | Stripe products |
-|---|---|---|---|
-| free | (none — default) | — | — |
-| premium | `premium` | `premium_monthly`, `premium_annual` | existing Stripe monthly/annual |
+| Tier               | RC entitlement       | Apple IAP products                  | Stripe products                |
+| ------------------ | -------------------- | ----------------------------------- | ------------------------------ |
+| free               | (none — default)     | —                                   | —                              |
+| premium            | `premium`            | `premium_monthly`, `premium_annual` | existing Stripe monthly/annual |
 | individual_trainer | `individual_trainer` | `trainer_monthly`, `trainer_annual` | existing Stripe monthly/annual |
-| small_business | `small_business` | — (web/Stripe only) | existing Stripe |
-| medium_enterprise | `medium_enterprise` | — (web/Stripe only) | existing Stripe |
+| small_business     | `small_business`     | — (web/Stripe only)                 | existing Stripe                |
+| medium_enterprise  | `medium_enterprise`  | — (web/Stripe only)                 | existing Stripe                |
 
 Consumer tiers get BOTH Apple + Stripe products on their entitlement; business tiers stay
 Stripe/web-only (multi-seat/invoicing can't go through Apple IAP). On iOS a business-tier upgrade
