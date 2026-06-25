@@ -10,6 +10,7 @@ import {
   readUserIdFromMetadata,
   unixSecondsToDate,
 } from "./_helpers";
+import { syncStripeSubscriptionToRevenueCat } from "../revenueCatSync";
 
 /**
  * Handler for `customer.subscription.created`.
@@ -40,6 +41,12 @@ export async function handleSubscriptionCreated(
     );
     return;
   }
+
+  // M12 §3b: bind this Stripe sub to the Supabase user id in RevenueCat so the
+  // web (Stripe) purchase merges with the user's Apple entitlements (RevenueCat
+  // otherwise keys auto-tracked Stripe purchases on the Stripe customer id).
+  // Best-effort + idempotent — runs regardless of the local-row outcome below.
+  await syncStripeSubscriptionToRevenueCat(subscription.id, userId);
 
   const repo = new SubscriptionRepository();
   const existing = await repo.findByExternalId(subscription.id);

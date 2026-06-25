@@ -4,12 +4,17 @@ import type Stripe from "stripe";
 
 const findByExternalIdMock = vi.fn();
 const insertMock = vi.fn();
+const syncRcMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
   SubscriptionRepository: vi.fn().mockImplementation(() => ({
     findByExternalId: findByExternalIdMock,
     insert: insertMock,
   })),
+}));
+
+vi.mock("../../revenueCatSync", () => ({
+  syncStripeSubscriptionToRevenueCat: syncRcMock,
 }));
 
 import { handleSubscriptionCreated } from "../../eventHandlers/subscriptionCreated";
@@ -45,6 +50,21 @@ describe("handleSubscriptionCreated", () => {
     vi.clearAllMocks();
     findByExternalIdMock.mockResolvedValue(null);
     insertMock.mockResolvedValue({ id: "us_test" });
+    syncRcMock.mockResolvedValue(undefined);
+  });
+
+  it("binds the Stripe sub to the user in RevenueCat (M12 §3b)", async () => {
+    await handleSubscriptionCreated(buildEvent());
+    expect(syncRcMock).toHaveBeenCalledWith("sub_new", "user-1");
+  });
+
+  it("does not attempt the RevenueCat bind when supabase_user_id is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await handleSubscriptionCreated(
+      buildEvent({ metadata: {} } as Partial<Stripe.Subscription>),
+    );
+    expect(syncRcMock).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it("warns and skips when supabase_user_id is missing", async () => {
