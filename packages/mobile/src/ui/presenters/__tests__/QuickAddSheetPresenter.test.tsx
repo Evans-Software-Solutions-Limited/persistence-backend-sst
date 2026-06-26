@@ -25,6 +25,17 @@ function render(over: Partial<QuickAddSheetProps> = {}) {
   const props: QuickAddSheetProps = {
     visible: true,
     onClose: jest.fn(),
+    mealLabel: "Breakfast",
+    stage: "menu",
+    aiLocked: true,
+    yesterday: { items: ["Oatmeal", "Greek yogurt"], kcal: 480 },
+    savedMeals: [{ id: "m1", name: "Standard breakfast", kcal: 480 }],
+    onLogYesterday: jest.fn(),
+    onLogMeal: jest.fn(),
+    onScan: jest.fn(),
+    onSnap: jest.fn(),
+    onSearch: jest.fn(),
+    onManual: jest.fn(),
     query: "",
     onQueryChange: jest.fn(),
     results: [],
@@ -37,52 +48,81 @@ function render(over: Partial<QuickAddSheetProps> = {}) {
     slot: "breakfast",
     onSlotChange: jest.fn(),
     onAdd: jest.fn(),
+    onBackToMenu: jest.fn(),
     ...over,
   };
   return { ...renderWithTheme(<QuickAddSheetPresenter {...props} />), props };
 }
 
-describe("QuickAddSheetPresenter", () => {
-  it("prompts for ≥2 chars before searching", () => {
-    const { getByTestId } = render({ query: "o" });
+describe("QuickAddSheetPresenter — menu stage", () => {
+  it("renders the from-yesterday, saved-meals, and action tiles", () => {
+    const { getByTestId } = render();
+    expect(getByTestId("quick-add-yesterday")).toBeTruthy();
+    expect(getByTestId("quick-add-meal-m1")).toBeTruthy();
+    expect(getByTestId("quick-add-tile-scan")).toBeTruthy();
+    expect(getByTestId("quick-add-tile-snap")).toBeTruthy();
+    expect(getByTestId("quick-add-tile-search")).toBeTruthy();
+    expect(getByTestId("quick-add-tile-manual")).toBeTruthy();
+  });
+
+  it("shows the AI badge on Snap when locked", () => {
+    const { getByTestId } = render({ aiLocked: true });
+    expect(getByTestId("quick-add-tile-snap-ai")).toBeTruthy();
+  });
+
+  it("hides from-yesterday when there's no history", () => {
+    const { queryByTestId } = render({ yesterday: null });
+    expect(queryByTestId("quick-add-yesterday")).toBeNull();
+  });
+
+  it("routes the menu actions", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("quick-add-yesterday"));
+    fireEvent.press(getByTestId("quick-add-meal-m1"));
+    fireEvent.press(getByTestId("quick-add-tile-scan"));
+    fireEvent.press(getByTestId("quick-add-tile-snap"));
+    fireEvent.press(getByTestId("quick-add-tile-search"));
+    fireEvent.press(getByTestId("quick-add-tile-manual"));
+    expect(props.onLogYesterday).toHaveBeenCalled();
+    expect(props.onLogMeal).toHaveBeenCalledWith("m1");
+    expect(props.onScan).toHaveBeenCalled();
+    expect(props.onSnap).toHaveBeenCalled();
+    expect(props.onSearch).toHaveBeenCalled();
+    expect(props.onManual).toHaveBeenCalled();
+  });
+});
+
+describe("QuickAddSheetPresenter — search stage", () => {
+  it("prompts for ≥2 chars", () => {
+    const { getByTestId } = render({ stage: "search", query: "o" });
     expect(getByTestId("quick-add-hint")).toBeTruthy();
   });
 
-  it("renders results and selects a food", () => {
-    const { getByTestId, props } = render({ query: "oat", results: [food] });
+  it("selects a search result", () => {
+    const { getByTestId, props } = render({
+      stage: "search",
+      query: "oat",
+      results: [food],
+    });
     fireEvent.press(getByTestId("quick-add-result-f1"));
     expect(props.onSelect).toHaveBeenCalledWith(food);
   });
 
-  it("shows an empty state when search returns nothing", () => {
-    const { getByTestId } = render({ query: "zzz", results: [] });
-    expect(getByTestId("quick-add-empty")).toBeTruthy();
-  });
-
-  it("renders the selected-food detail with serving + slot controls", () => {
-    const { getByTestId } = render({ selected: food });
+  it("shows the selected-food detail with OFF credit + confirms", () => {
+    const { getByTestId, props } = render({ stage: "search", selected: food });
     expect(getByTestId("quick-add-detail")).toBeTruthy();
-    expect(getByTestId("quick-add-servings")).toBeTruthy();
-    expect(getByTestId("quick-add-slot-lunch")).toBeTruthy();
-    // Open Food Facts attribution (ODbL) is shown for OFF-sourced foods.
     expect(getByTestId("quick-add-off-credit")).toBeTruthy();
-  });
-
-  it("steps servings, picks a slot, and confirms", () => {
-    const { getByTestId, props } = render({ selected: food });
-    fireEvent.press(getByTestId("quick-add-servings-plus"));
+    fireEvent.press(getByTestId("quick-add-servings-inc"));
     expect(props.onServingsChange).toHaveBeenCalledWith(1.5);
-    fireEvent.press(getByTestId("quick-add-servings-minus"));
-    expect(props.onServingsChange).toHaveBeenCalledWith(0.5);
-    fireEvent.press(getByTestId("quick-add-slot-dinner"));
+    fireEvent.press(getByTestId("quick-add-meal-picker-option-dinner"));
     expect(props.onSlotChange).toHaveBeenCalledWith("dinner");
     fireEvent.press(getByTestId("quick-add-confirm"));
     expect(props.onAdd).toHaveBeenCalled();
   });
 
-  it("goes back to search from the detail", () => {
-    const { getByTestId, props } = render({ selected: food });
-    fireEvent.press(getByTestId("quick-add-back"));
-    expect(props.onClearSelection).toHaveBeenCalled();
+  it("goes back from search to menu", () => {
+    const { getByTestId, props } = render({ stage: "search" });
+    fireEvent.press(getByTestId("quick-add-search-back"));
+    expect(props.onBackToMenu).toHaveBeenCalled();
   });
 });

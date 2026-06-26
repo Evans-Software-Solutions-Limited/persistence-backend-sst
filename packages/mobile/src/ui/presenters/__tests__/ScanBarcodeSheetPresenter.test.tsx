@@ -31,8 +31,13 @@ function render(over: Partial<ScanBarcodeSheetProps> = {}) {
     onBarcodeScanned: jest.fn(),
     isResolving: false,
     food: null,
-    servings: 1,
-    onServingsChange: jest.fn(),
+    portionMode: "serving",
+    onPortionModeChange: jest.fn(),
+    portionValue: 1,
+    onPortionDec: jest.fn(),
+    onPortionInc: jest.fn(),
+    effectiveGrams: 40,
+    scaled: { kcal: 150, proteinG: 5, carbsG: 27, fatG: 3 },
     slot: "breakfast",
     onSlotChange: jest.fn(),
     onAdd: jest.fn(),
@@ -58,31 +63,34 @@ describe("ScanBarcodeSheetPresenter", () => {
     expect(getByTestId("scan-camera")).toBeTruthy();
   });
 
-  it("renders the found-food card with serving + slot + OFF credit", () => {
+  it("renders the found-food card with macro pills, kcal stat, portion + meal pickers", () => {
     const { getByTestId } = render({ stage: "found", food });
-    expect(getByTestId("scan-found")).toBeTruthy();
-    expect(getByTestId("scan-servings")).toBeTruthy();
-    expect(getByTestId("scan-slot-snack")).toBeTruthy();
+    expect(getByTestId("scan-found-card")).toBeTruthy();
+    expect(getByTestId("scan-kcal")).toBeTruthy();
+    expect(getByTestId("scan-portion-mode")).toBeTruthy();
+    expect(getByTestId("scan-portion")).toBeTruthy();
+    expect(getByTestId("scan-meal-picker")).toBeTruthy();
     expect(getByTestId("scan-off-credit")).toBeTruthy();
   });
 
-  it("adds the found food and re-scans", () => {
+  it("switches portion mode + steps the portion", () => {
     const { getByTestId, props } = render({ stage: "found", food });
-    fireEvent.press(getByTestId("scan-servings-plus"));
-    expect(props.onServingsChange).toHaveBeenCalledWith(1.5);
-    fireEvent.press(getByTestId("scan-servings-minus"));
-    expect(props.onServingsChange).toHaveBeenCalledWith(0.5);
-    fireEvent.press(getByTestId("scan-slot-dinner"));
+    fireEvent.press(getByTestId("scan-portion-mode-option-grams"));
+    expect(props.onPortionModeChange).toHaveBeenCalledWith("grams");
+    fireEvent.press(getByTestId("scan-portion-inc"));
+    expect(props.onPortionInc).toHaveBeenCalled();
+    fireEvent.press(getByTestId("scan-portion-dec"));
+    expect(props.onPortionDec).toHaveBeenCalled();
+  });
+
+  it("picks a meal slot, adds, and re-scans", () => {
+    const { getByTestId, props } = render({ stage: "found", food });
+    fireEvent.press(getByTestId("scan-meal-picker-option-dinner"));
     expect(props.onSlotChange).toHaveBeenCalledWith("dinner");
     fireEvent.press(getByTestId("scan-confirm"));
     expect(props.onAdd).toHaveBeenCalled();
     fireEvent.press(getByTestId("scan-rescan"));
     expect(props.onRescan).toHaveBeenCalled();
-  });
-
-  it("shows the resolving hint while looking up", () => {
-    const { getByTestId } = render({ isResolving: true });
-    expect(getByTestId("scan-hint")).toBeTruthy();
   });
 
   it("renders the not-found, offline, and unavailable states", () => {

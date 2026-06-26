@@ -1,24 +1,43 @@
 import { CameraView } from "expo-camera";
-import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
-import { BottomSheet, Btn, Card, IconBtn } from "@/ui/components/foundation";
-import { IconBack, IconMinus, IconPlus } from "@/ui/components/icons";
+import {
+  BottomSheet,
+  Btn,
+  Card,
+  Pill,
+  Segmented,
+  Stat,
+} from "@/ui/components/foundation";
+import { toneHex } from "@/ui/components/foundation/tones";
+import { IconBarcode, IconCheck } from "@/ui/components/icons";
 import type { Food, MealSlot } from "@/domain/models/nutrition";
-import { MEAL_SLOTS, scaleFoodMacros } from "@/domain/services";
+import type { PortionMode } from "@/domain/services";
+import { MealPickerPresenter } from "./MealPickerPresenter";
+import { PortionStepperPresenter } from "./PortionStepperPresenter";
 
 /**
  * <ScanBarcodeSheetPresenter> — barcode scanner sheet (fuel-sheets.jsx ScanSheet).
- * On-device EAN/UPC decode via expo-camera's CameraView (free, no key). Stages:
- * scanning → found (food card → serving + slot → Add). 404 → add-manually path;
- * offline-uncached → graceful notice. The camera mounts ONLY while scanning so it
- * releases on close / once a code resolves (battery + privacy).
+ * Camera viewfinder + scanning/found status <Pill>, a recognised-item <Card>
+ * (macro <Pill>s + kcal <Stat>), a 3-mode portion picker (<Segmented> +
+ * <PortionStepper>), the shared <MealPicker>, and an Add button. On-device
+ * EAN/UPC decode via expo-camera; camera mounts only while scanning.
  *
- * Pure: stage + handlers are props; the container owns resolve + log.
+ * Pure: stage + portion + handlers are props; the container owns resolve, the
+ * portion math, and the log. The offline / not-found / unavailable states are
+ * V2 offline-first additions (design.md § Offline behaviour) on top of the
+ * prototype's scanning→found flow.
  *
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <ScanBarcodeSheet>
  */
 
+const PORTION_OPTIONS: { value: PortionMode; label: string }[] = [
+  { value: "serving", label: "Serving" },
+  { value: "grams", label: "Grams" },
+  { value: "cups", label: "Cups" },
+];
+
 const intl = (n: number) => Math.round(n).toLocaleString("en-US");
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export type ScanStage =
   | "scanning"
@@ -26,6 +45,13 @@ export type ScanStage =
   | "not-found"
   | "offline"
   | "unavailable";
+
+export type ScanScaledMacros = {
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
 
 export type ScanBarcodeSheetProps = {
   visible: boolean;
@@ -36,8 +62,17 @@ export type ScanBarcodeSheetProps = {
   onBarcodeScanned: (code: string) => void;
   isResolving: boolean;
   food: Food | null;
-  servings: number;
-  onServingsChange: (n: number) => void;
+  /** Portion entry. */
+  portionMode: PortionMode;
+  onPortionModeChange: (mode: PortionMode) => void;
+  /** The active mode's value (servings / grams / cups). */
+  portionValue: number;
+  onPortionDec: () => void;
+  onPortionInc: () => void;
+  /** Effective grams for the "= N g" readout (container-computed). */
+  effectiveGrams: number;
+  /** Macros scaled to the chosen portion (container-computed). */
+  scaled: ScanScaledMacros;
   slot: MealSlot;
   onSlotChange: (slot: MealSlot) => void;
   onAdd: () => void;
@@ -45,47 +80,72 @@ export type ScanBarcodeSheetProps = {
   testID?: string;
 };
 
-function SlotChips({
-  slot,
-  onSlotChange,
-}: {
-  slot: MealSlot;
-  onSlotChange: (slot: MealSlot) => void;
-}) {
+function FoundCard({ food, scaled }: { food: Food; scaled: ScanScaledMacros }) {
   return (
-    <View flexDirection="row" gap={8} flexWrap="wrap">
-      {MEAL_SLOTS.map((m) => {
-        const active = slot === m.slot;
-        return (
-          <Pressable
-            key={m.slot}
-            testID={`scan-slot-${m.slot}`}
-            onPress={() => onSlotChange(m.slot)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={m.label}
+    <Card pad={14} radius={14} accent="primary" testID="scan-found-card">
+      <View flexDirection="row" alignItems="center" gap={12}>
+        <View
+          width={50}
+          height={50}
+          borderRadius={10}
+          backgroundColor="$goldDim"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <IconBarcode size={22} color={toneHex("gold").base} />
+        </View>
+        <View flex={1}>
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={14}
+            color="$text"
+            numberOfLines={1}
           >
-            <View
-              paddingVertical={6}
-              paddingHorizontal={14}
-              borderRadius={9999}
-              borderWidth={1}
-              backgroundColor={active ? "$primaryDim" : "$surface3"}
-              borderColor={active ? "$primary" : "$border2"}
+            {food.name}
+          </Text>
+          <Text
+            fontFamily="$body"
+            fontSize={11.5}
+            color="$text3"
+            numberOfLines={1}
+          >
+            {food.barcode ? `${food.barcode} · ` : ""}per {food.servingSize}
+            {food.servingUnit}
+          </Text>
+          <View flexDirection="row" gap={6} marginTop={6}>
+            <Pill
+              tone="neutral"
+              size="xs"
+            >{`P ${round1(scaled.proteinG)}g`}</Pill>
+            <Pill
+              tone="neutral"
+              size="xs"
+            >{`C ${round1(scaled.carbsG)}g`}</Pill>
+            <Pill tone="neutral" size="xs">{`F ${round1(scaled.fatG)}g`}</Pill>
+          </View>
+          {food.source === "openfoodfacts" ? (
+            <Text
+              fontFamily="$body"
+              fontSize={10.5}
+              color="$text3"
+              marginTop={4}
+              testID="scan-off-credit"
             >
-              <Text
-                fontFamily="$display"
-                fontWeight="600"
-                fontSize={12}
-                color={active ? "$primary" : "$text2"}
-              >
-                {m.label}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
+              Data: Open Food Facts
+            </Text>
+          ) : null}
+        </View>
+        <Stat
+          value={intl(scaled.kcal)}
+          unit="kcal"
+          tone="gold"
+          size="md"
+          align="center"
+          testID="scan-kcal"
+        />
+      </View>
+    </Card>
   );
 }
 
@@ -98,20 +158,34 @@ export function ScanBarcodeSheetPresenter({
   onBarcodeScanned,
   isResolving,
   food,
-  servings,
-  onServingsChange,
+  portionMode,
+  onPortionModeChange,
+  portionValue,
+  onPortionDec,
+  onPortionInc,
+  effectiveGrams,
+  scaled,
   slot,
   onSlotChange,
   onAdd,
   onRescan,
   testID = "scan-sheet",
 }: ScanBarcodeSheetProps) {
+  const portionUnit =
+    portionMode === "serving"
+      ? `× ${food?.servingSize ?? 0}${food?.servingUnit ?? "g"}`
+      : portionMode === "grams"
+        ? "grams"
+        : portionValue === 1
+          ? "cup"
+          : "cups";
+
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
       title="Scan barcode"
-      eyebrow="ADD FOOD"
+      eyebrow="QUICK LOG"
       accent="primary"
       height="tall"
       testID={testID}
@@ -134,13 +208,15 @@ export function ScanBarcodeSheetPresenter({
             </Btn>
           </View>
         ) : (
-          <View gap={12}>
+          <View gap={14}>
             <View
-              height={280}
               borderRadius={16}
               overflow="hidden"
               backgroundColor="$bg"
+              borderColor="$border2"
+              borderWidth={1}
               testID="scan-camera-wrap"
+              style={{ aspectRatio: 16 / 9, position: "relative" }}
             >
               <CameraView
                 testID="scan-camera"
@@ -150,54 +226,38 @@ export function ScanBarcodeSheetPresenter({
                   onBarcodeScanned(data)
                 }
               />
+              <View
+                position="absolute"
+                bottom={12}
+                left={0}
+                right={0}
+                alignItems="center"
+              >
+                <Pill tone={isResolving ? "primary" : "neutral"} size="md">
+                  {isResolving ? "Looking up…" : "Scanning…"}
+                </Pill>
+              </View>
             </View>
             <Text
               fontFamily="$body"
-              fontSize={13}
+              fontSize={12.5}
               color="$text3"
               testID="scan-hint"
             >
-              {isResolving ? "Looking up…" : "Point your camera at a barcode."}
+              Centre the barcode in the frame. Hold still.
             </Text>
           </View>
         )
       ) : stage === "found" && food ? (
-        <View gap={16} testID="scan-found">
-          <View flexDirection="row" alignItems="center" gap={10}>
-            <IconBtn
-              icon={<IconBack size={18} />}
-              tone="neutral"
-              onPress={onRescan}
-              testID="scan-rescan"
-              accessibilityLabel="Scan again"
-            />
-            <View flex={1}>
-              <Text
-                fontFamily="$display"
-                fontWeight="700"
-                fontSize={16}
-                color="$text"
-                numberOfLines={1}
-              >
-                {food.name}
-              </Text>
-              {food.source === "openfoodfacts" ? (
-                <Text
-                  fontFamily="$body"
-                  fontSize={10.5}
-                  color="$text3"
-                  testID="scan-off-credit"
-                >
-                  Data: Open Food Facts
-                </Text>
-              ) : null}
-            </View>
-          </View>
-          <Card pad={16} radius={14}>
+        <View gap={14} testID="scan-found">
+          <FoundCard food={food} scaled={scaled} />
+
+          <Card pad={14} radius={14}>
             <View
               flexDirection="row"
               alignItems="center"
               justifyContent="space-between"
+              marginBottom={12}
             >
               <Text
                 fontFamily="$display"
@@ -207,42 +267,40 @@ export function ScanBarcodeSheetPresenter({
                 textTransform="uppercase"
                 color="$text3"
               >
-                Servings
+                Portion
               </Text>
-              <View flexDirection="row" alignItems="center" gap={12}>
-                <IconBtn
-                  icon={<IconMinus size={16} strokeWidth={2.5} />}
-                  tone="neutral"
-                  onPress={() =>
-                    onServingsChange(Math.max(0.5, servings - 0.5))
-                  }
-                  testID="scan-servings-minus"
-                  accessibilityLabel="Fewer servings"
-                />
-                <Text
-                  fontFamily="$mono"
-                  fontSize={20}
-                  fontWeight="600"
-                  color="$text"
-                  fontVariant={["tabular-nums"]}
-                  testID="scan-servings"
-                >
-                  {servings}
-                </Text>
-                <IconBtn
-                  icon={<IconPlus size={16} strokeWidth={2.5} />}
-                  tone="primary"
-                  onPress={() => onServingsChange(servings + 0.5)}
-                  testID="scan-servings-plus"
-                  accessibilityLabel="More servings"
-                />
-              </View>
+              <Text
+                fontFamily="$mono"
+                fontSize={10.5}
+                color="$text3"
+                fontVariant={["tabular-nums"]}
+              >
+                = {intl(effectiveGrams)} g
+              </Text>
             </View>
-            <Text fontFamily="$mono" fontSize={13} color="$text" marginTop={14}>
-              {intl(scaleFoodMacros(food, servings).kcal)} kcal
-            </Text>
+            <View marginBottom={14}>
+              <Segmented
+                testID="scan-portion-mode"
+                options={PORTION_OPTIONS}
+                value={portionMode}
+                onChange={(v) => onPortionModeChange(v as PortionMode)}
+              />
+            </View>
+            <PortionStepperPresenter
+              testID="scan-portion"
+              value={portionValue}
+              unit={portionUnit}
+              onDec={onPortionDec}
+              onInc={onPortionInc}
+            />
           </Card>
-          <SlotChips slot={slot} onSlotChange={onSlotChange} />
+
+          <MealPickerPresenter
+            value={slot}
+            onChange={onSlotChange}
+            testID="scan-meal-picker"
+          />
+
           <Btn
             variant="filled"
             tone="primary"
@@ -250,9 +308,19 @@ export function ScanBarcodeSheetPresenter({
             full
             onPress={onAdd}
             testID="scan-confirm"
-            icon={<IconPlus size={16} strokeWidth={2.5} />}
+            icon={<IconCheck size={16} strokeWidth={2.5} />}
           >
-            Add to {MEAL_SLOTS.find((m) => m.slot === slot)?.label}
+            Add
+          </Btn>
+          <Btn
+            variant="ghost"
+            tone="primary"
+            size="sm"
+            full
+            onPress={onRescan}
+            testID="scan-rescan"
+          >
+            Scan again
           </Btn>
         </View>
       ) : stage === "not-found" ? (

@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useResolveBarcode } from "@/ui/hooks/useResolveBarcode";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { localDayISO } from "@/shared/utils";
+import {
+  portionToServings,
+  scaleFoodMacros,
+  type PortionMode,
+} from "@/domain/services";
 import type { Food, MealSlot } from "@/domain/models/nutrition";
 import {
   ScanBarcodeSheetPresenter,
@@ -14,7 +19,8 @@ import {
 /**
  * <ScanBarcodeSheetContainer> — root-mounted barcode scanner. Owns the camera
  * permission, debounces duplicate reads, resolves the code (cache-first, offline
- * fallback), and logs the chosen food optimistically into the active slot.
+ * fallback), runs the Serving/Grams/Cups portion math (fuel-sheets.jsx), and
+ * logs the chosen food optimistically into the active slot.
  *
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <ScanBarcodeSheet>
  */
@@ -35,20 +41,32 @@ export function ScanBarcodeSheetContainer() {
 
   const [stage, setStage] = useState<ScanStage>("scanning");
   const [food, setFood] = useState<Food | null>(null);
-  const [servings, setServings] = useState(1);
   const [slot, setSlot] = useState<MealSlot>(slotFromStore);
 
+  // Portion entry — three independent values per the prototype.
+  const [portionMode, setPortionMode] = useState<PortionMode>("serving");
+  const [servings, setServings] = useState(1);
+  const [grams, setGrams] = useState(100);
+  const [cups, setCups] = useState(1);
+
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
+
+  const resetPortion = useCallback((f: Food | null) => {
+    setPortionMode("serving");
+    setServings(1);
+    setGrams(f?.servingSize && f.servingSize > 0 ? f.servingSize : 100);
+    setCups(1);
+  }, []);
 
   useEffect(() => {
     if (visible) {
       setStage("scanning");
       setFood(null);
-      setServings(1);
       setSlot(slotFromStore);
+      resetPortion(null);
       lastScanRef.current = null;
     }
-  }, [visible, slotFromStore]);
+  }, [visible, slotFromStore, resetPortion]);
 
   const onBarcodeScanned = useCallback(
     (code: string) => {
@@ -62,6 +80,7 @@ export function ScanBarcodeSheetContainer() {
           case "found":
             void Haptics.selectionAsync();
             setFood(result.food);
+            resetPortion(result.food);
             setStage("found");
             break;
           case "not-found":
@@ -75,7 +94,7 @@ export function ScanBarcodeSheetContainer() {
         }
       });
     },
-    [resolve],
+    [resolve, resetPortion],
   );
 
   const onRescan = useCallback(() => {
@@ -84,18 +103,51 @@ export function ScanBarcodeSheetContainer() {
     lastScanRef.current = null;
   }, []);
 
+  // Active portion value + the servings multiple it maps to.
+  const portionValue =
+    portionMode === "serving"
+      ? servings
+      : portionMode === "grams"
+        ? grams
+        : cups;
+  const servingsScale = useMemo(
+    () => (food ? portionToServings(food, portionMode, portionValue) : 0),
+    [food, portionMode, portionValue],
+  );
+  const effectiveGrams = Math.round(servingsScale * (food?.servingSize ?? 0));
+  const scaled = useMemo(
+    () =>
+      food
+        ? scaleFoodMacros(food, servingsScale)
+        : { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    [food, servingsScale],
+  );
+
+  const onPortionDec = useCallback(() => {
+    if (portionMode === "serving")
+      setServings((v) => Math.max(0.5, +(v - 0.5).toFixed(1)));
+    else if (portionMode === "grams") setGrams((v) => Math.max(10, v - 10));
+    else setCups((v) => Math.max(0.25, +(v - 0.25).toFixed(2)));
+  }, [portionMode]);
+
+  const onPortionInc = useCallback(() => {
+    if (portionMode === "serving") setServings((v) => +(v + 0.5).toFixed(1));
+    else if (portionMode === "grams") setGrams((v) => v + 10);
+    else setCups((v) => +(v + 0.25).toFixed(2));
+  }, [portionMode]);
+
   const onAdd = useCallback(async () => {
     if (!food) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await logEntry.mutate({
       foodId: food.id,
       mealSlot: slot,
-      servings,
+      servings: servingsScale,
       loggedAt: new Date(`${localDayISO()}T12:00:00`).toISOString(),
     });
     notifyMutated();
     close();
-  }, [food, slot, servings, logEntry, notifyMutated, close]);
+  }, [food, slot, servingsScale, logEntry, notifyMutated, close]);
 
   return (
     <ScanBarcodeSheetPresenter
@@ -107,8 +159,13 @@ export function ScanBarcodeSheetContainer() {
       onBarcodeScanned={onBarcodeScanned}
       isResolving={isResolving}
       food={food}
-      servings={servings}
-      onServingsChange={setServings}
+      portionMode={portionMode}
+      onPortionModeChange={setPortionMode}
+      portionValue={portionValue}
+      onPortionDec={onPortionDec}
+      onPortionInc={onPortionInc}
+      effectiveGrams={effectiveGrams}
+      scaled={scaled}
       slot={slot}
       onSlotChange={setSlot}
       onAdd={() => void onAdd()}

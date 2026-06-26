@@ -368,3 +368,31 @@ export function entryDisplayLabel(
   if (entry.mealId) return lookups.meal(entry.mealId) ?? "Meal";
   return "Quick entry";
 }
+
+// ── Portion picker (Scan/Quick-add sheets, fuel-sheets.jsx PortionStepper) ───
+
+/** Portion entry mode in the Scan sheet (fuel-sheets.jsx ScanSheet). */
+export type PortionMode = "serving" | "grams" | "cups";
+
+/** 1 cup ≈ 245 g (the prototype's cup→gram reference). */
+export const GRAMS_PER_CUP = 245;
+
+/**
+ * Convert a portion (mode + value) into a multiple of the food's serving — the
+ * value `scaleFoodMacros` / the logged `servings` expects. A food's per-serving
+ * macros cover `food.servingSize` grams, so:
+ *   serving → value (servings directly)
+ *   grams   → grams / servingSize
+ *   cups    → (cups × 245) / servingSize
+ * Guards a zero/absent serving size (→ the raw value) so macros never go NaN.
+ */
+export function portionToServings(
+  food: Pick<Food, "servingSize">,
+  mode: PortionMode,
+  value: number,
+): number {
+  if (mode === "serving") return value;
+  const size = food.servingSize > 0 ? food.servingSize : 1;
+  const grams = mode === "cups" ? value * GRAMS_PER_CUP : value;
+  return grams / size;
+}

@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
-import { Card, IconBtn } from "@/ui/components/foundation";
+import { Card, IconBtn, Stat } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconDroplet, IconMinus, IconPlus } from "@/ui/components/icons";
 
@@ -52,25 +52,13 @@ export function WaterTrackerPresenter({
           >
             Water
           </Text>
-          <View flexDirection="row" alignItems="baseline" gap={4} marginTop={4}>
-            <Text
-              fontFamily="$mono"
-              fontSize={20}
-              fontWeight="600"
-              color="$text"
-              fontVariant={["tabular-nums"]}
+          <View marginTop={4}>
+            <Stat
+              value={cups}
+              unit={`/ ${goal} cups`}
+              size="md"
               testID="fuel-water-count"
-            >
-              {cups}
-            </Text>
-            <Text
-              fontFamily="$mono"
-              fontSize={13}
-              color="$text3"
-              fontVariant={["tabular-nums"]}
-            >
-              / {goal} cups
-            </Text>
+            />
           </View>
         </View>
         <View flexDirection="row" gap={8}>

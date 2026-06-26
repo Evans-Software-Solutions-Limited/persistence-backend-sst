@@ -186,4 +186,36 @@ describe("ScanBarcodeSheetContainer", () => {
     });
     await waitFor(() => expect(mockProbe.last?.stage).toBe("offline"));
   });
+
+  it("runs the Serving/Grams/Cups portion math", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]); // servingSize 100, 300 kcal
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openScan("snack"));
+    await act(async () => {
+      mockProbe.last!.onBarcodeScanned("5012345678900");
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("found"));
+
+    // serving mode: 1 serving → 300 kcal, 100 g
+    expect(mockProbe.last?.scaled.kcal).toBe(300);
+    expect(mockProbe.last?.effectiveGrams).toBe(100);
+
+    // grams mode: default grams = servingSize (100); +10 → 110 g → 330 kcal
+    act(() => mockProbe.last!.onPortionModeChange("grams"));
+    act(() => mockProbe.last!.onPortionInc());
+    await waitFor(() => expect(mockProbe.last?.effectiveGrams).toBe(110));
+    expect(mockProbe.last?.scaled.kcal).toBe(330);
+
+    // cups mode: 1 cup ≈ 245 g → 2.45 servings → 735 kcal
+    act(() => mockProbe.last!.onPortionModeChange("cups"));
+    await waitFor(() => expect(mockProbe.last?.effectiveGrams).toBe(245));
+    expect(mockProbe.last?.scaled.kcal).toBe(735);
+    act(() => mockProbe.last!.onPortionDec()); // 0.75 cups
+    await waitFor(() => expect(mockProbe.last?.effectiveGrams).toBe(184));
+  });
 });

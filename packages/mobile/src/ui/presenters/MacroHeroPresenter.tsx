@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { Bar, Btn, Card, Ring } from "@/ui/components/foundation";
+import { Bar, Btn, Card, Ring, Stat } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconEdit, IconPlus } from "@/ui/components/icons";
 
@@ -118,29 +118,15 @@ export function MacroHeroPresenter({
           testID="fuel-hero-ring"
           accessibilityLabel={`${intl(remainingKcal)} kilocalories remaining`}
         >
-          <Text
-            fontFamily="$display"
-            fontSize={10.5}
-            fontWeight="600"
-            letterSpacing={1.5}
-            textTransform="uppercase"
-            color="$gold"
-          >
-            {celebrate ? "GOAL HIT" : "REMAINING"}
-          </Text>
-          <Text
-            fontFamily="$mono"
-            fontSize={26}
-            fontWeight="600"
-            color="$text"
-            marginTop={2}
-            fontVariant={["tabular-nums"]}
-          >
-            {intl(remainingKcal)}
-          </Text>
-          <Text fontFamily="$mono" fontSize={10} color="$text3">
-            kcal
-          </Text>
+          <Stat
+            value={intl(remainingKcal)}
+            unit="kcal"
+            label={celebrate ? "GOAL HIT" : "REMAINING"}
+            tone="gold"
+            size="md"
+            align="center"
+            testID="fuel-hero-remaining"
+          />
         </Ring>
 
         <View flex={1} gap={10}>
@@ -184,23 +170,12 @@ export function MacroHeroPresenter({
             </Btn>
           </View>
           <View flexDirection="row" alignItems="baseline" gap={4} marginTop={4}>
-            <Text
-              fontFamily="$mono"
-              fontSize={20}
-              fontWeight="600"
-              color="$text"
-              fontVariant={["tabular-nums"]}
-            >
-              {intl(consumedKcal)}
-            </Text>
-            <Text
-              fontFamily="$mono"
-              fontSize={12}
-              color="$text3"
-              fontVariant={["tabular-nums"]}
-            >
-              {noTarget ? "/ — kcal" : `/ ${intl(targetKcal)} kcal`}
-            </Text>
+            <Stat
+              value={intl(consumedKcal)}
+              unit={noTarget ? "/ — kcal" : `/ ${intl(targetKcal)} kcal`}
+              size="md"
+              testID="fuel-hero-consumed"
+            />
           </View>
         </View>
         <Btn
