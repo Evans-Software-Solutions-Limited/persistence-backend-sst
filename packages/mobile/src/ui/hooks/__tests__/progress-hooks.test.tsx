@@ -17,6 +17,7 @@ import {
   useGetAchievements,
   useGetStreaks,
   useGetHabits,
+  buildHabitGrid,
   useToggleHabitDay,
   useLogMeasurement,
   useUseFreezeToken,
@@ -220,6 +221,100 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     // wherever it falls in the week — no longer always the last column.
     expect(result.current.habits[0].days).toHaveLength(7);
     expect(result.current.habits[0].days.filter(Boolean)).toHaveLength(1);
+  });
+
+  describe("buildHabitGrid (config-aware)", () => {
+    const week = [
+      "2026-06-22",
+      "2026-06-23",
+      "2026-06-24",
+      "2026-06-25",
+      "2026-06-26",
+      "2026-06-27",
+      "2026-06-28",
+    ];
+    const cfg = (over: Record<string, unknown>) => ({
+      category: "water",
+      enabled: true,
+      goalId: "g-water",
+      assignedByCoach: false,
+      locked: false,
+      targetValue: 2,
+      unit: "L",
+      period: "daily",
+      completionRule: "value_gte",
+      daysPerWeek: null,
+      tolerancePct: null,
+      pending: null,
+      ...over,
+    });
+
+    it("renders one tile per enabled config with mapped label/tone, even with no completions", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({ category: "water", goalId: "g-water" }),
+        cfg({ category: "gym", goalId: "g-gym" }),
+      ]);
+      expect(habits).toHaveLength(2);
+      expect(habits[0]).toMatchObject({ label: "Water", tone: "primary" });
+      expect(habits[1]).toMatchObject({ label: "Gym", tone: "success" });
+      // No completions → all 7 days false.
+      expect(habits[0].days.filter(Boolean)).toHaveLength(0);
+    });
+
+    it("marks completion days against the configured goal", () => {
+      const habits = buildHabitGrid(
+        [
+          {
+            id: "c1",
+            userId: USER,
+            goalId: "g-water",
+            completedAt: `${week[2]}T10:00:00.000Z`,
+            localCompletedDate: week[2],
+            value: null,
+          },
+        ],
+        week,
+        [cfg({ category: "water", goalId: "g-water" })],
+      );
+      expect(habits[0].days[2]).toBe(true);
+      expect(habits[0].days.filter(Boolean)).toHaveLength(1);
+    });
+
+    it("filters out disabled configs and ones with no goalId", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({ category: "water", goalId: "g-water", enabled: true }),
+        cfg({ category: "gym", goalId: "g-gym", enabled: false }),
+        cfg({ category: "sleep", goalId: null, enabled: true }),
+      ]);
+      expect(habits).toHaveLength(1);
+      expect(habits[0].label).toBe("Water");
+    });
+
+    it("falls back to the category name + primary tone for an unknown category", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({ category: "meditation", goalId: "g-x" }),
+      ]);
+      expect(habits[0]).toMatchObject({ label: "meditation", tone: "primary" });
+    });
+
+    it("uses the completions-only legacy path when no configs are supplied", () => {
+      const habits = buildHabitGrid(
+        [
+          {
+            id: "c1",
+            userId: USER,
+            goalId: "g-legacy",
+            completedAt: `${week[1]}T10:00:00.000Z`,
+            localCompletedDate: week[1],
+            value: null,
+          },
+        ],
+        week,
+        [],
+      );
+      expect(habits).toHaveLength(1);
+      expect(habits[0].id).toBe("g-legacy");
+    });
   });
 
   it("buckets a habit by its local day, not the completedAt UTC slice (tz≥+12)", async () => {

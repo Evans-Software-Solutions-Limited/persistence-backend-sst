@@ -55,6 +55,7 @@ import type {
   LogMeasurementInput,
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
+  HabitConfigEntry,
 } from "@/domain/ports/api.port";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
@@ -1090,6 +1091,10 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<HabitCompletion[]>("/habit-completions", {
       params,
     });
+  }
+
+  async getHabitConfigs(): Promise<Result<HabitConfigEntry[], ApiError>> {
+    return this.requestEnvelope<HabitConfigEntry[]>("/users/me/habits/config");
   }
 
   async createHabitCompletion(

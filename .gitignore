@@ -22,6 +22,9 @@ node_modules
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
+# kiro local settings (machine-specific)
+.kiro/settings/
+
 # expo cache
 **/.expo
 

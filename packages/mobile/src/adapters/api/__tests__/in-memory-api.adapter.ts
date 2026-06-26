@@ -44,6 +44,7 @@ import type {
   LogMeasurementInput,
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
+  HabitConfigEntry,
   InviteApiError,
 } from "@/domain/ports/api.port";
 import type { PersonalRecord } from "@/domain/models/record";
@@ -961,6 +962,9 @@ export class InMemoryApiAdapter implements ApiPort {
       ? this.habitCompletions.filter((h) => h.goalId === params.goalId)
       : this.habitCompletions;
     return this.mayFail<HabitCompletion[]>(rows);
+  }
+  async getHabitConfigs() {
+    return this.mayFail<HabitConfigEntry[]>([]);
   }
   async createHabitCompletion(input: CreateHabitCompletionInput) {
     const row: HabitCompletion = {
