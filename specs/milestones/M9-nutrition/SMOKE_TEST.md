@@ -31,7 +31,7 @@ Reviewer's end-to-end walkthrough. Each step maps to a `13-nutrition-tracking/re
 12. [ ] Tap Add on the Lunch header → `<QuickAddSheet>` opens. (AC 3.1)
 13. [ ] Type a food name → results list (recents + foods + recipes + meals) → tap one. (AC 3.2)
 14. [ ] Set serving; meal slot defaults to Lunch → Add → `POST /nutrition/entries` → appears under Lunch. (AC 3.3, 3.4)
-15. [ ] Confirm there is **no "Or describe it…" CTA** (Tier-B, deferred). 
+15. [ ] Confirm there is **no "Or describe it…" CTA** (Tier-B, deferred).
 
 ## D. Edit / delete
 
@@ -55,7 +55,7 @@ Reviewer's end-to-end walkthrough. Each step maps to a `13-nutrition-tracking/re
 ## G. Recipes + Meals (STORY-005, 006, 007, 008)
 
 26. [ ] Open Recipes (QuickAddRow or library route) → `<Segmented>` Meals / Recipes; lists render via FlashList; recipe photos via `expo-image`. (AC 5.1, 5.2, 5.3)
-27. [ ] + Create → dropdown: Save meal / Create recipe / Snap recipe (**locked**, Tier B) / Import URL. (AC 5.4)
+27. [ ] - Create → dropdown: Save meal / Create recipe / Snap recipe (**locked**, Tier B) / Import URL. (AC 5.4)
 28. [ ] Create recipe manually: name + servings + ≥2 ingredients + instructions → Save → `POST /recipes` → server-materialised per-serving macros show on the card. Auto-estimate toggle is **disabled/locked**. (AC 6.1–6.4, Conflict C4)
 29. [ ] Import URL: paste a Schema.org recipe URL (e.g. a BBC Good Food recipe) → form pre-fills → review → Save. **No AI pill.** (AC 8.1–8.4, Conflict C3)
 30. [ ] Import a URL with no recipe microdata → graceful "couldn't read this page" state (server `422 no_recipe_microdata`), no crash.
@@ -67,12 +67,12 @@ Reviewer's end-to-end walkthrough. Each step maps to a `13-nutrition-tracking/re
 33. [ ] Increment water offline → count updates locally.
 34. [ ] Reconnect → `sync_queue` flushes → `SELECT * FROM nutrition_entries WHERE user_id = ?` shows the entry; water reflects the **absolute** last value (not a doubled delta). (BACKEND_BRIEF § 4)
 35. [ ] Offline barcode of a **previously cached** food → resolves from `cached_foods`. Offline barcode of an **uncached** food → "Food not in cache — connect to fetch from database." (no crash). (design.md § Offline behaviour)
-35a. [ ] **OFF seed (BACKEND_BRIEF § 9):** after the seed script runs, `SELECT count(*) FROM foods WHERE source='openfoodfacts'` is non-zero; scanning a **common seeded product** resolves with **no live OFF call** (check the egress/network log — served from the seeded `foods` row). The delta cron handler runs and logs `[off-delta:summary]` without error.
+        35a. [ ] **OFF seed (BACKEND_BRIEF § 9):** after the seed script runs, `SELECT count(*) FROM foods WHERE source='openfoodfacts'` is non-zero; scanning a **common seeded product** resolves with **no live OFF call** (check the egress/network log — served from the seeded `foods` row). The delta cron handler runs and logs `[off-delta:summary]` without error.
 36. [ ] Kill + relaunch the app offline → the Fuel screen restores the last cached day (cold-boot read from `cached_fuel_today`).
 
 ## I. Tier-B locked (Conflict C4, C6)
 
-37. [ ] Tap Snap → upgrade placeholder (no camera, no `/nutrition/ai/*` call fires — check the network log). 
+37. [ ] Tap Snap → upgrade placeholder (no camera, no `/nutrition/ai/*` call fires — check the network log).
 38. [ ] Snap-recipe in the Create dropdown is locked; auto-estimate-macros toggle is disabled.
 
 ## J. Streak (STORY-010)

@@ -17,7 +17,7 @@ You work in the SST v3 / Elysia / Neon / Drizzle backend at [`microservices/core
   - Migration format (idempotent, DO-block for `CREATE TYPE`, additive): [`supabase/migrations/20260607120100_m4_progress_schema.sql`](../../../supabase/migrations/20260607120100_m4_progress_schema.sql).
   - Streak engine + cron: [`infra/api.ts:89`](../../../infra/api.ts) (`streakCron`, `cron(0 2 * * ? *)`), [`microservices/core/src/streakCron.ts`](../../../microservices/core/src/streakCron.ts), [`microservices/core/src/application/streaks/{evaluate.ts,cron.ts}`](../../../microservices/core/src/application/streaks/).
   - External-fetch + secret-binding idiom: [`microservices/core/src/application/stripe/stripeClient.ts`](../../../microservices/core/src/application/stripe/stripeClient.ts) (lazy singleton + `getEnv`); secret wiring in [`infra/api.ts`](../../../infra/api.ts) + [`infra/secrets.ts`](../../../infra/secrets.ts).
-  - Test idiom (mock `getDb`, replicate the Drizzle chain, `__tests__/` colocation): [`.../repositories/__tests__/goalRepository.test.ts`](../../../microservices/core/src/application/repositories/__tests__/goalRepository.test.ts). **Mocked-DB blind spot:** unit tests mock `getDb`, so a malformed SQL expression ships green. For any query with `GROUP BY` / aggregates, render it through `PgDialect` in a test and assert the SQL string (per `reference_drizzle_groupby_param_bug` — a reused parameterized `sql\`\`` in SELECT+GROUP BY throws Postgres 42803 at runtime; group by ordinal). `GET /nutrition/today` aggregation is the at-risk query here.
+  - Test idiom (mock `getDb`, replicate the Drizzle chain, `__tests__/` colocation): [`.../repositories/__tests__/goalRepository.test.ts`](../../../microservices/core/src/application/repositories/__tests__/goalRepository.test.ts). **Mocked-DB blind spot:** unit tests mock `getDb`, so a malformed SQL expression ships green. For any query with `GROUP BY` / aggregates, render it through `PgDialect` in a test and assert the SQL string (per `reference_drizzle_groupby_param_bug` — a reused parameterized `sql\`\``in SELECT+GROUP BY throws Postgres 42803 at runtime; group by ordinal).`GET /nutrition/today` aggregation is the at-risk query here.
 
 ## Spec alignment — first commit on the branch
 
@@ -25,7 +25,7 @@ Update the parent spec BEFORE implementation (single commit), per `_agent.md` ru
 
 1. **`design.md` § Backend endpoints** — the table is already there; flesh out each Tier-A endpoint's request/response/status shapes from § Endpoint contracts below. Mark the `nutrition/ai/*` + `recipes/ai/*` rows "**deferred to M9.5**".
 2. **`design.md` § Import-URL (Conflict C3)** — state M9 ships deterministic Schema.org/`ld+json` scrape only; no-microdata → `422 no_recipe_microdata`; LLM fallback deferred to M9.5. Remove the implication that the M9 import is AI.
-2b. **`design.md` § Data sources (new section)** — capture the [`DATA_SOURCING.md`](./DATA_SOURCING.md) outcome: Open Food Facts is the M9 food DB (free, no key, ODbL → attribution required, 15 req/min/IP → cache-first mandatory, custom User-Agent mandatory, JSONL-dump ingest as the v2 scale lever).
+   2b. **`design.md` § Data sources (new section)** — capture the [`DATA_SOURCING.md`](./DATA_SOURCING.md) outcome: Open Food Facts is the M9 food DB (free, no key, ODbL → attribution required, 15 req/min/IP → cache-first mandatory, custom User-Agent mandatory, JSONL-dump ingest as the v2 scale lever).
 3. **`requirements.md`** — confirm STORY-002→010 ACs map 1:1 to SMOKE_TEST steps; add the `422 no_recipe_microdata` AC to STORY-008.
 4. **`tasks.md`** — mark 13.1, 13.2, 13.3 M9-scoped; 13.4 deferred.
 
@@ -91,6 +91,7 @@ Path `microservices/core/src/application/nutrition/today/`. Returns everything t
 
 - `GET /nutrition/entries?date=YYYY-MM-DD` → `{ data: NutritionEntry[] }`, `created_at`/`logged_at DESC`.
 - `POST /nutrition/entries` — body validated with `t.Object`:
+
   ```typescript
   {
     foodId?: string; recipeId?: string; mealId?: string;  // at least one, or a one-off custom payload
@@ -101,10 +102,12 @@ Path `microservices/core/src/application/nutrition/today/`. Returns everything t
     loggedAt: string;
   }
   ```
+
   - **Server re-derives macros** when `foodId`/`recipeId`/`mealId` is present (don't trust client math blindly — recompute from the referenced row × servings, store the server value). For a true one-off (no reference), accept the client macros.
   - `mealSlot` via `t.Union([t.Literal("breakfast"), …])`.
   - `logged_by_user_id` = NULL (self-write; M9 has no on-behalf route).
   - Returns `{ data: NutritionEntry }`.
+
 - `PUT /nutrition/entries/:id` — edit servings/slot/macros. **Ownership folded into WHERE** (`and(eq(id), eq(userId))`); null → 404.
 - `DELETE /nutrition/entries/:id` — same ownership-in-WHERE; null → 404.
 
@@ -139,7 +142,7 @@ Path `microservices/core/src/application/nutrition/today/`. Returns everything t
     - **Rate-limit defence.** OFF allows only **15 product reads/min/IP**, and our Lambda concentrates ALL users' scans on one egress IP — naive proxying gets us IP-banned at scale. The `foods` cache (step 1) is the primary mitigation: only true misses hit OFF. ALSO add **exponential backoff on HTTP 429** and a circuit-breaker that returns `barcode_not_found` (graceful — user adds manually) rather than retrying into a ban. Do NOT add an unbounded retry loop.
     - **ODbL attribution.** OFF data is Open Database License — attribution is required. Note in `design.md § Data sources` that the FE must credit Open Food Facts (food-detail sheet + an About/Data-sources line); the BE returns `source` on each `Food` so the FE knows when to show it.
   - **Bulk seed — IN SCOPE for M9 (Brad confirmed 2026-06-21; see DATA_SOURCING.md § 5 + § 9 below).** Don't rely on lazy cache-fill alone — seed `foods` from the OFF **Parquet** dump up front so offline barcode works from day 1 and the live rate-limit risk is gone. Scoped as a dedicated seed/ETL script + a delta-refresh cron, in its **own PR/commit**, NOT inside the resolve-endpoint handler. Full mirror remains overkill — curated subset only.
-  - **Consider USDA FoodData Central** (public domain — no ODbL, free key) as a complementary source for *generic/whole* foods on the search/manual path — cleaner licensing than OFF for non-barcoded items. Optional for M9 (the base `/foods` search hits our own table); flag in PR review if you seed generic foods from it. See DATA_SOURCING.md § 3.
+  - **Consider USDA FoodData Central** (public domain — no ODbL, free key) as a complementary source for _generic/whole_ foods on the search/manual path — cleaner licensing than OFF for non-barcoded items. Optional for M9 (the base `/foods` search hits our own table); flag in PR review if you seed generic foods from it. See DATA_SOURCING.md § 3.
 - `GET /foods?query=` — search `foods` by `name ILIKE %query%` (+ the user's own `source='user'` rows), limit 50. `{ data: Food[] }`.
 - `POST /foods` — user creates a custom food (`source = 'user'`, `created_by = userId`). `{ data: Food }`.
 
@@ -178,6 +181,7 @@ Per `design.md § Streak engine integration` + cross-cuts § 3.1. Daily; period 
 Goal: `foods` is pre-populated with the high-value slice of Open Food Facts so (a) common barcodes resolve locally with zero OFF live-reads, and (b) offline barcode works from launch. Read DATA_SOURCING.md § 5 first.
 
 **9a. Seed ETL (offline/one-shot script, not a request handler).**
+
 - Source the OFF **Parquet** dump (the simplified columnar export — do NOT scrape the API; do NOT pull the 43 GB JSONL).
 - Filter (DuckDB is the documented tool) to a **curated subset**: rows with a non-null `barcode` **and** complete macros (kcal + protein + carbs + fat + serving) **and** target locales (start UK/EN; widen later). This keeps the Neon footprint to a manageable curated slice, not the full multi-GB dump.
 - Map OFF `nutriments`/`code` → our `foods` columns; set `source = 'openfoodfacts'`, `created_by = NULL`. Idempotent upsert on `barcode` (re-runnable; never duplicates).
@@ -185,6 +189,7 @@ Goal: `foods` is pre-populated with the high-value slice of Open Food Facts so (
 - **ODbL:** the seeded rows are a Derivative Database — keep them tagged `source='openfoodfacts'` (segregable for the on-request ODbL offer) and ensure the FE shows OFF attribution (FRONTEND_BRIEF). Do NOT redistribute the seeded table publicly.
 
 **9b. Delta-refresh cron (keep the seed fresh).**
+
 - New SST `Cron` in `infra/api.ts` (sibling of `streakCron`/`volumeCron` — same `sst.aws.Cron` idiom). Daily (pick an off-peak UTC hour distinct from 02:00/03:00). Handler `microservices/core/src/offDeltaCron.ts`.
 - Apply OFF **daily delta exports** (last-14-days files at `https://static.openfoodfacts.org/data/delta/`) — upsert changed products into the curated `foods` slice (respecting the same filter). Idempotent; log a `[off-delta:summary]` line like the other crons.
 - Custom User-Agent on every fetch; bounded timeout; this is OFF-published static data (not the rate-limited API) but stay polite.
@@ -219,6 +224,7 @@ Expect +60–90 core tests over the post-M4 baseline.
 ## Inspector Brad expectations
 
 Substantive sweep targets:
+
 - The `GET /nutrition/today` aggregate SQL — PgDialect-rendered test guarding the 42803 GROUP-BY trap.
 - Server-side macro re-derivation on `POST /entries` (don't trust client kcal when a `foodId` is referenced).
 - Every SSRF reject branch on `/recipes/import` (this is the highest-risk surface — trust-boundary parity with the iOS receipt handler).
