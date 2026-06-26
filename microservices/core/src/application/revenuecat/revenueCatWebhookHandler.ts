@@ -88,7 +88,26 @@ const LIVE: readonly string[] = LIVE_SUBSCRIPTION_STATUSES;
  * `external_subscription_id = rc_<appUserId>`). Active → upsert the derived
  * tier/expiry; none → cancel the mirror row (revert to free).
  */
+/**
+ * RevenueCat assigns an anonymous App User ID (`$RCAnonymousID:<uuid>`) before
+ * the client binds identity via `Purchases.logIn(<supabaseUserId>)`. It is NOT
+ * our Supabase user id, which is the `uuid` FK on `user_subscriptions.user_id`
+ * — writing it would throw on the uuid cast and wedge the event in a
+ * 500/retry loop. Skip it: the purchase reconciles when RevenueCat fires a
+ * TRANSFER event aliasing the anon id to the Supabase id at login.
+ */
+export function isRevenueCatAnonymousId(appUserId: string): boolean {
+  return appUserId.startsWith("$RCAnonymousID:");
+}
+
 async function syncCustomer(appUserId: string): Promise<void> {
+  if (isRevenueCatAnonymousId(appUserId)) {
+    console.warn(
+      `[revenuecat:webhook] skipping anonymous app_user_id (no identity bind yet): ${appUserId}`,
+    );
+    return;
+  }
+
   const entitlements = await fetchActiveEntitlements(appUserId);
   const desired = pickDesiredSubscription(entitlements);
 
@@ -110,16 +129,29 @@ async function syncCustomer(appUserId: string): Promise<void> {
       } as Record<string, unknown>,
     };
 
+    // Supersede ANY other live row for this user before the active write so we
+    // never leave two live rows (the `user_subscriptions_active_unique` partial
+    // index allows one). This MUST run on the update branch too: the rc_ mirror
+    // may be `cancelled` while a sibling row (e.g. a Stripe-created mirror) is
+    // still live — flipping the mirror back to active without first cancelling
+    // the sibling would trip the index → 500 → RevenueCat retries forever.
+    // RevenueCat is the unifying source of truth across both rails, so a prior
+    // live row is safely superseded. Cancelling then re-activating the rc_ row
+    // itself (when it was already live) is a harmless extra write.
+    await repo.cancelLiveSubscriptions(appUserId);
+
     if (existing !== null) {
       await repo.updateById(existing.id, values);
-      return;
+    } else {
+      // find→insert isn't atomic: two concurrent FIRST deliveries for the same
+      // new customer (RevenueCat is at-least-once + unordered) can both see
+      // `existing === null` and both insert, tripping the active-unique index.
+      // This self-heals — the loser returns 500, RevenueCat retries, and the
+      // retry takes the update branch. A true fix is an upsert on
+      // external_subscription_id; deferred (needs the unique constraint) since
+      // the transient 500 is harmless given the retry.
+      await repo.insert({ userId: appUserId, startsAt: new Date(), ...values });
     }
-
-    // First RevenueCat mirror row for this user. Supersede any other live row
-    // (e.g. a Stripe-created mirror) so the insert doesn't violate the
-    // one-live-row partial index, then insert the canonical row.
-    await repo.cancelLiveSubscriptions(appUserId);
-    await repo.insert({ userId: appUserId, startsAt: new Date(), ...values });
     return;
   }
 

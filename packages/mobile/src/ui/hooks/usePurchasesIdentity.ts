@@ -21,21 +21,32 @@ export function usePurchasesIdentity(): void {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const boundUserIdRef = useRef<string | null>(null);
+  const inFlightUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (purchases === null) return;
 
     if (userId !== null) {
+      // Already bound, or an attempt for this user is already in flight.
       if (boundUserIdRef.current === userId) return;
-      boundUserIdRef.current = userId;
-      void purchases.logIn(userId);
+      if (inFlightUserIdRef.current === userId) return;
+      inFlightUserIdRef.current = userId;
+      void purchases.logIn(userId).then((result) => {
+        inFlightUserIdRef.current = null;
+        // Latch ONLY on success. A transient failure must not strand the ref —
+        // otherwise we'd never re-attempt and RevenueCat would stay on the
+        // anonymous App User ID, mis-attributing the purchase and breaking the
+        // cross-rail merge. Leaving the ref unset lets a later effect run (e.g.
+        // a re-auth) retry. RevenueCat also retries the network call itself.
+        if (result.ok) boundUserIdRef.current = userId;
+      });
       return;
     }
 
-    // Signed out — only log out if we previously bound a user (avoids a
-    // pointless anonymous churn on a cold, never-signed-in launch).
-    if (boundUserIdRef.current !== null) {
+    // Signed out — reset and log out if we'd bound (or were binding) a user.
+    if (boundUserIdRef.current !== null || inFlightUserIdRef.current !== null) {
       boundUserIdRef.current = null;
+      inFlightUserIdRef.current = null;
       void purchases.logOut();
     }
   }, [purchases, userId]);

@@ -48,6 +48,7 @@ vi.mock("../revenueCatClient", () => ({
 
 import {
   handleRevenueCatWebhook,
+  isRevenueCatAnonymousId,
   resolveAppUserIds,
   secretsMatch,
 } from "../revenueCatWebhookHandler";
@@ -80,6 +81,15 @@ describe("secretsMatch", () => {
   });
   it("false for same length, different content", () => {
     expect(secretsMatch("abc", "abd")).toBe(false);
+  });
+});
+
+describe("isRevenueCatAnonymousId", () => {
+  it("true for the RevenueCat anonymous id prefix", () => {
+    expect(isRevenueCatAnonymousId("$RCAnonymousID:abc")).toBe(true);
+  });
+  it("false for a Supabase-style id", () => {
+    expect(isRevenueCatAnonymousId("3f1a2b4c-...-uuid")).toBe(false);
   });
 });
 
@@ -177,7 +187,7 @@ describe("handleRevenueCatWebhook", () => {
     expect(markDoneMock).toHaveBeenCalledWith("evt_1");
   });
 
-  it("active entitlement, existing rc row → updates in place (no insert/cancel)", async () => {
+  it("active entitlement, existing rc row → cancels live siblings + updates in place (no insert)", async () => {
     findByExternalIdMock.mockResolvedValue({
       id: "us9",
       paymentStatus: "active",
@@ -192,7 +202,49 @@ describe("handleRevenueCatWebhook", () => {
       expect.objectContaining({ tierName: "premium", paymentStatus: "active" }),
     );
     expect(insertMock).not.toHaveBeenCalled();
+    // Cancel-then-write also runs on the update branch (finding 1): a sibling
+    // live row must be superseded before the mirror is (re)activated.
+    expect(cancelLiveMock).toHaveBeenCalledWith("user-1");
+  });
+
+  it("cancelled rc mirror + active entitlement → cancels siblings then re-activates the mirror (no active-unique violation)", async () => {
+    // The finding-1 scenario: the rc_ mirror lapsed to `cancelled` while a
+    // sibling row (e.g. a Stripe mirror) went live. Re-activating the mirror
+    // must first cancel the sibling, else two live rows trip the partial index.
+    findByExternalIdMock.mockResolvedValue({
+      id: "us9",
+      paymentStatus: "cancelled",
+    });
+    fetchEntMock.mockResolvedValue([
+      { tier: "premium", expiresAt: null, productId: null, store: null },
+    ]);
+    const res = await handleRevenueCatWebhook(buildRequest());
+    expect(res.status).toBe(200);
+    const cancelOrder = cancelLiveMock.mock.invocationCallOrder[0];
+    const updateOrder = updateByIdMock.mock.invocationCallOrder[0];
+    expect(cancelOrder).toBeLessThan(updateOrder);
+    expect(updateByIdMock).toHaveBeenCalledWith(
+      "us9",
+      expect.objectContaining({ paymentStatus: "active" }),
+    );
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it("skips an anonymous app_user_id (no entitlement fetch, no writes)", async () => {
+    const body = JSON.stringify({
+      event: {
+        id: "evt_anon",
+        type: "INITIAL_PURCHASE",
+        app_user_id: "$RCAnonymousID:abc123",
+      },
+    });
+    const res = await handleRevenueCatWebhook(buildRequest({ body }));
+    expect(res.status).toBe(200);
+    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(updateByIdMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
     expect(cancelLiveMock).not.toHaveBeenCalled();
+    expect(markDoneMock).toHaveBeenCalledWith("evt_anon");
   });
 
   it("no active entitlement + existing live rc row → cancels it (revert to free)", async () => {

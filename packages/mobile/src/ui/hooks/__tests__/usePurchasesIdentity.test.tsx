@@ -1,4 +1,4 @@
-import { renderHook } from "@testing-library/react-native";
+import { renderHook, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
@@ -85,5 +85,27 @@ describe("usePurchasesIdentity", () => {
         wrapper: wrap(makeAdapters(undefined)),
       }),
     ).not.toThrow();
+  });
+
+  it("does not latch a failed logIn — a later attempt retries", async () => {
+    const purchases = new MockPurchasesAdapter();
+    purchases.nextLogInResponse = {
+      ok: false,
+      error: { kind: "network", code: null, message: "offline" },
+    };
+    mockSession = { userId: "u1" };
+    const { rerender } = renderHook(() => usePurchasesIdentity(), {
+      wrapper: wrap(makeAdapters(purchases)),
+    });
+    await waitFor(() => expect(purchases.logInCalls).toEqual(["u1"]));
+
+    // The failed attempt must not have latched the ref. Sign out → back in to
+    // re-run the effect; with the network back it should retry, not skip.
+    purchases.nextLogInResponse = { ok: true };
+    mockSession = null;
+    rerender({});
+    mockSession = { userId: "u1" };
+    rerender({});
+    await waitFor(() => expect(purchases.logInCalls).toEqual(["u1", "u1"]));
   });
 });
