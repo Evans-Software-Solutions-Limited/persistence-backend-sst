@@ -191,7 +191,7 @@ export function RequestsPresenter(props: RequestsPresenterProps) {
               No pending requests
             </Text>
             <Text fontSize={13} color="$text3" textAlign="center">
-              When a coach invites you to connect, it'll show up here.
+              When a coach invites you to connect, it will show up here.
             </Text>
           </View>
         ) : (
