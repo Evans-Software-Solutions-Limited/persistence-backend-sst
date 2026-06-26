@@ -464,6 +464,8 @@ export interface ApiPort {
     goalId?: string;
     window?: string;
   }): Promise<Result<HabitCompletion[], ApiError>>;
+  /** Fetch the user's habit config (all 5 categories, enabled or defaults). */
+  getHabitConfigs(): Promise<Result<HabitConfigEntry[], ApiError>>;
   /** Toggle a habit ON for a day (idempotent POST). */
   createHabitCompletion(
     input: CreateHabitCompletionInput,
@@ -545,6 +547,22 @@ export type CreateHabitCompletionInput = {
 export type DeleteHabitCompletionInput = {
   goalId: string;
   date?: string;
+};
+
+/** A single habit category from GET /users/me/habits/config. */
+export type HabitConfigEntry = {
+  category: string;
+  enabled: boolean;
+  goalId: string | null;
+  assignedByCoach: boolean;
+  locked: boolean;
+  targetValue: number;
+  unit: string;
+  period: string;
+  completionRule: string;
+  daysPerWeek: number | null;
+  tolerancePct: number | null;
+  pending: { targetValue?: number; daysPerWeek?: number; enabled?: boolean } | null;
 };
 
 /** Wire shape for body_measurements (decimal columns arrive as strings). */

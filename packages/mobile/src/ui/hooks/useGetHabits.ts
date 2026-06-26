@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Habit, HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfigEntry } from "@/domain/ports/api.port";
+import type { HabitTileTone } from "@/domain/models/habit-completion";
 import { localDayISO, weekStartMondayISO } from "@/shared/utils";
+import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -25,22 +28,50 @@ function addDays(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Build the per-goal boolean grid over the supplied Mon→Sun ISO window. */
+/** Build the per-goal boolean grid over the supplied Mon→Sun ISO window.
+ *  Now config-aware: shows ALL enabled habits even when no completions exist. */
 export function buildHabitGrid(
   completions: readonly HabitCompletion[],
   weekDates: readonly string[],
+  configs?: readonly HabitConfigEntry[],
 ): Habit[] {
-  // `weekDates` is the shared Mon→Sun window (NOT a rolling today-last one), so
-  // days[i] lines up verbatim with the grid header's weekDates[i]. Completions
-  // bucket by the authoritative user-local day (localCompletedDate) when
-  // present; slicing completedAt alone would drop tz ≥ +12 toggles the server
-  // clamped to a different UTC day.
   const byGoal = new Map<string, Set<string>>();
   for (const c of completions) {
     const set = byGoal.get(c.goalId) ?? new Set<string>();
     set.add(c.localCompletedDate ?? dayISO(c.completedAt));
     byGoal.set(c.goalId, set);
   }
+
+  // If we have configs, build from those (so all enabled habits appear).
+  if (configs && configs.length > 0) {
+    const TONES: Record<string, HabitTileTone> = {
+      water: "primary",
+      gym: "success",
+      steps: "gold",
+      sleep: "primary",
+      calories: "ember",
+    };
+    const LABELS: Record<string, string> = {
+      water: "Water",
+      gym: "Gym",
+      steps: "Steps",
+      sleep: "Sleep",
+      calories: "Calories",
+    };
+    return configs
+      .filter((c) => c.enabled && c.goalId)
+      .map((cfg) => {
+        const completionDays = byGoal.get(cfg.goalId!) ?? new Set<string>();
+        return {
+          id: cfg.goalId!,
+          label: LABELS[cfg.category] ?? cfg.category,
+          tone: (TONES[cfg.category] ?? "primary") as HabitTileTone,
+          days: weekDates.map((d) => completionDays.has(d)),
+        };
+      });
+  }
+
+  // Fallback: build from completions alone (legacy path)
   return [...byGoal.entries()].map(([goalId, days]) => ({
     id: goalId,
     label: goalId,
@@ -53,8 +84,14 @@ export function buildHabitGrid(
  * Habit completions + derived 7-day grid for the Home HabitsGrid
  * (06-progress-goals, Phase 06.7; STORY-004). Cache-first from
  * `cached_habit_completions`; the toggle command writes optimistically there.
+ *
+ * Now also fetches habit configs so the grid shows all enabled habits
+ * even when no completions have been logged this week.
  */
 export function useGetHabits(): HabitsState {
+  const { api } = useAdapters();
+  const [configs, setConfigs] = useState<HabitConfigEntry[]>([]);
+
   const res = useCachedResource<HabitCompletion[]>({
     read: (storage, userId) => {
       const since = weekStartMondayISO(localDayISO());
@@ -68,6 +105,15 @@ export function useGetHabits(): HabitsState {
       storage.cacheHabitCompletions(userId, value),
   });
 
+  // Fetch habit configs (fire-and-forget; non-blocking)
+  useEffect(() => {
+    api.getHabitConfigs().then((result) => {
+      if (result.ok) {
+        setConfigs(result.value);
+      }
+    });
+  }, [api]);
+
   // The Mon→Sun ISO window, recomputed only when the device-local day actually
   // changes (todayISO is a primitive, so ordinary re-renders are stable). Both
   // `weekDates` and `habits` derive from it, so the grid header and the
@@ -80,8 +126,8 @@ export function useGetHabits(): HabitsState {
   }, [todayISO]);
 
   const habits = useMemo(
-    () => buildHabitGrid(res.data ?? [], weekDates),
-    [res.data, weekDates],
+    () => buildHabitGrid(res.data ?? [], weekDates, configs),
+    [res.data, weekDates, configs],
   );
   return { ...res, habits, weekDates };
 }

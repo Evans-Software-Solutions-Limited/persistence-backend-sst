@@ -1128,11 +1128,27 @@ export class TrainerRepository {
       }
 
       // Slot check: slotsTotal from tier, activeClients from active non-AI rels.
-      // Single source of truth for the limit (filters to LIVE subscriptions) —
-      // read via getDb() rather than the tx because tier config is static and
-      // never mutated mid-invite; only the active-client COUNT below needs the
-      // transaction's read consistency.
-      const slotsTotal = await this.getTrainerClientLimit(trainerId);
+      // CRITICAL: use `tx` (the transaction handle) for ALL queries inside this
+      // transaction. Using `getDb()` grabs a separate connection from the pool;
+      // under Supavisor transaction-mode pooling (single multiplexed connection)
+      // that creates a deadlock — the outer tx holds the only pooled connection
+      // while the inner query waits for it. This caused 20s Lambda timeouts.
+      const slotRows = await tx
+        .select({ limit: subscriptionTiers.trainerClientLimit })
+        .from(userSubscriptions)
+        .innerJoin(
+          subscriptionTiers,
+          eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+        )
+        .where(
+          and(
+            eq(userSubscriptions.userId, trainerId),
+            liveSubscriptionFilter(),
+          ),
+        )
+        .orderBy(desc(userSubscriptions.createdAt))
+        .limit(1);
+      const slotsTotal = slotRows[0]?.limit ?? null;
 
       const activeRows = await tx
         .select({ total: sql<number>`count(*)::int` })

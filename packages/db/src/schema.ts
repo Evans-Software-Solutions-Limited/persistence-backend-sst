@@ -1171,6 +1171,36 @@ export const trainerInvitations = pgTable(
   ],
 );
 
+// ─── Trainer Invite Codes ─────────────────────────────────────────────────────
+
+export const trainerInviteCodes = pgTable(
+  "trainer_invite_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    status: text("status").notNull().default("active"),
+    usedBy: uuid("used_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("trainer_invite_codes_code_active_uq")
+      .on(t.code)
+      .where(sql`status = 'active'`),
+  ],
+);
+
+export type TrainerInviteCode = typeof trainerInviteCodes.$inferSelect;
+export type NewTrainerInviteCode = typeof trainerInviteCodes.$inferInsert;
+
 // ─── User Devices ────────────────────────────────────────────────────────────
 
 export const userDevices = pgTable(
