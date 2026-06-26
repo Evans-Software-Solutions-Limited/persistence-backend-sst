@@ -148,10 +148,9 @@ describe("trainersClientRelationshipsListHandler", () => {
   beforeEach(() => vi.clearAllMocks());
 
   function get(query = "", headers = auth) {
-    return new Request(
-      `http://localhost/clients/me/relationships${query}`,
-      { headers },
-    );
+    return new Request(`http://localhost/clients/me/relationships${query}`, {
+      headers,
+    });
   }
 
   it("requires auth", async () => {

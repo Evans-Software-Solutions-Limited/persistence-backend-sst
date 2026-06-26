@@ -4,7 +4,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { Btn, Card, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
-import { IconBack, IconCheck, IconMinus, IconPlus } from "@/ui/components/icons";
+import {
+  IconBack,
+  IconCheck,
+  IconMinus,
+  IconPlus,
+} from "@/ui/components/icons";
 
 /**
  * <LogClientWeightPresenter> — coach logs a weight for one of their clients

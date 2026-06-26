@@ -73,7 +73,12 @@ export function TrainerProgressPresenter({
             gap={12}
           >
             <View flex={1}>
-              <Text fontFamily="$display" fontWeight="700" fontSize={15} color="$text">
+              <Text
+                fontFamily="$display"
+                fontWeight="700"
+                fontSize={15}
+                color="$text"
+              >
                 {pendingRequestCount === 1
                   ? "1 pending request"
                   : `${pendingRequestCount} pending requests`}
@@ -98,9 +103,18 @@ export function TrainerProgressPresenter({
       {trainer ? (
         <Card testID="you-trainer-active">
           <View flexDirection="row" alignItems="center" gap={12}>
-            <Avatar size={44} tone="trainer" initials={initialsOf(trainer.name) || "?"} />
+            <Avatar
+              size={44}
+              tone="trainer"
+              initials={initialsOf(trainer.name) || "?"}
+            />
             <View flex={1}>
-              <Text fontFamily="$display" fontWeight="700" fontSize={16} color="$text">
+              <Text
+                fontFamily="$display"
+                fontWeight="700"
+                fontSize={16}
+                color="$text"
+              >
                 {trainer.name}
               </Text>
               <Text fontSize={12.5} color="$text3" marginTop={2}>

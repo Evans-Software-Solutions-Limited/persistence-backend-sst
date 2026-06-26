@@ -150,7 +150,11 @@ export function YouPresenter(props: YouPresenterProps) {
           )}
 
           {(trainer !== null || pendingRequestCount > 0) && (
-            <Section eyebrow="COACHING" title="Your trainer" testID="you-trainer-section">
+            <Section
+              eyebrow="COACHING"
+              title="Your trainer"
+              testID="you-trainer-section"
+            >
               <TrainerProgressPresenter
                 trainer={trainer}
                 pendingRequestCount={pendingRequestCount}

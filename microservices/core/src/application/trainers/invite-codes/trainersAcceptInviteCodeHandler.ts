@@ -31,6 +31,23 @@ import { NotificationRepository } from "../../repositories/notificationRepositor
  * `pt_request` / `physio_request` notification to the trainer here, AFTER the
  * transaction commits, so a rollback never leaves an orphan notification.
  */
+/**
+ * Discriminated result of the accept-invite-code transaction: either the
+ * success shape (carrying the fields needed to emit the trainer notification
+ * post-commit) or a `{ code, message }` error body. The explicit union lets
+ * `"ok" in result` narrow cleanly so the success fields are non-optional.
+ */
+type AcceptInviteCodeTxResult =
+  | {
+      ok: true;
+      relationshipId: string;
+      trainerId: string;
+      trainerName: string;
+      trainerRole: string | null;
+      clientName: string;
+    }
+  | { code: string; message: string };
+
 export const trainersAcceptInviteCodeHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -44,7 +61,8 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       const { code } = ctx.body as { code: string };
       const normalizedCode = code.toUpperCase().trim();
 
-      const result = await db.transaction(async (tx) => {
+      const result = await db.transaction(
+        async (tx): Promise<AcceptInviteCodeTxResult> => {
         // Find the active, unexpired code
         const codeRows = await tx
           .select({
@@ -203,11 +221,15 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           await new NotificationRepository().create(result.trainerId, {
             type: isPhysio ? "physio_request" : "pt_request",
             title: isPhysio ? "New physio request" : "New training request",
-            message: `${result.clientName} used your invite code and wants to connect`,
+            message: `${result.clientName} joined via your invite code`,
             relatedEntityType: "pt_relationship",
             relatedEntityId: result.relationshipId,
             data: {
-              deeplink: `persistencemobile://requests?relationshipId=${result.relationshipId}`,
+              // Deeplink to the trainer's OWN clients roster (the pending
+              // client shows there). NOT the Requests screen — that's
+              // client-scoped (GET /clients/me/relationships filters on
+              // client_id = viewer), so a trainer would land on an empty list.
+              deeplink: `persistencemobile://clients?clientId=${userId}`,
               relationship_id: result.relationshipId,
               client_id: userId,
             },

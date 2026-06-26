@@ -1,7 +1,13 @@
 import { RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
-import { Avatar, Btn, Card, HeaderBar, IconBtn } from "@/ui/components/foundation";
+import {
+  Avatar,
+  Btn,
+  Card,
+  HeaderBar,
+  IconBtn,
+} from "@/ui/components/foundation";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { IconBack, IconUser } from "@/ui/components/icons";
 import { initialsOf } from "@/shared/utils";
@@ -62,12 +68,19 @@ function RequestCard({
           initials={initialsOf(request.trainerName) || "?"}
         />
         <View flex={1}>
-          <Text fontFamily="$display" fontWeight="700" fontSize={16} color="$text">
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={16}
+            color="$text"
+          >
             {request.trainerName}
           </Text>
           <Text fontSize={12.5} color="$text3" marginTop={2}>
             {roleLabel(request.trainerRole)}
-            {request.relationshipReason ? ` · ${request.relationshipReason}` : ""}
+            {request.relationshipReason
+              ? ` · ${request.relationshipReason}`
+              : ""}
           </Text>
         </View>
       </View>
@@ -169,7 +182,12 @@ export function RequestsPresenter(props: RequestsPresenterProps) {
             testID="requests-empty"
           >
             <IconUser size={32} />
-            <Text fontFamily="$display" fontWeight="700" fontSize={17} color="$text">
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={17}
+              color="$text"
+            >
               No pending requests
             </Text>
             <Text fontSize={13} color="$text3" textAlign="center">
