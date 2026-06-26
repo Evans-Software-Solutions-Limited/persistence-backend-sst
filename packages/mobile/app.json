@@ -96,7 +96,14 @@
         }
       ],
       "expo-font",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Persistence uses the camera to scan food barcodes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

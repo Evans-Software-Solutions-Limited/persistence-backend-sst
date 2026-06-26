@@ -2,6 +2,8 @@ import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
+import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
+import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
@@ -190,6 +192,16 @@ export default function AppLayout() {
         Spec: feedback_sheets_mount_at_root
       */}
       <AddClientSheetContainer />
+      {/*
+        M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
+        Both read useFuelSheets().sheet to drive their <BottomSheet> visibility;
+        the Fuel screen's Scan / Search / slot-Add affordances open them. Always
+        mounted so the slide-out animates on dismiss.
+
+        Spec: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § Sheets (mounted at root)
+      */}
+      <QuickAddSheetContainer />
+      <ScanBarcodeSheetContainer />
     </ExerciseFiltersProvider>
   );
 }

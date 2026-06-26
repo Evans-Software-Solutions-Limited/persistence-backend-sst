@@ -8,6 +8,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import type { HomePresenterProps } from "@/ui/presenters/HomePresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomeContainer } from "../HomeContainer";
 
 // jest hoists jest.mock factories above imports — captured refs must be
@@ -121,6 +122,7 @@ describe("HomeContainer (V2)", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockPush.mockClear();
+    useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 });
   });
 
   it("renders the presenter and populates the home payload from the API", async () => {
@@ -250,5 +252,18 @@ describe("HomeContainer (V2)", () => {
         storage.getCachedHabitCompletions(USER, { goalId: "g1" }),
       ).toHaveLength(1),
     );
+  });
+
+  it("quick-log Meal jumps to Fuel and opens the add-food sheet", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last?.onOpenMealLog());
+    expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/fuel");
+    expect(useFuelSheets.getState().sheet).toBe("quickAdd");
   });
 });

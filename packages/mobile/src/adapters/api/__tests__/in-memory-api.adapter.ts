@@ -15,6 +15,29 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import { filterExercises } from "@/domain/services/exercise.service";
+import {
+  computeConsumed,
+  computeRemaining,
+  groupBySlot,
+  scaleFoodMacros,
+  scaleRecipeMacros,
+} from "@/domain/services/nutrition.service";
+import type {
+  CreateFoodInput,
+  CreateMealInput,
+  CreateRecipeInput,
+  EditEntryInput,
+  Food,
+  FuelToday,
+  ImportedRecipe,
+  LogEntryInput,
+  Meal,
+  NutritionEntry,
+  NutritionTarget,
+  Recipe,
+  SetTargetsInput,
+  WaterToday,
+} from "@/domain/models/nutrition";
 import type {
   ApiPort,
   GetNotificationsParams,
@@ -1113,5 +1136,348 @@ export class InMemoryApiAdapter implements ApiPort {
       this.invitations = this.invitations.filter((inv) => inv.id !== id);
     }
     return result;
+  }
+
+  // -- Nutrition / Fuel (M9) --
+
+  /** Food library fixture (search + barcode resolve read this). */
+  public foods: Food[] = [];
+  /** Logged entries fixture; `logEntry`/`editEntry`/`deleteEntry` mutate it. */
+  public nutritionEntries: NutritionEntry[] = [];
+  public nutritionTarget: NutritionTarget | null = null;
+  /** Water cups keyed by YYYY-MM-DD. */
+  public water: Record<string, number> = {};
+  public recipes: Recipe[] = [];
+  public meals: Meal[] = [];
+  /** When set, `resolveBarcode` returns this error instead of searching foods. */
+  public nextBarcodeError: { status: number; message: string } | null = null;
+  /** Pre-fill returned by `importRecipeUrl` (null → 422 no_recipe_microdata). */
+  public importedRecipe: ImportedRecipe | null = null;
+  public logEntryCalls: LogEntryInput[] = [];
+  public setWaterCalls: { date: string; cups: number }[] = [];
+  private seq = 0;
+  private id(prefix: string): string {
+    this.seq += 1;
+    return `${prefix}-${this.seq}`;
+  }
+
+  async getFuelToday(date: string): Promise<Result<FuelToday, ApiError>> {
+    const entries = this.nutritionEntries.filter((e) =>
+      e.loggedAt.startsWith(date),
+    );
+    const macro = computeConsumed(entries);
+    const waterCups = this.water[date] ?? 0;
+    return this.mayFail<FuelToday>({
+      date,
+      targets: this.nutritionTarget,
+      consumed: { ...macro, waterCups },
+      remainingKcal: computeRemaining(this.nutritionTarget, macro),
+      entriesBySlot: groupBySlot(entries),
+    });
+  }
+
+  async getNutritionEntries(
+    date: string,
+  ): Promise<Result<NutritionEntry[], ApiError>> {
+    return this.mayFail<NutritionEntry[]>(
+      this.nutritionEntries.filter((e) => e.loggedAt.startsWith(date)),
+    );
+  }
+
+  async getNutritionTarget(): Promise<
+    Result<NutritionTarget | null, ApiError>
+  > {
+    return this.mayFail<NutritionTarget | null>(this.nutritionTarget);
+  }
+
+  async getWaterToday(date: string): Promise<Result<WaterToday, ApiError>> {
+    return this.mayFail<WaterToday>({
+      cups: this.water[date] ?? 0,
+      goal: this.nutritionTarget?.waterCups ?? 8,
+    });
+  }
+
+  async getRecipes(): Promise<Result<Recipe[], ApiError>> {
+    // List view omits ingredients (matches the backend payload-size choice).
+    return this.mayFail<Recipe[]>(
+      this.recipes.map((r) => ({ ...r, ingredients: [] })),
+    );
+  }
+
+  async getRecipe(id: string): Promise<Result<Recipe, ApiError>> {
+    const recipe = this.recipes.find((r) => r.id === id);
+    if (!recipe)
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "recipe_not_found",
+        status: 404,
+      });
+    return this.mayFail<Recipe>(recipe);
+  }
+
+  async getMeals(): Promise<Result<Meal[], ApiError>> {
+    return this.mayFail<Meal[]>(this.meals.map((m) => ({ ...m, items: [] })));
+  }
+
+  async searchFoods(query: string): Promise<Result<Food[], ApiError>> {
+    const q = query.toLowerCase();
+    return this.mayFail<Food[]>(
+      this.foods.filter((f) => f.name.toLowerCase().includes(q)),
+    );
+  }
+
+  async resolveBarcode(code: string): Promise<Result<Food, ApiError>> {
+    if (this.nextBarcodeError) {
+      const { status, message } = this.nextBarcodeError;
+      return fail<ApiError>({
+        kind: "api",
+        code: status === 404 ? "not_found" : "server",
+        message,
+        status,
+      });
+    }
+    const food = this.foods.find((f) => f.barcode === code);
+    if (!food)
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "barcode_not_found",
+        status: 404,
+      });
+    return this.mayFail<Food>(food);
+  }
+
+  async logEntry(
+    input: LogEntryInput,
+  ): Promise<Result<NutritionEntry, ApiError>> {
+    this.logEntryCalls.push(input);
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    // Mirror the server's macro authority: re-derive from the referenced food.
+    let macro = {
+      kcal: input.kcal ?? 0,
+      proteinG: input.proteinG ?? 0,
+      carbsG: input.carbsG ?? 0,
+      fatG: input.fatG ?? 0,
+    };
+    if (input.foodId) {
+      const food = this.foods.find((f) => f.id === input.foodId);
+      if (food) macro = scaleFoodMacros(food, input.servings);
+    }
+    const entry: NutritionEntry = {
+      id: this.id("entry"),
+      userId: this.profiles[0]?.id ?? "test-user",
+      foodId: input.foodId ?? null,
+      recipeId: input.recipeId ?? null,
+      mealId: input.mealId ?? null,
+      mealSlot: input.mealSlot,
+      servings: input.servings,
+      ...macro,
+      loggedAt: input.loggedAt,
+      loggedByUserId: null,
+      aiEstimated: false,
+      aiConfidence: null,
+    };
+    this.nutritionEntries.push(entry);
+    return ok(entry);
+  }
+
+  async editEntry(
+    id: string,
+    input: EditEntryInput,
+  ): Promise<Result<NutritionEntry, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const idx = this.nutritionEntries.findIndex((e) => e.id === id);
+    if (idx === -1)
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "entry_not_found",
+        status: 404,
+      });
+    const updated = { ...this.nutritionEntries[idx], ...input };
+    this.nutritionEntries[idx] = updated;
+    return ok(updated);
+  }
+
+  async deleteEntry(id: string): Promise<Result<void, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const before = this.nutritionEntries.length;
+    this.nutritionEntries = this.nutritionEntries.filter((e) => e.id !== id);
+    if (this.nutritionEntries.length === before)
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "entry_not_found",
+        status: 404,
+      });
+    return ok(undefined);
+  }
+
+  async setTargets(
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const next: NutritionTarget = {
+      userId: this.profiles[0]?.id ?? "test-user",
+      dailyKcal: input.dailyKcal,
+      proteinG: input.proteinG,
+      carbsG: input.carbsG,
+      fatG: input.fatG,
+      waterCups: input.waterCups,
+      preset: input.preset ?? "custom",
+      // Self-write leaves any existing trainer attribution untouched.
+      setByUserId: this.nutritionTarget?.setByUserId ?? null,
+      setByName: this.nutritionTarget?.setByName ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    this.nutritionTarget = next;
+    return ok(next);
+  }
+
+  async setWater(
+    date: string,
+    cups: number,
+  ): Promise<Result<WaterToday, ApiError>> {
+    this.setWaterCalls.push({ date, cups });
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const next = Math.max(0, Math.trunc(cups));
+    this.water[date] = next;
+    return ok({ cups: next, goal: this.nutritionTarget?.waterCups ?? 8 });
+  }
+
+  async createFood(input: CreateFoodInput): Promise<Result<Food, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const food: Food = {
+      id: this.id("food"),
+      name: input.name,
+      brand: input.brand ?? null,
+      barcode: input.barcode ?? null,
+      kcal: input.kcal,
+      proteinG: input.proteinG,
+      carbsG: input.carbsG,
+      fatG: input.fatG,
+      servingSize: input.servingSize,
+      servingUnit: input.servingUnit,
+      source: "user",
+      createdBy: this.profiles[0]?.id ?? "test-user",
+    };
+    this.foods.push(food);
+    return ok(food);
+  }
+
+  async createRecipe(
+    input: CreateRecipeInput,
+  ): Promise<Result<Recipe, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    // Materialise totals from the ingredients' linked foods × quantity.
+    const totals = input.ingredients.reduce(
+      (acc, ing) => {
+        const food = ing.foodId
+          ? this.foods.find((f) => f.id === ing.foodId)
+          : undefined;
+        if (!food) return acc;
+        return {
+          kcal: acc.kcal + food.kcal * ing.quantity,
+          proteinG: acc.proteinG + food.proteinG * ing.quantity,
+          carbsG: acc.carbsG + food.carbsG * ing.quantity,
+          fatG: acc.fatG + food.fatG * ing.quantity,
+        };
+      },
+      { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    );
+    const recipe: Recipe = {
+      id: this.id("recipe"),
+      userId: this.profiles[0]?.id ?? "test-user",
+      name: input.name,
+      photoUrl: input.photoUrl ?? null,
+      servings: input.servings,
+      instructions: input.instructions ?? null,
+      source: "manual",
+      sourceUrl: null,
+      totalKcal: Math.round(totals.kcal),
+      totalProteinG: Math.round(totals.proteinG),
+      totalCarbsG: Math.round(totals.carbsG),
+      totalFatG: Math.round(totals.fatG),
+      ingredients: input.ingredients.map((ing) => ({
+        id: this.id("ing"),
+        foodId: ing.foodId ?? null,
+        customName: ing.customName ?? null,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        sortOrder: ing.sortOrder,
+      })),
+    };
+    this.recipes.push(recipe);
+    return ok(recipe);
+  }
+
+  async importRecipeUrl(
+    url: string,
+  ): Promise<Result<ImportedRecipe, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    if (!this.importedRecipe)
+      return fail<ApiError>({
+        kind: "api",
+        code: "server",
+        message: "no_recipe_microdata",
+        status: 422,
+      });
+    return ok({ ...this.importedRecipe, sourceUrl: url });
+  }
+
+  async createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    // Materialise totals from food items (per-serving × servings) + recipe
+    // items (recipe total / recipe servings × servings).
+    const totals = input.items.reduce(
+      (acc, it) => {
+        if (it.foodId) {
+          const food = this.foods.find((f) => f.id === it.foodId);
+          if (food) {
+            const m = scaleFoodMacros(food, it.servings);
+            return {
+              kcal: acc.kcal + m.kcal,
+              proteinG: acc.proteinG + m.proteinG,
+              carbsG: acc.carbsG + m.carbsG,
+              fatG: acc.fatG + m.fatG,
+            };
+          }
+        }
+        if (it.recipeId) {
+          const recipe = this.recipes.find((r) => r.id === it.recipeId);
+          if (recipe) {
+            const m = scaleRecipeMacros(recipe, it.servings);
+            return {
+              kcal: acc.kcal + m.kcal,
+              proteinG: acc.proteinG + m.proteinG,
+              carbsG: acc.carbsG + m.carbsG,
+              fatG: acc.fatG + m.fatG,
+            };
+          }
+        }
+        return acc;
+      },
+      { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    );
+    const meal: Meal = {
+      id: this.id("meal"),
+      userId: this.profiles[0]?.id ?? "test-user",
+      name: input.name,
+      photoUrl: input.photoUrl ?? null,
+      totalKcal: Math.round(totals.kcal),
+      totalProteinG: Math.round(totals.proteinG),
+      totalCarbsG: Math.round(totals.carbsG),
+      totalFatG: Math.round(totals.fatG),
+      items: input.items.map((it) => ({
+        id: this.id("item"),
+        foodId: it.foodId ?? null,
+        recipeId: it.recipeId ?? null,
+        servings: it.servings,
+        sortOrder: it.sortOrder,
+      })),
+    };
+    this.meals.push(meal);
+    return ok(meal);
   }
 }

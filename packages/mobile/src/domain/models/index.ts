@@ -130,3 +130,29 @@ export {
   HOME_STALE_AFTER_MS,
   isHomeStale,
 } from "./progress";
+
+// ── M9 (13-nutrition-tracking / Fuel) ───────────────────────────────────────
+export {
+  type MealSlot,
+  type Food,
+  type NutritionEntry,
+  type NutritionTarget,
+  type WaterToday,
+  type Recipe,
+  type RecipeIngredient,
+  type Meal,
+  type MealItem,
+  type Consumed,
+  type EntriesBySlot,
+  type FuelToday,
+  type ImportedRecipe,
+  type LogEntryInput,
+  type EditEntryInput,
+  type SetTargetsInput,
+  type CreateFoodInput,
+  type RecipeIngredientInput,
+  type CreateRecipeInput,
+  type MealItemInput,
+  type CreateMealInput,
+  type ResolveBarcodeResult,
+} from "./nutrition";

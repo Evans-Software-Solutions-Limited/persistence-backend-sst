@@ -260,6 +260,110 @@ jest.mock("expo-linear-gradient", () => {
   };
 });
 
+// Mock expo-camera (M9 — barcode scanner). The native CameraView can't mount
+// in Jest. `CameraView` renders as a plain View exposing its testID so the
+// ScanBarcodeSheet tree mounts; the barcode-scan callback is exercised by
+// firing it from the test (the mock surfaces no frames). `useCameraPermissions`
+// returns a granted permission + a no-op request fn so the permission-gate path
+// renders the camera branch by default; per-test overrides take precedence.
+jest.mock("expo-camera", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const CameraView = React.forwardRef(
+    (props: Record<string, unknown>, _ref: unknown) =>
+      React.createElement(
+        View,
+        { testID: (props.testID as string) ?? "camera-view" },
+        props.children as React.ReactNode,
+      ),
+  );
+  return {
+    __esModule: true,
+    CameraView,
+    useCameraPermissions: jest.fn(() => [
+      { granted: true, canAskAgain: true, status: "granted" },
+      jest.fn(async () => ({ granted: true, status: "granted" })),
+    ]),
+  };
+});
+
+// Mock expo-haptics (M9 — water tracker + add-confirm feedback). The native
+// taptic engine is a no-op in Jest; tests assert the calls fire via jest.fn().
+jest.mock("expo-haptics", () => ({
+  __esModule: true,
+  selectionAsync: jest.fn(async () => undefined),
+  impactAsync: jest.fn(async () => undefined),
+  notificationAsync: jest.fn(async () => undefined),
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
+  NotificationFeedbackType: {
+    Success: "success",
+    Warning: "warning",
+    Error: "error",
+  },
+}));
+
+// Mock expo-image (M9 — recipe/food photos). Render the source-driven Image as
+// a plain View carrying its testID so cards mount; image decoding/caching is a
+// device concern not asserted in Jest.
+jest.mock("expo-image", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const Image = (props: Record<string, unknown>) =>
+    React.createElement(View, { testID: (props.testID as string) ?? "image" });
+  return { __esModule: true, Image };
+});
+
+// Mock @shopify/flash-list (M9 — meal/food/recipe lists). The real FlashList
+// needs native layout measurement; in Jest we render a plain FlatList-style
+// pass-through that maps `data` through `renderItem` so list rows are queryable
+// in render tests. `estimatedItemSize` and recycling are device-only concerns.
+jest.mock("@shopify/flash-list", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  function FlashList<T>(props: {
+    data?: readonly T[] | null;
+    renderItem?: (info: { item: T; index: number }) => React.ReactNode;
+    keyExtractor?: (item: T, index: number) => string;
+    ListEmptyComponent?: React.ReactNode | (() => React.ReactNode);
+    ListHeaderComponent?: React.ReactNode | (() => React.ReactNode);
+    ListFooterComponent?: React.ReactNode | (() => React.ReactNode);
+    testID?: string;
+  }) {
+    const resolve = (
+      c: React.ReactNode | (() => React.ReactNode),
+    ): React.ReactNode => (typeof c === "function" ? c() : c);
+    const data = props.data ?? [];
+    const header = props.ListHeaderComponent
+      ? resolve(props.ListHeaderComponent)
+      : null;
+    const footer = props.ListFooterComponent
+      ? resolve(props.ListFooterComponent)
+      : null;
+    const body =
+      data.length === 0 && props.ListEmptyComponent
+        ? resolve(props.ListEmptyComponent)
+        : data.map((item, index) =>
+            React.createElement(
+              React.Fragment,
+              {
+                key: props.keyExtractor
+                  ? props.keyExtractor(item, index)
+                  : index,
+              },
+              props.renderItem?.({ item, index }),
+            ),
+          );
+    return React.createElement(
+      View,
+      { testID: props.testID ?? "flash-list" },
+      header,
+      body,
+      footer,
+    );
+  }
+  return { __esModule: true, FlashList };
+});
+
 // Mock expo-web-browser (used by OAuth flow)
 jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),

@@ -13,8 +13,10 @@ import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
 import { initialsOf, timeGreeting } from "@/shared/utils";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
+import { WaterLogSheetContainer } from "@/ui/containers/WaterLogSheetContainer";
 
 /**
  * V2 Home container (06-progress-goals, STORY-001/002). Wires the cache-first
@@ -38,6 +40,8 @@ export function HomeContainer() {
   const workoutsState = useWorkouts();
   const profile = useProfilePage();
   const [weighInOpen, setWeighInOpen] = useState(false);
+  const [waterOpen, setWaterOpen] = useState(false);
+  const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
 
   // Map the user's own workouts → carousel items (home.jsx WorkoutCarousel).
   const workoutItems = useMemo(
@@ -202,6 +206,15 @@ export function HomeContainer() {
   const openWeighIn = useCallback(() => setWeighInOpen(true), []);
   const closeWeighIn = useCallback(() => setWeighInOpen(false), []);
 
+  // Quick-log: "Log meal" jumps to the Fuel tab and opens the add-food sheet;
+  // "Water" opens the water-log sheet (logs to the M9 water log).
+  const onOpenMealLog = useCallback(() => {
+    router.push("/(app)/(tabs)/fuel" as never);
+    openQuickAdd("breakfast");
+  }, [router, openQuickAdd]);
+  const openWater = useCallback(() => setWaterOpen(true), []);
+  const closeWater = useCallback(() => setWaterOpen(false), []);
+
   return (
     <>
       <HomePresenter
@@ -229,13 +242,14 @@ export function HomeContainer() {
         onOpenWorkoutsList={onOpenWorkoutsList}
         onOpenTab={onOpenTab}
         onOpenWeighIn={openWeighIn}
-        onOpenMealLog={noop}
-        onLogWater={noop}
+        onOpenMealLog={onOpenMealLog}
+        onLogWater={openWater}
         onLogMood={noop}
         onToggleHabitDay={onToggleHabitDay}
         onOpenCoach={noop}
       />
       <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />
+      <WaterLogSheetContainer visible={waterOpen} onClose={closeWater} />
     </>
   );
 }
