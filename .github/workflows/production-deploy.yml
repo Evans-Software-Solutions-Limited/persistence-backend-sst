@@ -92,19 +92,26 @@ jobs:
       - name: Unlock SST (clear stale lock from previous runs)
         run: bunx sst unlock --stage production || true
 
-      # SST secrets must be set per-stage in SSM before `sst deploy` runs;
-      # `databaseUrl.value` in `infra/api.ts` resolves at deploy time from
-      # the production-stage secret slot. Setting them here makes CI the
-      # source of truth — drift between a developer's `sst secret set`
-      # and the deployed Lambda is impossible. See deploy-staging.yml for
-      # the matching staging-stage step + the 2026-05-04 incident this
-      # closes. While the project is on a single shared Supabase project,
-      # the `DATABASE_URL` GH secret on the Production environment is
-      # identical to the staging one; once production gets its own
-      # Supabase project, only the per-environment secret value diverges.
-      - name: Set SST secrets (PersistenceDatabaseUrl)
+      # All SST secrets are set per-stage in SSM BEFORE `sst deploy` runs so
+      # CI is the single source of truth — drift between a developer's local
+      # `sst secret set` and the deployed Lambda is impossible (see
+      # deploy-staging.yml + the 2026-05-04 incident this closes). Every
+      # secret fails fast when its GitHub environment value is missing: an
+      # empty DB url re-creates that incident, an empty Stripe/RevenueCat
+      # webhook secret lets an attacker forge events and mutate
+      # user_subscriptions, and an empty RevenueCat API key/project id breaks
+      # entitlement sync at the first REST call. Production uses live values
+      # (sk_live_…). While the project is on a single shared Supabase project,
+      # the Production `DATABASE_URL` equals staging's; it diverges once
+      # production gets its own Supabase project.
+      - name: Set SST secrets
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          REVENUECAT_API_KEY: ${{ secrets.REVENUECATAPIKEY }}
+          REVENUECAT_PROJECT_ID: ${{ secrets.REVENUECATPROJECTID }}
+          REVENUECAT_WEBHOOK_SECRET: ${{ secrets.REVENUECATWEBHOOKSECRET }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL is not set on the Production GitHub environment."
@@ -113,32 +120,32 @@ jobs:
             echo "  postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres"
             exit 1
           fi
-          bunx sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage production
-
-      # Stripe secrets used by the SST API Lambda for outbound SDK calls
-      # (subscriptionCreate/cancel) AND inbound webhook signature
-      # verification. Both must be set or the deploy fails fast — without
-      # the webhook secret an attacker could forge events and mutate
-      # user_subscriptions; without the API key outbound endpoints throw
-      # at first SDK call. Use sk_live_… on production.
-      - name: Set SST secrets (Stripe)
-        env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-        run: |
           if [ -z "$STRIPE_SECRET_KEY" ]; then
-            echo "::error::STRIPE_SECRET_KEY is not set on the Production GitHub environment."
-            echo "Add it under Settings → Environments → Production → Secrets (expected: sk_live_…)."
+            echo "::error::STRIPE_SECRET_KEY is not set on the Production GitHub environment (expected: sk_live_…)."
             exit 1
           fi
           if [ -z "$STRIPE_WEBHOOK_SECRET" ]; then
-            echo "::error::STRIPE_WEBHOOK_SECRET is not set on the Production GitHub environment."
-            echo "Add it under Settings → Environments → Production → Secrets (expected: whsec_…)."
-            echo "Issued by Stripe when the webhook endpoint is registered against the production API URL."
+            echo "::error::STRIPE_WEBHOOK_SECRET is not set on the Production GitHub environment (expected: whsec_…, issued by Stripe for the production webhook endpoint)."
             exit 1
           fi
+          if [ -z "$REVENUECAT_API_KEY" ]; then
+            echo "::error::REVENUECATAPIKEY is not set on the Production GitHub environment (expected: the RevenueCat secret REST API key, sk_…)."
+            exit 1
+          fi
+          if [ -z "$REVENUECAT_PROJECT_ID" ]; then
+            echo "::error::REVENUECATPROJECTID is not set on the Production GitHub environment (the RevenueCat project id for the v2 REST paths)."
+            exit 1
+          fi
+          if [ -z "$REVENUECAT_WEBHOOK_SECRET" ]; then
+            echo "::error::REVENUECATWEBHOOKSECRET is not set on the Production GitHub environment (the Authorization header value configured on the RevenueCat webhook)."
+            exit 1
+          fi
+          bunx sst secret set PersistenceDatabaseUrl "$DATABASE_URL" --stage production
           bunx sst secret set StripeSecretKey "$STRIPE_SECRET_KEY" --stage production
           bunx sst secret set StripeWebhookSecret "$STRIPE_WEBHOOK_SECRET" --stage production
+          bunx sst secret set RevenueCatApiKey "$REVENUECAT_API_KEY" --stage production
+          bunx sst secret set RevenueCatProjectId "$REVENUECAT_PROJECT_ID" --stage production
+          bunx sst secret set RevenueCatWebhookSecret "$REVENUECAT_WEBHOOK_SECRET" --stage production
 
       - name: Deploy
         run: bunx sst deploy --stage production
