@@ -64,6 +64,7 @@ import { getAchievementsHandler } from "./application/progress/getAchievementsHa
 import { useFreezeTokenHandler } from "./application/progress/useFreezeTokenHandler";
 import { getStreaksHandler } from "./application/progress/getStreaksHandler";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
+import { handleRevenueCatWebhook } from "./application/revenuecat/revenueCatWebhookHandler";
 import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
 import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
 import { subscriptionsTiersHandler } from "./application/subscriptions/tiers/subscriptionsTiersHandler";
@@ -183,6 +184,12 @@ export type CoreApi = typeof app;
 // sub-app, so this doesn't conflict with anything below.
 const honoApp = new Hono();
 honoApp.post("/stripe/webhook", (c) => handleStripeWebhook(c.req.raw));
+// `/revenuecat/webhook` lives on the Hono parent for the same reason as Stripe:
+// webhook auth reads the raw `Authorization` header (a static bearer secret)
+// rather than going through Elysia's JWT middleware. RevenueCat is the
+// entitlement source of truth across both rails (Apple IAP + Stripe); this
+// keeps user_subscriptions in sync (M12).
+honoApp.post("/revenuecat/webhook", (c) => handleRevenueCatWebhook(c.req.raw));
 honoApp.mount("/", app.fetch);
 const honoHandler = handle(honoApp);
 

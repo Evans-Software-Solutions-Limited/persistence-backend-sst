@@ -167,7 +167,7 @@ describe("ProfileDrawerContainer", () => {
       ["onOpenProfile", "/(app)/profile/edit"],
       ["onOpenAchievements", "/(app)/coming-soon?feature=achievements"],
       ["onOpenHealth", "/(app)/profile/health"],
-      ["onOpenSubscription", "/(app)/coming-soon?feature=subscription"],
+      ["onOpenSubscription", "/(auth)/subscription-selection"],
       ["onOpenNotifications", "/(app)/profile/notifications"],
       ["onOpenSettings", "/(app)/profile/privacy-settings"],
     ];

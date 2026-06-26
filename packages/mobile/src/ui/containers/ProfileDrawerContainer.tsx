@@ -123,9 +123,7 @@ export function ProfileDrawerContainer() {
         pushFrom("/(app)/coming-soon?feature=achievements")
       }
       onOpenHealth={() => pushFrom("/(app)/profile/health")}
-      onOpenSubscription={() =>
-        pushFrom("/(app)/coming-soon?feature=subscription")
-      }
+      onOpenSubscription={() => pushFrom("/(auth)/subscription-selection")}
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
       onOpenSettings={() => pushFrom("/(app)/profile/privacy-settings")}
       onSignOut={onSignOut}

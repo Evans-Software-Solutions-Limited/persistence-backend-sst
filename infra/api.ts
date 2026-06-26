@@ -1,4 +1,11 @@
-import { databaseUrl, stripeSecretKey, stripeWebhookSecret } from "./secrets";
+import {
+  databaseUrl,
+  revenueCatApiKey,
+  revenueCatProjectId,
+  revenueCatWebhookSecret,
+  stripeSecretKey,
+  stripeWebhookSecret,
+} from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { avatarsBucket } from "./storage";
 
@@ -45,6 +52,14 @@ coreAPI.route("$default", {
     // silently degrading to "no Stripe access".
     STRIPE_SECRET_KEY: stripeSecretKey.value,
     STRIPE_WEBHOOK_SECRET: stripeWebhookSecret.value,
+    // RevenueCat (M12). `REVENUECAT_WEBHOOK_SECRET` authenticates inbound
+    // POST /revenuecat/webhook; `REVENUECAT_API_KEY` + `REVENUECAT_PROJECT_ID`
+    // are used to re-fetch the customer's active entitlements (the
+    // authoritative read) after each webhook. Set per-stage by the deploy
+    // workflows; missing values fail fast at handler use.
+    REVENUECAT_WEBHOOK_SECRET: revenueCatWebhookSecret.value,
+    REVENUECAT_API_KEY: revenueCatApiKey.value,
+    REVENUECAT_PROJECT_ID: revenueCatProjectId.value,
   },
 });
 

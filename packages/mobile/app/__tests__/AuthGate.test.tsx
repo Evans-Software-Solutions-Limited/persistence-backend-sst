@@ -74,6 +74,15 @@ jest.mock("../../src/ui/hooks/useActiveWorkoutRehydration", () => ({
   useActiveWorkoutRehydration: () => mockUseActiveWorkoutRehydration(),
 }));
 
+// Mock usePurchasesIdentity — same rationale: the real hook calls
+// useAdapters/useAuth and throws without the provider plumbing (its own
+// behaviour is covered in
+// src/ui/hooks/__tests__/usePurchasesIdentity.test.tsx).
+const mockUsePurchasesIdentity = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/usePurchasesIdentity", () => ({
+  usePurchasesIdentity: () => mockUsePurchasesIdentity(),
+}));
+
 // eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -341,5 +350,19 @@ describe("ActiveWorkoutBootstrap (active-session rehydration wiring)", () => {
     render(<RootLayout />);
 
     expect(mockUseActiveWorkoutRehydration).toHaveBeenCalled();
+  });
+});
+
+describe("PurchasesIdentityBootstrap (RevenueCat identity wiring, M12)", () => {
+  it("invokes `usePurchasesIdentity()` on mount", () => {
+    // M12 — binds the RevenueCat App User ID to the Supabase user id.
+    // Mounted as a sibling of AuthGate inside AppProviders.
+    mockUsePurchasesIdentity.mockClear();
+    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    expect(mockUsePurchasesIdentity).toHaveBeenCalled();
   });
 });

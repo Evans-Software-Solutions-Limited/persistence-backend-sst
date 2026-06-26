@@ -423,6 +423,32 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
 });
 
 /**
+ * RevenueCat webhook event idempotency + lifecycle log (M12 — RevenueCat
+ * fronts both Apple IAP + Stripe). Mirrors `stripeWebhookEvents`: RevenueCat
+ * delivers at-least-once and unordered, so the handler claims each event by
+ * `event_id` before re-fetching the customer and upserting `user_subscriptions`.
+ *
+ * Schema mirrors `supabase/migrations/20260624120000_revenuecat_webhook_events.sql`.
+ */
+export const revenuecatWebhookEvents = pgTable("revenuecat_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  type: text("type").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  // Durable-claim lifecycle: processing | done | failed. Dedupe skips only
+  // `done`; `failed` / stale `processing` are re-claimable. Defaults to 'done'
+  // so any pre-existing (already-processed) rows keep deduping.
+  status: text("status").notNull().default("done"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * Append-only ledger of `user_subscriptions.payment_status` transitions
  * (spec 17 / Phase D). Insert-only — never updated or deleted. Not FK-cascaded
  * so the audit trail outlives the subscription row it describes.

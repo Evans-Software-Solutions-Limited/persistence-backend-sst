@@ -295,6 +295,30 @@ jest.mock("expo-notifications", () => ({
   },
 }));
 
+// Mock react-native-purchases — M12 (iOS RevenueCat rail). The native module
+// isn't linked in Jest. The `RevenueCatPurchasesAdapter` (production) is the
+// only consumer of the real package; hook / container / presenter tests inject
+// `MockPurchasesAdapter` via the Adapters context. This global keeps the
+// adapter's own module-load (a static `import Purchases from ...`) from
+// blowing up the jest module graph, and lets the adapter's unit test drive
+// the static methods via `jest.spyOn`.
+jest.mock("react-native-purchases", () => ({
+  __esModule: true,
+  default: {
+    configure: jest.fn(),
+    setLogLevel: jest.fn(async () => undefined),
+    logIn: jest.fn(async () => ({ customerInfo: {}, created: false })),
+    logOut: jest.fn(async () => ({})),
+    getOfferings: jest.fn(async () => ({ all: {}, current: null })),
+    purchasePackage: jest.fn(async () => ({
+      customerInfo: { entitlements: { active: {} } },
+      productIdentifier: "",
+    })),
+    restorePurchases: jest.fn(async () => ({ entitlements: { active: {} } })),
+  },
+  LOG_LEVEL: { DEBUG: "DEBUG", INFO: "INFO" },
+}));
+
 // Mock @stripe/stripe-react-native — M10. The native module isn't
 // linked in Jest, so importing it for real throws on iOS-only
 // bindings. The adapter under test (`StripeApplePayAdapter`) carries

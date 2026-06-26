@@ -10,6 +10,7 @@ import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 
@@ -105,6 +106,20 @@ function ActiveWorkoutBootstrap() {
   return null;
 }
 
+/**
+ * Binds RevenueCat's App User ID to the Supabase user id after auth resolves
+ * (and logs out on sign-out) — the load-bearing identity rule for the iOS IAP
+ * rail (M12). No-ops on web / Android and until a userId resolves. Sibling to
+ * the other bootstraps because purchase identity and auth are independent
+ * concerns.
+ *
+ * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md § Deliverable 2
+ */
+function PurchasesIdentityBootstrap() {
+  usePurchasesIdentity();
+  return null;
+}
+
 function AuthGate() {
   const { session, isLoading } = useAuth();
   const segments = useSegments();
@@ -192,6 +207,7 @@ export default function RootLayout() {
             <PushNotificationsBootstrap />
             <UserModeBootstrap />
             <ActiveWorkoutBootstrap />
+            <PurchasesIdentityBootstrap />
             <AuthGate />
           </AppProviders>
         </StripeProvider>
