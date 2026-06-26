@@ -10,6 +10,10 @@
 -- Codes are short (6 alphanumeric chars), expire after 24h, and are
 -- single-use. A trainer can have at most one active (unexpired, unused)
 -- code at a time to keep the UX simple.
+--
+-- Ordered AFTER the 2026-06-26 security-hardening migrations (which are
+-- already applied on remote) so `supabase db push` inserts it as the newest
+-- pending migration rather than out-of-order in the past.
 
 CREATE TABLE IF NOT EXISTS trainer_invite_codes (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -43,11 +47,13 @@ CREATE INDEX IF NOT EXISTS trainer_invite_codes_trainer_idx
 -- RLS
 ALTER TABLE trainer_invite_codes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Trainers can view own invite codes" ON trainer_invite_codes;
 CREATE POLICY "Trainers can view own invite codes"
   ON trainer_invite_codes FOR SELECT
   TO authenticated
   USING (trainer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Trainers can create invite codes" ON trainer_invite_codes;
 CREATE POLICY "Trainers can create invite codes"
   ON trainer_invite_codes FOR INSERT
   TO authenticated
@@ -60,6 +66,7 @@ CREATE POLICY "Trainers can create invite codes"
     )
   );
 
+DROP POLICY IF EXISTS "Trainers can update own invite codes" ON trainer_invite_codes;
 CREATE POLICY "Trainers can update own invite codes"
   ON trainer_invite_codes FOR UPDATE
   TO authenticated
