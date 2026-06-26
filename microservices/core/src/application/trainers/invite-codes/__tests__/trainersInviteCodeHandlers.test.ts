@@ -27,6 +27,12 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "user-id" }),
 }));
 
+// Spy on the trainer-facing notification emitted after a successful join.
+const notificationCreate = vi.fn(async () => ({}));
+vi.mock("../../../repositories/notificationRepository", () => ({
+  NotificationRepository: vi.fn(() => ({ create: notificationCreate })),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -321,9 +327,10 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [], // no existing rel
-        [{ fullName: "Coach Carter" }], // trainer name
+        [{ fullName: "Coach Carter" }], // trainer name + role
         [{ id: "code-1" }], // claim succeeds (1 row)
         [{ id: "rel-new" }], // relationship insert returning
+        [{ fullName: "Jordan" }], // client name (notification copy)
       ]),
     );
     const { trainersAcceptInviteCodeHandler } =
@@ -338,15 +345,83 @@ describe("trainersAcceptInviteCodeHandler", () => {
     expect(body.data.trainerName).toBe("Coach Carter");
   });
 
+  it("notifies the trainer of the new request on success", async () => {
+    (getDb as any).mockReturnValue(
+      txDb([
+        [{ id: "code-1", trainerId: "trainer-1" }], // code
+        [], // no existing rel
+        [{ fullName: "Coach Carter", role: "personal_trainer" }], // trainer
+        [{ id: "code-1" }], // claim succeeds
+        [{ id: "rel-new" }], // relationship insert returning
+        [{ fullName: "Jordan" }], // client name
+      ]),
+    );
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+
+    expect(notificationCreate).toHaveBeenCalledTimes(1);
+    expect(notificationCreate).toHaveBeenCalledWith(
+      "trainer-1",
+      expect.objectContaining({
+        type: "pt_request",
+        relatedEntityType: "pt_relationship",
+        relatedEntityId: "rel-new",
+      }),
+    );
+  });
+
+  it("emits a physio_request when the trainer is a physiotherapist", async () => {
+    (getDb as any).mockReturnValue(
+      txDb([
+        [{ id: "code-1", trainerId: "trainer-1" }],
+        [],
+        [{ fullName: "Dr. Lee", role: "physiotherapist" }],
+        [{ id: "code-1" }],
+        [{ id: "rel-new" }],
+        [{ fullName: "Jordan" }],
+      ]),
+    );
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+
+    expect(notificationCreate).toHaveBeenCalledWith(
+      "trainer-1",
+      expect.objectContaining({ type: "physio_request" }),
+    );
+  });
+
+  it("still returns 201 when the notification emit fails", async () => {
+    notificationCreate.mockRejectedValueOnce(new Error("notify boom"));
+    (getDb as any).mockReturnValue(
+      txDb([
+        [{ id: "code-1", trainerId: "trainer-1" }],
+        [],
+        [{ fullName: "Coach Carter" }],
+        [{ id: "code-1" }],
+        [{ id: "rel-new" }],
+        [{ fullName: "Jordan" }],
+      ]),
+    );
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    const res = await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123" }),
+    );
+    expect(res.status).toBe(201);
+  });
+
   it("201 revives a dormant relationship on success", async () => {
     (getDb as any).mockReturnValue(
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [{ id: "rel-old", status: "terminated" }], // dormant rel
-        [{ fullName: "Coach" }], // trainer name
+        [{ fullName: "Coach" }], // trainer name + role
         [{ id: "code-1" }], // claim succeeds
         // revive uses update (awaited at .where → next queue entry)
         [],
+        [{ fullName: "Jordan" }], // client name (notification copy)
       ]),
     );
     const { trainersAcceptInviteCodeHandler } =

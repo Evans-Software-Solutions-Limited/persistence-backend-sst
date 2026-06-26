@@ -56,10 +56,13 @@ function render(overrides: Partial<YouPresenterProps> = {}) {
     ],
     isLoading: false,
     isRefreshing: false,
+    trainer: null,
+    pendingRequestCount: 0,
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
     onOpenCalendar: jest.fn(),
     onUseToken,
+    onOpenRequests: jest.fn(),
     ...overrides,
   };
   return { ...renderWithTheme(<YouPresenter {...props} />), onUseToken };

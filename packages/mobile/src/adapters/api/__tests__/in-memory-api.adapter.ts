@@ -96,6 +96,12 @@ import type {
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
+  ClientRelationshipStatus,
+  ClientTrainerRelationship,
+  RelationshipResponseAction,
+  RelationshipResponseResult,
+} from "@/domain/models/clientRelationship";
+import type {
   InviteClientRequest,
   InviteClientResult,
   InviteErrorCode,
@@ -1030,6 +1036,7 @@ export class InMemoryApiAdapter implements ApiPort {
     const row: ApiMeasurement = {
       id: `measurement-${this.measurements.length + 1}`,
       userId: "test-user",
+      loggedByUserId: null,
       weightKg: input.weightKg != null ? String(input.weightKg) : null,
       bodyFatPercentage:
         input.bodyFatPercentage != null
@@ -1046,6 +1053,36 @@ export class InMemoryApiAdapter implements ApiPort {
       measuredAt: new Date().toISOString(),
     };
     this.measurements.push(row);
+    return this.mayFail<ApiMeasurement>(row);
+  }
+
+  /** Captures logClientWeight calls for assertions. */
+  public logClientWeightCalls: {
+    clientId: string;
+    input: LogMeasurementInput;
+  }[] = [];
+
+  async logClientWeight(clientId: string, input: LogMeasurementInput) {
+    this.logClientWeightCalls.push({ clientId, input });
+    const row: ApiMeasurement = {
+      id: `measurement-${this.measurements.length + 1}`,
+      userId: clientId,
+      loggedByUserId: "trainer-test",
+      weightKg: input.weightKg != null ? String(input.weightKg) : null,
+      bodyFatPercentage:
+        input.bodyFatPercentage != null
+          ? String(input.bodyFatPercentage)
+          : null,
+      chestCm: null,
+      waistCm: null,
+      hipsCm: null,
+      leftArmCm: null,
+      rightArmCm: null,
+      leftThighCm: null,
+      rightThighCm: null,
+      notes: input.notes ?? null,
+      measuredAt: new Date().toISOString(),
+    };
     return this.mayFail<ApiMeasurement>(row);
   }
 
@@ -1479,5 +1516,40 @@ export class InMemoryApiAdapter implements ApiPort {
     };
     this.meals.push(meal);
     return ok(meal);
+  }
+
+  /** Client-side relationships fixture (Requests screen + You section). */
+  public clientRelationships: ClientTrainerRelationship[] = [];
+  /** Captures respondToRelationship calls for assertions. */
+  public respondToRelationshipCalls: {
+    relationshipId: string;
+    action: RelationshipResponseAction;
+  }[] = [];
+
+  async getClientRelationships(
+    status?: ClientRelationshipStatus,
+  ): Promise<Result<ClientTrainerRelationship[], ApiError>> {
+    const rows = status
+      ? this.clientRelationships.filter((r) => r.status === status)
+      : this.clientRelationships;
+    return this.mayFail<ClientTrainerRelationship[]>([...rows]);
+  }
+
+  async respondToRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RelationshipResponseResult, ApiError>> {
+    this.respondToRelationshipCalls.push({ relationshipId, action });
+    const result = this.mayFail<RelationshipResponseResult>({
+      relationshipId,
+      trainerId: "trainer-test",
+      status: action === "accept" ? "active" : "terminated",
+    });
+    if (result.ok) {
+      this.clientRelationships = this.clientRelationships.filter(
+        (r) => r.relationshipId !== relationshipId,
+      );
+    }
+    return result;
   }
 }

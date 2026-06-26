@@ -26,6 +26,31 @@ const LEGACY_REDIRECTS: Record<string, string> = {
 };
 
 /**
+ * Custom-scheme deep links emitted by the backend (DB notification triggers +
+ * handlers) look like `persistencemobile://<host>?<query>`. Map the known
+ * hosts onto in-app routes. Unknown hosts fall back to Home so a tap never
+ * dead-ends. Producers historically emitted these under `data.deeplink`
+ * (lowercase) while the app reads `data.deepLink`; the adapters now tolerate
+ * both, and this resolver normalises the scheme.
+ */
+const APP_SCHEME = "persistencemobile://";
+
+const SCHEME_HOSTS: Record<string, string> = {
+  requests: "/(app)/requests",
+  clients: "/(app)/(tabs)/clients",
+  profile: "/(app)/(tabs)/you",
+};
+
+function resolveSchemeLink(rest: string): string {
+  const qIndex = rest.indexOf("?");
+  const host = qIndex === -1 ? rest : rest.slice(0, qIndex);
+  const query = qIndex === -1 ? "" : rest.slice(qIndex); // includes the "?"
+  const base = SCHEME_HOSTS[host];
+  if (!base) return HOME_ROUTE;
+  return query ? `${base}${query}` : base;
+}
+
+/**
  * Resolve a deep link to a route. Returns Home for null/empty/unknown so
  * a tap always lands somewhere valid (never a dead route).
  */
@@ -35,6 +60,9 @@ export function resolveNotificationRoute(
   if (!deepLink) return HOME_ROUTE;
   const trimmed = deepLink.trim();
   if (trimmed === "") return HOME_ROUTE;
+  if (trimmed.startsWith(APP_SCHEME)) {
+    return resolveSchemeLink(trimmed.slice(APP_SCHEME.length));
+  }
   if (LEGACY_REDIRECTS[trimmed]) return LEGACY_REDIRECTS[trimmed];
   // Already an absolute app path → pass through. Anything else is unknown.
   if (trimmed.startsWith("/")) return trimmed;

@@ -12,6 +12,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { NotificationRepository } from "../../repositories/notificationRepository";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
@@ -21,6 +22,14 @@ import {
  *
  * Validates the code is active + not expired, creates a pending relationship,
  * marks the code as used.
+ *
+ * Notifications: this flow is CLIENT-initiated (the client redeems the
+ * trainer's code), so the trainer is the party who must review/accept the
+ * request. The shared `create_pt_relationship_notifications` Postgres trigger
+ * only covers the trainer-initiated email flow (it notifies the client on a
+ * pending INSERT), so the trainer would otherwise receive nothing. We emit a
+ * `pt_request` / `physio_request` notification to the trainer here, AFTER the
+ * transaction commits, so a rollback never leaves an orphan notification.
  */
 export const trainersAcceptInviteCodeHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -35,7 +44,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       const { code } = ctx.body as { code: string };
       const normalizedCode = code.toUpperCase().trim();
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         // Find the active, unexpired code
         const codeRows = await tx
           .select({
@@ -100,13 +109,16 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           };
         }
 
-        // Get trainer name for the response
+        // Get trainer name + role for the response and notification. Role
+        // picks `physio_request` vs `pt_request`; it may be null/undefined in
+        // unit tests, which falls back to the personal-trainer copy.
         const trainerRows = await tx
-          .select({ fullName: profiles.fullName })
+          .select({ fullName: profiles.fullName, role: profiles.role })
           .from(profiles)
           .where(eq(profiles.id, trainerId))
           .limit(1);
         const trainerName = trainerRows[0]?.fullName ?? "Your trainer";
+        const trainerRole = trainerRows[0]?.role ?? null;
 
         // Atomically claim the code BEFORE creating the relationship. The
         // `status = 'active'` guard + rowcount check closes the TOCTOU window:
@@ -162,16 +174,63 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           relationshipId = inserted[0].id;
         }
 
+        // Client display name for the trainer-facing notification copy.
+        const clientRows = await tx
+          .select({ fullName: profiles.fullName })
+          .from(profiles)
+          .where(eq(profiles.id, userId))
+          .limit(1);
+        const clientName = clientRows[0]?.fullName ?? "A new client";
+
         ctx.set.status = 201;
+        return {
+          ok: true as const,
+          relationshipId,
+          trainerId,
+          trainerName,
+          trainerRole,
+          clientName,
+        };
+      });
+
+      // Emit the trainer-facing request notification AFTER the transaction
+      // commits, so a rollback can't leave an orphan notification. Best-effort:
+      // a notification failure must not fail an otherwise-successful join — the
+      // relationship already exists and the trainer can still see it.
+      if ("ok" in result) {
+        const isPhysio = result.trainerRole === "physiotherapist";
+        try {
+          await new NotificationRepository().create(result.trainerId, {
+            type: isPhysio ? "physio_request" : "pt_request",
+            title: isPhysio ? "New physio request" : "New training request",
+            message: `${result.clientName} used your invite code and wants to connect`,
+            relatedEntityType: "pt_relationship",
+            relatedEntityId: result.relationshipId,
+            data: {
+              deeplink: `persistencemobile://requests?relationshipId=${result.relationshipId}`,
+              relationship_id: result.relationshipId,
+              client_id: userId,
+            },
+          });
+        } catch (err) {
+          console.error(
+            "[accept-invite-code] failed to emit trainer notification",
+            err,
+          );
+        }
+
         return {
           data: {
             success: true,
-            relationshipId,
-            trainerName,
-            message: `Training request sent to ${trainerName}`,
+            relationshipId: result.relationshipId,
+            trainerName: result.trainerName,
+            message: `Training request sent to ${result.trainerName}`,
           },
         };
-      });
+      }
+
+      // Error result: ctx.set.status was already set inside the transaction.
+      return result;
     },
     {
       body: t.Object({

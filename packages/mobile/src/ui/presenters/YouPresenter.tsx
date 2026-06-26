@@ -16,6 +16,10 @@ import {
 import { BodyTrendPresenter, type TrendData } from "./BodyTrendPresenter";
 import { VolumeStatsPresenter } from "./VolumeStatsPresenter";
 import { PRHistoryPresenter } from "./PRHistoryPresenter";
+import {
+  TrainerProgressPresenter,
+  type TrainerProgressData,
+} from "./TrainerProgressPresenter";
 
 /**
  * <YouPresenter> — You/Progress lifetime view (06-progress-goals, STORY-003;
@@ -39,6 +43,11 @@ export type YouPresenterProps = {
   volumeStats: VolumeStats | null;
   prHistory: PersonalRecord[];
 
+  /** Active coach relationship for the "Your trainer" block, or null. */
+  trainer: TrainerProgressData | null;
+  /** Count of pending incoming coach requests. */
+  pendingRequestCount: number;
+
   isLoading: boolean;
   isRefreshing: boolean;
   error?: ApiError | null;
@@ -48,6 +57,8 @@ export type YouPresenterProps = {
   onOpenDrawer: () => void;
   onOpenCalendar: () => void;
   onUseToken: () => void;
+  /** Navigate to the Requests screen. */
+  onOpenRequests: () => void;
 };
 
 export function YouPresenter(props: YouPresenterProps) {
@@ -60,6 +71,8 @@ export function YouPresenter(props: YouPresenterProps) {
     bodyTrend,
     volumeStats,
     prHistory,
+    trainer,
+    pendingRequestCount,
     isLoading,
     isRefreshing,
     error,
@@ -68,6 +81,7 @@ export function YouPresenter(props: YouPresenterProps) {
     onOpenDrawer,
     onOpenCalendar,
     onUseToken,
+    onOpenRequests,
   } = props;
 
   const hasAny =
@@ -133,6 +147,16 @@ export function YouPresenter(props: YouPresenterProps) {
                 busy={busyToken}
               />
             </View>
+          )}
+
+          {(trainer !== null || pendingRequestCount > 0) && (
+            <Section eyebrow="COACHING" title="Your trainer" testID="you-trainer-section">
+              <TrainerProgressPresenter
+                trainer={trainer}
+                pendingRequestCount={pendingRequestCount}
+                onOpenRequests={onOpenRequests}
+              />
+            </Section>
           )}
 
           <Section
