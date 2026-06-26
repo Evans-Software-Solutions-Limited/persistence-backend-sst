@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import type {
   BillingCycle,
@@ -15,9 +15,11 @@ import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
 import { useCreateSubscription } from "@/ui/hooks/useCreateSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
+import { usePurchases } from "@/ui/hooks/usePurchases";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { newIdempotencyKey } from "@/shared/utils";
 import { CancelSubscriptionModal } from "@/ui/components/subscription/CancelSubscriptionModal";
+import { IOSPurchaseFlowContainer } from "@/ui/containers/IOSPurchaseFlowContainer";
 import { USER_CANCELLED_ERROR } from "@/ui/components/subscription/PaymentMethodForm";
 import {
   deriveTrialEligibility,
@@ -63,7 +65,24 @@ const OFFLINE_3DS_MESSAGE =
 const OFFLINE_3DS_LOST_MESSAGE =
   "Connection lost during payment verification. Please try again.";
 
+/**
+ * Public entry for the post-sign-up subscription screen. Dispatches by rail:
+ * on iOS (where a RevenueCat purchases adapter is wired) the native Apple IAP
+ * flow renders; everywhere else the existing Stripe Apple-Pay flow renders
+ * unchanged. The branch condition is constant for a given mount, so the
+ * downstream hook order in each child container is stable.
+ *
+ * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md § Deliverable 3
+ */
 export function SubscriptionSelectionContainer() {
+  const purchases = usePurchases();
+  if (Platform.OS === "ios" && purchases !== null) {
+    return <IOSPurchaseFlowContainer />;
+  }
+  return <StripeSubscriptionSelectionContainer />;
+}
+
+function StripeSubscriptionSelectionContainer() {
   const router = useRouter();
   const { payments, netInfo } = useAdapters();
   const isOnline = useOnlineStatus();
