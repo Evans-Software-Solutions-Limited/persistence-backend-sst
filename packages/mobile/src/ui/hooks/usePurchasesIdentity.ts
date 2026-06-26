@@ -32,6 +32,13 @@ export function usePurchasesIdentity(): void {
       if (inFlightUserIdRef.current === userId) return;
       inFlightUserIdRef.current = userId;
       void purchases.logIn(userId).then((result) => {
+        // Guard against a stale resolution: if identity changed while this
+        // logIn was in flight (sign-out, or a switch to another user), this
+        // result is no longer current — don't clear the newer in-flight
+        // marker and don't latch a now-incorrect binding. Without this, a
+        // sign-out mid-flight would latch the signed-out user, so signing
+        // back in short-circuits and RevenueCat stays on the anonymous id.
+        if (inFlightUserIdRef.current !== userId) return;
         inFlightUserIdRef.current = null;
         // Latch ONLY on success. A transient failure must not strand the ref —
         // otherwise we'd never re-attempt and RevenueCat would stay on the

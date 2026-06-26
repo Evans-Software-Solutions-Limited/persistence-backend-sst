@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react-native";
+import { act, renderHook, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
@@ -107,5 +107,42 @@ describe("usePurchasesIdentity", () => {
     mockSession = { userId: "u1" };
     rerender({});
     await waitFor(() => expect(purchases.logInCalls).toEqual(["u1", "u1"]));
+  });
+
+  it("sign-out during an in-flight logIn does not stale-latch (re-login still binds)", async () => {
+    const purchases = new MockPurchasesAdapter();
+    const calls: string[] = [];
+    let resolveLogIn: ((r: { ok: true }) => void) | null = null;
+    // Override logIn with a manually-controlled deferred so we can interleave
+    // a sign-out while the call is still pending.
+    purchases.logIn = ((id: string) => {
+      calls.push(id);
+      return new Promise((res) => {
+        resolveLogIn = res as unknown as (r: { ok: true }) => void;
+      });
+    }) as unknown as typeof purchases.logIn;
+
+    mockSession = { userId: "u1" };
+    const { rerender } = renderHook(() => usePurchasesIdentity(), {
+      wrapper: wrap(makeAdapters(purchases)),
+    });
+    expect(calls).toEqual(["u1"]); // logIn(u1) in flight, not yet resolved
+
+    // Sign out before logIn resolves.
+    mockSession = null;
+    rerender({});
+    expect(purchases.logOutCalls).toBe(1);
+
+    // The stale in-flight logIn(u1) now resolves — it must NOT latch u1.
+    await act(async () => {
+      resolveLogIn?.({ ok: true });
+      await Promise.resolve();
+    });
+
+    // Sign back in as u1 — logIn must be re-issued, not short-circuited by a
+    // stale latch.
+    mockSession = { userId: "u1" };
+    rerender({});
+    await waitFor(() => expect(calls).toEqual(["u1", "u1"]));
   });
 });
