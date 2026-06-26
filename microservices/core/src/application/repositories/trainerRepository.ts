@@ -16,6 +16,7 @@ import {
   type TrainerInvitation,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { Db } from "@persistence/db/client";
 import { liveSubscriptionFilter } from "./subscriptionRepository";
 
 // ─── Wire shapes ──────────────────────────────────────────────────────────────
@@ -517,9 +518,15 @@ export class TrainerRepository {
    * (no subscription row, or the joined tier has a null limit) — the handler
    * surfaces `slotsTotal: null` / `slotsOpen: null` in that case.
    */
-  async getTrainerClientLimit(trainerId: string): Promise<number | null> {
-    const db = getDb();
-    const rows = await db
+  async getTrainerClientLimit(
+    trainerId: string,
+    // Executor defaults to a fresh pooled connection, but callers inside a
+    // transaction MUST pass their `tx` — otherwise this opens a second pooled
+    // connection and deadlocks under Supavisor transaction-mode pooling (the
+    // outer tx holds the only connection while this query waits for it).
+    executor: Pick<Db, "select"> = getDb(),
+  ): Promise<number | null> {
+    const rows = await executor
       .select({ limit: subscriptionTiers.trainerClientLimit })
       .from(userSubscriptions)
       .innerJoin(
@@ -1128,27 +1135,11 @@ export class TrainerRepository {
       }
 
       // Slot check: slotsTotal from tier, activeClients from active non-AI rels.
-      // CRITICAL: use `tx` (the transaction handle) for ALL queries inside this
-      // transaction. Using `getDb()` grabs a separate connection from the pool;
-      // under Supavisor transaction-mode pooling (single multiplexed connection)
-      // that creates a deadlock — the outer tx holds the only pooled connection
-      // while the inner query waits for it. This caused 20s Lambda timeouts.
-      const slotRows = await tx
-        .select({ limit: subscriptionTiers.trainerClientLimit })
-        .from(userSubscriptions)
-        .innerJoin(
-          subscriptionTiers,
-          eq(userSubscriptions.tierName, subscriptionTiers.tierName),
-        )
-        .where(
-          and(
-            eq(userSubscriptions.userId, trainerId),
-            liveSubscriptionFilter(),
-          ),
-        )
-        .orderBy(desc(userSubscriptions.createdAt))
-        .limit(1);
-      const slotsTotal = slotRows[0]?.limit ?? null;
+      // CRITICAL: pass `tx` so the slot-limit query runs on the transaction's
+      // own connection. Calling getTrainerClientLimit() with the default
+      // executor would grab a SECOND pooled connection and deadlock under
+      // Supavisor transaction-mode pooling (20s Lambda timeouts).
+      const slotsTotal = await this.getTrainerClientLimit(trainerId, tx);
 
       const activeRows = await tx
         .select({ total: sql<number>`count(*)::int` })

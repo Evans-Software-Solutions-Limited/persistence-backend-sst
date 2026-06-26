@@ -562,7 +562,11 @@ export type HabitConfigEntry = {
   completionRule: string;
   daysPerWeek: number | null;
   tolerancePct: number | null;
-  pending: { targetValue?: number; daysPerWeek?: number; enabled?: boolean } | null;
+  pending: {
+    targetValue?: number;
+    daysPerWeek?: number;
+    enabled?: boolean;
+  } | null;
 };
 
 /** Wire shape for body_measurements (decimal columns arrive as strings). */

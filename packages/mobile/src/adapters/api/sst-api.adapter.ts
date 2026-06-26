@@ -1094,9 +1094,7 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   async getHabitConfigs(): Promise<Result<HabitConfigEntry[], ApiError>> {
-    return this.requestEnvelope<HabitConfigEntry[]>(
-      "/users/me/habits/config",
-    );
+    return this.requestEnvelope<HabitConfigEntry[]>("/users/me/habits/config");
   }
 
   async createHabitCompletion(
