@@ -108,6 +108,34 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           .limit(1);
         const trainerName = trainerRows[0]?.fullName ?? "Your trainer";
 
+        // Atomically claim the code BEFORE creating the relationship. The
+        // `status = 'active'` guard + rowcount check closes the TOCTOU window:
+        // if two clients submit the same code concurrently, only the UPDATE
+        // that flips 'active' → 'used' returns a row; the loser gets 0 rows
+        // and is rejected, so the code can never be redeemed twice.
+        const claimed = await tx
+          .update(trainerInviteCodes)
+          .set({
+            status: "used",
+            usedBy: userId,
+            usedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(trainerInviteCodes.id, inviteCode.id),
+              eq(trainerInviteCodes.status, "active"),
+            ),
+          )
+          .returning({ id: trainerInviteCodes.id });
+
+        if (claimed.length === 0) {
+          ctx.set.status = 409;
+          return {
+            code: "code_already_used",
+            message: "This invite code has already been used.",
+          };
+        }
+
         // Create or revive the relationship
         let relationshipId: string;
         if (existingRel) {
@@ -133,16 +161,6 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             .returning({ id: ptClientRelationships.id });
           relationshipId = inserted[0].id;
         }
-
-        // Mark the code as used
-        await tx
-          .update(trainerInviteCodes)
-          .set({
-            status: "used",
-            usedBy: userId,
-            usedAt: new Date(),
-          })
-          .where(eq(trainerInviteCodes.id, inviteCode.id));
 
         ctx.set.status = 201;
         return {

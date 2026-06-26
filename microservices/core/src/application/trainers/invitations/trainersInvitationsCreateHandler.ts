@@ -51,9 +51,11 @@ export const trainersInvitationsCreateHandler = new Elysia()
           ctx.set.status = err.status;
           return { code: err.code, message: err.message };
         }
-        // Surface the real error so it's visible in logs/response
+        // Surface the real error so it's visible in logs/response.
+        // Do NOT log the client email (PII → CloudWatch); userId + message
+        // is enough to triage, and the email adds no diagnostic value.
         console.error(
-          `[trainers:invite] unhandled error for trainer=${userId} email=${body.clientEmail}:`,
+          `[trainers:invite] unhandled error for trainer=${userId}:`,
           err instanceof Error ? err.message : err,
           err instanceof Error ? err.stack : "",
         );

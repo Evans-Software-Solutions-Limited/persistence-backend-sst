@@ -93,13 +93,13 @@ export const trainersInviteCodeCreateHandler = new Elysia()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     let attempts = 0;
     while (attempts < 5) {
-      const code = generateCode();
+      const newCode = generateCode();
       try {
         const inserted = await db
           .insert(trainerInviteCodes)
           .values({
             trainerId: userId,
-            code,
+            code: newCode,
             status: "active",
             expiresAt,
           })
@@ -119,15 +119,55 @@ export const trainersInviteCodeCreateHandler = new Elysia()
           },
         };
       } catch (err) {
-        // Unique constraint violation — regenerate
-        if (
-          err instanceof Error &&
-          err.message.includes("unique") 
-        ) {
-          attempts++;
-          continue;
+        // Only handle unique-constraint violations (PG 23505); rethrow
+        // everything else. Matching on SQLSTATE is more robust than sniffing
+        // the message text.
+        const isUniqueViolation =
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code?: unknown }).code === "23505";
+        if (!isUniqueViolation) throw err;
+
+        const constraint =
+          typeof err === "object" && err !== null && "constraint_name" in err
+            ? (err as { constraint_name?: unknown }).constraint_name
+            : undefined;
+
+        // A concurrent request already created this trainer's active code
+        // (trainer_id partial-unique violation). Re-fetch and return it
+        // rather than fighting the invariant.
+        if (constraint === "trainer_invite_codes_trainer_active_uq") {
+          const concurrent = await db
+            .select({
+              id: trainerInviteCodes.id,
+              code: trainerInviteCodes.code,
+              expiresAt: trainerInviteCodes.expiresAt,
+            })
+            .from(trainerInviteCodes)
+            .where(
+              and(
+                eq(trainerInviteCodes.trainerId, userId),
+                eq(trainerInviteCodes.status, "active"),
+                sql`${trainerInviteCodes.expiresAt} > NOW()`,
+              ),
+            )
+            .limit(1);
+          if (concurrent[0]) {
+            return {
+              data: {
+                id: concurrent[0].id,
+                code: concurrent[0].code,
+                expiresAt: concurrent[0].expiresAt.toISOString(),
+                isExisting: true,
+              },
+            };
+          }
         }
-        throw err;
+
+        // Otherwise it's a code-value collision — regenerate and retry.
+        attempts++;
+        continue;
       }
     }
 

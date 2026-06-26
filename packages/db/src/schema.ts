@@ -1195,6 +1195,13 @@ export const trainerInviteCodes = pgTable(
     uniqueIndex("trainer_invite_codes_code_active_uq")
       .on(t.code)
       .where(sql`status = 'active'`),
+    // Enforces "at most one active code per trainer" — mirrors the partial
+    // unique index in 20260625120000_trainer_invite_codes.sql. Declared here
+    // so the Drizzle schema stays in parity with the DB (avoids drizzle-kit
+    // flagging it for drop if push/generate is ever wired up).
+    uniqueIndex("trainer_invite_codes_trainer_active_uq")
+      .on(t.trainerId)
+      .where(sql`status = 'active'`),
   ],
 );
 

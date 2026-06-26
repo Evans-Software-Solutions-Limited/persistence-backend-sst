@@ -27,6 +27,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS trainer_invite_codes_code_active_uq
   ON trainer_invite_codes (code)
   WHERE status = 'active';
 
+-- Enforce "at most one active code per trainer" at the DB level (the handler
+-- assumes this invariant; without it two concurrent create calls could both
+-- insert an active row). A partial unique index on trainer_id WHERE active
+-- makes the second concurrent insert fail with 23505, which the handler
+-- catches and resolves by returning the already-created active code.
+CREATE UNIQUE INDEX IF NOT EXISTS trainer_invite_codes_trainer_active_uq
+  ON trainer_invite_codes (trainer_id)
+  WHERE status = 'active';
+
 -- Lookup by trainer (dashboard / list active codes)
 CREATE INDEX IF NOT EXISTS trainer_invite_codes_trainer_idx
   ON trainer_invite_codes (trainer_id, status);
@@ -56,10 +65,10 @@ CREATE POLICY "Trainers can update own invite codes"
   TO authenticated
   USING (trainer_id = auth.uid());
 
--- Clients can read a code to accept it (needed for the accept flow)
-CREATE POLICY "Authenticated users can read active codes by code value"
-  ON trainer_invite_codes FOR SELECT
-  TO authenticated
-  USING (status = 'active' AND expires_at > now());
+-- NOTE: deliberately NO broad client-facing SELECT policy. The accept-code
+-- flow runs through the SST API on a direct pooler connection (getDb()),
+-- which bypasses RLS — so clients never need to read this table via
+-- PostgREST. A "status = 'active'" SELECT-for-all policy would let any
+-- authenticated user enumerate every trainer's live codes, so it's omitted.
 
 COMMENT ON TABLE trainer_invite_codes IS 'Short-lived invite codes trainers generate for clients to join without email lookup. Single-use, 24h expiry.';

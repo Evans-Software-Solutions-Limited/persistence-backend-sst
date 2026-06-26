@@ -1,5 +1,9 @@
 -- Enable RLS on tables that were missing it.
--- Applied via Supabase MCP 2026-06-26. Idempotent (IF NOT EXISTS / safe re-run).
+-- Applied via Supabase MCP 2026-06-26.
+--
+-- ENABLE ROW LEVEL SECURITY is idempotent. CREATE POLICY does NOT support
+-- IF NOT EXISTS in Postgres (through PG 17), so each policy is preceded by a
+-- DROP POLICY IF EXISTS to make the migration safe to replay.
 
 ALTER TABLE habit_completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE habit_configs ENABLE ROW LEVEL SECURITY;
@@ -20,58 +24,72 @@ ALTER TABLE volume_by_muscle_per_user ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weekly_volume_per_user ENABLE ROW LEVEL SECURITY;
 
 -- User-owned data policies
-CREATE POLICY IF NOT EXISTS "Users can manage own habit completions"
+DROP POLICY IF EXISTS "Users can manage own habit completions" ON habit_completions;
+CREATE POLICY "Users can manage own habit completions"
   ON habit_completions FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own habit configs"
+DROP POLICY IF EXISTS "Users can manage own habit configs" ON habit_configs;
+CREATE POLICY "Users can manage own habit configs"
   ON habit_configs FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own streak holidays"
+DROP POLICY IF EXISTS "Users can manage own streak holidays" ON streak_holidays;
+CREATE POLICY "Users can manage own streak holidays"
   ON streak_holidays FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own streaks"
+DROP POLICY IF EXISTS "Users can manage own streaks" ON user_streaks;
+CREATE POLICY "Users can manage own streaks"
   ON user_streaks FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own nutrition entries"
+DROP POLICY IF EXISTS "Users can manage own nutrition entries" ON nutrition_entries;
+CREATE POLICY "Users can manage own nutrition entries"
   ON nutrition_entries FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own nutrition targets"
+DROP POLICY IF EXISTS "Users can manage own nutrition targets" ON nutrition_targets;
+CREATE POLICY "Users can manage own nutrition targets"
   ON nutrition_targets FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own meals"
+DROP POLICY IF EXISTS "Users can manage own meals" ON meals;
+CREATE POLICY "Users can manage own meals"
   ON meals FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can manage own meal items"
+DROP POLICY IF EXISTS "Users can manage own meal items" ON meal_items;
+CREATE POLICY "Users can manage own meal items"
   ON meal_items FOR ALL TO authenticated
   USING (meal_id IN (SELECT id FROM meals WHERE user_id = auth.uid()))
   WITH CHECK (meal_id IN (SELECT id FROM meals WHERE user_id = auth.uid()));
 
-CREATE POLICY IF NOT EXISTS "Users can manage own water log"
+DROP POLICY IF EXISTS "Users can manage own water log" ON water_log;
+CREATE POLICY "Users can manage own water log"
   ON water_log FOR ALL TO authenticated
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- Shared reference data (read-only)
-CREATE POLICY IF NOT EXISTS "Authenticated users can read foods"
+DROP POLICY IF EXISTS "Authenticated users can read foods" ON foods;
+CREATE POLICY "Authenticated users can read foods"
   ON foods FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY IF NOT EXISTS "Authenticated users can read recipes"
+DROP POLICY IF EXISTS "Authenticated users can read recipes" ON recipes;
+CREATE POLICY "Authenticated users can read recipes"
   ON recipes FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY IF NOT EXISTS "Authenticated users can read recipe ingredients"
+DROP POLICY IF EXISTS "Authenticated users can read recipe ingredients" ON recipe_ingredients;
+CREATE POLICY "Authenticated users can read recipe ingredients"
   ON recipe_ingredients FOR SELECT TO authenticated USING (true);
 
 -- Aggregation tables (read-only for owner)
-CREATE POLICY IF NOT EXISTS "Users can read own volume data"
+DROP POLICY IF EXISTS "Users can read own volume data" ON volume_by_muscle_per_user;
+CREATE POLICY "Users can read own volume data"
   ON volume_by_muscle_per_user FOR SELECT TO authenticated
   USING (user_id = auth.uid());
 
-CREATE POLICY IF NOT EXISTS "Users can read own weekly volume"
+DROP POLICY IF EXISTS "Users can read own weekly volume" ON weekly_volume_per_user;
+CREATE POLICY "Users can read own weekly volume"
   ON weekly_volume_per_user FOR SELECT TO authenticated
   USING (user_id = auth.uid());
