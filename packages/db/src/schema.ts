@@ -407,7 +407,7 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
  * delivers at-least-once and unordered, so the handler claims each event by
  * `event_id` before re-fetching the customer and upserting `user_subscriptions`.
  *
- * Schema mirrors `supabase/migrations/20260624120000_revenuecat_webhook_events.sql`.
+ * Schema mirrors `supabase/migrations/20260626120000_revenuecat_webhook_events.sql`.
  */
 export const revenuecatWebhookEvents = pgTable("revenuecat_webhook_events", {
   eventId: text("event_id").primaryKey(),
