@@ -15,6 +15,9 @@ jest.mock("@/adapters/api", () => ({
   getApiBaseUrl: () => "https://api.test",
 }));
 jest.mock("@/state/drawer", () => ({ useDrawer: () => jest.fn() }));
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}));
 
 const mockProbe: { last: YouPresenterProps | null } = { last: null };
 jest.mock("@/ui/presenters/YouPresenter", () => ({
@@ -80,7 +83,16 @@ function makeAdapters() {
       api,
       auth,
       storage,
-      health: {} as Adapters["health"],
+      health: {
+        isAvailable: jest.fn(async () => false),
+        getPermissionStatus: jest.fn(async () => ({
+          steps: "not_determined",
+          calories: "not_determined",
+          bodyWeight: "not_determined",
+          heartRate: "not_determined",
+        })),
+        writeBodyWeight: jest.fn(async () => ok(undefined)),
+      } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
@@ -176,6 +188,44 @@ describe("YouContainer", () => {
       </AdapterProvider>,
     );
     expect(mockProbe.last?.onRefresh).toBe(first);
+  });
+
+  it("surfaces the active trainer and pending-request count", async () => {
+    const { api, adapters } = makeAdapters();
+    api.clientRelationships = [
+      {
+        relationshipId: "rel-active",
+        trainerId: "trainer-1",
+        trainerName: "Coach Carter",
+        trainerRole: "personal_trainer",
+        trainerAvatarUrl: null,
+        status: "active",
+        relationshipReason: null,
+        since: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        relationshipId: "rel-pending",
+        trainerId: "trainer-2",
+        trainerName: "Dr. Lee",
+        trainerRole: "physiotherapist",
+        trainerAvatarUrl: null,
+        status: "pending",
+        relationshipReason: null,
+        since: null,
+      },
+    ];
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.trainer).not.toBeNull());
+    expect(mockProbe.last?.trainer?.name).toBe("Coach Carter");
+    expect(mockProbe.last?.pendingRequestCount).toBe(1);
+    // Exercise the requests-navigation callback.
+    act(() => {
+      mockProbe.last?.onOpenRequests();
+    });
   });
 
   it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {
