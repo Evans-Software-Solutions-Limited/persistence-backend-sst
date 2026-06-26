@@ -63,153 +63,155 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
 
       const result = await db.transaction(
         async (tx): Promise<AcceptInviteCodeTxResult> => {
-        // Find the active, unexpired code
-        const codeRows = await tx
-          .select({
-            id: trainerInviteCodes.id,
-            trainerId: trainerInviteCodes.trainerId,
-          })
-          .from(trainerInviteCodes)
-          .where(
-            and(
-              eq(trainerInviteCodes.code, normalizedCode),
-              eq(trainerInviteCodes.status, "active"),
-              sql`${trainerInviteCodes.expiresAt} > NOW()`,
-            ),
-          )
-          .limit(1);
-
-        const inviteCode = codeRows[0];
-        if (!inviteCode) {
-          ctx.set.status = 404;
-          return {
-            code: "invalid_code",
-            message:
-              "Invalid or expired invite code. Ask your trainer for a new one.",
-          };
-        }
-
-        const trainerId = inviteCode.trainerId;
-
-        // Self-join guard
-        if (trainerId === userId) {
-          ctx.set.status = 400;
-          return {
-            code: "self_invite",
-            message: "You cannot join yourself as a client",
-          };
-        }
-
-        // Check if relationship already exists
-        const existing = await tx
-          .select({
-            id: ptClientRelationships.id,
-            status: ptClientRelationships.status,
-          })
-          .from(ptClientRelationships)
-          .where(
-            and(
-              eq(ptClientRelationships.trainerId, trainerId),
-              eq(ptClientRelationships.clientId, userId),
-            ),
-          )
-          .limit(1);
-
-        const existingRel = existing[0];
-        if (
-          existingRel &&
-          (existingRel.status === "active" || existingRel.status === "pending")
-        ) {
-          ctx.set.status = 409;
-          return {
-            code: "exists",
-            message: "You already have a relationship with this trainer",
-          };
-        }
-
-        // Get trainer name + role for the response and notification. Role
-        // picks `physio_request` vs `pt_request`; it may be null/undefined in
-        // unit tests, which falls back to the personal-trainer copy.
-        const trainerRows = await tx
-          .select({ fullName: profiles.fullName, role: profiles.role })
-          .from(profiles)
-          .where(eq(profiles.id, trainerId))
-          .limit(1);
-        const trainerName = trainerRows[0]?.fullName ?? "Your trainer";
-        const trainerRole = trainerRows[0]?.role ?? null;
-
-        // Atomically claim the code BEFORE creating the relationship. The
-        // `status = 'active'` guard + rowcount check closes the TOCTOU window:
-        // if two clients submit the same code concurrently, only the UPDATE
-        // that flips 'active' → 'used' returns a row; the loser gets 0 rows
-        // and is rejected, so the code can never be redeemed twice.
-        const claimed = await tx
-          .update(trainerInviteCodes)
-          .set({
-            status: "used",
-            usedBy: userId,
-            usedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(trainerInviteCodes.id, inviteCode.id),
-              eq(trainerInviteCodes.status, "active"),
-            ),
-          )
-          .returning({ id: trainerInviteCodes.id });
-
-        if (claimed.length === 0) {
-          ctx.set.status = 409;
-          return {
-            code: "code_already_used",
-            message: "This invite code has already been used.",
-          };
-        }
-
-        // Create or revive the relationship
-        let relationshipId: string;
-        if (existingRel) {
-          // Revive dormant relationship
-          await tx
-            .update(ptClientRelationships)
-            .set({
-              status: "pending",
-              endDate: null,
-              updatedAt: new Date(),
+          // Find the active, unexpired code
+          const codeRows = await tx
+            .select({
+              id: trainerInviteCodes.id,
+              trainerId: trainerInviteCodes.trainerId,
             })
-            .where(eq(ptClientRelationships.id, existingRel.id));
-          relationshipId = existingRel.id;
-        } else {
-          const inserted = await tx
-            .insert(ptClientRelationships)
-            .values({
-              trainerId,
-              clientId: userId,
-              status: "pending",
-              relationshipReason: "Joined via invite code",
-            } as NewPtClientRelationship)
-            .returning({ id: ptClientRelationships.id });
-          relationshipId = inserted[0].id;
-        }
+            .from(trainerInviteCodes)
+            .where(
+              and(
+                eq(trainerInviteCodes.code, normalizedCode),
+                eq(trainerInviteCodes.status, "active"),
+                sql`${trainerInviteCodes.expiresAt} > NOW()`,
+              ),
+            )
+            .limit(1);
 
-        // Client display name for the trainer-facing notification copy.
-        const clientRows = await tx
-          .select({ fullName: profiles.fullName })
-          .from(profiles)
-          .where(eq(profiles.id, userId))
-          .limit(1);
-        const clientName = clientRows[0]?.fullName ?? "A new client";
+          const inviteCode = codeRows[0];
+          if (!inviteCode) {
+            ctx.set.status = 404;
+            return {
+              code: "invalid_code",
+              message:
+                "Invalid or expired invite code. Ask your trainer for a new one.",
+            };
+          }
 
-        ctx.set.status = 201;
-        return {
-          ok: true as const,
-          relationshipId,
-          trainerId,
-          trainerName,
-          trainerRole,
-          clientName,
-        };
-      });
+          const trainerId = inviteCode.trainerId;
+
+          // Self-join guard
+          if (trainerId === userId) {
+            ctx.set.status = 400;
+            return {
+              code: "self_invite",
+              message: "You cannot join yourself as a client",
+            };
+          }
+
+          // Check if relationship already exists
+          const existing = await tx
+            .select({
+              id: ptClientRelationships.id,
+              status: ptClientRelationships.status,
+            })
+            .from(ptClientRelationships)
+            .where(
+              and(
+                eq(ptClientRelationships.trainerId, trainerId),
+                eq(ptClientRelationships.clientId, userId),
+              ),
+            )
+            .limit(1);
+
+          const existingRel = existing[0];
+          if (
+            existingRel &&
+            (existingRel.status === "active" ||
+              existingRel.status === "pending")
+          ) {
+            ctx.set.status = 409;
+            return {
+              code: "exists",
+              message: "You already have a relationship with this trainer",
+            };
+          }
+
+          // Get trainer name + role for the response and notification. Role
+          // picks `physio_request` vs `pt_request`; it may be null/undefined in
+          // unit tests, which falls back to the personal-trainer copy.
+          const trainerRows = await tx
+            .select({ fullName: profiles.fullName, role: profiles.role })
+            .from(profiles)
+            .where(eq(profiles.id, trainerId))
+            .limit(1);
+          const trainerName = trainerRows[0]?.fullName ?? "Your trainer";
+          const trainerRole = trainerRows[0]?.role ?? null;
+
+          // Atomically claim the code BEFORE creating the relationship. The
+          // `status = 'active'` guard + rowcount check closes the TOCTOU window:
+          // if two clients submit the same code concurrently, only the UPDATE
+          // that flips 'active' → 'used' returns a row; the loser gets 0 rows
+          // and is rejected, so the code can never be redeemed twice.
+          const claimed = await tx
+            .update(trainerInviteCodes)
+            .set({
+              status: "used",
+              usedBy: userId,
+              usedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(trainerInviteCodes.id, inviteCode.id),
+                eq(trainerInviteCodes.status, "active"),
+              ),
+            )
+            .returning({ id: trainerInviteCodes.id });
+
+          if (claimed.length === 0) {
+            ctx.set.status = 409;
+            return {
+              code: "code_already_used",
+              message: "This invite code has already been used.",
+            };
+          }
+
+          // Create or revive the relationship
+          let relationshipId: string;
+          if (existingRel) {
+            // Revive dormant relationship
+            await tx
+              .update(ptClientRelationships)
+              .set({
+                status: "pending",
+                endDate: null,
+                updatedAt: new Date(),
+              })
+              .where(eq(ptClientRelationships.id, existingRel.id));
+            relationshipId = existingRel.id;
+          } else {
+            const inserted = await tx
+              .insert(ptClientRelationships)
+              .values({
+                trainerId,
+                clientId: userId,
+                status: "pending",
+                relationshipReason: "Joined via invite code",
+              } as NewPtClientRelationship)
+              .returning({ id: ptClientRelationships.id });
+            relationshipId = inserted[0].id;
+          }
+
+          // Client display name for the trainer-facing notification copy.
+          const clientRows = await tx
+            .select({ fullName: profiles.fullName })
+            .from(profiles)
+            .where(eq(profiles.id, userId))
+            .limit(1);
+          const clientName = clientRows[0]?.fullName ?? "A new client";
+
+          ctx.set.status = 201;
+          return {
+            ok: true as const,
+            relationshipId,
+            trainerId,
+            trainerName,
+            trainerRole,
+            clientName,
+          };
+        },
+      );
 
       // Emit the trainer-facing request notification AFTER the transaction
       // commits, so a rollback can't leave an orphan notification. Best-effort:

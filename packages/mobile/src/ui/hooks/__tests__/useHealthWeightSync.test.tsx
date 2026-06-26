@@ -53,9 +53,7 @@ type Stubs = {
 };
 
 function setup(s: Stubs) {
-  const writeBodyWeight = jest.fn(
-    async () => s.writeResult ?? ok(undefined),
-  );
+  const writeBodyWeight = jest.fn(async () => s.writeResult ?? ok(undefined));
   const setLastSyncedAt = jest.fn();
   const adapters = {
     api: { getMeasurements: jest.fn(async () => ok(s.measurements)) },
