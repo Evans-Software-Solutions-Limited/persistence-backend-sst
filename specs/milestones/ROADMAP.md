@@ -12,6 +12,7 @@
 2. **Section 2 — Active workstream.** The design-system port. Ten ready spec triplets, executed against `tasks.md` per spec. Phase ordering preserved.
 3. **Section 3 — Spec slot status.** Per-slot state for the 15 numbered slots + `_shared/`.
 4. **Section 4 — Scope boundaries.** What's deliberately not on this roadmap.
+5. **Section 5 — Queued post-merge follow-ups.** Near-term work captured + agreed, parked behind the current merge. Each needs a spec-update commit (per the discipline below) when picked up.
 
 There is no "open milestones" section any more — everything alive is in Section 2.
 
@@ -137,4 +138,31 @@ Each spec's `tasks.md` lists its phases + per-PR scope. Implementation picks a p
 
 ---
 
-_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off)_
+## Section 5 — Queued post-merge follow-ups
+
+Agreed work that is **parked behind the current M9 (Fuel) merge**. These are intended to ship, not scope-boundaries. When a follow-up is picked up, the first commits update the cited spec triplet(s) per the spec-first discipline, then implementation follows.
+
+### 5.1 — Manual sleep logging (Home quick-log "Sleep" tile) + HealthKit
+
+The Home quick-log strip's **"Mood" tile is renamed to "Sleep"**, letting the user log how much sleep they had. Decided approach (mirrors the WeighIn weight pattern): the manual entry writes a **durable backend `sleep_data` record AND mirrors to Apple HealthKit best-effort**; reads prefer HealthKit when available, so the Home "sleep" micro-pill stays truthful.
+
+Cross-domain — spec homes + work:
+
+- **Backend (`microservices/core` + migration):** add `'manual'` to the `health_provider` enum (`packages/db` schema + a Supabase migration), and a `POST /health/sleep` (+ `GET`) handler writing `sleep_data` (`sleep_date`, `duration_minutes`, `data_source='manual'`, unique on `(user_id, sleep_date, data_source)`). Owner: backend; **outside the M9 mobile brief's lane.**
+- **`07-health-integration`:** add `writeSleep(start, end)` / `getSleepLastNight()` to the health port + the expo-healthkit adapter + InMemory double + Android stub. HealthKit sleep is a category sample (start/end) — device-only, not CI-verifiable (same caveat as existing HealthKit reads).
+- **`06-progress-goals`:** the Home quick-log Mood→Sleep rename + a `<SleepLogSheet>` (hours/duration entry, BottomSheet like WeighIn). Mobile data layer: `api.port` `logSleep`/`getSleepToday`, a `sleep_log` sync-queue entity + cache + hook.
+
+Mobile UI/data layer is in-lane; the backend endpoint + migration and the health-port additions are the cross-boundary parts. Sequence as its own slice (own branch). Recommended split when actioned: backend endpoint + migration first (or in parallel), then the mobile + health-port vertical against that contract.
+
+### 5.2 — Coach: view + record client body weight
+
+Coaches should be able to **see a client's body-weight history** and **record a logged weight on the client's behalf**.
+
+- **`10-trainer-features`:** reuse the existing on-behalf write + attribution + audit pattern (`set_by` / `logged_by_user_id` per `_shared/cross-cuts.md` §1) so a coach-recorded weight is attributed + audited, and surface the client's weight trend in Client Detail.
+- **`06-progress-goals`:** the `body_measurements` log + weigh-in flow already exist for the athlete; this extends read + on-behalf write to the trainer surface.
+
+Backend on-behalf measurement endpoint + the Client-Detail weight read are the main work. Not started; raised 2026-06-26.
+
+---
+
+_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off) · Revised 2026-06-26 (Section 5 — queued post-merge follow-ups)_
