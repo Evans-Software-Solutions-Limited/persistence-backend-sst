@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { useGetWaterToday } from "@/ui/hooks/useGetWaterToday";
 import { useSetWater } from "@/ui/hooks/useSetWater";
@@ -27,14 +27,26 @@ export function WaterLogSheetContainer({
   const goal = water.data?.goal ?? 8;
   const [cups, setCups] = useState(serverCups);
 
-  // Seed local cups from the cached value each time the sheet opens.
+  // Seed local cups from the cached value: on open, and as the cache hydrates
+  // (userId/auth resolves async, so serverCups can arrive after first paint) —
+  // but stop the moment the user edits, so a background useGetFuelToday refresh
+  // landing mid-edit can't discard their in-progress taps.
+  const wasVisible = useRef(false);
+  const dirty = useRef(false);
   useEffect(() => {
-    if (visible) setCups(serverCups);
+    if (!visible) {
+      wasVisible.current = false;
+      return;
+    }
+    if (!wasVisible.current) dirty.current = false; // fresh open
+    wasVisible.current = true;
+    if (!dirty.current) setCups(serverCups);
   }, [visible, serverCups]);
 
   const onSetCups = useCallback(
     (next: number) => {
       const clamped = Math.max(0, next);
+      dirty.current = true;
       setCups(clamped);
       void Haptics.selectionAsync();
       void setWater.mutate({ date, cups: clamped });

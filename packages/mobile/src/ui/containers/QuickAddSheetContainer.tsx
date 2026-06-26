@@ -30,10 +30,12 @@ import {
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <QuickAddSheet>
  */
 
-/** YYYY-MM-DD for the day before `dayIso`. */
+/** YYYY-MM-DD for the day before `dayIso` (UTC-anchored so it can't double-step
+ * for positive UTC offsets — parsing `${dayIso}T00:00:00` as local time then
+ * re-serialising to UTC already rolls the date back east of UTC). */
 function previousDayISO(dayIso: string): string {
-  const d = new Date(`${dayIso}T00:00:00`);
-  d.setDate(d.getDate() - 1);
+  const d = new Date(`${dayIso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
 
@@ -114,7 +116,11 @@ export function QuickAddSheetContainer() {
     [meals.data],
   );
 
-  const loggedAt = () => new Date(`${localDayISO()}T12:00:00`).toISOString();
+  // Noon-UTC of the user-local day (matches the habit-completion pattern): the
+  // sync-queue command derives the cache day-key by slicing this ISO string, so
+  // anchoring at noon UTC keeps the optimistic entry in TODAY's bucket for every
+  // timezone (a local-noon anchor drifts to the previous day for tz > +12).
+  const loggedAt = () => `${localDayISO()}T12:00:00.000Z`;
 
   const onLogYesterday = useCallback(async () => {
     if (!userId) return;

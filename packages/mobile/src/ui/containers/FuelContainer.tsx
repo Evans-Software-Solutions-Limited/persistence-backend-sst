@@ -156,7 +156,16 @@ export function FuelContainer() {
   // (celebrate) is the live in-band state — it clears if later logging pushes
   // the day back out. Not a persistent streak (that's the cron's job).
   const prevHitRef = useRef(false);
+  const hitMountedRef = useRef(false);
   useEffect(() => {
+    // Skip the first run after mount: the cache hydrates synchronously, so a
+    // day already in-band would otherwise fire the haptic every time the Fuel
+    // tab opens. Only a false→true transition WITHIN a mounted session counts.
+    if (!hitMountedRef.current) {
+      hitMountedRef.current = true;
+      prevHitRef.current = goalHit.all;
+      return;
+    }
     if (goalHit.all && !prevHitRef.current) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }

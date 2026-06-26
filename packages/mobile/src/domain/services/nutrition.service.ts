@@ -384,7 +384,10 @@ export const GRAMS_PER_CUP = 245;
  *   serving → value (servings directly)
  *   grams   → grams / servingSize
  *   cups    → (cups × 245) / servingSize
- * Guards a zero/absent serving size (→ the raw value) so macros never go NaN.
+ * When `servingSize` is missing/0 (permitted by the model; common in raw OFF
+ * data) grams/cups fall back to a **100 g basis** — i.e. the macros are treated
+ * as per-100 g (OFF's default reference) rather than per-1 g, which would
+ * otherwise over-count by ~100×.
  */
 export function portionToServings(
   food: Pick<Food, "servingSize">,
@@ -392,7 +395,7 @@ export function portionToServings(
   value: number,
 ): number {
   if (mode === "serving") return value;
-  const size = food.servingSize > 0 ? food.servingSize : 1;
+  const size = food.servingSize > 0 ? food.servingSize : 100;
   const grams = mode === "cups" ? value * GRAMS_PER_CUP : value;
   return grams / size;
 }

@@ -143,7 +143,9 @@ export function ScanBarcodeSheetContainer() {
       foodId: food.id,
       mealSlot: slot,
       servings: servingsScale,
-      loggedAt: new Date(`${localDayISO()}T12:00:00`).toISOString(),
+      // Noon-UTC of the local day keeps the optimistic entry in today's cache
+      // bucket for every timezone (the command slices this for the day-key).
+      loggedAt: `${localDayISO()}T12:00:00.000Z`,
     });
     notifyMutated();
     close();

@@ -202,8 +202,8 @@ describe("QuickAddSheetContainer", () => {
   it("re-logs yesterday's entries for the slot", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFoods([food]);
-    const y = new Date(`${localDayISO()}T00:00:00`);
-    y.setDate(y.getDate() - 1);
+    const y = new Date(`${localDayISO()}T00:00:00.000Z`);
+    y.setUTCDate(y.getUTCDate() - 1);
     const yIso = y.toISOString().slice(0, 10);
     storage.cacheFuelToday(USER, yIso, {
       date: yIso,

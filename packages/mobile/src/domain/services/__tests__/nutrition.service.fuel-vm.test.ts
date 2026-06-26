@@ -3,6 +3,7 @@ import {
   entryDisplayLabel,
   heroRingPct,
   macroPct,
+  portionToServings,
   type EntryNameLookups,
 } from "@/domain/services/nutrition.service";
 import type {
@@ -117,5 +118,37 @@ describe("nutrition.service Fuel view-model helpers", () => {
     it("labels a macro-only one-off as Quick entry", () => {
       expect(entryDisplayLabel(entry({}), lookups)).toBe("Quick entry");
     });
+  });
+});
+
+describe("portionToServings", () => {
+  it("serving mode returns the value directly", () => {
+    expect(portionToServings({ servingSize: 40 }, "serving", 2)).toBe(2);
+  });
+
+  it("grams mode divides by serving size", () => {
+    expect(portionToServings({ servingSize: 100 }, "grams", 150)).toBeCloseTo(
+      1.5,
+      5,
+    );
+  });
+
+  it("cups mode converts via 245 g/cup", () => {
+    expect(portionToServings({ servingSize: 100 }, "cups", 1)).toBeCloseTo(
+      2.45,
+      5,
+    );
+  });
+
+  it("falls back to a 100 g basis when serving size is missing (no ~100x over-count)", () => {
+    // servingSize 0 → grams treated as per-100g, NOT per-1g.
+    expect(portionToServings({ servingSize: 0 }, "grams", 150)).toBeCloseTo(
+      1.5,
+      5,
+    );
+    expect(portionToServings({ servingSize: 0 }, "cups", 1)).toBeCloseTo(
+      2.45,
+      5,
+    );
   });
 });
