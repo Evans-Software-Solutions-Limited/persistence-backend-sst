@@ -8,7 +8,11 @@ import { useGetVolumeStats } from "@/ui/hooks/useGetVolumeStats";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useGetPRHistory } from "@/ui/hooks/useGetPRHistory";
 import { useUseFreezeToken } from "@/ui/hooks/useUseFreezeToken";
+import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
+import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
 import { useDrawer } from "@/state/drawer";
+import { useRouter } from "expo-router";
 import { initialsOf } from "@/shared/utils";
 import { toneHex, type Tone } from "@/ui/components/foundation/tones";
 import {
@@ -79,6 +83,10 @@ export function YouContainer() {
   const { session } = useAuth();
   const profile = useProfilePage();
   const openDrawer = useDrawer((s) => s.openDrawer);
+  const router = useRouter();
+
+  // Pull any coach-logged weights into HealthKit on open (weight-sync flow).
+  useHealthWeightSync();
 
   // Avatar initials prefer the profile name (legacy parity, mirrors
   // HomeContainer); cache-first via useProfilePage, with the email as a
@@ -91,6 +99,41 @@ export function YouContainer() {
   const body = useGetBodyMeasurements(30);
   const prs = useGetPRHistory();
   const freeze = useUseFreezeToken();
+
+  // HealthKit / Health Connect latest body weight. The /body-trend API only
+  // carries weigh-ins logged IN the app, so a user who records weight solely
+  // in Apple Health saw an empty weight tile. We fall back to (or, when more
+  // recent, prefer) the platform health reading. HealthWeight.unit is
+  // "kg" | "lbs"; the trend series is kg, so convert lbs → kg.
+  const health = useHealthData();
+  const healthWeight = useMemo(() => {
+    const w = health.latestBodyWeight;
+    if (!w) return null;
+    const kg = w.unit === "lbs" ? w.value * 0.45359237 : w.value;
+    return { kg, date: w.date };
+  }, [health.latestBodyWeight]);
+
+  // Client-side trainer relationships → the "Your trainer" You-page block +
+  // the pending-request prompt (10-trainer-features). Both pending and active
+  // come back in one fetch.
+  const relationships = useClientRelationships();
+  const trainer = useMemo(() => {
+    const active = relationships.data.find((r) => r.status === "active");
+    return active
+      ? {
+          name: active.trainerName,
+          role: active.trainerRole,
+          since: active.since,
+        }
+      : null;
+  }, [relationships.data]);
+  const pendingRequestCount = useMemo(
+    () => relationships.data.filter((r) => r.status === "pending").length,
+    [relationships.data],
+  );
+  const onOpenRequests = useCallback(() => {
+    router.push("/(app)/requests" as never);
+  }, [router]);
 
   const primary = useMemo(
     () => pickPrimaryStreak(streaks.data ?? []),
@@ -125,11 +168,31 @@ export function YouContainer() {
       .map((p) => p.bodyFat)
       .filter((f): f is number => f != null);
     const delta = (s: number[]) => (s.length > 1 ? s[s.length - 1] - s[0] : 0);
+
+    // Merge the platform health weight when the API has none, or when the
+    // health reading is newer than the latest in-app weigh-in. Appending to
+    // the series keeps the sparkline + delta consistent with the displayed
+    // current value.
+    let weightSeriesMerged = weightSeries;
+    if (healthWeight != null) {
+      const lastApiWeightDate = [...pts]
+        .reverse()
+        .find((p) => p.weightKg != null)?.date;
+      const healthIsNewer =
+        weightSeries.length === 0 ||
+        lastApiWeightDate == null ||
+        new Date(healthWeight.date).getTime() >
+          new Date(lastApiWeightDate).getTime();
+      if (healthIsNewer) {
+        weightSeriesMerged = [...weightSeries, healthWeight.kg];
+      }
+    }
+
     return {
       weight: {
-        current: weightSeries[weightSeries.length - 1] ?? null,
-        delta: delta(weightSeries),
-        series: weightSeries,
+        current: weightSeriesMerged[weightSeriesMerged.length - 1] ?? null,
+        delta: delta(weightSeriesMerged),
+        series: weightSeriesMerged,
         unit: "kg" as const,
       },
       bodyFat: {
@@ -138,7 +201,7 @@ export function YouContainer() {
         series: fatSeries,
       },
     };
-  }, [body.data]);
+  }, [body.data, healthWeight]);
 
   const workoutsLabel = volume.data
     ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`
@@ -154,6 +217,8 @@ export function YouContainer() {
   const refreshVolume = volume.refresh;
   const refreshBody = body.refresh;
   const refreshPRs = prs.refresh;
+  const refreshHealth = health.refresh;
+  const refreshRelationships = relationships.refresh;
   const spendFreezeToken = freeze.mutate;
   const onRefresh = useCallback(() => {
     void Promise.all([
@@ -162,6 +227,8 @@ export function YouContainer() {
       refreshVolume(),
       refreshBody(),
       refreshPRs(),
+      refreshHealth(),
+      refreshRelationships(),
     ]);
   }, [
     refreshStreaks,
@@ -169,6 +236,8 @@ export function YouContainer() {
     refreshVolume,
     refreshBody,
     refreshPRs,
+    refreshHealth,
+    refreshRelationships,
   ]);
 
   const onUseToken = useCallback(async () => {
@@ -189,6 +258,8 @@ export function YouContainer() {
       bodyTrend={bodyTrend}
       volumeStats={volume.data}
       prHistory={prs.data ?? []}
+      trainer={trainer}
+      pendingRequestCount={pendingRequestCount}
       isLoading={
         (streaks.isRefreshing || (streaks.isStale && streaks.error === null)) &&
         streaks.data === null
@@ -200,6 +271,7 @@ export function YouContainer() {
       onOpenDrawer={openDrawer}
       onOpenCalendar={noop}
       onUseToken={onUseToken}
+      onOpenRequests={onOpenRequests}
     />
   );
 }

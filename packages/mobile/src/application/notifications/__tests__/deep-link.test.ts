@@ -33,4 +33,27 @@ describe("resolveNotificationRoute", () => {
   it("falls back to Home for an unknown non-absolute link", () => {
     expect(resolveNotificationRoute("garbage")).toBe(HOME_ROUTE);
   });
+
+  it("maps custom-scheme links to in-app routes", () => {
+    expect(
+      resolveNotificationRoute(
+        "persistencemobile://requests?relationshipId=rel-1",
+      ),
+    ).toBe("/(app)/requests?relationshipId=rel-1");
+    expect(resolveNotificationRoute("persistencemobile://requests")).toBe(
+      "/(app)/requests",
+    );
+    expect(
+      resolveNotificationRoute("persistencemobile://clients?clientId=c-1"),
+    ).toBe("/(app)/(tabs)/clients?clientId=c-1");
+    expect(resolveNotificationRoute("persistencemobile://profile")).toBe(
+      "/(app)/(tabs)/you",
+    );
+  });
+
+  it("falls back to Home for an unknown custom-scheme host", () => {
+    expect(resolveNotificationRoute("persistencemobile://wat?x=1")).toBe(
+      HOME_ROUTE,
+    );
+  });
 });

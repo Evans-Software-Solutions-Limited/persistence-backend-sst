@@ -27,7 +27,11 @@ import { fail, ok, type Result } from "@/shared/errors";
 function extractDeepLink(
   response: Notifications.NotificationResponse | null,
 ): string | null {
-  const deepLink = response?.notification?.request?.content?.data?.deepLink;
+  const data = response?.notification?.request?.content?.data as
+    | Record<string, unknown>
+    | undefined;
+  // Tolerate both `deepLink` (handlers/spec) and `deeplink` (DB triggers).
+  const deepLink = data?.deepLink ?? data?.deeplink;
   return typeof deepLink === "string" ? deepLink : null;
 }
 

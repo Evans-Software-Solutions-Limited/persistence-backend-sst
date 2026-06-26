@@ -45,6 +45,12 @@ import type {
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
+  ClientRelationshipStatus,
+  ClientTrainerRelationship,
+  RelationshipResponseAction,
+  RelationshipResponseResult,
+} from "@/domain/models/clientRelationship";
+import type {
   InviteClientRequest,
   InviteClientResult,
   InviteErrorCode,
@@ -498,6 +504,17 @@ export interface ApiPort {
     input: LogMeasurementInput,
   ): Promise<Result<ApiMeasurement, ApiError>>;
 
+  /**
+   * Coach logs a measurement (typically weight) on behalf of a client
+   * (`POST /clients/:clientId/measurements`). Server-guarded by an active
+   * trainer↔client relationship; stamps `loggedByUserId`. The client's app
+   * later writes coach-logged weights into HealthKit (`useHealthWeightSync`).
+   */
+  logClientWeight(
+    clientId: string,
+    input: LogMeasurementInput,
+  ): Promise<Result<ApiMeasurement, ApiError>>;
+
   // -- Trainers / Coach You (10-trainer-features) --
   /**
    * Fetch the Coach You aggregate (`GET /trainers/me/overview`). Single
@@ -635,6 +652,31 @@ export interface ApiPort {
 
   /** Save a meal preset (`POST /meals`); server materialises totals from items. */
   createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>>;
+
+  // -- Client side of the coach↔client handshake (10-trainer-features) --
+  /**
+   * List the CURRENT user's trainer relationships as a client
+   * (`GET /clients/me/relationships?status=`). Powers the Requests screen
+   * (`status=pending`) and the You-page "Your trainer" section
+   * (`status=active`). Omitting `status` returns pending + active. Single
+   * `{ data: ClientTrainerRelationship[] }` envelope; AI self-relationship is
+   * excluded server-side. camelCase wire shape == domain shape.
+   */
+  getClientRelationships(
+    status?: ClientRelationshipStatus,
+  ): Promise<Result<ClientTrainerRelationship[], ApiError>>;
+
+  /**
+   * Accept or decline a pending coach request
+   * (`POST /clients/me/relationships/:relationshipId/respond`). Accept flips
+   * the relationship to `active` (the backend trigger then notifies the
+   * trainer); decline terminates it. 404 when no pending row matches (not
+   * owned / already actioned).
+   */
+  respondToRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RelationshipResponseResult, ApiError>>;
 }
 
 /**
@@ -684,6 +726,8 @@ export type HabitConfigEntry = {
 export type ApiMeasurement = {
   id: string;
   userId: string;
+  /** NULL = self-logged; set to the trainer's id when a coach logged it. */
+  loggedByUserId: string | null;
   weightKg: string | null;
   bodyFatPercentage: string | null;
   chestCm: string | null;

@@ -71,6 +71,12 @@ import type {
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
+  ClientRelationshipStatus,
+  ClientTrainerRelationship,
+  RelationshipResponseAction,
+  RelationshipResponseResult,
+} from "@/domain/models/clientRelationship";
+import type {
   InviteClientRequest,
   InviteClientResult,
   InviteErrorCode,
@@ -1153,6 +1159,16 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
+  async logClientWeight(
+    clientId: string,
+    input: LogMeasurementInput,
+  ): Promise<Result<ApiMeasurement, ApiError>> {
+    return this.requestEnvelope<ApiMeasurement>(
+      `/clients/${clientId}/measurements`,
+      { method: "POST", body: input },
+    );
+  }
+
   // -- Trainers / Coach You (10-trainer-features) --
   //
   // GET overview + GET invitations are single `{ data }` envelopes (camelCase
@@ -1351,6 +1367,26 @@ export class SSTApiAdapter implements ApiPort {
       method: "POST",
       body: input,
     });
+  }
+
+  // -- Client side of the coach↔client handshake (10-trainer-features) --
+  async getClientRelationships(
+    status?: ClientRelationshipStatus,
+  ): Promise<Result<ClientTrainerRelationship[], ApiError>> {
+    return this.requestEnvelope<ClientTrainerRelationship[]>(
+      "/clients/me/relationships",
+      { params: status ? { status } : undefined },
+    );
+  }
+
+  async respondToRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RelationshipResponseResult, ApiError>> {
+    return this.requestEnvelope<RelationshipResponseResult>(
+      `/clients/me/relationships/${relationshipId}/respond`,
+      { method: "POST", body: { action } },
+    );
   }
 
   /**
@@ -1676,7 +1712,13 @@ function parseDecimal(value: string | number): number {
  * reaches the forward-compatible renderer rather than being rejected.
  */
 export function mapApiNotification(api: ApiNotification): Notification {
-  const rawDeepLink = (api.data ?? {}).deepLink;
+  const data = api.data ?? {};
+  // Producers are inconsistent: DB triggers emit `data.deeplink` (lowercase)
+  // while handlers/spec use `data.deepLink`. Tolerate both so trigger-emitted
+  // deep links (trainer requests, client-accepted, etc.) actually route.
+  const rawDeepLink =
+    (data as Record<string, unknown>).deepLink ??
+    (data as Record<string, unknown>).deeplink;
   return {
     id: api.id,
     type: api.type,

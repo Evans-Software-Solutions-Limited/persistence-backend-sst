@@ -82,6 +82,9 @@ import { trainersInvitationsCreateHandler } from "./application/trainers/invitat
 import { trainersInvitationsDeleteHandler } from "./application/trainers/invitations/trainersInvitationsDeleteHandler";
 import { trainersInviteCodeCreateHandler } from "./application/trainers/invite-codes/trainersInviteCodeCreateHandler";
 import { trainersAcceptInviteCodeHandler } from "./application/trainers/invite-codes/trainersAcceptInviteCodeHandler";
+import { trainersClientRelationshipsListHandler } from "./application/trainers/relationships/trainersClientRelationshipsListHandler";
+import { trainersRespondToRequestHandler } from "./application/trainers/relationships/trainersRespondToRequestHandler";
+import { trainersLogClientMeasurementHandler } from "./application/trainers/measurements/trainersLogClientMeasurementHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -169,6 +172,11 @@ const app = new Elysia()
   .use(trainersInvitationsDeleteHandler)
   .use(trainersInviteCodeCreateHandler)
   .use(trainersAcceptInviteCodeHandler)
+  // M10 — client side of the coach↔client handshake: list the client's
+  // trainer relationships + accept/decline a pending request.
+  .use(trainersClientRelationshipsListHandler)
+  .use(trainersRespondToRequestHandler)
+  .use(trainersLogClientMeasurementHandler)
   // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
   // ./application/nutritionRoutes) — keeps the Eden Treaty type in
   // packages/web under TS's instantiation-depth ceiling.
