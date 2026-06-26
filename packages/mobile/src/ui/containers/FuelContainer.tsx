@@ -156,21 +156,24 @@ export function FuelContainer() {
   // (celebrate) is the live in-band state — it clears if later logging pushes
   // the day back out. Not a persistent streak (that's the cron's job).
   const prevHitRef = useRef(false);
-  const hitMountedRef = useRef(false);
+  const hitBaselineRef = useRef(false);
   useEffect(() => {
-    // Skip the first run after mount: the cache hydrates synchronously, so a
-    // day already in-band would otherwise fire the haptic every time the Fuel
-    // tab opens. Only a false→true transition WITHIN a mounted session counts.
-    if (!hitMountedRef.current) {
-      hitMountedRef.current = true;
-      prevHitRef.current = goalHit.all;
+    // Establish the baseline on the first render where the day aggregate is
+    // actually LOADED — `data` is null on cold start until async auth resolves,
+    // so banking the verdict at mount would treat the later null→in-band
+    // hydration as a transition and fire a spurious success haptic on app open.
+    if (!hitBaselineRef.current) {
+      if (data !== null) {
+        hitBaselineRef.current = true;
+        prevHitRef.current = goalHit.all;
+      }
       return;
     }
     if (goalHit.all && !prevHitRef.current) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     prevHitRef.current = goalHit.all;
-  }, [goalHit.all]);
+  }, [goalHit.all, data]);
 
   // A sheet logged an entry → re-read the optimistic cache + reconcile online.
   const seenRevRef = useRef(sheetRev);

@@ -114,7 +114,10 @@ export function ScanBarcodeSheetContainer() {
     () => (food ? portionToServings(food, portionMode, portionValue) : 0),
     [food, portionMode, portionValue],
   );
-  const effectiveGrams = Math.round(servingsScale * (food?.servingSize ?? 0));
+  // Mirror the service's 100 g fallback so the "= N g" readout shows the real
+  // gram-equivalent (not 0 g) for foods with no serving size.
+  const effSize = food && food.servingSize > 0 ? food.servingSize : 100;
+  const effectiveGrams = Math.round(servingsScale * effSize);
   const scaled = useMemo(
     () =>
       food

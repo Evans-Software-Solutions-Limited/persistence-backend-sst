@@ -207,6 +207,31 @@ describe("FuelContainer", () => {
     expect(mockProbe.last?.aiLocked).toBe(true);
   });
 
+  it("does not fire the goal-hit haptic on cold start into an already-in-band day", async () => {
+    const { adapters, storage } = makeAdapters();
+    // consumed == targets → every macro in band → goalHit.all true at hydrate.
+    storage.cacheFuelToday(USER, localDayISO(), {
+      ...makeFuel(),
+      consumed: {
+        kcal: 2000,
+        proteinG: 150,
+        carbsG: 200,
+        fatG: 60,
+        waterCups: 4,
+      },
+      remainingKcal: 0,
+    });
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    expect(mockProbe.last?.celebrate).toBe(true); // day is in-band…
+    // …but opening the tab must NOT buzz — the haptic is for a live transition.
+    expect(Haptics.notificationAsync as jest.Mock).not.toHaveBeenCalled();
+  });
+
   it("setting water fires a selection haptic and optimistically reloads", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
