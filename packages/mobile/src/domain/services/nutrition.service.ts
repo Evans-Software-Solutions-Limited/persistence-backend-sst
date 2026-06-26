@@ -312,3 +312,59 @@ export function detectDailyGoalHit(
   const fat = withinBand(consumed.fatG, target.fatG, tol);
   return { kcal, protein, carbs, fat, all: kcal && protein && carbs && fat };
 }
+
+// ── Fuel-screen view-model helpers (pure) ────────────────────────────────────
+
+/** The four meal slots, in render order, with display labels. */
+export const MEAL_SLOTS: readonly { slot: MealSlot; label: string }[] = [
+  { slot: "breakfast", label: "Breakfast" },
+  { slot: "lunch", label: "Lunch" },
+  { slot: "snack", label: "Snack" },
+  { slot: "dinner", label: "Dinner" },
+];
+
+/**
+ * Hero-ring fill fraction: CONSUMED toward target (0..1, clamped). The ring
+ * fills as the user eats toward their goal; the centre shows REMAINING. No
+ * target (or non-positive) → 0 so the ring renders empty rather than NaN.
+ */
+export function heroRingPct(
+  target: NutritionTarget | null,
+  consumed: Pick<Consumed, "kcal">,
+): number {
+  if (!target || target.dailyKcal <= 0) return 0;
+  return Math.min(1, Math.max(0, consumed.kcal / target.dailyKcal));
+}
+
+/** Per-macro fill fraction (consumed/target, clamped 0..1). */
+export function macroPct(value: number, target: number): number {
+  if (target <= 0) return 0;
+  return Math.min(1, Math.max(0, value / target));
+}
+
+/**
+ * Name lookups the container builds from the local caches (foods/recipes/meals)
+ * so the meal-log rows render a label — the backend `/nutrition/today` aggregate
+ * returns bare entries with no denormalised name (see FRONTEND_BRIEF contract
+ * note). Each resolver returns `undefined` on a miss.
+ */
+export type EntryNameLookups = {
+  food: (id: string) => string | undefined;
+  recipe: (id: string) => string | undefined;
+  meal: (id: string) => string | undefined;
+};
+
+/**
+ * Resolve a human label for a logged entry from the local name caches, with a
+ * graceful fallback chain: referenced item name → typed fallback when the ref
+ * isn't cached → "Quick entry" for a macro-only one-off. Pure.
+ */
+export function entryDisplayLabel(
+  entry: Pick<NutritionEntry, "foodId" | "recipeId" | "mealId">,
+  lookups: EntryNameLookups,
+): string {
+  if (entry.foodId) return lookups.food(entry.foodId) ?? "Logged food";
+  if (entry.recipeId) return lookups.recipe(entry.recipeId) ?? "Recipe";
+  if (entry.mealId) return lookups.meal(entry.mealId) ?? "Meal";
+  return "Quick entry";
+}

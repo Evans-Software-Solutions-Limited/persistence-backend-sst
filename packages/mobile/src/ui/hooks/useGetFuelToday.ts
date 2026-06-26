@@ -14,7 +14,15 @@ export type FuelTodayState = {
   isStale: boolean;
   isRefreshing: boolean;
   error: ApiError | null;
+  /** Network refresh: drain the queue, fetch server-truth, reconcile cache. */
   refresh: () => Promise<void>;
+  /**
+   * Synchronous re-read of the local cache into state — no network. The Fuel
+   * container calls this immediately after an optimistic mutation so the ring /
+   * log reflect the recomputed aggregate even offline (where `refresh`'s fetch
+   * can't land). `refresh` still runs after for server reconciliation online.
+   */
+  reload: () => void;
 };
 
 /**
@@ -112,5 +120,11 @@ export function useGetFuelToday(date: string): FuelTodayState {
     void refresh();
   }, [userId, date, readCache, refresh]);
 
-  return { data, isStale, isRefreshing, error, refresh };
+  const reload = useCallback(() => {
+    const c = readCache();
+    setData(c.value);
+    setIsStale(c.stale);
+  }, [readCache]);
+
+  return { data, isStale, isRefreshing, error, refresh, reload };
 }
