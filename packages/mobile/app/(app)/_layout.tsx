@@ -176,6 +176,19 @@ export default function AppLayout() {
           name="coming-soon"
           options={{ title: "Coming soon", headerShown: true }}
         />
+        {/*
+          Fuel stub routes render the bare <ComingSoon> component (no
+          HeaderBar), so they opt back into the native header for a back
+          affordance until their real screens land in M9.
+        */}
+        <Stack.Screen
+          name="fuel/recipes"
+          options={{ title: "Recipes", headerShown: true }}
+        />
+        <Stack.Screen
+          name="fuel/targets"
+          options={{ title: "Targets", headerShown: true }}
+        />
       </Stack>
       {/*
         ProfileDrawerContainer is ALWAYS mounted (sibling of the Stack) — its
