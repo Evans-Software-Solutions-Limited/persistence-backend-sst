@@ -117,6 +117,36 @@ describe("NutritionEntryRepository", () => {
     });
   });
 
+  describe("sumKcalForDay", () => {
+    // `.select({kcal}).from().where()` resolves directly (no orderBy/limit).
+    const makeSumChain = (resolved: unknown) => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(resolved),
+      }),
+    });
+
+    it("returns the day's kcal total as a number (numeric→number)", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeSumChain([{ kcal: "1500" }])),
+      });
+      const out = await new NutritionEntryRepository().sumKcalForDay(
+        "u1",
+        "2026-06-21",
+      );
+      expect(out).toBe(1500);
+      expect(typeof out).toBe("number");
+    });
+
+    it("returns 0 when nothing is logged", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeSumChain([{ kcal: "0" }])),
+      });
+      expect(
+        await new NutritionEntryRepository().sumKcalForDay("u1", "2026-06-21"),
+      ).toBe(0);
+    });
+  });
+
   describe("create", () => {
     it("inserts and returns the parsed DTO", async () => {
       const valuesSpy = vi.fn().mockReturnValue({

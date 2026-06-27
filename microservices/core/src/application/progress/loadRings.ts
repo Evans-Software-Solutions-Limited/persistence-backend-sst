@@ -22,6 +22,10 @@ export interface RingPorts {
     endISO: string,
   ): Promise<number>;
   getTodaySteps(userId: string, todayLocalISO: string): Promise<number>;
+  /** kcal logged for the user-local day (Fuel ring numerator). */
+  sumKcalForDay(userId: string, todayLocalISO: string): Promise<number>;
+  /** Daily kcal target, or null when the user hasn't set one (→ Fuel gated). */
+  getDailyKcalTarget(userId: string): Promise<number | null>;
 }
 
 export async function loadRings(
@@ -34,10 +38,18 @@ export async function loadRings(
   const ws = weekStartISO(now, tz);
   const we = addDaysISO(ws, 6);
 
-  const [steps, weekKg] = await Promise.all([
+  const [steps, weekKg, kcal, kcalTarget] = await Promise.all([
     ports.getTodaySteps(userId, today),
     ports.totalVolume(userId, tz, ws, we),
+    ports.sumKcalForDay(userId, today),
+    ports.getDailyKcalTarget(userId),
   ]);
 
-  return buildRings(steps, DEFAULT_GOAL_STEPS, weekKg, DEFAULT_TARGET_KG);
+  return buildRings(
+    steps,
+    DEFAULT_GOAL_STEPS,
+    weekKg,
+    DEFAULT_TARGET_KG,
+    kcalTarget !== null ? { consumed: kcal, target: kcalTarget } : null,
+  );
 }

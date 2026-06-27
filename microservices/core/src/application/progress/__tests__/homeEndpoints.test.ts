@@ -16,6 +16,13 @@ const homeMock = vi.hoisted(() => ({
   getAchievements: vi.fn(async () => [{ id: "ua1" }] as any[]),
 }));
 const habitMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as any[]) }));
+const nutEntryMock = vi.hoisted(() => ({
+  sumKcalForDay: vi.fn(async () => 1200),
+}));
+const nutTargetMock = vi.hoisted(() => ({
+  // Default: no target → Fuel ring stays gated (matches the assertions below).
+  get: vi.fn(async () => null as any),
+}));
 const streakMock = vi.hoisted(() => ({
   spendTokenManually: vi.fn(async () => ({ id: "s1", freezeTokens: 1 })),
   getActiveStreaksForUser: vi.fn(async () => [
@@ -34,6 +41,12 @@ vi.mock("../../repositories/habitRepository", () => ({
 }));
 vi.mock("../../repositories/streakRepository", () => ({
   StreakRepository: vi.fn().mockImplementation(() => streakMock),
+}));
+vi.mock("../../repositories/nutritionEntryRepository", () => ({
+  NutritionEntryRepository: vi.fn().mockImplementation(() => nutEntryMock),
+}));
+vi.mock("../../repositories/nutritionTargetRepository", () => ({
+  NutritionTargetRepository: vi.fn().mockImplementation(() => nutTargetMock),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -74,6 +87,21 @@ describe("Home/You endpoints", () => {
     const { data } = (await res.json()) as any;
     expect(data.move.current).toBe(7420);
     expect(data.fuel).toBe("gated");
+  });
+
+  it("GET /users/me/today-rings makes Fuel live once a daily kcal target is set", async () => {
+    nutTargetMock.get.mockResolvedValueOnce({ dailyKcal: 2000 } as any);
+    nutEntryMock.sumKcalForDay.mockResolvedValueOnce(1500);
+    const res = await getTodayRingsHandler.handle(
+      new Request("http://localhost/users/me/today-rings", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.fuel).toEqual({
+      current: 1500,
+      target: 2000,
+      pct: 0.75,
+      unit: "kcal",
+    });
   });
 
   it("GET /users/me/home aggregates rings + micro + volume + PRs + habits", async () => {
