@@ -10,6 +10,7 @@ The phase checkboxes below predate several shipped PRs and were never ticked; **
 source of truth** for what's actually merged on `main`.
 
 ### Shipped
+
 - **Coach mode branching** — `(tabs)/index.tsx` + `(tabs)/you.tsx` branch on `useUserMode().mode` (T-10.9.4). NB `CoachHomeContainer` is still a **`ComingSoon` stub** → T-10.9.1 NOT done.
 - **Coach You** — `CoachYouPresenter`/`Container` + `GET /trainers/me/overview` (business stats, client-health donut, own-training peek, programme-stats peek, recent-activity feed) → T-10.13.1/.2. `AISummaryCardPresenter` stub NOT built → T-10.13.3 open.
 - **Clients list** (#125) — `ClientsListPresenter` → T-10.9.2.
@@ -18,7 +19,9 @@ source of truth** for what's actually merged on `main`.
 - **PR #136 — new surface, NOT in the original brief:** client-side accept/decline handshake (`GET /clients/me/relationships`, `POST /clients/me/relationships/:id/respond`), You-page "Your trainer" section, invite-code → trainer notification, coach log-weight, and coach→client→HealthKit weight writeback sync.
 
 ### ⚠ Reconciliation debt from #136 — do BEFORE more on-behalf work
+
 #136 shipped a coach weight-log endpoint that **diverges from this brief + cross-cuts**:
+
 - Path is `POST /clients/:clientId/measurements`; brief mandates `POST /trainers/me/clients/:clientId/measurements` (cross-cuts § 1.2).
 - Authorization is an **inline** active-relationship check, not the shared `assertTrainerCanActForClient` helper (cross-cuts § 1.3) — which still does not exist in code.
 - It writes **no `trainer_actions_audit` row** (cross-cuts § 1.4) — the audit table + `auditTrainerAction` helper don't exist yet, so this on-behalf write has no audit trail, violating the "no `logged_by_user_id` without a matching audit row" invariant.
@@ -26,9 +29,11 @@ source of truth** for what's actually merged on `main`.
 > **R-1** Build the audit foundation (T-10.1.1 + Phase 10.2) FIRST, then re-home the #136 weight-log onto `POST /trainers/me/clients/:clientId/measurements` via the shared helpers + transactional audit write, and repoint the mobile `logClientWeight` adapter (keep the old route as a temporary alias or migrate its single caller). Add the audit-rollback test.
 
 ### Not built yet
+
 Audit infra (10.1 table/enum, 10.2 helpers), on-behalf endpoints (10.3 sessions/goals/nutrition-target/workout-assignments), programs (10.4/10.12), notes endpoints (10.5), dedicated recent-activity endpoint (10.6 — currently folded into the overview aggregate), **Client Detail screen (10.9.3 — still the `ComingSoon` stub)**, on-behalf sheets (10.11), athlete-side attribution badges (10.14), AI-summary stub (10.13.3).
 
 ### Recommended order for the next sessions
+
 1. **Audit foundation (10.1 + 10.2)** — `trainer_actions_audit` + `action_type_enum`, `assertTrainerCanActForClient` + `auditTrainerAction` helpers + tests. Everything on-behalf depends on it.
 2. **Reconcile #136 (R-1 above).**
 3. **Client Detail read-only v1** — per `specs/milestones/M8-coach/CLIENT_DETAIL_BRIEF.md`: `GET /trainers/me/clients/:clientId` + replace the `clients/[id]` stub. Formally introduces `assertTrainerCanActForClient`. (Spec/design call this a "5-tab strip"; the prototype + brief are a single-scroll screen — fix that wording when 10.9.3 lands.)
