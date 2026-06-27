@@ -59,6 +59,12 @@ export default function AppLayout() {
     <ExerciseFiltersProvider>
       <Stack
         screenOptions={{
+          // Opt-OUT of the native header by default. Every app screen renders
+          // its own <HeaderBar>, so a default native header would double up
+          // (the recurring "two headers" bug, e.g. /requests). Screens that
+          // genuinely want the native header opt in with `headerShown: true`
+          // (exercises/filters, sync-blocked, coming-soon below).
+          headerShown: false,
           headerStyle: { backgroundColor: colorPalette.neutral1000 },
           headerTintColor: colorPalette.neutral0,
           headerTitleStyle: { fontWeight: "600" },
@@ -102,6 +108,7 @@ export default function AppLayout() {
           options={{
             title: "Filters",
             presentation: "modal",
+            headerShown: true,
           }}
         />
         <Stack.Screen
@@ -159,7 +166,28 @@ export default function AppLayout() {
         */}
         <Stack.Screen
           name="sync-blocked"
-          options={{ title: "Blocked by your plan" }}
+          options={{ title: "Blocked by your plan", headerShown: true }}
+        />
+        {/*
+          Generic placeholder route. Renders no <HeaderBar> of its own, so it
+          opts back into the native header for a back affordance.
+        */}
+        <Stack.Screen
+          name="coming-soon"
+          options={{ title: "Coming soon", headerShown: true }}
+        />
+        {/*
+          Fuel stub routes render the bare <ComingSoon> component (no
+          HeaderBar), so they opt back into the native header for a back
+          affordance until their real screens land in M9.
+        */}
+        <Stack.Screen
+          name="fuel/recipes"
+          options={{ title: "Recipes", headerShown: true }}
+        />
+        <Stack.Screen
+          name="fuel/targets"
+          options={{ title: "Targets", headerShown: true }}
         />
       </Stack>
       {/*
