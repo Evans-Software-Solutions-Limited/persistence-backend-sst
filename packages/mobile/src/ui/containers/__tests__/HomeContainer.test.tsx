@@ -22,6 +22,7 @@ jest.mock("expo-router", () => {
   const React = jest.requireActual("react") as typeof import("react");
   return {
     useRouter: () => ({ push: mockPush }),
+    useNavigation: () => ({ addListener: () => () => {} }),
     // Run the focus callback once on mount so HomeContainer's focus-refresh
     // path (HealthKit re-read) is exercised under test.
     useFocusEffect: (cb: () => void | (() => void)) =>

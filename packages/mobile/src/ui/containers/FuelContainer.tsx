@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
@@ -53,6 +55,9 @@ export function fuelDateLabel(dayIso: string): string {
 export function FuelContainer() {
   const router = useRouter();
   const { storage } = useAdapters();
+
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTopOnTabPress(scrollRef);
 
   const date = localDayISO();
   const fuel = useGetFuelToday(date);
@@ -201,6 +206,7 @@ export function FuelContainer() {
 
   return (
     <FuelPresenter
+      scrollRef={scrollRef}
       dateLabel={fuelDateLabel(date)}
       hasData={data !== null}
       isLoading={isLoading}

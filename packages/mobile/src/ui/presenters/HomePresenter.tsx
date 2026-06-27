@@ -1,3 +1,4 @@
+import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import Animated from "react-native-reanimated";
 import { Text, View } from "@tamagui/core";
@@ -64,6 +65,8 @@ export type HomePresenterProps = {
   onLogMood: () => void;
   onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
   onOpenCoach: () => void;
+  /** Forwarded by the container for tab-press scroll-to-top. */
+  scrollRef?: RefObject<ScrollView | null>;
 };
 
 export function HomePresenter(props: HomePresenterProps) {
@@ -94,6 +97,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onLogMood,
     onToggleHabitDay,
     onOpenCoach,
+    scrollRef,
   } = props;
 
   const style = (i: number) => animationStyles[i] ?? {};
@@ -120,6 +124,7 @@ export function HomePresenter(props: HomePresenterProps) {
 
   return (
     <ScrollView
+      ref={scrollRef}
       testID="home-scroll"
       contentContainerStyle={{ paddingBottom: 140 }}
       refreshControl={

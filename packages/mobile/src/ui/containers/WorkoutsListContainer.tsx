@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo } from "react";
-import { Alert } from "react-native";
+import { useCallback, useMemo, useRef } from "react";
+import { Alert, type ScrollView } from "react-native";
+import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 
 import { deleteWorkoutCommand } from "@/application/commands/delete-workout.command";
 import type { Workout } from "@/domain/models/workout";
@@ -28,6 +29,9 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
+
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTopOnTabPress(scrollRef);
 
   // Re-read the cache on focus so workouts created/edited in the modal
   // stack (`/workouts/create`, `/workouts/[id]/edit`) appear without a
@@ -160,6 +164,7 @@ export function WorkoutsListContainer() {
 
   return (
     <WorkoutsListPresenter
+      scrollRef={scrollRef}
       isInitialLoading={isInitialLoading}
       error={workouts.error}
       isRefreshing={workouts.isRefreshing}

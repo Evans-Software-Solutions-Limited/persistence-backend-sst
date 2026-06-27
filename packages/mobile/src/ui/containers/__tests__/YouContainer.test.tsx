@@ -17,6 +17,7 @@ jest.mock("@/adapters/api", () => ({
 jest.mock("@/state/drawer", () => ({ useDrawer: () => jest.fn() }));
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn() }),
+  useNavigation: () => ({ addListener: () => () => {} }),
 }));
 
 const mockProbe: { last: YouPresenterProps | null } = { last: null };
