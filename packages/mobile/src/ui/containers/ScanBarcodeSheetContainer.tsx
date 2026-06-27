@@ -35,6 +35,13 @@ export function ScanBarcodeSheetContainer() {
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
   const visible = sheet === "scan";
 
+  // gorhom fires onClose on any close (incl. a controlled handoff). Only a
+  // genuine dismiss of THIS sheet should clear the shared store — mirrors the
+  // Quick-add guard so the two root-mounted sheets can't clobber each other.
+  const onSheetClose = useCallback(() => {
+    if (visible) close();
+  }, [visible, close]);
+
   const [permission, requestPermission] = useCameraPermissions();
   const { resolve, isResolving } = useResolveBarcode();
   const logEntry = useLogEntry();
@@ -157,7 +164,7 @@ export function ScanBarcodeSheetContainer() {
   return (
     <ScanBarcodeSheetPresenter
       visible={visible}
-      onClose={close}
+      onClose={onSheetClose}
       stage={stage}
       hasPermission={permission?.granted ?? false}
       onRequestPermission={() => void requestPermission()}

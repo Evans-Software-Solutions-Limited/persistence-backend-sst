@@ -51,6 +51,17 @@ export function QuickAddSheetContainer() {
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
   const visible = sheet === "quickAdd";
 
+  // gorhom fires `onClose` on ANY close — including the CONTROLLED close that
+  // happens when this sheet hands off to another (Quick-add → Scan flips the
+  // shared store, so this sheet's `visible` drops to false and gorhom animates
+  // it shut). Clearing the store unconditionally there would null `sheet` right
+  // after `openScan` set it, snapping the just-opened Scan sheet closed. Guard
+  // on `visible`: only a genuine dismiss (this sheet still active) clears the
+  // store; a handoff is a no-op.
+  const onSheetClose = useCallback(() => {
+    if (visible) close();
+  }, [visible, close]);
+
   const meals = useGetMeals();
   const logEntry = useLogEntry();
   const aiGate = useNutritionAiGate();
@@ -175,7 +186,7 @@ export function QuickAddSheetContainer() {
   return (
     <QuickAddSheetPresenter
       visible={visible}
-      onClose={close}
+      onClose={onSheetClose}
       mealLabel={mealLabel}
       stage={stage}
       aiLocked={!aiGate.allowed}
@@ -184,7 +195,10 @@ export function QuickAddSheetContainer() {
       onLogYesterday={() => void onLogYesterday()}
       onLogMeal={(id) => void onLogMeal(id)}
       onScan={() => {
-        close();
+        // No explicit close() — `openScan` flips the shared store to "scan",
+        // which drops this sheet's `visible` to false (the guarded onSheetClose
+        // then no-ops). Calling close() first would briefly null the store and
+        // race the handoff.
         openScan(slot);
       }}
       onSnap={() => aiGate.gateProps.onUpgrade()}
