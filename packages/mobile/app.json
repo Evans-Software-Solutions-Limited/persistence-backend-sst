@@ -14,7 +14,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Persistence needs access to your health data to track your fitness progress, including steps, workouts, and activity levels.",
-        "NSHealthUpdateUsageDescription": "Persistence requests write permission to verify authorization status. We do not write or modify your health data."
+        "NSHealthUpdateUsageDescription": "Persistence requests write permission to verify authorization status. We do not write or modify your health data.",
+        "NSPhotoLibraryUsageDescription": "Persistence needs access to your photos so you can choose a profile picture from your library."
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
