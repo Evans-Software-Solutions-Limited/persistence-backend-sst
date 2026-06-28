@@ -50,6 +50,34 @@ describe("ACCOUNT_DELETION_STEPS", () => {
     ]);
   });
 
+  it("nullifies cross-user references to owned rows (NO-ACTION FKs on other users' children)", () => {
+    const refOwned = ACCOUNT_DELETION_STEPS.filter(
+      (s) => s.kind === "nullify-referencing-owned",
+    );
+    expect(refOwned).toEqual([
+      {
+        kind: "nullify-referencing-owned",
+        table: "recipe_ingredients",
+        column: "food_id",
+        ownerTable: "foods",
+        ownerColumn: "created_by",
+      },
+    ]);
+  });
+
+  it("nullifies recipe_ingredients.food_id BEFORE deleting foods", () => {
+    const nullRefIdx = ACCOUNT_DELETION_STEPS.findIndex(
+      (s) =>
+        s.kind === "nullify-referencing-owned" &&
+        s.table === "recipe_ingredients",
+    );
+    const foodsDeleteIdx = ACCOUNT_DELETION_STEPS.findIndex(
+      (s) => s.kind === "delete" && s.table === "foods",
+    );
+    expect(nullRefIdx).toBeGreaterThan(-1);
+    expect(nullRefIdx).toBeLessThan(foodsDeleteIdx);
+  });
+
   it("orders meals/recipes before foods so recipe_ingredients/meal_items clear first", () => {
     const order = ACCOUNT_DELETION_STEPS.filter((s) => s.kind === "delete").map(
       (s) => s.table,
@@ -81,6 +109,23 @@ describe("buildStatement", () => {
     );
     expect(sql).toBe(
       'update "nutrition_entries" set "logged_by_user_id" = null where "logged_by_user_id" = $1',
+    );
+    expect(params).toEqual(["user-123"]);
+  });
+
+  it("renders a subquery-based SET NULL for nullify-referencing-owned steps", () => {
+    const { sql, params } = render(
+      {
+        kind: "nullify-referencing-owned",
+        table: "recipe_ingredients",
+        column: "food_id",
+        ownerTable: "foods",
+        ownerColumn: "created_by",
+      },
+      "user-123",
+    );
+    expect(sql).toBe(
+      'update "recipe_ingredients" set "food_id" = null where "food_id" in (select id from "foods" where "created_by" = $1)',
     );
     expect(params).toEqual(["user-123"]);
   });

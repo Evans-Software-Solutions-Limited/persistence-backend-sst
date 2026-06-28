@@ -23,7 +23,20 @@ export type AccountDeletionStep =
    */
   | { kind: "nullify"; table: string; column: string }
   /** Delete the deleting user's own rows behind a NO-ACTION FK. */
-  | { kind: "delete"; table: string; column: string };
+  | { kind: "delete"; table: string; column: string }
+  /**
+   * Null a FK column on rows that reference a table OWNED by the deleting
+   * user. Used when another user's row (e.g. recipe_ingredients) holds a
+   * NO-ACTION FK to one of the deleting user's rows (e.g. foods). Generated
+   * SQL: `UPDATE <table> SET <column> = NULL WHERE <column> IN (SELECT id FROM <ownerTable> WHERE <ownerColumn> = $userId)`.
+   */
+  | {
+      kind: "nullify-referencing-owned";
+      table: string;
+      column: string;
+      ownerTable: string;
+      ownerColumn: string;
+    };
 
 export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
   // 1) Null cross-user attribution (NO-ACTION FKs on other users' rows).
@@ -44,6 +57,16 @@ export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
   { kind: "delete", table: "water_log", column: "user_id" },
   { kind: "delete", table: "meals", column: "user_id" },
   { kind: "delete", table: "recipes", column: "user_id" },
+  // Null cross-user references to the user's foods (recipe_ingredients.food_id
+  // is NO ACTION — another user's recipe may reference a food the deleting
+  // user created). Must precede the foods delete.
+  {
+    kind: "nullify-referencing-owned",
+    table: "recipe_ingredients",
+    column: "food_id",
+    ownerTable: "foods",
+    ownerColumn: "created_by",
+  },
   { kind: "delete", table: "foods", column: "created_by" },
   { kind: "delete", table: "nutrition_targets", column: "user_id" },
   { kind: "delete", table: "ai_usage_log", column: "user_id" },
@@ -65,6 +88,11 @@ export function buildStatement(step: AccountDeletionStep, userId: string): SQL {
   const column = sql.identifier(step.column);
   if (step.kind === "nullify") {
     return sql`update ${table} set ${column} = null where ${column} = ${userId}`;
+  }
+  if (step.kind === "nullify-referencing-owned") {
+    const ownerTable = sql.identifier(step.ownerTable);
+    const ownerColumn = sql.identifier(step.ownerColumn);
+    return sql`update ${table} set ${column} = null where ${column} in (select id from ${ownerTable} where ${ownerColumn} = ${userId})`;
   }
   return sql`delete from ${table} where ${column} = ${userId}`;
 }
