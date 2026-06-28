@@ -38,7 +38,13 @@ const {
       serviceRoleKey: "svc",
     })),
     deleteAuthUserWithRetry: vi.fn(async () => void calls.push("auth-delete")),
-    findMostRecentForUser: vi.fn(async () => null),
+    findMostRecentForUser: vi.fn(
+      async () =>
+        null as {
+          externalSubscriptionId: string;
+          paymentStatus: string;
+        } | null,
+    ),
     stripeCancelMock: vi.fn(async () => ({})),
   };
 });
