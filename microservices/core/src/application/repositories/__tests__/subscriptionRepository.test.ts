@@ -877,3 +877,62 @@ describe("SubscriptionRepository", () => {
     });
   });
 });
+
+describe("findStripeSubscriptionIdsForUser", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function makeWhereResolvingChain(rows: unknown) {
+    // select().from().where() resolves directly (no limit/orderBy).
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(rows),
+      }),
+    };
+  }
+
+  it("returns every non-empty external id for the user", async () => {
+    const mockDb = {
+      select: vi
+        .fn()
+        .mockReturnValue(
+          makeWhereResolvingChain([
+            { externalId: "sub_a" },
+            { externalId: "sub_b" },
+            { externalId: "rc_user-1" },
+          ]),
+        ),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { SubscriptionRepository } =
+      await import("../subscriptionRepository");
+    const ids =
+      await new SubscriptionRepository().findStripeSubscriptionIdsForUser(
+        "user-1",
+      );
+    expect(ids).toEqual(["sub_a", "sub_b", "rc_user-1"]);
+  });
+
+  it("filters out null / empty external ids", async () => {
+    const mockDb = {
+      select: vi
+        .fn()
+        .mockReturnValue(
+          makeWhereResolvingChain([
+            { externalId: "sub_a" },
+            { externalId: null },
+            { externalId: "" },
+          ]),
+        ),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { SubscriptionRepository } =
+      await import("../subscriptionRepository");
+    const ids =
+      await new SubscriptionRepository().findStripeSubscriptionIdsForUser(
+        "user-1",
+      );
+    expect(ids).toEqual(["sub_a"]);
+  });
+});

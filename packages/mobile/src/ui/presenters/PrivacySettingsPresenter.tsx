@@ -54,6 +54,7 @@ export type PrivacySettingsPresenterProps = {
   onBack: () => void;
   onOpenPrivacyPolicy: () => void;
   onOpenTerms: () => void;
+  onDeleteAccount: () => void;
 };
 
 function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
@@ -80,6 +81,7 @@ export function PrivacySettingsPresenter({
   onBack,
   onOpenPrivacyPolicy,
   onOpenTerms,
+  onDeleteAccount,
 }: PrivacySettingsPresenterProps) {
   const insets = useSafeAreaInsets();
 
@@ -163,8 +165,7 @@ export function PrivacySettingsPresenter({
           <Text style={styles.sectionTitle}>Data &amp; Privacy</Text>
           <Text style={styles.sectionDescription}>
             Your data is stored securely and used only to provide the service.
-            You can request data export or account deletion at any time by
-            contacting support.
+            Contact support to request a copy of your data.
           </Text>
         </View>
 
@@ -192,6 +193,34 @@ export function PrivacySettingsPresenter({
               <Text style={styles.optionTitle}>Terms of Service</Text>
             </View>
             <IconChevronR {...iconDefaults({ size: 16 })} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Account deletion — App Store Guideline 5.1.1(v). Destructive,
+            irreversible; the container gates it behind a double-confirm. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Delete Account</Text>
+          <Text style={styles.sectionDescription}>
+            Permanently delete your account and all associated data — profile,
+            workouts, sessions, nutrition, measurements, and goals. This cannot
+            be undone.
+          </Text>
+          <TouchableOpacity
+            style={[styles.option, styles.dangerOption]}
+            onPress={onDeleteAccount}
+            testID="privacy-settings-delete-account"
+            accessibilityRole="button"
+            accessibilityLabel="Delete account"
+          >
+            <View style={styles.optionContent}>
+              <Text style={[styles.optionTitle, styles.dangerTitle]}>
+                Delete Account
+              </Text>
+            </View>
+            <IconChevronR
+              {...iconDefaults({ size: 16 })}
+              color={Colors.error.DEFAULT}
+            />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -238,6 +267,13 @@ const styles = StyleSheet.create({
   optionSelected: {
     borderWidth: 2,
     borderColor: Colors.primary.DEFAULT,
+  },
+  dangerOption: {
+    borderWidth: 1,
+    borderColor: Colors.error.DEFAULT,
+  },
+  dangerTitle: {
+    color: Colors.error.DEFAULT,
   },
   optionContent: {
     flex: 1,

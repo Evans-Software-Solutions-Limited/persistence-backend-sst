@@ -25,7 +25,7 @@ import { useProfilePage } from "@/ui/hooks/useProfilePage";
 export function PrivacySettingsContainer() {
   const router = useRouter();
   const { api, storage } = useAdapters();
-  const { session } = useAuth();
+  const { session, deleteAccount } = useAuth();
   const profilePage = useProfilePage();
 
   const cachedIsPublic = profilePage.payload?.profile.isProfilePublic ?? null;
@@ -82,6 +82,51 @@ export function PrivacySettingsContainer() {
     router.push("/(app)/profile/terms" as never);
   }, [router]);
 
+  // App Store Guideline 5.1.1(v): in-app account deletion. Double-confirm —
+  // this permanently and irreversibly deletes the account + all data. On
+  // success, `deleteAccount` tears down the session and AuthGate routes to
+  // sign-in (same as sign-out); on failure the user stays signed in and can
+  // retry (the backend endpoint is idempotent).
+  const onDeleteAccount = useCallback(() => {
+    Alert.alert(
+      "Delete Account?",
+      "This permanently deletes your account and all your data — profile, " +
+        "workouts, sessions, nutrition, measurements, and goals. This cannot " +
+        "be undone.\n\nIf you have an active Apple subscription, cancel it " +
+        "separately in Settings → Subscriptions.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Permanently delete?",
+              "Last chance — this can't be undone.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await deleteAccount();
+                    } catch {
+                      Alert.alert(
+                        "Couldn't delete your account",
+                        "Something went wrong. Please try again.",
+                      );
+                    }
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  }, [deleteAccount]);
+
   return (
     <PrivacySettingsPresenter
       isLoading={!hydrated}
@@ -90,6 +135,7 @@ export function PrivacySettingsContainer() {
       onBack={onBack}
       onOpenPrivacyPolicy={onOpenPrivacyPolicy}
       onOpenTerms={onOpenTerms}
+      onDeleteAccount={onDeleteAccount}
     />
   );
 }

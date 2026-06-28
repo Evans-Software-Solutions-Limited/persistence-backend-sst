@@ -22,6 +22,7 @@ import { profilesGetHandler } from "./application/profiles/get/profilesGetHandle
 import { profilesPageGetHandler } from "./application/profiles/page/profilesPageGetHandler";
 import { profilesUpdateHandler } from "./application/profiles/update/profilesUpdateHandler";
 import { profilesAvatarHandler } from "./application/profiles/avatar/profilesAvatarHandler";
+import { accountDeleteHandler } from "./application/account/delete/accountDeleteHandler";
 import { sessionsCreateHandler } from "./application/sessions/create/sessionsCreateHandler";
 import { sessionsListHandler } from "./application/sessions/list/sessionsListHandler";
 import { sessionsGetHandler } from "./application/sessions/get/sessionsGetHandler";
@@ -110,6 +111,9 @@ const app = new Elysia()
   .use(profilesPageGetHandler)
   .use(profilesUpdateHandler)
   .use(profilesAvatarHandler)
+  // App Store Guideline 5.1.1(v) — in-app account deletion. Auth-guarded;
+  // cascade-purges the caller's own data + deletes the Supabase auth user.
+  .use(accountDeleteHandler)
   .use(sessionsCreateHandler)
   .use(sessionsListHandler)
   .use(sessionsGetHandler)

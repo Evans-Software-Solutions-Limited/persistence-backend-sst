@@ -163,6 +163,14 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.getProfile();
   }
 
+  async deleteAccount(): Promise<Result<void, ApiError>> {
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
+    this.profiles = [];
+    this.profilePage = null;
+    return ok(undefined);
+  }
+
   async getWorkouts(
     params?: GetWorkoutsParams,
   ): Promise<Result<GetWorkoutsResult, ApiError>> {

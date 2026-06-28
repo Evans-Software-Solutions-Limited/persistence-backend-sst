@@ -207,3 +207,45 @@ _End of `08-profile-settings/requirements.md` · 2026-05-27 (rewritten from scra
 ---
 
 _Revised 2026-05-31 — reconciled against shipped `main` (#83 + #93); DOB backend addition unlocked by owner decision._
+
+---
+
+## Revised 2026-06-28: in-app account deletion (App Store Guideline 5.1.1(v))
+
+> New work, authored as the spec-first commit on `feat/account-deletion`. Account deletion was not covered by the 2026-05-27 rewrite or any other spec; this addendum is its authoritative home (the deletion entry point lives on the Privacy Settings sub-page owned by this spec). Cross-references `02-auth-flow` (the auth account it tears down) and `12-production-readiness` (it is the #1 App Store hard blocker).
+
+### Context
+
+Apple **Guideline 5.1.1(v)** requires any app that supports account creation to let users **initiate account deletion from inside the app** (not "email support"). Today there is no deletion path, and worse, `PrivacySettingsPresenter`'s Data & Privacy footer copy already tells reviewers they can "request … account deletion at any time by contacting support" — a promise reviewers test. This is a hard reject until real in-app deletion ships.
+
+### STORY-011: As a user, I want to permanently delete my account and all my data from inside the app
+
+**Acceptance Criteria:**
+
+- 11.1 [ ] The Privacy Settings screen (`08.3` / `PrivacySettingsPresenter`) renders a destructive **"Delete Account"** section with a clear, irreversible-action description and a red/error-tinted action row. The stale "contacting support" deletion sentence in the Data & Privacy footer is removed (data-export wording may stay).
+- 11.2 [ ] Tapping Delete Account opens a **double-confirm** destructive dialog (native `Alert` with a `destructive`-styled confirm + a Cancel). Copy states the action is permanent and lists what is removed (profile, workouts, sessions, nutrition, measurements, goals, subscriptions-link, devices).
+- 11.3 [ ] On confirm, the app calls the backend deletion endpoint, then tears down the local session exactly as sign-out does (Supabase session cleared, local SQLite cache cleared, device-global slices reset) and routes to `(auth)/sign-in`.
+- 11.4 [ ] The backend **`DELETE /account`** endpoint (auth-guarded; acts only on the caller's own `userId` from the JWT — never an id from the body) permanently removes **all** of the caller's owned data and the Supabase **auth user** itself, so the credential can no longer sign in.
+- 11.5 [ ] Deletion preserves **other users' data**: rows that merely _attribute_ an action to the deleting user from another user's record (a trainer who logged a client's session/measurement/nutrition, set a client's targets, or assigned a client's goal) are **nulled**, not deleted.
+- 11.6 [ ] The DB purge is **atomic** (single transaction) — a partial failure rolls back with no half-deleted account. The endpoint is **idempotent**: a retry after a transient failure succeeds (already-deleted rows / already-deleted auth user are treated as success).
+- 11.7 [ ] If account deletion is not configured on the server (the Supabase service-role secret is absent), the endpoint fails fast with a clear error **before** purging any data — never a half-delete.
+- 11.8 [ ] Errors surface to the user as a non-destructive Alert ("Couldn't delete your account. Please try again.") and leave them signed in; success is the only path that signs them out.
+
+### Out of scope
+
+- Data **export** ("download my data") — not required by 5.1.1(v); deferred.
+- A grace-period / soft-delete with restore window — v1 is a hard delete (Apple accepts immediate deletion).
+- Re-confirming the user's password before deletion — the valid session JWT is the authority (matches the app's other destructive operations).
+
+### Dependencies
+
+| Dependency                    | What's needed                                                                                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Supabase **service-role key** | A new `SupabaseServiceRoleKey` SST secret, set per stage (`bunx sst secret set SupabaseServiceRoleKey …`). Required to delete the `auth.users` record via the Admin API. Owner (Brad) provisions it; code + infra wiring ship in this PR. |
+| `02-auth-flow`                | Reuses the existing sign-out teardown (`useAuth().signOut`) for the local session/cache/slice reset after the backend delete.                                                                                                             |
+
+### Open questions
+
+None.
+
+_Revised 2026-06-28 — in-app account deletion (STORY-011)._

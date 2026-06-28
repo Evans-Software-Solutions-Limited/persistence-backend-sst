@@ -735,3 +735,88 @@ The direct `api.updateProfile` path is retired for the edit form. (The adapter m
 ---
 
 _Revised 2026-05-31 (b) — offline-first profile write (AC 9.2) + PR #94 fixes._
+
+---
+
+## Revised 2026-06-28: in-app account deletion (STORY-011)
+
+> Pairs with `requirements.md § Revised 2026-06-28`. New cross-cutting slice: a backend `DELETE /account` endpoint + a mobile destructive-confirm flow on Privacy Settings. This is the first backend-route addition this spec carries beyond the DOB read-path slice.
+
+### Why a plain `DELETE FROM profiles` is not enough
+
+`public.profiles.id` is `REFERENCES auth.users(id) ON DELETE CASCADE`, and ~30 tables reference `profiles.id ON DELETE CASCADE`. But several FKs are **`NO ACTION`** (verified against the live schema, 2026-06-28) and would make a profile delete throw a foreign-key violation, or would wrongly delete another user's data:
+
+- **Owner rows behind NO-ACTION FKs (must be deleted first):** `nutrition_entries.user_id`, `water_log.user_id`, `meals.user_id`, `recipes.user_id`, `foods.created_by`, `nutrition_targets.user_id`, `ai_usage_log.user_id`.
+- **Cross-user attribution behind NO-ACTION FKs (must be NULLed, not deleted — they live on _other_ users' rows):** `body_measurements.logged_by_user_id`, `workout_sessions.logged_by_user_id`, `nutrition_entries.logged_by_user_id`, `nutrition_targets.set_by_user_id`, `user_goals.assigned_by_user_id`, `subscription_price_history.changed_by`.
+
+Everything else cascades off the `profiles` row delete.
+
+### Deletion order (single transaction, `db.transaction`)
+
+The driver is `postgres-js` over TCP, so real transactions are available. The purge runs an ordered, data-driven plan (`ACCOUNT_DELETION_STEPS`) so it is unit-testable and auditable against the FK map:
+
+1. **Null cross-user attribution** — `UPDATE <table> SET <col> = NULL WHERE <col> = $userId` for each attribution column above. Preserves other users' rows and unblocks the NO-ACTION FKs.
+2. **Delete the user's own NO-ACTION-owner rows** in child-safe order: `nutrition_entries` → `water_log` → `meals` (cascades `meal_items`) → `recipes` (cascades `recipe_ingredients`) → `foods` → `nutrition_targets` → `ai_usage_log`.
+3. **Delete the `profiles` row** — the `ON DELETE CASCADE` FKs remove all remaining owned rows (workouts, sessions, PRs, measurements, achievements, friendships, habits, health, notifications, devices, goals, streaks, volume, subscriptions, trainer relationships/notes/invites, ai\_\*).
+
+Then, **after the transaction commits**, delete the Supabase **auth user** so the login is gone. Because `profiles` is already deleted, the `auth.users` delete is a clean leaf delete.
+
+Atomicity: the whole purge is one transaction — any failure rolls back, no half-delete. Idempotency: every step keys on `userId`, so a retry deletes zero rows; a Supabase Admin `404` (user already gone) is treated as success. If any cascade is unexpectedly blocked by a future NO-ACTION FK, the transaction rolls back and the endpoint 500s (safe — nothing partially deleted) rather than orphaning data.
+
+### Backend shape
+
+```
+microservices/core/src/application/account/
+├── accountDeletionPlan.ts        ← ACCOUNT_DELETION_STEPS (pure data) + buildStatement(step, userId)
+├── accountRepository.ts          ← AccountRepository.purgeUserData(userId): runs the plan in one tx
+├── supabaseAdminClient.ts        ← getSupabaseAdminConfig() (fail-fast) + deleteAuthUser(userId) (Admin REST)
+└── delete/accountDeleteHandler.ts← DELETE /account (auth-guarded)
+```
+
+`DELETE /account` handler flow (registered in `api.ts` next to the other destructive routes):
+
+```
+.derive(getAuthUser).onBeforeHandle(requireAuth)
+.delete("/account", async (ctx) => {
+  const { sub: userId } = getUser(ctx);
+  getSupabaseAdminConfig();              // 11.7 — fail fast (500) BEFORE any purge if unconfigured
+  await AccountRepository.purgeUserData(userId);  // 11.4/11.5/11.6 — atomic public-schema purge
+  await deleteAuthUser(userId);          // removes auth.users (404 == already gone == ok)
+  return { data: { deleted: true } };
+})
+```
+
+`supabaseAdminClient.ts` uses native `fetch` against the Admin REST API (no SDK dep, mirroring `revenueCatClient.ts`):
+
+```
+DELETE {SUPABASE_URL}/auth/v1/admin/users/{userId}
+  headers: { apikey: <serviceRoleKey>, Authorization: Bearer <serviceRoleKey> }
+```
+
+`getSupabaseAdminConfig()` reads `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` via `@persistence/api-utils/env` and throws a clear error when the key is missing (→ handler 500 before purge).
+
+Note — per the repo rule "all business data flows through the SST API adapter, not Supabase directly," the **mobile** delete goes through the SST API (`ApiPort.deleteAccount`), NOT the Supabase client. The Supabase Admin call lives server-side only, behind the service-role secret.
+
+### Infra
+
+- `infra/secrets.ts` — `export const supabaseServiceRoleKey = new sst.Secret("SupabaseServiceRoleKey")`.
+- `infra/api.ts` — add `SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey.value` to the core API route environment (alongside `SUPABASE_URL`). Set per stage via `bunx sst secret set SupabaseServiceRoleKey "<service_role_key>" --stage <stage>` (never file-committed — repo is public).
+
+### Mobile shape
+
+- `ApiPort.deleteAccount(): Promise<Result<void, ApiError>>` — `sst-api.adapter` calls `request<void>("/account", { method: "DELETE" })`; in-memory adapter honours `shouldFail`.
+- `useAuth()` gains `deleteAccount()` — calls `api.deleteAccount()`, and on success runs the **same** teardown as `signOut` (factored into a shared local `tearDownLocalSession()`: `auth.signOut()` + `storage.clearAll()` + `useUserMode.reset()` + `useTrainSegment.reset()`). On failure it sets `error` and throws, leaving the user signed in (11.8).
+- `PrivacySettingsContainer` passes `onDeleteAccount` to the presenter; the handler shows the double-confirm `Alert` (11.2), calls `deleteAccount()`, and on failure shows a non-destructive Alert. Navigation to `(auth)/sign-in` is handled by the existing `AuthGate` reacting to the session→null change (same as sign-out).
+- `PrivacySettingsPresenter` gains a `onDeleteAccount` prop + a "Delete Account" destructive section (reusing the existing `styles.section`/`styles.option` with an error tint), and drops the stale "contacting support … account deletion" sentence.
+
+### Testing strategy
+
+- **`accountDeletionPlan`** — assert the step list: every NO-ACTION column from the FK audit is present, attribution steps are `nullify`, owner steps are `delete`, `profiles` is the **last** step; `buildStatement` renders parameterized SQL (no value interpolation) — guard via `PgDialect().sqlToQuery`.
+- **`AccountRepository.purgeUserData`** — mock `getDb().transaction` to capture executed statements; assert order + that all run inside one transaction.
+- **`accountDeleteHandler`** — (a) unconfigured key → 500, no purge, no auth delete; (b) happy path → purge then auth delete, `{ deleted: true }`; (c) Admin 404 → success; (d) Admin 5xx → 500; (e) unauthenticated → 401.
+- **`useAuth().deleteAccount`** — success runs teardown (signOut + clearAll + slice resets); failure throws + leaves session intact.
+- **`PrivacySettingsContainer`/Presenter** — Delete Account row present; confirm path calls `deleteAccount`; cancel does nothing; failure shows the retry Alert.
+
+90% coverage per `_agent.md`.
+
+_Revised 2026-06-28 — in-app account deletion (STORY-011)._
