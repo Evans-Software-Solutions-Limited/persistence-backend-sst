@@ -110,6 +110,30 @@ describe("accountDeleteHandler", () => {
     expect(stripeCancelMock).toHaveBeenCalledTimes(2);
   });
 
+  it("cancels only sub_ rows and skips rc_ in a mixed list", async () => {
+    findStripeSubscriptionIdsForUser.mockResolvedValue([
+      "sub_a",
+      "rc_user-id",
+      "sub_b",
+    ]);
+    const res = await accountDeleteHandler.handle(del());
+    expect(res.status).toBe(200);
+    expect(stripeCancelMock).toHaveBeenCalledTimes(2);
+    expect(stripeCancelMock).toHaveBeenCalledWith("sub_a");
+    expect(stripeCancelMock).toHaveBeenCalledWith("sub_b");
+    expect(stripeCancelMock).not.toHaveBeenCalledWith("rc_user-id");
+  });
+
+  it("aborts (502, no purge) when a later sub in the loop genuinely fails", async () => {
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_a", "sub_b"]);
+    stripeCancelMock
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("Stripe down"));
+    const res = await accountDeleteHandler.handle(del());
+    expect(res.status).toBe(502);
+    expect(purgeUserData).not.toHaveBeenCalled();
+  });
+
   it("skips Stripe cancel for RevenueCat-managed (Apple IAP) subs", async () => {
     findStripeSubscriptionIdsForUser.mockResolvedValue(["rc_user-id"]);
     const res = await accountDeleteHandler.handle(del());

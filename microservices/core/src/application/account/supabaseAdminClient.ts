@@ -32,7 +32,7 @@ export function getSupabaseAdminConfig(): SupabaseAdminConfig {
   if (serviceRoleKey.trim().length === 0) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is set but empty");
   }
-  if (url.length === 0) {
+  if (url.trim().length === 0) {
     throw new Error("SUPABASE_URL is set but empty");
   }
   return { url, serviceRoleKey };

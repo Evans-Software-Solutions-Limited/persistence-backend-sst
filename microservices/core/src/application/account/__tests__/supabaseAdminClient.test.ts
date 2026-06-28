@@ -33,6 +33,14 @@ describe("getSupabaseAdminConfig", () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "   ";
     expect(() => getSupabaseAdminConfig()).toThrow(/empty/);
   });
+
+  it("throws when SUPABASE_URL is set but whitespace-only", () => {
+    process.env.SUPABASE_URL = "   ";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "svc-key";
+    expect(() => getSupabaseAdminConfig()).toThrow(
+      /SUPABASE_URL is set but empty/,
+    );
+  });
 });
 
 describe("deleteAuthUser", () => {
