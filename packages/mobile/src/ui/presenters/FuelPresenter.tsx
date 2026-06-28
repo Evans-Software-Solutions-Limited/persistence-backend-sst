@@ -1,3 +1,4 @@
+import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { View } from "@tamagui/core";
 import { HeaderBar, IconBtn } from "@/ui/components/foundation";
@@ -61,6 +62,8 @@ export type FuelPresenterProps = {
   onSetWater: (cups: number) => void;
   onPressRow?: (id: string, slot: MealSlot) => void;
   onLog: () => void;
+  /** Forwarded by the container for tab-press scroll-to-top. */
+  scrollRef?: RefObject<ScrollView | null>;
   testID?: string;
 };
 
@@ -93,6 +96,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onSetWater,
     onPressRow,
     onLog,
+    scrollRef,
     testID = "fuel-screen",
   } = props;
 
@@ -148,6 +152,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
   return (
     <View flex={1} testID={testID}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 140 }}
         refreshControl={
           <RefreshControl

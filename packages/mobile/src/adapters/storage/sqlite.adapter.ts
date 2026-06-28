@@ -92,6 +92,21 @@ export class SQLiteStorageAdapter implements StoragePort {
   async initialize(): Promise<void> {
     const db = this.getDb();
 
+    // One-time pre-M2 → M2 migration for `cached_workouts` (legacy flat
+    // id-keyed stash → (user_id, type) list slices). SCHEMA-GUARDED: a prior
+    // build ran `DROP TABLE IF EXISTS cached_workouts` UNCONDITIONALLY in the
+    // execSync block below, which wiped the workouts cache on EVERY cold launch
+    // — so the Train + Home lists errored offline (the only cache without a
+    // usable offline copy). Only drop when the legacy flat schema is actually
+    // present (its CREATE lacks the composite PK); the new-schema table is left
+    // intact so it persists across launches and offline reads work.
+    const wkDef = db.getFirstSync(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='cached_workouts'`,
+    ) as { sql: string } | null;
+    if (wkDef !== null && !wkDef.sql.includes("PRIMARY KEY (user_id, type)")) {
+      db.execSync(`DROP TABLE IF EXISTS cached_workouts;`);
+    }
+
     db.execSync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,12 +144,12 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- withTransactionSync block. Post-rebuild, every install
       -- converges on this exact schema.
 
-      -- Pre-M2 the table was a flat keyed-by-id stash with no usage in
-      -- shipped code; M2 replaces it with a (user_id, type)-keyed cache
-      -- of full list slices. DROP IF EXISTS is safe because no shipped
-      -- writes touched the old table.
-      DROP TABLE IF EXISTS cached_workouts;
-
+      -- Pre-M2 the table was a flat keyed-by-id stash; M2 replaced it with a
+      -- (user_id, type)-keyed cache of full list slices. The one-time drop of
+      -- the legacy schema is SCHEMA-GUARDED in JS above (it previously ran
+      -- unconditionally HERE, wiping the cache on every launch → workouts
+      -- errored offline). CREATE IF NOT EXISTS preserves the populated table
+      -- across launches so offline reads work.
       CREATE TABLE IF NOT EXISTS cached_workouts (
         user_id TEXT NOT NULL,
         type TEXT NOT NULL CHECK(type IN ('mine', 'assigned', 'default')),

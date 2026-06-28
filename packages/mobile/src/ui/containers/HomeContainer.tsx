@@ -1,5 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { ScrollView } from "react-native";
+import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useHealthData } from "@/ui/hooks/useHealthData";
@@ -32,6 +34,9 @@ export function HomeContainer() {
   const { session } = useAuth();
   const openDrawer = useDrawer((s) => s.openDrawer);
   const mode = useUserMode((s) => s.mode);
+
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTopOnTabPress(scrollRef);
 
   const home = useGetHome();
   const health = useHealthData();
@@ -218,6 +223,7 @@ export function HomeContainer() {
   return (
     <>
       <HomePresenter
+        scrollRef={scrollRef}
         user={user}
         greeting={greeting}
         home={homeData}

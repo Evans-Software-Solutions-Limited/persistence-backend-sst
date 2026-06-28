@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import React from "react";
+import React, { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 
 import type { Workout } from "@/domain/models/workout";
@@ -53,6 +53,8 @@ export interface WorkoutsListPresenterProps {
   onLongPress: (workout: Workout) => void;
   onRetry: () => void;
   onRefresh: () => void;
+  /** Forwarded by the container for tab-press scroll-to-top. */
+  scrollRef?: RefObject<ScrollView | null>;
 }
 
 export function WorkoutsListPresenter({
@@ -72,6 +74,7 @@ export function WorkoutsListPresenter({
   onLongPress,
   onRetry,
   onRefresh,
+  scrollRef,
 }: WorkoutsListPresenterProps) {
   // Blocking error ONLY when the cache is empty + refresh failed. A cached
   // user offline must always see their list (matches V2 behaviour).
@@ -105,6 +108,7 @@ export function WorkoutsListPresenter({
   return (
     <View flex={1} backgroundColor="$bg">
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,

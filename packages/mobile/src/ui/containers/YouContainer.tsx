@@ -1,5 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
+import type { ScrollView } from "react-native";
+import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
@@ -84,6 +86,9 @@ export function YouContainer() {
   const profile = useProfilePage();
   const openDrawer = useDrawer((s) => s.openDrawer);
   const router = useRouter();
+
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTopOnTabPress(scrollRef);
 
   // Pull any coach-logged weights into HealthKit on open (weight-sync flow).
   useHealthWeightSync();
@@ -250,6 +255,7 @@ export function YouContainer() {
 
   return (
     <YouPresenter
+      scrollRef={scrollRef}
       initials={initialsOf(fullName ?? session?.email ?? "") || "?"}
       workoutsLabel={workoutsLabel}
       streak={streak}

@@ -2,6 +2,8 @@ import Elysia from "elysia";
 import { VolumeService } from "../repositories/volumeService";
 import { HomeReadService } from "../repositories/homeReadService";
 import { HabitService } from "../repositories/habitService";
+import { NutritionEntryService } from "../repositories/nutritionEntryService";
+import { NutritionTargetService } from "../repositories/nutritionTargetService";
 import {
   getAuthUser,
   requireAuth,
@@ -30,6 +32,8 @@ export const getHomeHandler = new Elysia()
   .use(VolumeService)
   .use(HomeReadService)
   .use(HabitService)
+  .use(NutritionEntryService)
+  .use(NutritionTargetService)
   .get("/users/me/home", async (ctx) => {
     const { sub: userId } = getUser(ctx);
     const now = new Date();
@@ -60,6 +64,8 @@ export const getHomeHandler = new Elysia()
       streak,
       recentPRs,
       completions,
+      kcal,
+      kcalTarget,
     ] = await Promise.all([
       ctx.HomeReadRepository.getTodaySteps(userId, today),
       ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
@@ -74,6 +80,10 @@ export const getHomeHandler = new Elysia()
       ctx.HomeReadRepository.getActiveWorkoutStreakCount(userId),
       ctx.HomeReadRepository.getRecentPRs(userId, RECENT_PR_LIMIT),
       ctx.HabitRepository.list(userId, { windowDays: 7 }),
+      ctx.NutritionEntryRepository.sumKcalForDay(userId, today),
+      ctx.NutritionTargetRepository.get(userId).then(
+        (t) => t?.dailyKcal ?? null,
+      ),
     ]);
 
     const rings = buildRings(
@@ -81,6 +91,7 @@ export const getHomeHandler = new Elysia()
       DEFAULT_GOAL_STEPS,
       thisKg,
       DEFAULT_TARGET_KG,
+      kcalTarget !== null ? { consumed: kcal, target: kcalTarget } : null,
     );
 
     return {

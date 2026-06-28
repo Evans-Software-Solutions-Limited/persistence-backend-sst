@@ -97,6 +97,29 @@ export class NutritionEntryRepository {
     return rows.map(toDTO);
   }
 
+  /**
+   * Total kcal logged for a user-local day — feeds the Home "Fuel" ring without
+   * pulling the full entry list. Single SUM aggregate (no GROUP BY → no 42803
+   * trap; the tz-aware day predicate lives only in the WHERE). Returns a number
+   * (numeric→number boundary); 0 when nothing's logged.
+   */
+  async sumKcalForDay(userId: string, date: string): Promise<number> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        kcal: sql<string>`COALESCE(SUM(${nutritionEntries.kcal}), 0)`,
+      })
+      .from(nutritionEntries)
+      .where(
+        and(
+          eq(nutritionEntries.userId, userId),
+          // Same user-local day bucketing as listByDate (PR #124).
+          sql`(${nutritionEntries.loggedAt} AT TIME ZONE COALESCE((SELECT timezone FROM profiles WHERE id = ${userId}), 'Europe/London'))::date = ${date}::date`,
+        ),
+      );
+    return Number(rows[0]?.kcal ?? 0);
+  }
+
   /** A single owned entry (ownership in WHERE) — used by the edit re-derivation. */
   async getById(id: string, userId: string): Promise<NutritionEntryDTO | null> {
     const db = getDb();

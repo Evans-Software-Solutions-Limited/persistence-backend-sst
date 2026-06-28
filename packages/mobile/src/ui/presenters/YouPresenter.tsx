@@ -1,3 +1,4 @@
+import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
@@ -59,6 +60,8 @@ export type YouPresenterProps = {
   onUseToken: () => void;
   /** Navigate to the Requests screen. */
   onOpenRequests: () => void;
+  /** Forwarded by the container for tab-press scroll-to-top. */
+  scrollRef?: RefObject<ScrollView | null>;
 };
 
 export function YouPresenter(props: YouPresenterProps) {
@@ -82,6 +85,7 @@ export function YouPresenter(props: YouPresenterProps) {
     onOpenCalendar,
     onUseToken,
     onOpenRequests,
+    scrollRef,
   } = props;
 
   const hasAny =
@@ -114,6 +118,7 @@ export function YouPresenter(props: YouPresenterProps) {
   return (
     <View flex={1} paddingTop={insets.top}>
       <ScrollView
+        ref={scrollRef}
         testID="you-scroll"
         contentContainerStyle={{ paddingBottom: 140 }}
         refreshControl={

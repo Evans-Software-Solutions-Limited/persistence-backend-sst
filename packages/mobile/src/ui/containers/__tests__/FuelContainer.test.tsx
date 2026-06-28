@@ -22,6 +22,7 @@ const mockProbe: { last: FuelPresenterProps | null } = { last: null };
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush }),
+  useNavigation: () => ({ addListener: () => () => {} }),
 }));
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
