@@ -47,6 +47,7 @@ describe("ACCOUNT_DELETION_STEPS", () => {
       "foods.created_by",
       "nutrition_targets.user_id",
       "ai_usage_log.user_id",
+      "subscription_status_transitions.user_id",
     ]);
   });
 

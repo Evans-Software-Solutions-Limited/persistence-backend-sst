@@ -27,6 +27,12 @@ describe("getSupabaseAdminConfig", () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     expect(() => getSupabaseAdminConfig()).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
   });
+
+  it("throws when the service-role key is set but empty", () => {
+    process.env.SUPABASE_URL = "https://proj.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "   ";
+    expect(() => getSupabaseAdminConfig()).toThrow(/empty/);
+  });
 });
 
 describe("deleteAuthUser", () => {

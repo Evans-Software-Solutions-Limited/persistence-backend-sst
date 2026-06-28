@@ -26,7 +26,7 @@ const {
   purgeUserData,
   getSupabaseAdminConfig,
   deleteAuthUserWithRetry,
-  findMostRecentForUser,
+  findStripeSubscriptionIdsForUser,
   stripeCancelMock,
 } = vi.hoisted(() => {
   const calls: string[] = [];
@@ -38,13 +38,7 @@ const {
       serviceRoleKey: "svc",
     })),
     deleteAuthUserWithRetry: vi.fn(async () => void calls.push("auth-delete")),
-    findMostRecentForUser: vi.fn(
-      async () =>
-        null as {
-          externalSubscriptionId: string;
-          paymentStatus: string;
-        } | null,
-    ),
+    findStripeSubscriptionIdsForUser: vi.fn(async (): Promise<string[]> => []),
     stripeCancelMock: vi.fn(async () => ({})),
   };
 });
@@ -57,7 +51,7 @@ vi.mock("../../supabaseAdminClient", () => ({
   deleteAuthUserWithRetry,
 }));
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn(() => ({ findMostRecentForUser })),
+  SubscriptionRepository: vi.fn(() => ({ findStripeSubscriptionIdsForUser })),
 }));
 vi.mock("../../../stripe/stripeClient", () => ({
   getStripe: () => ({ subscriptions: { cancel: stripeCancelMock } }),
@@ -85,7 +79,7 @@ describe("accountDeleteHandler", () => {
       url: "https://x.supabase.co",
       serviceRoleKey: "svc",
     });
-    findMostRecentForUser.mockResolvedValue(null);
+    findStripeSubscriptionIdsForUser.mockResolvedValue([]);
   });
 
   it("401s when unauthenticated", async () => {
@@ -97,10 +91,7 @@ describe("accountDeleteHandler", () => {
   });
 
   it("cancels Stripe sub, purges data, deletes auth user, returns 200", async () => {
-    findMostRecentForUser.mockResolvedValue({
-      externalSubscriptionId: "sub_abc",
-      paymentStatus: "active",
-    });
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_abc"]);
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: { deleted: true } });
@@ -110,32 +101,25 @@ describe("accountDeleteHandler", () => {
     expect(calls).toEqual(["purge", "auth-delete"]);
   });
 
+  it("cancels EVERY Stripe subscription the user has (not just the newest)", async () => {
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_a", "sub_b"]);
+    const res = await accountDeleteHandler.handle(del());
+    expect(res.status).toBe(200);
+    expect(stripeCancelMock).toHaveBeenCalledWith("sub_a");
+    expect(stripeCancelMock).toHaveBeenCalledWith("sub_b");
+    expect(stripeCancelMock).toHaveBeenCalledTimes(2);
+  });
+
   it("skips Stripe cancel for RevenueCat-managed (Apple IAP) subs", async () => {
-    findMostRecentForUser.mockResolvedValue({
-      externalSubscriptionId: "rc_user-id",
-      paymentStatus: "active",
-    });
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["rc_user-id"]);
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(200);
     expect(stripeCancelMock).not.toHaveBeenCalled();
     expect(purgeUserData).toHaveBeenCalled();
   });
 
-  it("skips Stripe cancel when sub is already cancelled", async () => {
-    findMostRecentForUser.mockResolvedValue({
-      externalSubscriptionId: "sub_abc",
-      paymentStatus: "cancelled",
-    });
-    const res = await accountDeleteHandler.handle(del());
-    expect(res.status).toBe(200);
-    expect(stripeCancelMock).not.toHaveBeenCalled();
-  });
-
   it("treats Stripe resource_missing as already cancelled (idempotent)", async () => {
-    findMostRecentForUser.mockResolvedValue({
-      externalSubscriptionId: "sub_abc",
-      paymentStatus: "active",
-    });
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_abc"]);
     const err = new Error("No such subscription") as Error & { code: string };
     err.code = "resource_missing";
     stripeCancelMock.mockRejectedValueOnce(err);
@@ -145,10 +129,7 @@ describe("accountDeleteHandler", () => {
   });
 
   it("502s and aborts when Stripe cancel genuinely fails (no purge)", async () => {
-    findMostRecentForUser.mockResolvedValue({
-      externalSubscriptionId: "sub_abc",
-      paymentStatus: "active",
-    });
+    findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_abc"]);
     stripeCancelMock.mockRejectedValueOnce(new Error("Stripe down"));
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(502);

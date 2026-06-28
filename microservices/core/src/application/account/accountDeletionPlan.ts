@@ -70,6 +70,15 @@ export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
   { kind: "delete", table: "foods", column: "created_by" },
   { kind: "delete", table: "nutrition_targets", column: "user_id" },
   { kind: "delete", table: "ai_usage_log", column: "user_id" },
+  // subscription_status_transitions has NO foreign keys at all (verified
+  // against the live schema), so it is neither a cascade child of profiles
+  // nor blocked by one — it must be deleted explicitly or the user's billing
+  // status-transition history (user_id + stripe_event_id) is orphaned.
+  {
+    kind: "delete",
+    table: "subscription_status_transitions",
+    column: "user_id",
+  },
 
   // 3) Delete the profile — ON DELETE CASCADE FKs remove every remaining
   //    owned row (workouts, sessions, PRs, measurements, achievements,

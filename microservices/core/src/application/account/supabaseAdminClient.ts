@@ -23,10 +23,19 @@ export interface SupabaseAdminConfig {
  * rather than half-deleting an account (requirements 11.7).
  */
 export function getSupabaseAdminConfig(): SupabaseAdminConfig {
-  return {
-    url: getEnv("SUPABASE_URL").replace(/\/$/, ""),
-    serviceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY"),
-  };
+  const url = getEnv("SUPABASE_URL").replace(/\/$/, "");
+  const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  // `getEnv` only throws when the var is ABSENT; an explicitly-empty value
+  // (`SUPABASE_SERVICE_ROLE_KEY=""`) would otherwise pass the handler's
+  // fail-fast guard and let the purge proceed before the Admin call 401s.
+  // Treat empty/whitespace as unconfigured.
+  if (serviceRoleKey.trim().length === 0) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is set but empty");
+  }
+  if (url.length === 0) {
+    throw new Error("SUPABASE_URL is set but empty");
+  }
+  return { url, serviceRoleKey };
 }
 
 /**

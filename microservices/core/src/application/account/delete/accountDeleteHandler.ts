@@ -29,36 +29,34 @@ function isAlreadyCanceledError(err: unknown): boolean {
 }
 
 /**
- * Cancel any active Stripe-direct subscription for the user before purging
- * their data. RevenueCat/Apple IAP subs (externalSubscriptionId starting with
- * "rc_") cannot be cancelled server-side — the mobile confirm dialog instructs
- * the user to cancel in iOS Settings.
+ * Cancel EVERY Stripe-billed subscription for the user before purging their
+ * data. We cancel all rows carrying a Stripe `sub_…` id (not just the newest,
+ * and regardless of local payment_status) because a user can have more than
+ * one row and a locally-"cancelled" row can still be live on Stripe (the
+ * RevenueCat sync flips status without calling Stripe). RevenueCat/Apple IAP
+ * subs (`rc_…`) can't be cancelled server-side — the mobile confirm dialog
+ * tells the user to cancel in iOS Settings.
  *
  * Throws on a non-recoverable Stripe error so the handler can abort before
  * purging (the user stays signed in and can retry).
  */
-async function cancelActiveStripeSubscription(userId: string): Promise<void> {
+async function cancelStripeSubscriptions(userId: string): Promise<void> {
   const subRepo = new SubscriptionRepository();
-  const sub = await subRepo.findMostRecentForUser(userId);
-  if (!sub) return;
-
-  const extId = sub.externalSubscriptionId;
-  if (typeof extId !== "string" || extId.length === 0) return;
-  // Skip RevenueCat-managed (Apple IAP) subscriptions — can't cancel server-side.
-  if (extId.startsWith("rc_")) return;
-  // Skip already-cancelled rows.
-  if (sub.paymentStatus === "cancelled" || sub.paymentStatus === "canceled")
-    return;
+  const externalIds = await subRepo.findStripeSubscriptionIdsForUser(userId);
+  const stripeIds = externalIds.filter((id) => id.startsWith("sub_"));
+  if (stripeIds.length === 0) return;
 
   const stripe = getStripe();
-  try {
-    await stripe.subscriptions.cancel(extId);
-  } catch (err) {
-    if (isAlreadyCanceledError(err)) {
-      // Already cancelled on Stripe — idempotent, treat as success.
-      return;
+  for (const stripeId of stripeIds) {
+    try {
+      await stripe.subscriptions.cancel(stripeId);
+    } catch (err) {
+      if (isAlreadyCanceledError(err)) {
+        // Already cancelled on Stripe — idempotent, treat as success.
+        continue;
+      }
+      throw err;
     }
-    throw err;
   }
 }
 
@@ -98,7 +96,7 @@ export const accountDeleteHandler = new Elysia()
 
     // 2. Cancel active Stripe subscription (stop billing BEFORE purge).
     try {
-      await cancelActiveStripeSubscription(userId);
+      await cancelStripeSubscriptions(userId);
     } catch (err) {
       console.error("[account:delete] Stripe subscription cancel failed:", err);
       ctx.set.status = 502;

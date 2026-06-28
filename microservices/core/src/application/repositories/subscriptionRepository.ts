@@ -213,6 +213,36 @@ export class SubscriptionRepository {
   }
 
   /**
+   * Fetch ALL `user_subscriptions` rows for a user that carry a Stripe
+   * subscription id (`sub_…`), regardless of local `payment_status`.
+   *
+   * Used by account deletion to cancel every Stripe-billed subscription
+   * before purging the rows. We deliberately do NOT filter on local status:
+   * `cancelLiveSubscriptions` (the RevenueCat sync) flips `payment_status`
+   * to 'cancelled' WITHOUT calling Stripe, so a locally-"cancelled" row can
+   * still be billing on Stripe. Stripe's own idempotency (resource_missing /
+   * already-cancelled) makes re-cancelling a dead sub a safe no-op, so the
+   * caller can attempt cancel on every Stripe row. RevenueCat-mirror rows
+   * (`rc_…`) are returned too; the caller skips them (Apple IAP can't be
+   * cancelled server-side).
+   */
+  async findStripeSubscriptionIdsForUser(userId: string): Promise<string[]> {
+    const db = getDb();
+    const rows = await db
+      .select({ externalId: userSubscriptions.externalSubscriptionId })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          isNotNull(userSubscriptions.externalSubscriptionId),
+        ),
+      );
+    return rows
+      .map((r) => r.externalId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+  }
+
+  /**
    * Lookup a `user_subscriptions` row by primary key, scoped to the
    * authenticated user. Used by `POST /subscriptions/:id/cancel` to
    * enforce ownership before issuing any Stripe-side cancel — without
