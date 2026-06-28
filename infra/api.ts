@@ -5,6 +5,7 @@ import {
   revenueCatWebhookSecret,
   stripeSecretKey,
   stripeWebhookSecret,
+  supabaseServiceRoleKey,
 } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { avatarsBucket } from "./storage";
@@ -44,6 +45,12 @@ coreAPI.route("$default", {
   environment: {
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
+    // Supabase service-role key — server-side only. Used exclusively by
+    // `DELETE /account` to remove the `auth.users` record via the Admin REST
+    // API (App Store Guideline 5.1.1(v) in-app account deletion). The endpoint
+    // fails fast before purging any data when this is unset, so a stage
+    // without the secret never half-deletes an account.
+    SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey.value,
     // Stripe — server-side only. The webhook handler uses
     // `STRIPE_WEBHOOK_SECRET` for signature verification, and outbound
     // subscription operations use `STRIPE_SECRET_KEY` against the Stripe

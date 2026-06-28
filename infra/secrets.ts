@@ -38,3 +38,17 @@ export const revenueCatWebhookSecret = new sst.Secret(
 );
 export const revenueCatApiKey = new sst.Secret("RevenueCatApiKey");
 export const revenueCatProjectId = new sst.Secret("RevenueCatProjectId");
+
+// Supabase service-role key — server-side only, NEVER shipped to the client.
+//
+// `SupabaseServiceRoleKey` — the Supabase project's service-role API key. Used
+//                            solely by the `DELETE /account` endpoint to remove
+//                            the `auth.users` record via the Admin REST API
+//                            (`DELETE /auth/v1/admin/users/{id}`), which the
+//                            anon/JWT context cannot do. Required for App Store
+//                            Guideline 5.1.1(v) in-app account deletion.
+//
+// Set per-stage from CI / locally via
+//   `bunx sst secret set SupabaseServiceRoleKey "<service_role_key>" --stage <stage>`.
+// Never file-commit the value; the repo is public.
+export const supabaseServiceRoleKey = new sst.Secret("SupabaseServiceRoleKey");
