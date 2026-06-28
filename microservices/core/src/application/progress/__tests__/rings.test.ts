@@ -32,9 +32,9 @@ describe("buildRings", () => {
 
   it("gates fuel when the target is null or non-positive", () => {
     expect(buildRings(0, 10000, 0, 20000, null).fuel).toBe("gated");
-    expect(buildRings(0, 10000, 0, 20000, { consumed: 500, target: 0 }).fuel).toBe(
-      "gated",
-    );
+    expect(
+      buildRings(0, 10000, 0, 20000, { consumed: 500, target: 0 }).fuel,
+    ).toBe("gated");
   });
 
   it("makes fuel live with a target and folds it into todayPct", () => {

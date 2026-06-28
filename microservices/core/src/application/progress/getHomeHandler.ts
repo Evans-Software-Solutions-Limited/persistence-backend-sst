@@ -81,9 +81,9 @@ export const getHomeHandler = new Elysia()
       ctx.HomeReadRepository.getRecentPRs(userId, RECENT_PR_LIMIT),
       ctx.HabitRepository.list(userId, { windowDays: 7 }),
       ctx.NutritionEntryRepository.sumKcalForDay(userId, today),
-      ctx.NutritionTargetRepository
-        .get(userId)
-        .then((t) => t?.dailyKcal ?? null),
+      ctx.NutritionTargetRepository.get(userId).then(
+        (t) => t?.dailyKcal ?? null,
+      ),
     ]);
 
     const rings = buildRings(
