@@ -66,13 +66,13 @@ out in both PRs.
 
 ## Tier ↔ entitlement mapping (4 entitlements)
 
-| Tier               | RC entitlement       | Apple IAP products                  | Stripe products                |
-| ------------------ | -------------------- | ----------------------------------- | ------------------------------ |
-| free               | (none — default)     | —                                   | —                              |
-| premium            | `premium`            | `premium_monthly`, `premium_annual` | existing Stripe monthly/annual |
-| individual_trainer | `individual_trainer` | `trainer_monthly`, `trainer_annual` | existing Stripe monthly/annual |
-| small_business     | `small_business`     | `small_business_monthly` (monthly only) | existing Stripe           |
-| medium_enterprise  | `medium_enterprise`  | `medium_enterprise_monthly` (monthly only) | existing Stripe        |
+| Tier               | RC entitlement       | Apple IAP products                         | Stripe products                |
+| ------------------ | -------------------- | ------------------------------------------ | ------------------------------ |
+| free               | (none — default)     | —                                          | —                              |
+| premium            | `premium`            | `premium_monthly`, `premium_annual`        | existing Stripe monthly/annual |
+| individual_trainer | `individual_trainer` | `trainer_monthly`, `trainer_annual`        | existing Stripe monthly/annual |
+| small_business     | `small_business`     | `small_business_monthly` (monthly only)    | existing Stripe                |
+| medium_enterprise  | `medium_enterprise`  | `medium_enterprise_monthly` (monthly only) | existing Stripe                |
 
 All 4 paid tiers are purchasable on iOS via Apple IAP. Business tiers are monthly-only for launch
 (annual pricing parked — see banner note). Annual individual_trainer / premium have yearly Apple
