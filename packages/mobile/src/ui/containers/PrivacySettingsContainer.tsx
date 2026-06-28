@@ -92,7 +92,8 @@ export function PrivacySettingsContainer() {
       "Delete Account?",
       "This permanently deletes your account and all your data — profile, " +
         "workouts, sessions, nutrition, measurements, and goals. This cannot " +
-        "be undone.",
+        "be undone.\n\nIf you have an active Apple subscription, cancel it " +
+        "separately in Settings → Subscriptions.",
       [
         { text: "Cancel", style: "cancel" },
         {

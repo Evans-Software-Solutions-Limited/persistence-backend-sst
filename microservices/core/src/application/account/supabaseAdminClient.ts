@@ -56,3 +56,29 @@ export async function deleteAuthUser(userId: string): Promise<void> {
     );
   }
 }
+
+/**
+ * `deleteAuthUser` with a bounded retry (up to `maxAttempts`, 500ms between).
+ * Used by the account-delete handler AFTER the data purge has committed — a
+ * transient Supabase Admin 5xx should not block the user from being signed out
+ * (the data is already gone). If all attempts fail, the error propagates and
+ * the handler logs it for ops cleanup.
+ */
+export async function deleteAuthUserWithRetry(
+  userId: string,
+  maxAttempts = 3,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await deleteAuthUser(userId);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
