@@ -1,0 +1,21 @@
+{
+  "name": "@persistence/seed",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "seed": "bun run src/seedExercises.ts && bash src/seedFoods.sh",
+    "seed:exercises": "bun run src/seedExercises.ts",
+    "seed:foods": "bash src/seedFoods.sh",
+    "refresh:foods": "bash src/refreshOffDump.sh"
+  },
+  "dependencies": {
+    "@persistence/db": "workspace:*",
+    "drizzle-orm": "^0.44.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}

@@ -17,7 +17,10 @@
     "test": "turbo run test:unit --cache-dir .turbo",
     "test:unit": "turbo run test:unit --cache-dir .turbo",
     "tear-down": "sst remove",
-    "shell": "bun run --filter @persistence/scripts shell"
+    "shell": "bun run --filter @persistence/scripts shell",
+    "seed": "bun run --filter @persistence/seed seed",
+    "seed:exercises": "bun run --filter @persistence/seed seed:exercises",
+    "seed:foods": "bun run --filter @persistence/seed seed:foods"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22",

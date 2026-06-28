@@ -81,6 +81,9 @@ async function main(): Promise<void> {
   console.log(
     `[off-seed] done — read=${read} mapped=${mapped} upserted=${upserted}`,
   );
+  // postgres.js holds the connection open and keeps the event loop alive;
+  // exit explicitly so the script (and `seed:foods`) terminates cleanly.
+  process.exit(0);
 }
 
 main().catch((err) => {
