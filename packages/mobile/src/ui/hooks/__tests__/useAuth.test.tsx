@@ -557,4 +557,75 @@ describe("useAuth", () => {
     expect(storage.getPendingMutations()).toHaveLength(0);
     expect(storage.getLastSyncedAt("workout")).toBeNull();
   });
+
+  it("deletes the account: clears the session + device-global local state", async () => {
+    const { adapters, auth, storage } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    storage.setLastSyncedAt("workout", "2026-01-01T00:00:00Z");
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.signIn("trainer@example.com", "password");
+    });
+    act(() => {
+      useUserMode.setState({
+        mode: "coach",
+        isTrainerEligible: true,
+        isEligibilityKnown: true,
+      });
+      useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+    });
+    expect(result.current.session).not.toBeNull();
+
+    await act(async () => {
+      await result.current.deleteAccount();
+    });
+
+    // Session torn down (AuthGate routes to sign-in on this), and the
+    // device-global slices + storage cache reset — same as sign-out.
+    expect(result.current.session).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(useUserMode.getState().mode).toBe("athlete");
+    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(storage.getLastSyncedAt("workout")).toBeNull();
+  });
+
+  it("throws + sets error + keeps the session when the backend delete fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+    expect(result.current.session).not.toBeNull();
+
+    (adapters.api as InMemoryApiAdapter).shouldFail = true;
+
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.deleteAccount();
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect(result.current.error?.kind).toBe("auth");
+    // Failure leaves the user signed in so they can retry.
+    expect(result.current.session).not.toBeNull();
+    // auth adapter is referenced to keep the destructure parallel to sign-out
+    // tests; the in-memory auth was never asked to sign out on the failure path.
+    expect(auth.currentSession).not.toBeNull();
+  });
 });

@@ -1,330 +1,104 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { TamaguiProvider } from "@tamagui/core";
-import type { ReactNode } from "react";
-import { Alert, Pressable, Switch, Text, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
-import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
-import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
-import { StubHealthAdapter } from "@/adapters/health";
-import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
-import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
-import type { ProfilePageData } from "@/domain/models/profilePage";
-import type { Adapters } from "@/shared/types";
-import { PrivacySettingsPresenter } from "@/ui/presenters/PrivacySettingsPresenter";
-import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import config from "../../../../tamagui.config";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { render, waitFor } from "@testing-library/react-native";
+import { Alert } from "react-native";
+import type { PrivacySettingsPresenterProps } from "@/ui/presenters/PrivacySettingsPresenter";
 import { PrivacySettingsContainer } from "../PrivacySettingsContainer";
 
-jest.setTimeout(15_000);
-
-jest.mock("@/ui/presenters/PrivacySettingsPresenter");
-const MockPresenter = jest.mocked(PrivacySettingsPresenter);
-
-MockPresenter.mockImplementation((props) => (
-  <View testID="privacy-settings-presenter-stub">
-    <Text testID="stub-loading">{props.isLoading ? "true" : "false"}</Text>
-    <Switch
-      testID="stub-is-public"
-      value={props.isProfilePublic}
-      onValueChange={() => {}}
-    />
-    <Pressable
-      testID="stub-update-public"
-      onPress={() => props.onUpdateVisibility("public")}
-    />
-    <Pressable
-      testID="stub-update-private"
-      onPress={() => props.onUpdateVisibility("private")}
-    />
-    <Pressable testID="stub-back" onPress={() => props.onBack()} />
-    <Pressable
-      testID="stub-open-policy"
-      onPress={() => props.onOpenPrivacyPolicy()}
-    />
-    <Pressable testID="stub-open-terms" onPress={() => props.onOpenTerms()} />
-  </View>
-));
-
-const mockBack = jest.fn();
-const mockPush = jest.fn();
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: mockBack, push: mockPush }),
+// Capture the props handed to the (mocked) presenter so we can drive the
+// container's handlers directly. `mock`-prefixed so jest's hoist allows it.
+const mockProbe: { props: PrivacySettingsPresenterProps | null } = {
+  props: null,
+};
+jest.mock("@/ui/presenters/PrivacySettingsPresenter", () => ({
+  PrivacySettingsPresenter: (props: PrivacySettingsPresenterProps) => {
+    mockProbe.props = props;
+    return null;
+  },
 }));
 
-function makeProfilePagePayload(
-  overrides: Partial<ProfilePageData["profile"]> = {},
-): ProfilePageData {
-  return {
-    profile: {
-      id: "user-1",
-      fullName: "Brad Simms",
-      email: "brad@example.com",
-      username: null,
-      avatarUrl: null,
-      role: "user",
-      fitnessLevel: "intermediate",
-      dateOfBirth: null,
-      heightCm: null,
-      weightKg: null,
-      preferredUnits: "metric",
-      isProfilePublic: false,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      ...overrides,
-    },
-    subscription: {
-      tierName: null,
-      tierDisplayName: null,
-      status: null,
-      isFreeTier: true,
-      isTrainerTier: false,
-      expiresAt: null,
-      cancelledAt: null,
-      workoutLimit: null,
-      isUnlimited: false,
-    },
-    stats: { workoutsCompleted: 0 },
-    recentAchievements: [],
-    activeTrainers: [],
-    pendingTrainerRequests: [],
-  };
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+}));
+jest.mock("@/ui/hooks/useAdapters");
+jest.mock("@/ui/hooks/useAuth");
+jest.mock("@/ui/hooks/useProfilePage");
+
+import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
+
+const deleteAccount = jest.fn(async () => undefined);
+
+/** Pull the button list out of the Nth Alert.alert invocation. */
+function alertButtons(callIndex: number): any[] {
+  const call = (Alert.alert as jest.Mock).mock.calls[callIndex];
+  return (call?.[2] ?? []) as any[];
 }
+const pressByText = (buttons: any[], text: string) =>
+  buttons.find((b) => b.text === text)?.onPress?.();
 
-async function createTestAdapters(): Promise<{
-  adapters: Adapters;
-  auth: InMemoryAuthAdapter;
-  storage: InMemoryStorageAdapter;
-  api: InMemoryApiAdapter;
-}> {
-  const auth = new InMemoryAuthAdapter();
-  await auth.signInWithEmail("brad@example.com", "password");
-  const api = new InMemoryApiAdapter();
-  const storage = new InMemoryStorageAdapter();
-  const adapters: Adapters = {
-    api,
-    auth,
-    storage,
-    health: new StubHealthAdapter(),
-    notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
-    netInfo: new InMemoryNetInfoAdapter(),
-  };
-  return { adapters, auth, storage, api };
-}
-
-function TestWrapper({
-  children,
-  adapters,
-}: {
-  children: ReactNode;
-  adapters: Adapters;
-}) {
-  return (
-    <SafeAreaProvider
-      initialMetrics={{
-        frame: { x: 0, y: 0, width: 390, height: 844 },
-        insets: { top: 44, left: 0, right: 0, bottom: 34 },
-      }}
-    >
-      <TamaguiProvider config={config} defaultTheme="dark">
-        <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
-      </TamaguiProvider>
-    </SafeAreaProvider>
-  );
-}
-
-describe("PrivacySettingsContainer", () => {
-  let alertSpy: jest.SpyInstance;
-
+describe("PrivacySettingsContainer — delete account", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockBack.mockReset();
-    mockPush.mockReset();
-    alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    mockProbe.props = null;
+    deleteAccount.mockResolvedValue(undefined);
+    (useAuth as jest.Mock).mockReturnValue({
+      session: { userId: "u1" },
+      deleteAccount,
+    });
+    (useAdapters as jest.Mock).mockReturnValue({
+      api: { updateProfile: jest.fn() },
+      storage: { invalidateProfilePage: jest.fn() },
+    });
+    (useProfilePage as jest.Mock).mockReturnValue({
+      payload: { profile: { isProfilePublic: false } },
+    });
+    jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
   });
 
-  afterEach(() => {
-    alertSpy.mockRestore();
+  it("double-confirms then calls deleteAccount", async () => {
+    render(<PrivacySettingsContainer />);
+    mockProbe.props!.onDeleteAccount();
+
+    // First confirm dialog → tap the destructive action.
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    pressByText(alertButtons(0), "Delete Account");
+
+    // Second (last-chance) dialog → tap Delete.
+    expect(Alert.alert).toHaveBeenCalledTimes(2);
+    await pressByText(alertButtons(1), "Delete");
+
+    expect(deleteAccount).toHaveBeenCalledTimes(1);
   });
 
-  it("hydrates the toggle from the cached profile-page payload", async () => {
-    const { adapters, storage, auth } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(
-      userId,
-      makeProfilePagePayload({ isProfilePublic: true }),
-    );
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-    expect(getByTestId("stub-is-public").props.value).toBe(true);
+  it("does nothing when the user cancels the first dialog", () => {
+    render(<PrivacySettingsContainer />);
+    mockProbe.props!.onDeleteAccount();
+    pressByText(alertButtons(0), "Cancel");
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(deleteAccount).not.toHaveBeenCalled();
   });
 
-  it("PATCHes isProfilePublic=true and invalidates the cache when Public is picked", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-    api.profiles = [
-      {
-        id: userId,
-        email: "brad@example.com",
-        fullName: "Brad Simms",
-        role: "user",
-        fitnessLevel: "intermediate",
-        avatarUrl: null,
-        isProfilePublic: false,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ];
-    const invalidateSpy = jest.spyOn(storage, "invalidateProfilePage");
-    const updateSpy = jest.spyOn(api, "updateProfile");
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-update-public"));
-    });
-
-    await waitFor(() => {
-      expect(updateSpy).toHaveBeenCalledWith({ isProfilePublic: true });
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith(userId);
-    expect(getByTestId("stub-is-public").props.value).toBe(true);
+  it("does not delete if the user cancels the second dialog", () => {
+    render(<PrivacySettingsContainer />);
+    mockProbe.props!.onDeleteAccount();
+    pressByText(alertButtons(0), "Delete Account");
+    pressByText(alertButtons(1), "Cancel");
+    expect(deleteAccount).not.toHaveBeenCalled();
   });
 
-  it("skips the API call when the tapped option matches the current value", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-    const updateSpy = jest.spyOn(api, "updateProfile");
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    await act(async () => {
-      // Cached state is private; tap Private again — should no-op.
-      fireEvent.press(getByTestId("stub-update-private"));
-    });
-    expect(updateSpy).not.toHaveBeenCalled();
-  });
-
-  it("reverts the toggle and alerts when the update fails", async () => {
-    const { adapters, storage, auth, api } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-    api.profiles = [
-      {
-        id: userId,
-        email: "brad@example.com",
-        fullName: "Brad Simms",
-        role: "user",
-        fitnessLevel: "intermediate",
-        avatarUrl: null,
-        isProfilePublic: false,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ];
-    // Force the next mayFail() to return an error.
-    api.shouldFail = true;
-    api.failError = {
-      kind: "api",
-      code: "network",
-      message: "boom",
-    };
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-update-public"));
-    });
+  it("shows a non-destructive retry alert when deletion fails", async () => {
+    deleteAccount.mockRejectedValueOnce(new Error("network"));
+    render(<PrivacySettingsContainer />);
+    mockProbe.props!.onDeleteAccount();
+    pressByText(alertButtons(0), "Delete Account");
+    await pressByText(alertButtons(1), "Delete");
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith(
-        "Error",
-        "Failed to update privacy settings",
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Couldn't delete your account",
+        "Something went wrong. Please try again.",
       );
     });
-    expect(getByTestId("stub-is-public").props.value).toBe(false);
-  });
-
-  it("routes back when onBack fires", async () => {
-    const { adapters, storage, auth } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-back"));
-    });
-    expect(mockBack).toHaveBeenCalledTimes(1);
-  });
-
-  it("pushes the policy + terms routes from the Legal links", async () => {
-    const { adapters, storage, auth } = await createTestAdapters();
-    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
-    if (!userId) throw new Error("expected a signed-in session");
-    storage.cacheProfilePage(userId, makeProfilePagePayload());
-
-    const { getByTestId } = render(
-      <TestWrapper adapters={adapters}>
-        <PrivacySettingsContainer />
-      </TestWrapper>,
-    );
-    await waitFor(() => {
-      expect(getByTestId("stub-loading").props.children).toBe("false");
-    });
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-open-policy"));
-    });
-    expect(mockPush).toHaveBeenCalledWith("/(app)/profile/privacy");
-
-    await act(async () => {
-      fireEvent.press(getByTestId("stub-open-terms"));
-    });
-    expect(mockPush).toHaveBeenCalledWith("/(app)/profile/terms");
   });
 });

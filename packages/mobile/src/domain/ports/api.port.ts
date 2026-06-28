@@ -118,6 +118,14 @@ export interface ApiPort {
    */
   deleteAvatar(): Promise<Result<{ avatarUrl: null }, ApiError>>;
 
+  /**
+   * App Store Guideline 5.1.1(v): permanently delete the caller's account.
+   * The backend cascade-purges all of the user's owned data and deletes the
+   * Supabase auth user so the credential can no longer sign in. Idempotent.
+   * See specs/08-profile-settings § Revised 2026-06-28 (STORY-011).
+   */
+  deleteAccount(): Promise<Result<void, ApiError>>;
+
   // -- Workouts (M2) --
   /**
    * Fetch a workouts list slice for one of the three section types

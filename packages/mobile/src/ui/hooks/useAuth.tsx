@@ -19,6 +19,7 @@ export type AuthState = {
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 /**
@@ -26,7 +27,7 @@ export type AuthState = {
  * to provide reactive session state and auth actions.
  */
 export function useAuth(): AuthState {
-  const { auth, storage } = useAdapters();
+  const { auth, storage, api } = useAdapters();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
@@ -138,6 +139,24 @@ export function useAuth(): AuthState {
     [auth],
   );
 
+  // Shared local-session teardown for both sign-out and account deletion.
+  // Clears cached user data (sync queue, exercises, metadata) so the next
+  // sign-in starts clean, and resets the device-global runtime slices.
+  // The user-mode + train-segment STORAGE_KEYs are device-global (not
+  // user-scoped), so without this a trainer's coach mode / last segment /
+  // pending create-exercise redirect would bleed into the next account on
+  // this device (PR #93 review). In-memory resets are synchronous; the disk
+  // clears inside them + storage.clearAll() are best-effort.
+  const clearLocalState = useCallback(() => {
+    try {
+      storage.clearAll();
+    } catch {
+      // Best-effort — don't block teardown on storage failure.
+    }
+    useUserMode.getState().reset();
+    useTrainSegment.getState().reset();
+  }, [storage]);
+
   const signOut = useCallback(async () => {
     setError(null);
     const result = await auth.signOut();
@@ -145,24 +164,8 @@ export function useAuth(): AuthState {
       setError(result.error);
       throw new Error(result.error.message);
     }
-    // Clear all cached user data (sync queue, exercises, metadata)
-    // so the next sign-in starts with a clean slate.
-    try {
-      storage.clearAll();
-    } catch {
-      // Best-effort — don't block sign-out on storage failure
-    }
-    // Reset the runtime user-mode slice too — its persisted key is
-    // device-global, not user-scoped, so without this a trainer's coach
-    // mode + eligibility would bleed into the next account signed in on
-    // this device (PR #93 review). In-memory reset is synchronous; the
-    // disk clear inside reset() is best-effort.
-    useUserMode.getState().reset();
-    // Same device-global-key reasoning for the Train hub segment + its
-    // one-shot pendingCreate flag — clear both so A's last segment (and any
-    // pending create-exercise redirect) don't surface for account B.
-    useTrainSegment.getState().reset();
-  }, [auth, storage]);
+    clearLocalState();
+  }, [auth, clearLocalState]);
 
   const resetPassword = useCallback(
     async (email: string) => {
@@ -176,6 +179,31 @@ export function useAuth(): AuthState {
     [auth],
   );
 
+  // App Store Guideline 5.1.1(v): permanently delete the account. Calls the
+  // backend (cascade-purge + Supabase auth-user delete) and only tears down
+  // the local session on success — a failure leaves the user signed in so
+  // they can retry (the endpoint is idempotent). Navigation to the sign-in
+  // screen is handled by AuthGate reacting to the session→null change, same
+  // as sign-out. The backend delete goes through the SST API (not Supabase
+  // directly) per the repo's "all business data through the API" rule.
+  const deleteAccount = useCallback(async () => {
+    setError(null);
+    const result = await api.deleteAccount();
+    if (!result.ok) {
+      const err: AuthError = {
+        kind: "auth",
+        code: "unknown",
+        message: result.error.message,
+      };
+      setError(err);
+      throw new Error(result.error.message);
+    }
+    // Account is gone server-side. Clear the local Supabase session
+    // (best-effort — the credential no longer exists) + local state.
+    await auth.signOut().catch(() => undefined);
+    clearLocalState();
+  }, [api, auth, clearLocalState]);
+
   return {
     session,
     isLoading,
@@ -187,5 +215,6 @@ export function useAuth(): AuthState {
     signInWithApple,
     signOut,
     resetPassword,
+    deleteAccount,
   };
 }

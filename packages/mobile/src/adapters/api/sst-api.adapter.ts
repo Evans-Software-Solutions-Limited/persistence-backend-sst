@@ -430,6 +430,15 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
+  /**
+   * App Store Guideline 5.1.1(v): permanently delete the caller's account.
+   * Backend cascade-purges all owned data + deletes the Supabase auth user.
+   * See specs/08-profile-settings § Revised 2026-06-28 (STORY-011).
+   */
+  async deleteAccount(): Promise<Result<void, ApiError>> {
+    return this.request<void>("/account", { method: "DELETE" });
+  }
+
   // -- Workouts (M2) --
   async getWorkouts(
     params?: GetWorkoutsParams,
