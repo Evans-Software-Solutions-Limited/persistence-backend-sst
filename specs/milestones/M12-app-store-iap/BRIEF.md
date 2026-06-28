@@ -10,12 +10,16 @@
 > - **Kept (single-rail core):** `POST /revenuecat/webhook` → re-fetch active entitlements →
 >   upsert `user_subscriptions`. RevenueCat keys everything by **App User ID = the Supabase user id**.
 >   The native Stripe webhook handlers stay **dormant** (not removed; not required for iOS-only).
-> - **Purchasable on iOS:** only `premium` + `individual_trainer` (Apple products exist for these).
->   `small_business` / `medium_enterprise` have **no iOS purchase path** (were for the web rail) —
->   the entitlement model still supports all four; add Apple products later if they must sell on iOS.
-> - RevenueCat project `b408fd30`, offering `default` (`ofrng79adc3c998`); Apple product ids
->   `app.persistence.{premium,trainer.individual}.{monthly,annual}`. Mobile configures RevenueCat with
->   the Supabase user id and reads `getOfferings()` → `default`.
+> - **Purchasable on iOS (2026-06-27 update — all 4 tiers):** `premium`, `individual_trainer`,
+>   `small_business`, `medium_enterprise` all have Apple IAP products. Business tiers are
+>   **monthly-only** (no yearly pricing — Apple's high-end GBP price points don't map to round
+>   numbers; annual business pricing is parked for a separate review). Note: unpriced draft
+>   "Small Business Annual" (ASC id `6784980136`) still exists in App Store Connect — delete when
+>   convenient.
+> - RevenueCat project `b408fd30`, offering `default` (`ofrng79adc3c998`); **6 packages**: consumer
+>   (`app.persistence.{premium,trainer.individual}.{monthly,annual}`) + business
+>   (`app.persistence.small_business.monthly`, `app.persistence.medium_enterprise.monthly`). Mobile
+>   configures RevenueCat with the Supabase user id and reads `getOfferings()` → `default`.
 >
 > The sections below are retained as historical context; where they describe Stripe/cross-rail, the
 > banner above wins.
@@ -67,13 +71,12 @@ out in both PRs.
 | free               | (none — default)     | —                                   | —                              |
 | premium            | `premium`            | `premium_monthly`, `premium_annual` | existing Stripe monthly/annual |
 | individual_trainer | `individual_trainer` | `trainer_monthly`, `trainer_annual` | existing Stripe monthly/annual |
-| small_business     | `small_business`     | — (web/Stripe only)                 | existing Stripe                |
-| medium_enterprise  | `medium_enterprise`  | — (web/Stripe only)                 | existing Stripe                |
+| small_business     | `small_business`     | `small_business_monthly` (monthly only) | existing Stripe           |
+| medium_enterprise  | `medium_enterprise`  | `medium_enterprise_monthly` (monthly only) | existing Stripe        |
 
-Consumer tiers get BOTH Apple + Stripe products on their entitlement; business tiers stay
-Stripe/web-only (multi-seat/invoicing can't go through Apple IAP). On iOS a business-tier upgrade
-opens a "Manage your team / Upgrade your business plan" web CTA — never an IAP sheet, never "click
-here to subscribe at our website" wording (§3.1.1).
+All 4 paid tiers are purchasable on iOS via Apple IAP. Business tiers are monthly-only for launch
+(annual pricing parked — see banner note). Annual individual_trainer / premium have yearly Apple
+products.
 
 ## Canonical-table guard (unchanged)
 

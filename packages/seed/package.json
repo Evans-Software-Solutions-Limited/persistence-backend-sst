@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "seed": "bun run src/seedExercises.ts && bash src/seedFoods.sh",
     "seed:exercises": "bun run src/seedExercises.ts",
     "seed:foods": "bash src/seedFoods.sh",
@@ -15,7 +16,10 @@
     "drizzle-orm": "^0.44.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@types/node": "^22",
-    "typescript": "^5"
+    "eslint": "^9.39.1",
+    "typescript": "^5",
+    "typescript-eslint": "^8.48.0"
   }
 }

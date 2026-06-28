@@ -158,6 +158,18 @@
         "typescript": "~5.9.2",
       },
     },
+    "packages/seed": {
+      "name": "@persistence/seed",
+      "version": "0.0.0",
+      "dependencies": {
+        "@persistence/db": "workspace:*",
+        "drizzle-orm": "^0.44.2",
+      },
+      "devDependencies": {
+        "@types/node": "^22",
+        "typescript": "^5",
+      },
+    },
     "packages/web": {
       "name": "@persistence/web",
       "version": "0.0.0",
@@ -866,6 +878,8 @@
     "@persistence/other-service": ["@persistence/other-service@workspace:microservices/other-service"],
 
     "@persistence/scripts": ["@persistence/scripts@workspace:scripts"],
+
+    "@persistence/seed": ["@persistence/seed@workspace:packages/seed"],
 
     "@persistence/web": ["@persistence/web@workspace:packages/web"],
 

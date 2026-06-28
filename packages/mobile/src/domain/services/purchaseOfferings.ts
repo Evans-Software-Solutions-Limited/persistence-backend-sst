@@ -18,15 +18,14 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
  * it MUST match the ids configured in App Store Connect + attached in the
  * RevenueCat dashboard.
  *
- * Known consumer ids (Part D):
+ * Known product ids (6 packages, all in the `default` offering):
  *   - `app.persistence.premium.{monthly,annual}`
  *   - `app.persistence.trainer.individual.{monthly,annual}`
+ *   - `app.persistence.small_business.monthly`      (monthly-only for launch)
+ *   - `app.persistence.medium_enterprise.monthly`   (monthly-only for launch)
  *
- * Business tiers (`small_business`, `medium_enterprise`) get Apple products
- * later (cowork is adding them); the keyword matching below already maps them
- * the moment their products follow the same convention — no code change
- * needed. Anything unrecognised maps to `tier: null` and is filtered out of
- * the paywall.
+ * Anything unrecognised maps to `tier: null` and is filtered out of the
+ * paywall.
  */
 
 /**

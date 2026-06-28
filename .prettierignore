@@ -26,3 +26,7 @@ expo-env.d.ts
 # to what gets applied — don't reflow.
 supabase/migrations/**
 supabase/config.toml
+
+# Seed: committed binary dataset (ODbL) — never reflow
+packages/seed/data/off-uk.jsonl.gz
+**/*.gz
