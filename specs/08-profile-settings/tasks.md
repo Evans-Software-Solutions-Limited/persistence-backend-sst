@@ -96,3 +96,42 @@ Per-package, not turbo: `npx tsc --noEmit && npx expo lint && npx jest --coverag
 ---
 
 _Revised 2026-05-31 — reconciled against shipped `main`; adds DOB backend phase + hook/route corrections._
+
+---
+
+## Revised 2026-06-28: Phase 08.C — in-app account deletion (STORY-011)
+
+> Pairs with `design.md` + `requirements.md` § Revised 2026-06-28. One PR off `main` (`feat/account-deletion`). App Store hard blocker #1.
+
+### Phase 08.C.0 — spec-first (land FIRST)
+
+- [x] **T-08.C.0** This triplet's `Revised 2026-06-28` addendums (requirements STORY-011 + design § Account deletion + this phase).
+
+### Phase 08.C.1 — backend infra + secret
+
+- [ ] **T-08.C.1** `infra/secrets.ts`: add `SupabaseServiceRoleKey` secret. `infra/api.ts`: wire `SUPABASE_SERVICE_ROLE_KEY` into the core API route env. (Implements requirements 11.4/11.7 dependency.)
+
+### Phase 08.C.2 — backend deletion logic + endpoint
+
+- [ ] **T-08.C.2.1** `account/accountDeletionPlan.ts` — `ACCOUNT_DELETION_STEPS` (data-driven FK plan per design § Deletion order) + `buildStatement`. (11.4/11.5)
+- [ ] **T-08.C.2.2** `account/accountRepository.ts` — `purgeUserData(userId)` runs the plan in one `db.transaction`. (11.6)
+- [ ] **T-08.C.2.3** `account/supabaseAdminClient.ts` — `getSupabaseAdminConfig()` (fail-fast) + `deleteAuthUser(userId)` Admin REST (404 == ok). (11.4/11.7)
+- [ ] **T-08.C.2.4** `account/delete/accountDeleteHandler.ts` — `DELETE /account`; register in `api.ts`. (11.4/11.6/11.7)
+- [ ] **T-08.C.2.5** Backend unit tests: plan, repository, handler (configured/unconfigured/404/5xx/401). 90% on changed files.
+
+### Phase 08.C.3 — mobile port + adapter
+
+- [ ] **T-08.C.3.1** `ApiPort.deleteAccount()` + `sst-api.adapter` (`DELETE /account`) + in-memory adapter. (11.4)
+- [ ] **T-08.C.3.2** `useAuth().deleteAccount()` — backend call + shared `tearDownLocalSession()` reuse; failure leaves session intact. (11.3/11.8)
+
+### Phase 08.C.4 — mobile UI (Privacy Settings)
+
+- [ ] **T-08.C.4.1** `PrivacySettingsPresenter` — destructive "Delete Account" section + remove stale "contacting support … deletion" copy. (11.1)
+- [ ] **T-08.C.4.2** `PrivacySettingsContainer` — `onDeleteAccount` double-confirm `Alert` → `deleteAccount()`; failure → retry Alert. (11.2/11.3/11.8)
+- [ ] **T-08.C.4.3** Mobile tests: presenter (row present), container (confirm/cancel/failure), `useAuth().deleteAccount`. 90% on changed files.
+
+### Phase 08.C.5 — gates + verify
+
+- [ ] **T-08.C.5** Root gates (`prettier:check`, `typecheck`, `lint`, `build`, `test:unit`) + `@persistence/web test:unit` green. Device-verify steps handed to owner.
+
+_Revised 2026-06-28 — Phase 08.C account deletion._
