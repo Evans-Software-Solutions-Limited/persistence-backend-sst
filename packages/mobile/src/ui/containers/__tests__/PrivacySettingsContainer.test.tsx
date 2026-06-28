@@ -1,7 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, waitFor } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import type { PrivacySettingsPresenterProps } from "@/ui/presenters/PrivacySettingsPresenter";
+import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { PrivacySettingsContainer } from "../PrivacySettingsContainer";
 
 // Capture the props handed to the (mocked) presenter so we can drive the
@@ -23,18 +25,16 @@ jest.mock("@/ui/hooks/useAdapters");
 jest.mock("@/ui/hooks/useAuth");
 jest.mock("@/ui/hooks/useProfilePage");
 
-import { useAdapters } from "@/ui/hooks/useAdapters";
-import { useAuth } from "@/ui/hooks/useAuth";
-import { useProfilePage } from "@/ui/hooks/useProfilePage";
+type AlertButton = { text?: string; onPress?: () => void | Promise<void> };
 
 const deleteAccount = jest.fn(async () => undefined);
 
 /** Pull the button list out of the Nth Alert.alert invocation. */
-function alertButtons(callIndex: number): any[] {
+function alertButtons(callIndex: number): AlertButton[] {
   const call = (Alert.alert as jest.Mock).mock.calls[callIndex];
-  return (call?.[2] ?? []) as any[];
+  return (call?.[2] ?? []) as AlertButton[];
 }
-const pressByText = (buttons: any[], text: string) =>
+const pressByText = (buttons: AlertButton[], text: string) =>
   buttons.find((b) => b.text === text)?.onPress?.();
 
 describe("PrivacySettingsContainer — delete account", () => {

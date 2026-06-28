@@ -757,7 +757,7 @@ The driver is `postgres-js` over TCP, so real transactions are available. The pu
 
 1. **Null cross-user attribution** — `UPDATE <table> SET <col> = NULL WHERE <col> = $userId` for each attribution column above. Preserves other users' rows and unblocks the NO-ACTION FKs.
 2. **Delete the user's own NO-ACTION-owner rows** in child-safe order: `nutrition_entries` → `water_log` → `meals` (cascades `meal_items`) → `recipes` (cascades `recipe_ingredients`) → `foods` → `nutrition_targets` → `ai_usage_log`.
-3. **Delete the `profiles` row** — the `ON DELETE CASCADE` FKs remove all remaining owned rows (workouts, sessions, PRs, measurements, achievements, friendships, habits, health, notifications, devices, goals, streaks, volume, subscriptions, trainer relationships/notes/invites, ai_*).
+3. **Delete the `profiles` row** — the `ON DELETE CASCADE` FKs remove all remaining owned rows (workouts, sessions, PRs, measurements, achievements, friendships, habits, health, notifications, devices, goals, streaks, volume, subscriptions, trainer relationships/notes/invites, ai\_\*).
 
 Then, **after the transaction commits**, delete the Supabase **auth user** so the login is gone. Because `profiles` is already deleted, the `auth.users` delete is a clean leaf delete.
 

@@ -18,7 +18,9 @@ describe("AccountRepository.purgeUserData", () => {
 
   it("runs every deletion step, in plan order, inside a single transaction", async () => {
     const executed: SQL[] = [];
-    const tx = { execute: vi.fn(async (stmt: SQL) => void executed.push(stmt)) };
+    const tx = {
+      execute: vi.fn(async (stmt: SQL) => void executed.push(stmt)),
+    };
     const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) =>
       cb(tx),
     );

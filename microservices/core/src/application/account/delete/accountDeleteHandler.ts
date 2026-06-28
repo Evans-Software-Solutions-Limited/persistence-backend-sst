@@ -5,10 +5,7 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { AccountRepository } from "../accountRepository";
-import {
-  getSupabaseAdminConfig,
-  deleteAuthUser,
-} from "../supabaseAdminClient";
+import { getSupabaseAdminConfig, deleteAuthUser } from "../supabaseAdminClient";
 
 const accountRepository = new AccountRepository();
 

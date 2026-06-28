@@ -90,7 +90,9 @@ describe("accountDeleteHandler", () => {
 
   it("fails fast (500) BEFORE any purge when the service-role key is unconfigured", async () => {
     getSupabaseAdminConfig.mockImplementation(() => {
-      throw new Error("Missing environment variable for SUPABASE_SERVICE_ROLE_KEY");
+      throw new Error(
+        "Missing environment variable for SUPABASE_SERVICE_ROLE_KEY",
+      );
     });
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(500);

@@ -239,10 +239,10 @@ Apple **Guideline 5.1.1(v)** requires any app that supports account creation to 
 
 ### Dependencies
 
-| Dependency | What's needed |
-| --- | --- |
+| Dependency                    | What's needed                                                                                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Supabase **service-role key** | A new `SupabaseServiceRoleKey` SST secret, set per stage (`bunx sst secret set SupabaseServiceRoleKey …`). Required to delete the `auth.users` record via the Admin API. Owner (Brad) provisions it; code + infra wiring ship in this PR. |
-| `02-auth-flow` | Reuses the existing sign-out teardown (`useAuth().signOut`) for the local session/cache/slice reset after the backend delete. |
+| `02-auth-flow`                | Reuses the existing sign-out teardown (`useAuth().signOut`) for the local session/cache/slice reset after the backend delete.                                                                                                             |
 
 ### Open questions
 

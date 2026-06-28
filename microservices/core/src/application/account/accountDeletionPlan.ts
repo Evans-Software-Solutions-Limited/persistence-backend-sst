@@ -32,7 +32,11 @@ export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
   { kind: "nullify", table: "nutrition_entries", column: "logged_by_user_id" },
   { kind: "nullify", table: "nutrition_targets", column: "set_by_user_id" },
   { kind: "nullify", table: "user_goals", column: "assigned_by_user_id" },
-  { kind: "nullify", table: "subscription_price_history", column: "changed_by" },
+  {
+    kind: "nullify",
+    table: "subscription_price_history",
+    column: "changed_by",
+  },
 
   // 2) Delete the user's own rows behind NO-ACTION FKs, in child-safe order.
   //    meals → meal_items and recipes → recipe_ingredients cascade off these.

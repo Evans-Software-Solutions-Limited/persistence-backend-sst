@@ -72,7 +72,11 @@ describe("buildStatement", () => {
 
   it("renders a parameterized UPDATE … SET NULL for attribution nullify steps", () => {
     const { sql, params } = render(
-      { kind: "nullify", table: "nutrition_entries", column: "logged_by_user_id" },
+      {
+        kind: "nullify",
+        table: "nutrition_entries",
+        column: "logged_by_user_id",
+      },
       "user-123",
     );
     expect(sql).toBe(

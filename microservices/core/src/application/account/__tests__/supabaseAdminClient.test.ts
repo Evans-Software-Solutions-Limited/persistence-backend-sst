@@ -1,9 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  getSupabaseAdminConfig,
-  deleteAuthUser,
-} from "../supabaseAdminClient";
+import { getSupabaseAdminConfig, deleteAuthUser } from "../supabaseAdminClient";
 
 const ORIGINAL = { ...process.env };
 

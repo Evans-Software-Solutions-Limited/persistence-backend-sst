@@ -31,7 +31,9 @@ describe("PrivacySettingsPresenter — account deletion (Apple 5.1.1(v))", () =>
     // The old footer falsely promised "account deletion at any time by
     // contacting support" — reviewers test this. It must be gone.
     expect(queryByText(/account deletion/i)).toBeNull();
-    expect(queryByText(/Contact support to request a copy of your data\./i)).not.toBeNull();
+    expect(
+      queryByText(/Contact support to request a copy of your data\./i),
+    ).not.toBeNull();
   });
 
   it("does not render the delete row while loading", () => {

@@ -559,7 +559,7 @@ describe("useAuth", () => {
   });
 
   it("deletes the account: clears the session + device-global local state", async () => {
-    const { adapters, auth, storage } = createTestAdapters();
+    const { adapters, storage } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (
       <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
     );
