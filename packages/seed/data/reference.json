@@ -1,0 +1,283 @@
+{
+  "muscleGroups": [
+    {
+      "name": "Chest",
+      "description": "Pectoral muscles"
+    },
+    {
+      "name": "Back",
+      "description": "Upper and lower back muscles"
+    },
+    {
+      "name": "Shoulders",
+      "description": "Deltoid muscles"
+    },
+    {
+      "name": "Biceps",
+      "description": "Front of upper arm"
+    },
+    {
+      "name": "Triceps",
+      "description": "Back of upper arm"
+    },
+    {
+      "name": "Forearms",
+      "description": "Lower arm muscles"
+    },
+    {
+      "name": "Abs",
+      "description": "Abdominal muscles"
+    },
+    {
+      "name": "Obliques",
+      "description": "Side abdominal muscles"
+    },
+    {
+      "name": "Lower Back",
+      "description": "Lumbar region"
+    },
+    {
+      "name": "Quadriceps",
+      "description": "Front thigh muscles"
+    },
+    {
+      "name": "Hamstrings",
+      "description": "Back thigh muscles"
+    },
+    {
+      "name": "Glutes",
+      "description": "Buttocks muscles"
+    },
+    {
+      "name": "Calves",
+      "description": "Lower leg muscles"
+    },
+    {
+      "name": "Hip Flexors",
+      "description": "Hip region muscles"
+    },
+    {
+      "name": "Traps",
+      "description": "Trapezius muscles"
+    },
+    {
+      "name": "Lats",
+      "description": "Latissimus dorsi"
+    },
+    {
+      "name": "Full Body",
+      "description": "Multiple muscle groups"
+    }
+  ],
+  "equipmentTypes": [
+    {
+      "name": "Barbell",
+      "description": "Standard barbell"
+    },
+    {
+      "name": "Dumbbells",
+      "description": "Pair of dumbbells"
+    },
+    {
+      "name": "Kettlebell",
+      "description": "Kettlebell weight"
+    },
+    {
+      "name": "Resistance Bands",
+      "description": "Elastic resistance bands"
+    },
+    {
+      "name": "Pull-up Bar",
+      "description": "Fixed or doorway pull-up bar"
+    },
+    {
+      "name": "Bench",
+      "description": "Flat or adjustable bench"
+    },
+    {
+      "name": "Cable Machine",
+      "description": "Cable crossover or functional trainer"
+    },
+    {
+      "name": "Smith Machine",
+      "description": "Guided barbell machine"
+    },
+    {
+      "name": "Squat Rack",
+      "description": "Power rack or squat stand"
+    },
+    {
+      "name": "Leg Press Machine",
+      "description": "Leg press apparatus"
+    },
+    {
+      "name": "Leg Curl Machine",
+      "description": "Hamstring curl machine"
+    },
+    {
+      "name": "Leg Extension Machine",
+      "description": "Quadriceps extension machine"
+    },
+    {
+      "name": "Lat Pulldown Machine",
+      "description": "Lat pulldown station"
+    },
+    {
+      "name": "Rowing Machine",
+      "description": "Cable or Concept2 rowing machine"
+    },
+    {
+      "name": "Treadmill",
+      "description": "Running machine"
+    },
+    {
+      "name": "Exercise Bike",
+      "description": "Stationary bicycle"
+    },
+    {
+      "name": "Elliptical",
+      "description": "Elliptical trainer"
+    },
+    {
+      "name": "Medicine Ball",
+      "description": "Weighted ball"
+    },
+    {
+      "name": "Foam Roller",
+      "description": "Myofascial release tool"
+    },
+    {
+      "name": "Yoga Mat",
+      "description": "Exercise mat"
+    },
+    {
+      "name": "Box / Step",
+      "description": "Plyometric box or step platform"
+    },
+    {
+      "name": "TRX / Suspension Trainer",
+      "description": "Suspension training system"
+    },
+    {
+      "name": "EZ Bar",
+      "description": "Curved barbell for curls"
+    },
+    {
+      "name": "Dip Station",
+      "description": "Parallel bars for dips"
+    },
+    {
+      "name": "Bodyweight",
+      "description": "No equipment needed"
+    },
+    {
+      "name": "Battle Ropes",
+      "description": "Heavy training ropes"
+    },
+    {
+      "name": "Sled",
+      "description": "Prowler or weight sled"
+    },
+    {
+      "name": "Ab Wheel",
+      "description": "Rolling ab exercise tool"
+    }
+  ],
+  "accessibilityTags": [
+    {
+      "name": "Requires Standing",
+      "description": "Must be able to stand",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Kneeling",
+      "description": "Must be able to kneel",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Lying Down",
+      "description": "Must be able to lie flat",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Full Shoulder Mobility",
+      "description": "Needs full shoulder range of motion",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Full Hip Mobility",
+      "description": "Needs full hip range of motion",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Balance",
+      "description": "Needs good balance and stability",
+      "category": "requirement"
+    },
+    {
+      "name": "High Impact",
+      "description": "Involves jumping or high-impact movements",
+      "category": "requirement"
+    },
+    {
+      "name": "Requires Grip Strength",
+      "description": "Needs strong hand grip",
+      "category": "requirement"
+    },
+    {
+      "name": "Seated Option Available",
+      "description": "Can be performed seated",
+      "category": "modification"
+    },
+    {
+      "name": "Low Impact Alternative",
+      "description": "Has a low-impact version",
+      "category": "modification"
+    },
+    {
+      "name": "Can Use Support",
+      "description": "Can use wall or chair for support",
+      "category": "modification"
+    },
+    {
+      "name": "Regression Available",
+      "description": "Has easier variation",
+      "category": "modification"
+    },
+    {
+      "name": "Not Suitable for Knee Issues",
+      "description": "May aggravate knee problems",
+      "category": "limitation"
+    },
+    {
+      "name": "Not Suitable for Lower Back Issues",
+      "description": "May aggravate lower back problems",
+      "category": "limitation"
+    },
+    {
+      "name": "Not Suitable for Shoulder Issues",
+      "description": "May aggravate shoulder problems",
+      "category": "limitation"
+    },
+    {
+      "name": "Not Suitable for Wrist Issues",
+      "description": "May aggravate wrist problems",
+      "category": "limitation"
+    },
+    {
+      "name": "Not Suitable for Neck Issues",
+      "description": "May aggravate neck problems",
+      "category": "limitation"
+    },
+    {
+      "name": "Avoid During Pregnancy",
+      "description": "Not recommended during pregnancy",
+      "category": "limitation"
+    },
+    {
+      "name": "Requires Spotter",
+      "description": "Safety requires a spotter",
+      "category": "limitation"
+    }
+  ]
+}

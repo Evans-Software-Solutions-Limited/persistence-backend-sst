@@ -12,8 +12,7 @@
 
 Do NOT restyle `SubscriptionSelectionPresenter`. Cards, role/billing toggles, current-status card,
 cancel flow stay pixel-identical. New UI only: the iOS purchase trigger, Restore Purchases, "Manage
-in App Store", and the business-tier web CTA. Changing card layout/copy beyond §3.1.1 wording → stop
-and flag.
+in App Store". Changing card layout/copy beyond §3.1.1 wording → stop and flag.
 
 ## Deliverable 1 — SDK install + config
 
@@ -51,9 +50,10 @@ return <StripePaywall />; // existing Web/Android path, UNCHANGED
   coach-mode switch behave exactly as today. (Server truth lands via the RC webhook → our table; the
   client may briefly rely on `getCustomerInfo()` — that's fine, `useMySubscription` reconciles.)
 
-Business tiers on iOS (`small_business` / `medium_enterprise`): render a "Manage your team / Upgrade
-your business plan" card → `Linking.openURL` to the marketing site. Never an IAP package, never
-"click here to subscribe at our website" wording.
+Business tiers on iOS (`small_business` / `medium_enterprise`): purchasable via Apple IAP —
+monthly-only for launch (no yearly Apple products exist yet). Selecting a business tier on the yearly
+billing cycle shows the "not available on a yearly basis yet" alert, which is correct. Never show
+"subscribe at our website" wording (§3.1.1).
 
 ## Deliverable 4 — Restore Purchases (iOS)
 
@@ -85,7 +85,7 @@ the id is present at checkout/webhook time).
   Web/Android render the existing Stripe paywall unchanged (testID/snapshot parity).
 - Purchase: success → entitlement read + `useMySubscription` invalidated; failure → surfaced, no crash.
 - Restore: calls `restorePurchases`, invalidates subscription query.
-- Business-tier iOS: renders the web CTA, never an IAP package.
+- Business-tier iOS monthly: purchase flows through IAP; yearly billing cycle → "not available on a yearly basis" alert (expected — no yearly product).
 
 ## Gate (from repo root)
 
