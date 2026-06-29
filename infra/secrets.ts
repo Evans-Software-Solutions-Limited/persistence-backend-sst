@@ -39,6 +39,19 @@ export const revenueCatWebhookSecret = new sst.Secret(
 export const revenueCatApiKey = new sst.Secret("RevenueCatApiKey");
 export const revenueCatProjectId = new sst.Secret("RevenueCatProjectId");
 
+// Expo Push access token (09.9 / A3 — push delivery).
+//
+// `ExpoAccessToken` — OPTIONAL. The Expo Push API (https://exp.host/--/api/v2/push/send)
+//                     accepts unauthenticated sends UNLESS "Enhanced Security
+//                     for Push" is enabled on the Expo account, in which case
+//                     it must be sent as a Bearer. The send client
+//                     (`expoPushClient.ts`) omits the Authorization header when
+//                     the value is empty/unset, so an empty secret is valid and
+//                     deploys must NOT fail-fast on it (unlike the secrets
+//                     above). Set per-stage from CI; leave empty unless Brad has
+//                     turned Enhanced Security on in the Expo dashboard.
+export const expoAccessToken = new sst.Secret("ExpoAccessToken");
+
 // Supabase service-role key — server-side only, NEVER shipped to the client.
 //
 // `SupabaseServiceRoleKey` — the Supabase project's service-role API key. Used

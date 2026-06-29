@@ -7,7 +7,9 @@
  * (FRONTEND_BRIEF § Group C / EXECUTION_PLAN § 5).
  *
  * Push tokens land in 09.2: `getDevicePushToken` wraps
- * `getDevicePushTokenAsync`, and the listener subscriptions back the
+ * `getExpoPushTokenAsync` (the Expo push token, `ExponentPushToken[…]`, which
+ * the backend Expo Push delivery layer in 09.9 / A3 targets — NOT the raw
+ * native APNs/FCM token), and the listener subscriptions back the
  * push-registration + foreground-refresh flow in `usePushNotifications`.
  *
  * Spec: specs/05-active-session/requirements.md STORY-003
@@ -15,6 +17,7 @@
  */
 
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import type {
   LocalNotification,
   NotificationsPort,
@@ -73,7 +76,17 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
 
   async getDevicePushToken(): Promise<Result<string, NotificationError>> {
     try {
-      const result = await Notifications.getDevicePushTokenAsync();
+      // The Expo push token (`ExponentPushToken[…]`) is what the backend Expo
+      // Push API send path targets. `getExpoPushTokenAsync` needs the EAS
+      // project id to mint the token in a standalone build; read it from the
+      // resolved app config (app.json → expo.extra.eas.projectId).
+      const projectId =
+        typeof Constants.expoConfig?.extra?.eas?.projectId === "string"
+          ? (Constants.expoConfig.extra.eas.projectId as string)
+          : undefined;
+      const result = await Notifications.getExpoPushTokenAsync(
+        projectId !== undefined ? { projectId } : undefined,
+      );
       const token =
         typeof result.data === "string" ? result.data : String(result.data);
       return ok(token);
@@ -82,9 +95,7 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
         kind: "notification",
         code: "token_failed",
         message:
-          err instanceof Error
-            ? err.message
-            : "Failed to get device push token",
+          err instanceof Error ? err.message : "Failed to get Expo push token",
       });
     }
   }

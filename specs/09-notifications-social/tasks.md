@@ -4,9 +4,51 @@
 
 ---
 
+## Phase 09.9 — Backend push delivery (A3) — go-live blocker
+
+> Authored 2026-06-29. The in-app surface shipped (09.1–09.8) but no push was
+> ever sent. This phase builds the server-side Expo Push delivery layer. See
+> requirements.md / design.md ADDENDUM 2026-06-29. Canonical reference: legacy
+> `../persistence-backend/supabase/functions/send-push-notification/index.ts`.
+
+- [ ] **T-09.9.1** `notifications/push/expoPushClient.ts` — raw-fetch Expo Push
+      API client (`https://exp.host/--/api/v2/push/send`), ≤100 batching, in-order
+      ticket concat, optional `EXPO_ACCESS_TOKEN` Bearer, throw on non-2xx. Mirrors
+      `revenueCatClient.ts`. STORY-008 AC 8.2, 8.6.
+- [ ] **T-09.9.2** `UserDeviceRepository.listActiveTokens(userId)` +
+      `deactivateToken(userId, deviceToken)`. Scoped to `userId`. STORY-008 AC 8.5,
+      STORY-009 AC 9.1.
+- [ ] **T-09.9.3** `notifications/push/notificationDispatcher.ts` —
+      `createAndDispatch`: persist via `NotificationRepository.create`, then
+      preference-gated, device-scoped push; push failure isolated; dead-token
+      retirement on `DeviceNotRegistered` ticket. STORY-008 AC 8.1/8.3/8.4,
+      STORY-009 AC 9.1–9.3.
+- [ ] **T-09.9.4** Migrate producers to the dispatcher: `streaks/notifier.ts` +
+      `trainers/invite-codes/trainersAcceptInviteCodeHandler.ts`. STORY-008 AC 8.1.
+- [ ] **T-09.9.5** Infra/CI: `ExpoAccessToken` SST secret (`infra/secrets.ts`),
+      bind `EXPO_ACCESS_TOKEN` on `coreAPI` (`infra/api.ts`), set in
+      `deploy-staging.yml` + `production-deploy.yml` (optional, no fail-fast).
+      Decision #16.
+- [ ] **T-09.9.6** Mobile token-type correction: `expo-notifications.adapter.ts`
+      → `getExpoPushTokenAsync({ projectId })`; `app.json` `aps-environment`
+      entitlement. STORY-010.
+- [ ] **T-09.9.7** Unit tests ≥90% on new `application/**` + repository files:
+      client batching/ticket-mapping/auth-header, dispatcher gating/isolation/dead-
+      token retirement, repo active-token + deactivate queries.
+- [ ] **T-09.9.8** Manual on-device e2e (Brad, EAS build — push does NOT work in
+      Expo Go): trigger a real event (e.g. trainer invite-code accept →
+      `pt_request`) → push delivered; mute that type in Preferences → no push, row
+      still appears; tap push → deep-link routes.
+
+---
+
 ## Backend status
 
 **Already shipped (PR #81, 2026-05-27):** 6 endpoints + JSONB preferences + atomic merge + COALESCE read-state semantics. No further backend work required for v1 frontend ship.
+
+> **2026-06-29:** the above held for the _frontend_ ship, but the **push
+> delivery layer** (server-side send) was never built — see Phase 09.9 (added
+> at the foot of this file).
 
 ---
 
@@ -81,6 +123,44 @@
   - Open Preferences → toggle "Workouts" off → assert subsequent assign does NOT deliver.
   - Tap notification in list → assert mark-read + correct deep-link route.
   - Airplane-mode → open Notifications → assert cached list renders; toggle a pref offline → reconnect → assert it persists.
+
+---
+
+## Phase 09.9 — Backend push delivery (A3) — go-live blocker
+
+> Authored 2026-06-29. The in-app surface shipped (09.1–09.8) but no push was
+> ever sent. This phase builds the server-side Expo Push delivery layer. See
+> requirements.md / design.md ADDENDUM 2026-06-29. Canonical reference: legacy
+> `../persistence-backend/supabase/functions/send-push-notification/index.ts`.
+
+- [ ] **T-09.9.1** `notifications/push/expoPushClient.ts` — raw-fetch Expo Push
+      API client (`https://exp.host/--/api/v2/push/send`), ≤100 batching, in-order
+      ticket concat, optional `EXPO_ACCESS_TOKEN` Bearer, throw on non-2xx. Mirrors
+      `revenueCatClient.ts`. STORY-008 AC 8.2, 8.6.
+- [ ] **T-09.9.2** `UserDeviceRepository.listActiveTokens(userId)` +
+      `deactivateToken(userId, deviceToken)`. Scoped to `userId`. STORY-008 AC 8.5,
+      STORY-009 AC 9.1.
+- [ ] **T-09.9.3** `notifications/push/notificationDispatcher.ts` —
+      `createAndDispatch`: persist via `NotificationRepository.create`, then
+      preference-gated, device-scoped push; push failure isolated; dead-token
+      retirement on `DeviceNotRegistered` ticket. STORY-008 AC 8.1/8.3/8.4,
+      STORY-009 AC 9.1–9.3.
+- [ ] **T-09.9.4** Migrate producers to the dispatcher: `streaks/notifier.ts` +
+      `trainers/invite-codes/trainersAcceptInviteCodeHandler.ts`. STORY-008 AC 8.1.
+- [ ] **T-09.9.5** Infra/CI: `ExpoAccessToken` SST secret (`infra/secrets.ts`),
+      bind `EXPO_ACCESS_TOKEN` on `coreAPI` (`infra/api.ts`), set in
+      `deploy-staging.yml` + `production-deploy.yml` (optional, no fail-fast).
+      Decision #16.
+- [ ] **T-09.9.6** Mobile token-type correction: `expo-notifications.adapter.ts`
+      → `getExpoPushTokenAsync({ projectId })`; `app.json` `aps-environment`
+      entitlement. STORY-010.
+- [ ] **T-09.9.7** Unit tests ≥90% on new `application/**` + repository files:
+      client batching/ticket-mapping/auth-header, dispatcher gating/isolation/dead-
+      token retirement, repo active-token + deactivate queries.
+- [ ] **T-09.9.8** Manual on-device e2e (Brad, EAS build — push does NOT work in
+      Expo Go): trigger a real event (e.g. trainer invite-code accept →
+      `pt_request`) → push delivered; mute that type in Preferences → no push, row
+      still appears; tap push → deep-link routes.
 
 ---
 

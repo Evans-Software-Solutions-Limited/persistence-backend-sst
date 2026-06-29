@@ -21,7 +21,8 @@
         "com.apple.developer.healthkit": true,
         "com.apple.developer.in-app-payments": [
           "merchant.com.bradleyevans96.persistence"
-        ]
+        ],
+        "aps-environment": "production"
       }
     },
     "android": {

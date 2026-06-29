@@ -521,4 +521,180 @@ Required companion changes:
 
 ---
 
+## ADDENDUM 2026-06-29 — Backend push delivery (A3)
+
+> Pairs with `requirements.md` ADDENDUM (STORY-008/009/010). Builds the
+> server-side send layer that was specced-around but never built. Canonical
+> reference: the legacy `send-push-notification` Edge Function at
+> `../persistence-backend/supabase/functions/send-push-notification/index.ts`.
+
+### New backend layout
+
+```
+microservices/core/src/application/notifications/push/
+├── expoPushClient.ts          ← raw-fetch Expo Push API client (mirrors revenueCatClient.ts)
+├── notificationDispatcher.ts  ← persists row (NotificationRepository.create) THEN fans out push
+└── __tests__/
+    ├── expoPushClient.test.ts
+    └── notificationDispatcher.test.ts
+```
+
+Plus repository additions:
+
+- `UserDeviceRepository.listActiveTokens(userId)` → `{ deviceToken, platform }[]`
+  where `is_active = true` (scoped to `userId`).
+- `UserDeviceRepository.deactivateToken(userId, deviceToken)` → sets
+  `is_active = false` on `(user_id, device_token)`.
+
+### `expoPushClient.ts`
+
+Mirrors `revenueCatClient.ts`: native `fetch`, no SDK, `getEnv*` for config,
+defensive parsing.
+
+```ts
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_PUSH_BATCH = 100; // Expo's documented per-request cap
+
+export interface ExpoPushMessage {
+  to: string; // ExponentPushToken[…]
+  title: string;
+  body: string;
+  sound?: "default";
+  data?: Record<string, unknown>;
+  priority?: "default" | "normal" | "high";
+  channelId?: string;
+}
+
+export interface ExpoPushTicket {
+  status: "ok" | "error";
+  id?: string;
+  message?: string;
+  details?: { error?: string }; // e.g. "DeviceNotRegistered"
+}
+
+// EXPO_ACCESS_TOKEN is optional — header omitted when absent (basic send
+// works unauthenticated unless Enhanced Security for Push is enabled).
+export function getExpoAccessToken(): string | undefined { … }
+
+// Chunks into ≤100, POSTs each chunk, concatenates tickets IN ORDER so the
+// caller can zip tickets[i] ↔ messages[i]. Throws on a non-2xx chunk so the
+// dispatcher catches + logs (row already safe).
+export async function sendExpoPushMessages(
+  messages: ExpoPushMessage[],
+): Promise<ExpoPushTicket[]>;
+```
+
+Expo's `/push/send` returns `{ data: ExpoPushTicket[] }` with one ticket per
+message, in request order — that ordering is the contract we rely on to map a
+`DeviceNotRegistered` ticket back to the token that produced it.
+
+### `notificationDispatcher.ts`
+
+A thin application service wrapping the existing `NotificationRepository.create`
+choke point. **Persist first, push second, never let push failure escape.**
+
+```ts
+export class NotificationDispatcher {
+  constructor(
+    notifications = new NotificationRepository(),
+    devices = new UserDeviceRepository(),
+    profiles = new ProfileRepository(),
+    send = sendExpoPushMessages,
+  ) { … } // explicit field assignment (erasableSyntaxOnly bans param-properties)
+
+  /** Persist the in-app row, then best-effort push. Returns the row. */
+  async createAndDispatch(
+    userId: string,
+    input: CreateNotificationInput,
+  ): Promise<AppNotification> {
+    const row = await this.notifications.create(userId, input); // ALWAYS persisted
+    try {
+      await this.dispatchPush(userId, row);
+    } catch (err) {
+      console.warn(`[push] dispatch failed for ${row.id} (${row.type}):`, err);
+    }
+    return row;
+  }
+
+  private async dispatchPush(userId, row) {
+    const prefs = await this.profiles.getNotificationPreferences(userId);
+    if (prefs === NOTIFICATION_PREFERENCES_PROFILE_MISSING) return;
+    if (prefs[row.type] === false) return;            // muted → row kept, no push (AC 8.3)
+    const devices = await this.devices.listActiveTokens(userId);
+    if (devices.length === 0) return;                  // no devices → no-op (AC 8.5)
+    const messages = devices.map((d) => toExpoMessage(d.deviceToken, row));
+    const tickets = await this.send(messages);
+    await this.retireDeadTokens(userId, devices, tickets); // AC 9.1
+  }
+}
+```
+
+Message mapping (mirrors legacy shape):
+
+```ts
+function toExpoMessage(token, row): ExpoPushMessage {
+  return {
+    to: token,
+    title: row.title,
+    body: row.message ?? "",
+    sound: "default",
+    priority: "high",
+    channelId: "default",
+    data: {
+      ...row.data,
+      notification_type: row.type,
+      deepLink: row.data?.deepLink,
+    },
+  };
+}
+```
+
+Dead-token retirement: zip `tickets[i] ↔ devices[i]`; for any ticket with
+`status === "error"` and `details.error === "DeviceNotRegistered"`, call
+`deactivateToken(userId, devices[i].deviceToken)`. Each deactivate is
+individually try/caught (AC 9.3). Other errors are logged only (AC 9.2).
+
+### Producer migration
+
+The two existing `NotificationRepository.create` callers switch to
+`NotificationDispatcher.createAndDispatch`:
+
+- `streaks/notifier.ts` (`StreakNotificationDispatcher`) — constructor default
+  becomes `new NotificationDispatcher()`; `notify()` calls `createAndDispatch`.
+- `trainers/invite-codes/trainersAcceptInviteCodeHandler.ts` — swaps
+  `new NotificationRepository().create(...)` for
+  `new NotificationDispatcher().createAndDispatch(...)`.
+
+No new endpoint is added — delivery is a side-effect of the existing write
+path, so all current + future producers get push for free (decision #13).
+
+### Infra / secrets / CI
+
+- `infra/secrets.ts`: `export const expoAccessToken = new sst.Secret("ExpoAccessToken");`
+- `infra/api.ts`: bind `EXPO_ACCESS_TOKEN: expoAccessToken.value` on the
+  `coreAPI` `$default` route environment (alongside the RevenueCat keys).
+- `deploy-staging.yml` + `production-deploy.yml`: `bunx sst secret set
+ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage <stage>`. **No fail-fast guard** —
+  it's optional; an empty value is valid (client omits the auth header).
+
+### Mobile correction (STORY-010)
+
+- `adapters/notifications/expo-notifications.adapter.ts`: `getDevicePushToken()`
+  switches from `getDevicePushTokenAsync()` to
+  `getExpoPushTokenAsync({ projectId })` (project id from
+  `Constants.expoConfig.extra.eas.projectId`). Returns `ExponentPushToken[…]`.
+- `app.json`: add `ios.entitlements["aps-environment"]` (`development` for dev
+  builds; EAS sets `production` for release builds).
+
+### Risks + mitigations (A3)
+
+| Risk                                                                 | Mitigation                                                                                                                                      |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Push send hangs and blocks the request that emitted the notification | Dispatch is awaited but fully error-isolated; the row is already committed before push. Consider a fetch timeout follow-up if latency shows up. |
+| `DeviceNotRegistered` only surfaces in async receipts, not tickets   | v1 handles the ticket-level case (covers re-install / permission-revoke for already-dead tokens). Receipt polling deferred (STORY-009 AC 9.4).  |
+| Stored native tokens from before STORY-010 land                      | They'll yield `DeviceNotRegistered`/`InvalidCredentials` tickets and get retired; clients re-register the Expo token on next launch.            |
+| Enhanced Security for Push enabled but `EXPO_ACCESS_TOKEN` unset     | Expo returns 4xx → caught + logged, row safe. Brad sets the secret to enable delivery.                                                          |
+
+---
+
 _End of `09-notifications-social/design.md` · 2026-05-28 (rewritten from scratch)_

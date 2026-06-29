@@ -384,6 +384,10 @@ jest.mock("expo-linking", () => ({
 jest.mock("expo-notifications", () => ({
   requestPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
   getPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
+  getExpoPushTokenAsync: jest.fn(async () => ({
+    data: "ExponentPushToken[stub]",
+    type: "expo",
+  })),
   scheduleNotificationAsync: jest.fn(async () => "stub-notif-id"),
   cancelScheduledNotificationAsync: jest.fn(async () => undefined),
   setNotificationHandler: jest.fn(),
