@@ -2,6 +2,41 @@
 
 > **Spec rewritten from scratch on 2026-05-28** to align with the May 2026 design package + the May 2027 M7-backend ship. Prior version preserved in git history.
 
+> **Revised 2026-06-29 (A3 — backend push delivery — supersedes conflicting detail below).**
+> The go-live readiness audit (2026-06-28) confirmed the in-app notification
+> surface (write/list/prefs/device-register) shipped, but **nothing ever sent
+> an actual push** — zero Expo/APNs/FCM send code in the backend. Rows were
+> written, never delivered. A3 builds the **server-side delivery layer**. The
+> following is authoritative; older inline detail that conflicts is superseded:
+>
+> 1. **Push delivers via the Expo Push API** (`https://exp.host/--/api/v2/push/send`),
+>    raw `fetch`, no SDK — mirroring the outbound-HTTP convention in
+>    `revenueCatClient.ts` and the legacy `send-push-notification` Supabase
+>    Edge Function (`../persistence-backend/supabase/functions/send-push-notification/index.ts`),
+>    which is the canonical reference for the message shape + batching + token
+>    handling.
+> 2. **The stored device token is the Expo push token** (`ExponentPushToken[…]`),
+>    obtained on the client via `getExpoPushTokenAsync()`, **not** the native
+>    APNs/FCM token from `getDevicePushTokenAsync()`. This corrects STORY-004
+>    AC 4.1 below (and `design.md § Push notification listener`), which predates
+>    the Expo-Push-API decision — the native token is not deliverable through
+>    the Expo Push API. (See ADDENDUM STORY-010.)
+> 3. **Every persisted notification attempts a push** (decision: direction-
+>    agnostic — athlete-own AND coach↔client events), gated only by the
+>    recipient's per-type preference. The in-app row is the source of truth;
+>    the push is a best-effort side-effect that must never lose the row.
+> 4. **All 12 live `NOTIFICATION_TYPES` are push-eligible** for v1 (no subset).
+>    Per-type opt-out via the existing `notification_preferences` JSONB gates
+>    delivery.
+> 5. **Quiet hours / do-not-disturb is DEFERRED** (post-launch). No tz/window
+>    schema in v1.
+> 6. **`EXPO_ACCESS_TOKEN` is optional** — Expo Push send works unauthenticated
+>    unless "Enhanced Security for Push" is enabled on the Expo account, in
+>    which case it is sent as a Bearer. Wired as an optional SST secret +
+>    per-stage CI set; the client omits the `Authorization` header when absent.
+>
+> See the ADDENDUM section at the foot of this file for the new stories.
+
 > **Revised 2026-06-07 (Phase 09.1 reconciliation — supersedes conflicting detail below).**
 > Building the mobile frontend surfaced that the 2026-05-28 rewrite's inline
 > taxonomy was aspirational and never matched the shipped backend (PR #81).
@@ -197,6 +232,84 @@ Authoritative references:
 ## Open questions
 
 None. All 10 decisions locked.
+
+---
+
+## ADDENDUM 2026-06-29 — Backend push delivery (A3)
+
+> Implementation reference: the legacy Expo send path at
+> `../persistence-backend/supabase/functions/send-push-notification/index.ts`
+> (Expo Push API, `ExponentPushToken[…]`, `{ to, sound, title, body, data,
+priority, channelId }` message shape). A3 ports that into the SST backend,
+> adds per-type preference gating (legacy had none), and adds dead-token
+> deactivation (legacy had none).
+
+### STORY-008: As any notification recipient, I receive a push for events I haven't muted
+
+**Acceptance Criteria:**
+
+- 8.1 [ ] Every call that persists an in-app notification (the
+  `NotificationRepository.create` choke point — streak engine, trainer
+  invite-code accept, and all future coach↔client producers) also attempts a
+  push to the recipient's active devices.
+- 8.2 [ ] The push is sent via the Expo Push API (`https://exp.host/--/api/v2/push/send`)
+  using raw `fetch` (no SDK), mirroring `revenueCatClient.ts`.
+- 8.3 [ ] Delivery is gated by the recipient's `notification_preferences`: if the
+  notification's `type` is explicitly `false`, the in-app row is still written
+  but **no push is sent**. Missing key → default `true` (opt-out model).
+- 8.4 [ ] The in-app write and the push are decoupled: a push failure (network,
+  Expo 5xx, malformed token) is caught + logged and **never** throws back to the
+  producer or loses the persisted row.
+- 8.5 [ ] Only `user_devices` rows with `is_active = true` for the recipient are
+  targeted. A user with no active devices is a no-op (row still written).
+- 8.6 [ ] Messages are batched at ≤100 per Expo request (Expo's documented cap);
+  ticket ordering is preserved so each ticket maps back to its source token.
+- 8.7 [ ] Ownership: the recipient `userId` is supplied by the trusted emitter
+  (the JWT subject of the triggering event / the row's `user_id`), never from a
+  request body. Device + preference lookups scope to that `userId`.
+
+### STORY-009: As the system, I retire dead device tokens so they aren't retried forever
+
+**Acceptance Criteria:**
+
+- 9.1 [ ] When an Expo push **ticket** comes back with `status: "error"` and
+  `details.error === "DeviceNotRegistered"`, the corresponding `user_devices`
+  row is set `is_active = false` (scoped to `(user_id, device_token)`).
+- 9.2 [ ] Other ticket errors (e.g. `MessageTooBig`, `MessageRateExceeded`) are
+  logged but do not deactivate the token.
+- 9.3 [ ] Deactivation failures are isolated — they never throw back into the
+  notification write path.
+- 9.4 [ ] Full delivery-**receipt** polling (the async `/push/getReceipts` step,
+  which can surface `DeviceNotRegistered` later) is **deferred** post-launch;
+  v1 acts on the synchronous ticket response only. Documented in `design.md`.
+
+### STORY-010: As the mobile client, I register the Expo push token (not the native token)
+
+**Acceptance Criteria:**
+
+- 10.1 [ ] The client obtains its token via `getExpoPushTokenAsync({ projectId })`
+  (EAS project id from app config), yielding an `ExponentPushToken[…]` string —
+  **superseding** STORY-004 AC 4.1's `getDevicePushTokenAsync()` (native token,
+  not deliverable via the Expo Push API).
+- 10.2 [ ] That Expo token is POSTed to `/devices/register` (existing endpoint,
+  unchanged) and is what the backend send path targets.
+- 10.3 [ ] `app.json` carries `ios.entitlements["aps-environment"]` so the EAS
+  build provisions APNs. (Brad enables the Push Notifications capability in
+  Apple Developer + uploads the APNs key to Expo via `eas credentials`.)
+- 10.4 [ ] Re-registration on auth change + Expo token rotation is unchanged
+  (STORY-004 AC 4.4) — it just carries the corrected token type.
+
+### Decisions locked (A3)
+
+| #   | Decision            | Value                                                                                  |
+| --- | ------------------- | -------------------------------------------------------------------------------------- |
+| 11  | Send transport      | Expo Push API, raw `fetch`, no SDK. Ports the legacy Edge Function.                    |
+| 12  | Push-eligible types | All 12 live `NOTIFICATION_TYPES`. Per-type pref gates delivery.                        |
+| 13  | Direction           | Direction-agnostic — every persisted notification pushes (athlete-own + coach↔client). |
+| 14  | Quiet hours / DND   | Deferred post-launch.                                                                  |
+| 15  | Token type          | Expo push token (`getExpoPushTokenAsync`). Native token path corrected.                |
+| 16  | `EXPO_ACCESS_TOKEN` | Optional SST secret; Bearer only when present. Wired into both deploy workflows.       |
+| 17  | Receipt polling     | Deferred; act on synchronous ticket response (incl. `DeviceNotRegistered`) only.       |
 
 ---
 
