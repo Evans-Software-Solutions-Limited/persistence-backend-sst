@@ -161,9 +161,12 @@ export function toExpoMessage(
     notification_type: row.type,
     notification_id: row.id,
   };
-  // Preserve an existing deepLink if the producer set one in `data`.
-  if (typeof row.data?.deepLink === "string") {
-    data.deepLink = row.data.deepLink;
+  // Canonicalise: producers may set `deeplink` (lowercase, e.g.
+  // trainersAcceptInviteCodeHandler) or `deepLink` (camelCase). The mobile
+  // tap handler reads `data.deepLink`; promote the lowercase variant so it's
+  // consistently available regardless of producer convention.
+  if (typeof data.deeplink === "string" && data.deepLink === undefined) {
+    data.deepLink = data.deeplink;
   }
 
   return {

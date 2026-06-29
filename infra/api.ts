@@ -122,6 +122,9 @@ export const streakCron = new sst.aws.Cron("streak-sweep", {
     timeout: "120 seconds",
     environment: {
       DATABASE_URL: databaseUrl.value,
+      // Streak notifier emits push via the dispatcher; mirror the API route's
+      // binding so Enhanced-Security-on sends don't silently 4xx in this Lambda.
+      EXPO_ACCESS_TOKEN: expoAccessToken.value,
     },
   },
 });

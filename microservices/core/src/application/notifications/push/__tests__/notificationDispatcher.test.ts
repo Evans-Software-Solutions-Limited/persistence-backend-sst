@@ -285,4 +285,35 @@ describe("toExpoMessage", () => {
     );
     expect(message.body).toBe("");
   });
+
+  it("canonicalises lowercase deeplink to deepLink in the push data", () => {
+    const row = makeRow({
+      data: { deeplink: "persistencemobile://clients?clientId=c1" },
+    });
+    const message = toExpoMessage(
+      { deviceToken: "ExponentPushToken[a]", platform: "ios" },
+      row,
+    );
+    expect(message.data?.deepLink).toBe(
+      "persistencemobile://clients?clientId=c1",
+    );
+    // The original lowercase key is also preserved (spread).
+    expect(message.data?.deeplink).toBe(
+      "persistencemobile://clients?clientId=c1",
+    );
+  });
+
+  it("does not overwrite deepLink if already set (camelCase takes precedence)", () => {
+    const row = makeRow({
+      data: {
+        deepLink: "persistencemobile://streaks",
+        deeplink: "persistencemobile://old",
+      },
+    });
+    const message = toExpoMessage(
+      { deviceToken: "ExponentPushToken[a]", platform: "ios" },
+      row,
+    );
+    expect(message.data?.deepLink).toBe("persistencemobile://streaks");
+  });
 });
