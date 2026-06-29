@@ -21,6 +21,19 @@ function makeSelectChain(resolvedValue: unknown) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
+// `listActiveTokens` resolves directly off `.where(...)` (no `.limit`).
+function makeListChain(resolvedValue: unknown) {
+  const where = vi.fn().mockResolvedValue(resolvedValue);
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
+// `deactivateToken`: `.update(...).set(...).where(...)`.
+function makeUpdateChain() {
+  const where = vi.fn().mockResolvedValue(undefined);
+  const set = vi.fn().mockReturnValue({ where });
+  return { set, _where: where };
+}
+
 describe("UserDeviceRepository.register", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -172,5 +185,65 @@ describe("UserDeviceRepository.findByUserAndToken", () => {
     const result = await repo.findByUserAndToken("user-1", "tok");
 
     expect(result).toBeNull();
+  });
+});
+
+describe("UserDeviceRepository.listActiveTokens", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns only deviceToken + platform for active devices", async () => {
+    const rows = [
+      { deviceToken: "ExponentPushToken[a]", platform: "ios" },
+      { deviceToken: "ExponentPushToken[b]", platform: "android" },
+    ];
+    const mockDb = {
+      select: vi.fn().mockReturnValue(makeListChain(rows)),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const repo = new UserDeviceRepository();
+    const result = await repo.listActiveTokens("user-1");
+
+    expect(result).toEqual([
+      { deviceToken: "ExponentPushToken[a]", platform: "ios" },
+      { deviceToken: "ExponentPushToken[b]", platform: "android" },
+    ]);
+  });
+
+  it("returns an empty array when the user has no active devices", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue(makeListChain([])),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const repo = new UserDeviceRepository();
+    const result = await repo.listActiveTokens("user-1");
+
+    expect(result).toEqual([]);
+  });
+});
+
+describe("UserDeviceRepository.deactivateToken", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("issues an UPDATE setting isActive false", async () => {
+    const updateChain = makeUpdateChain();
+    const mockDb = { update: vi.fn().mockReturnValue(updateChain) };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const repo = new UserDeviceRepository();
+    await repo.deactivateToken("user-1", "ExponentPushToken[dead]");
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    const setArg = updateChain.set.mock.calls[0][0];
+    expect(setArg.isActive).toBe(false);
+    expect(updateChain._where).toHaveBeenCalledTimes(1);
   });
 });

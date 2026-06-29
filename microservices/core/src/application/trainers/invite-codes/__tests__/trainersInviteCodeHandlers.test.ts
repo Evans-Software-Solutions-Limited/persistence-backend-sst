@@ -28,9 +28,14 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 // Spy on the trainer-facing notification emitted after a successful join.
+// The handler now routes through NotificationDispatcher.createAndDispatch
+// (09.9 / A3) — same (userId, input) signature as the old repo.create, so the
+// assertions below are unchanged; only the mocked module + method name moved.
 const notificationCreate = vi.fn(async () => ({}));
-vi.mock("../../../repositories/notificationRepository", () => ({
-  NotificationRepository: vi.fn(() => ({ create: notificationCreate })),
+vi.mock("../../../notifications/push/notificationDispatcher", () => ({
+  NotificationDispatcher: vi.fn(() => ({
+    createAndDispatch: notificationCreate,
+  })),
 }));
 
 const auth = {

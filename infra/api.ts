@@ -1,5 +1,6 @@
 import {
   databaseUrl,
+  expoAccessToken,
   revenueCatApiKey,
   revenueCatProjectId,
   revenueCatWebhookSecret,
@@ -67,6 +68,12 @@ coreAPI.route("$default", {
     REVENUECAT_WEBHOOK_SECRET: revenueCatWebhookSecret.value,
     REVENUECAT_API_KEY: revenueCatApiKey.value,
     REVENUECAT_PROJECT_ID: revenueCatProjectId.value,
+    // Expo Push (09.9 / A3). OPTIONAL bearer for the Expo Push API — the send
+    // client omits the Authorization header when this is empty, so an unset /
+    // empty value still deploys and sends (unauthenticated send works unless
+    // "Enhanced Security for Push" is enabled on the Expo account). Set
+    // per-stage by the deploy workflows; not fail-fast.
+    EXPO_ACCESS_TOKEN: expoAccessToken.value,
   },
 });
 

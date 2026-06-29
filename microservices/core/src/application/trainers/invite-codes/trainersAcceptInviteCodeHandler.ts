@@ -12,7 +12,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { NotificationRepository } from "../../repositories/notificationRepository";
+import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
@@ -220,22 +220,25 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       if ("ok" in result) {
         const isPhysio = result.trainerRole === "physiotherapist";
         try {
-          await new NotificationRepository().create(result.trainerId, {
-            type: isPhysio ? "physio_request" : "pt_request",
-            title: isPhysio ? "New physio request" : "New training request",
-            message: `${result.clientName} joined via your invite code`,
-            relatedEntityType: "pt_relationship",
-            relatedEntityId: result.relationshipId,
-            data: {
-              // Deeplink to the trainer's OWN clients roster (the pending
-              // client shows there). NOT the Requests screen — that's
-              // client-scoped (GET /clients/me/relationships filters on
-              // client_id = viewer), so a trainer would land on an empty list.
-              deeplink: `persistencemobile://clients?clientId=${userId}`,
-              relationship_id: result.relationshipId,
-              client_id: userId,
+          await new NotificationDispatcher().createAndDispatch(
+            result.trainerId,
+            {
+              type: isPhysio ? "physio_request" : "pt_request",
+              title: isPhysio ? "New physio request" : "New training request",
+              message: `${result.clientName} joined via your invite code`,
+              relatedEntityType: "pt_relationship",
+              relatedEntityId: result.relationshipId,
+              data: {
+                // Deeplink to the trainer's OWN clients roster (the pending
+                // client shows there). NOT the Requests screen — that's
+                // client-scoped (GET /clients/me/relationships filters on
+                // client_id = viewer), so a trainer would land on an empty list.
+                deeplink: `persistencemobile://clients?clientId=${userId}`,
+                relationship_id: result.relationshipId,
+                client_id: userId,
+              },
             },
-          });
+          );
         } catch (err) {
           console.error(
             "[accept-invite-code] failed to emit trainer notification",

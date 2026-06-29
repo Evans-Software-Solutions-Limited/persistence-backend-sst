@@ -113,6 +113,10 @@ jobs:
           REVENUECAT_PROJECT_ID: ${{ secrets.REVENUECATPROJECTID }}
           REVENUECAT_WEBHOOK_SECRET: ${{ secrets.REVENUECATWEBHOOKSECRET }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Expo Push (09.9 / A3). OPTIONAL — only needed if "Enhanced Security
+          # for Push" is enabled on the Expo account. NOT fail-fast: an empty
+          # value is valid (the send client omits the Authorization header).
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL is not set on the staging GitHub environment."
@@ -154,6 +158,8 @@ jobs:
           bunx sst secret set RevenueCatProjectId "$REVENUECAT_PROJECT_ID" --stage staging
           bunx sst secret set RevenueCatWebhookSecret "$REVENUECAT_WEBHOOK_SECRET" --stage staging
           bunx sst secret set SupabaseServiceRoleKey "$SUPABASE_SERVICE_ROLE_KEY" --stage staging
+          # Optional — safe to set empty; the client omits the auth header when blank.
+          bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage staging
 
       - name: Deploy
         run: bunx sst deploy --stage staging

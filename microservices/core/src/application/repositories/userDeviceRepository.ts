@@ -1,6 +1,6 @@
 import { userDevices, type UserDevice } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 /**
  * Platform identifiers accepted by `POST /devices/register`. Mirrors
@@ -20,6 +20,15 @@ export interface RegisterDeviceInput {
   deviceToken: string;
   platform: DevicePlatform;
   deviceInfo?: DeviceInfo;
+}
+
+/**
+ * A targetable active device — just the fields the push send path needs.
+ * Returned by {@link UserDeviceRepository.listActiveTokens}.
+ */
+export interface ActiveDeviceToken {
+  deviceToken: string;
+  platform: string;
 }
 
 export class UserDeviceRepository {
@@ -112,5 +121,57 @@ export class UserDeviceRepository {
       )
       .limit(1);
     return result[0] ?? null;
+  }
+
+  /**
+   * List the user's active (`is_active = true`) device push tokens — the fan-out
+   * targets for a push send. Scoped to `userId` (the trusted emitter's subject);
+   * a notification for user A can never read user B's devices.
+   *
+   * `is_active` is nullable in the schema (column default `true`); the predicate
+   * matches only rows explicitly `true`, so a NULL row (legacy / manual insert)
+   * is treated as not-targetable rather than silently pushed to.
+   *
+   * Spec: specs/09-notifications-social/design.md § ADDENDUM 2026-06-29.
+   */
+  async listActiveTokens(userId: string): Promise<ActiveDeviceToken[]> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        deviceToken: userDevices.deviceToken,
+        platform: userDevices.platform,
+      })
+      .from(userDevices)
+      .where(
+        and(eq(userDevices.userId, userId), eq(userDevices.isActive, true)),
+      );
+    return rows.map((row) => ({
+      deviceToken: row.deviceToken,
+      platform: row.platform,
+    }));
+  }
+
+  /**
+   * Mark a device token inactive — called when Expo reports
+   * `DeviceNotRegistered` for it (uninstalled app / revoked permission /
+   * rotated token) so the dead token stops being retried on every send.
+   *
+   * Scoped to `(user_id, device_token)` (the unique-index pair), so it only
+   * ever touches the caller's own row. Idempotent: deactivating an already-
+   * inactive or absent row is a no-op.
+   *
+   * Spec: specs/09-notifications-social/requirements.md STORY-009.
+   */
+  async deactivateToken(userId: string, deviceToken: string): Promise<void> {
+    const db = getDb();
+    await db
+      .update(userDevices)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userDevices.userId, userId),
+          eq(userDevices.deviceToken, deviceToken),
+        ),
+      );
   }
 }
