@@ -117,6 +117,10 @@ export function YouContainer() {
     const kg = w.unit === "lbs" ? w.value * 0.45359237 : w.value;
     return { kg, date: w.date };
   }, [health.latestBodyWeight]);
+  // HealthKit body-fat percentage (0..100), same rationale as weight: the
+  // /body-trend API only carries body fat logged IN the app, so a connected
+  // scale (Renpho → Apple Health) left the body-fat tile empty.
+  const healthBodyFat = health.latestBodyFat;
 
   // Client-side trainer relationships → the "Your trainer" You-page block +
   // the pending-request prompt (10-trainer-features). Both pending and active
@@ -178,19 +182,32 @@ export function YouContainer() {
     // health reading is newer than the latest in-app weigh-in. Appending to
     // the series keeps the sparkline + delta consistent with the displayed
     // current value.
-    let weightSeriesMerged = weightSeries;
-    if (healthWeight != null) {
-      const lastApiWeightDate = [...pts]
-        .reverse()
-        .find((p) => p.weightKg != null)?.date;
-      const healthIsNewer =
-        weightSeries.length === 0 ||
+    const lastApiWeightDate = [...pts]
+      .reverse()
+      .find((p) => p.weightKg != null)?.date;
+    const healthWeightIsNewer =
+      healthWeight != null &&
+      (weightSeries.length === 0 ||
         lastApiWeightDate == null ||
         new Date(healthWeight.date).getTime() >
-          new Date(lastApiWeightDate).getTime();
-      if (healthIsNewer) {
-        weightSeriesMerged = [...weightSeries, healthWeight.kg];
-      }
+          new Date(lastApiWeightDate).getTime());
+
+    let weightSeriesMerged = weightSeries;
+    if (healthWeight != null && healthWeightIsNewer) {
+      weightSeriesMerged = [...weightSeries, healthWeight.kg];
+    }
+
+    // Body fat: the health port gives no standalone timestamp for the fat
+    // reading, so — unlike weight — we can't tell whether a HealthKit fat
+    // value is newer than the latest in-app log. We deliberately do NOT borrow
+    // the weight's recency as a proxy: a scale can sync a fresh weight without
+    // a new fat measurement, which would surface a stale fat value as "current"
+    // and skew the delta. So in-app fat always wins when present; the HealthKit
+    // reading only fills the gap when there's no in-app fat history at all
+    // (the connected-scale-only case this fallback targets).
+    let fatSeriesMerged = fatSeries;
+    if (healthBodyFat != null && fatSeries.length === 0) {
+      fatSeriesMerged = [healthBodyFat];
     }
 
     return {
@@ -201,12 +218,12 @@ export function YouContainer() {
         unit: "kg" as const,
       },
       bodyFat: {
-        current: fatSeries[fatSeries.length - 1] ?? null,
-        delta: delta(fatSeries),
-        series: fatSeries,
+        current: fatSeriesMerged[fatSeriesMerged.length - 1] ?? null,
+        delta: delta(fatSeriesMerged),
+        series: fatSeriesMerged,
       },
     };
-  }, [body.data, healthWeight]);
+  }, [body.data, healthWeight, healthBodyFat]);
 
   const workoutsLabel = volume.data
     ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`

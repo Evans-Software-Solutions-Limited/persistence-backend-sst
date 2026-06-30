@@ -41,6 +41,7 @@ function healthState(over: Partial<HealthDataState> = {}): HealthDataState {
     basalCaloriesToday: null,
     standTimeTodayMinutes: null,
     latestBodyWeight: null,
+    latestBodyFat: null,
     permissionStatus: {
       steps: "granted",
       calories: "granted",

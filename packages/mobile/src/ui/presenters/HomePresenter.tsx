@@ -55,6 +55,8 @@ export type HomePresenterProps = {
   onRefresh: () => void;
   onOpenDrawer: () => void;
   onOpenNotifications: () => void;
+  /** Unread-notification count for the header bell badge. 0/undefined hides it. */
+  notificationCount?: number;
   onOpenWorkout: (workoutId: string) => void;
   /** Open the Train tab pinned to the Workouts segment (workouts "View all"). */
   onOpenWorkoutsList: () => void;
@@ -62,7 +64,6 @@ export type HomePresenterProps = {
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
   onLogWater: () => void;
-  onLogMood: () => void;
   onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
   onOpenCoach: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
@@ -88,13 +89,13 @@ export function HomePresenter(props: HomePresenterProps) {
     onRefresh,
     onOpenDrawer,
     onOpenNotifications,
+    notificationCount,
     onOpenWorkout,
     onOpenWorkoutsList,
     onOpenTab,
     onOpenWeighIn,
     onOpenMealLog,
     onLogWater,
-    onLogMood,
     onToggleHabitDay,
     onOpenCoach,
     scrollRef,
@@ -150,6 +151,7 @@ export function HomePresenter(props: HomePresenterProps) {
             icon={<IconBell size={18} />}
             tone="ghost"
             onPress={onOpenNotifications}
+            badgeCount={notificationCount}
             accessibilityLabel="Notifications"
             testID="home-bell"
           />
@@ -205,7 +207,6 @@ export function HomePresenter(props: HomePresenterProps) {
               onWeighIn={onOpenWeighIn}
               onLogMeal={onOpenMealLog}
               onLogWater={onLogWater}
-              onLogMood={onLogMood}
             />
           </Section>
         </Animated.View>

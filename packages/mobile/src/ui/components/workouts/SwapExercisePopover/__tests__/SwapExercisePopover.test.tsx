@@ -312,24 +312,24 @@ describe("SwapExercisePopover", () => {
     expect(queryByTestId("swap-picker-modal")).toBeNull();
   });
 
-  it("Create button routes to the coming-soon stub (legacy parity — Create CTA isn't a swap action)", async () => {
+  it("Create button closes the picker and routes to the real /exercises/create", async () => {
     const storage = new InMemoryStorageAdapter();
     const api = new InMemoryApiAdapter();
     seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
 
+    const onClose = jest.fn();
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
         <SwapExercisePopover
           visible={true}
-          onClose={jest.fn()}
+          onClose={onClose}
           onSwap={jest.fn()}
         />
       </AdapterProvider>,
     );
     fireEvent.press(await findByTestId("swap-picker-create"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=exercise-creator",
-    );
+    expect(onClose).toHaveBeenCalled();
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 
   it("disables every exercise in `existingExerciseIds` (Brad's no-duplicates rule — covers the source row + all other in-session rows)", async () => {

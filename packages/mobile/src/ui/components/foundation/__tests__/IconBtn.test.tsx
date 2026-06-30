@@ -146,6 +146,30 @@ describe("IconBtn", () => {
     );
     expect(getByTestId("ib")).toBeTruthy();
   });
+
+  it("renders an unread badge with the count when badgeCount > 0", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <IconBtn icon={icon} badgeCount={3} testID="ib" />,
+    );
+    expect(getByTestId("ib-badge")).toBeTruthy();
+    expect(getByText("3")).toBeTruthy();
+  });
+
+  it("hides the badge when badgeCount is 0 or undefined", () => {
+    const { queryByTestId, rerender } = renderWithTheme(
+      <IconBtn icon={icon} badgeCount={0} testID="ib" />,
+    );
+    expect(queryByTestId("ib-badge")).toBeNull();
+    rerender(<IconBtn icon={icon} testID="ib" />);
+    expect(queryByTestId("ib-badge")).toBeNull();
+  });
+
+  it("caps the badge label at 99+", () => {
+    const { getByText } = renderWithTheme(
+      <IconBtn icon={icon} badgeCount={250} testID="ib" />,
+    );
+    expect(getByText("99+")).toBeTruthy();
+  });
 });
 
 describe("iconBtnForeground", () => {
