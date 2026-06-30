@@ -197,17 +197,17 @@ export function YouContainer() {
       weightSeriesMerged = [...weightSeries, healthWeight.kg];
     }
 
-    // Body fat has no standalone timestamp from the health port, but a
-    // connected scale writes fat + weight in the same sync — so the weight's
-    // recency is a faithful proxy. Append the HealthKit fat reading when the
-    // API carries no in-app fat history, or when the paired weight sync is
-    // newer than the latest in-app weigh-in.
+    // Body fat: the health port gives no standalone timestamp for the fat
+    // reading, so — unlike weight — we can't tell whether a HealthKit fat
+    // value is newer than the latest in-app log. We deliberately do NOT borrow
+    // the weight's recency as a proxy: a scale can sync a fresh weight without
+    // a new fat measurement, which would surface a stale fat value as "current"
+    // and skew the delta. So in-app fat always wins when present; the HealthKit
+    // reading only fills the gap when there's no in-app fat history at all
+    // (the connected-scale-only case this fallback targets).
     let fatSeriesMerged = fatSeries;
-    if (
-      healthBodyFat != null &&
-      (fatSeries.length === 0 || healthWeightIsNewer)
-    ) {
-      fatSeriesMerged = [...fatSeries, healthBodyFat];
+    if (healthBodyFat != null && fatSeries.length === 0) {
+      fatSeriesMerged = [healthBodyFat];
     }
 
     return {

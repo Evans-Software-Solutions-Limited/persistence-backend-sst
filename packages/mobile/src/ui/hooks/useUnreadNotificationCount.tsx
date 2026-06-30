@@ -40,7 +40,11 @@ export function useUnreadNotificationCount(): number {
 
   // First paint from the cache: apply pending reads to the cached page so a
   // just-viewed list doesn't flash a stale count before the server sync lands.
+  // Gated on a signed-in user — without this, a previous user's still-cached
+  // notifications (signed out / mid account-switch) would flash their count on
+  // the bell for a frame before the userId-gated `sync` reconciles.
   const [count, setCount] = useState(() => {
+    if (!userId) return 0;
     const cached = getNotificationsQuery(storage);
     const now = new Date().toISOString();
     const page = applyPendingReads(cached.notifications, storage, now);

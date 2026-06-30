@@ -210,6 +210,53 @@ describe("YouContainer", () => {
     expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
   });
 
+  it("does NOT let a HealthKit fat reading override in-app fat history (no fat timestamp → in-app wins)", async () => {
+    // The health port has no timestamp for body fat, so a scale syncing a fresh
+    // WEIGHT without a new fat measurement must not surface a stale fat value
+    // as "current". When in-app fat history exists, it wins; the HealthKit fat
+    // reading is ignored (Inspector Brad MEDIUM, PR #143).
+    const { api, adapters } = makeAdapters();
+    api.bodyTrend = [
+      { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: 20.0 },
+      { date: "2026-06-28T00:00:00.000Z", weightKg: 79.0, bodyFat: 19.5 },
+    ];
+    adapters.health = {
+      isAvailable: jest.fn(async () => true),
+      getPermissionStatus: jest.fn(async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+      })),
+      getStepsToday: jest.fn(async () => ok(0)),
+      getStepsLastNDays: jest.fn(async () => ok([])),
+      getActiveCaloriesToday: jest.fn(async () => ok(0)),
+      getBasalCaloriesToday: jest.fn(async () => ok(0)),
+      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
+      // A weight newer than the last in-app weigh-in...
+      getLatestBodyWeight: jest.fn(async () =>
+        ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
+      ),
+      // ...but a STALE fat reading from a week ago. Must not become "current".
+      getLatestBodyFat: jest.fn(async () => ok(25.0)),
+    } as unknown as Adapters["health"];
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+
+    // In-app fat history is preserved; the stale HealthKit 25.0 is ignored.
+    await waitFor(() =>
+      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(19.5),
+    );
+    expect(mockProbe.last?.bodyTrend.bodyFat.series).toEqual([20.0, 19.5]);
+    expect(mockProbe.last?.bodyTrend.bodyFat.series).not.toContain(25.0);
+    // Weight still merges (it HAS a timestamp and is genuinely newer).
+    expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
+  });
+
   it("keeps onRefresh referentially stable across re-renders", async () => {
     // Regression (PR #37): the useCallback deps were the whole hook-result
     // objects (fresh literals each render), defeating memoisation. Depending on

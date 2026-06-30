@@ -154,9 +154,15 @@ describe("useUnreadNotificationCount", () => {
     expect(result.current).toBe(6);
   });
 
-  it("does not sync when signed out (stays at the cache seed of 0)", async () => {
+  it("seeds 0 when signed out even with a prior user's notifications still cached", async () => {
+    // Guards the sign-out / account-switch flash: the synchronous cache seed
+    // must not paint a previous user's count before the userId-gated sync runs.
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
+    storage.cacheNotifications([
+      makeNotification({ id: "stale-1", readAt: null }),
+      makeNotification({ id: "stale-2", readAt: null }),
+    ]);
     api.notificationsUnreadCount = 9;
 
     const { result } = renderHook(() => useUnreadNotificationCount(), {
@@ -164,6 +170,8 @@ describe("useUnreadNotificationCount", () => {
         makeAdapters(api, storage, new StubNotifications(), null),
       ),
     });
+    // Seed is 0 (signed out) immediately — never the cached 2 / server 9.
+    expect(result.current).toBe(0);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
