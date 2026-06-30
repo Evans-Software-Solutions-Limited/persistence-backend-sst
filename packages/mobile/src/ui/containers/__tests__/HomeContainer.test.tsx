@@ -103,7 +103,12 @@ function makeAdapters(healthOverride: Partial<HealthPort> = {}): {
       auth,
       storage,
       health: makeHealthStub(healthOverride),
-      notifications: {} as Adapters["notifications"],
+      notifications: {
+        // useUnreadNotificationCount registers a foreground push listener; it
+        // must return an unsubscribe fn or the effect cleanup throws.
+        addNotificationReceivedListener: jest.fn(() => () => {}),
+        setBadgeCount: jest.fn(async () => {}),
+      } as unknown as Adapters["notifications"],
       payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     },

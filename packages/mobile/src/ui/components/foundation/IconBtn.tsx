@@ -1,4 +1,4 @@
-import { View } from "@tamagui/core";
+import { Text, View } from "@tamagui/core";
 import {
   cloneElement,
   isValidElement,
@@ -35,6 +35,11 @@ export type IconBtnProps = {
   size?: number;
   /** Active state — primary-dim fill + primary fg regardless of tone. */
   active?: boolean;
+  /**
+   * Unread/notification count rendered as a small ember badge at the top-right.
+   * Hidden when 0 or undefined; capped at "99+". Used by the header bell.
+   */
+  badgeCount?: number;
   disabled?: boolean;
   accessibilityLabel?: string;
   accessibilityState?: AccessibilityState;
@@ -78,6 +83,7 @@ export function IconBtn({
   tone = "neutral",
   size = 36,
   active = false,
+  badgeCount,
   disabled = false,
   accessibilityLabel,
   accessibilityState,
@@ -104,22 +110,59 @@ export function IconBtn({
         })
       : icon;
 
+  const showBadge = typeof badgeCount === "number" && badgeCount > 0;
+  const badgeLabel = showBadge
+    ? badgeCount > 99
+      ? "99+"
+      : String(badgeCount)
+    : null;
+
   const circle = (
-    <View
-      width={size}
-      height={size}
-      minWidth={size}
-      minHeight={size}
-      borderRadius={9999}
-      flexDirection="row"
-      alignItems="center"
-      justifyContent="center"
-      backgroundColor={bg}
-      borderColor={border}
-      borderWidth={1}
-      style={{ flexShrink: 0 }}
-    >
-      {tintedIcon}
+    <View style={{ flexShrink: 0, position: "relative" }}>
+      <View
+        width={size}
+        height={size}
+        minWidth={size}
+        minHeight={size}
+        borderRadius={9999}
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor={bg}
+        borderColor={border}
+        borderWidth={1}
+        style={{ flexShrink: 0 }}
+      >
+        {tintedIcon}
+      </View>
+      {badgeLabel !== null && (
+        <View
+          position="absolute"
+          top={-4}
+          right={-4}
+          minWidth={18}
+          height={18}
+          paddingHorizontal={5}
+          borderRadius={9999}
+          backgroundColor="$ember"
+          borderColor="$bg"
+          borderWidth={2}
+          alignItems="center"
+          justifyContent="center"
+          testID={testID ? `${testID}-badge` : undefined}
+          accessibilityLabel={`${badgeCount} unread`}
+        >
+          <Text
+            color="#fff"
+            fontSize={10}
+            fontWeight="700"
+            lineHeight={12}
+            numberOfLines={1}
+          >
+            {badgeLabel}
+          </Text>
+        </View>
+      )}
     </View>
   );
 

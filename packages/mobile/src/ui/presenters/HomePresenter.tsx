@@ -55,6 +55,8 @@ export type HomePresenterProps = {
   onRefresh: () => void;
   onOpenDrawer: () => void;
   onOpenNotifications: () => void;
+  /** Unread-notification count for the header bell badge. 0/undefined hides it. */
+  notificationCount?: number;
   onOpenWorkout: (workoutId: string) => void;
   /** Open the Train tab pinned to the Workouts segment (workouts "View all"). */
   onOpenWorkoutsList: () => void;
@@ -87,6 +89,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onRefresh,
     onOpenDrawer,
     onOpenNotifications,
+    notificationCount,
     onOpenWorkout,
     onOpenWorkoutsList,
     onOpenTab,
@@ -148,6 +151,7 @@ export function HomePresenter(props: HomePresenterProps) {
             icon={<IconBell size={18} />}
             tone="ghost"
             onPress={onOpenNotifications}
+            badgeCount={notificationCount}
             accessibilityLabel="Notifications"
             testID="home-bell"
           />

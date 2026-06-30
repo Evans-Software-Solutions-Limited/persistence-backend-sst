@@ -5,6 +5,7 @@ import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useUnreadNotificationCount } from "@/ui/hooks/useUnreadNotificationCount";
 import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
@@ -40,6 +41,7 @@ export function HomeContainer() {
 
   const home = useGetHome();
   const health = useHealthData();
+  const notificationCount = useUnreadNotificationCount();
   const habitsState = useGetHabits();
   const toggle = useToggleHabitDay();
   const workoutsState = useWorkouts();
@@ -244,6 +246,7 @@ export function HomeContainer() {
         onRefresh={onRefresh}
         onOpenDrawer={openDrawer}
         onOpenNotifications={onOpenNotifications}
+        notificationCount={notificationCount}
         onOpenWorkout={onOpenWorkout}
         onOpenWorkoutsList={onOpenWorkoutsList}
         onOpenTab={onOpenTab}
