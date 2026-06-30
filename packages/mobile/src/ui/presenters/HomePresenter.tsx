@@ -62,7 +62,6 @@ export type HomePresenterProps = {
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
   onLogWater: () => void;
-  onLogMood: () => void;
   onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
   onOpenCoach: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
@@ -94,7 +93,6 @@ export function HomePresenter(props: HomePresenterProps) {
     onOpenWeighIn,
     onOpenMealLog,
     onLogWater,
-    onLogMood,
     onToggleHabitDay,
     onOpenCoach,
     scrollRef,
@@ -205,7 +203,6 @@ export function HomePresenter(props: HomePresenterProps) {
               onWeighIn={onOpenWeighIn}
               onLogMeal={onOpenMealLog}
               onLogWater={onLogWater}
-              onLogMood={onLogMood}
             />
           </Section>
         </Animated.View>

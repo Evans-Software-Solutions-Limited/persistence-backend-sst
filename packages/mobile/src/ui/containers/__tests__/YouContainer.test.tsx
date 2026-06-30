@@ -171,6 +171,45 @@ describe("YouContainer", () => {
     expect(mockProbe.last?.initials).toBe("A");
   });
 
+  it("surfaces the HealthKit body-fat reading when the app has no in-app fat history", async () => {
+    // Renpho-style flow: weight + body fat are written to Apple Health by a
+    // connected scale, never logged in-app. The /body-trend API therefore
+    // carries no body fat, and the You-page tile would be empty without the
+    // HealthKit fallback.
+    const { adapters } = makeAdapters();
+    adapters.health = {
+      isAvailable: jest.fn(async () => true),
+      getPermissionStatus: jest.fn(async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+      })),
+      getStepsToday: jest.fn(async () => ok(0)),
+      getStepsLastNDays: jest.fn(async () => ok([])),
+      getActiveCaloriesToday: jest.fn(async () => ok(0)),
+      getBasalCaloriesToday: jest.fn(async () => ok(0)),
+      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
+      getLatestBodyWeight: jest.fn(async () =>
+        ok({ value: 78.2, unit: "kg", date: "2026-06-29T12:00:00.000Z" }),
+      ),
+      getLatestBodyFat: jest.fn(async () => ok(22.5)),
+    } as unknown as Adapters["health"];
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+
+    await waitFor(() =>
+      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(22.5),
+    );
+    expect(mockProbe.last?.bodyTrend.bodyFat.series).toContain(22.5);
+    // The paired weight reading should appear on the weight tile too.
+    expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
+  });
+
   it("keeps onRefresh referentially stable across re-renders", async () => {
     // Regression (PR #37): the useCallback deps were the whole hook-result
     // objects (fresh literals each render), defeating memoisation. Depending on

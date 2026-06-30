@@ -250,7 +250,6 @@ export function HomeContainer() {
         onOpenWeighIn={openWeighIn}
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
-        onLogMood={noop}
         onToggleHabitDay={onToggleHabitDay}
         onOpenCoach={noop}
       />

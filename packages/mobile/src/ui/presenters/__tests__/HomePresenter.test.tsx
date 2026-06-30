@@ -80,7 +80,6 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     onOpenWeighIn: jest.fn(),
     onOpenMealLog: jest.fn(),
     onLogWater: jest.fn(),
-    onLogMood: jest.fn(),
     onToggleHabitDay: jest.fn(),
     onOpenCoach: jest.fn(),
     ...overrides,

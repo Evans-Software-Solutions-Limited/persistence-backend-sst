@@ -141,17 +141,22 @@ function AddExercisePopoverContainer({
     setSelectedExercise(null);
   };
 
-  const handleCreateExercise = useCallback(() => {
-    router.push("/coming-soon?feature=exercise-creator" as never);
-  }, [router]);
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setSearchQuery("");
     setSelectedExerciseIds([]);
     setCurrentView("list");
     setSelectedExercise(null);
     onClose();
-  };
+  }, [onClose]);
+
+  const handleCreateExercise = useCallback(() => {
+    // Close the picker first so the full-screen creator isn't stacked behind an
+    // open bottom-sheet; then route to the real creator (was a /coming-soon
+    // dead-end). After creating, the user returns and can search their new
+    // exercise to add it.
+    handleClose();
+    router.push("/(app)/exercises/create" as never);
+  }, [router, handleClose]);
 
   // Resolve picks in the order the user tapped them. The previous
   // implementation used `allRows.filter(...)`, which returns rows in

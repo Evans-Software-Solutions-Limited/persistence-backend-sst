@@ -314,25 +314,25 @@ describe("AddExercisePopover", () => {
     expect(getByText("Chest.")).toBeTruthy();
   });
 
-  it("routes the Create CTA to /coming-soon?feature=exercise-creator", () => {
+  it("closes the picker and routes the Create CTA to the real /exercises/create", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedCache(storage, [buildExercise()]);
+    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
       withAdapters(
         makeAdapters(api, storage),
         <AddExercisePopover
           visible
-          onClose={jest.fn()}
+          onClose={onClose}
           onAddExercises={jest.fn()}
           onAddSuperset={jest.fn()}
         />,
       ),
     );
     fireEvent.press(getByTestId("create-exercise-button"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/coming-soon?feature=exercise-creator",
-    );
+    expect(onClose).toHaveBeenCalled();
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 
   it("invokes onClose and resets selection state when closed", () => {

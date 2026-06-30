@@ -117,6 +117,10 @@ export function YouContainer() {
     const kg = w.unit === "lbs" ? w.value * 0.45359237 : w.value;
     return { kg, date: w.date };
   }, [health.latestBodyWeight]);
+  // HealthKit body-fat percentage (0..100), same rationale as weight: the
+  // /body-trend API only carries body fat logged IN the app, so a connected
+  // scale (Renpho → Apple Health) left the body-fat tile empty.
+  const healthBodyFat = health.latestBodyFat;
 
   // Client-side trainer relationships → the "Your trainer" You-page block +
   // the pending-request prompt (10-trainer-features). Both pending and active
@@ -178,19 +182,32 @@ export function YouContainer() {
     // health reading is newer than the latest in-app weigh-in. Appending to
     // the series keeps the sparkline + delta consistent with the displayed
     // current value.
-    let weightSeriesMerged = weightSeries;
-    if (healthWeight != null) {
-      const lastApiWeightDate = [...pts]
-        .reverse()
-        .find((p) => p.weightKg != null)?.date;
-      const healthIsNewer =
-        weightSeries.length === 0 ||
+    const lastApiWeightDate = [...pts]
+      .reverse()
+      .find((p) => p.weightKg != null)?.date;
+    const healthWeightIsNewer =
+      healthWeight != null &&
+      (weightSeries.length === 0 ||
         lastApiWeightDate == null ||
         new Date(healthWeight.date).getTime() >
-          new Date(lastApiWeightDate).getTime();
-      if (healthIsNewer) {
-        weightSeriesMerged = [...weightSeries, healthWeight.kg];
-      }
+          new Date(lastApiWeightDate).getTime());
+
+    let weightSeriesMerged = weightSeries;
+    if (healthWeight != null && healthWeightIsNewer) {
+      weightSeriesMerged = [...weightSeries, healthWeight.kg];
+    }
+
+    // Body fat has no standalone timestamp from the health port, but a
+    // connected scale writes fat + weight in the same sync — so the weight's
+    // recency is a faithful proxy. Append the HealthKit fat reading when the
+    // API carries no in-app fat history, or when the paired weight sync is
+    // newer than the latest in-app weigh-in.
+    let fatSeriesMerged = fatSeries;
+    if (
+      healthBodyFat != null &&
+      (fatSeries.length === 0 || healthWeightIsNewer)
+    ) {
+      fatSeriesMerged = [...fatSeries, healthBodyFat];
     }
 
     return {
@@ -201,12 +218,12 @@ export function YouContainer() {
         unit: "kg" as const,
       },
       bodyFat: {
-        current: fatSeries[fatSeries.length - 1] ?? null,
-        delta: delta(fatSeries),
-        series: fatSeries,
+        current: fatSeriesMerged[fatSeriesMerged.length - 1] ?? null,
+        delta: delta(fatSeriesMerged),
+        series: fatSeriesMerged,
       },
     };
-  }, [body.data, healthWeight]);
+  }, [body.data, healthWeight, healthBodyFat]);
 
   const workoutsLabel = volume.data
     ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`

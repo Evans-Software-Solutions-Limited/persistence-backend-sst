@@ -112,6 +112,8 @@ describe("useHealthData", () => {
     });
     expect(result.current.activeCaloriesToday).toBe(312);
     expect(result.current.latestBodyWeight?.value).toBe(74.5);
+    expect(result.current.latestBodyFat).toBe(18.2);
+    expect(health.getLatestBodyFat).toHaveBeenCalled();
     expect(result.current.isAvailable).toBe(true);
     expect(result.current.permissionStatus.steps).toBe("granted");
     expect(result.current.lastReadAt).not.toBeNull();

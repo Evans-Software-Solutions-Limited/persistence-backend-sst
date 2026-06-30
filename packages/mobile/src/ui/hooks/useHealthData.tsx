@@ -41,6 +41,13 @@ export type HealthDataState = {
   /** Cumulative Apple Stand Time today in minutes, or null. */
   standTimeTodayMinutes: number | null;
   latestBodyWeight: HealthWeight | null;
+  /**
+   * Most recent body-fat reading as a PERCENTAGE (0..100), or null. The
+   * /body-trend API only carries body fat logged IN the app, so a user who
+   * records body fat solely via a connected scale (e.g. Renpho → Apple Health)
+   * saw an empty body-fat tile. The You screen falls back to this reading.
+   */
+  latestBodyFat: number | null;
   permissionStatus: HealthPermissionStatus;
   isAvailable: boolean;
   isReading: boolean;
@@ -80,6 +87,7 @@ export function useHealthData(): HealthDataState {
   const [latestBodyWeight, setLatestBodyWeight] = useState<HealthWeight | null>(
     null,
   );
+  const [latestBodyFat, setLatestBodyFat] = useState<number | null>(null);
   const [permissionStatus, setPermissionStatus] =
     useState<HealthPermissionStatus>(DEFAULT_PERMISSIONS);
   const [isAvailable, setIsAvailable] = useState(false);
@@ -125,6 +133,7 @@ export function useHealthData(): HealthDataState {
           basalResult,
           standResult,
           weightResult,
+          bodyFatResult,
         ] = await Promise.all([
           health.getStepsToday(),
           health.getStepsLastNDays(STEPS_HISTORY_DAYS),
@@ -132,6 +141,7 @@ export function useHealthData(): HealthDataState {
           health.getBasalCaloriesToday(),
           health.getStandTimeTodayMinutes(),
           health.getLatestBodyWeight(),
+          health.getLatestBodyFat(),
         ]);
         if (stepsResult.ok) setStepsToday(stepsResult.value);
         if (stepsHistoryResult.ok) setStepsHistory(stepsHistoryResult.value);
@@ -139,6 +149,7 @@ export function useHealthData(): HealthDataState {
         if (basalResult.ok) setBasalCaloriesToday(basalResult.value);
         if (standResult.ok) setStandTimeTodayMinutes(standResult.value);
         if (weightResult.ok) setLatestBodyWeight(weightResult.value);
+        if (bodyFatResult.ok) setLatestBodyFat(bodyFatResult.value);
         setLastReadAt(new Date(now).toISOString());
       } finally {
         setIsReading(false);
@@ -186,6 +197,7 @@ export function useHealthData(): HealthDataState {
     basalCaloriesToday,
     standTimeTodayMinutes,
     latestBodyWeight,
+    latestBodyFat,
     permissionStatus,
     isAvailable,
     isReading,

@@ -195,10 +195,6 @@ function SwapExercisePopoverContainer({
     setSelectedExercise(null);
   };
 
-  const handleCreateExercise = useCallback(() => {
-    router.push("/coming-soon?feature=exercise-creator" as never);
-  }, [router]);
-
   // Reset every piece of internal state — search, selection, and the
   // details drill-in — so the next time the popover opens it starts
   // fresh. The component stays mounted when `visible` flips to false
@@ -218,6 +214,18 @@ function SwapExercisePopoverContainer({
     resetInternalState();
     onClose();
   };
+
+  const handleCreateExercise = useCallback(() => {
+    // Close the picker first so the full-screen creator isn't stacked behind an
+    // open bottom-sheet; then route to the real creator (was a /coming-soon
+    // dead-end). After creating, the user returns and can search their new
+    // exercise to swap it in.
+    handleClose();
+    router.push("/(app)/exercises/create" as never);
+    // handleClose is a stable closure over setState + onClose; intentionally
+    // omitted from deps to avoid re-creating this callback every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   const handleSwapClick = () => {
     if (!selectedExerciseId) return;
