@@ -55,6 +55,11 @@ export const profilesUpdateHandler = new Elysia()
         }
         updateData.dateOfBirth = body.dateOfBirth;
       }
+      // `gender` feeds the Fuel Targets TDEE calculator. `null` clears it
+      // ("prefer not to say" in the editor persists as 'other', not null; null
+      // means never-set). The t.Union below constrains values to the three the
+      // DB CHECK allows, so no extra validation is needed here.
+      if (body.gender !== undefined) updateData.gender = body.gender;
       if (body.heightCm !== undefined)
         updateData.heightCm = String(body.heightCm);
       if (body.weightKg !== undefined)
@@ -63,8 +68,13 @@ export const profilesUpdateHandler = new Elysia()
         updateData.availableEquipment = body.availableEquipment;
       if (body.accessibilityNeeds !== undefined)
         updateData.accessibilityNeeds = body.accessibilityNeeds;
-      if (body.preferredUnits !== undefined)
-        updateData.preferredUnits = body.preferredUnits;
+      // Independent per-field display-unit preferences (users routinely mix
+      // e.g. kg + ft/in) — the t.Union below constrains values to what each
+      // CHECK constraint allows, so no extra validation is needed here.
+      if (body.weightUnit !== undefined)
+        updateData.weightUnit = body.weightUnit;
+      if (body.heightUnit !== undefined)
+        updateData.heightUnit = body.heightUnit;
       if (body.isProfilePublic !== undefined)
         updateData.isProfilePublic = body.isProfilePublic;
 
@@ -101,11 +111,20 @@ export const profilesUpdateHandler = new Elysia()
           ]),
         ),
         dateOfBirth: t.Optional(t.Union([t.String(), t.Null()])),
+        gender: t.Optional(
+          t.Union([
+            t.Literal("male"),
+            t.Literal("female"),
+            t.Literal("other"),
+            t.Null(),
+          ]),
+        ),
         heightCm: t.Optional(t.Union([t.String(), t.Number()])),
         weightKg: t.Optional(t.Union([t.String(), t.Number()])),
         availableEquipment: t.Optional(t.Array(t.String())),
         accessibilityNeeds: t.Optional(t.Array(t.String())),
-        preferredUnits: t.Optional(t.String()),
+        weightUnit: t.Optional(t.Union([t.Literal("kg"), t.Literal("lb")])),
+        heightUnit: t.Optional(t.Union([t.Literal("cm"), t.Literal("ftin")])),
         isProfilePublic: t.Optional(t.Boolean()),
       }),
     },

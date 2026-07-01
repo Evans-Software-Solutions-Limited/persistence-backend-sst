@@ -11,6 +11,11 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import type {
+  ProfileGender,
+  ProfilePageHeightUnit,
+  ProfilePageWeightUnit,
+} from "@/domain/models/profilePage";
 import {
   EditProfilePresenter,
   type EditProfileFitnessLevel,
@@ -19,10 +24,12 @@ import {
 /**
  * M6 PR-4: Edit Profile screen container.
  *
- * Scope: fullName + fitnessLevel + isProfilePublic (3 fields).
- * Username / height / weight / preferred units defer to a later
- * milestone — they touch onboarding territory and want their own
- * UX pass.
+ * Scope: fullName + fitnessLevel + isProfilePublic (3 fields), plus
+ * gender + height + weightUnit/heightUnit (M9 — TDEE calculator inputs +
+ * independent per-field display-unit preferences, STORY-004). Username /
+ * weight still defer to a later milestone — weight is a point-in-time
+ * measurement logged via the weigh-in flow, not a static profile attribute,
+ * so it doesn't belong on this screen.
  *
  * Initial values: read from the cached profile-page payload (instant
  * paint, no spinner if the user came in from the Profile tab).
@@ -60,6 +67,12 @@ type Snapshot = {
   fullName: string;
   fitnessLevel: EditProfileFitnessLevel;
   dateOfBirth: string;
+  /** null = "prefer not to say"/unset in the selector. */
+  gender: ProfileGender | null;
+  /** cm, as the raw text-field string; "" = unset. */
+  heightCm: string;
+  weightUnit: ProfilePageWeightUnit;
+  heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
 };
 
@@ -78,6 +91,10 @@ export function EditProfileContainer() {
       fullName: p.fullName ?? "",
       fitnessLevel: asFitnessLevel(p.fitnessLevel),
       dateOfBirth: p.dateOfBirth ?? "",
+      gender: p.gender ?? null,
+      heightCm: p.heightCm === null ? "" : String(p.heightCm),
+      weightUnit: p.weightUnit,
+      heightUnit: p.heightUnit,
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -86,6 +103,10 @@ export function EditProfileContainer() {
   const [fitnessLevel, setFitnessLevel] =
     useState<EditProfileFitnessLevel>("beginner");
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState<ProfileGender | null>(null);
+  const [heightCm, setHeightCm] = useState("");
+  const [weightUnit, setWeightUnit] = useState<ProfilePageWeightUnit>("kg");
+  const [heightUnit, setHeightUnit] = useState<ProfilePageHeightUnit>("cm");
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -94,6 +115,10 @@ export function EditProfileContainer() {
     setFullName(initial.fullName);
     setFitnessLevel(initial.fitnessLevel);
     setDateOfBirth(initial.dateOfBirth);
+    setGender(initial.gender);
+    setHeightCm(initial.heightCm);
+    setWeightUnit(initial.weightUnit);
+    setHeightUnit(initial.heightUnit);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -107,9 +132,24 @@ export function EditProfileContainer() {
       fullName !== initial.fullName ||
       fitnessLevel !== initial.fitnessLevel ||
       dateOfBirth !== initial.dateOfBirth ||
+      gender !== initial.gender ||
+      heightCm !== initial.heightCm ||
+      weightUnit !== initial.weightUnit ||
+      heightUnit !== initial.heightUnit ||
       isProfilePublic !== initial.isProfilePublic
     );
-  }, [initial, hydrated, fullName, fitnessLevel, dateOfBirth, isProfilePublic]);
+  }, [
+    initial,
+    hydrated,
+    fullName,
+    fitnessLevel,
+    dateOfBirth,
+    gender,
+    heightCm,
+    weightUnit,
+    heightUnit,
+    isProfilePublic,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
@@ -142,6 +182,24 @@ export function EditProfileContainer() {
         const trimmedDob = dateOfBirth.trim();
         input.dateOfBirth = trimmedDob.length > 0 ? trimmedDob : null;
       }
+      if (gender !== initial.gender) {
+        input.gender = gender;
+      }
+      if (heightCm !== initial.heightCm) {
+        // Empty string clears height (send null); otherwise parse to a
+        // number — the command range-validates it before enqueueing.
+        // Non-numeric text also parses to NaN, which the command's
+        // Number.isFinite check rejects the same way.
+        const trimmedHeight = heightCm.trim();
+        input.heightCm =
+          trimmedHeight.length > 0 ? Number(trimmedHeight) : null;
+      }
+      if (weightUnit !== initial.weightUnit) {
+        input.weightUnit = weightUnit;
+      }
+      if (heightUnit !== initial.heightUnit) {
+        input.heightUnit = heightUnit;
+      }
       if (isProfilePublic !== initial.isProfilePublic) {
         input.isProfilePublic = isProfilePublic;
       }
@@ -159,6 +217,7 @@ export function EditProfileContainer() {
         setErrorMessage(
           result.error.fields.dateOfBirth ??
             result.error.fields.fullName ??
+            result.error.fields.heightCm ??
             "Couldn't save your profile. Check your details and try again.",
         );
         return;
@@ -187,6 +246,10 @@ export function EditProfileContainer() {
     fullName,
     fitnessLevel,
     dateOfBirth,
+    gender,
+    heightCm,
+    weightUnit,
+    heightUnit,
     isProfilePublic,
   ]);
 
@@ -214,6 +277,10 @@ export function EditProfileContainer() {
       fullName={fullName}
       fitnessLevel={fitnessLevel}
       dateOfBirth={dateOfBirth}
+      gender={gender}
+      heightCm={heightCm}
+      weightUnit={weightUnit}
+      heightUnit={heightUnit}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
@@ -225,6 +292,10 @@ export function EditProfileContainer() {
       onFullNameChange={setFullName}
       onFitnessLevelChange={setFitnessLevel}
       onDateOfBirthChange={setDateOfBirth}
+      onGenderChange={setGender}
+      onHeightCmChange={setHeightCm}
+      onWeightUnitChange={setWeightUnit}
+      onHeightUnitChange={setHeightUnit}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

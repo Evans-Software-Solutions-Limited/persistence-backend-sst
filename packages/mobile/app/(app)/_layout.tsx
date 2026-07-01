@@ -177,18 +177,19 @@ export default function AppLayout() {
           options={{ title: "Coming soon", headerShown: true }}
         />
         {/*
-          Fuel stub routes render the bare <ComingSoon> component (no
-          HeaderBar), so they opt back into the native header for a back
-          affordance until their real screens land in M9.
+          fuel/recipes is still the M9-era stub — bare <ComingSoon> (no
+          HeaderBar), so it opts into the native header for a back affordance
+          until its real screen lands.
         */}
         <Stack.Screen
           name="fuel/recipes"
           options={{ title: "Recipes", headerShown: true }}
         />
-        <Stack.Screen
-          name="fuel/targets"
-          options={{ title: "Targets", headerShown: true }}
-        />
+        {/*
+          fuel/targets (M9 PR3) owns its own <HeaderBar> (Cancel/Save) —
+          native header off, matching every other custom-chrome screen.
+        */}
+        <Stack.Screen name="fuel/targets" options={{ headerShown: false }} />
       </Stack>
       {/*
         ProfileDrawerContainer is ALWAYS mounted (sibling of the Stack) — its

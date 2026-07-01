@@ -17,9 +17,11 @@ function makePayload(
       role: "user",
       fitnessLevel: "intermediate",
       dateOfBirth: null,
+      gender: null,
       heightCm: null,
       weightKg: null,
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: false,
       createdAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -121,6 +123,87 @@ describe("updateProfileCommand", () => {
     expect(
       storage.getCachedProfilePage(USER)?.payload.profile.dateOfBirth,
     ).toBe(null);
+  });
+
+  it("queues heightCm and writes it to the cache", () => {
+    storage.cacheProfilePage(USER, makePayload({ heightCm: null }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: 178 },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ heightCm: 178 });
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.heightCm).toBe(
+      178,
+    );
+  });
+
+  it("queues heightCm: null to clear the field", () => {
+    storage.cacheProfilePage(USER, makePayload({ heightCm: 178 }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: null },
+    );
+    expect(result.ok).toBe(true);
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.heightCm).toBe(
+      null,
+    );
+  });
+
+  it("rejects an out-of-range height BEFORE enqueueing (no queue entry, no cache write)", () => {
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: 9999 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("validation");
+      expect(result.error.fields.heightCm).toBeTruthy();
+    }
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("rejects a NaN height (non-numeric text parsed upstream)", () => {
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: Number("not-a-number") },
+    );
+    expect(result.ok).toBe(false);
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("queues weightUnit and writes it to the cache", () => {
+    storage.cacheProfilePage(USER, makePayload({ weightUnit: "kg" }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { weightUnit: "lb" },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ weightUnit: "lb" });
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.weightUnit).toBe(
+      "lb",
+    );
+  });
+
+  it("queues heightUnit and writes it to the cache, independently of weightUnit", () => {
+    storage.cacheProfilePage(
+      USER,
+      makePayload({ weightUnit: "kg", heightUnit: "cm" }),
+    );
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightUnit: "ftin" },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ heightUnit: "ftin" });
+    const cached = storage.getCachedProfilePage(USER)?.payload.profile;
+    expect(cached?.heightUnit).toBe("ftin");
+    // Mixed units (kg + ft/in) is the whole point of splitting this field —
+    // changing one must never touch the other.
+    expect(cached?.weightUnit).toBe("kg");
   });
 
   it("rejects a whitespace-only fullName", () => {

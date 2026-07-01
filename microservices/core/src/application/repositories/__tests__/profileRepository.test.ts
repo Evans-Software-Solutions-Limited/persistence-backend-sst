@@ -281,7 +281,7 @@ describe("ProfileRepository.getProfilePageData", () => {
         resolved = fixtures.subscription ?? [];
       } else if ("unlockedAt" in projection && "iconUrl" in projection) {
         resolved = fixtures.achievements ?? [];
-      } else if ("fullName" in projection && "preferredUnits" in projection) {
+      } else if ("fullName" in projection && "weightUnit" in projection) {
         resolved = fixtures.profile ?? [];
       } else {
         resolved = [];
@@ -332,9 +332,11 @@ describe("ProfileRepository.getProfilePageData", () => {
       role: "user",
       fitnessLevel: "intermediate",
       dateOfBirth: "1990-01-15",
+      gender: "male",
       heightCm: "180.5",
       weightKg: "75.25",
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: false,
       createdAt: new Date("2024-01-15T10:00:00Z"),
       ...overrides,
@@ -396,6 +398,7 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.profile.heightCm).toBe(180.5);
     expect(result?.profile.weightKg).toBe(75.25);
     expect(result?.profile.dateOfBirth).toBe("1990-01-15");
+    expect(result?.profile.gender).toBe("male");
     expect(result?.subscription.tierName).toBe("premium");
     expect(result?.subscription.tierDisplayName).toBe("Premium");
     expect(result?.subscription.status).toBe("active");
@@ -450,9 +453,43 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.profile.weightKg).toBe(60.5);
   });
 
-  it("normalises preferredUnits to 'metric' when not 'imperial'", async () => {
+  it.each(["male", "female", "other"] as const)(
+    "surfaces a valid gender (%s) verbatim",
+    async (gender) => {
+      const mockDb = makeAggregateDb({
+        profile: [makeProfileRow({ gender })],
+        workoutsCount: [{ total: 0 }],
+      });
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { ProfileRepository } = await import("../profileRepository");
+      const repo = new ProfileRepository();
+      const result = await repo.getProfilePageData("user-1");
+
+      expect(result?.profile.gender).toBe(gender);
+    },
+  );
+
+  it.each([null, "banana", ""])(
+    "collapses an unset/stray gender (%p) to null so the editor prompts",
+    async (gender) => {
+      const mockDb = makeAggregateDb({
+        profile: [makeProfileRow({ gender })],
+        workoutsCount: [{ total: 0 }],
+      });
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { ProfileRepository } = await import("../profileRepository");
+      const repo = new ProfileRepository();
+      const result = await repo.getProfilePageData("user-1");
+
+      expect(result?.profile.gender).toBeNull();
+    },
+  );
+
+  it("normalises weightUnit to 'kg' when not 'lb'", async () => {
     const mockDb = makeAggregateDb({
-      profile: [makeProfileRow({ preferredUnits: "garbage" })],
+      profile: [makeProfileRow({ weightUnit: "garbage" })],
       workoutsCount: [{ total: 0 }],
     });
     (getDb as any).mockReturnValue(mockDb);
@@ -461,7 +498,21 @@ describe("ProfileRepository.getProfilePageData", () => {
     const repo = new ProfileRepository();
     const result = await repo.getProfilePageData("user-1");
 
-    expect(result?.profile.preferredUnits).toBe("metric");
+    expect(result?.profile.weightUnit).toBe("kg");
+  });
+
+  it("normalises heightUnit to 'cm' when not 'ftin'", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow({ heightUnit: "garbage" })],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.heightUnit).toBe("cm");
   });
 
   it("collapses unknown role values to 'user'", async () => {

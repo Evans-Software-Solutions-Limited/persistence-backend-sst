@@ -773,6 +773,21 @@ export type ApiProfile = {
    *  (M0); surfaced on the wire type when Edit Profile started writing it
    *  (08-profile-settings STORY-010). Age is derived client-side, never stored. */
   dateOfBirth?: string | null;
+  /** M9: biological-sex input for the Fuel Targets TDEE calculator. Backend
+   *  accepts this on PATCH (validated to the three literals + null-to-clear);
+   *  null = never set. */
+  gender?: "male" | "female" | "other" | null;
+  /** M9: height in cm, another TDEE calculator input. Backend has accepted
+   *  this on PATCH since M0 (`profiles.height_cm`); added to the wire type
+   *  when Edit Profile started writing it. null = never set. */
+  heightCm?: number | null;
+  /** Independent per-field display-unit preferences — users routinely mix
+   *  units (e.g. kg for weight, ft/in for height), so a single combined
+   *  metric/imperial toggle can't express the common case. Backend accepts
+   *  both on PATCH (`profiles.weight_unit`/`profiles.height_unit`,
+   *  migration 20260701120000_split_preferred_units.sql). */
+  weightUnit?: "kg" | "lb";
+  heightUnit?: "cm" | "ftin";
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */

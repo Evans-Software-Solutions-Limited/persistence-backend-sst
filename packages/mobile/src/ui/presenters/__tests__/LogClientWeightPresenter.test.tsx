@@ -48,6 +48,24 @@ describe("LogClientWeightPresenter", () => {
     expect(kg).toBeCloseTo(99.79, 1);
   });
 
+  it("can be cleared to an empty string and retyped", () => {
+    // Regression: deriving `value` from a parsed number meant deleting all
+    // the digits produced NaN, the handler bailed, and the field snapped
+    // back to the last valid number — it could never be cleared.
+    const { getByTestId } = render();
+    fireEvent.changeText(getByTestId("log-client-weight-input"), "");
+    expect(getByTestId("log-client-weight-input").props.value).toBe("");
+    fireEvent.changeText(getByTestId("log-client-weight-input"), "9");
+    expect(getByTestId("log-client-weight-input").props.value).toBe("9");
+  });
+
+  it("reformats the field from the last valid value when the unit toggles mid-edit", () => {
+    const { getByTestId, getByLabelText } = render();
+    fireEvent.changeText(getByTestId("log-client-weight-input"), "");
+    fireEvent.press(getByLabelText("Use lb"));
+    expect(getByTestId("log-client-weight-input").props.value).toBe("176.4");
+  });
+
   it("shows the success label and disables save", () => {
     const { props, getByText, getByTestId } = render({ success: true });
     expect(getByText("Logged ✓")).toBeTruthy();

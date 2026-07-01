@@ -83,7 +83,7 @@ export function WeighInSheetPresenter({
   visible,
   onClose,
   onSave,
-  defaultUnit = "kg",
+  defaultUnit,
   history = [],
   defaultWeightKg,
   defaultBodyFat = null,
@@ -91,9 +91,30 @@ export function WeighInSheetPresenter({
   today = new Date(),
   testID = "weigh-in-sheet",
 }: WeighInSheetProps) {
-  const [unit, setUnit] = useState<WeighInUnit>(defaultUnit);
+  const fmt = (v: number) => v.toFixed(1);
+  const toDisplay = (kgValue: number, u: WeighInUnit) =>
+    u === "kg" ? kgValue : kgValue / KG_PER_LB;
+
+  const [unit, setUnit] = useState<WeighInUnit>(defaultUnit ?? "kg");
   const [kg, setKg] = useState<number>(
     defaultWeightKg ?? history[history.length - 1] ?? 80,
+  );
+  // Raw text backing the weight TextInput, tracked separately from the
+  // canonical numeric `kg`. Deriving `value` straight from a *parsed* number
+  // (the old approach: `value={fmt(kg)}`) means deleting all the digits
+  // makes `parseFloat("")` NaN, the onChangeText handler bails without
+  // updating state, and the controlled input snaps right back to the last
+  // valid formatted number — the field can never be cleared to type a new
+  // value. Tracking raw text lets the field hold "", "12.", etc. mid-edit;
+  // `kg` only updates once the text parses to a real number (mirrors
+  // `onTypeBodyFat`'s empty-string handling below).
+  const [weightText, setWeightText] = useState<string>(() =>
+    fmt(
+      toDisplay(
+        defaultWeightKg ?? history[history.length - 1] ?? 80,
+        defaultUnit ?? "kg",
+      ),
+    ),
   );
   const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
@@ -115,17 +136,38 @@ export function WeighInSheetPresenter({
     wasVisible.current = visible;
   }, [visible]);
 
-  // …and seed weight/body-fat from the prefill. This runs again when the
-  // prefill values land (the Apple Health read resolves async, AFTER the open),
-  // so the freshest reading populates the form — but only for a field the user
-  // hasn't typed into yet, so an in-progress edit is never clobbered.
+  // …and seed weight/body-fat from the prefill, PLUS the unit toggle from
+  // the caller's preferred-units default — combined into one effect so
+  // there's no cross-effect ordering hazard (a separate unit-seed effect
+  // that also writes `weightText` could run before or after this one in the
+  // same commit and clobber the other's formatting with a stale closure).
+  //
+  // Both prefill values and `defaultUnit` resolve async, after this sheet's
+  // already-mounted-at-root first render (see feedback_sheets_mount_at_root)
+  // — `defaultUnit` starts `undefined` until the profile fetch lands. The
+  // unit seed is one-shot (ref-guarded) so a manual toggle afterward is
+  // never overwritten by a later-resolving `defaultUnit`; the weight/body-fat
+  // prefill re-applies on every arrival but only to an untouched field.
+  const unitHydratedRef = useRef(false);
   useEffect(() => {
     if (!visible) return;
+    const shouldSeedUnit =
+      defaultUnit !== undefined && !unitHydratedRef.current;
+    if (shouldSeedUnit) unitHydratedRef.current = true;
+    const resolvedUnit = shouldSeedUnit ? defaultUnit : unit;
+    if (shouldSeedUnit) setUnit(defaultUnit);
     if (!editedWeight.current) {
-      setKg(defaultWeightKg ?? history[history.length - 1] ?? 80);
+      const prefillKg = defaultWeightKg ?? history[history.length - 1] ?? 80;
+      setKg(prefillKg);
+      setWeightText(fmt(toDisplay(prefillKg, resolvedUnit)));
+    } else if (shouldSeedUnit) {
+      setWeightText(fmt(toDisplay(kg, resolvedUnit)));
     }
     if (!editedBodyFat.current) setBodyFat(defaultBodyFat);
-  }, [visible, defaultWeightKg, defaultBodyFat, history]);
+    // `unit`/`kg` deliberately omitted — a mid-session unit toggle reformats
+    // via its own handler below, not by re-running this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, defaultUnit, defaultWeightKg, defaultBodyFat, history]);
 
   const onTypeBodyFat = (text: string) => {
     editedBodyFat.current = true;
@@ -140,21 +182,30 @@ export function WeighInSheetPresenter({
     setBodyFat(Math.min(100, Math.max(0, v)));
   };
 
-  const display = unit === "kg" ? kg : kg / KG_PER_LB;
+  const display = toDisplay(kg, unit);
   const step = unit === "kg" ? 0.1 : 0.2;
-  const fmt = (v: number) => v.toFixed(1);
 
   const adjust = (dir: number) => {
     editedWeight.current = true;
     const next = display + dir * step;
     const nextKg =
       unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3);
-    setKg(clampKg(nextKg));
+    const clamped = clampKg(nextKg);
+    setKg(clamped);
+    setWeightText(fmt(toDisplay(clamped, unit)));
+  };
+  const onChangeUnit = (nextUnit: WeighInUnit) => {
+    setUnit(nextUnit);
+    setWeightText(fmt(toDisplay(kg, nextUnit)));
   };
   const onType = (text: string) => {
+    // Always commit the raw text so the field can be cleared/retyped — see
+    // the `weightText` state comment above. `kg` (the canonical value used
+    // by +/-, unit toggle, and Save) only updates once the text parses.
+    editedWeight.current = true;
+    setWeightText(text);
     const v = parseFloat(text);
     if (Number.isNaN(v)) return;
-    editedWeight.current = true;
     // Not clamped: an out-of-range typed value flows to logMeasurementCommand,
     // which rejects it and leaves the sheet open to correct (see MIN/MAX above).
     setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
@@ -226,7 +277,7 @@ export function WeighInSheetPresenter({
               justifyContent="center"
             >
               <TextInput
-                value={fmt(display)}
+                value={weightText}
                 onChangeText={onType}
                 inputMode="decimal"
                 accessibilityLabel="Weight value"
@@ -280,7 +331,7 @@ export function WeighInSheetPresenter({
                   borderRadius={999}
                   alignItems="center"
                   backgroundColor={on ? "$primary" : "transparent"}
-                  onPress={() => setUnit(u)}
+                  onPress={() => onChangeUnit(u)}
                   accessibilityLabel={`Use ${u}`}
                 >
                   <Text

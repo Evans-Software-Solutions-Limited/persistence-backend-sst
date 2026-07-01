@@ -26,7 +26,19 @@ export type ProfilePageFitnessLevel =
   | "advanced"
   | "elite";
 
-export type ProfilePagePreferredUnits = "metric" | "imperial";
+/** Weight-display-unit preference (weigh-in sheet's kg/lb toggle). */
+export type ProfilePageWeightUnit = "kg" | "lb";
+/** Height-display-unit preference (Edit Profile's cm/ft+in toggle).
+ *  Independent of `ProfilePageWeightUnit` — users routinely mix units
+ *  (e.g. kg for weight, ft/in for height). */
+export type ProfilePageHeightUnit = "cm" | "ftin";
+
+/**
+ * Biological-sex input for the Fuel Targets TDEE calculator (M9). `male`/
+ * `female` are the Mifflin-St Jeor coefficient sets; `other` (a user who
+ * declines the binary) uses the midpoint constant. Null = never set.
+ */
+export type ProfileGender = "male" | "female" | "other";
 
 export type ProfilePageSubscriptionStatus =
   | "active"
@@ -49,9 +61,12 @@ export type ProfilePageProfile = {
    * age, never persist a computed age).
    */
   dateOfBirth: string | null;
+  /** Sex for the Fuel Targets TDEE calc (M9); null when never set. */
+  gender: ProfileGender | null;
   heightCm: number | null;
   weightKg: number | null;
-  preferredUnits: ProfilePagePreferredUnits;
+  weightUnit: ProfilePageWeightUnit;
+  heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
   /** ISO timestamp — drives the "member since" copy. */
   createdAt: string;

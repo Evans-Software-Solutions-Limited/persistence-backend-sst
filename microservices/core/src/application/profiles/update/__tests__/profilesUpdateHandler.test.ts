@@ -48,7 +48,8 @@ describe("ProfilesUpdateHandler", () => {
       weightKg: "80",
       availableEquipment: [],
       accessibilityNeeds: [],
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: true,
       subscriptionId: null,
       hasUsedUserTrial: false,
@@ -225,6 +226,144 @@ describe("ProfilesUpdateHandler", () => {
       );
     });
 
+    it("should accept and persist a valid gender (Fuel Targets TDEE input)", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: "female" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ gender: "female" }),
+      );
+    });
+
+    it("should accept gender: null so the user can clear it", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: null }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ gender: null }),
+      );
+    });
+
+    it("should reject an out-of-enum gender with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: "banana" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
+    it("should accept a valid weightUnit value", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ weightUnit: "lb" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ weightUnit: "lb" }),
+      );
+    });
+
+    it("should reject an out-of-enum weightUnit with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ weightUnit: "stone" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
+    it("should accept a valid heightUnit value", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ heightUnit: "ftin" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ heightUnit: "ftin" }),
+      );
+    });
+
+    it("should reject an out-of-enum heightUnit with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ heightUnit: "meters" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
     it("should accept a valid YYYY-MM-DD dateOfBirth", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");
@@ -328,7 +467,8 @@ describe("ProfilesUpdateHandler", () => {
             dateOfBirth: "1995-05-15",
             availableEquipment: ["dumbbells"],
             accessibilityNeeds: [],
-            preferredUnits: "imperial",
+            weightUnit: "lb",
+            heightUnit: "ftin",
             isProfilePublic: false,
           }),
         }),
@@ -342,7 +482,8 @@ describe("ProfilesUpdateHandler", () => {
           dateOfBirth: "1995-05-15",
           availableEquipment: ["dumbbells"],
           accessibilityNeeds: [],
-          preferredUnits: "imperial",
+          weightUnit: "lb",
+          heightUnit: "ftin",
           isProfilePublic: false,
         }),
       );

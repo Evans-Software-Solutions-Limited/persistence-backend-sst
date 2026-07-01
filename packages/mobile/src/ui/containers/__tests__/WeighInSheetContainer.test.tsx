@@ -2,12 +2,53 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
+import type { ProfilePageData } from "@/domain/models/profilePage";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { StubHealthAdapter } from "@/adapters/health";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { WeighInSheetContainer } from "../WeighInSheetContainer";
+
+function makeProfilePagePayload(
+  overrides: Partial<ProfilePageData["profile"]> = {},
+): ProfilePageData {
+  return {
+    profile: {
+      id: "user-1",
+      fullName: "Brad Simms",
+      email: "brad@example.com",
+      username: null,
+      avatarUrl: null,
+      role: "user",
+      fitnessLevel: "intermediate",
+      dateOfBirth: null,
+      gender: null,
+      heightCm: null,
+      weightKg: null,
+      weightUnit: "kg",
+      heightUnit: "cm",
+      isProfilePublic: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    },
+    subscription: {
+      tierName: null,
+      tierDisplayName: null,
+      status: null,
+      isFreeTier: true,
+      isTrainerTier: false,
+      expiresAt: null,
+      cancelledAt: null,
+      workoutLimit: null,
+      isUnlimited: false,
+    },
+    stats: { workoutsCompleted: 0 },
+    recentAchievements: [],
+    activeTrainers: [],
+    pendingTrainerRequests: [],
+  };
+}
 
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -109,6 +150,44 @@ describe("WeighInSheetContainer", () => {
       expect.any(Date),
     );
     expect(writeBodyFat).toHaveBeenCalledWith(18.5, expect.any(Date));
+  });
+
+  it("defaults the unit toggle to lb when the profile's weightUnit is lb", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage(
+      USER,
+      makeProfilePagePayload({ weightUnit: "lb" }),
+    );
+    const onClose = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <WeighInSheetContainer visible onClose={onClose} />
+      </AdapterProvider>,
+    );
+    // No prefill/history in this fixture, so the canonical weight is the
+    // default 80kg — displayed in lb (176.4) once the profile's imperial
+    // preference has seeded the toggle. Displayed in kg (80.0) would mean
+    // the wiring never took effect.
+    await waitFor(() =>
+      expect(getByTestId("weigh-in-input").props.value).toBe("176.4"),
+    );
+  });
+
+  it("defaults the unit toggle to kg when the profile's weightUnit is kg (unchanged)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage(
+      USER,
+      makeProfilePagePayload({ weightUnit: "kg" }),
+    );
+    const onClose = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <WeighInSheetContainer visible onClose={onClose} />
+      </AdapterProvider>,
+    );
+    await waitFor(() =>
+      expect(getByTestId("weigh-in-input").props.value).toBe("80.0"),
+    );
   });
 
   it("does not write to Apple Health when the log is rejected", async () => {

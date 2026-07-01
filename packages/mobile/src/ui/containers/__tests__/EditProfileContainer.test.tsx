@@ -45,6 +45,26 @@ MockPresenter.mockImplementation((props) => {
         value={props.dateOfBirth}
         onChangeText={(t) => props.onDateOfBirthChange(t)}
       />
+      <Text testID="stub-gender">{props.gender ?? "none"}</Text>
+      <Pressable
+        testID="stub-set-gender-female"
+        onPress={() => props.onGenderChange("female")}
+      />
+      <TextInput
+        testID="stub-height"
+        value={props.heightCm}
+        onChangeText={(t) => props.onHeightCmChange(t)}
+      />
+      <Text testID="stub-weight-unit">{props.weightUnit}</Text>
+      <Pressable
+        testID="stub-set-weight-unit-lb"
+        onPress={() => props.onWeightUnitChange("lb")}
+      />
+      <Text testID="stub-height-unit">{props.heightUnit}</Text>
+      <Pressable
+        testID="stub-set-height-unit-ftin"
+        onPress={() => props.onHeightUnitChange("ftin")}
+      />
       <Switch
         testID="stub-public-switch"
         value={props.isProfilePublic}
@@ -81,9 +101,11 @@ function makeProfilePagePayload(
       role: "user",
       fitnessLevel: "intermediate",
       dateOfBirth: null,
+      gender: null,
       heightCm: null,
       weightKg: null,
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: false,
       createdAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -238,6 +260,189 @@ describe("EditProfileContainer", () => {
     expect(cached?.payload.profile.fullName).toBe("Brad S Edited");
     expect(cached?.payload.profile.fitnessLevel).toBe("advanced");
     expect(cached?.payload.profile.isProfilePublic).toBe(true);
+  });
+
+  it("queues a gender change (Fuel Targets TDEE input) + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    // Seed with gender unset so a selection is a real diff.
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-set-gender-female"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ gender: "female" });
+    expect(storage.getCachedProfilePage(userId)?.payload.profile.gender).toBe(
+      "female",
+    );
+  });
+
+  it("queues a height change (Fuel Targets TDEE input) + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-height"), "178");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ heightCm: 178 });
+    expect(storage.getCachedProfilePage(userId)?.payload.profile.heightCm).toBe(
+      178,
+    );
+  });
+
+  it("clears height (sends null) when the user empties a previously-set value", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload({ heightCm: 178 }));
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-height").props.value).toBe("178");
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-height"), "");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ heightCm: null });
+  });
+
+  it("queues a weightUnit change + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-set-weight-unit-lb"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ weightUnit: "lb" });
+    expect(
+      storage.getCachedProfilePage(userId)?.payload.profile.weightUnit,
+    ).toBe("lb");
+  });
+
+  it("queues a heightUnit change independently of weightUnit + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-set-height-unit-ftin"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ heightUnit: "ftin" });
+    const cached = storage.getCachedProfilePage(userId)?.payload.profile;
+    expect(cached?.heightUnit).toBe("ftin");
+    // Mixed units is the whole point of the split — changing height's unit
+    // must never touch weight's.
+    expect(cached?.weightUnit).toBe("kg");
+  });
+
+  it("does not save and shows an error when height is out of range", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId("stub-height"), "9999");
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() =>
+      expect(getByTestId("stub-error").props.children).not.toBe("none"),
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
   });
 
   it("queues fullName: null when the user clears a previously-set name", async () => {

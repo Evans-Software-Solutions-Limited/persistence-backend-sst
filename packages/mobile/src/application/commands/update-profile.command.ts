@@ -33,7 +33,14 @@ import { isIsoDateString } from "@/shared/utils/date";
 export type UpdateProfileInput = Partial<
   Pick<
     ApiProfile,
-    "fullName" | "fitnessLevel" | "dateOfBirth" | "isProfilePublic"
+    | "fullName"
+    | "fitnessLevel"
+    | "dateOfBirth"
+    | "gender"
+    | "heightCm"
+    | "weightUnit"
+    | "heightUnit"
+    | "isProfilePublic"
   >
 >;
 
@@ -75,6 +82,21 @@ export function updateProfileCommand(
     }
   }
 
+  // Sanity-bound height before enqueueing — an invalid value queued offline
+  // would 500 the server on every drain attempt, same rationale as DOB.
+  if (typeof input.heightCm === "number") {
+    if (
+      !Number.isFinite(input.heightCm) ||
+      input.heightCm < 50 ||
+      input.heightCm > 272
+    ) {
+      return fail({
+        kind: "validation",
+        fields: { heightCm: "Enter a height between 50cm and 272cm." },
+      });
+    }
+  }
+
   // Optimistic cache write — merge the patch into the cached profile-page
   // payload so reads reflect it instantly (and across a restart) until the
   // queue drains. Skipped when there's no cached row yet (the next
@@ -91,6 +113,14 @@ export function updateProfileCommand(
           : {}),
         ...(input.dateOfBirth !== undefined
           ? { dateOfBirth: input.dateOfBirth }
+          : {}),
+        ...(input.gender !== undefined ? { gender: input.gender } : {}),
+        ...(input.heightCm !== undefined ? { heightCm: input.heightCm } : {}),
+        ...(input.weightUnit !== undefined
+          ? { weightUnit: input.weightUnit }
+          : {}),
+        ...(input.heightUnit !== undefined
+          ? { heightUnit: input.heightUnit }
           : {}),
         ...(input.isProfilePublic !== undefined
           ? { isProfilePublic: input.isProfilePublic }

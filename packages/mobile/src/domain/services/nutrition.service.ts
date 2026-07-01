@@ -144,7 +144,14 @@ export function setFuelTargets(
 
 // ── TDEE calculator (ported 1:1 from `fuel-targets.jsx`) ─────────────────────
 
-export type Sex = "male" | "female";
+/**
+ * Biological-sex input for the Mifflin-St Jeor BMR. `male`/`female` are the
+ * equation's two coefficient sets; `other` (a user who declines the binary)
+ * uses the midpoint constant so the calculator works for everyone — see
+ * {@link bmrMifflinStJeor}. NULL (never set) is handled by the caller, which
+ * prompts the user rather than guessing.
+ */
+export type Sex = "male" | "female" | "other";
 
 export type TdeeProfile = {
   sex: Sex | null;
@@ -196,7 +203,12 @@ export function bmrMifflinStJeor(profile: TdeeProfile): number | null {
     return null;
   }
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-  return sex === "female" ? base - 161 : base + 5;
+  // Mifflin-St Jeor sex constant: male +5, female -161. `other` uses the
+  // midpoint (-78) — a documented neutral baseline so users who decline the
+  // binary still get a usable target rather than being blocked or defaulted to
+  // one sex. (-78 = (5 + -161) / 2.)
+  const sexConstant = sex === "female" ? -161 : sex === "other" ? -78 : 5;
+  return base + sexConstant;
 }
 
 /** TDEE = BMR × activity multiplier. Null-propagating. */
@@ -266,6 +278,126 @@ export function goalLabel(goal: number): GoalLabel {
   if (goal <= 0.75)
     return { name: "Lean bulk", sub: "~0.25 kg/wk gain", tone: "gold" };
   return { name: "Aggressive bulk", sub: "~0.5 kg/wk gain", tone: "gold" };
+}
+
+// ── Macro-editor preset resolution ─────────────────────────────────────────
+//
+// Prototype parity (`fuel-targets.jsx`'s `MacroEditor`): 5 chips —
+// Recommended/High protein/Balanced/Low carb/Custom. "Recommended" is
+// dynamic (tracks the goal slider via {@link recommendedSplit}); the other 3
+// are fixed ratios. Revised 2026-07-01: an earlier pass replaced this with a
+// goal-slider-shaped 4-preset set (Maintain/Cut/Bulk/Custom) per a read of
+// `design.md § Risks` — on review that reading conflated two independent
+// prototype controls: the goal slider (cut↔bulk, calorie deficit/surplus,
+// labelled via {@link goalLabel}) and the macro-balance chips (protein/carb/
+// fat RATIO, independent of the goal slider). `design.md § Risks`'s "no
+// auto-rebalance" directive is about slider-DRAG behaviour within Custom
+// mode, not preset naming/count — it still applies: dragging a slider in
+// Custom mode only moves that one macro, no proportional rebalancing of the
+// others, and the sum-≠-100% warning chip still gates Save. Restored to the
+// prototype's 5-chip set per explicit user correction.
+
+export type MacroPresetMode =
+  | "recommended"
+  | "high_protein"
+  | "balanced"
+  | "low_carb"
+  | "custom";
+
+type FixedMacroPreset = {
+  id: Exclude<MacroPresetMode, "custom" | "recommended">;
+  label: string;
+  split: MacroSplit;
+};
+
+/** The 3 fixed preset shortcuts (prototype parity). Goal-independent — they
+ * set a macro RATIO, not a calorie target (that's the separate goal slider).
+ * "Recommended" isn't listed here since its split is dynamic — see
+ * {@link presetSplit}. */
+export const MACRO_PRESETS: readonly FixedMacroPreset[] = [
+  {
+    id: "high_protein",
+    label: "High protein",
+    split: { proteinPct: 40, carbsPct: 30, fatPct: 30 },
+  },
+  {
+    id: "balanced",
+    label: "Balanced",
+    split: { proteinPct: 30, carbsPct: 40, fatPct: 30 },
+  },
+  {
+    id: "low_carb",
+    label: "Low carb",
+    split: { proteinPct: 35, carbsPct: 20, fatPct: 45 },
+  },
+];
+
+/**
+ * Resolve a non-'custom' macro mode's percentage split. "Recommended"
+ * depends on the current goal-slider value (prototype parity); the other 3
+ * fixed presets ignore `goal` entirely.
+ */
+export function presetSplit(
+  mode: Exclude<MacroPresetMode, "custom">,
+  goal: number,
+): MacroSplit {
+  if (mode === "recommended") return recommendedSplit(goal);
+  return (
+    MACRO_PRESETS.find((p) => p.id === mode)?.split ?? recommendedSplit(goal)
+  );
+}
+
+/**
+ * True when the three percentages sum to exactly 100. The 3 fixed presets
+ * always do (by construction); only 'custom' mode's independently-dragged
+ * sliders can drift — this is the single source of truth for the "sum ≠
+ * 100%" warning chip (design.md § Risks) and for gating Save.
+ */
+export function macroSplitSumsTo100(split: MacroSplit): boolean {
+  return split.proteinPct + split.carbsPct + split.fatPct === 100;
+}
+
+// ── Fuel Targets editor: single derived-preview computation ────────────────
+
+export type FuelTargetsPreview = {
+  bmr: number | null;
+  tdee: number | null;
+  /** Goal-adjusted daily kcal, rounded to the nearest 10. Null when the
+   * profile is incomplete (missing sex/age/height/weight). */
+  kcal: number | null;
+  goalLabel: GoalLabel;
+  macroSplit: MacroSplit;
+  macroGrams: { proteinG: number; carbsG: number; fatG: number } | null;
+};
+
+/**
+ * The Targets editor's entire live-preview computation, as one pure
+ * function of its inputs — the container calls this on every slider/chip
+ * change (via `useMemo`) rather than re-deriving bmr/tdee/kcal/macros
+ * piecemeal, so the whole preview is independently unit-testable without
+ * mounting React.
+ */
+export function computeFuelTargetsPreview(
+  profile: TdeeProfile,
+  activityId: ActivityLevel["id"],
+  goal: number,
+  macroMode: MacroPresetMode,
+  customSplit: MacroSplit,
+): FuelTargetsPreview {
+  const bmr = bmrMifflinStJeor(profile);
+  const tdeeValue = tdee(bmr, activityMultiplier(activityId));
+  const kcal = goalAdjustedKcal(tdeeValue, goal);
+  const macroSplit =
+    macroMode === "custom" ? customSplit : presetSplit(macroMode, goal);
+  const macroGrams = kcal === null ? null : macrosFromKcal(kcal, macroSplit);
+  return {
+    bmr,
+    tdee: tdeeValue,
+    kcal,
+    goalLabel: goalLabel(goal),
+    macroSplit,
+    macroGrams,
+  };
 }
 
 // ── Daily goal-hit detection (immediate in-app reward) ───────────────────────

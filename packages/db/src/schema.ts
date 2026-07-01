@@ -262,11 +262,28 @@ export const profiles = pgTable("profiles", {
   role: userRoleEnum("role").default("user"),
   fitnessLevel: fitnessLevelEnum("fitness_level").default("beginner"),
   dateOfBirth: text("date_of_birth"),
+  // 'male' | 'female' | 'other' | null — biological-sex input for the Fuel
+  // Targets Mifflin-St Jeor TDEE calculator (M9). CHECK-constrained in
+  // migration 20260630120000_add_profile_gender.sql. NULL = never set.
+  gender: text("gender"),
   heightCm: decimal("height_cm", { precision: 5, scale: 2 }),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
   availableEquipment: uuid("available_equipment").array().default([]),
   accessibilityNeeds: uuid("accessibility_needs").array().default([]),
+  // Unused — superseded by the independent weightUnit/heightUnit below
+  // (migration 20260701120000_split_preferred_units.sql). Kept on the
+  // schema since the column is still live in the DB and `dashboardRepository`
+  // still projects it on the wire; no mobile UI reads it anymore.
   preferredUnits: text("preferred_units").default("metric"),
+  // 'kg' | 'lb' — display-unit preference for the weigh-in sheet's weight
+  // toggle. CHECK-constrained in migration
+  // 20260701120000_split_preferred_units.sql. Independent of heightUnit
+  // below (users routinely mix e.g. kg + ft/in).
+  weightUnit: text("weight_unit").default("kg"),
+  // 'cm' | 'ftin' — display-unit preference for Edit Profile's height
+  // toggle. CHECK-constrained in migration
+  // 20260701120000_split_preferred_units.sql.
+  heightUnit: text("height_unit").default("cm"),
   // M4: IANA timezone identifier for user-local streak period rollover
   // (cross-cuts § 3.4). Migration 20260607120100_m4_progress_schema.sql.
   timezone: text("timezone").notNull().default("Europe/London"),
