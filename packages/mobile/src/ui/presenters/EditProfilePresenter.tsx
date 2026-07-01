@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import type { ProfileGender } from "@/domain/models/profilePage";
 
 /**
  * Edit Profile screen — pure presenter. Shell-refreshed for 08-profile-
@@ -40,6 +41,17 @@ const FITNESS_LEVELS: EditProfileFitnessLevel[] = [
   "elite",
 ];
 
+/**
+ * Sex options for the TDEE calculator. Framed as a metabolic input, not a
+ * gender-identity statement — "Prefer not to say" persists as `other`, which
+ * the calculator maps to the midpoint BMR baseline (nutrition.service).
+ */
+const GENDER_OPTIONS: { value: ProfileGender; label: string }[] = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Prefer not to say" },
+];
+
 function capitalize(value: string): string {
   if (value.length === 0) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -50,6 +62,8 @@ export type EditProfilePresenterProps = {
   fitnessLevel: EditProfileFitnessLevel;
   /** ISO date string (YYYY-MM-DD) or "" when unset. */
   dateOfBirth: string;
+  /** Sex for the TDEE calc; null when never set (no chip selected). */
+  gender: ProfileGender | null;
   isProfilePublic: boolean;
   isSaving: boolean;
   isLoadingInitial: boolean;
@@ -58,6 +72,7 @@ export type EditProfilePresenterProps = {
   onFullNameChange: (value: string) => void;
   onFitnessLevelChange: (value: EditProfileFitnessLevel) => void;
   onDateOfBirthChange: (value: string) => void;
+  onGenderChange: (value: ProfileGender) => void;
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
@@ -75,6 +90,7 @@ export function EditProfilePresenter({
   fullName,
   fitnessLevel,
   dateOfBirth,
+  gender,
   isProfilePublic,
   isSaving,
   isLoadingInitial,
@@ -86,6 +102,7 @@ export function EditProfilePresenter({
   onFullNameChange,
   onFitnessLevelChange,
   onDateOfBirthChange,
+  onGenderChange,
   onIsProfilePublicChange,
   onSave,
   onBack,
@@ -255,6 +272,46 @@ export function EditProfilePresenter({
             />
             <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
               Used to show your age on your profile.
+            </Text>
+          </View>
+
+          {/* Sex — TDEE calculator input (M9). Framed as a metabolic input. */}
+          <View marginBottom={20}>
+            <FieldLabel>Sex</FieldLabel>
+            <View flexDirection="row" flexWrap="wrap" gap={8}>
+              {GENDER_OPTIONS.map((option) => {
+                const selected = option.value === gender;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => onGenderChange(option.value)}
+                    disabled={isSaving}
+                    testID={`edit-profile-gender-${option.value}`}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                  >
+                    <View
+                      paddingHorizontal={16}
+                      paddingVertical={10}
+                      borderRadius={12}
+                      backgroundColor={selected ? "$primaryDim" : "$surface2"}
+                      borderWidth={1}
+                      borderColor={selected ? "$primary" : "$border"}
+                    >
+                      <Text
+                        fontFamily="$display"
+                        fontSize={13}
+                        fontWeight={selected ? "700" : "400"}
+                        color={selected ? "$primary" : "$text2"}
+                      >
+                        {option.label}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
+              Used only to estimate your daily calorie targets.
             </Text>
           </View>
 

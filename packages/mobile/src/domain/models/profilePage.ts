@@ -28,6 +28,13 @@ export type ProfilePageFitnessLevel =
 
 export type ProfilePagePreferredUnits = "metric" | "imperial";
 
+/**
+ * Biological-sex input for the Fuel Targets TDEE calculator (M9). `male`/
+ * `female` are the Mifflin-St Jeor coefficient sets; `other` (a user who
+ * declines the binary) uses the midpoint constant. Null = never set.
+ */
+export type ProfileGender = "male" | "female" | "other";
+
 export type ProfilePageSubscriptionStatus =
   | "active"
   | "trialing"
@@ -49,6 +56,8 @@ export type ProfilePageProfile = {
    * age, never persist a computed age).
    */
   dateOfBirth: string | null;
+  /** Sex for the Fuel Targets TDEE calc (M9); null when never set. */
+  gender: ProfileGender | null;
   heightCm: number | null;
   weightKg: number | null;
   preferredUnits: ProfilePagePreferredUnits;

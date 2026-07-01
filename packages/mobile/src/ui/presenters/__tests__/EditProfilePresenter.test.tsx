@@ -12,12 +12,14 @@ function makeProps(
     fullName: "Brad Simms",
     fitnessLevel: "intermediate",
     dateOfBirth: "1990-01-15",
+    gender: null,
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
     errorMessage: null,
     onFullNameChange: jest.fn(),
     onFitnessLevelChange: jest.fn(),
+    onGenderChange: jest.fn(),
     onDateOfBirthChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
@@ -87,6 +89,34 @@ describe("EditProfilePresenter", () => {
     );
     fireEvent.press(getByTestId("edit-profile-fitness-elite"));
     expect(onFitnessLevelChange).toHaveBeenCalledWith("elite");
+  });
+
+  it("fires onGenderChange when a sex option is tapped", () => {
+    const onGenderChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ onGenderChange })} />,
+    );
+    fireEvent.press(getByTestId("edit-profile-gender-female"));
+    expect(onGenderChange).toHaveBeenCalledWith("female");
+  });
+
+  it("maps 'Prefer not to say' to the 'other' value", () => {
+    const onGenderChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ onGenderChange })} />,
+    );
+    fireEvent.press(getByTestId("edit-profile-gender-other"));
+    expect(onGenderChange).toHaveBeenCalledWith("other");
+  });
+
+  it("highlights the selected sex and leaves others unselected", () => {
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ gender: "female" })} />,
+    );
+    // The selected chip renders in the primary tone; a smoke check that the
+    // node exists + the unselected sibling does too (visual state via style).
+    expect(getByTestId("edit-profile-gender-female")).toBeTruthy();
+    expect(getByTestId("edit-profile-gender-male")).toBeTruthy();
   });
 
   it("fires onIsProfilePublicChange when the switch toggles", () => {

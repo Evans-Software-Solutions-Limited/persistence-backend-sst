@@ -45,6 +45,11 @@ MockPresenter.mockImplementation((props) => {
         value={props.dateOfBirth}
         onChangeText={(t) => props.onDateOfBirthChange(t)}
       />
+      <Text testID="stub-gender">{props.gender ?? "none"}</Text>
+      <Pressable
+        testID="stub-set-gender-female"
+        onPress={() => props.onGenderChange("female")}
+      />
       <Switch
         testID="stub-public-switch"
         value={props.isProfilePublic}
@@ -81,6 +86,7 @@ function makeProfilePagePayload(
       role: "user",
       fitnessLevel: "intermediate",
       dateOfBirth: null,
+      gender: null,
       heightCm: null,
       weightKg: null,
       preferredUnits: "metric",
@@ -238,6 +244,39 @@ describe("EditProfileContainer", () => {
     expect(cached?.payload.profile.fullName).toBe("Brad S Edited");
     expect(cached?.payload.profile.fitnessLevel).toBe("advanced");
     expect(cached?.payload.profile.isProfilePublic).toBe(true);
+  });
+
+  it("queues a gender change (Fuel Targets TDEE input) + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    // Seed with gender unset so a selection is a real diff.
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-set-gender-female"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ gender: "female" });
+    expect(storage.getCachedProfilePage(userId)?.payload.profile.gender).toBe(
+      "female",
+    );
   });
 
   it("queues fullName: null when the user clears a previously-set name", async () => {

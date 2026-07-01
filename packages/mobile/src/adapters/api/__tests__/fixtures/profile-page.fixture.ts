@@ -17,6 +17,7 @@ export const PROFILE_PAGE_FIXTURE: ProfilePageData = {
     role: "user",
     fitnessLevel: "intermediate",
     dateOfBirth: "1995-03-15",
+    gender: "male",
     heightCm: 180,
     weightKg: 78,
     preferredUnits: "metric",

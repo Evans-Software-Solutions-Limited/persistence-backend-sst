@@ -11,6 +11,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import type { ProfileGender } from "@/domain/models/profilePage";
 import {
   EditProfilePresenter,
   type EditProfileFitnessLevel,
@@ -60,6 +61,8 @@ type Snapshot = {
   fullName: string;
   fitnessLevel: EditProfileFitnessLevel;
   dateOfBirth: string;
+  /** null = "prefer not to say"/unset in the selector. */
+  gender: ProfileGender | null;
   isProfilePublic: boolean;
 };
 
@@ -78,6 +81,7 @@ export function EditProfileContainer() {
       fullName: p.fullName ?? "",
       fitnessLevel: asFitnessLevel(p.fitnessLevel),
       dateOfBirth: p.dateOfBirth ?? "",
+      gender: p.gender ?? null,
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -86,6 +90,7 @@ export function EditProfileContainer() {
   const [fitnessLevel, setFitnessLevel] =
     useState<EditProfileFitnessLevel>("beginner");
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState<ProfileGender | null>(null);
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -94,6 +99,7 @@ export function EditProfileContainer() {
     setFullName(initial.fullName);
     setFitnessLevel(initial.fitnessLevel);
     setDateOfBirth(initial.dateOfBirth);
+    setGender(initial.gender);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -107,9 +113,18 @@ export function EditProfileContainer() {
       fullName !== initial.fullName ||
       fitnessLevel !== initial.fitnessLevel ||
       dateOfBirth !== initial.dateOfBirth ||
+      gender !== initial.gender ||
       isProfilePublic !== initial.isProfilePublic
     );
-  }, [initial, hydrated, fullName, fitnessLevel, dateOfBirth, isProfilePublic]);
+  }, [
+    initial,
+    hydrated,
+    fullName,
+    fitnessLevel,
+    dateOfBirth,
+    gender,
+    isProfilePublic,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
@@ -141,6 +156,9 @@ export function EditProfileContainer() {
         // client-side (STORY-010 — never persist a computed age).
         const trimmedDob = dateOfBirth.trim();
         input.dateOfBirth = trimmedDob.length > 0 ? trimmedDob : null;
+      }
+      if (gender !== initial.gender) {
+        input.gender = gender;
       }
       if (isProfilePublic !== initial.isProfilePublic) {
         input.isProfilePublic = isProfilePublic;
@@ -187,6 +205,7 @@ export function EditProfileContainer() {
     fullName,
     fitnessLevel,
     dateOfBirth,
+    gender,
     isProfilePublic,
   ]);
 
@@ -214,6 +233,7 @@ export function EditProfileContainer() {
       fullName={fullName}
       fitnessLevel={fitnessLevel}
       dateOfBirth={dateOfBirth}
+      gender={gender}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
@@ -225,6 +245,7 @@ export function EditProfileContainer() {
       onFullNameChange={setFullName}
       onFitnessLevelChange={setFitnessLevel}
       onDateOfBirthChange={setDateOfBirth}
+      onGenderChange={setGender}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

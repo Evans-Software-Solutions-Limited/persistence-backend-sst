@@ -1247,6 +1247,7 @@ describe("InMemoryStorageAdapter", () => {
         role: "user" as const,
         fitnessLevel: null,
         dateOfBirth: null,
+        gender: null,
         heightCm: null,
         weightKg: null,
         preferredUnits: "metric" as const,

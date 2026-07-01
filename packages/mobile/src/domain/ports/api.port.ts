@@ -773,6 +773,10 @@ export type ApiProfile = {
    *  (M0); surfaced on the wire type when Edit Profile started writing it
    *  (08-profile-settings STORY-010). Age is derived client-side, never stored. */
   dateOfBirth?: string | null;
+  /** M9: biological-sex input for the Fuel Targets TDEE calculator. Backend
+   *  accepts this on PATCH (validated to the three literals + null-to-clear);
+   *  null = never set. */
+  gender?: "male" | "female" | "other" | null;
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */

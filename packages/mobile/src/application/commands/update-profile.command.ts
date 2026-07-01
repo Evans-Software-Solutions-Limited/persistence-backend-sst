@@ -33,7 +33,7 @@ import { isIsoDateString } from "@/shared/utils/date";
 export type UpdateProfileInput = Partial<
   Pick<
     ApiProfile,
-    "fullName" | "fitnessLevel" | "dateOfBirth" | "isProfilePublic"
+    "fullName" | "fitnessLevel" | "dateOfBirth" | "gender" | "isProfilePublic"
   >
 >;
 
@@ -92,6 +92,7 @@ export function updateProfileCommand(
         ...(input.dateOfBirth !== undefined
           ? { dateOfBirth: input.dateOfBirth }
           : {}),
+        ...(input.gender !== undefined ? { gender: input.gender } : {}),
         ...(input.isProfilePublic !== undefined
           ? { isProfilePublic: input.isProfilePublic }
           : {}),

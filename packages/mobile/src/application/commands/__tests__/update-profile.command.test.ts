@@ -17,6 +17,7 @@ function makePayload(
       role: "user",
       fitnessLevel: "intermediate",
       dateOfBirth: null,
+      gender: null,
       heightCm: null,
       weightKg: null,
       preferredUnits: "metric",
