@@ -71,7 +71,7 @@ export function WeighInSheetContainer({
             : weight.value.value;
         setPrefillWeightKg(kg);
       }
-      if (fat.ok) setPrefillBodyFat(fat.value);
+      if (fat.ok) setPrefillBodyFat(fat.value?.value ?? null);
     })();
     return () => {
       cancelled = true;

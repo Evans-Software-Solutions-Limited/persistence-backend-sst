@@ -10,6 +10,7 @@
  */
 
 import type {
+  HealthBodyFat,
   HealthDailySteps,
   HealthError,
   HealthPermissionStatus,
@@ -81,7 +82,7 @@ export class AndroidStubHealthAdapter implements HealthPort {
     return fail(UNAVAILABLE);
   }
 
-  async getLatestBodyFat(): Promise<Result<number | null, HealthError>> {
+  async getLatestBodyFat(): Promise<Result<HealthBodyFat | null, HealthError>> {
     return fail(UNAVAILABLE);
   }
 

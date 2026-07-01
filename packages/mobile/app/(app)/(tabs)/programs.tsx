@@ -16,6 +16,7 @@ export default function ProgramsTab() {
       icon="albums-outline"
       title="Programs"
       description="Programme building arrives in milestone M8 (10-trainer-features)."
+      safeAreaTop
       testID="programs-tab"
     />
   );

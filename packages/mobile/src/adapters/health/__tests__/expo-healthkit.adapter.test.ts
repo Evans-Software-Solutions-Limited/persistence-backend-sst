@@ -493,7 +493,7 @@ describe("ExpoHealthKitAdapter", () => {
     expect(result.error.code).toBe("write_failed");
   });
 
-  it("getLatestBodyFat returns the sample as a percentage (fraction × 100)", async () => {
+  it("getLatestBodyFat returns the sample as a percentage (fraction × 100) with its date", async () => {
     const hk = makeHealthKit({
       getMostRecentQuantitySample: jest.fn(async () => ({
         quantity: 0.182,
@@ -505,7 +505,8 @@ describe("ExpoHealthKitAdapter", () => {
     const result = await adapter.getLatestBodyFat();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toBeCloseTo(18.2, 5);
+    expect(result.value?.value).toBeCloseTo(18.2, 5);
+    expect(result.value?.date).toBe("2026-06-10T08:00:00.000Z");
   });
 
   it("getLatestBodyFat returns null when there is no sample", async () => {

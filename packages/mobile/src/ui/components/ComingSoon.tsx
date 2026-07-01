@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { View } from "@tamagui/core";
 import type { ComponentProps } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Column } from "./Column";
 import { Text } from "./Text";
@@ -9,6 +10,14 @@ type ComingSoonProps = {
   icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   description: string;
+  /**
+   * Apply the top safe-area inset. Opt-in because it's only correct when
+   * ComingSoon IS the screen and there's no chrome above it (tab screens,
+   * header-less stack screens). Routes under the native header (coming-soon,
+   * fuel/recipes) or embedded mid-scroll (ProfilePresenter) must leave this
+   * off — the inset is already consumed above them.
+   */
+  safeAreaTop?: boolean;
   testID?: string;
 };
 
@@ -20,8 +29,10 @@ export function ComingSoon({
   icon,
   title,
   description,
+  safeAreaTop = false,
   testID,
 }: ComingSoonProps) {
+  const insets = useSafeAreaInsets();
   return (
     <View
       flex={1}
@@ -29,6 +40,7 @@ export function ComingSoon({
       justifyContent="center"
       alignItems="center"
       padding="$2xl"
+      paddingTop={safeAreaTop ? insets.top : undefined}
       testID={testID}
     >
       <Column gap="base" centered>
