@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const repoMock = vi.hoisted(() => ({
   getUserTimezone: vi.fn(async () => "Europe/London"),
@@ -30,7 +30,17 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 import { getVolumeStatsHandler } from "../getVolumeStatsHandler";
 
 describe("getVolumeStatsHandler", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Freeze the clock: the handler derives the window start from `new Date()`,
+    // so the "month" window start assertion below ("2026-06-01") depends on the
+    // real date. Without this the test passed only during June (it broke when
+    // the date rolled to July). Mid-month avoids any TZ-boundary ambiguity.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+  });
+
+  afterEach(() => vi.useRealTimers());
 
   it("returns workouts, tonnes, adherence + by-muscle pct", async () => {
     repoMock.completedSessionCount.mockResolvedValue(18);
