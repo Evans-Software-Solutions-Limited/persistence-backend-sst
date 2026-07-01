@@ -25,6 +25,7 @@ import { useRouter } from "expo-router";
 
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useGetNutritionTarget } from "@/ui/hooks/useGetNutritionTarget";
+import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useSetTargets } from "@/ui/hooks/useSetTargets";
 import { computeAge, localDayISO } from "@/shared/utils";
 import {
@@ -47,6 +48,7 @@ export function FuelTargetsContainer() {
   const router = useRouter();
   const profilePage = useProfilePage();
   const target = useGetNutritionTarget();
+  const body = useGetBodyMeasurements(30);
   const { mutate: setTargets } = useSetTargets();
 
   const [activityId, setActivityId] =
@@ -88,7 +90,20 @@ export function FuelTargetsContainer() {
   const age = computeAge(profile?.dateOfBirth ?? null);
   const gender = profile?.gender ?? null;
   const heightCm = profile?.heightCm ?? null;
-  const weightKg = profile?.weightKg ?? null;
+  // `profile.weightKg` is a static snapshot that nothing in the app ever
+  // writes — weight is logged via the weigh-in flow into `cached_body_trend`,
+  // never back onto the profile row. Sourcing from the latest body
+  // measurement instead means a weigh-in logged from Home actually feeds the
+  // TDEE calculator; the profile field is kept only as a defensive fallback
+  // for the (currently unused) direct-write path.
+  const latestWeightKg = useMemo(() => {
+    const points = body.data ?? [];
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      if (points[i].weightKg != null) return points[i].weightKg;
+    }
+    return null;
+  }, [body.data]);
+  const weightKg = latestWeightKg ?? profile?.weightKg ?? null;
 
   const preview = useMemo(
     () =>

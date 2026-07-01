@@ -121,7 +121,7 @@ describe("FuelTargetsContainer", () => {
     mockFetch.mockClear();
   });
 
-  it("derives age/gender/height/weight from the profile and computes a live kcal target", async () => {
+  it("derives age/gender/height from the profile and computes a live kcal target", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheProfilePage("user-1", makeProfilePagePayload());
     render(
@@ -133,11 +133,57 @@ describe("FuelTargetsContainer", () => {
     await waitFor(() => expect(mockProbe.last?.age).not.toBeNull());
     expect(mockProbe.last?.gender).toBe("male");
     expect(mockProbe.last?.heightCm).toBe(178);
+    // No cached body-trend in this fixture — falls back to the (currently
+    // unused-by-any-write-path) profile.weightKg snapshot.
     expect(mockProbe.last?.weightKg).toBe(79.8);
     // Complete profile (male/age/height/weight) + default moderate activity +
     // maintain goal → a real, non-null kcal target.
     expect(mockProbe.last?.kcal).not.toBeNull();
     expect(mockProbe.last?.macroGrams).not.toBeNull();
+  });
+
+  it("uses the latest logged body-measurement weight over the stale profile snapshot", async () => {
+    // Regression: weigh-ins (Home / weigh-in sheet) only ever write to
+    // cached_body_trend, never back onto profile.weightKg — so Fuel Targets
+    // must read the same source Home does, not the profile field.
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage(
+      "user-1",
+      makeProfilePagePayload({ weightKg: 79.8 }),
+    );
+    storage.cacheBodyTrend("user-1", [
+      { date: "2026-06-01", weightKg: 80.5, bodyFat: null },
+      { date: "2026-06-10", weightKg: 78.2, bodyFat: null },
+    ]);
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.weightKg).toBe(78.2));
+  });
+
+  it("falls back to the profile snapshot when the latest measurement has no weight (body-fat-only log)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage(
+      "user-1",
+      makeProfilePagePayload({ weightKg: 79.8 }),
+    );
+    storage.cacheBodyTrend("user-1", [
+      { date: "2026-06-01", weightKg: 80.5, bodyFat: null },
+      { date: "2026-06-10", weightKg: null, bodyFat: 18 },
+    ]);
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+
+    // Skips the weight-less latest point and uses the most recent point
+    // that actually has a weight, rather than falling all the way back to
+    // the profile snapshot.
+    await waitFor(() => expect(mockProbe.last?.weightKg).toBe(80.5));
   });
 
   it("shows null kcal/macros when the profile is incomplete (no gender set)", async () => {
