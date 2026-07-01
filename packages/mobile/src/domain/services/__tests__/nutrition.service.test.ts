@@ -194,6 +194,20 @@ describe("bmrMifflinStJeor", () => {
     ).toBeCloseTo(10 * 60 + 6.25 * 165 - 5 * 30 - 161, 5);
   });
 
+  it("computes 'other' BMR at the midpoint constant (-78)", () => {
+    expect(
+      bmrMifflinStJeor({ sex: "other", age: 30, heightCm: 170, weightKg: 70 }),
+    ).toBeCloseTo(10 * 70 + 6.25 * 170 - 5 * 30 - 78, 5);
+  });
+
+  it("places 'other' exactly between male and female for identical stats", () => {
+    const base = { age: 30, heightCm: 170, weightKg: 70 };
+    const male = bmrMifflinStJeor({ ...base, sex: "male" })!;
+    const female = bmrMifflinStJeor({ ...base, sex: "female" })!;
+    const other = bmrMifflinStJeor({ ...base, sex: "other" })!;
+    expect(other).toBeCloseTo((male + female) / 2, 5);
+  });
+
   it.each([
     { sex: null, age: 30, heightCm: 170, weightKg: 70 },
     { sex: "male" as const, age: null, heightCm: 170, weightKg: 70 },

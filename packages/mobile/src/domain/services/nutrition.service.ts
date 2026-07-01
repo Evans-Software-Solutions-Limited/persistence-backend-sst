@@ -144,7 +144,14 @@ export function setFuelTargets(
 
 // ── TDEE calculator (ported 1:1 from `fuel-targets.jsx`) ─────────────────────
 
-export type Sex = "male" | "female";
+/**
+ * Biological-sex input for the Mifflin-St Jeor BMR. `male`/`female` are the
+ * equation's two coefficient sets; `other` (a user who declines the binary)
+ * uses the midpoint constant so the calculator works for everyone — see
+ * {@link bmrMifflinStJeor}. NULL (never set) is handled by the caller, which
+ * prompts the user rather than guessing.
+ */
+export type Sex = "male" | "female" | "other";
 
 export type TdeeProfile = {
   sex: Sex | null;
@@ -196,7 +203,12 @@ export function bmrMifflinStJeor(profile: TdeeProfile): number | null {
     return null;
   }
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-  return sex === "female" ? base - 161 : base + 5;
+  // Mifflin-St Jeor sex constant: male +5, female -161. `other` uses the
+  // midpoint (-78) — a documented neutral baseline so users who decline the
+  // binary still get a usable target rather than being blocked or defaulted to
+  // one sex. (-78 = (5 + -161) / 2.)
+  const sexConstant = sex === "female" ? -161 : sex === "other" ? -78 : 5;
+  return base + sexConstant;
 }
 
 /** TDEE = BMR × activity multiplier. Null-propagating. */

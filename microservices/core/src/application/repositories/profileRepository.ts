@@ -101,6 +101,12 @@ export interface ProfilePageProfileSlice {
    * DOB, never persist a computed age).
    */
   dateOfBirth: string | null;
+  /**
+   * Biological-sex input for the Fuel Targets TDEE calculator (M9).
+   * `'male' | 'female' | 'other'` or null when never set. CHECK-constrained
+   * in the DB; anything unexpected collapses to null in the slice.
+   */
+  gender: "male" | "female" | "other" | null;
   heightCm: number | null;
   weightKg: number | null;
   preferredUnits: "metric" | "imperial";
@@ -295,6 +301,7 @@ export class ProfileRepository {
         role: profiles.role,
         fitnessLevel: profiles.fitnessLevel,
         dateOfBirth: profiles.dateOfBirth,
+        gender: profiles.gender,
         heightCm: profiles.heightCm,
         weightKg: profiles.weightKg,
         preferredUnits: profiles.preferredUnits,
@@ -325,6 +332,14 @@ export class ProfileRepository {
           : "user",
       fitnessLevel: row.fitnessLevel ?? null,
       dateOfBirth: row.dateOfBirth ?? null,
+      // Constrain to the three CHECK-allowed values; any stray value (or null)
+      // collapses to null so the editor prompts rather than mis-computing.
+      gender:
+        row.gender === "male" ||
+        row.gender === "female" ||
+        row.gender === "other"
+          ? row.gender
+          : null,
       heightCm: coerceDecimal(row.heightCm),
       weightKg: coerceDecimal(row.weightKg),
       preferredUnits: row.preferredUnits === "imperial" ? "imperial" : "metric",

@@ -55,6 +55,11 @@ export const profilesUpdateHandler = new Elysia()
         }
         updateData.dateOfBirth = body.dateOfBirth;
       }
+      // `gender` feeds the Fuel Targets TDEE calculator. `null` clears it
+      // ("prefer not to say" in the editor persists as 'other', not null; null
+      // means never-set). The t.Union below constrains values to the three the
+      // DB CHECK allows, so no extra validation is needed here.
+      if (body.gender !== undefined) updateData.gender = body.gender;
       if (body.heightCm !== undefined)
         updateData.heightCm = String(body.heightCm);
       if (body.weightKg !== undefined)
@@ -101,6 +106,14 @@ export const profilesUpdateHandler = new Elysia()
           ]),
         ),
         dateOfBirth: t.Optional(t.Union([t.String(), t.Null()])),
+        gender: t.Optional(
+          t.Union([
+            t.Literal("male"),
+            t.Literal("female"),
+            t.Literal("other"),
+            t.Null(),
+          ]),
+        ),
         heightCm: t.Optional(t.Union([t.String(), t.Number()])),
         weightKg: t.Optional(t.Union([t.String(), t.Number()])),
         availableEquipment: t.Optional(t.Array(t.String())),

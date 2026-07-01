@@ -262,6 +262,10 @@ export const profiles = pgTable("profiles", {
   role: userRoleEnum("role").default("user"),
   fitnessLevel: fitnessLevelEnum("fitness_level").default("beginner"),
   dateOfBirth: text("date_of_birth"),
+  // 'male' | 'female' | 'other' | null — biological-sex input for the Fuel
+  // Targets Mifflin-St Jeor TDEE calculator (M9). CHECK-constrained in
+  // migration 20260630120000_add_profile_gender.sql. NULL = never set.
+  gender: text("gender"),
   heightCm: decimal("height_cm", { precision: 5, scale: 2 }),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
   availableEquipment: uuid("available_equipment").array().default([]),

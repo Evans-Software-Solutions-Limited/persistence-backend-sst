@@ -225,6 +225,66 @@ describe("ProfilesUpdateHandler", () => {
       );
     });
 
+    it("should accept and persist a valid gender (Fuel Targets TDEE input)", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: "female" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ gender: "female" }),
+      );
+    });
+
+    it("should accept gender: null so the user can clear it", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: null }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ gender: null }),
+      );
+    });
+
+    it("should reject an out-of-enum gender with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ gender: "banana" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
     it("should accept a valid YYYY-MM-DD dateOfBirth", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");
