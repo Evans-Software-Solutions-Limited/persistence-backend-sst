@@ -193,7 +193,9 @@ describe("YouContainer", () => {
       getLatestBodyWeight: jest.fn(async () =>
         ok({ value: 78.2, unit: "kg", date: "2026-06-29T12:00:00.000Z" }),
       ),
-      getLatestBodyFat: jest.fn(async () => ok(22.5)),
+      getLatestBodyFat: jest.fn(async () =>
+        ok({ value: 22.5, date: "2026-06-29T12:00:00.000Z" }),
+      ),
     } as unknown as Adapters["health"];
 
     render(
@@ -210,11 +212,11 @@ describe("YouContainer", () => {
     expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
   });
 
-  it("does NOT let a HealthKit fat reading override in-app fat history (no fat timestamp → in-app wins)", async () => {
-    // The health port has no timestamp for body fat, so a scale syncing a fresh
-    // WEIGHT without a new fat measurement must not surface a stale fat value
-    // as "current". When in-app fat history exists, it wins; the HealthKit fat
-    // reading is ignored (Inspector Brad MEDIUM, PR #143).
+  it("does NOT let a STALE-dated HealthKit fat reading override newer in-app fat history", async () => {
+    // A scale syncing a fresh WEIGHT without a new fat measurement must not
+    // surface a stale fat value as "current". The fat merge compares the fat
+    // sample's OWN date against the last in-app fat point — never the weight's
+    // recency as a proxy (Inspector Brad MEDIUM, PR #143).
     const { api, adapters } = makeAdapters();
     api.bodyTrend = [
       { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: 20.0 },
@@ -237,8 +239,11 @@ describe("YouContainer", () => {
       getLatestBodyWeight: jest.fn(async () =>
         ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
       ),
-      // ...but a STALE fat reading from a week ago. Must not become "current".
-      getLatestBodyFat: jest.fn(async () => ok(25.0)),
+      // ...but a STALE fat reading from before the last in-app fat log.
+      // Must not become "current".
+      getLatestBodyFat: jest.fn(async () =>
+        ok({ value: 25.0, date: "2026-06-23T12:00:00.000Z" }),
+      ),
     } as unknown as Adapters["health"];
 
     render(
@@ -255,6 +260,50 @@ describe("YouContainer", () => {
     expect(mockProbe.last?.bodyTrend.bodyFat.series).not.toContain(25.0);
     // Weight still merges (it HAS a timestamp and is genuinely newer).
     expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
+  });
+
+  it("merges a HealthKit fat reading NEWER than the last in-app fat log", async () => {
+    // The fat sample now carries its own date, so a fresh connected-scale
+    // reading taken after the last in-app log becomes "current" — the same
+    // rule the weight merge has always used.
+    const { api, adapters } = makeAdapters();
+    api.bodyTrend = [
+      { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: 20.0 },
+      { date: "2026-06-28T00:00:00.000Z", weightKg: 79.0, bodyFat: 19.5 },
+    ];
+    adapters.health = {
+      isAvailable: jest.fn(async () => true),
+      getPermissionStatus: jest.fn(async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+      })),
+      getStepsToday: jest.fn(async () => ok(0)),
+      getStepsLastNDays: jest.fn(async () => ok([])),
+      getActiveCaloriesToday: jest.fn(async () => ok(0)),
+      getBasalCaloriesToday: jest.fn(async () => ok(0)),
+      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
+      getLatestBodyWeight: jest.fn(async () =>
+        ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
+      ),
+      getLatestBodyFat: jest.fn(async () =>
+        ok({ value: 18.9, date: "2026-06-30T12:00:00.000Z" }),
+      ),
+    } as unknown as Adapters["health"];
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+
+    await waitFor(() =>
+      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(18.9),
+    );
+    expect(mockProbe.last?.bodyTrend.bodyFat.series).toEqual([
+      20.0, 19.5, 18.9,
+    ]);
   });
 
   it("keeps onRefresh referentially stable across re-renders", async () => {

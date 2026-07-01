@@ -10,6 +10,7 @@
  */
 
 import type {
+  HealthBodyFat,
   HealthDailySteps,
   HealthError,
   HealthPermissionStatus,
@@ -436,15 +437,21 @@ export class ExpoHealthKitAdapter implements HealthPort {
     }
   }
 
-  async getLatestBodyFat(): Promise<Result<number | null, HealthError>> {
+  async getLatestBodyFat(): Promise<Result<HealthBodyFat | null, HealthError>> {
     try {
       const sample = await this.healthkit.getMostRecentQuantitySample(
         IDENTIFIER.BODY_FAT_PERCENTAGE,
       );
       if (!sample || typeof sample.quantity !== "number") return ok(null);
+      const date =
+        sample.endDate instanceof Date
+          ? sample.endDate.toISOString()
+          : typeof sample.endDate === "string"
+            ? sample.endDate
+            : new Date().toISOString();
       // HealthKit stores body fat as a fraction (0.18 = 18%). Surface a
       // percentage so the UI + the measurements API speak the same unit.
-      return ok(sample.quantity * 100);
+      return ok({ value: sample.quantity * 100, date });
     } catch (err) {
       return fail(
         readFailure(

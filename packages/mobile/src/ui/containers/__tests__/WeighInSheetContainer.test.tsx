@@ -125,7 +125,8 @@ describe("WeighInSheetContainer", () => {
     Object.assign(adapters.health, {
       getLatestBodyWeight: async () =>
         ok({ value: 176, unit: "lbs" as const, date: "2026-06-10T07:00:00Z" }),
-      getLatestBodyFat: async () => ok(18.5),
+      getLatestBodyFat: async () =>
+        ok({ value: 18.5, date: "2026-06-10T07:00:00Z" }),
       writeBodyWeight,
       writeBodyFat,
     });

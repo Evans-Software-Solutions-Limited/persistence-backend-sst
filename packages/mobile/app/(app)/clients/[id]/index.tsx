@@ -23,6 +23,7 @@ export default function ClientDetailScreen() {
         icon="person-outline"
         title="Client"
         description="The full client detail screen arrives in the next slice."
+        safeAreaTop
         testID="client-detail-coming-soon"
       />
       <View

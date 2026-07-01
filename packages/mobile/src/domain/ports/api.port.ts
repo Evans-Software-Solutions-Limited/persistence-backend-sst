@@ -761,6 +761,12 @@ export type LogMeasurementInput = {
   leftThighCm?: number;
   rightThighCm?: number;
   notes?: string;
+  /**
+   * ISO timestamp of when the reading was actually taken. Omitted for
+   * interactive weigh-ins (the server stamps NOW); set by the HealthKit→server
+   * push so a reading imported days later still lands on the right trend day.
+   */
+  measuredAt?: string;
 };
 
 export type ApiProfile = {

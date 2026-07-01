@@ -54,7 +54,8 @@ function makeHealthAdapter(overrides: Partial<HealthPort> = {}): HealthPort {
     getLatestBodyWeight: async () =>
       ok({ value: 74.5, unit: "kg" as const, date: "2026-04-20T07:00:00Z" }),
     getHeartRateLatest: async () => ok(62),
-    getLatestBodyFat: async () => ok(18.2),
+    getLatestBodyFat: async () =>
+      ok({ value: 18.2, date: "2026-04-20T07:00:00Z" }),
     writeBodyWeight: async () =>
       ok(undefined) as Awaited<ReturnType<HealthPort["writeBodyWeight"]>>,
     writeBodyFat: async () =>
@@ -112,7 +113,10 @@ describe("useHealthData", () => {
     });
     expect(result.current.activeCaloriesToday).toBe(312);
     expect(result.current.latestBodyWeight?.value).toBe(74.5);
-    expect(result.current.latestBodyFat).toBe(18.2);
+    expect(result.current.latestBodyFat).toEqual({
+      value: 18.2,
+      date: "2026-04-20T07:00:00Z",
+    });
     expect(health.getLatestBodyFat).toHaveBeenCalled();
     expect(result.current.isAvailable).toBe(true);
     expect(result.current.permissionStatus.steps).toBe("granted");

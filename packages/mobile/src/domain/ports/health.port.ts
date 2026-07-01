@@ -14,6 +14,16 @@ export type HealthWeight = {
 };
 
 /**
+ * Body-fat sample as a PERCENTAGE (0..100) plus the sample's end date.
+ * The date lets callers compare recency against in-app measurement logs
+ * (You-screen merge, HealthKit→server push dedup).
+ */
+export type HealthBodyFat = {
+  value: number;
+  date: string;
+};
+
+/**
  * Daily step bucket used by the Home tab's StepsTodayTile mini-graph.
  * Mirrors the legacy `twoWeeksSteps` shape (`{ date, steps }`).
  */
@@ -77,11 +87,12 @@ export interface HealthPort {
    */
   getHeartRateLatest(): Promise<Result<number | null, HealthError>>;
   /**
-   * Most recent body-fat sample as a PERCENTAGE (0..100), or null when no
-   * samples exist. HealthKit stores body fat as a fraction (0.18 = 18%); the
-   * adapter converts to a percentage so callers don't juggle the unit.
+   * Most recent body-fat sample as a PERCENTAGE (0..100) with its sample
+   * date, or null when no samples exist. HealthKit stores body fat as a
+   * fraction (0.18 = 18%); the adapter converts to a percentage so callers
+   * don't juggle the unit.
    */
-  getLatestBodyFat(): Promise<Result<number | null, HealthError>>;
+  getLatestBodyFat(): Promise<Result<HealthBodyFat | null, HealthError>>;
   writeBodyWeight(
     weight: number,
     date: Date,

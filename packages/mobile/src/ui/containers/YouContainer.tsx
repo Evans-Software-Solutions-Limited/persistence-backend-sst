@@ -117,9 +117,9 @@ export function YouContainer() {
     const kg = w.unit === "lbs" ? w.value * 0.45359237 : w.value;
     return { kg, date: w.date };
   }, [health.latestBodyWeight]);
-  // HealthKit body-fat percentage (0..100), same rationale as weight: the
-  // /body-trend API only carries body fat logged IN the app, so a connected
-  // scale (Renpho → Apple Health) left the body-fat tile empty.
+  // HealthKit body-fat reading ({ value, date }), same rationale as weight:
+  // the /body-trend API only carries body fat logged IN the app, so a
+  // connected scale (Renpho → Apple Health) left the body-fat tile empty.
   const healthBodyFat = health.latestBodyFat;
 
   // Client-side trainer relationships → the "Your trainer" You-page block +
@@ -197,17 +197,23 @@ export function YouContainer() {
       weightSeriesMerged = [...weightSeries, healthWeight.kg];
     }
 
-    // Body fat: the health port gives no standalone timestamp for the fat
-    // reading, so — unlike weight — we can't tell whether a HealthKit fat
-    // value is newer than the latest in-app log. We deliberately do NOT borrow
-    // the weight's recency as a proxy: a scale can sync a fresh weight without
-    // a new fat measurement, which would surface a stale fat value as "current"
-    // and skew the delta. So in-app fat always wins when present; the HealthKit
-    // reading only fills the gap when there's no in-app fat history at all
-    // (the connected-scale-only case this fallback targets).
+    // Body fat: same merge rule as weight, on the fat sample's OWN date —
+    // never the weight's recency as a proxy (a scale can sync a fresh weight
+    // without a new fat measurement, which would surface a stale fat value as
+    // "current" and skew the delta).
+    const lastApiFatDate = [...pts]
+      .reverse()
+      .find((p) => p.bodyFat != null)?.date;
+    const healthFatIsNewer =
+      healthBodyFat != null &&
+      (fatSeries.length === 0 ||
+        lastApiFatDate == null ||
+        new Date(healthBodyFat.date).getTime() >
+          new Date(lastApiFatDate).getTime());
+
     let fatSeriesMerged = fatSeries;
-    if (healthBodyFat != null && fatSeries.length === 0) {
-      fatSeriesMerged = [healthBodyFat];
+    if (healthBodyFat != null && healthFatIsNewer) {
+      fatSeriesMerged = [...fatSeries, healthBodyFat.value];
     }
 
     return {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import type {
+  HealthBodyFat,
   HealthDailySteps,
   HealthPermissionStatus,
   HealthWeight,
@@ -42,12 +43,13 @@ export type HealthDataState = {
   standTimeTodayMinutes: number | null;
   latestBodyWeight: HealthWeight | null;
   /**
-   * Most recent body-fat reading as a PERCENTAGE (0..100), or null. The
-   * /body-trend API only carries body fat logged IN the app, so a user who
-   * records body fat solely via a connected scale (e.g. Renpho → Apple Health)
-   * saw an empty body-fat tile. The You screen falls back to this reading.
+   * Most recent body-fat reading — percentage (0..100) + sample date — or
+   * null. The /body-trend API only carries body fat logged IN the app, so a
+   * user who records body fat solely via a connected scale (e.g. Renpho →
+   * Apple Health) saw an empty body-fat tile. The You screen falls back to
+   * (or, when newer, prefers) this reading.
    */
-  latestBodyFat: number | null;
+  latestBodyFat: HealthBodyFat | null;
   permissionStatus: HealthPermissionStatus;
   isAvailable: boolean;
   isReading: boolean;
@@ -87,7 +89,9 @@ export function useHealthData(): HealthDataState {
   const [latestBodyWeight, setLatestBodyWeight] = useState<HealthWeight | null>(
     null,
   );
-  const [latestBodyFat, setLatestBodyFat] = useState<number | null>(null);
+  const [latestBodyFat, setLatestBodyFat] = useState<HealthBodyFat | null>(
+    null,
+  );
   const [permissionStatus, setPermissionStatus] =
     useState<HealthPermissionStatus>(DEFAULT_PERMISSIONS);
   const [isAvailable, setIsAvailable] = useState(false);
