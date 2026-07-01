@@ -91,9 +91,30 @@ export function WeighInSheetPresenter({
   today = new Date(),
   testID = "weigh-in-sheet",
 }: WeighInSheetProps) {
+  const fmt = (v: number) => v.toFixed(1);
+  const toDisplay = (kgValue: number, u: WeighInUnit) =>
+    u === "kg" ? kgValue : kgValue / KG_PER_LB;
+
   const [unit, setUnit] = useState<WeighInUnit>(defaultUnit);
   const [kg, setKg] = useState<number>(
     defaultWeightKg ?? history[history.length - 1] ?? 80,
+  );
+  // Raw text backing the weight TextInput, tracked separately from the
+  // canonical numeric `kg`. Deriving `value` straight from a *parsed* number
+  // (the old approach: `value={fmt(kg)}`) means deleting all the digits
+  // makes `parseFloat("")` NaN, the onChangeText handler bails without
+  // updating state, and the controlled input snaps right back to the last
+  // valid formatted number — the field can never be cleared to type a new
+  // value. Tracking raw text lets the field hold "", "12.", etc. mid-edit;
+  // `kg` only updates once the text parses to a real number (mirrors
+  // `onTypeBodyFat`'s empty-string handling below).
+  const [weightText, setWeightText] = useState<string>(() =>
+    fmt(
+      toDisplay(
+        defaultWeightKg ?? history[history.length - 1] ?? 80,
+        defaultUnit,
+      ),
+    ),
   );
   const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
@@ -122,9 +143,14 @@ export function WeighInSheetPresenter({
   useEffect(() => {
     if (!visible) return;
     if (!editedWeight.current) {
-      setKg(defaultWeightKg ?? history[history.length - 1] ?? 80);
+      const prefillKg = defaultWeightKg ?? history[history.length - 1] ?? 80;
+      setKg(prefillKg);
+      setWeightText(fmt(toDisplay(prefillKg, unit)));
     }
     if (!editedBodyFat.current) setBodyFat(defaultBodyFat);
+    // `unit` deliberately omitted — a mid-session unit toggle reformats via
+    // its own handler below, not by re-running the prefill.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, defaultWeightKg, defaultBodyFat, history]);
 
   const onTypeBodyFat = (text: string) => {
@@ -140,21 +166,30 @@ export function WeighInSheetPresenter({
     setBodyFat(Math.min(100, Math.max(0, v)));
   };
 
-  const display = unit === "kg" ? kg : kg / KG_PER_LB;
+  const display = toDisplay(kg, unit);
   const step = unit === "kg" ? 0.1 : 0.2;
-  const fmt = (v: number) => v.toFixed(1);
 
   const adjust = (dir: number) => {
     editedWeight.current = true;
     const next = display + dir * step;
     const nextKg =
       unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3);
-    setKg(clampKg(nextKg));
+    const clamped = clampKg(nextKg);
+    setKg(clamped);
+    setWeightText(fmt(toDisplay(clamped, unit)));
+  };
+  const onChangeUnit = (nextUnit: WeighInUnit) => {
+    setUnit(nextUnit);
+    setWeightText(fmt(toDisplay(kg, nextUnit)));
   };
   const onType = (text: string) => {
+    // Always commit the raw text so the field can be cleared/retyped — see
+    // the `weightText` state comment above. `kg` (the canonical value used
+    // by +/-, unit toggle, and Save) only updates once the text parses.
+    editedWeight.current = true;
+    setWeightText(text);
     const v = parseFloat(text);
     if (Number.isNaN(v)) return;
-    editedWeight.current = true;
     // Not clamped: an out-of-range typed value flows to logMeasurementCommand,
     // which rejects it and leaves the sheet open to correct (see MIN/MAX above).
     setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
@@ -226,7 +261,7 @@ export function WeighInSheetPresenter({
               justifyContent="center"
             >
               <TextInput
-                value={fmt(display)}
+                value={weightText}
                 onChangeText={onType}
                 inputMode="decimal"
                 accessibilityLabel="Weight value"
@@ -280,7 +315,7 @@ export function WeighInSheetPresenter({
                   borderRadius={999}
                   alignItems="center"
                   backgroundColor={on ? "$primary" : "transparent"}
-                  onPress={() => setUnit(u)}
+                  onPress={() => onChangeUnit(u)}
                   accessibilityLabel={`Use ${u}`}
                 >
                   <Text

@@ -128,9 +128,38 @@ describe("WeighInSheetPresenter", () => {
     // §3: only the stepper is floored. A deliberately-typed bad value still
     // flows through so logMeasurementCommand can reject it and the container
     // can keep the sheet open to correct (gate covered by WeighInSheetContainer).
-    const { getByTestId } = render();
+    // The field shows the raw typed text verbatim (not reformatted) — see the
+    // "can be cleared" test below for why.
+    const { getByTestId, onSave, getByText } = render();
     fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
-    expect(getByTestId("weigh-in-input").props.value).toBe("-50.0");
+    expect(getByTestId("weigh-in-input").props.value).toBe("-50");
+    fireEvent.press(getByText(/Log/));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ weightKg: -50 }),
+    );
+  });
+
+  it("can be cleared to an empty string and retyped, unlike the old parse-and-reformat input", () => {
+    // The regression this fix targets: deriving `value` from a parsed number
+    // meant deleting all the digits produced NaN, the handler bailed, and the
+    // controlled input snapped back to the last valid number — the field
+    // could never be cleared. Raw text state fixes that.
+    const { getByTestId } = render();
+    fireEvent.changeText(getByTestId("weigh-in-input"), "");
+    expect(getByTestId("weigh-in-input").props.value).toBe("");
+    fireEvent.changeText(getByTestId("weigh-in-input"), "6");
+    expect(getByTestId("weigh-in-input").props.value).toBe("6");
+    fireEvent.changeText(getByTestId("weigh-in-input"), "65");
+    expect(getByTestId("weigh-in-input").props.value).toBe("65");
+  });
+
+  it("reformats the field from the last valid value when the unit toggles mid-edit", () => {
+    const { getByTestId, getByLabelText } = render();
+    fireEvent.changeText(getByTestId("weigh-in-input"), "");
+    fireEvent.press(getByLabelText("Use lb"));
+    // Unit toggle reformats from the canonical (still 79.8kg) — the cleared
+    // raw text doesn't leave the field stuck empty.
+    expect(getByTestId("weigh-in-input").props.value).toBe("175.9");
   });
 
   it("picks a past day via the date chips", () => {
