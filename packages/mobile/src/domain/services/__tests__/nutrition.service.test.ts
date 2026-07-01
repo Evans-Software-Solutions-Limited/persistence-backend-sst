@@ -441,22 +441,33 @@ describe("setFuelTargets", () => {
 });
 
 describe("presetSplit", () => {
-  it("resolves the three fixed presets", () => {
-    expect(presetSplit("maintain")).toEqual({
-      proteinPct: 30,
-      carbsPct: 45,
-      fatPct: 25,
-    });
-    expect(presetSplit("cut")).toEqual({
+  it("resolves the three fixed presets, ignoring goal", () => {
+    expect(presetSplit("high_protein", 0)).toEqual({
       proteinPct: 40,
-      carbsPct: 35,
-      fatPct: 25,
+      carbsPct: 30,
+      fatPct: 30,
     });
-    expect(presetSplit("bulk")).toEqual({
-      proteinPct: 25,
-      carbsPct: 50,
-      fatPct: 25,
+    expect(presetSplit("balanced", 0)).toEqual({
+      proteinPct: 30,
+      carbsPct: 40,
+      fatPct: 30,
     });
+    expect(presetSplit("low_carb", 0)).toEqual({
+      proteinPct: 35,
+      carbsPct: 20,
+      fatPct: 45,
+    });
+    expect(presetSplit("high_protein", -0.9)).toEqual(
+      presetSplit("high_protein", 0.9),
+    );
+  });
+
+  it("'recommended' tracks the goal slider via recommendedSplit", () => {
+    expect(presetSplit("recommended", -0.9)).toEqual(recommendedSplit(-0.9));
+    expect(presetSplit("recommended", 0.9)).toEqual(recommendedSplit(0.9));
+    expect(presetSplit("recommended", -0.9)).not.toEqual(
+      presetSplit("recommended", 0.9),
+    );
   });
 
   it("MACRO_PRESETS carries exactly the three fixed presets, each summing to 100", () => {
@@ -503,7 +514,7 @@ describe("computeFuelTargetsPreview", () => {
       PROFILE,
       "moderate",
       0,
-      "maintain",
+      "recommended",
       { proteinPct: 30, carbsPct: 45, fatPct: 25 },
     );
     const expectedBmr = bmrMifflinStJeor(PROFILE);
@@ -512,9 +523,9 @@ describe("computeFuelTargetsPreview", () => {
     expect(preview.bmr).toBeCloseTo(expectedBmr!, 5);
     expect(preview.tdee).toBeCloseTo(expectedTdee!, 5);
     expect(preview.kcal).toBe(expectedKcal);
-    expect(preview.macroSplit).toEqual(presetSplit("maintain"));
+    expect(preview.macroSplit).toEqual(presetSplit("recommended", 0));
     expect(preview.macroGrams).toEqual(
-      macrosFromKcal(expectedKcal!, presetSplit("maintain")),
+      macrosFromKcal(expectedKcal!, presetSplit("recommended", 0)),
     );
     expect(preview.goalLabel).toEqual(goalLabel(0));
   });
@@ -524,7 +535,7 @@ describe("computeFuelTargetsPreview", () => {
       { sex: null, age: 28, heightCm: 178, weightKg: 79.8 },
       "moderate",
       0.5,
-      "maintain",
+      "recommended",
       { proteinPct: 30, carbsPct: 45, fatPct: 25 },
     );
     expect(preview.bmr).toBeNull();
@@ -549,18 +560,43 @@ describe("computeFuelTargetsPreview", () => {
   });
 
   it("a fixed preset's split is independent of the goal slider", () => {
-    const atCut = computeFuelTargetsPreview(PROFILE, "moderate", -0.9, "cut", {
-      proteinPct: 30,
-      carbsPct: 45,
-      fatPct: 25,
-    });
-    const atBulk = computeFuelTargetsPreview(PROFILE, "moderate", 0.9, "cut", {
-      proteinPct: 30,
-      carbsPct: 45,
-      fatPct: 25,
-    });
-    expect(atCut.macroSplit).toEqual(presetSplit("cut"));
-    expect(atBulk.macroSplit).toEqual(presetSplit("cut"));
+    const atCut = computeFuelTargetsPreview(
+      PROFILE,
+      "moderate",
+      -0.9,
+      "high_protein",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    const atBulk = computeFuelTargetsPreview(
+      PROFILE,
+      "moderate",
+      0.9,
+      "high_protein",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    expect(atCut.macroSplit).toEqual(presetSplit("high_protein", -0.9));
+    expect(atBulk.macroSplit).toEqual(presetSplit("high_protein", 0.9));
+    expect(atCut.macroSplit).toEqual(atBulk.macroSplit);
+  });
+
+  it("'recommended' mode's split DOES track the goal slider (prototype parity)", () => {
+    const atCut = computeFuelTargetsPreview(
+      PROFILE,
+      "moderate",
+      -0.9,
+      "recommended",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    const atBulk = computeFuelTargetsPreview(
+      PROFILE,
+      "moderate",
+      0.9,
+      "recommended",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    expect(atCut.macroSplit).toEqual(recommendedSplit(-0.9));
+    expect(atBulk.macroSplit).toEqual(recommendedSplit(0.9));
+    expect(atCut.macroSplit).not.toEqual(atBulk.macroSplit);
   });
 
   it("'custom' mode preserves an invalid (sum ≠ 100) split verbatim — no auto-rebalance", () => {

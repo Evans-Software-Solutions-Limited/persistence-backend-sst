@@ -70,7 +70,7 @@ function makeProps(
     onActivityChange: jest.fn(),
     goal: 0,
     onGoalChange: jest.fn(),
-    macroMode: "maintain",
+    macroMode: "recommended",
     onMacroModeChange: jest.fn(),
     onProteinPctChange: jest.fn(),
     onCarbsPctChange: jest.fn(),
@@ -215,9 +215,10 @@ describe("FuelTargetsPresenter", () => {
   });
 
   it.each([
-    ["maintain", "maintain"],
-    ["cut", "cut"],
-    ["bulk", "bulk"],
+    ["recommended", "recommended"],
+    ["high_protein", "high_protein"],
+    ["balanced", "balanced"],
+    ["low_carb", "low_carb"],
     ["custom", "custom"],
   ])("fires onMacroModeChange(%s) when that preset chip is tapped", (id) => {
     const onMacroModeChange = jest.fn();
@@ -230,7 +231,7 @@ describe("FuelTargetsPresenter", () => {
 
   it("disables the macro sliders when mode is not 'custom'", () => {
     const { getByTestId } = renderWithTheme(
-      <FuelTargetsPresenter {...makeProps({ macroMode: "maintain" })} />,
+      <FuelTargetsPresenter {...makeProps({ macroMode: "recommended" })} />,
     );
     expect(
       getByTestId("fuel-targets-protein-slider-input").props.editable,

@@ -795,9 +795,10 @@ function GoalSliderSection({
 // ── Macro editor ──────────────────────────────────────────────────────────
 
 const PRESET_CHIPS: { id: MacroPresetMode; label: string }[] = [
-  { id: "maintain", label: "Maintain" },
-  { id: "cut", label: "Cut" },
-  { id: "bulk", label: "Bulk" },
+  { id: "recommended", label: "Recommended" },
+  { id: "high_protein", label: "High protein" },
+  { id: "balanced", label: "Balanced" },
+  { id: "low_carb", label: "Low carb" },
   { id: "custom", label: "Custom" },
 ];
 

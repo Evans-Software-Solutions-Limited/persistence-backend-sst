@@ -321,25 +321,25 @@ describe("FuelTargetsContainer", () => {
         <FuelTargetsContainer />
       </AdapterProvider>,
     );
-    await waitFor(() => expect(mockProbe.last?.macroMode).toBe("maintain"));
+    await waitFor(() => expect(mockProbe.last?.macroMode).toBe("recommended"));
 
     await act(async () => {
-      mockProbe.last?.onMacroModeChange("cut");
+      mockProbe.last?.onMacroModeChange("high_protein");
     });
     expect(mockProbe.last?.macroSplit).toEqual({
       proteinPct: 40,
-      carbsPct: 35,
-      fatPct: 25,
+      carbsPct: 30,
+      fatPct: 30,
     });
 
     await act(async () => {
       mockProbe.last?.onMacroModeChange("custom");
     });
-    // Custom starts from 'cut's values, not some other stale default.
+    // Custom starts from 'high_protein's values, not some other stale default.
     expect(mockProbe.last?.macroSplit).toEqual({
       proteinPct: 40,
-      carbsPct: 35,
-      fatPct: 25,
+      carbsPct: 30,
+      fatPct: 30,
     });
 
     await act(async () => {
@@ -348,8 +348,8 @@ describe("FuelTargetsContainer", () => {
     // Protein moves alone — carbs/fat untouched (no auto-rebalance).
     expect(mockProbe.last?.macroSplit).toEqual({
       proteinPct: 60,
-      carbsPct: 35,
-      fatPct: 25,
+      carbsPct: 30,
+      fatPct: 30,
     });
 
     await act(async () => {

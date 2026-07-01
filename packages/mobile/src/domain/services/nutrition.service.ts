@@ -282,56 +282,68 @@ export function goalLabel(goal: number): GoalLabel {
 
 // ── Macro-editor preset resolution ─────────────────────────────────────────
 //
-// Deliberate deviation from the literal `fuel-targets.jsx` prototype, which
-// used 5 chips (Recommended/High protein/Balanced/Low carb/Custom) with
-// protein-drag auto-rebalancing carbs/fat proportionally. `design.md § Risks`
-// explicitly overrides this: "Macro autobalance UX in Fuel Targets — sliders
-// that auto-rebalance can confuse users → Use 3-input pattern (% for each
-// macro) + warning chip when sum ≠ 100; not auto-adjust", and
-// `requirements.md` STORY-004 AC 4.3 names the 4 presets "Maintain, Cut,
-// Bulk, Custom". Per the spec-first discipline (specs/_agent.md), an explicit
-// documented spec decision like this takes precedence over the prototype's
-// literal interaction wiring — unlike the VISUAL design (colours, layout,
-// copy), which the prototype still governs. So: 3 independent macro sliders
-// (no rebalancing), a fixed 3-preset shortcut set, and a sum-validity check
-// for the warning chip.
+// Prototype parity (`fuel-targets.jsx`'s `MacroEditor`): 5 chips —
+// Recommended/High protein/Balanced/Low carb/Custom. "Recommended" is
+// dynamic (tracks the goal slider via {@link recommendedSplit}); the other 3
+// are fixed ratios. Revised 2026-07-01: an earlier pass replaced this with a
+// goal-slider-shaped 4-preset set (Maintain/Cut/Bulk/Custom) per a read of
+// `design.md § Risks` — on review that reading conflated two independent
+// prototype controls: the goal slider (cut↔bulk, calorie deficit/surplus,
+// labelled via {@link goalLabel}) and the macro-balance chips (protein/carb/
+// fat RATIO, independent of the goal slider). `design.md § Risks`'s "no
+// auto-rebalance" directive is about slider-DRAG behaviour within Custom
+// mode, not preset naming/count — it still applies: dragging a slider in
+// Custom mode only moves that one macro, no proportional rebalancing of the
+// others, and the sum-≠-100% warning chip still gates Save. Restored to the
+// prototype's 5-chip set per explicit user correction.
 
-export type MacroPresetMode = "maintain" | "cut" | "bulk" | "custom";
+export type MacroPresetMode =
+  | "recommended"
+  | "high_protein"
+  | "balanced"
+  | "low_carb"
+  | "custom";
 
 type FixedMacroPreset = {
-  id: Exclude<MacroPresetMode, "custom">;
+  id: Exclude<MacroPresetMode, "custom" | "recommended">;
   label: string;
   split: MacroSplit;
 };
 
-/** The 3 fixed preset shortcuts (STORY-004 AC 4.3). Goal-independent — they
+/** The 3 fixed preset shortcuts (prototype parity). Goal-independent — they
  * set a macro RATIO, not a calorie target (that's the separate goal slider).
- * Values mirror {@link recommendedSplit}'s cut/maintain/bulk bands so a
- * preset and the equivalent goal-slider position never disagree. */
+ * "Recommended" isn't listed here since its split is dynamic — see
+ * {@link presetSplit}. */
 export const MACRO_PRESETS: readonly FixedMacroPreset[] = [
   {
-    id: "maintain",
-    label: "Maintain",
-    split: { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    id: "high_protein",
+    label: "High protein",
+    split: { proteinPct: 40, carbsPct: 30, fatPct: 30 },
   },
   {
-    id: "cut",
-    label: "Cut",
-    split: { proteinPct: 40, carbsPct: 35, fatPct: 25 },
+    id: "balanced",
+    label: "Balanced",
+    split: { proteinPct: 30, carbsPct: 40, fatPct: 30 },
   },
   {
-    id: "bulk",
-    label: "Bulk",
-    split: { proteinPct: 25, carbsPct: 50, fatPct: 25 },
+    id: "low_carb",
+    label: "Low carb",
+    split: { proteinPct: 35, carbsPct: 20, fatPct: 45 },
   },
 ];
 
-/** Resolve a non-'custom' macro mode's fixed percentage split. */
+/**
+ * Resolve a non-'custom' macro mode's percentage split. "Recommended"
+ * depends on the current goal-slider value (prototype parity); the other 3
+ * fixed presets ignore `goal` entirely.
+ */
 export function presetSplit(
   mode: Exclude<MacroPresetMode, "custom">,
+  goal: number,
 ): MacroSplit {
+  if (mode === "recommended") return recommendedSplit(goal);
   return (
-    MACRO_PRESETS.find((p) => p.id === mode)?.split ?? MACRO_PRESETS[0].split
+    MACRO_PRESETS.find((p) => p.id === mode)?.split ?? recommendedSplit(goal)
   );
 }
 
@@ -376,7 +388,7 @@ export function computeFuelTargetsPreview(
   const tdeeValue = tdee(bmr, activityMultiplier(activityId));
   const kcal = goalAdjustedKcal(tdeeValue, goal);
   const macroSplit =
-    macroMode === "custom" ? customSplit : presetSplit(macroMode);
+    macroMode === "custom" ? customSplit : presetSplit(macroMode, goal);
   const macroGrams = kcal === null ? null : macrosFromKcal(kcal, macroSplit);
   return {
     bmr,

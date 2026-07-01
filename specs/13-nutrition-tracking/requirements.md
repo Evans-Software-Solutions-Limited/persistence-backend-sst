@@ -216,9 +216,20 @@ Landed alongside the Fuel Targets editor build. Two ACs were stale against decis
 
 - **AC 4.2 corrected** — was: "macro split (% Protein / Carbs / Fat — **auto-balances to 100**)". This contradicted `design.md § Risks` ("Macro autobalance UX in Fuel Targets — sliders that auto-rebalance can confuse users → Use 3-input pattern + warning chip when sum ≠ 100; not auto-adjust"), which `FRONTEND_BRIEF.md` had already resolved in the auto-rebalance's favor of the Risks entry but the AC text was never updated to match. **Corrected AC 4.2**: daily calorie target (numeric, kcal), macro split (% Protein / Carbs / Fat as 3 independent inputs — no auto-rebalance), a visible warning + a disabled Save when the three don't sum to 100%, water goal (cups/day).
 - **AC 4.6 scope note** — "Form pre-populates from current target if exists" is satisfied for `waterCups` only. The calculator's other inputs (activity level, goal-slider position, macro-mode selection) are NOT persisted columns on `nutrition_targets` (only the computed `dailyKcal`/`proteinG`/`carbsG`/`fatG`/`waterCups`/`preset` are) — the editor is a "compute fresh from the profile" tool each time it opens, matching the design-source prototype (`fuel-targets.jsx` has no session-restore concept). Reverse-deriving a percentage split + activity/goal position from a saved kcal+grams target was considered and deferred — it adds a real amount of complexity (mode-validity checks, an effect racing the profile/target fetch lifecycle) for a convenience the user resolves in a few taps by re-selecting their preset/activity. Flagged as a known, disclosed scope line rather than a silent gap; picking it up later is additive (no rework needed).
-- **Macro-preset naming**: AC 4.3's "Maintain, Cut, Bulk, Custom" is unchanged and is what shipped — each preset is a fixed goal-independent ratio (`nutrition.service.MACRO_PRESETS`), not derived from the goal slider at save time.
+- **Macro-preset naming**: superseded — see the 2026-07-01 (device-test correction) entry below.
 - **Not in the design-source prototype**: `fuel-targets.jsx` has no water-goal field at all, despite AC 4.2 requiring one and `SetTargetsInput.waterCups` being a mandatory field on the wire type. The shipped editor adds a minimal cups stepper (droplet icon + ± controls) consistent with the app's existing water iconography — not a prototype port, since there was nothing to port.
 
 ---
 
-_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections)_
+## Revised 2026-07-01 (device-test correction) — AC 4.3 named the wrong control
+
+The initial STORY-004 AC-correction pass above (same date) misread `fuel-targets.jsx` as having ONE preset control and reconciled it against `design.md § Risks`'s "no auto-rebalance" directive by adopting the goal slider's own labels ("Maintain/Cut/Bulk/Custom") as the macro-preset chip set. On device testing this was flagged as wrong: the prototype has **two independent controls**, not one:
+
+1. **Goal slider** — cut ↔ bulk (calorie deficit/surplus), labelled via `goalLabel()`: "Aggressive cut / Cut / Maintain / Lean bulk / Aggressive bulk". Unaffected by this correction — already correct.
+2. **Macro-balance preset chips** — protein/carb/fat RATIO, independent of the goal slider: "Recommended" (dynamic, tracks the goal slider via `recommendedSplit()`), "High protein" (40/30/30), "Balanced" (30/40/30), "Low carb" (35/20/45), "Custom".
+
+**AC 4.3 corrected**: preset chips are "Recommended", "High protein", "Balanced", "Low carb", "Custom" — restored to prototype naming and preset count (`nutrition.service.MacroPresetMode`/`MACRO_PRESETS`/`presetSplit`). `design.md § Risks`'s "no auto-rebalance" directive still applies and is unaffected by this correction — it governs slider-DRAG behaviour within Custom mode (each of the 3 sliders moves only its own field), not preset naming or count. The sum-≠-100% warning chip and Save-gating logic are also unaffected.
+
+---
+
+_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections) · Revised 2026-07-01 (device-test correction)_

@@ -30,9 +30,9 @@ import { computeAge, localDayISO } from "@/shared/utils";
 import {
   computeFuelTargetsPreview,
   DEFAULT_ACTIVITY_ID,
-  MACRO_PRESETS,
   macroSplitSumsTo100,
   presetSplit,
+  recommendedSplit,
   type ActivityLevel,
   type MacroPresetMode,
   type MacroSplit,
@@ -41,7 +41,7 @@ import { FuelTargetsPresenter } from "@/ui/presenters/FuelTargetsPresenter";
 
 const DEFAULT_WATER_CUPS = 8;
 const DEFAULT_GOAL = 0;
-const DEFAULT_MACRO_MODE: MacroPresetMode = "maintain";
+const DEFAULT_MACRO_MODE: MacroPresetMode = "recommended";
 
 export function FuelTargetsContainer() {
   const router = useRouter();
@@ -55,7 +55,7 @@ export function FuelTargetsContainer() {
   const [macroMode, setMacroMode] =
     useState<MacroPresetMode>(DEFAULT_MACRO_MODE);
   const [customSplit, setCustomSplit] = useState<MacroSplit>(
-    MACRO_PRESETS[0].split,
+    recommendedSplit(DEFAULT_GOAL),
   );
   const [waterCups, setWaterCups] = useState(DEFAULT_WATER_CUPS);
   const [isSaving, setIsSaving] = useState(false);
@@ -110,11 +110,11 @@ export function FuelTargetsContainer() {
   const onMacroModeChange = useCallback(
     (nextMode: MacroPresetMode) => {
       if (nextMode === "custom" && macroMode !== "custom") {
-        setCustomSplit(presetSplit(macroMode));
+        setCustomSplit(presetSplit(macroMode, goal));
       }
       setMacroMode(nextMode);
     },
-    [macroMode],
+    [macroMode, goal],
   );
 
   const onProteinPctChange = useCallback(
