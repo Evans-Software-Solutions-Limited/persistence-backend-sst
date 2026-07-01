@@ -61,9 +61,15 @@ export function FuelTargetsContainer() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // One-shot: carry over the water goal from an existing target once it's
-  // resolved (cache-first, so this often fires synchronously on mount). A
-  // ref (not state) guards it so a later refetch/refresh doesn't clobber a
-  // value the user has since changed in this session.
+  // resolved (cache-first, so this often fires synchronously on mount; on a
+  // cache-miss `target.data` starts null and the real value can arrive later
+  // via the background fetch). A ref (not state) guards it so a later
+  // refetch/refresh doesn't clobber a value the user has since changed in
+  // this session — `target.data === null` on the FIRST render just means
+  // "not resolved yet" here, not "confirmed no target", so it must not latch
+  // the ref by itself. Latching only happens once we actually hydrate, or
+  // once the user makes their own edit (`onWaterCupsChange` below) — a
+  // manual edit always wins over a late-arriving fetch.
   const waterHydratedRef = useRef(false);
   useEffect(() => {
     if (waterHydratedRef.current) return;
@@ -71,6 +77,11 @@ export function FuelTargetsContainer() {
     waterHydratedRef.current = true;
     setWaterCups(target.data.waterCups);
   }, [target.data]);
+
+  const onWaterCupsChange = useCallback((cups: number) => {
+    waterHydratedRef.current = true;
+    setWaterCups(cups);
+  }, []);
 
   const profile = profilePage.payload?.profile ?? null;
   const age = computeAge(profile?.dateOfBirth ?? null);
@@ -188,7 +199,7 @@ export function FuelTargetsContainer() {
       onCarbsPctChange={onCarbsPctChange}
       onFatPctChange={onFatPctChange}
       waterCups={waterCups}
-      onWaterCupsChange={setWaterCups}
+      onWaterCupsChange={onWaterCupsChange}
     />
   );
 }

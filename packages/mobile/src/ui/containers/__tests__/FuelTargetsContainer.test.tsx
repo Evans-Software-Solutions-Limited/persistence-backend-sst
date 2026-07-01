@@ -241,6 +241,66 @@ describe("FuelTargetsContainer", () => {
     expect(mockProbe.last?.waterCups).toBe(12);
   });
 
+  it("does not clobber a mid-flight water-goal edit when a cache-miss fetch later resolves with an existing target", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    // No cached target on mount (cache-miss) — target.data is null until
+    // the background fetch resolves, so the default (8) renders first.
+    api.nutritionTarget = {
+      userId: "user-1",
+      dailyKcal: 2200,
+      proteinG: 165,
+      carbsG: 220,
+      fatG: 61,
+      waterCups: 10,
+      preset: "custom",
+      setByUserId: null,
+      setByName: null,
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    expect(mockProbe.last?.waterCups).toBe(8);
+
+    // The user edits while the background fetch is still in flight (before
+    // it resolves with the existing target's waterCups: 10).
+    await act(async () => {
+      mockProbe.last?.onWaterCupsChange(12);
+    });
+    expect(mockProbe.last?.waterCups).toBe(12);
+
+    // The fetch now resolves — the user's edit must win, not the fetched 10.
+    await waitFor(() => expect(mockProbe.last?.trainerName).toBeNull());
+    expect(mockProbe.last?.waterCups).toBe(12);
+  });
+
+  it("still hydrates the water goal from a cache-miss fetch when the user hasn't edited it yet", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    api.nutritionTarget = {
+      userId: "user-1",
+      dailyKcal: 2200,
+      proteinG: 165,
+      carbsG: 220,
+      fatG: 61,
+      waterCups: 10,
+      preset: "custom",
+      setByUserId: null,
+      setByName: null,
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    expect(mockProbe.last?.waterCups).toBe(8);
+    await waitFor(() => expect(mockProbe.last?.waterCups).toBe(10));
+  });
+
   it("defaults the water goal to 8 cups when no target exists", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheProfilePage("user-1", makeProfilePagePayload());
@@ -366,7 +426,7 @@ describe("FuelTargetsContainer", () => {
     });
   });
 
-  it("does not save (and shows an error) when the profile is incomplete", async () => {
+  it("does not save when the profile is incomplete (container-level guard; presenter also disables Save via canSave)", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheProfilePage(
       "user-1",

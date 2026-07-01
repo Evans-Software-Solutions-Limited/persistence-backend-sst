@@ -146,6 +146,17 @@ describe("FuelTargetsPresenter", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("disables Save when the profile is incomplete, even with a valid default split", () => {
+    const onSave = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <FuelTargetsPresenter
+        {...makeProps({ kcal: null, macroGrams: null, onSave })}
+      />,
+    );
+    fireEvent.press(getByTestId("fuel-targets-save"));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("hides the warning chip when the split sums to 100", () => {
     const { queryByTestId } = renderWithTheme(
       <FuelTargetsPresenter {...makeProps()} />,

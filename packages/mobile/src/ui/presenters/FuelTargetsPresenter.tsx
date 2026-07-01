@@ -132,7 +132,7 @@ export function FuelTargetsPresenter({
 }: FuelTargetsPresenterProps) {
   const insets = useSafeAreaInsets();
   const splitValid = macroSplitSumsTo100(macroSplit);
-  const canSave = !isSaving && splitValid;
+  const canSave = !isSaving && splitValid && kcal !== null;
 
   if (isLoadingInitial) {
     return (
