@@ -280,6 +280,114 @@ export function goalLabel(goal: number): GoalLabel {
   return { name: "Aggressive bulk", sub: "~0.5 kg/wk gain", tone: "gold" };
 }
 
+// ── Macro-editor preset resolution ─────────────────────────────────────────
+//
+// Deliberate deviation from the literal `fuel-targets.jsx` prototype, which
+// used 5 chips (Recommended/High protein/Balanced/Low carb/Custom) with
+// protein-drag auto-rebalancing carbs/fat proportionally. `design.md § Risks`
+// explicitly overrides this: "Macro autobalance UX in Fuel Targets — sliders
+// that auto-rebalance can confuse users → Use 3-input pattern (% for each
+// macro) + warning chip when sum ≠ 100; not auto-adjust", and
+// `requirements.md` STORY-004 AC 4.3 names the 4 presets "Maintain, Cut,
+// Bulk, Custom". Per the spec-first discipline (specs/_agent.md), an explicit
+// documented spec decision like this takes precedence over the prototype's
+// literal interaction wiring — unlike the VISUAL design (colours, layout,
+// copy), which the prototype still governs. So: 3 independent macro sliders
+// (no rebalancing), a fixed 3-preset shortcut set, and a sum-validity check
+// for the warning chip.
+
+export type MacroPresetMode = "maintain" | "cut" | "bulk" | "custom";
+
+type FixedMacroPreset = {
+  id: Exclude<MacroPresetMode, "custom">;
+  label: string;
+  split: MacroSplit;
+};
+
+/** The 3 fixed preset shortcuts (STORY-004 AC 4.3). Goal-independent — they
+ * set a macro RATIO, not a calorie target (that's the separate goal slider).
+ * Values mirror {@link recommendedSplit}'s cut/maintain/bulk bands so a
+ * preset and the equivalent goal-slider position never disagree. */
+export const MACRO_PRESETS: readonly FixedMacroPreset[] = [
+  {
+    id: "maintain",
+    label: "Maintain",
+    split: { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+  },
+  {
+    id: "cut",
+    label: "Cut",
+    split: { proteinPct: 40, carbsPct: 35, fatPct: 25 },
+  },
+  {
+    id: "bulk",
+    label: "Bulk",
+    split: { proteinPct: 25, carbsPct: 50, fatPct: 25 },
+  },
+];
+
+/** Resolve a non-'custom' macro mode's fixed percentage split. */
+export function presetSplit(
+  mode: Exclude<MacroPresetMode, "custom">,
+): MacroSplit {
+  return (
+    MACRO_PRESETS.find((p) => p.id === mode)?.split ?? MACRO_PRESETS[0].split
+  );
+}
+
+/**
+ * True when the three percentages sum to exactly 100. The 3 fixed presets
+ * always do (by construction); only 'custom' mode's independently-dragged
+ * sliders can drift — this is the single source of truth for the "sum ≠
+ * 100%" warning chip (design.md § Risks) and for gating Save.
+ */
+export function macroSplitSumsTo100(split: MacroSplit): boolean {
+  return split.proteinPct + split.carbsPct + split.fatPct === 100;
+}
+
+// ── Fuel Targets editor: single derived-preview computation ────────────────
+
+export type FuelTargetsPreview = {
+  bmr: number | null;
+  tdee: number | null;
+  /** Goal-adjusted daily kcal, rounded to the nearest 10. Null when the
+   * profile is incomplete (missing sex/age/height/weight). */
+  kcal: number | null;
+  goalLabel: GoalLabel;
+  macroSplit: MacroSplit;
+  macroGrams: { proteinG: number; carbsG: number; fatG: number } | null;
+};
+
+/**
+ * The Targets editor's entire live-preview computation, as one pure
+ * function of its inputs — the container calls this on every slider/chip
+ * change (via `useMemo`) rather than re-deriving bmr/tdee/kcal/macros
+ * piecemeal, so the whole preview is independently unit-testable without
+ * mounting React.
+ */
+export function computeFuelTargetsPreview(
+  profile: TdeeProfile,
+  activityId: ActivityLevel["id"],
+  goal: number,
+  macroMode: MacroPresetMode,
+  customSplit: MacroSplit,
+): FuelTargetsPreview {
+  const bmr = bmrMifflinStJeor(profile);
+  const tdeeValue = tdee(bmr, activityMultiplier(activityId));
+  const kcal = goalAdjustedKcal(tdeeValue, goal);
+  const macroSplit =
+    macroMode === "custom" ? customSplit : presetSplit(macroMode);
+  const macroGrams = kcal === null ? null : macrosFromKcal(kcal, macroSplit);
+  return {
+    bmr,
+    tdee: tdeeValue,
+    kcal,
+    goalLabel: goalLabel(goal),
+    macroSplit,
+    macroGrams,
+  };
+}
+
 // ── Daily goal-hit detection (immediate in-app reward) ───────────────────────
 
 /** True when `value` is within ±`tol` (fraction) of `target` (target > 0). */

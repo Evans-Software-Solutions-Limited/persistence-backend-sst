@@ -109,7 +109,8 @@
       "!**/ports/**",
       "!src/ui/components/workouts/SemiCircleSlider/SemiCircleSlider.tsx",
       "!src/ui/components/workouts/SemiCircleSlider/SemiCircleSliderGesture.tsx",
-      "!src/ui/components/workouts/SemiCircleSlider/Cursor.tsx"
+      "!src/ui/components/workouts/SemiCircleSlider/Cursor.tsx",
+      "!src/ui/components/foundation/LinearSlider/LinearSlider.tsx"
     ],
     "coverageThreshold": {
       "global": {

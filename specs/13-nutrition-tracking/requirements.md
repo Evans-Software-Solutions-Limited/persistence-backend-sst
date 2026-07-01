@@ -210,4 +210,15 @@ None. All 10 decisions locked.
 
 ---
 
-_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch)_
+## Revised 2026-07-01 — STORY-004 AC corrections (Fuel Targets editor implementation)
+
+Landed alongside the Fuel Targets editor build. Two ACs were stale against decisions already recorded elsewhere in this spec set (`design.md § Risks`, `FRONTEND_BRIEF.md`'s Conflict C2 resolution) but never reconciled back into the AC text itself — corrected here per the spec-first discipline (`specs/_agent.md`).
+
+- **AC 4.2 corrected** — was: "macro split (% Protein / Carbs / Fat — **auto-balances to 100**)". This contradicted `design.md § Risks` ("Macro autobalance UX in Fuel Targets — sliders that auto-rebalance can confuse users → Use 3-input pattern + warning chip when sum ≠ 100; not auto-adjust"), which `FRONTEND_BRIEF.md` had already resolved in the auto-rebalance's favor of the Risks entry but the AC text was never updated to match. **Corrected AC 4.2**: daily calorie target (numeric, kcal), macro split (% Protein / Carbs / Fat as 3 independent inputs — no auto-rebalance), a visible warning + a disabled Save when the three don't sum to 100%, water goal (cups/day).
+- **AC 4.6 scope note** — "Form pre-populates from current target if exists" is satisfied for `waterCups` only. The calculator's other inputs (activity level, goal-slider position, macro-mode selection) are NOT persisted columns on `nutrition_targets` (only the computed `dailyKcal`/`proteinG`/`carbsG`/`fatG`/`waterCups`/`preset` are) — the editor is a "compute fresh from the profile" tool each time it opens, matching the design-source prototype (`fuel-targets.jsx` has no session-restore concept). Reverse-deriving a percentage split + activity/goal position from a saved kcal+grams target was considered and deferred — it adds a real amount of complexity (mode-validity checks, an effect racing the profile/target fetch lifecycle) for a convenience the user resolves in a few taps by re-selecting their preset/activity. Flagged as a known, disclosed scope line rather than a silent gap; picking it up later is additive (no rework needed).
+- **Macro-preset naming**: AC 4.3's "Maintain, Cut, Bulk, Custom" is unchanged and is what shipped — each preset is a fixed goal-independent ratio (`nutrition.service.MACRO_PRESETS`), not derived from the goal slider at save time.
+- **Not in the design-source prototype**: `fuel-targets.jsx` has no water-goal field at all, despite AC 4.2 requiring one and `SetTargetsInput.waterCups` being a mandatory field on the wire type. The shipped editor adds a minimal cups stepper (droplet icon + ± controls) consistent with the app's existing water iconography — not a prototype port, since there was nothing to port.
+
+---
+
+_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections)_
