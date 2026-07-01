@@ -285,6 +285,45 @@ describe("ProfilesUpdateHandler", () => {
       expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
     });
 
+    it("should accept a valid preferredUnits value", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ preferredUnits: "imperial" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ preferredUnits: "imperial" }),
+      );
+    });
+
+    it("should reject an out-of-enum preferredUnits with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ preferredUnits: "furlongs" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
     it("should accept a valid YYYY-MM-DD dateOfBirth", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");

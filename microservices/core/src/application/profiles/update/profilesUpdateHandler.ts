@@ -118,7 +118,9 @@ export const profilesUpdateHandler = new Elysia()
         weightKg: t.Optional(t.Union([t.String(), t.Number()])),
         availableEquipment: t.Optional(t.Array(t.String())),
         accessibilityNeeds: t.Optional(t.Array(t.String())),
-        preferredUnits: t.Optional(t.String()),
+        preferredUnits: t.Optional(
+          t.Union([t.Literal("metric"), t.Literal("imperial")]),
+        ),
         isProfilePublic: t.Optional(t.Boolean()),
       }),
     },
