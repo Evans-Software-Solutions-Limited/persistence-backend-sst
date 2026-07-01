@@ -17,7 +17,8 @@ import { IconBack, iconDefaults } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import type {
   ProfileGender,
-  ProfilePagePreferredUnits,
+  ProfilePageHeightUnit,
+  ProfilePageWeightUnit,
 } from "@/domain/models/profilePage";
 
 /**
@@ -56,7 +57,6 @@ const GENDER_OPTIONS: { value: ProfileGender; label: string }[] = [
   { value: "other", label: "Prefer not to say" },
 ];
 
-type HeightUnit = "cm" | "ftin";
 const CM_PER_INCH = 2.54;
 
 function cmToFeetInches(cmValue: number): { feet: number; inches: number } {
@@ -84,9 +84,13 @@ export type EditProfilePresenterProps = {
   gender: ProfileGender | null;
   /** Height in cm, as the raw text-field string; "" when unset. */
   heightCm: string;
-  /** Display-unit preference — also seeds the height field's cm/ft+in
-   *  toggle and (via the weigh-in sheet) the weight field's kg/lb toggle. */
-  preferredUnits: ProfilePagePreferredUnits;
+  /** Persisted display-unit preference for the weigh-in sheet's weight
+   *  toggle. Independent of `heightUnit` — users routinely mix units. */
+  weightUnit: ProfilePageWeightUnit;
+  /** Persisted display-unit preference for the height field below — this
+   *  directly controls which input(s) render (cm vs ft+in), not just a
+   *  seed for local state. */
+  heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
   isSaving: boolean;
   isLoadingInitial: boolean;
@@ -97,7 +101,8 @@ export type EditProfilePresenterProps = {
   onDateOfBirthChange: (value: string) => void;
   onGenderChange: (value: ProfileGender) => void;
   onHeightCmChange: (value: string) => void;
-  onPreferredUnitsChange: (value: ProfilePagePreferredUnits) => void;
+  onWeightUnitChange: (value: ProfilePageWeightUnit) => void;
+  onHeightUnitChange: (value: ProfilePageHeightUnit) => void;
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
@@ -117,7 +122,8 @@ export function EditProfilePresenter({
   dateOfBirth,
   gender,
   heightCm,
-  preferredUnits,
+  weightUnit,
+  heightUnit,
   isProfilePublic,
   isSaving,
   isLoadingInitial,
@@ -131,27 +137,21 @@ export function EditProfilePresenter({
   onDateOfBirthChange,
   onGenderChange,
   onHeightCmChange,
-  onPreferredUnitsChange,
+  onWeightUnitChange,
+  onHeightUnitChange,
   onIsProfilePublicChange,
   onSave,
   onBack,
 }: EditProfilePresenterProps) {
   const insets = useSafeAreaInsets();
 
-  // Height unit toggle (cm / ft+in) — local to the presenter, same pattern
-  // as the weigh-in sheet's kg/lb toggle: the canonical value the container
-  // knows about is always cm (matches `heightCm` prop/DB column); ft+in is
-  // purely a display convenience computed at the toggle boundary and on
-  // each ft/in keystroke, never fed back as a second source of truth.
-  //
-  // `preferredUnits` isn't ready at first mount — the container renders
-  // this presenter immediately with `isLoadingInitial=true` and un-hydrated
-  // defaults, then re-renders once the cached profile hydrates. A plain
-  // `useState(() => ...)` initializer would capture that stale first-mount
-  // default forever, so seed it via a one-shot effect gated on
-  // `isLoadingInitial` flipping to false instead (ref-guarded so a later
-  // user toggle is never clobbered).
-  const [heightUnit, setHeightUnit] = useState<HeightUnit>("cm");
+  // Raw text backing the feet/inches inputs when `heightUnit === "ftin"`.
+  // Canonical value is always cm (matches the `heightCm` prop/DB column);
+  // these are a display convenience derived from it, never a second source
+  // of truth. `heightUnit` itself is a controlled prop (persisted from the
+  // profile) — no local mirror/seed-effect needed for the toggle itself,
+  // only for re-deriving feet/inches text whenever we (re-)enter ft/in mode
+  // from cm mode or from first mount.
   const [feetText, setFeetText] = useState("");
   const [inchesText, setInchesText] = useState("");
 
@@ -167,23 +167,18 @@ export function EditProfilePresenter({
     }
   };
 
-  const unitHydratedRef = useRef(false);
+  const prevHeightUnitRef = useRef<ProfilePageHeightUnit | null>(null);
   useEffect(() => {
-    if (isLoadingInitial || unitHydratedRef.current) return;
-    unitHydratedRef.current = true;
-    if (preferredUnits === "imperial") {
+    if (isLoadingInitial) return;
+    if (heightUnit === "ftin" && prevHeightUnitRef.current !== "ftin") {
       seedFeetInchesFromCm(heightCm);
-      setHeightUnit("ftin");
     }
+    prevHeightUnitRef.current = heightUnit;
+    // `heightCm` deliberately omitted — this re-derives feet/inches only on
+    // an ftin-mode ENTRY (mount-while-ftin, or a cm→ftin toggle), not on
+    // every cm change, so it doesn't fight the ft/in fields' own typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingInitial, preferredUnits]);
-
-  const onHeightUnitChange = (nextUnit: HeightUnit) => {
-    if (nextUnit === "ftin" && heightUnit === "cm") {
-      seedFeetInchesFromCm(heightCm);
-    }
-    setHeightUnit(nextUnit);
-  };
+  }, [isLoadingInitial, heightUnit]);
 
   const commitFeetInches = (feetStr: string, inchesStr: string) => {
     const trimmedFeet = feetStr.trim();
@@ -504,35 +499,23 @@ export function EditProfilePresenter({
             </Text>
           </View>
 
-          {/* Units — persisted display preference for weight (weigh-in
-              sheet) + height (this screen). Also flips the height toggle
-              above immediately, so the two stay in sync within this
-              session rather than requiring two separate taps. */}
+          {/* Weight unit — persisted preference for the weigh-in sheet's
+              kg/lb toggle. Independent of height's unit below: users
+              routinely mix units (e.g. kg + ft/in). */}
           <View marginBottom={20}>
-            <FieldLabel>Units</FieldLabel>
+            <FieldLabel>Weight Unit</FieldLabel>
             <View flexDirection="row" flexWrap="wrap" gap={8}>
               {[
-                { value: "metric" as const, label: "Metric (cm / kg)" },
-                { value: "imperial" as const, label: "Imperial (ft-in / lb)" },
+                { value: "kg" as const, label: "Kilograms (kg)" },
+                { value: "lb" as const, label: "Pounds (lb)" },
               ].map((option) => {
-                const selected = option.value === preferredUnits;
+                const selected = option.value === weightUnit;
                 return (
                   <Pressable
                     key={option.value}
-                    onPress={() => {
-                      onPreferredUnitsChange(option.value);
-                      if (option.value === "imperial" && heightUnit === "cm") {
-                        seedFeetInchesFromCm(heightCm);
-                        setHeightUnit("ftin");
-                      } else if (
-                        option.value === "metric" &&
-                        heightUnit === "ftin"
-                      ) {
-                        setHeightUnit("cm");
-                      }
-                    }}
+                    onPress={() => onWeightUnitChange(option.value)}
                     disabled={isSaving}
-                    testID={`edit-profile-units-${option.value}`}
+                    testID={`edit-profile-weight-unit-${option.value}`}
                     style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
                   >
                     <View

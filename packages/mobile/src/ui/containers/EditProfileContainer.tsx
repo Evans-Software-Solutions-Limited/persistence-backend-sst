@@ -13,7 +13,8 @@ import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import type {
   ProfileGender,
-  ProfilePagePreferredUnits,
+  ProfilePageHeightUnit,
+  ProfilePageWeightUnit,
 } from "@/domain/models/profilePage";
 import {
   EditProfilePresenter,
@@ -24,11 +25,11 @@ import {
  * M6 PR-4: Edit Profile screen container.
  *
  * Scope: fullName + fitnessLevel + isProfilePublic (3 fields), plus
- * gender + height + preferredUnits (M9 — TDEE calculator inputs +
- * metric/imperial display preference, STORY-004). Username / weight still
- * defer to a later milestone — weight is a point-in-time measurement logged
- * via the weigh-in flow, not a static profile attribute, so it doesn't
- * belong on this screen.
+ * gender + height + weightUnit/heightUnit (M9 — TDEE calculator inputs +
+ * independent per-field display-unit preferences, STORY-004). Username /
+ * weight still defer to a later milestone — weight is a point-in-time
+ * measurement logged via the weigh-in flow, not a static profile attribute,
+ * so it doesn't belong on this screen.
  *
  * Initial values: read from the cached profile-page payload (instant
  * paint, no spinner if the user came in from the Profile tab).
@@ -70,7 +71,8 @@ type Snapshot = {
   gender: ProfileGender | null;
   /** cm, as the raw text-field string; "" = unset. */
   heightCm: string;
-  preferredUnits: ProfilePagePreferredUnits;
+  weightUnit: ProfilePageWeightUnit;
+  heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
 };
 
@@ -91,7 +93,8 @@ export function EditProfileContainer() {
       dateOfBirth: p.dateOfBirth ?? "",
       gender: p.gender ?? null,
       heightCm: p.heightCm === null ? "" : String(p.heightCm),
-      preferredUnits: p.preferredUnits,
+      weightUnit: p.weightUnit,
+      heightUnit: p.heightUnit,
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -102,8 +105,8 @@ export function EditProfileContainer() {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [gender, setGender] = useState<ProfileGender | null>(null);
   const [heightCm, setHeightCm] = useState("");
-  const [preferredUnits, setPreferredUnits] =
-    useState<ProfilePagePreferredUnits>("metric");
+  const [weightUnit, setWeightUnit] = useState<ProfilePageWeightUnit>("kg");
+  const [heightUnit, setHeightUnit] = useState<ProfilePageHeightUnit>("cm");
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -114,7 +117,8 @@ export function EditProfileContainer() {
     setDateOfBirth(initial.dateOfBirth);
     setGender(initial.gender);
     setHeightCm(initial.heightCm);
-    setPreferredUnits(initial.preferredUnits);
+    setWeightUnit(initial.weightUnit);
+    setHeightUnit(initial.heightUnit);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -130,7 +134,8 @@ export function EditProfileContainer() {
       dateOfBirth !== initial.dateOfBirth ||
       gender !== initial.gender ||
       heightCm !== initial.heightCm ||
-      preferredUnits !== initial.preferredUnits ||
+      weightUnit !== initial.weightUnit ||
+      heightUnit !== initial.heightUnit ||
       isProfilePublic !== initial.isProfilePublic
     );
   }, [
@@ -141,7 +146,8 @@ export function EditProfileContainer() {
     dateOfBirth,
     gender,
     heightCm,
-    preferredUnits,
+    weightUnit,
+    heightUnit,
     isProfilePublic,
   ]);
 
@@ -188,8 +194,11 @@ export function EditProfileContainer() {
         input.heightCm =
           trimmedHeight.length > 0 ? Number(trimmedHeight) : null;
       }
-      if (preferredUnits !== initial.preferredUnits) {
-        input.preferredUnits = preferredUnits;
+      if (weightUnit !== initial.weightUnit) {
+        input.weightUnit = weightUnit;
+      }
+      if (heightUnit !== initial.heightUnit) {
+        input.heightUnit = heightUnit;
       }
       if (isProfilePublic !== initial.isProfilePublic) {
         input.isProfilePublic = isProfilePublic;
@@ -239,7 +248,8 @@ export function EditProfileContainer() {
     dateOfBirth,
     gender,
     heightCm,
-    preferredUnits,
+    weightUnit,
+    heightUnit,
     isProfilePublic,
   ]);
 
@@ -269,7 +279,8 @@ export function EditProfileContainer() {
       dateOfBirth={dateOfBirth}
       gender={gender}
       heightCm={heightCm}
-      preferredUnits={preferredUnits}
+      weightUnit={weightUnit}
+      heightUnit={heightUnit}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
@@ -283,7 +294,8 @@ export function EditProfileContainer() {
       onDateOfBirthChange={setDateOfBirth}
       onGenderChange={setGender}
       onHeightCmChange={setHeightCm}
-      onPreferredUnitsChange={setPreferredUnits}
+      onWeightUnitChange={setWeightUnit}
+      onHeightUnitChange={setHeightUnit}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

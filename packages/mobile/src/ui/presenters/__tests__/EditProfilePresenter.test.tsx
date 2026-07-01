@@ -14,7 +14,8 @@ function makeProps(
     dateOfBirth: "1990-01-15",
     gender: null,
     heightCm: "",
-    preferredUnits: "metric",
+    weightUnit: "kg",
+    heightUnit: "cm",
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
@@ -24,7 +25,8 @@ function makeProps(
     onGenderChange: jest.fn(),
     onDateOfBirthChange: jest.fn(),
     onHeightCmChange: jest.fn(),
-    onPreferredUnitsChange: jest.fn(),
+    onWeightUnitChange: jest.fn(),
+    onHeightUnitChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
     onBack: jest.fn(),
@@ -135,24 +137,44 @@ describe("EditProfilePresenter", () => {
     expect(onHeightCmChange).toHaveBeenCalledWith("180");
   });
 
-  it("toggling to ft/in converts the cm prop into a feet+inches display", () => {
-    const { getByTestId } = renderWithTheme(
-      <EditProfilePresenter {...makeProps({ heightCm: "178" })} />,
+  it("renders cm or ft+in inputs based on the controlled heightUnit prop", () => {
+    const { getByTestId, queryByTestId, rerender } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "178", heightUnit: "cm" })}
+      />,
     );
-    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    expect(getByTestId("edit-profile-height").props.value).toBe("178");
+    expect(queryByTestId("edit-profile-height-feet")).toBeNull();
+
+    rerender(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "178", heightUnit: "ftin" })}
+      />,
+    );
     // 178cm = 70.0787...in = 5ft 10.1in.
+    expect(queryByTestId("edit-profile-height")).toBeNull();
     expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
     expect(getByTestId("edit-profile-height-inches").props.value).toBe("10.1");
+  });
+
+  it("fires onHeightUnitChange when the height field's own toggle is tapped", () => {
+    const onHeightUnitChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightUnit: "cm", onHeightUnitChange })}
+      />,
+    );
+    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    expect(onHeightUnitChange).toHaveBeenCalledWith("ftin");
   });
 
   it("typing feet/inches computes the canonical cm via onHeightCmChange", () => {
     const onHeightCmChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter
-        {...makeProps({ heightCm: "", onHeightCmChange })}
+        {...makeProps({ heightCm: "", heightUnit: "ftin", onHeightCmChange })}
       />,
     );
-    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
     fireEvent.changeText(getByTestId("edit-profile-height-feet"), "5");
     expect(onHeightCmChange).toHaveBeenLastCalledWith("152.4"); // 5ft 0in
     fireEvent.changeText(getByTestId("edit-profile-height-inches"), "10");
@@ -163,48 +185,27 @@ describe("EditProfilePresenter", () => {
     const onHeightCmChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter
-        {...makeProps({ heightCm: "178", onHeightCmChange })}
+        {...makeProps({
+          heightCm: "178",
+          heightUnit: "ftin",
+          onHeightCmChange,
+        })}
       />,
     );
-    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
     fireEvent.changeText(getByTestId("edit-profile-height-feet"), "");
     fireEvent.changeText(getByTestId("edit-profile-height-inches"), "");
     expect(onHeightCmChange).toHaveBeenLastCalledWith("");
   });
 
-  it("toggling back to cm shows the cm prop again", () => {
-    const { getByTestId } = renderWithTheme(
-      <EditProfilePresenter {...makeProps({ heightCm: "178" })} />,
-    );
-    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
-    fireEvent.press(getByTestId("edit-profile-height-unit-cm"));
-    expect(getByTestId("edit-profile-height").props.value).toBe("178");
-  });
-
-  it("seeds the height toggle to ft/in when preferredUnits is imperial and the profile has hydrated", () => {
-    const { getByTestId } = renderWithTheme(
-      <EditProfilePresenter
-        {...makeProps({
-          heightCm: "178",
-          preferredUnits: "imperial",
-          isLoadingInitial: false,
-        })}
-      />,
-    );
-    expect(getByTestId("edit-profile-height-feet")).toBeTruthy();
-    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
-  });
-
-  it("does not seed the height toggle from a stale default while still loading", () => {
-    // Regression: a plain useState(() => preferredUnits === "imperial" ...)
-    // initializer would capture "metric" at first mount (before hydration),
-    // permanently missing a real "imperial" preference that only lands once
-    // isLoadingInitial flips to false.
-    const { rerender, getByTestId, queryByTestId } = renderWithTheme(
+  it("re-derives feet/inches from the cm prop when entering ft/in mode after hydration", () => {
+    // Regression: heightUnit resolves alongside heightCm during hydration
+    // (isLoadingInitial flips false), so the ft/in fields must reflect the
+    // real cm value the first time they render, not a stale "" default.
+    const { getByTestId, queryByTestId, rerender } = renderWithTheme(
       <EditProfilePresenter
         {...makeProps({
           heightCm: "",
-          preferredUnits: "metric",
+          heightUnit: "cm",
           isLoadingInitial: true,
         })}
       />,
@@ -213,7 +214,7 @@ describe("EditProfilePresenter", () => {
       <EditProfilePresenter
         {...makeProps({
           heightCm: "178",
-          preferredUnits: "imperial",
+          heightUnit: "ftin",
           isLoadingInitial: false,
         })}
       />,
@@ -222,18 +223,13 @@ describe("EditProfilePresenter", () => {
     expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
   });
 
-  it("selecting a units option fires onPreferredUnitsChange and flips the height toggle", () => {
-    const onPreferredUnitsChange = jest.fn();
-    const { getByTestId, queryByTestId } = renderWithTheme(
-      <EditProfilePresenter
-        {...makeProps({ heightCm: "178", onPreferredUnitsChange })}
-      />,
+  it("selecting a weight-unit option fires onWeightUnitChange", () => {
+    const onWeightUnitChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ onWeightUnitChange })} />,
     );
-    expect(getByTestId("edit-profile-height")).toBeTruthy();
-    fireEvent.press(getByTestId("edit-profile-units-imperial"));
-    expect(onPreferredUnitsChange).toHaveBeenCalledWith("imperial");
-    expect(queryByTestId("edit-profile-height")).toBeNull();
-    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
+    fireEvent.press(getByTestId("edit-profile-weight-unit-lb"));
+    expect(onWeightUnitChange).toHaveBeenCalledWith("lb");
   });
 
   it("fires onIsProfilePublicChange when the switch toggles", () => {

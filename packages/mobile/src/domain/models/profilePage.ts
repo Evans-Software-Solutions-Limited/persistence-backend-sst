@@ -26,7 +26,12 @@ export type ProfilePageFitnessLevel =
   | "advanced"
   | "elite";
 
-export type ProfilePagePreferredUnits = "metric" | "imperial";
+/** Weight-display-unit preference (weigh-in sheet's kg/lb toggle). */
+export type ProfilePageWeightUnit = "kg" | "lb";
+/** Height-display-unit preference (Edit Profile's cm/ft+in toggle).
+ *  Independent of `ProfilePageWeightUnit` — users routinely mix units
+ *  (e.g. kg for weight, ft/in for height). */
+export type ProfilePageHeightUnit = "cm" | "ftin";
 
 /**
  * Biological-sex input for the Fuel Targets TDEE calculator (M9). `male`/
@@ -60,7 +65,8 @@ export type ProfilePageProfile = {
   gender: ProfileGender | null;
   heightCm: number | null;
   weightKg: number | null;
-  preferredUnits: ProfilePagePreferredUnits;
+  weightUnit: ProfilePageWeightUnit;
+  heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
   /** ISO timestamp — drives the "member since" copy. */
   createdAt: string;

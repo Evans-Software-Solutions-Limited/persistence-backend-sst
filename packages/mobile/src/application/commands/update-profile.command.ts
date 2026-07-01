@@ -38,7 +38,8 @@ export type UpdateProfileInput = Partial<
     | "dateOfBirth"
     | "gender"
     | "heightCm"
-    | "preferredUnits"
+    | "weightUnit"
+    | "heightUnit"
     | "isProfilePublic"
   >
 >;
@@ -115,8 +116,11 @@ export function updateProfileCommand(
           : {}),
         ...(input.gender !== undefined ? { gender: input.gender } : {}),
         ...(input.heightCm !== undefined ? { heightCm: input.heightCm } : {}),
-        ...(input.preferredUnits !== undefined
-          ? { preferredUnits: input.preferredUnits }
+        ...(input.weightUnit !== undefined
+          ? { weightUnit: input.weightUnit }
+          : {}),
+        ...(input.heightUnit !== undefined
+          ? { heightUnit: input.heightUnit }
           : {}),
         ...(input.isProfilePublic !== undefined
           ? { isProfilePublic: input.isProfilePublic }

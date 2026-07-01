@@ -781,11 +781,13 @@ export type ApiProfile = {
    *  this on PATCH since M0 (`profiles.height_cm`); added to the wire type
    *  when Edit Profile started writing it. null = never set. */
   heightCm?: number | null;
-  /** Display-unit preference for weight/height toggles. Backend has
-   *  accepted this on PATCH since M0 (`profiles.preferred_units`, defaults
-   *  `"metric"`); added to the wire type when Edit Profile started writing
-   *  it. */
-  preferredUnits?: "metric" | "imperial";
+  /** Independent per-field display-unit preferences — users routinely mix
+   *  units (e.g. kg for weight, ft/in for height), so a single combined
+   *  metric/imperial toggle can't express the common case. Backend accepts
+   *  both on PATCH (`profiles.weight_unit`/`profiles.height_unit`,
+   *  migration 20260701120000_split_preferred_units.sql). */
+  weightUnit?: "kg" | "lb";
+  heightUnit?: "cm" | "ftin";
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */

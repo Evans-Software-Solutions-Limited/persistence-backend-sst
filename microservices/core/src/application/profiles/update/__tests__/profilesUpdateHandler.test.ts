@@ -48,7 +48,8 @@ describe("ProfilesUpdateHandler", () => {
       weightKg: "80",
       availableEquipment: [],
       accessibilityNeeds: [],
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: true,
       subscriptionId: null,
       hasUsedUserTrial: false,
@@ -285,7 +286,7 @@ describe("ProfilesUpdateHandler", () => {
       expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
     });
 
-    it("should accept a valid preferredUnits value", async () => {
+    it("should accept a valid weightUnit value", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");
       const response = await profilesUpdateHandler.handle(
@@ -295,18 +296,18 @@ describe("ProfilesUpdateHandler", () => {
             authorization: "Bearer test-token",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ preferredUnits: "imperial" }),
+          body: JSON.stringify({ weightUnit: "lb" }),
         }),
       );
 
       expect(response.status).toBe(200);
       expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
         "test-user-id",
-        expect.objectContaining({ preferredUnits: "imperial" }),
+        expect.objectContaining({ weightUnit: "lb" }),
       );
     });
 
-    it("should reject an out-of-enum preferredUnits with a 422 and not touch the repo", async () => {
+    it("should reject an out-of-enum weightUnit with a 422 and not touch the repo", async () => {
       const { profilesUpdateHandler } =
         await import("../profilesUpdateHandler");
       const response = await profilesUpdateHandler.handle(
@@ -316,7 +317,46 @@ describe("ProfilesUpdateHandler", () => {
             authorization: "Bearer test-token",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ preferredUnits: "furlongs" }),
+          body: JSON.stringify({ weightUnit: "stone" }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+    });
+
+    it("should accept a valid heightUnit value", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ heightUnit: "ftin" }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(profileRepositoryMocks.update).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ heightUnit: "ftin" }),
+      );
+    });
+
+    it("should reject an out-of-enum heightUnit with a 422 and not touch the repo", async () => {
+      const { profilesUpdateHandler } =
+        await import("../profilesUpdateHandler");
+      const response = await profilesUpdateHandler.handle(
+        new Request("http://localhost/profile", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ heightUnit: "meters" }),
         }),
       );
 
@@ -427,7 +467,8 @@ describe("ProfilesUpdateHandler", () => {
             dateOfBirth: "1995-05-15",
             availableEquipment: ["dumbbells"],
             accessibilityNeeds: [],
-            preferredUnits: "imperial",
+            weightUnit: "lb",
+            heightUnit: "ftin",
             isProfilePublic: false,
           }),
         }),
@@ -441,7 +482,8 @@ describe("ProfilesUpdateHandler", () => {
           dateOfBirth: "1995-05-15",
           availableEquipment: ["dumbbells"],
           accessibilityNeeds: [],
-          preferredUnits: "imperial",
+          weightUnit: "lb",
+          heightUnit: "ftin",
           isProfilePublic: false,
         }),
       );

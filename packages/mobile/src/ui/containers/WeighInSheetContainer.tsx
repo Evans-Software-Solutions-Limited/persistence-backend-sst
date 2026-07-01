@@ -18,8 +18,9 @@ const KG_PER_LB = 0.45359237;
  * the latest Apple Health reading when the sheet opens; on save it logs +
  * queues the measurement AND writes weight + body fat back to Apple Health
  * (best-effort: the write is a no-op on platforms without HealthKit). The
- * kg/lb toggle defaults from the profile's `preferredUnits`, same as the
- * height field on Edit Profile.
+ * kg/lb toggle defaults from the profile's `weightUnit` preference —
+ * independent of `heightUnit` (Edit Profile), since users routinely mix
+ * units (e.g. kg for weight, ft/in for height).
  */
 export function WeighInSheetContainer({
   visible,
@@ -40,9 +41,7 @@ export function WeighInSheetContainer({
   // synchronous) — the presenter only seeds its unit toggle once this stops
   // being `undefined`, so it never has to guess a wrong "kg" default.
   const defaultUnit: WeighInUnit | undefined = profilePage.payload
-    ? profilePage.payload.profile.preferredUnits === "imperial"
-      ? "lb"
-      : "kg"
+    ? profilePage.payload.profile.weightUnit
     : undefined;
 
   const history = useMemo(

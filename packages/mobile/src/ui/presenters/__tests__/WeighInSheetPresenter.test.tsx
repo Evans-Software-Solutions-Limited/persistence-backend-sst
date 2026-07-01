@@ -114,8 +114,9 @@ describe("WeighInSheetPresenter", () => {
 
   it("seeds the unit toggle once a late-arriving defaultUnit lands (profile resolves after mount)", () => {
     // The container's `defaultUnit` (derived from the profile's
-    // preferredUnits) is `undefined` at first mount and resolves moments
-    // later — same async-after-open shape as the weight/body-fat prefills.
+    // weightUnit preference) is `undefined` at first mount and resolves
+    // moments later — same async-after-open shape as the weight/body-fat
+    // prefills.
     const { getByTestId, rerender } = render({ defaultUnit: undefined });
     expect(getByTestId("weigh-in-input").props.value).toBe("79.8"); // kg
     rerender(

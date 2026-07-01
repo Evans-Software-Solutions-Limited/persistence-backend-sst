@@ -26,7 +26,8 @@ function makeProfilePagePayload(
       gender: null,
       heightCm: null,
       weightKg: null,
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: false,
       createdAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -151,11 +152,11 @@ describe("WeighInSheetContainer", () => {
     expect(writeBodyFat).toHaveBeenCalledWith(18.5, expect.any(Date));
   });
 
-  it("defaults the unit toggle to lb when the profile prefers imperial", async () => {
+  it("defaults the unit toggle to lb when the profile's weightUnit is lb", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheProfilePage(
       USER,
-      makeProfilePagePayload({ preferredUnits: "imperial" }),
+      makeProfilePagePayload({ weightUnit: "lb" }),
     );
     const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
@@ -172,11 +173,11 @@ describe("WeighInSheetContainer", () => {
     );
   });
 
-  it("defaults the unit toggle to kg when the profile prefers metric (unchanged)", async () => {
+  it("defaults the unit toggle to kg when the profile's weightUnit is kg (unchanged)", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheProfilePage(
       USER,
-      makeProfilePagePayload({ preferredUnits: "metric" }),
+      makeProfilePagePayload({ weightUnit: "kg" }),
     );
     const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(

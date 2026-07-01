@@ -68,8 +68,13 @@ export const profilesUpdateHandler = new Elysia()
         updateData.availableEquipment = body.availableEquipment;
       if (body.accessibilityNeeds !== undefined)
         updateData.accessibilityNeeds = body.accessibilityNeeds;
-      if (body.preferredUnits !== undefined)
-        updateData.preferredUnits = body.preferredUnits;
+      // Independent per-field display-unit preferences (users routinely mix
+      // e.g. kg + ft/in) — the t.Union below constrains values to what each
+      // CHECK constraint allows, so no extra validation is needed here.
+      if (body.weightUnit !== undefined)
+        updateData.weightUnit = body.weightUnit;
+      if (body.heightUnit !== undefined)
+        updateData.heightUnit = body.heightUnit;
       if (body.isProfilePublic !== undefined)
         updateData.isProfilePublic = body.isProfilePublic;
 
@@ -118,9 +123,8 @@ export const profilesUpdateHandler = new Elysia()
         weightKg: t.Optional(t.Union([t.String(), t.Number()])),
         availableEquipment: t.Optional(t.Array(t.String())),
         accessibilityNeeds: t.Optional(t.Array(t.String())),
-        preferredUnits: t.Optional(
-          t.Union([t.Literal("metric"), t.Literal("imperial")]),
-        ),
+        weightUnit: t.Optional(t.Union([t.Literal("kg"), t.Literal("lb")])),
+        heightUnit: t.Optional(t.Union([t.Literal("cm"), t.Literal("ftin")])),
         isProfilePublic: t.Optional(t.Boolean()),
       }),
     },

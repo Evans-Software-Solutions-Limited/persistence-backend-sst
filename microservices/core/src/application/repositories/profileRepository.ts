@@ -79,7 +79,7 @@ export function reconcileNotificationPreferences(
  * Wire shape for the profile page's profile slice. Fields are normalised
  * for the mobile presenter — numeric strings from Drizzle's `decimal`
  * type are coerced to JS `number | null`, dates to ISO strings, and
- * `preferredUnits` is constrained to the two values the UI cares about.
+ * `weightUnit`/`heightUnit` are each constrained to their two valid values.
  *
  * `email` is sourced from the JWT, not the `profiles` row — the column
  * exists in Supabase but is treated as authoritative-via-auth elsewhere
@@ -109,7 +109,10 @@ export interface ProfilePageProfileSlice {
   gender: "male" | "female" | "other" | null;
   heightCm: number | null;
   weightKg: number | null;
-  preferredUnits: "metric" | "imperial";
+  /** Independent per-field display-unit preferences (users routinely mix
+   *  e.g. kg + ft/in) — replaces the old combined `preferredUnits`. */
+  weightUnit: "kg" | "lb";
+  heightUnit: "cm" | "ftin";
   isProfilePublic: boolean;
   createdAt: string;
 }
@@ -304,7 +307,8 @@ export class ProfileRepository {
         gender: profiles.gender,
         heightCm: profiles.heightCm,
         weightKg: profiles.weightKg,
-        preferredUnits: profiles.preferredUnits,
+        weightUnit: profiles.weightUnit,
+        heightUnit: profiles.heightUnit,
         isProfilePublic: profiles.isProfilePublic,
         createdAt: profiles.createdAt,
       })
@@ -342,7 +346,8 @@ export class ProfileRepository {
           : null,
       heightCm: coerceDecimal(row.heightCm),
       weightKg: coerceDecimal(row.weightKg),
-      preferredUnits: row.preferredUnits === "imperial" ? "imperial" : "metric",
+      weightUnit: row.weightUnit === "lb" ? "lb" : "kg",
+      heightUnit: row.heightUnit === "ftin" ? "ftin" : "cm",
       isProfilePublic: row.isProfilePublic === true,
       createdAt: toIsoString(row.createdAt),
     };

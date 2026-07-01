@@ -20,7 +20,8 @@ function makePayload(
       gender: null,
       heightCm: null,
       weightKg: null,
-      preferredUnits: "metric",
+      weightUnit: "kg",
+      heightUnit: "cm",
       isProfilePublic: false,
       createdAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -170,6 +171,39 @@ describe("updateProfileCommand", () => {
     );
     expect(result.ok).toBe(false);
     expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("queues weightUnit and writes it to the cache", () => {
+    storage.cacheProfilePage(USER, makePayload({ weightUnit: "kg" }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { weightUnit: "lb" },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ weightUnit: "lb" });
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.weightUnit).toBe(
+      "lb",
+    );
+  });
+
+  it("queues heightUnit and writes it to the cache, independently of weightUnit", () => {
+    storage.cacheProfilePage(
+      USER,
+      makePayload({ weightUnit: "kg", heightUnit: "cm" }),
+    );
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightUnit: "ftin" },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ heightUnit: "ftin" });
+    const cached = storage.getCachedProfilePage(USER)?.payload.profile;
+    expect(cached?.heightUnit).toBe("ftin");
+    // Mixed units (kg + ft/in) is the whole point of splitting this field —
+    // changing one must never touch the other.
+    expect(cached?.weightUnit).toBe("kg");
   });
 
   it("rejects a whitespace-only fullName", () => {
