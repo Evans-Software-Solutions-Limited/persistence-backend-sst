@@ -133,6 +133,52 @@ describe("EditProfilePresenter", () => {
     expect(onHeightCmChange).toHaveBeenCalledWith("180");
   });
 
+  it("toggling to ft/in converts the cm prop into a feet+inches display", () => {
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ heightCm: "178" })} />,
+    );
+    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    // 178cm = 70.0787...in = 5ft 10.1in.
+    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
+    expect(getByTestId("edit-profile-height-inches").props.value).toBe("10.1");
+  });
+
+  it("typing feet/inches computes the canonical cm via onHeightCmChange", () => {
+    const onHeightCmChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "", onHeightCmChange })}
+      />,
+    );
+    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    fireEvent.changeText(getByTestId("edit-profile-height-feet"), "5");
+    expect(onHeightCmChange).toHaveBeenLastCalledWith("152.4"); // 5ft 0in
+    fireEvent.changeText(getByTestId("edit-profile-height-inches"), "10");
+    expect(onHeightCmChange).toHaveBeenLastCalledWith("177.8"); // 5ft 10in
+  });
+
+  it("clearing both feet and inches sends an empty string to clear height", () => {
+    const onHeightCmChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "178", onHeightCmChange })}
+      />,
+    );
+    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    fireEvent.changeText(getByTestId("edit-profile-height-feet"), "");
+    fireEvent.changeText(getByTestId("edit-profile-height-inches"), "");
+    expect(onHeightCmChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("toggling back to cm shows the cm prop again", () => {
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ heightCm: "178" })} />,
+    );
+    fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
+    fireEvent.press(getByTestId("edit-profile-height-unit-cm"));
+    expect(getByTestId("edit-profile-height").props.value).toBe("178");
+  });
+
   it("fires onIsProfilePublicChange when the switch toggles", () => {
     const onIsProfilePublicChange = jest.fn();
     const { getByTestId } = renderWithTheme(

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Text, View } from "@tamagui/core";
 import {
   Image,
@@ -51,6 +52,20 @@ const GENDER_OPTIONS: { value: ProfileGender; label: string }[] = [
   { value: "female", label: "Female" },
   { value: "other", label: "Prefer not to say" },
 ];
+
+type HeightUnit = "cm" | "ftin";
+const CM_PER_INCH = 2.54;
+
+function cmToFeetInches(cmValue: number): { feet: number; inches: number } {
+  const totalInches = cmValue / CM_PER_INCH;
+  const feet = Math.floor(totalInches / 12);
+  const inches = totalInches - feet * 12;
+  return { feet, inches };
+}
+
+function feetInchesToCm(feet: number, inches: number): number {
+  return (feet * 12 + inches) * CM_PER_INCH;
+}
 
 function capitalize(value: string): string {
   if (value.length === 0) return value;
@@ -113,6 +128,51 @@ export function EditProfilePresenter({
   onBack,
 }: EditProfilePresenterProps) {
   const insets = useSafeAreaInsets();
+
+  // Height unit toggle (cm / ft+in) — local to the presenter, same pattern
+  // as the weigh-in sheet's kg/lb toggle: the canonical value the container
+  // knows about is always cm (matches `heightCm` prop/DB column); ft+in is
+  // purely a display convenience computed at the toggle boundary and on
+  // each ft/in keystroke, never fed back as a second source of truth.
+  const [heightUnit, setHeightUnit] = useState<HeightUnit>("cm");
+  const [feetText, setFeetText] = useState("");
+  const [inchesText, setInchesText] = useState("");
+
+  const onHeightUnitChange = (nextUnit: HeightUnit) => {
+    if (nextUnit === "ftin" && heightUnit === "cm") {
+      const cmNum = parseFloat(heightCm);
+      if (Number.isNaN(cmNum)) {
+        setFeetText("");
+        setInchesText("");
+      } else {
+        const { feet, inches } = cmToFeetInches(cmNum);
+        setFeetText(String(feet));
+        setInchesText(inches.toFixed(1));
+      }
+    }
+    setHeightUnit(nextUnit);
+  };
+
+  const commitFeetInches = (feetStr: string, inchesStr: string) => {
+    const trimmedFeet = feetStr.trim();
+    const trimmedInches = inchesStr.trim();
+    if (trimmedFeet === "" && trimmedInches === "") {
+      onHeightCmChange("");
+      return;
+    }
+    const feet = trimmedFeet === "" ? 0 : parseFloat(trimmedFeet);
+    const inches = trimmedInches === "" ? 0 : parseFloat(trimmedInches);
+    if (Number.isNaN(feet) || Number.isNaN(inches)) return;
+    onHeightCmChange(feetInchesToCm(feet, inches).toFixed(1));
+  };
+  const onFeetChange = (text: string) => {
+    setFeetText(text);
+    commitFeetInches(text, inchesText);
+  };
+  const onInchesChange = (text: string) => {
+    setInchesText(text);
+    commitFeetInches(feetText, text);
+  };
 
   if (isLoadingInitial) {
     return (
@@ -320,19 +380,93 @@ export function EditProfilePresenter({
             </Text>
           </View>
 
-          {/* Height — TDEE calculator input (M9). */}
+          {/* Height — TDEE calculator input (M9). Canonical value is always
+              cm (matches the `heightCm` prop/DB column); ft+in is a display
+              convenience converted at the toggle boundary. */}
           <View marginBottom={20}>
-            <FieldLabel>Height (cm)</FieldLabel>
-            <TextInput
-              style={inputStyle}
-              value={heightCm}
-              onChangeText={onHeightCmChange}
-              placeholder="e.g. 178"
-              placeholderTextColor="#8A8A98"
-              keyboardType="number-pad"
-              editable={!isSaving}
-              testID="edit-profile-height"
-            />
+            <View
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="space-between"
+              marginBottom={8}
+            >
+              <FieldLabel>Height</FieldLabel>
+              <View
+                flexDirection="row"
+                gap={4}
+                backgroundColor="$surface3"
+                borderRadius={999}
+                padding={3}
+              >
+                {(["cm", "ftin"] as const).map((u) => {
+                  const on = heightUnit === u;
+                  return (
+                    <Pressable
+                      key={u}
+                      onPress={() => onHeightUnitChange(u)}
+                      disabled={isSaving}
+                      testID={`edit-profile-height-unit-${u}`}
+                      accessibilityLabel={u === "cm" ? "Use cm" : "Use ft/in"}
+                    >
+                      <View
+                        paddingVertical={6}
+                        paddingHorizontal={12}
+                        borderRadius={999}
+                        backgroundColor={on ? "$primary" : "transparent"}
+                      >
+                        <Text
+                          fontWeight="700"
+                          fontSize={11.5}
+                          color={on ? "$primaryInk" : "$text3"}
+                        >
+                          {u === "cm" ? "CM" : "FT/IN"}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {heightUnit === "cm" ? (
+              <TextInput
+                style={inputStyle}
+                value={heightCm}
+                onChangeText={onHeightCmChange}
+                placeholder="e.g. 178"
+                placeholderTextColor="#8A8A98"
+                keyboardType="number-pad"
+                editable={!isSaving}
+                testID="edit-profile-height"
+              />
+            ) : (
+              <View flexDirection="row" gap={10}>
+                <View flex={1}>
+                  <TextInput
+                    style={inputStyle}
+                    value={feetText}
+                    onChangeText={onFeetChange}
+                    placeholder="ft"
+                    placeholderTextColor="#8A8A98"
+                    keyboardType="number-pad"
+                    editable={!isSaving}
+                    testID="edit-profile-height-feet"
+                  />
+                </View>
+                <View flex={1}>
+                  <TextInput
+                    style={inputStyle}
+                    value={inchesText}
+                    onChangeText={onInchesChange}
+                    placeholder="in"
+                    placeholderTextColor="#8A8A98"
+                    keyboardType="decimal-pad"
+                    editable={!isSaving}
+                    testID="edit-profile-height-inches"
+                  />
+                </View>
+              </View>
+            )}
             <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
               Used only to estimate your daily calorie targets.
             </Text>
