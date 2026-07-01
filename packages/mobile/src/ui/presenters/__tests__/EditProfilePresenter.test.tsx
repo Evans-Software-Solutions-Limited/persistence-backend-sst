@@ -14,6 +14,7 @@ function makeProps(
     dateOfBirth: "1990-01-15",
     gender: null,
     heightCm: "",
+    preferredUnits: "metric",
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
@@ -23,6 +24,7 @@ function makeProps(
     onGenderChange: jest.fn(),
     onDateOfBirthChange: jest.fn(),
     onHeightCmChange: jest.fn(),
+    onPreferredUnitsChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
     onBack: jest.fn(),
@@ -177,6 +179,61 @@ describe("EditProfilePresenter", () => {
     fireEvent.press(getByTestId("edit-profile-height-unit-ftin"));
     fireEvent.press(getByTestId("edit-profile-height-unit-cm"));
     expect(getByTestId("edit-profile-height").props.value).toBe("178");
+  });
+
+  it("seeds the height toggle to ft/in when preferredUnits is imperial and the profile has hydrated", () => {
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({
+          heightCm: "178",
+          preferredUnits: "imperial",
+          isLoadingInitial: false,
+        })}
+      />,
+    );
+    expect(getByTestId("edit-profile-height-feet")).toBeTruthy();
+    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
+  });
+
+  it("does not seed the height toggle from a stale default while still loading", () => {
+    // Regression: a plain useState(() => preferredUnits === "imperial" ...)
+    // initializer would capture "metric" at first mount (before hydration),
+    // permanently missing a real "imperial" preference that only lands once
+    // isLoadingInitial flips to false.
+    const { rerender, getByTestId, queryByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({
+          heightCm: "",
+          preferredUnits: "metric",
+          isLoadingInitial: true,
+        })}
+      />,
+    );
+    rerender(
+      <EditProfilePresenter
+        {...makeProps({
+          heightCm: "178",
+          preferredUnits: "imperial",
+          isLoadingInitial: false,
+        })}
+      />,
+    );
+    expect(queryByTestId("edit-profile-height")).toBeNull();
+    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
+  });
+
+  it("selecting a units option fires onPreferredUnitsChange and flips the height toggle", () => {
+    const onPreferredUnitsChange = jest.fn();
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "178", onPreferredUnitsChange })}
+      />,
+    );
+    expect(getByTestId("edit-profile-height")).toBeTruthy();
+    fireEvent.press(getByTestId("edit-profile-units-imperial"));
+    expect(onPreferredUnitsChange).toHaveBeenCalledWith("imperial");
+    expect(queryByTestId("edit-profile-height")).toBeNull();
+    expect(getByTestId("edit-profile-height-feet").props.value).toBe("5");
   });
 
   it("fires onIsProfilePublicChange when the switch toggles", () => {

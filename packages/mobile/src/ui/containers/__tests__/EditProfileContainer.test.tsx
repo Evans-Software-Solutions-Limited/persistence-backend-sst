@@ -55,6 +55,11 @@ MockPresenter.mockImplementation((props) => {
         value={props.heightCm}
         onChangeText={(t) => props.onHeightCmChange(t)}
       />
+      <Text testID="stub-preferred-units">{props.preferredUnits}</Text>
+      <Pressable
+        testID="stub-set-units-imperial"
+        onPress={() => props.onPreferredUnitsChange("imperial")}
+      />
       <Switch
         testID="stub-public-switch"
         value={props.isProfilePublic}
@@ -341,6 +346,36 @@ describe("EditProfileContainer", () => {
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
     const [, init] = mockFetch.mock.calls[0];
     expect(JSON.parse(init.body)).toEqual({ heightCm: null });
+  });
+
+  it("queues a preferredUnits change + writes it to the cache", async () => {
+    const { adapters, storage, auth } = await createTestAdapters();
+    const userId = (auth as InMemoryAuthAdapter).currentSession?.userId;
+    if (!userId) throw new Error("expected a signed-in session");
+    storage.cacheProfilePage(userId, makeProfilePagePayload());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <EditProfileContainer />
+      </TestWrapper>,
+    );
+    await waitFor(() => {
+      expect(getByTestId("stub-loading").props.children).toBe("false");
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-set-units-imperial"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-save"));
+    });
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ preferredUnits: "imperial" });
+    expect(
+      storage.getCachedProfilePage(userId)?.payload.profile.preferredUnits,
+    ).toBe("imperial");
   });
 
   it("does not save and shows an error when height is out of range", async () => {

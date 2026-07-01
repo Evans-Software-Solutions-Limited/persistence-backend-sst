@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useLogMeasurement } from "@/ui/hooks/useLogMeasurement";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import {
   WeighInSheetPresenter,
   type WeighInSaveInput,
+  type WeighInUnit,
 } from "@/ui/presenters/WeighInSheetPresenter";
 
 const KG_PER_LB = 0.45359237;
@@ -15,7 +17,9 @@ const KG_PER_LB = 0.45359237;
  * the sparkline from the cached body-trend and prefills weight/body-fat from
  * the latest Apple Health reading when the sheet opens; on save it logs +
  * queues the measurement AND writes weight + body fat back to Apple Health
- * (best-effort: the write is a no-op on platforms without HealthKit).
+ * (best-effort: the write is a no-op on platforms without HealthKit). The
+ * kg/lb toggle defaults from the profile's `preferredUnits`, same as the
+ * height field on Edit Profile.
  */
 export function WeighInSheetContainer({
   visible,
@@ -27,9 +31,19 @@ export function WeighInSheetContainer({
   const { health } = useAdapters();
   const log = useLogMeasurement();
   const body = useGetBodyMeasurements(30);
+  const profilePage = useProfilePage();
   const [saving, setSaving] = useState(false);
   const [prefillWeightKg, setPrefillWeightKg] = useState<number | undefined>();
   const [prefillBodyFat, setPrefillBodyFat] = useState<number | null>(null);
+
+  // `undefined` until the profile resolves (cache-first, so this is often
+  // synchronous) — the presenter only seeds its unit toggle once this stops
+  // being `undefined`, so it never has to guess a wrong "kg" default.
+  const defaultUnit: WeighInUnit | undefined = profilePage.payload
+    ? profilePage.payload.profile.preferredUnits === "imperial"
+      ? "lb"
+      : "kg"
+    : undefined;
 
   const history = useMemo(
     () =>
@@ -101,6 +115,7 @@ export function WeighInSheetContainer({
       onClose={onClose}
       onSave={onSave}
       history={history}
+      defaultUnit={defaultUnit}
       defaultWeightKg={prefillWeightKg}
       defaultBodyFat={prefillBodyFat}
       saving={saving}

@@ -112,6 +112,47 @@ describe("WeighInSheetPresenter", () => {
     expect(getByTestId("weigh-in-bodyfat-input").props.value).toBe("16");
   });
 
+  it("seeds the unit toggle once a late-arriving defaultUnit lands (profile resolves after mount)", () => {
+    // The container's `defaultUnit` (derived from the profile's
+    // preferredUnits) is `undefined` at first mount and resolves moments
+    // later — same async-after-open shape as the weight/body-fat prefills.
+    const { getByTestId, rerender } = render({ defaultUnit: undefined });
+    expect(getByTestId("weigh-in-input").props.value).toBe("79.8"); // kg
+    rerender(
+      <WeighInSheetPresenter
+        visible
+        onClose={jest.fn()}
+        onSave={jest.fn()}
+        history={[80.5, 80.2, 79.9, 79.8]}
+        today={TODAY}
+        defaultUnit="lb"
+      />,
+    );
+    // 79.8kg → 175.9lb.
+    expect(getByTestId("weigh-in-input").props.value).toBe("175.9");
+  });
+
+  it("does not re-seed the unit toggle from a later defaultUnit change (a manual toggle wins)", () => {
+    const { getByTestId, getByLabelText, rerender } = render({
+      defaultUnit: "kg",
+    });
+    fireEvent.press(getByLabelText("Use lb"));
+    expect(getByTestId("weigh-in-input").props.value).toBe("175.9");
+    // The container's defaultUnit flips back to "kg" (e.g. profile refetch)
+    // — the one-shot seed already fired, so the user's manual choice stands.
+    rerender(
+      <WeighInSheetPresenter
+        visible
+        onClose={jest.fn()}
+        onSave={jest.fn()}
+        history={[80.5, 80.2, 79.9, 79.8]}
+        today={TODAY}
+        defaultUnit="kg"
+      />,
+    );
+    expect(getByTestId("weigh-in-input").props.value).toBe("175.9");
+  });
+
   it("floors the stepper so minus can't drive the weight non-positive", () => {
     // §3: seeded just above the floor, spamming Decrease must clamp at MIN (1
     // kg) — never 0 or negative, which logMeasurementCommand rejects (silent

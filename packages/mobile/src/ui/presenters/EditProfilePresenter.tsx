@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, View } from "@tamagui/core";
 import {
   Image,
@@ -15,7 +15,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import type { ProfileGender } from "@/domain/models/profilePage";
+import type {
+  ProfileGender,
+  ProfilePagePreferredUnits,
+} from "@/domain/models/profilePage";
 
 /**
  * Edit Profile screen — pure presenter. Shell-refreshed for 08-profile-
@@ -81,6 +84,9 @@ export type EditProfilePresenterProps = {
   gender: ProfileGender | null;
   /** Height in cm, as the raw text-field string; "" when unset. */
   heightCm: string;
+  /** Display-unit preference — also seeds the height field's cm/ft+in
+   *  toggle and (via the weigh-in sheet) the weight field's kg/lb toggle. */
+  preferredUnits: ProfilePagePreferredUnits;
   isProfilePublic: boolean;
   isSaving: boolean;
   isLoadingInitial: boolean;
@@ -91,6 +97,7 @@ export type EditProfilePresenterProps = {
   onDateOfBirthChange: (value: string) => void;
   onGenderChange: (value: ProfileGender) => void;
   onHeightCmChange: (value: string) => void;
+  onPreferredUnitsChange: (value: ProfilePagePreferredUnits) => void;
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
@@ -110,6 +117,7 @@ export function EditProfilePresenter({
   dateOfBirth,
   gender,
   heightCm,
+  preferredUnits,
   isProfilePublic,
   isSaving,
   isLoadingInitial,
@@ -123,6 +131,7 @@ export function EditProfilePresenter({
   onDateOfBirthChange,
   onGenderChange,
   onHeightCmChange,
+  onPreferredUnitsChange,
   onIsProfilePublicChange,
   onSave,
   onBack,
@@ -134,21 +143,44 @@ export function EditProfilePresenter({
   // knows about is always cm (matches `heightCm` prop/DB column); ft+in is
   // purely a display convenience computed at the toggle boundary and on
   // each ft/in keystroke, never fed back as a second source of truth.
+  //
+  // `preferredUnits` isn't ready at first mount — the container renders
+  // this presenter immediately with `isLoadingInitial=true` and un-hydrated
+  // defaults, then re-renders once the cached profile hydrates. A plain
+  // `useState(() => ...)` initializer would capture that stale first-mount
+  // default forever, so seed it via a one-shot effect gated on
+  // `isLoadingInitial` flipping to false instead (ref-guarded so a later
+  // user toggle is never clobbered).
   const [heightUnit, setHeightUnit] = useState<HeightUnit>("cm");
   const [feetText, setFeetText] = useState("");
   const [inchesText, setInchesText] = useState("");
 
+  const seedFeetInchesFromCm = (cmString: string) => {
+    const cmNum = parseFloat(cmString);
+    if (Number.isNaN(cmNum)) {
+      setFeetText("");
+      setInchesText("");
+    } else {
+      const { feet, inches } = cmToFeetInches(cmNum);
+      setFeetText(String(feet));
+      setInchesText(inches.toFixed(1));
+    }
+  };
+
+  const unitHydratedRef = useRef(false);
+  useEffect(() => {
+    if (isLoadingInitial || unitHydratedRef.current) return;
+    unitHydratedRef.current = true;
+    if (preferredUnits === "imperial") {
+      seedFeetInchesFromCm(heightCm);
+      setHeightUnit("ftin");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingInitial, preferredUnits]);
+
   const onHeightUnitChange = (nextUnit: HeightUnit) => {
     if (nextUnit === "ftin" && heightUnit === "cm") {
-      const cmNum = parseFloat(heightCm);
-      if (Number.isNaN(cmNum)) {
-        setFeetText("");
-        setInchesText("");
-      } else {
-        const { feet, inches } = cmToFeetInches(cmNum);
-        setFeetText(String(feet));
-        setInchesText(inches.toFixed(1));
-      }
+      seedFeetInchesFromCm(heightCm);
     }
     setHeightUnit(nextUnit);
   };
@@ -470,6 +502,60 @@ export function EditProfilePresenter({
             <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
               Used only to estimate your daily calorie targets.
             </Text>
+          </View>
+
+          {/* Units — persisted display preference for weight (weigh-in
+              sheet) + height (this screen). Also flips the height toggle
+              above immediately, so the two stay in sync within this
+              session rather than requiring two separate taps. */}
+          <View marginBottom={20}>
+            <FieldLabel>Units</FieldLabel>
+            <View flexDirection="row" flexWrap="wrap" gap={8}>
+              {[
+                { value: "metric" as const, label: "Metric (cm / kg)" },
+                { value: "imperial" as const, label: "Imperial (ft-in / lb)" },
+              ].map((option) => {
+                const selected = option.value === preferredUnits;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => {
+                      onPreferredUnitsChange(option.value);
+                      if (option.value === "imperial" && heightUnit === "cm") {
+                        seedFeetInchesFromCm(heightCm);
+                        setHeightUnit("ftin");
+                      } else if (
+                        option.value === "metric" &&
+                        heightUnit === "ftin"
+                      ) {
+                        setHeightUnit("cm");
+                      }
+                    }}
+                    disabled={isSaving}
+                    testID={`edit-profile-units-${option.value}`}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                  >
+                    <View
+                      paddingHorizontal={16}
+                      paddingVertical={10}
+                      borderRadius={12}
+                      backgroundColor={selected ? "$primaryDim" : "$surface2"}
+                      borderWidth={1}
+                      borderColor={selected ? "$primary" : "$border"}
+                    >
+                      <Text
+                        fontFamily="$display"
+                        fontSize={13}
+                        fontWeight={selected ? "700" : "400"}
+                        color={selected ? "$primary" : "$text2"}
+                      >
+                        {option.label}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
           {/* Fitness Level */}

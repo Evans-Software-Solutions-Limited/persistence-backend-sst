@@ -83,7 +83,7 @@ export function WeighInSheetPresenter({
   visible,
   onClose,
   onSave,
-  defaultUnit = "kg",
+  defaultUnit,
   history = [],
   defaultWeightKg,
   defaultBodyFat = null,
@@ -95,7 +95,7 @@ export function WeighInSheetPresenter({
   const toDisplay = (kgValue: number, u: WeighInUnit) =>
     u === "kg" ? kgValue : kgValue / KG_PER_LB;
 
-  const [unit, setUnit] = useState<WeighInUnit>(defaultUnit);
+  const [unit, setUnit] = useState<WeighInUnit>(defaultUnit ?? "kg");
   const [kg, setKg] = useState<number>(
     defaultWeightKg ?? history[history.length - 1] ?? 80,
   );
@@ -112,7 +112,7 @@ export function WeighInSheetPresenter({
     fmt(
       toDisplay(
         defaultWeightKg ?? history[history.length - 1] ?? 80,
-        defaultUnit,
+        defaultUnit ?? "kg",
       ),
     ),
   );
@@ -136,22 +136,38 @@ export function WeighInSheetPresenter({
     wasVisible.current = visible;
   }, [visible]);
 
-  // …and seed weight/body-fat from the prefill. This runs again when the
-  // prefill values land (the Apple Health read resolves async, AFTER the open),
-  // so the freshest reading populates the form — but only for a field the user
-  // hasn't typed into yet, so an in-progress edit is never clobbered.
+  // …and seed weight/body-fat from the prefill, PLUS the unit toggle from
+  // the caller's preferred-units default — combined into one effect so
+  // there's no cross-effect ordering hazard (a separate unit-seed effect
+  // that also writes `weightText` could run before or after this one in the
+  // same commit and clobber the other's formatting with a stale closure).
+  //
+  // Both prefill values and `defaultUnit` resolve async, after this sheet's
+  // already-mounted-at-root first render (see feedback_sheets_mount_at_root)
+  // — `defaultUnit` starts `undefined` until the profile fetch lands. The
+  // unit seed is one-shot (ref-guarded) so a manual toggle afterward is
+  // never overwritten by a later-resolving `defaultUnit`; the weight/body-fat
+  // prefill re-applies on every arrival but only to an untouched field.
+  const unitHydratedRef = useRef(false);
   useEffect(() => {
     if (!visible) return;
+    const shouldSeedUnit =
+      defaultUnit !== undefined && !unitHydratedRef.current;
+    if (shouldSeedUnit) unitHydratedRef.current = true;
+    const resolvedUnit = shouldSeedUnit ? defaultUnit : unit;
+    if (shouldSeedUnit) setUnit(defaultUnit);
     if (!editedWeight.current) {
       const prefillKg = defaultWeightKg ?? history[history.length - 1] ?? 80;
       setKg(prefillKg);
-      setWeightText(fmt(toDisplay(prefillKg, unit)));
+      setWeightText(fmt(toDisplay(prefillKg, resolvedUnit)));
+    } else if (shouldSeedUnit) {
+      setWeightText(fmt(toDisplay(kg, resolvedUnit)));
     }
     if (!editedBodyFat.current) setBodyFat(defaultBodyFat);
-    // `unit` deliberately omitted — a mid-session unit toggle reformats via
-    // its own handler below, not by re-running the prefill.
+    // `unit`/`kg` deliberately omitted — a mid-session unit toggle reformats
+    // via its own handler below, not by re-running this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, defaultWeightKg, defaultBodyFat, history]);
+  }, [visible, defaultUnit, defaultWeightKg, defaultBodyFat, history]);
 
   const onTypeBodyFat = (text: string) => {
     editedBodyFat.current = true;

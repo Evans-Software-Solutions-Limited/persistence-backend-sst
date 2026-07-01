@@ -781,6 +781,11 @@ export type ApiProfile = {
    *  this on PATCH since M0 (`profiles.height_cm`); added to the wire type
    *  when Edit Profile started writing it. null = never set. */
   heightCm?: number | null;
+  /** Display-unit preference for weight/height toggles. Backend has
+   *  accepted this on PATCH since M0 (`profiles.preferred_units`, defaults
+   *  `"metric"`); added to the wire type when Edit Profile started writing
+   *  it. */
+  preferredUnits?: "metric" | "imperial";
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */
