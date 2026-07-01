@@ -64,6 +64,8 @@ export type EditProfilePresenterProps = {
   dateOfBirth: string;
   /** Sex for the TDEE calc; null when never set (no chip selected). */
   gender: ProfileGender | null;
+  /** Height in cm, as the raw text-field string; "" when unset. */
+  heightCm: string;
   isProfilePublic: boolean;
   isSaving: boolean;
   isLoadingInitial: boolean;
@@ -73,6 +75,7 @@ export type EditProfilePresenterProps = {
   onFitnessLevelChange: (value: EditProfileFitnessLevel) => void;
   onDateOfBirthChange: (value: string) => void;
   onGenderChange: (value: ProfileGender) => void;
+  onHeightCmChange: (value: string) => void;
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
@@ -91,6 +94,7 @@ export function EditProfilePresenter({
   fitnessLevel,
   dateOfBirth,
   gender,
+  heightCm,
   isProfilePublic,
   isSaving,
   isLoadingInitial,
@@ -103,6 +107,7 @@ export function EditProfilePresenter({
   onFitnessLevelChange,
   onDateOfBirthChange,
   onGenderChange,
+  onHeightCmChange,
   onIsProfilePublicChange,
   onSave,
   onBack,
@@ -310,6 +315,24 @@ export function EditProfilePresenter({
                 );
               })}
             </View>
+            <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
+              Used only to estimate your daily calorie targets.
+            </Text>
+          </View>
+
+          {/* Height — TDEE calculator input (M9). */}
+          <View marginBottom={20}>
+            <FieldLabel>Height (cm)</FieldLabel>
+            <TextInput
+              style={inputStyle}
+              value={heightCm}
+              onChangeText={onHeightCmChange}
+              placeholder="e.g. 178"
+              placeholderTextColor="#8A8A98"
+              keyboardType="number-pad"
+              editable={!isSaving}
+              testID="edit-profile-height"
+            />
             <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
               Used only to estimate your daily calorie targets.
             </Text>

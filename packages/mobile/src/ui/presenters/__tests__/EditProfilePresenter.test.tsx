@@ -13,6 +13,7 @@ function makeProps(
     fitnessLevel: "intermediate",
     dateOfBirth: "1990-01-15",
     gender: null,
+    heightCm: "",
     isProfilePublic: false,
     isSaving: false,
     isLoadingInitial: false,
@@ -21,6 +22,7 @@ function makeProps(
     onFitnessLevelChange: jest.fn(),
     onGenderChange: jest.fn(),
     onDateOfBirthChange: jest.fn(),
+    onHeightCmChange: jest.fn(),
     onIsProfilePublicChange: jest.fn(),
     onSave: jest.fn(),
     onBack: jest.fn(),
@@ -117,6 +119,18 @@ describe("EditProfilePresenter", () => {
     // node exists + the unselected sibling does too (visual state via style).
     expect(getByTestId("edit-profile-gender-female")).toBeTruthy();
     expect(getByTestId("edit-profile-gender-male")).toBeTruthy();
+  });
+
+  it("renders the height field and fires onHeightCmChange on input", () => {
+    const onHeightCmChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({ heightCm: "178", onHeightCmChange })}
+      />,
+    );
+    expect(getByTestId("edit-profile-height").props.value).toBe("178");
+    fireEvent.changeText(getByTestId("edit-profile-height"), "180");
+    expect(onHeightCmChange).toHaveBeenCalledWith("180");
   });
 
   it("fires onIsProfilePublicChange when the switch toggles", () => {

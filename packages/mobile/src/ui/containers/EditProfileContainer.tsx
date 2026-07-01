@@ -20,10 +20,11 @@ import {
 /**
  * M6 PR-4: Edit Profile screen container.
  *
- * Scope: fullName + fitnessLevel + isProfilePublic (3 fields).
- * Username / height / weight / preferred units defer to a later
- * milestone — they touch onboarding territory and want their own
- * UX pass.
+ * Scope: fullName + fitnessLevel + isProfilePublic (3 fields), plus
+ * gender + height (M9 — TDEE calculator inputs, STORY-004). Username /
+ * weight / preferred units still defer to a later milestone — weight is
+ * a point-in-time measurement logged via the weigh-in flow, not a static
+ * profile attribute, so it doesn't belong on this screen.
  *
  * Initial values: read from the cached profile-page payload (instant
  * paint, no spinner if the user came in from the Profile tab).
@@ -63,6 +64,8 @@ type Snapshot = {
   dateOfBirth: string;
   /** null = "prefer not to say"/unset in the selector. */
   gender: ProfileGender | null;
+  /** cm, as the raw text-field string; "" = unset. */
+  heightCm: string;
   isProfilePublic: boolean;
 };
 
@@ -82,6 +85,7 @@ export function EditProfileContainer() {
       fitnessLevel: asFitnessLevel(p.fitnessLevel),
       dateOfBirth: p.dateOfBirth ?? "",
       gender: p.gender ?? null,
+      heightCm: p.heightCm === null ? "" : String(p.heightCm),
       isProfilePublic: p.isProfilePublic,
     };
   }, [profilePage.payload]);
@@ -91,6 +95,7 @@ export function EditProfileContainer() {
     useState<EditProfileFitnessLevel>("beginner");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [gender, setGender] = useState<ProfileGender | null>(null);
+  const [heightCm, setHeightCm] = useState("");
   const [isProfilePublic, setIsProfilePublic] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -100,6 +105,7 @@ export function EditProfileContainer() {
     setFitnessLevel(initial.fitnessLevel);
     setDateOfBirth(initial.dateOfBirth);
     setGender(initial.gender);
+    setHeightCm(initial.heightCm);
     setIsProfilePublic(initial.isProfilePublic);
     setHydrated(true);
   }, [initial, hydrated]);
@@ -114,6 +120,7 @@ export function EditProfileContainer() {
       fitnessLevel !== initial.fitnessLevel ||
       dateOfBirth !== initial.dateOfBirth ||
       gender !== initial.gender ||
+      heightCm !== initial.heightCm ||
       isProfilePublic !== initial.isProfilePublic
     );
   }, [
@@ -123,6 +130,7 @@ export function EditProfileContainer() {
     fitnessLevel,
     dateOfBirth,
     gender,
+    heightCm,
     isProfilePublic,
   ]);
 
@@ -160,6 +168,15 @@ export function EditProfileContainer() {
       if (gender !== initial.gender) {
         input.gender = gender;
       }
+      if (heightCm !== initial.heightCm) {
+        // Empty string clears height (send null); otherwise parse to a
+        // number — the command range-validates it before enqueueing.
+        // Non-numeric text also parses to NaN, which the command's
+        // Number.isFinite check rejects the same way.
+        const trimmedHeight = heightCm.trim();
+        input.heightCm =
+          trimmedHeight.length > 0 ? Number(trimmedHeight) : null;
+      }
       if (isProfilePublic !== initial.isProfilePublic) {
         input.isProfilePublic = isProfilePublic;
       }
@@ -177,6 +194,7 @@ export function EditProfileContainer() {
         setErrorMessage(
           result.error.fields.dateOfBirth ??
             result.error.fields.fullName ??
+            result.error.fields.heightCm ??
             "Couldn't save your profile. Check your details and try again.",
         );
         return;
@@ -206,6 +224,7 @@ export function EditProfileContainer() {
     fitnessLevel,
     dateOfBirth,
     gender,
+    heightCm,
     isProfilePublic,
   ]);
 
@@ -234,6 +253,7 @@ export function EditProfileContainer() {
       fitnessLevel={fitnessLevel}
       dateOfBirth={dateOfBirth}
       gender={gender}
+      heightCm={heightCm}
       isProfilePublic={isProfilePublic}
       isSaving={isSaving}
       isLoadingInitial={!hydrated}
@@ -246,6 +266,7 @@ export function EditProfileContainer() {
       onFitnessLevelChange={setFitnessLevel}
       onDateOfBirthChange={setDateOfBirth}
       onGenderChange={setGender}
+      onHeightCmChange={setHeightCm}
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}

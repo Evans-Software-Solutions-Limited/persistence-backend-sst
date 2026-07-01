@@ -124,6 +124,54 @@ describe("updateProfileCommand", () => {
     ).toBe(null);
   });
 
+  it("queues heightCm and writes it to the cache", () => {
+    storage.cacheProfilePage(USER, makePayload({ heightCm: null }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: 178 },
+    );
+    expect(result.ok).toBe(true);
+    const pending = storage.getPendingMutations();
+    expect(JSON.parse(pending[0].payload)).toEqual({ heightCm: 178 });
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.heightCm).toBe(
+      178,
+    );
+  });
+
+  it("queues heightCm: null to clear the field", () => {
+    storage.cacheProfilePage(USER, makePayload({ heightCm: 178 }));
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: null },
+    );
+    expect(result.ok).toBe(true);
+    expect(storage.getCachedProfilePage(USER)?.payload.profile.heightCm).toBe(
+      null,
+    );
+  });
+
+  it("rejects an out-of-range height BEFORE enqueueing (no queue entry, no cache write)", () => {
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: 9999 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("validation");
+      expect(result.error.fields.heightCm).toBeTruthy();
+    }
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("rejects a NaN height (non-numeric text parsed upstream)", () => {
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { heightCm: Number("not-a-number") },
+    );
+    expect(result.ok).toBe(false);
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
   it("rejects a whitespace-only fullName", () => {
     const result = updateProfileCommand(
       { storage, userId: USER },

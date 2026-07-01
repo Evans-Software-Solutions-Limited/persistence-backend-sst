@@ -777,6 +777,10 @@ export type ApiProfile = {
    *  accepts this on PATCH (validated to the three literals + null-to-clear);
    *  null = never set. */
   gender?: "male" | "female" | "other" | null;
+  /** M9: height in cm, another TDEE calculator input. Backend has accepted
+   *  this on PATCH since M0 (`profiles.height_cm`); added to the wire type
+   *  when Edit Profile started writing it. null = never set. */
+  heightCm?: number | null;
   avatarUrl: string | null;
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */
