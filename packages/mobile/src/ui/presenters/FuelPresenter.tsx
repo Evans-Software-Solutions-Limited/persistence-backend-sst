@@ -1,6 +1,7 @@
 import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { View } from "@tamagui/core";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { IconCalendar, IconTarget } from "@/ui/components/icons";
@@ -100,6 +101,8 @@ export function FuelPresenter(props: FuelPresenterProps) {
     testID = "fuel-screen",
   } = props;
 
+  const insets = useSafeAreaInsets();
+
   const header = (
     <HeaderBar
       large
@@ -128,7 +131,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
 
   if (isLoading && !hasData) {
     return (
-      <View flex={1} testID={testID}>
+      <View flex={1} paddingTop={insets.top} testID={testID}>
         {header}
         <View flex={1} alignItems="center" justifyContent="center">
           <PLogoDrawLoader />
@@ -139,7 +142,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
 
   if (error && !hasData) {
     return (
-      <View flex={1} testID={testID}>
+      <View flex={1} paddingTop={insets.top} testID={testID}>
         {header}
         <ErrorState
           message="Couldn't load your day. Pull to retry."
@@ -150,7 +153,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
   }
 
   return (
-    <View flex={1} testID={testID}>
+    <View flex={1} paddingTop={insets.top} testID={testID}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 140 }}
