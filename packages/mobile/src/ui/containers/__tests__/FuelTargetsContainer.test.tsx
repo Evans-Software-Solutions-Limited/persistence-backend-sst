@@ -445,4 +445,39 @@ describe("FuelTargetsContainer", () => {
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockBack).not.toHaveBeenCalled();
   });
+
+  it("does not save when the macro split doesn't sum to 100 (write-boundary guard, independent of the presenter's disabled Save button)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+
+    await act(async () => {
+      mockProbe.last?.onMacroModeChange("custom");
+    });
+    await act(async () => {
+      mockProbe.last?.onProteinPctChange(50);
+    });
+    await act(async () => {
+      mockProbe.last?.onCarbsPctChange(50);
+    });
+    // proteinPct 50 + carbsPct 50 + fatPct 25 (unchanged) = 125, not 100.
+    expect(mockProbe.last?.macroSplit).toEqual({
+      proteinPct: 50,
+      carbsPct: 50,
+      fatPct: 25,
+    });
+
+    await act(async () => {
+      // Bypasses the presenter's own disabled-Save gate entirely — this
+      // asserts the container's write boundary rejects it independently.
+      await mockProbe.last?.onSave();
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+  });
 });

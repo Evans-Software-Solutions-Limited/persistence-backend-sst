@@ -31,6 +31,7 @@ import {
   computeFuelTargetsPreview,
   DEFAULT_ACTIVITY_ID,
   MACRO_PRESETS,
+  macroSplitSumsTo100,
   presetSplit,
   type ActivityLevel,
   type MacroPresetMode,
@@ -141,7 +142,12 @@ export function FuelTargetsContainer() {
     // Guarded by the presenter's disabled Save button too (incomplete
     // profile / invalid split), but re-checked here since this is the actual
     // write boundary.
-    if (preview.kcal === null || preview.macroGrams === null) return;
+    if (
+      preview.kcal === null ||
+      preview.macroGrams === null ||
+      !macroSplitSumsTo100(preview.macroSplit)
+    )
+      return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
