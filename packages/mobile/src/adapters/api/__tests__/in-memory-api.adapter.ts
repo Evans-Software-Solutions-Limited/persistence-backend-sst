@@ -1094,6 +1094,15 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<ApiMeasurement>(row);
   }
 
+  /** Fixture for `getClientBodyTrend`, keyed by clientId (default: empty). */
+  public clientBodyTrends: Record<string, BodyTrendPoint[]> = {};
+
+  async getClientBodyTrend(clientId: string, _window?: string) {
+    return this.mayFail<BodyTrendPoint[]>(
+      this.clientBodyTrends[clientId] ?? [],
+    );
+  }
+
   // -- Trainers / Coach You (10-trainer-features) --
   public coachOverview: CoachOverview | null = null;
   public invitations: TrainerInvitation[] = [];
