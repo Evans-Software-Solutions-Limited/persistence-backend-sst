@@ -30,7 +30,14 @@ export function useGetClientBodyTrend(
   const [error, setError] = useState<ApiError | null>(null);
 
   const load = useCallback(async () => {
-    if (!clientId) return;
+    if (!clientId) {
+      // No client to fetch — settle (not "loading forever") and drop any
+      // previous client's series so a valid→undefined id transition can't
+      // strand stale data behind a permanent spinner.
+      setData(null);
+      setIsLoading(false);
+      return;
+    }
     const result = await api.getClientBodyTrend(clientId, `${windowDays}d`);
     if (result.ok) {
       setData(result.value);

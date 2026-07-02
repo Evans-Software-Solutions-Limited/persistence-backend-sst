@@ -52,10 +52,28 @@ describe("useGetClientBodyTrend", () => {
     expect(result.current.data).toEqual(TREND);
   });
 
-  it("does not fetch without a clientId", async () => {
+  it("does not fetch without a clientId and settles isLoading=false", async () => {
     const getClientBodyTrend = jest.fn(async () => ok(TREND));
-    setup(getClientBodyTrend, {});
-    await new Promise((r) => setTimeout(r, 10));
+    const { result } = setup(getClientBodyTrend, {});
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(getClientBodyTrend).not.toHaveBeenCalled();
+    expect(result.current.data).toBeNull();
+  });
+
+  it("drops the previous client's data when the id becomes undefined", async () => {
+    const getClientBodyTrend = jest.fn(async () => ok(TREND));
+    const adapters = { api: { getClientBodyTrend } } as unknown as Adapters;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+    const { result, rerender } = renderHook(
+      ({ id }: { id?: string }) => useGetClientBodyTrend(id),
+      { wrapper, initialProps: { id: "client-1" } as { id?: string } },
+    );
+    await waitFor(() => expect(result.current.data).toEqual(TREND));
+
+    rerender({ id: undefined });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data).toBeNull();
   });
 });
