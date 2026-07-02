@@ -8,6 +8,9 @@
  * the sliders drive the live preview). `nutrition_targets` only persists the
  * RESULT (kcal/macros/water/preset), not the calculator inputs (activity
  * level, goal-slider position) — there's no column to hydrate them from.
+ * The manual calorie mode (Brad-requested 2026-07-02, post-PR #144) follows
+ * the same rule: the typed kcal is an editor input, only the result persists;
+ * re-opening the editor starts back in calculated mode.
  *
  * Deliberate scope line for AC 4.6 ("form pre-populates from current target
  * if exists"): only `waterCups` is hydrated from an existing target (a
@@ -30,11 +33,13 @@ import { useSetTargets } from "@/ui/hooks/useSetTargets";
 import { computeAge, localDayISO } from "@/shared/utils";
 import {
   computeFuelTargetsPreview,
+  computeManualFuelTargetsPreview,
   DEFAULT_ACTIVITY_ID,
   macroSplitSumsTo100,
   presetSplit,
   recommendedSplit,
   type ActivityLevel,
+  type CalorieMode,
   type MacroPresetMode,
   type MacroSplit,
 } from "@/domain/services/nutrition.service";
@@ -54,6 +59,12 @@ export function FuelTargetsContainer() {
   const [activityId, setActivityId] =
     useState<ActivityLevel["id"]>(DEFAULT_ACTIVITY_ID);
   const [goal, setGoal] = useState(DEFAULT_GOAL);
+  const [calorieMode, setCalorieMode] = useState<CalorieMode>("calculated");
+  // Raw text backing the manual-kcal input (the presenter renders it
+  // verbatim). Tracked as TEXT, not a parsed number, for the same reason as
+  // the weigh-in fields (PR #144): deriving the input's value from a parsed
+  // number makes the field impossible to clear mid-edit.
+  const [manualKcalText, setManualKcalText] = useState("");
   const [macroMode, setMacroMode] =
     useState<MacroPresetMode>(DEFAULT_MACRO_MODE);
   const [customSplit, setCustomSplit] = useState<MacroSplit>(
@@ -105,16 +116,55 @@ export function FuelTargetsContainer() {
   }, [body.data]);
   const weightKg = latestWeightKg ?? profile?.weightKg ?? null;
 
+  const manualKcal = useMemo(() => {
+    const parsed = parseFloat(manualKcalText);
+    return Number.isNaN(parsed) ? null : parsed;
+  }, [manualKcalText]);
+
   const preview = useMemo(
     () =>
-      computeFuelTargetsPreview(
-        { sex: gender, age, heightCm, weightKg },
-        activityId,
-        goal,
-        macroMode,
-        customSplit,
-      ),
-    [gender, age, heightCm, weightKg, activityId, goal, macroMode, customSplit],
+      calorieMode === "manual"
+        ? computeManualFuelTargetsPreview(
+            manualKcal,
+            goal,
+            macroMode,
+            customSplit,
+          )
+        : computeFuelTargetsPreview(
+            { sex: gender, age, heightCm, weightKg },
+            activityId,
+            goal,
+            macroMode,
+            customSplit,
+          ),
+    [
+      calorieMode,
+      manualKcal,
+      gender,
+      age,
+      heightCm,
+      weightKg,
+      activityId,
+      goal,
+      macroMode,
+      customSplit,
+    ],
+  );
+
+  // Switching INTO manual mode with an empty field seeds it from the number
+  // already on screen (the live calculated kcal), falling back to the saved
+  // target — "start from the calculation, then tweak" — so the user edits a
+  // concrete value instead of a blank box. Only when empty: a value the user
+  // typed earlier in this session survives toggling back and forth.
+  const onCalorieModeChange = useCallback(
+    (mode: CalorieMode) => {
+      if (mode === "manual" && manualKcalText === "") {
+        const seed = preview.kcal ?? target.data?.dailyKcal ?? null;
+        if (seed !== null) setManualKcalText(String(seed));
+      }
+      setCalorieMode(mode);
+    },
+    [manualKcalText, preview.kcal, target.data],
   );
 
   // Switching INTO Custom mode snapshots whatever split was effectively
@@ -205,6 +255,10 @@ export function FuelTargetsContainer() {
       heightCm={heightCm}
       weightKg={weightKg}
       onOpenProfile={onOpenProfile}
+      calorieMode={calorieMode}
+      onCalorieModeChange={onCalorieModeChange}
+      manualKcalText={manualKcalText}
+      onManualKcalTextChange={setManualKcalText}
       tdee={preview.tdee}
       kcal={preview.kcal}
       goalLabelInfo={preview.goalLabel}

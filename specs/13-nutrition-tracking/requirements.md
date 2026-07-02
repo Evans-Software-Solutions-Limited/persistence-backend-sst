@@ -232,4 +232,14 @@ The initial STORY-004 AC-correction pass above (same date) misread `fuel-targets
 
 ---
 
-_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections) · Revised 2026-07-01 (device-test correction)_
+## Revised 2026-07-02 — STORY-004 manual calorie mode (Brad-requested)
+
+Post-sign-off feedback on the shipped Fuel Targets editor: the calculator was the ONLY way to arrive at a daily kcal target. Users who already know their number (from a coach, another app, or preference) — or whose profile is too incomplete for Mifflin-St Jeor — had no way to set targets by hand.
+
+**New AC 4.8**: the editor has a calorie-mode toggle — "Calculator" (default, the existing TDEE flow) and "Set my own" (a direct numeric kcal input, sanity-bounded 500–10,000). In manual mode the profile strip / activity chips / goal slider are hidden (nothing is being calculated) but the macro-split editor (AC 4.2/4.3 — preset chips + Custom sliders) applies identically to the typed kcal. An out-of-range entry shows an inline warning and blocks Save via the same `kcal === null` contract as an incomplete profile. Switching into manual with an empty field seeds it from the live calculated kcal (falling back to the saved target's `dailyKcal`); a value the user typed survives toggling modes within the session.
+
+**Persistence unchanged**: `nutrition_targets` still stores only the result (`dailyKcal`/macros/`waterCups`/`preset`) — no "source" column. Re-opening the editor starts back in calculated mode, consistent with the AC 4.6 scope note above (the editor is a compute-fresh tool, not a session restore). Not in the design-source prototype (which is calculator-only); deviation explicitly requested by Brad 2026-07-02.
+
+---
+
+_End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections) · Revised 2026-07-01 (device-test correction) · Revised 2026-07-02 (manual calorie mode)_

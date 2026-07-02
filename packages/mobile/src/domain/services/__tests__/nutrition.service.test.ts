@@ -11,6 +11,7 @@ import {
   bmrMifflinStJeor,
   computeConsumed,
   computeFuelTargetsPreview,
+  computeManualFuelTargetsPreview,
   computeRemaining,
   detectDailyGoalHit,
   flattenFuelEntries,
@@ -21,6 +22,9 @@ import {
   MACRO_PRESETS,
   macroSplitSumsTo100,
   macrosFromKcal,
+  manualKcalInRange,
+  MANUAL_KCAL_MAX,
+  MANUAL_KCAL_MIN,
   presetSplit,
   recomputeFuelToday,
   recommendedSplit,
@@ -613,5 +617,64 @@ describe("computeFuelTargetsPreview", () => {
     );
     expect(preview.macroSplit).toEqual(invalid);
     expect(macroSplitSumsTo100(preview.macroSplit)).toBe(false);
+  });
+});
+
+describe("computeManualFuelTargetsPreview + manualKcalInRange", () => {
+  const SPLIT = { proteinPct: 30, carbsPct: 45, fatPct: 25 };
+
+  it("uses the typed kcal directly — no bmr/tdee — with the preset split applied", () => {
+    const preview = computeManualFuelTargetsPreview(
+      2200,
+      0,
+      "recommended",
+      SPLIT,
+    );
+    expect(preview.bmr).toBeNull();
+    expect(preview.tdee).toBeNull();
+    expect(preview.kcal).toBe(2200);
+    expect(preview.macroSplit).toEqual(presetSplit("recommended", 0));
+    expect(preview.macroGrams).toEqual(
+      macrosFromKcal(2200, presetSplit("recommended", 0)),
+    );
+  });
+
+  it("uses the caller's customSplit in 'custom' mode (split stays editable)", () => {
+    const custom = { proteinPct: 50, carbsPct: 30, fatPct: 20 };
+    const preview = computeManualFuelTargetsPreview(2200, 0, "custom", custom);
+    expect(preview.macroSplit).toEqual(custom);
+    expect(preview.macroGrams).toEqual(macrosFromKcal(2200, custom));
+  });
+
+  it("rounds a fractional entry to whole kcal", () => {
+    expect(
+      computeManualFuelTargetsPreview(2199.6, 0, "balanced", SPLIT).kcal,
+    ).toBe(2200);
+  });
+
+  it("nulls kcal/macroGrams when the entry is absent or out of range", () => {
+    for (const bad of [
+      null,
+      MANUAL_KCAL_MIN - 1,
+      MANUAL_KCAL_MAX + 1,
+      0,
+      -50,
+    ]) {
+      const preview = computeManualFuelTargetsPreview(
+        bad,
+        0,
+        "balanced",
+        SPLIT,
+      );
+      expect(preview.kcal).toBeNull();
+      expect(preview.macroGrams).toBeNull();
+    }
+  });
+
+  it("manualKcalInRange accepts the inclusive bounds", () => {
+    expect(manualKcalInRange(MANUAL_KCAL_MIN)).toBe(true);
+    expect(manualKcalInRange(MANUAL_KCAL_MAX)).toBe(true);
+    expect(manualKcalInRange(MANUAL_KCAL_MIN - 0.01)).toBe(false);
+    expect(manualKcalInRange(null)).toBe(false);
   });
 });

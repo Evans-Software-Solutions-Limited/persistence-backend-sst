@@ -61,6 +61,10 @@ function makeProps(
     heightCm: 178,
     weightKg: 79.8,
     onOpenProfile: jest.fn(),
+    calorieMode: "calculated",
+    onCalorieModeChange: jest.fn(),
+    manualKcalText: "",
+    onManualKcalTextChange: jest.fn(),
     tdee: 2480,
     kcal: 2480,
     goalLabelInfo: { name: "Maintain", sub: "Hold weight", tone: "success" },
@@ -313,5 +317,86 @@ describe("FuelTargetsPresenter", () => {
     );
     expect(getByTestId("fuel-targets-error")).toBeTruthy();
     expect(getByText("Couldn't save your targets.")).toBeTruthy();
+  });
+
+  // ── Manual calorie mode ───────────────────────────────────────────────────
+
+  it("fires onCalorieModeChange from the mode toggle", () => {
+    const props = makeProps();
+    const { getByTestId } = renderWithTheme(
+      <FuelTargetsPresenter {...props} />,
+    );
+    fireEvent.press(getByTestId("fuel-targets-calorie-mode-manual"));
+    expect(props.onCalorieModeChange).toHaveBeenCalledWith("manual");
+  });
+
+  it("manual mode swaps the calculator sections for the kcal input (macros/water stay)", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <FuelTargetsPresenter
+        {...makeProps({
+          calorieMode: "manual",
+          manualKcalText: "2200",
+          tdee: null,
+          kcal: 2200,
+        })}
+      />,
+    );
+    expect(getByTestId("fuel-targets-manual-kcal-input").props.value).toBe(
+      "2200",
+    );
+    // Calculator-only sections are hidden…
+    expect(queryByTestId("fuel-targets-open-profile")).toBeNull();
+    expect(queryByTestId("fuel-targets-activity-moderate")).toBeNull();
+    expect(queryByTestId("fuel-targets-goal-slider")).toBeNull();
+    // …the macro editor, water goal and MANUAL pill remain.
+    expect(getByTestId("fuel-targets-macro-sliders")).toBeTruthy();
+    expect(getByTestId("fuel-targets-manual-pill")).toBeTruthy();
+  });
+
+  it("manual mode still allows changing the macro split preset", () => {
+    const props = makeProps({
+      calorieMode: "manual",
+      manualKcalText: "2200",
+      tdee: null,
+      kcal: 2200,
+    });
+    const { getByTestId } = renderWithTheme(
+      <FuelTargetsPresenter {...props} />,
+    );
+    fireEvent.press(getByTestId("fuel-targets-macro-mode-high_protein"));
+    expect(props.onMacroModeChange).toHaveBeenCalledWith("high_protein");
+  });
+
+  it("forwards typed kcal text and shows the range warning when out of range", () => {
+    const props = makeProps({
+      calorieMode: "manual",
+      manualKcalText: "99",
+      tdee: null,
+      kcal: null, // container's preview nulls an out-of-range kcal
+    });
+    const { getByTestId } = renderWithTheme(
+      <FuelTargetsPresenter {...props} />,
+    );
+    fireEvent.changeText(getByTestId("fuel-targets-manual-kcal-input"), "990");
+    expect(props.onManualKcalTextChange).toHaveBeenCalledWith("990");
+    expect(getByTestId("fuel-targets-manual-kcal-warning")).toBeTruthy();
+    // kcal === null also disables Save (same contract as incomplete profile).
+    expect(
+      getByTestId("fuel-targets-save").props.accessibilityState?.disabled,
+    ).toBe(true);
+  });
+
+  it("hides the range warning while the field is simply empty", () => {
+    const { queryByTestId } = renderWithTheme(
+      <FuelTargetsPresenter
+        {...makeProps({
+          calorieMode: "manual",
+          manualKcalText: "",
+          tdee: null,
+          kcal: null,
+        })}
+      />,
+    );
+    expect(queryByTestId("fuel-targets-manual-kcal-warning")).toBeNull();
   });
 });
