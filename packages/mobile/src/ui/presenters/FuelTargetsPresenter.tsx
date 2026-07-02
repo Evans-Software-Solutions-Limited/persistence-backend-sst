@@ -2,17 +2,19 @@
  * <FuelTargetsPresenter> — the Fuel → Targets TDEE calculator (M9 PR3).
  * Ports `~/Downloads/handoff/design-source/screens/fuel-targets.jsx`: a
  * sticky live kcal/macro preview, a read-only profile strip, 5 activity
- * chips, a cut↔bulk goal slider, and a macro editor.
+ * chips, a cut↔bulk goal slider, and a macro editor (the prototype's 5
+ * preset chips: Recommended/High protein/Balanced/Low carb/Custom).
  *
- * Two deliberate deviations from the literal prototype, both already decided
- * in the M9 spec (not this PR's call — see `specs/13-nutrition-tracking/
- * design.md § Risks`, `requirements.md` STORY-004 AC 4.3):
- *  - the macro editor has 4 preset chips (Maintain/Cut/Bulk/Custom, each a
- *    FIXED ratio) instead of the prototype's 5 (Recommended/High protein/
- *    Balanced/Low carb/Custom);
+ * Deliberate deviations from the literal prototype, each decided in the
+ * spec, not ad hoc (see `specs/13-nutrition-tracking/design.md § Risks`,
+ * `requirements.md` STORY-004):
  *  - the 3 macro sliders are fully independent (no auto-rebalance-on-drag);
  *    a split that doesn't sum to 100% shows a warning chip and blocks Save,
- *    rather than being silently corrected.
+ *    rather than being silently corrected;
+ *  - a CALORIE-MODE toggle (Calculator / Set my own, Brad-requested
+ *    2026-07-02): manual mode swaps the profile/activity/goal calculator for
+ *    a direct kcal input while the macro-split editor keeps working
+ *    identically. Not in the prototype at all.
  *
  * Pure presenter — all bmr/tdee/kcal/macro math is computed by the container
  * via `nutrition.service`'s `computeFuelTargetsPreview` and passed down as
@@ -24,7 +26,7 @@
  *       specs/13-nutrition-tracking/requirements.md STORY-004
  */
 
-import { Pressable, ScrollView, StyleSheet } from "react-native";
+import { Pressable, ScrollView, StyleSheet, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
@@ -49,8 +51,11 @@ import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { color } from "@/ui/theme/tokens";
 import {
   ACTIVITY_LEVELS,
+  MANUAL_KCAL_MAX,
+  MANUAL_KCAL_MIN,
   macroSplitSumsTo100,
   type ActivityLevel,
+  type CalorieMode,
   type GoalLabel,
   type MacroPresetMode,
   type MacroSplit,
@@ -74,7 +79,16 @@ export type FuelTargetsPresenterProps = {
   weightKg: number | null;
   onOpenProfile: () => void;
 
-  /** Null when the profile is incomplete (no bmr → no kcal to show). */
+  /** Calculator vs direct kcal entry — manual swaps the profile/activity/
+   * goal sections for a single kcal input; macros work identically. */
+  calorieMode: CalorieMode;
+  onCalorieModeChange: (mode: CalorieMode) => void;
+  /** Raw text of the manual kcal input (container-owned, clearable). */
+  manualKcalText: string;
+  onManualKcalTextChange: (text: string) => void;
+
+  /** Null when the profile is incomplete (no bmr → no kcal to show), or
+   * when the manual kcal is absent/out of range. */
   tdee: number | null;
   kcal: number | null;
   goalLabelInfo: GoalLabel;
@@ -112,6 +126,10 @@ export function FuelTargetsPresenter({
   heightCm,
   weightKg,
   onOpenProfile,
+  calorieMode,
+  onCalorieModeChange,
+  manualKcalText,
+  onManualKcalTextChange,
   tdee,
   kcal,
   goalLabelInfo,
@@ -200,6 +218,7 @@ export function FuelTargetsPresenter({
         goalLabelInfo={goalLabelInfo}
         macroSplit={macroSplit}
         macroGrams={macroGrams}
+        manual={calorieMode === "manual"}
       />
 
       <ScrollView
@@ -235,23 +254,35 @@ export function FuelTargetsPresenter({
 
         {trainerName ? <TrainerAttributionBanner name={trainerName} /> : null}
 
-        <ProfileStrip
-          age={age}
-          gender={gender}
-          heightCm={heightCm}
-          weightKg={weightKg}
-          onOpenProfile={onOpenProfile}
-        />
+        <CalorieModeToggle value={calorieMode} onChange={onCalorieModeChange} />
 
-        <ActivityChips value={activityId} onChange={onActivityChange} />
+        {calorieMode === "manual" ? (
+          <ManualKcalSection
+            text={manualKcalText}
+            kcal={kcal}
+            onChange={onManualKcalTextChange}
+          />
+        ) : (
+          <>
+            <ProfileStrip
+              age={age}
+              gender={gender}
+              heightCm={heightCm}
+              weightKg={weightKg}
+              onOpenProfile={onOpenProfile}
+            />
 
-        <GoalSliderSection
-          value={goal}
-          onChange={onGoalChange}
-          label={goalLabelInfo}
-          kcal={kcal}
-          tdee={tdee}
-        />
+            <ActivityChips value={activityId} onChange={onActivityChange} />
+
+            <GoalSliderSection
+              value={goal}
+              onChange={onGoalChange}
+              label={goalLabelInfo}
+              kcal={kcal}
+              tdee={tdee}
+            />
+          </>
+        )}
 
         <MacroEditorSection
           mode={macroMode}
@@ -302,6 +333,7 @@ function StickyPreview({
   goalLabelInfo,
   macroSplit,
   macroGrams,
+  manual,
 }: {
   kcal: number | null;
   tdee: number | null;
@@ -309,9 +341,17 @@ function StickyPreview({
   goalLabelInfo: GoalLabel;
   macroSplit: MacroSplit;
   macroGrams: { proteinG: number; carbsG: number; fatG: number } | null;
+  manual: boolean;
 }) {
   const incomplete = kcal === null || macroGrams === null;
   const deltaKcal = incomplete ? null : Math.round(kcal! - (tdee ?? kcal!));
+  const subLine = manual
+    ? deltaKcal === null
+      ? "Enter a calorie target"
+      : "Your own target"
+    : deltaKcal === null
+      ? "Complete your profile"
+      : `${deltaKcal >= 0 ? "+" : ""}${deltaKcal} kcal · TDEE ${Math.round(tdee ?? 0)}`;
 
   return (
     <LinearGradient
@@ -362,13 +402,17 @@ function StickyPreview({
           </View>
         </View>
         <View alignItems="flex-end" flexShrink={0}>
-          <Pill tone={goalLabelInfo.tone as Tone} size="xs">
-            {goalLabelInfo.name.toUpperCase()}
-          </Pill>
+          {manual ? (
+            <Pill tone="gold" size="xs" testID="fuel-targets-manual-pill">
+              MANUAL
+            </Pill>
+          ) : (
+            <Pill tone={goalLabelInfo.tone as Tone} size="xs">
+              {goalLabelInfo.name.toUpperCase()}
+            </Pill>
+          )}
           <Text fontFamily="$body" fontSize={10.5} color="$text3" marginTop={4}>
-            {deltaKcal === null
-              ? "Complete your profile"
-              : `${deltaKcal >= 0 ? "+" : ""}${deltaKcal} kcal · TDEE ${Math.round(tdee ?? 0)}`}
+            {subLine}
           </Text>
         </View>
       </View>
@@ -1048,6 +1092,129 @@ function WaterGoalSection({
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────
+
+// ── Calorie mode toggle + manual kcal input ─────────────────────────────────
+
+const CALORIE_MODES: { id: CalorieMode; label: string; sub: string }[] = [
+  { id: "calculated", label: "Calculator", sub: "From your profile" },
+  { id: "manual", label: "Set my own", sub: "Type a kcal target" },
+];
+
+function CalorieModeToggle({
+  value,
+  onChange,
+}: {
+  value: CalorieMode;
+  onChange: (mode: CalorieMode) => void;
+}) {
+  return (
+    <View flexDirection="row" gap={5}>
+      {CALORIE_MODES.map((m) => {
+        const selected = m.id === value;
+        return (
+          <Pressable
+            key={m.id}
+            onPress={() => onChange(m.id)}
+            testID={`fuel-targets-calorie-mode-${m.id}`}
+            style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.8 : 1 })}
+          >
+            <View
+              paddingVertical={10}
+              paddingHorizontal={4}
+              borderRadius={10}
+              backgroundColor={selected ? "$primaryDim" : "$surface2"}
+              borderWidth={1}
+              borderColor={selected ? "$primary" : "$border"}
+              alignItems="center"
+              gap={3}
+            >
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={11.5}
+                color={selected ? "$primary" : "$text2"}
+              >
+                {m.label}
+              </Text>
+              <Text
+                fontFamily="$body"
+                fontSize={9}
+                color={selected ? "$primary" : "$text3"}
+              >
+                {m.sub}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ManualKcalSection({
+  text,
+  kcal,
+  onChange,
+}: {
+  text: string;
+  /** The container's validated preview kcal — null while absent/out of range. */
+  kcal: number | null;
+  onChange: (text: string) => void;
+}) {
+  const outOfRange = text.trim() !== "" && kcal === null;
+  return (
+    <View>
+      <SectionHead
+        title="Daily calories"
+        sub="Your macros still follow the split below"
+      />
+      <Card pad={16} radius={12} style={{ marginTop: 10 }}>
+        <View
+          flexDirection="row"
+          alignItems="baseline"
+          justifyContent="center"
+          gap={6}
+        >
+          <TextInput
+            value={text}
+            onChangeText={onChange}
+            inputMode="numeric"
+            placeholder="—"
+            placeholderTextColor="#8A8A98"
+            accessibilityLabel="Daily calorie target"
+            testID="fuel-targets-manual-kcal-input"
+            style={{
+              minWidth: 120,
+              textAlign: "right",
+              color: "#F4F4F8",
+              fontFamily: "Geist Mono",
+              fontWeight: "600",
+              fontSize: 40,
+              letterSpacing: -1.5,
+              padding: 0,
+            }}
+          />
+          <Text fontFamily="$mono" color="$text3" fontSize={15}>
+            kcal
+          </Text>
+        </View>
+      </Card>
+      {outOfRange ? (
+        <Text
+          fontFamily="$body"
+          fontSize={11.5}
+          color="$error"
+          marginTop={6}
+          paddingHorizontal={4}
+          testID="fuel-targets-manual-kcal-warning"
+        >
+          Enter between {MANUAL_KCAL_MIN.toLocaleString()} and{" "}
+          {MANUAL_KCAL_MAX.toLocaleString()} kcal.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
 function SectionHead({ title, sub }: { title: string; sub?: string }) {
   return (

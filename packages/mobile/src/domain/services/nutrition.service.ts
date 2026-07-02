@@ -400,6 +400,52 @@ export function computeFuelTargetsPreview(
   };
 }
 
+// ── Fuel Targets editor: manual calorie mode ────────────────────────────────
+
+/**
+ * How the daily-kcal target is sourced in the Targets editor: derived from
+ * the TDEE calculator ("calculated") or typed directly by the user
+ * ("manual"). Manual mode exists for users who already know their number
+ * (from a coach, another app, or preference) and for profiles too incomplete
+ * for Mifflin-St Jeor — the macro split applies identically in both modes.
+ */
+export type CalorieMode = "calculated" | "manual";
+
+/** Sanity bounds for a manually-entered daily kcal target. */
+export const MANUAL_KCAL_MIN = 500;
+export const MANUAL_KCAL_MAX = 10000;
+
+export function manualKcalInRange(kcal: number | null): kcal is number {
+  return kcal !== null && kcal >= MANUAL_KCAL_MIN && kcal <= MANUAL_KCAL_MAX;
+}
+
+/**
+ * Manual-mode counterpart to `computeFuelTargetsPreview`: the user's typed
+ * kcal replaces the TDEE-derived number (bmr/tdee stay null — nothing was
+ * calculated), while the macro split works exactly as in calculated mode.
+ * An out-of-range/absent kcal yields `kcal: null`, which the presenter
+ * already treats as "can't save" — same contract as an incomplete profile.
+ */
+export function computeManualFuelTargetsPreview(
+  manualKcal: number | null,
+  goal: number,
+  macroMode: MacroPresetMode,
+  customSplit: MacroSplit,
+): FuelTargetsPreview {
+  const kcal = manualKcalInRange(manualKcal) ? Math.round(manualKcal) : null;
+  const macroSplit =
+    macroMode === "custom" ? customSplit : presetSplit(macroMode, goal);
+  const macroGrams = kcal === null ? null : macrosFromKcal(kcal, macroSplit);
+  return {
+    bmr: null,
+    tdee: null,
+    kcal,
+    goalLabel: goalLabel(goal),
+    macroSplit,
+    macroGrams,
+  };
+}
+
 // ── Daily goal-hit detection (immediate in-app reward) ───────────────────────
 
 /** True when `value` is within ±`tol` (fraction) of `target` (target > 0). */

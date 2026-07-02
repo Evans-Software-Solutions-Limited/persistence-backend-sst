@@ -527,4 +527,124 @@ describe("FuelTargetsContainer", () => {
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockBack).not.toHaveBeenCalled();
   });
+
+  // ── Manual calorie mode ───────────────────────────────────────────────────
+
+  it("switching to manual seeds the input from the live calculated kcal", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+    const calculatedKcal = mockProbe.last!.kcal!;
+
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("manual");
+    });
+    expect(mockProbe.last?.calorieMode).toBe("manual");
+    expect(mockProbe.last?.manualKcalText).toBe(String(calculatedKcal));
+    // Seeded value is in range → preview kcal sticks, tdee is gone.
+    expect(mockProbe.last?.kcal).toBe(calculatedKcal);
+    expect(mockProbe.last?.tdee).toBeNull();
+  });
+
+  it("manual mode works with an INCOMPLETE profile (the calculator's blocker doesn't apply)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage(
+      "user-1",
+      makeProfilePagePayload({ gender: null }),
+    );
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(mockProbe.last?.kcal).toBeNull(); // calculator can't produce one
+
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("manual");
+    });
+    await act(async () => {
+      mockProbe.last?.onManualKcalTextChange("2200");
+    });
+    expect(mockProbe.last?.kcal).toBe(2200);
+    expect(mockProbe.last?.macroGrams).not.toBeNull();
+  });
+
+  it("a user-typed manual kcal survives toggling back to the calculator and back again", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("manual");
+    });
+    await act(async () => {
+      mockProbe.last?.onManualKcalTextChange("1800");
+    });
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("calculated");
+    });
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("manual");
+    });
+    // NOT re-seeded from the calculator — the typed value wins.
+    expect(mockProbe.last?.manualKcalText).toBe("1800");
+    expect(mockProbe.last?.kcal).toBe(1800);
+  });
+
+  it("Save in manual mode PUTs the typed kcal with split-derived macros; out-of-range is blocked at the write boundary", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+
+    await act(async () => {
+      mockProbe.last?.onCalorieModeChange("manual");
+    });
+    await act(async () => {
+      mockProbe.last?.onManualKcalTextChange("120"); // below MANUAL_KCAL_MIN
+    });
+    expect(mockProbe.last?.kcal).toBeNull();
+    await act(async () => {
+      await mockProbe.last?.onSave();
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      mockProbe.last?.onManualKcalTextChange("2600");
+    });
+    await act(async () => {
+      mockProbe.last?.onMacroModeChange("high_protein");
+    });
+    const { macroGrams, waterCups } = mockProbe.last!;
+    await act(async () => {
+      await mockProbe.last?.onSave();
+    });
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/nutrition/targets");
+    expect(JSON.parse(init.body)).toEqual({
+      dailyKcal: 2600,
+      proteinG: macroGrams!.proteinG,
+      carbsG: macroGrams!.carbsG,
+      fatG: macroGrams!.fatG,
+      waterCups,
+      preset: "high_protein",
+    });
+  });
 });
