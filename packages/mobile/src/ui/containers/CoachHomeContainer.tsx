@@ -17,6 +17,7 @@ export function CoachHomeContainer() {
       icon="people-outline"
       title="Coach Home"
       description="Your coaching dashboard arrives in milestone M8 (10-trainer-features)."
+      safeAreaTop
       testID="coach-home"
     />
   );

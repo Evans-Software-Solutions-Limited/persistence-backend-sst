@@ -1,5 +1,6 @@
 import type {
   HealthPort,
+  HealthBodyFat,
   HealthDailySteps,
   HealthPermissionStatus,
   HealthWeight,
@@ -60,7 +61,7 @@ export class StubHealthAdapter implements HealthPort {
   async getHeartRateLatest(): Promise<Result<number | null, HealthError>> {
     return fail(UNAVAILABLE);
   }
-  async getLatestBodyFat(): Promise<Result<number | null, HealthError>> {
+  async getLatestBodyFat(): Promise<Result<HealthBodyFat | null, HealthError>> {
     return fail(UNAVAILABLE);
   }
   async writeBodyWeight(): Promise<Result<void, HealthError>> {

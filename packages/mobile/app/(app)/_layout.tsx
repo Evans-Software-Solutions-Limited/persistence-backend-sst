@@ -6,6 +6,7 @@ import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetCon
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
@@ -54,6 +55,11 @@ export default function AppLayout() {
   // Keep the OS app-icon badge in sync with the unread count (launch /
   // foreground / push).
   useNotificationBadge();
+  // Cross-device weight sync: push new HealthKit weight/body-fat readings to
+  // /measurements on launch + foreground (day-granularity dedup — see hook).
+  // Complements useHealthWeightSync (YouContainer), which runs the OTHER
+  // direction: coach-logged server rows → HealthKit.
+  useHealthBodyPushSync();
 
   return (
     <ExerciseFiltersProvider>

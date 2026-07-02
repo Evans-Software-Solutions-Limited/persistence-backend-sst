@@ -27,6 +27,12 @@ vi.mock("../../../repositories/measurementRepository", () => ({
   MeasurementRepository: vi.fn().mockImplementation(() => mocks),
 }));
 
+const streakMocks = { safeEvaluateStreaks: vi.fn(async () => ({})) };
+vi.mock("../../../streaks/evaluate", () => ({
+  safeEvaluateStreaks: (...args: unknown[]) =>
+    streakMocks.safeEvaluateStreaks(...(args as [])),
+}));
+
 describe("MeasurementsCreateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -185,5 +191,96 @@ describe("MeasurementsCreateHandler", () => {
       }),
     );
     expect(response.status).toBe(201);
+  });
+
+  it("should pass a valid past measuredAt through to the repository and streak evaluation", async () => {
+    const { measurementsCreateHandler } =
+      await import("../measurementsCreateHandler");
+    const response = await measurementsCreateHandler.handle(
+      new Request("http://localhost/measurements", {
+        method: "POST",
+        body: JSON.stringify({
+          weightKg: 75,
+          measuredAt: "2026-06-25T12:00:00.000Z",
+        }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({
+        weightKg: "75",
+        measuredAt: new Date("2026-06-25T12:00:00.000Z"),
+      }),
+    );
+    // A backdated import credits the reading's own day, not today's.
+    expect(streakMocks.safeEvaluateStreaks).toHaveBeenCalledWith(
+      "test-user-id",
+      "measurement_logged",
+      new Date("2026-06-25T12:00:00.000Z"),
+    );
+  });
+
+  it("should NOT pass measuredAt to the repository when omitted (DB default applies)", async () => {
+    const { measurementsCreateHandler } =
+      await import("../measurementsCreateHandler");
+    const response = await measurementsCreateHandler.handle(
+      new Request("http://localhost/measurements", {
+        method: "POST",
+        body: JSON.stringify({ weightKg: 75 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(201);
+    const createArgs = mocks.create.mock.calls[0] as unknown[];
+    expect(createArgs[1]).not.toHaveProperty("measuredAt");
+  });
+
+  it("should 400 on an unparseable measuredAt", async () => {
+    const { measurementsCreateHandler } =
+      await import("../measurementsCreateHandler");
+    const response = await measurementsCreateHandler.handle(
+      new Request("http://localhost/measurements", {
+        method: "POST",
+        body: JSON.stringify({ weightKg: 75, measuredAt: "not-a-date" }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as any;
+    expect(data.code).toBe("invalid_measured_at");
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("should 400 on a future-dated measuredAt", async () => {
+    const { measurementsCreateHandler } =
+      await import("../measurementsCreateHandler");
+    const response = await measurementsCreateHandler.handle(
+      new Request("http://localhost/measurements", {
+        method: "POST",
+        body: JSON.stringify({
+          weightKg: 75,
+          measuredAt: "2999-01-01T00:00:00.000Z",
+        }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as any;
+    expect(data.code).toBe("invalid_measured_at");
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });
