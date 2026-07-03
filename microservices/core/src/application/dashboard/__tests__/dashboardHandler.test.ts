@@ -117,6 +117,7 @@ describe("dashboardHandler", () => {
         bodyFatPercentage: 15.0,
         measuredAt: "2026-04-20T10:00:00.000Z",
       },
+      activeProgramme: null,
     };
 
     const spy = vi
@@ -184,6 +185,7 @@ describe("dashboardHandler", () => {
         bodyFatPercentage: 15.0,
         measuredAt: "2026-04-20T10:00:00.000Z",
       },
+      activeProgramme: null,
     });
 
     const response = await dashboardHandler.handle(
@@ -237,6 +239,7 @@ describe("dashboardHandler", () => {
       },
       prOfTheWeek: null,
       latestMeasurement: null,
+      activeProgramme: null,
     });
 
     const response = await dashboardHandler.handle(

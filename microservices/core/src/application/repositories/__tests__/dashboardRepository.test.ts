@@ -1445,7 +1445,10 @@ describe("DashboardRepository sub-query composition", () => {
       expect(progressSpy).toHaveBeenCalledWith("user-1");
       expect(measurementSpy).toHaveBeenCalledWith("user-1");
 
-      // The payload is a straight projection.
+      // The payload is a straight projection. `activeProgramme` resolves to
+      // null here: the un-stubbed ProgramAssignmentRepository slice runs
+      // against the shared getDb mock, whose empty result set means "no
+      // live programme" (specs/19-programs).
       expect(payload).toEqual({
         profile,
         subscription,
@@ -1455,6 +1458,7 @@ describe("DashboardRepository sub-query composition", () => {
         progress,
         prOfTheWeek,
         latestMeasurement,
+        activeProgramme: null,
       });
     });
 
