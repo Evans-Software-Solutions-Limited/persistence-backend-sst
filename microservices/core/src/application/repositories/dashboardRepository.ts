@@ -15,6 +15,7 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { SYSTEM_USER_ID } from "./exerciseRepository";
+import { ProgramAssignmentRepository } from "./programAssignmentRepository";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,12 @@ export interface DashboardRecentWorkout {
   createdBy: string;
   isAssigned: boolean;
   assignedByType: AssignedByType | null;
+  /**
+   * The open occurrence's due date (YYYY-MM-DD) for assigned rows — lets
+   * Home label "Today's training" (specs/19-programs). Null for own /
+   * default workouts and undated ad-hoc assignments.
+   */
+  dueDate?: string | null;
 }
 
 export interface DashboardRecentActivity {
@@ -104,8 +111,24 @@ export interface DashboardLatestMeasurement {
 }
 
 /**
+ * The client's live programme for the Home "Your programme" card
+ * (specs/19-programs STORY-005). `totalWeeks`/`endDate` null = indefinite
+ * programme ("Ongoing").
+ */
+export interface DashboardActiveProgramme {
+  assignmentId: string;
+  programId: string;
+  name: string;
+  week: number;
+  totalWeeks: number | null;
+  endDate: string | null;
+  startDate: string;
+}
+
+/**
  * Full `/dashboard` payload. Matches the `DashboardPayload` contract
- * in specs/06-progress-goals/design.md § Dashboard backend contract (M1).
+ * in specs/06-progress-goals/design.md § Dashboard backend contract (M1),
+ * extended with `activeProgramme` (specs/19-programs — additive).
  */
 export interface DashboardData {
   profile: DashboardProfile;
@@ -116,6 +139,7 @@ export interface DashboardData {
   progress: DashboardProgress;
   prOfTheWeek: DashboardPROfTheWeek | null;
   latestMeasurement: DashboardLatestMeasurement | null;
+  activeProgramme: DashboardActiveProgramme | null;
 }
 
 // ─── Internal row shapes (typed for pure-function helpers) ────────────────────
@@ -304,12 +328,32 @@ function monthKey(date: Date): string {
 export class DashboardRepository {
   static readonly key = "DashboardRepository";
 
+  // Composed for the programme slices (top-up + Home card). Kept as a
+  // field so tests can substitute a stub.
+  private readonly programAssignmentRepository =
+    new ProgramAssignmentRepository();
+
   /**
    * Assembles the full `DashboardPayload` in a single `Promise.all` so Lambda
    * cold-start latency stays bounded (AC 7.8). Each sub-query is a private
    * method with its own test seams.
    */
   async getDashboard(userId: string): Promise<DashboardData> {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Rolling top-up for indefinite programmes BEFORE the reads below so
+    // the assigned list always has ~28 days of runway (specs/19-programs
+    // § Materialisation). Error-tolerant: a top-up failure must not take
+    // down the Home screen — the already-materialised window still renders.
+    try {
+      await this.programAssignmentRepository.ensureMaterializedForClient(
+        userId,
+        today,
+      );
+    } catch (err) {
+      console.error("dashboard programme top-up failed", err);
+    }
+
     const [
       profile,
       subscription,
@@ -319,6 +363,7 @@ export class DashboardRepository {
       prOfTheWeek,
       progress,
       latestMeasurement,
+      activeProgramme,
     ] = await Promise.all([
       this.getProfileSlice(userId),
       this.getSubscriptionSlice(userId),
@@ -328,6 +373,10 @@ export class DashboardRepository {
       this.getPROfTheWeek(userId),
       this.getProgressStats(userId),
       this.getLatestMeasurement(userId),
+      this.programAssignmentRepository.getActiveProgrammeForClient(
+        userId,
+        today,
+      ),
     ]);
 
     return {
@@ -339,6 +388,7 @@ export class DashboardRepository {
       progress,
       prOfTheWeek,
       latestMeasurement,
+      activeProgramme,
     };
   }
 
@@ -444,8 +494,11 @@ export class DashboardRepository {
         .where(eq(workouts.createdBy, userId))
         .orderBy(desc(workouts.createdAt))
         .limit(limit),
-      // 2. Assigned workouts — join the assignment to surface the trainer's
-      //    role so we can derive `assignedByType` without a second query.
+      // 2. Assigned workouts — OPEN plan-visible occurrences, due-date
+      //    ascending (overdue → today → upcoming), so Home reads as
+      //    "Today's training" (specs/19-programs STORY-005). The join
+      //    surfaces the trainer's role so we can derive `assignedByType`
+      //    without a second query.
       db
         .select({
           id: workouts.id,
@@ -453,14 +506,20 @@ export class DashboardRepository {
           description: workouts.description,
           estimatedDurationMinutes: workouts.estimatedDurationMinutes,
           createdBy: workouts.createdBy,
-          assignedAt: workoutAssignments.createdAt,
+          dueDate: workoutAssignments.dueDate,
           trainerRole: profiles.role,
         })
         .from(workoutAssignments)
         .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
         .leftJoin(profiles, eq(workoutAssignments.trainerId, profiles.id))
-        .where(eq(workoutAssignments.clientId, userId))
-        .orderBy(desc(workoutAssignments.createdAt))
+        .where(
+          and(
+            eq(workoutAssignments.clientId, userId),
+            eq(workoutAssignments.status, "assigned"),
+            eq(workoutAssignments.showInPlan, true),
+          ),
+        )
+        .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
         .limit(limit),
       // 3. Default templates — system-authored or public library entries.
       db
@@ -512,6 +571,7 @@ export class DashboardRepository {
         createdBy: row.createdBy ?? SYSTEM_USER_ID,
         isAssigned: true,
         assignedByType: mapTrainerRoleToAssignedByType(row.trainerRole),
+        dueDate: row.dueDate ?? null,
       });
       if (combined.length >= limit) return combined;
     }

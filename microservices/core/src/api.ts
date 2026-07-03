@@ -87,6 +87,15 @@ import { trainersClientRelationshipsListHandler } from "./application/trainers/r
 import { trainersRespondToRequestHandler } from "./application/trainers/relationships/trainersRespondToRequestHandler";
 import { trainersLogClientMeasurementHandler } from "./application/trainers/measurements/trainersLogClientMeasurementHandler";
 import { trainersClientBodyTrendHandler } from "./application/trainers/measurements/trainersClientBodyTrendHandler";
+import { trainersProgramsListHandler } from "./application/trainers/programs/trainersProgramsListHandler";
+import { trainersProgramsCreateHandler } from "./application/trainers/programs/trainersProgramsCreateHandler";
+import { trainersProgramsGetHandler } from "./application/trainers/programs/trainersProgramsGetHandler";
+import { trainersProgramsUpdateHandler } from "./application/trainers/programs/trainersProgramsUpdateHandler";
+import { trainersProgramsDeleteHandler } from "./application/trainers/programs/trainersProgramsDeleteHandler";
+import { trainersProgramsAssignHandler } from "./application/trainers/programs/trainersProgramsAssignHandler";
+import { trainersProgramsUnassignHandler } from "./application/trainers/programs/trainersProgramsUnassignHandler";
+import { trainersClientWorkoutAssignmentsCreateHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsCreateHandler";
+import { trainersClientWorkoutAssignmentsDeleteHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsDeleteHandler";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -183,6 +192,17 @@ const app = new Elysia()
   .use(trainersRespondToRequestHandler)
   .use(trainersLogClientMeasurementHandler)
   .use(trainersClientBodyTrendHandler)
+  // M13 — programmes (specs/19-programs): coach CRUD + assign/unassign +
+  // ad-hoc single-workout assignment.
+  .use(trainersProgramsListHandler)
+  .use(trainersProgramsCreateHandler)
+  .use(trainersProgramsGetHandler)
+  .use(trainersProgramsUpdateHandler)
+  .use(trainersProgramsDeleteHandler)
+  .use(trainersProgramsAssignHandler)
+  .use(trainersProgramsUnassignHandler)
+  .use(trainersClientWorkoutAssignmentsCreateHandler)
+  .use(trainersClientWorkoutAssignmentsDeleteHandler)
   // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
   // ./application/nutritionRoutes) — keeps the Eden Treaty type in
   // packages/web under TS's instantiation-depth ceiling.

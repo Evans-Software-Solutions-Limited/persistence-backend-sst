@@ -1348,4 +1348,92 @@ describe("TrainerRepository", () => {
       expect(tx.insert).not.toHaveBeenCalled();
     });
   });
+
+  // ─── Programmes (specs/19-programs) ─────────────────────────────────────
+
+  describe("formatProgramLabel", () => {
+    it("finite: name · Wk N / M with calendar-derived week", async () => {
+      const { formatProgramLabel } = await import("../trainerRepository");
+      expect(
+        formatProgramLabel(
+          {
+            programName: "Strength",
+            startDate: "2026-06-26",
+            endDate: "2026-09-17",
+            durationWeeks: 12,
+          },
+          "2026-07-03", // 7 elapsed days → week 2
+        ),
+      ).toBe("Strength · Wk 2 / 12");
+    });
+
+    it("indefinite: name · Wk N with no denominator", async () => {
+      const { formatProgramLabel } = await import("../trainerRepository");
+      expect(
+        formatProgramLabel(
+          {
+            programName: "Cut",
+            startDate: "2026-06-05",
+            endDate: null,
+            durationWeeks: null,
+          },
+          "2026-07-03", // 28 elapsed days → week 5
+        ),
+      ).toBe("Cut · Wk 5");
+    });
+  });
+
+  describe("getLiveProgramInfoByClient", () => {
+    it("returns an empty map without querying for an empty client list", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const db = dbWithSelects([]);
+      (getDb as any).mockReturnValue(db);
+      const repo = new TrainerRepository();
+      const out = await repo.getLiveProgramInfoByClient("t-1", []);
+      expect(out.size).toBe(0);
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it("maps one live programme per client; latest-started wins on overlap", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const db = dbWithSelects([
+        [
+          {
+            clientId: "c-1",
+            programName: "Old Block",
+            startDate: "2026-05-01",
+            endDate: "2026-07-24",
+            durationWeeks: 12,
+          },
+          {
+            clientId: "c-1",
+            programName: "New Block",
+            startDate: "2026-06-26",
+            endDate: null,
+            durationWeeks: null,
+          },
+          {
+            clientId: "c-2",
+            programName: "Mobility",
+            startDate: "2026-07-01",
+            endDate: "2026-08-11",
+            durationWeeks: 6,
+          },
+        ],
+      ]);
+      (getDb as any).mockReturnValue(db);
+      const repo = new TrainerRepository();
+      const out = await repo.getLiveProgramInfoByClient("t-1", ["c-1", "c-2"]);
+      // Rows arrive start-date ascending; the Map overwrite keeps the
+      // latest-started programme for c-1.
+      expect(out.get("c-1")).toMatchObject({
+        programName: "New Block",
+        durationWeeks: null,
+      });
+      expect(out.get("c-2")).toMatchObject({
+        programName: "Mobility",
+        endDate: "2026-08-11",
+      });
+    });
+  });
 });

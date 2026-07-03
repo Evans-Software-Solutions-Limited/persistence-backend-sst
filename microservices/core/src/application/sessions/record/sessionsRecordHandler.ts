@@ -2,6 +2,7 @@ import Elysia, { t } from "elysia";
 import { SessionService } from "../../repositories/sessionService";
 import { PersonalRecordsService } from "../../repositories/personalRecordsService";
 import { WorkoutService } from "../../repositories/workoutService";
+import { ProgramService } from "../../repositories/programService";
 import {
   getAuthUser,
   requireAuth,
@@ -46,6 +47,7 @@ export const sessionsRecordHandler = new Elysia()
   .use(SessionService)
   .use(PersonalRecordsService)
   .use(WorkoutService)
+  .use(ProgramService)
   .post(
     "/sessions/record",
     async (ctx) => {
@@ -109,11 +111,24 @@ export const sessionsRecordHandler = new Elysia()
       // Hand off the PR-detection function to the repo so it can run
       // inside the same transaction. Keeps SessionRepository free of
       // a direct PersonalRecordsRepository import — DI via the handler.
+      // The second hook links the completed session to its open
+      // workout_assignments occurrence (specs/19-programs) — only wired
+      // when the session references a workout template, since linking is
+      // keyed on (client, workout).
       const recorded = await ctx.SessionRepository.recordSession(
         userId,
         payload,
         (uid, sessionId, tx) =>
           ctx.PersonalRecordsRepository.recordPRsForSession(uid, sessionId, tx),
+        payload.workoutId
+          ? (uid, sessionId, tx) =>
+              ctx.ProgramAssignmentRepository.linkCompletedSession(
+                uid,
+                payload.workoutId!,
+                sessionId,
+                tx,
+              )
+          : undefined,
       );
 
       // Advance the workout streak for a completed session (STORY-006).

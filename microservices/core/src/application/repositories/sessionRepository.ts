@@ -226,6 +226,16 @@ export class SessionRepository {
       sessionId: string,
       tx: DbOrTx,
     ) => Promise<DetectedPersonalRecord[]>,
+    // Optional post-record hook run inside the SAME transaction for
+    // completed sessions — the handler wires programme-assignment
+    // completion linking through here (specs/19-programs § Materialisation)
+    // without coupling this repo to the programme tables. Same DI rationale
+    // as `runPRDetection`.
+    afterCompletedRecord?: (
+      userId: string,
+      sessionId: string,
+      tx: DbOrTx,
+    ) => Promise<void>,
   ): Promise<RecordedSession> {
     const db = getDb();
 
@@ -335,6 +345,13 @@ export class SessionRepository {
           session.id,
           tx,
         );
+        // 3b. Programme-assignment completion linking (specs/19-programs),
+        //     same-tx so an occurrence can never be marked completed
+        //     against a session that failed to commit. Skipped for
+        //     cancelled sessions — a discarded workout isn't adherence.
+        if (afterCompletedRecord) {
+          await afterCompletedRecord(userId, session.id, tx);
+        }
       }
 
       // 4. Re-fetch the full nested session inside the same tx so the

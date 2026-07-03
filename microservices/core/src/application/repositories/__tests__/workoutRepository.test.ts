@@ -333,7 +333,8 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
-          .mockReturnValueOnce(makeSelectChain([])),
+          .mockReturnValueOnce(makeSelectChain([])) // no friendship
+          .mockReturnValueOnce(makeSelectChain([])), // no assignment either
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -341,12 +342,15 @@ describe("WorkoutRepository", () => {
       const result = await repo.getById("wo-1", "stranger-id");
 
       expect(result).toBeNull();
-      expect(mockDb.select).toHaveBeenCalledTimes(2);
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
     });
 
     it("should deny access to private workout for non-owner", async () => {
       const mockDb = {
-        select: vi.fn().mockReturnValueOnce(makeSelectChain([baseWorkout])),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([baseWorkout]))
+          .mockReturnValueOnce(makeSelectChain([])), // no assignment grant
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -354,6 +358,54 @@ describe("WorkoutRepository", () => {
       const result = await repo.getById("wo-1", "not-the-owner");
 
       expect(result).toBeNull();
+    });
+
+    it("grants a client access to an assigned private workout (specs/19-programs AC 5.5)", async () => {
+      const privateWorkout = {
+        ...baseWorkout,
+        createdBy: "coach-id",
+        visibility: "private" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([privateWorkout]))
+          .mockReturnValueOnce(makeSelectChain([{ id: "wa-1" }])) // assignment row
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "client-id");
+
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe("wo-1");
+    });
+
+    it("grants access to a friends-visibility workout via assignment when not a friend", async () => {
+      const friendsWorkout = {
+        ...baseWorkout,
+        createdBy: "coach-id",
+        visibility: "friends" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
+          .mockReturnValueOnce(makeSelectChain([])) // no friendship
+          .mockReturnValueOnce(makeSelectChain([{ id: "wa-1" }])) // assignment
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "client-id");
+
+      expect(result).not.toBeNull();
     });
 
     it("should grant access to public workout for any user", async () => {

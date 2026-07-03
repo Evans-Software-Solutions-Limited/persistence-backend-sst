@@ -458,4 +458,148 @@ describe("ProgramAssignmentRepository", () => {
       expect(out).toMatchObject({ week: 5, totalWeeks: null, endDate: null });
     });
   });
+
+  describe("linkCompletedSession", () => {
+    it("no open occurrence for the workout → no-op", async () => {
+      const db = makeDb({ selects: [[]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("ad-hoc occurrence (no programme linkage): completes the row, no parent queries", async () => {
+      const db = makeDb({
+        selects: [[{ id: "wa-1", programAssignmentId: null }]],
+        updateResults: [[{ id: "wa-1" }]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      expect(db.update).toHaveBeenCalledTimes(1);
+      // Only the candidate select ran — no parent/remaining queries.
+      expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("retry / concurrent replay: occurrence already completed → stops after the guarded update", async () => {
+      const db = makeDb({
+        selects: [[{ id: "wa-1", programAssignmentId: "pa-1" }]],
+        updateResults: [[]], // guarded UPDATE matched nothing
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      expect(db.update).toHaveBeenCalledTimes(1);
+      expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("first completion promotes the parent assigned → started", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "wa-1", programAssignmentId: "pa-1" }],
+          [{ id: "pa-1", status: "assigned", durationWeeks: 4 }],
+          [{ remaining: 11 }],
+        ],
+        updateResults: [[{ id: "wa-1" }], [{ id: "pa-1" }]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      expect(db.update).toHaveBeenCalledTimes(2);
+    });
+
+    it("final occurrence of a FINITE programme completes the parent", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "wa-12", programAssignmentId: "pa-1" }],
+          [{ id: "pa-1", status: "started", durationWeeks: 4 }],
+          [{ remaining: 0 }],
+        ],
+        updateResults: [[{ id: "wa-12" }], [{ id: "pa-1" }]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      expect(db.update).toHaveBeenCalledTimes(2);
+    });
+
+    it("INDEFINITE programme never auto-completes between top-ups", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "wa-8", programAssignmentId: "pa-1" }],
+          [{ id: "pa-1", status: "started", durationWeeks: null }],
+          [{ remaining: 0 }], // window exhausted, but the programme is ongoing
+        ],
+        updateResults: [[{ id: "wa-8" }]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      await repo.linkCompletedSession(CLIENT, "w-a", "sess-1", db);
+      // Occurrence update only — parent stays `started`.
+      expect(db.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("createAdHoc", () => {
+    it("rejects a workout the trainer cannot read", async () => {
+      const db = makeDb({ selects: [[]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.createAdHoc(
+        TRAINER,
+        CLIENT,
+        { workoutId: "w-x" },
+        TODAY,
+      );
+      expect(out).toEqual({ error: "invalid_workout" });
+      expect(db.insert).not.toHaveBeenCalled();
+    });
+
+    it("creates an un-linked assignment row with defaults", async () => {
+      const row = { id: "wa-1", trainerId: TRAINER, clientId: CLIENT };
+      const db = makeDb({
+        selects: [[{ id: "w-a" }]],
+        insertResults: [[row]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.createAdHoc(
+        TRAINER,
+        CLIENT,
+        { workoutId: "w-a", dueDate: "2026-07-10", trainerNotes: "Focus form" },
+        TODAY,
+      );
+      expect(out).toEqual({ assignment: row });
+      expect(db.insertedValues[0]).toMatchObject({
+        trainerId: TRAINER,
+        clientId: CLIENT,
+        workoutId: "w-a",
+        assignedDate: TODAY,
+        dueDate: "2026-07-10",
+        status: "assigned",
+        trainerNotes: "Focus form",
+        showInPlan: true,
+        showInLibrary: true,
+      });
+      // No programme linkage on ad-hoc rows.
+      expect((db.insertedValues[0] as any).programAssignmentId).toBeUndefined();
+    });
+  });
+
+  describe("deleteAdHoc", () => {
+    it("deletes an untouched ad-hoc row", async () => {
+      const db = makeDb({ deleteResults: [[{ id: "wa-1" }]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toBe("deleted");
+    });
+
+    it("not_found when no row matches at all", async () => {
+      const db = makeDb({ deleteResults: [[]], selects: [[]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-x")).toBe("not_found");
+    });
+
+    it("not_deletable when the row exists but is completed or programme-linked", async () => {
+      const db = makeDb({
+        deleteResults: [[]],
+        selects: [[{ id: "wa-1" }]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toBe(
+        "not_deletable",
+      );
+    });
+  });
 });

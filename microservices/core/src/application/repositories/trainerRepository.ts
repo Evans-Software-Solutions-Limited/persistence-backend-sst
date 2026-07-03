@@ -17,6 +17,7 @@ import {
 import { getDb } from "@persistence/db/client";
 import type { Db } from "@persistence/db/client";
 import { liveSubscriptionFilter } from "./subscriptionRepository";
+import { currentWeek } from "../programs/scheduling";
 
 // ─── Wire shapes ──────────────────────────────────────────────────────────────
 
@@ -65,6 +66,25 @@ export interface ClientFlag {
   label: string;
 }
 
+/** Live programme assignment info per roster client (specs/19-programs). */
+export interface LiveProgramInfo {
+  programName: string;
+  startDate: string;
+  endDate: string | null;
+  durationWeeks: number | null;
+}
+
+/** "Strength · Wk 4 / 12" (finite) / "Cut · Wk 4" (indefinite). */
+export function formatProgramLabel(
+  info: LiveProgramInfo,
+  today: string,
+): string {
+  const week = currentWeek(info.startDate, today, info.durationWeeks);
+  return info.durationWeeks === null
+    ? `${info.programName} · Wk ${week}`
+    : `${info.programName} · Wk ${week} / ${info.durationWeeks}`;
+}
+
 export interface TrainerClient {
   /** clientId (profiles.id). */
   id: string;
@@ -74,12 +94,18 @@ export interface TrainerClient {
   /** pt_client_relationships.status — only active | pending reach the roster. */
   status: ClientStatus;
   /**
-   * v1: ALWAYS null. The prototype's "Strength · Wk 4 / 12" needs a
-   * `program_assignments` table, which doesn't exist until the Programs slice
-   * (10.4). The field stays in the contract; the presenter hides the segment
-   * when null. Do NOT fabricate it.
+   * "{programme name} · Wk N / M" (finite) or "{programme name} · Wk N"
+   * (indefinite) from the client's live `program_assignments` row, trainer-
+   * scoped. Null when this trainer has no live programme assignment for the
+   * client — the presenter hides the segment.
    */
   programLabel: string | null;
+  /**
+   * The live assignment's end date (YYYY-MM-DD) — null when indefinite or
+   * no live programme. Powers the "Programme ends" summary chip (ends
+   * within 14 days).
+   */
+  programEndDate: string | null;
   /** v1 28-day adherence %, or null when the client has no in-window assignments. */
   adherence: number | null;
   /** null when adherence is null (no band without a number). */
@@ -479,6 +505,54 @@ export class TrainerRepository {
       .groupBy(workoutAssignments.clientId);
     for (const r of rows) {
       result.set(r.clientId, r.missed);
+    }
+    return result;
+  }
+
+  /**
+   * Per-client live programme info for the roster, scoped to THIS trainer's
+   * assignments (a co-trainer's programme must not label this trainer's
+   * roster row). One entry per client — with the live-unique index a client
+   * holds at most one live assignment per programme; across programmes the
+   * most recently started wins.
+   */
+  async getLiveProgramInfoByClient(
+    trainerId: string,
+    clientIds: string[],
+  ): Promise<Map<string, LiveProgramInfo>> {
+    const result = new Map<string, LiveProgramInfo>();
+    if (clientIds.length === 0) return result;
+    const db = getDb();
+    const rows = await db
+      .select({
+        clientId: programAssignments.clientId,
+        programName: workoutPrograms.name,
+        startDate: programAssignments.startDate,
+        endDate: programAssignments.endDate,
+        durationWeeks: workoutPrograms.durationWeeks,
+      })
+      .from(programAssignments)
+      .innerJoin(
+        workoutPrograms,
+        eq(workoutPrograms.id, programAssignments.programId),
+      )
+      .where(
+        and(
+          eq(programAssignments.assignedBy, trainerId),
+          inArray(programAssignments.clientId, clientIds),
+          inArray(programAssignments.status, ["assigned", "started"]),
+        ),
+      )
+      // Ascending start date + Map overwrite ⇒ the latest-started live
+      // programme wins per client.
+      .orderBy(sql`${programAssignments.startDate} asc`);
+    for (const r of rows) {
+      result.set(r.clientId, {
+        programName: r.programName,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        durationWeeks: r.durationWeeks,
+      });
     }
     return result;
   }
@@ -1002,7 +1076,8 @@ export class TrainerRepository {
    * v1 assumptions (confirm on PR):
    *  - adherence: reuse `getAdherenceRows` over the last 28 days; null when the
    *    client has zero in-window assignments → null band.
-   *  - programLabel: always null (no program_assignments table until 10.4).
+   *  - programLabel/programEndDate: from the client's live programme
+   *    assignment via `getLiveProgramInfoByClient` (specs/19-programs).
    *  - flags + adherence are trainer-scoped on the assignment side so a
    *    co-trainer's data for a jointly-coached client can't leak.
    *
@@ -1021,13 +1096,20 @@ export class TrainerRepository {
 
     const clientIds = roster.map((c) => c.clientId);
 
-    const [adherenceRows, lastSeenByClient, missedByClient, clientsWithPRs] =
-      await Promise.all([
-        this.getAdherenceRows(trainerId, clientIds, winStart, now),
-        this.getLastSeenByClient(clientIds),
-        this.getMissedCountsByClient(trainerId, clientIds, winStart, now),
-        this.getClientsWithPRsThisMonth(clientIds, monthStart),
-      ]);
+    const [
+      adherenceRows,
+      lastSeenByClient,
+      missedByClient,
+      clientsWithPRs,
+      programInfoByClient,
+    ] = await Promise.all([
+      this.getAdherenceRows(trainerId, clientIds, winStart, now),
+      this.getLastSeenByClient(clientIds),
+      this.getMissedCountsByClient(trainerId, clientIds, winStart, now),
+      this.getClientsWithPRsThisMonth(clientIds, monthStart),
+      this.getLiveProgramInfoByClient(trainerId, clientIds),
+    ]);
+    const todayIso = now.toISOString().slice(0, 10);
 
     const adherenceByClient = new Map<string, number | null>();
     for (const r of adherenceRows) {
@@ -1054,14 +1136,18 @@ export class TrainerRepository {
         }
       }
 
+      const programInfo = programInfoByClient.get(c.clientId) ?? null;
+
       return {
         id: c.clientId,
         name: c.clientName,
         initials: initialsFromName(c.clientName),
         avatarUrl: c.avatarUrl,
         status: c.status,
-        // v1: no program_assignments table yet — see field doc.
-        programLabel: null,
+        programLabel: programInfo
+          ? formatProgramLabel(programInfo, todayIso)
+          : null,
+        programEndDate: programInfo?.endDate ?? null,
         adherence,
         band,
         lastSeenAt,
