@@ -149,6 +149,11 @@ Failure to write the audit row → entire transaction rolls back → handler ret
 
 ## Backend — programs
 
+> **⚠ Superseded 2026-07-03 by `specs/19-programs/design.md`** — this section
+> chose to keep the week-structured tables; that decision was reversed after
+> the Phase-0 audit (all four tables empty in prod, Brad confirmed flat
+> ordered-list shape + nullable duration). Do not build from this section.
+
 Existing tables in `packages/db/src/schema.ts` cover the program structure end-to-end:
 
 | Table (Drizzle name → SQL name)               | Shape                                                                                                                     |

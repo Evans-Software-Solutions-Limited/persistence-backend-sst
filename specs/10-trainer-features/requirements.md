@@ -148,6 +148,10 @@ Authoritative references:
 
 ### STORY-010: As a trainer, I want a Programs library + detail editor
 
+> **⚠ Superseded 2026-07-03 by `specs/19-programs/`** — the table shapes and
+> endpoints below are replaced (programme model flattened, `program_weeks`
+> dropped, `workout_assignments` unified). The visual references remain valid.
+
 **Acceptance Criteria:**
 
 - 10.1 [ ] Route `(app)/(tabs)/programs.tsx` lists trainer's authored programs per `coach.jsx` ProgramsScreen + `extra.jsx:290–328`.
