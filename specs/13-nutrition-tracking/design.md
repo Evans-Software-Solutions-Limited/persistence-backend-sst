@@ -14,7 +14,7 @@ microservices/core/src/application/
 │   ├── water/                         ← water log
 │   ├── barcode/                       ← POST /nutrition/barcode/resolve
 │   ├── ai/
-│   │   ├── recognize-photo/           ← Tier B (M9.5)
+│   │   ├── estimate/                  ← Tier B (M9.5; renamed 2026-07-03, was recognize-photo/)
 │   │   ├── estimate-text/             ← Tier B
 │   │   └── extract-recipe-photo/      ← Tier B
 │   └── streaks/                       ← daily kcal-in-target evaluation
@@ -257,11 +257,11 @@ row shapes with macro columns coerced to `number`.
 
 ### M9.5 Tier B — **deferred to M9.5** (all gate on `aiAccess` via `assertEntitlement` per cross-cuts § 4.1)
 
-| Method | Path                            | Description                         | Status               |
-| ------ | ------------------------------- | ----------------------------------- | -------------------- |
-| POST   | `/nutrition/ai/recognize-photo` | Multipart photo → recognised items  | **deferred to M9.5** |
-| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate          | **deferred to M9.5** |
-| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe | **deferred to M9.5** |
+| Method | Path                            | Description                                                                                         | Status                |
+| ------ | ------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| POST   | `/nutrition/ai/recognize-photo` | ~~Multipart photo~~ → renamed `POST /nutrition/ai/estimate`, base64 JSON — see § Revised 2026-07-03 | **M9.5 launch scope** |
+| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate                                                                          | **deferred to M9.5**  |
+| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe                                                                 | **deferred to M9.5**  |
 
 All AI endpoints (M9.5):
 
@@ -455,7 +455,7 @@ Per `fuel-sheets.jsx` (Scan section). Camera view + scanning-line animation (Rea
 
 ### `<SnapAISheetPresenter>` (Tier B)
 
-Per `fuel-sheets.jsx` (Snap section). Camera capture button + recognising animation ("Recognizing…" with pulsing sparkles). On capture, uploads to `/nutrition/ai/recognize-photo`. Receives recognised items → editable list → Add. If `!aiEntitled`, sheet immediately shows upgrade prompt instead.
+Per `fuel-sheets.jsx` (Snap section). Camera capture button + recognising animation ("Recognizing…" with pulsing sparkles). On capture, uploads to `/nutrition/ai/estimate` (renamed 2026-07-03; base64 JSON — see § Revised 2026-07-03). Receives recognised items → editable draft card → Add. If `!aiEntitled`, sheet immediately shows upgrade prompt instead.
 
 ### `<QuickAddSheetPresenter>`
 
@@ -548,7 +548,7 @@ if (!entitlement.granted) {
 await assertEntitlement(ctx.userId, "aiAccess");
 ```
 
-Failure → 402 + `{ code: 'ENTITLEMENT_DENIED', entitlement: 'aiAccess', message, upgradeUrl }` per cross-cuts § 4.1.
+Failure → 402. ~~`{ code: 'ENTITLEMENT_DENIED', entitlement: 'aiAccess', message, upgradeUrl }` per cross-cuts § 4.1~~ — corrected 2026-07-03: that shape was never shipped; the real wire contract is the M10.5 handler's `{ code: 'ENTITLEMENT_DENIED', error, feature, reason, current_tier, upgrade_to, upgrade_price_monthly }` (see § Revised 2026-07-03 › 402 wire shape).
 
 ---
 
@@ -655,13 +655,15 @@ Supersedes the "M9.5 Tier B — deferred" endpoint table above. STORY-013 (`POST
 | POST   | `/nutrition/ai/estimate`      | `{ imageBase64: string, mediaType: 'image/jpeg'\|'image/png', mealType?: MealType }` | opus-4-6  |
 | POST   | `/nutrition/ai/estimate-text` | `{ description: string (1–1000 chars) }`                                             | haiku-4-5 |
 
-Handler order (both): `requireAuth` → `assertEntitlement(userId, 'ai_access')` (402 `ENTITLEMENT_DENIED`/`aiAccess` on deny) → [abuse ceiling: >30 `ai_usage_log` rows today → 429 `AI_DAILY_LIMIT` — pending Brad] → validate body → adapter call → `200 { data: AiEstimate }`. `ai_usage_log` insert happens in a `finally` (endpoint, request/response byte sizes, ms) — written on success AND failure.
+Handler order (both): `requireAuth` → `const v = await assertEntitlement(userId, 'ai_access')`; on `!v.allowed` `throw new EntitlementError(v, 'ai_access')` (the helper returns a verdict, it does not throw — same two-step pattern as the `create_workout` callers; the shared error handler maps it to 402) → [abuse ceiling: >30 `ai_usage_log` rows today → 429 `AI_DAILY_LIMIT` — pending Brad; best-effort under concurrency since the usage-log write lands in the `finally`, so a concurrent burst can slightly overshoot — acceptable for a cost backstop, not a precise quota] → validate body → adapter call → `200 { data: AiEstimate }`. `ai_usage_log` insert happens in a `finally` (endpoint, request/response byte sizes, ms) — written on success AND failure.
 
 Errors: `413 image_too_large` (base64 > 5 MB), `422 ai_unreadable` (refusal/unparseable), `503 ai_unavailable` (provider outage/timeout after retry). Mobile maps 422/503 to the "Couldn't read this photo — try Quick Add instead" state.
 
 **Image transport — base64-in-JSON, not multipart.** Client downscales to ≤1080px long edge + JPEG ~0.7 quality via `expo-image-manipulator` (already a dependency) → typically 150–400 KB → ~200–530 KB as base64, far under the 6 MB Lambda payload cap. One code path through the existing Elysia `t.Object` validation and the mobile `SSTApiAdapter` JSON client; no multipart parser; the image is transient — decoded, size- and magic-byte-checked (JPEG/PNG), sent to Bedrock, never persisted.
 
-**Entitlement (closes C6):** `EntitlementFeature` gains `'ai_access'`; `assertEntitlement` implements the real check (latest sub + tier join → `subscription_tiers.ai_access`; deny reasons mirror `create_workout`'s cancelled/expired handling). `ai_workout` stub untouched. Wire payload string stays `aiAccess`.
+**Entitlement (closes C6):** `EntitlementFeature` gains `'ai_access'` (backend union AND the mobile mirror in `packages/mobile/src/domain/models/entitlement.ts` — the strict 402 parser casts `feature` to that union); `assertEntitlement` implements the real check (latest sub + tier join → `subscription_tiers.ai_access`; deny reasons mirror `create_workout`'s cancelled/expired handling). `ai_workout` stub untouched.
+
+**402 wire shape — SHIPPED contract, not the cross-cuts § 4.1 draft.** The shipped error handler (`shared/errorHandler.ts`) + mobile parser (`parseEntitlement.ts`, strict) use: `{ code: 'ENTITLEMENT_DENIED', error, feature: 'ai_access', reason, current_tier, upgrade_to, upgrade_price_monthly }` — snake_case, `feature` not `entitlement`, no `upgradeUrl`/`message`. Cross-cuts § 4.1's `{ entitlement: 'aiAccess', upgradeUrl }` shape was never shipped (M10.5 superseded it); this section and the § AI entitlement gating block above (which quoted the stale shape) are corrected to the shipped contract, and cross-cuts § 4.1 carries a matching Revised 2026-07-03 amendment. No error-handler changes needed — adding the union member is sufficient.
 
 **No automated foods-table grounding (eval-locked).** Grounding worsened every model's accuracy (junk rows + wrong-nutriment products in the OFF seed). Draft card carries the model's own numbers; the user can swap any item for a DB food manually. Revisit only after a foods-table quality pass (name-length filter, kcal sanity bounds, trigram search) — captured as a future task, not v1.
 

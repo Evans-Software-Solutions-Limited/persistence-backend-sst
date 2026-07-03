@@ -281,7 +281,7 @@ Brad's call 2026-07-03: Tier B "Snap" ships end-to-end as launch scope, not a re
 
 ### Entitlement key reconciliation (closes M9 Conflict C6)
 
-Backend `EntitlementFeature` gains **`ai_access`** with a REAL check (latest sub → tier → `subscription_tiers.ai_access`), replacing the stub-allow path for these two endpoints. The 402 wire payload keeps `entitlement: 'aiAccess'` per cross-cuts § 4.1 (M10.6 mobile contract unchanged). Mobile's `useNutritionAiGate` already evaluates `tier.aiAccess` client-side. Flag for Brad: `premium` is currently the only tier with `ai_access=true` — trainer tiers have it false; confirm intended.
+Backend `EntitlementFeature` gains **`ai_access`** with a REAL check (latest sub → tier → `subscription_tiers.ai_access`), replacing the stub-allow path for these two endpoints; the mobile mirror union (`domain/models/entitlement.ts`) gains the same member. The 402 wire payload is the SHIPPED M10.5/M10.6 contract — `{ code: 'ENTITLEMENT_DENIED', error, feature: 'ai_access', reason, current_tier, upgrade_to, upgrade_price_monthly }` — NOT cross-cuts § 4.1's never-shipped `{ entitlement: 'aiAccess', upgradeUrl }` draft (cross-cuts carries a matching Revised 2026-07-03 amendment). Mobile's strict 402 parser (`parseEntitlement.ts`) and `useNutritionAiGate` (already evaluates `tier.aiAccess` client-side) then work unchanged. Flag for Brad: `premium` is currently the only tier with `ai_access=true` — trainer tiers have it false; confirm intended.
 
 ### Abuse ceiling (pending Brad sign-off; deviation from cross-cuts § 4.3)
 

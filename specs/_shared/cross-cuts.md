@@ -286,6 +286,14 @@ On entitlement denial:
 
 This shape is **identical** to the M10.5 / M10.6 contract — the mobile sync queue's 402 handler (per M10.6 `MOBILE_BRIEF`) recognises it automatically. AI-gated mutations queued offline-then-flushed will surface as `blocked_entitlement` entries with no additional client work.
 
+**Revised 2026-07-03:** the body shape above is the pre-M10.5 draft and was **never shipped**. The authoritative 402 contract is what M10.5 shipped and the mobile M10.6 parser (`packages/mobile/src/shared/errors/parseEntitlement.ts`, strict) consumes:
+
+```
+{ code: 'ENTITLEMENT_DENIED', error, feature, reason, current_tier, upgrade_to, upgrade_price_monthly }
+```
+
+— snake_case, `feature` (an `EntitlementFeature` union member, e.g. `'ai_access'`) rather than `entitlement`, and no `upgradeUrl`/`message`. The helper also lives at `application/entitlement/` (singular), not `entitlements/`, and returns an `EntitlementVerdict` (caller throws `EntitlementError` on `!allowed`). Downstream specs must cite this shipped shape; `13-nutrition-tracking § Revised 2026-07-03` is the first consumer.
+
 ### 4.2 Logging usage for billing analytics
 
 **Locked 2026-05-25:** yes — every AI inference call writes one row to `ai_usage_log` with `(user_id, endpoint, request_size_bytes, response_size_bytes, ms, created_at)`. Cheap to maintain, gives us a basis to model cost per active user, and supports a future per-call quota tier (out of scope today per § 4.3).

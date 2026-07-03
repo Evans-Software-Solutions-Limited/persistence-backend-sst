@@ -85,7 +85,7 @@
 - [ ] **T-13.11.1** `<SnapAISheet>` per `fuel-sheets.jsx SnapSheet`: capture (camera + library pick) → `expo-image-manipulator` downscale/compress → `POST /nutrition/ai/estimate` → recognizing animation → editable draft card (per-item confidence %, <0.7 default-unticked) → confirm → `POST /nutrition/entries` per kept item.
 - [ ] **T-13.11.2** "Or describe it…" CTA in Quick Add → text input → `/nutrition/ai/estimate-text` → same draft-card confirm flow.
 - [ ] **T-13.11.3** Offline: Snap affordance disabled ("Snap needs a connection — try Quick Add instead"); AI calls never queue. Failure: 422/503 → "Couldn't read this photo" + retry.
-- [ ] **T-13.11.4** All entry points show upgrade prompt when `!aiEntitled` (gate hook keys off `tier.aiAccess`).
+- [ ] **T-13.11.4** All entry points show upgrade prompt when `!aiEntitled` (gate hook keys off `tier.aiAccess`). Add `'ai_access'` to the mobile `EntitlementFeature` union (`domain/models/entitlement.ts`) — the strict 402 parser casts `feature` to it. Compile-breaks to fix at the same time: `FEATURE_DISPLAY_NAMES` `Record<EntitlementFeature, string>` maps in `useFeatureGate.ts` and `SyncBlockedPresenter.tsx` need an `ai_access` entry; refresh the stale "stubs" doc comments in both unions.
 - [ ] **T-13.11.5** Widen `expo-camera`/`expo-image-picker` permission strings for meal photos; verify merged `NSCameraUsageDescription` at prebuild; new EAS dev build.
 - [ ] ~~T-13.11.x `<SnapRecipePhotoSheet>`~~ — STORY-013 stays **deferred**.
 
