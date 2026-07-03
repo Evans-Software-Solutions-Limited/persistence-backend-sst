@@ -43,6 +43,26 @@ export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   link: [avatarsBucket],
+  // Bedrock IAM auth for Tier B AI nutrition estimation (M9.5 —
+  // specs/13-nutrition-tracking/design.md § Revised 2026-07-03). No
+  // API-key secret: SigV4 auth from the Lambda execution role. Both
+  // resource shapes are required —
+  //   - `inference-profile/eu.anthropic.*` authorizes invoking the
+  //     cross-region EU inference profile ids used by the adapter
+  //     (`AI_PHOTO_MODEL_ID` / `AI_TEXT_MODEL_ID`);
+  //   - `foundation-model/anthropic.*` authorizes the underlying
+  //     regional foundation model that the inference profile routes to.
+  // Bedrock denies the call if only the profile ARN is granted — the
+  // profile is a routing indirection, not a standalone invokable unit.
+  permissions: [
+    {
+      actions: ["bedrock:InvokeModel"],
+      resources: [
+        "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:*:*:inference-profile/eu.anthropic.*",
+      ],
+    },
+  ],
   environment: {
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
@@ -74,6 +94,13 @@ coreAPI.route("$default", {
     // "Enhanced Security for Push" is enabled on the Expo account). Set
     // per-stage by the deploy workflows; not fail-fast.
     EXPO_ACCESS_TOKEN: expoAccessToken.value,
+    // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
+    // Bedrock auth is IAM (see `permissions` above), so there's nothing
+    // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;
+    // override per-stage if AWS ever grants direct (non-cross-region)
+    // Opus 4.8 access and a cheaper/faster model id becomes preferable.
+    AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
+    AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
   },
 });
 

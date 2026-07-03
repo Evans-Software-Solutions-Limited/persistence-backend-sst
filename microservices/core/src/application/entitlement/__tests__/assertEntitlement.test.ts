@@ -144,6 +144,251 @@ describe("assertEntitlement — stub features", () => {
   });
 });
 
+const FREE_TIER_NO_AI = [
+  { tierName: "free", workoutLimit: 3, aiAccess: false, priceMonthly: "0.00" },
+];
+const PREMIUM_TIER_WITH_AI = [
+  {
+    tierName: "premium",
+    workoutLimit: null,
+    aiAccess: true,
+    priceMonthly: "12.99",
+  },
+];
+const TRAINER_TIER_WITH_AI = [
+  {
+    tierName: "individual_trainer",
+    workoutLimit: null,
+    aiAccess: true,
+    priceMonthly: "14.99",
+  },
+];
+
+const PREMIUM_SUB_ACTIVE_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "active",
+    expiresAt: null,
+    aiAccess: true,
+  },
+];
+const PREMIUM_SUB_TRIALING_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "trialing",
+    expiresAt: null,
+    aiAccess: true,
+  },
+];
+const CANCELLED_SUB_EXPIRED_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "cancelled",
+    expiresAt: new Date(Date.now() - 86_400_000), // -1 day
+    aiAccess: true,
+  },
+];
+const CANCELLED_SUB_FUTURE_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "cancelled",
+    expiresAt: new Date(Date.now() + 86_400_000), // +1 day
+    aiAccess: true,
+  },
+];
+const PAST_DUE_SUB_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "past_due",
+    expiresAt: null,
+    aiAccess: true,
+  },
+];
+const TRAINER_SUB_ACTIVE_AI = [
+  {
+    tierName: "individual_trainer",
+    paymentStatus: "active",
+    expiresAt: null,
+    aiAccess: true,
+  },
+];
+
+describe("assertEntitlement — ai_access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("allows when premium sub is active (ai_access=true on the tier)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_SUB_ACTIVE_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("allows when premium sub is trialing", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_SUB_TRIALING_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("allows when trainer sub is active (ai_access=true on the trainer tier)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_TRAINER, TRAINER_SUB_ACTIVE_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("denies with reason='tier' for a free user (no sub row) and suggests premium", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [], // no user_subscriptions row
+        FREE_TIER_NO_AI, // no-sub-row free-tier lookup
+        PREMIUM_TIER_WITH_AI, // buildDenyVerdict's upgrade-tier lookup
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+    });
+  });
+
+  it("denies with reason='tier' for a trainer-role free user and suggests individual_trainer", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_TRAINER, [], FREE_TIER_NO_AI, TRAINER_TIER_WITH_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "free",
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 14.99,
+    });
+  });
+
+  it("denies with reason='cancelled' + upgradeTo=null once the grace period has passed", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED_AI,
+        FREE_TIER_NO_AI, // revert-to-free lookup inside the status branch
+        // No upgrade-tier lookup — buildDenyVerdict short-circuits to
+        // upgradeTo=null for 'cancelled'/'expired' before ever calling
+        // loadTier again.
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "premium",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("stays allowed for a cancelled sub still within its paid grace period", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, CANCELLED_SUB_FUTURE_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("denies with reason='expired' + upgradeTo=null for a past_due sub", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PAST_DUE_SUB_AI, FREE_TIER_NO_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "expired",
+      currentTier: "premium",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("throws when the free tier row is missing from the catalog (no-sub-row path)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [],
+        [], // free tier row missing
+      ]),
+    );
+
+    await expect(assertEntitlement("user-1", "ai_access")).rejects.toThrow(
+      /free.*missing/,
+    );
+  });
+
+  it("throws when the free tier row is missing from the catalog (status-revert path)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PAST_DUE_SUB_AI,
+        [], // free tier row missing on the revert-to-free lookup
+      ]),
+    );
+
+    await expect(assertEntitlement("user-1", "ai_access")).rejects.toThrow(
+      /free.*missing/,
+    );
+  });
+
+  it("coerces an unknown tier_name on the sub row to 'free' in the verdict", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "deleted_tier_xyz",
+            paymentStatus: "active",
+            expiresAt: null,
+            aiAccess: null, // LEFT JOIN miss — no catalog row for the deleted tier
+          },
+        ],
+        PREMIUM_TIER_WITH_AI, // upgrade-tier lookup
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+    });
+  });
+
+  it("throws when the profiles row is missing (schema corruption)", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([[]]));
+
+    await expect(assertEntitlement("user-1", "ai_access")).rejects.toThrow(
+      /schema corruption/,
+    );
+  });
+});
+
 describe("assertEntitlement — create_workout, no sub row (free defaults)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
