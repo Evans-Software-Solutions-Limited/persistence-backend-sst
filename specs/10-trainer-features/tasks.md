@@ -70,6 +70,8 @@ Audit infra (10.1 table/enum, 10.2 helpers), on-behalf endpoints (10.3 sessions/
 
 ## Phase 10.4 — Programs endpoints (1 PR)
 
+> **⚠ Superseded 2026-07-03 by `specs/19-programs/tasks.md` Phases 19.1–19.2.**
+
 - [ ] **T-10.4.1** `GET /trainers/me/programs`. Implements STORY-010 AC 10.6.
 - [ ] **T-10.4.2** `POST /trainers/me/programs` (create).
 - [ ] **T-10.4.3** `GET /trainers/me/programs/:id`, `PUT /trainers/me/programs/:id`, `DELETE /trainers/me/programs/:id`.
@@ -126,6 +128,8 @@ Audit infra (10.1 table/enum, 10.2 helpers), on-behalf endpoints (10.3 sessions/
 - [ ] **T-10.11.5** `<AddNoteSheetPresenter>` + container. Implements STORY-011.
 
 ## Phase 10.12 — Programs list + editor (1 PR)
+
+> **⚠ Superseded 2026-07-03 by `specs/19-programs/tasks.md` Phases 19.3–19.4.**
 
 - [ ] **T-10.12.1** `<ProgramsListPresenter>` per `coach.jsx ProgramsScreen` + `extra.jsx:290–328`. Implements STORY-010 AC 10.1–10.4.
 - [ ] **T-10.12.2** `<ProgramEditorPresenter>` per design.md. Week-by-week list editing v1.
