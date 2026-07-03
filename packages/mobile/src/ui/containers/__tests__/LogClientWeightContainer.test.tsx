@@ -54,18 +54,31 @@ describe("LogClientWeightContainer", () => {
     const logClientWeight = jest.fn(async () => ok({}));
     renderWithApi(logClientWeight);
     await act(async () => {
-      await props().onSave(82);
+      await props().onSave({ weightKg: 82, bodyFatPercentage: null });
     });
+    // Body fat left blank → the key is omitted from the request entirely.
     expect(logClientWeight).toHaveBeenCalledWith("client-1", { weightKg: 82 });
     expect(props().success).toBe(true);
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
+  });
+
+  it("includes bodyFatPercentage when the coach filled it in", async () => {
+    const logClientWeight = jest.fn(async () => ok({}));
+    renderWithApi(logClientWeight);
+    await act(async () => {
+      await props().onSave({ weightKg: 82, bodyFatPercentage: 19.5 });
+    });
+    expect(logClientWeight).toHaveBeenCalledWith("client-1", {
+      weightKg: 82,
+      bodyFatPercentage: 19.5,
+    });
   });
 
   it("surfaces an error on failure", async () => {
     const err: ApiError = { kind: "api", code: "server", message: "no" };
     renderWithApi(jest.fn(async () => fail(err)));
     await act(async () => {
-      await props().onSave(82);
+      await props().onSave({ weightKg: 82, bodyFatPercentage: null });
     });
     expect(props().error).toBeTruthy();
     expect(props().success).toBe(false);
@@ -76,7 +89,7 @@ describe("LogClientWeightContainer", () => {
     const logClientWeight = jest.fn(async () => ok({}));
     renderWithApi(logClientWeight);
     await act(async () => {
-      await props().onSave(82);
+      await props().onSave({ weightKg: 82, bodyFatPercentage: null });
     });
     expect(logClientWeight).not.toHaveBeenCalled();
   });

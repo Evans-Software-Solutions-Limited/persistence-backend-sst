@@ -1,13 +1,17 @@
 import { useCallback, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
-import { LogClientWeightPresenter } from "@/ui/presenters/LogClientWeightPresenter";
+import {
+  LogClientWeightPresenter,
+  type LogClientWeightSaveInput,
+} from "@/ui/presenters/LogClientWeightPresenter";
 
 /**
- * <LogClientWeightContainer> — wires the coach log-weight form to
- * POST /clients/:clientId/measurements (`api.logClientWeight`). Reads the
- * client id (and optional name) from the route params. On success it briefly
- * shows "Logged ✓" then pops back to the client detail.
+ * <LogClientWeightContainer> — wires the coach log-weight form (weight +
+ * optional body fat) to POST /clients/:clientId/measurements
+ * (`api.logClientWeight`). Reads the client id (and optional name) from the
+ * route params. On success it briefly shows "Logged ✓" then pops back to the
+ * client detail.
  */
 export function LogClientWeightContainer() {
   const router = useRouter();
@@ -23,11 +27,14 @@ export function LogClientWeightContainer() {
   }, [router]);
 
   const onSave = useCallback(
-    async (weightKg: number) => {
+    async ({ weightKg, bodyFatPercentage }: LogClientWeightSaveInput) => {
       if (!id) return;
       setSaving(true);
       setError(null);
-      const result = await api.logClientWeight(id, { weightKg });
+      const result = await api.logClientWeight(id, {
+        weightKg,
+        ...(bodyFatPercentage != null ? { bodyFatPercentage } : {}),
+      });
       setSaving(false);
       if (result.ok) {
         setSuccess(true);

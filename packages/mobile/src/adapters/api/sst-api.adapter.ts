@@ -1178,6 +1178,16 @@ export class SSTApiAdapter implements ApiPort {
     );
   }
 
+  async getClientBodyTrend(
+    clientId: string,
+    window?: string,
+  ): Promise<Result<BodyTrendPoint[], ApiError>> {
+    return this.requestEnvelope<BodyTrendPoint[]>(
+      `/clients/${clientId}/body-trend`,
+      { params: window ? { window } : undefined },
+    );
+  }
+
   // -- Trainers / Coach You (10-trainer-features) --
   //
   // GET overview + GET invitations are single `{ data }` envelopes (camelCase

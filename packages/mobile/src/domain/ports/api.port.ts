@@ -523,6 +523,19 @@ export interface ApiPort {
     input: LogMeasurementInput,
   ): Promise<Result<ApiMeasurement, ApiError>>;
 
+  /**
+   * Coach reads a client's body-measurement trend
+   * (`GET /clients/:clientId/body-trend?window=Nd`). Same wire shape as the
+   * self route (`getBodyTrend`), so Client Detail reuses `BodyTrendPoint` +
+   * `<BodyTrendPresenter>` unchanged. Server-guarded by an active
+   * trainer↔client relationship (403 `not_your_client`); days are bucketed
+   * in the CLIENT's timezone.
+   */
+  getClientBodyTrend(
+    clientId: string,
+    window?: string,
+  ): Promise<Result<BodyTrendPoint[], ApiError>>;
+
   // -- Trainers / Coach You (10-trainer-features) --
   /**
    * Fetch the Coach You aggregate (`GET /trainers/me/overview`). Single
