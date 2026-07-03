@@ -293,10 +293,19 @@ export class WorkoutRepository {
       return eq(workouts.createdBy, userId);
     }
     if (type === "assigned") {
+      // `show_in_library` is the coach's per-assignment "clutter the
+      // client's library?" flag (specs/19-programs D3) — plan-only
+      // assignments are excluded here but still surface on Home. The
+      // IN-subquery dedupes repeated occurrences of the same workout.
       const assignedIds = db
         .select({ workoutId: workoutAssignments.workoutId })
         .from(workoutAssignments)
-        .where(eq(workoutAssignments.clientId, userId));
+        .where(
+          and(
+            eq(workoutAssignments.clientId, userId),
+            eq(workoutAssignments.showInLibrary, true),
+          ),
+        );
       return inArray(workouts.id, assignedIds);
     }
     // default — public, but exclude user's own publics (those show under
@@ -339,9 +348,25 @@ export class WorkoutRepository {
           ),
         )
         .limit(1);
-      return friendship.length > 0;
+      if (friendship.length > 0) return true;
+      // fall through — an assignment can still grant access.
     }
-    return false; // private, non-owner
+    // Assignment grant (specs/19-programs AC 5.5): a coach can assign
+    // their own PRIVATE (or friends-only) workout — the assignment row
+    // itself is the read permission, otherwise the client could list the
+    // workout via type=assigned but 404 on its detail. Checked last so the
+    // owner / public / friend fast paths stay exactly as they were.
+    const assignment = await db
+      .select({ id: workoutAssignments.id })
+      .from(workoutAssignments)
+      .where(
+        and(
+          eq(workoutAssignments.workoutId, workout.id),
+          eq(workoutAssignments.clientId, userId),
+        ),
+      )
+      .limit(1);
+    return assignment.length > 0;
   }
 
   private async fetchWorkoutWithExercises(

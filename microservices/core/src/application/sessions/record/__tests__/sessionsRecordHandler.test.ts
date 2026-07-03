@@ -213,6 +213,9 @@ describe("sessionsRecordHandler", () => {
       "test-user-id",
       expect.objectContaining({ name: "Push Day" }),
       expect.any(Function),
+      // Programme completion-linking hook — wired because validBody
+      // references a workout template (specs/19-programs).
+      expect.any(Function),
     );
   });
 
