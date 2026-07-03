@@ -243,3 +243,46 @@ Post-sign-off feedback on the shipped Fuel Targets editor: the calculator was th
 ---
 
 _End of `13-nutrition-tracking/requirements.md` · 2026-05-27 (rewritten from scratch) · Revised 2026-07-01 (STORY-004 AC corrections) · Revised 2026-07-01 (device-test correction) · Revised 2026-07-02 (manual calorie mode)_
+
+---
+
+## Revised 2026-07-03 — M9.5 Tier B is LAUNCH SCOPE (photo + free-text); eval-locked decisions
+
+Brad's call 2026-07-03: Tier B "Snap" ships end-to-end as launch scope, not a research spike. STORY-011 (photo) and STORY-012 (free-text) are in scope for M9.5; **STORY-013 (recipe-photo extract) stays deferred** to a later slice.
+
+### Phase 0 accuracy eval (2026-07-03) — decisions locked
+
+25 ground-truth photos (22 measured Nutrition5k cafeteria plates + 3 packaged items), 3 Claude models on AWS Bedrock (eu-west-2), direct estimation vs foods-table grounding. Full artifacts in the session eval; summary:
+
+| arm                      | abs kcal err median | p90  | confidence signal                        | cost/snap (EU) |
+| ------------------------ | ------------------- | ---- | ---------------------------------------- | -------------- |
+| claude-opus-4-6 direct   | 30%                 | 72%  | calibrated (conf ≥ 0.7 → 12% median err) | ~$0.019        |
+| claude-sonnet-4-6 direct | 33%                 | 88%  | noisy                                    | ~$0.014        |
+| claude-haiku-4-5 direct  | 32%                 | 119% | uninformative (always ~0.8)              | ~$0.004        |
+
+- **Provider: AWS Bedrock with IAM auth** (Brad 2026-07-03) — no API-key secret exists anywhere; the Lambda gets `bedrock:InvokeModel` on the two model ARNs. Claude Opus 4.8/4.7 are account-gated on Bedrock; `eu.anthropic.claude-opus-4-6-v1` is the top available rung (same price class).
+- **Photo model: `claude-opus-4-6`** — best tail accuracy and the only model whose per-item confidence is calibrated enough to drive the prototype's confidence UX. **Free-text model: `claude-haiku-4-5`** (no image tokens; easier task; ~$0.002/call). Model ids are deploy-time config, not hardcoded.
+- **NO automated foods-table grounding in v1.** The eval showed grounding _degrades_ accuracy on every model (opus 30% → 40% median) because the OFF-seeded `foods` table contains junk-name rows and wrong-nutriment products. The AI's numbers go on the draft card directly; the user can manually replace any item with a DB food via the existing search affordance.
+- **Structured output = forced tool use** (`tool_choice`), not `output_config.format` — the latter is fragmented/unsupported across Bedrock endpoints.
+
+### STORY-011 AC corrections (photo)
+
+- **11.3 corrected**: endpoint is **`POST /nutrition/ai/estimate`** with a JSON body `{ imageBase64, mediaType, mealType? }` — NOT multipart (see design.md § M9.5 Tier B revision for the transport justification). Client downscales/compresses before upload. Entitlement assert + `ai_usage_log` unchanged.
+- **11.4 expanded**: response items render as an **editable draft card** (per `fuel-sheets.jsx SnapSheet` confirm stage): per-item name / amount / kcal / confidence %, toggleable; items with confidence below the default-untick threshold (0.7) start **unticked**. AI output is NEVER logged without explicit user confirm.
+- **11.5 unchanged** (confirm → `POST /nutrition/entries`).
+- **11.7 new — offline**: Snap is online-only. When offline the Snap affordance is disabled with "Snap needs a connection — try Quick Add instead". AI calls never enter the sync queue.
+- **11.8 new — failure UX**: model refusal / unparseable output → `422 ai_unreadable`; provider outage/timeout → `503 ai_unavailable`. Sheet shows "Couldn't read this photo — try Quick Add instead" with a retry. `ai_usage_log` row is written on failures too.
+- **11.9 new — permissions**: the `expo-camera` plugin's `NSCameraUsageDescription` currently only covers barcode scanning; string widens to cover meal photos (forces a new EAS dev build). Photo-library pick is also offered (uses existing library permission, string widened to cover meal photos).
+
+### STORY-012 AC corrections (free-text)
+
+- **12.2 corrected**: endpoint `POST /nutrition/ai/estimate-text` body `{ description }`, same gating/logging/response envelope as photo; runs on the cheaper text model.
+- **12.4 expanded**: output feeds the same editable draft card + confirm flow as photo. Never auto-logged.
+
+### Entitlement key reconciliation (closes M9 Conflict C6)
+
+Backend `EntitlementFeature` gains **`ai_access`** with a REAL check (latest sub → tier → `subscription_tiers.ai_access`), replacing the stub-allow path for these two endpoints. The 402 wire payload keeps `entitlement: 'aiAccess'` per cross-cuts § 4.1 (M10.6 mobile contract unchanged). Mobile's `useNutritionAiGate` already evaluates `tier.aiAccess` client-side. Flag for Brad: `premium` is currently the only tier with `ai_access=true` — trainer tiers have it false; confirm intended.
+
+### Abuse ceiling (pending Brad sign-off; deviation from cross-cuts § 4.3)
+
+A server-side **daily AI-call ceiling (30/day/user across both endpoints)** returning `429 { code: 'AI_DAILY_LIMIT' }`, implemented as a count over today's `ai_usage_log` rows. This is NOT a product quota tier (still out of scope) — it is a cost-abuse backstop so per-user spend mathematically cannot exceed subscription revenue. If Brad declines, ships without it.

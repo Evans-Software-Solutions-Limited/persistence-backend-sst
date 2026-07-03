@@ -628,3 +628,55 @@ M7 owns delivery.
 ---
 
 _End of `13-nutrition-tracking/design.md` · 2026-05-27 (rewritten from scratch)_
+
+---
+
+## Revised 2026-07-03 — M9.5 Tier B design (photo + free-text estimation, launch scope)
+
+Supersedes the "M9.5 Tier B — deferred" endpoint table above. STORY-013 (`POST /recipes/ai/extract-photo`) remains deferred and is unchanged.
+
+### Provider architecture — Claude on AWS Bedrock, IAM auth
+
+- **No API-key secret.** The core Lambda gets an IAM policy allowing `bedrock:InvokeModel` (+ `InvokeModelWithResponseStream` unused-but-harmless omitted) on the two inference-profile ARNs, granted in `infra/api.ts` via the function's `permissions`. This kills the whole secret-rotation/leak class for a public repo — nothing to set in CI, nothing in the SST secret store.
+- **SDK**: `@anthropic-ai/bedrock-sdk` (`AnthropicBedrock` client) — identical Messages request/response shape to the direct Anthropic API; auth is SigV4 from the Lambda role.
+- **Models** (deploy-time env config `AI_PHOTO_MODEL_ID` / `AI_TEXT_MODEL_ID`, defaults):
+  - Photo: `eu.anthropic.claude-opus-4-6-v1` (EU cross-region inference profile; invocable from eu-west-2). Opus 4.8/4.7 are account-gated on Bedrock — revisit if access is granted; same price class.
+  - Free-text: `eu.anthropic.claude-haiku-4-5-20251001-v1:0`.
+- **Structured output = forced tool use**: one tool (`report_estimate`) whose `input_schema` is the estimate schema, `tool_choice: { type: 'tool', name: 'report_estimate' }`. Chosen over `output_config.format` because structured-outputs support is fragmented across Bedrock endpoints/models (the Bedrock Messages path rejects it outright), while tool-forcing works on every Claude model on every rail — and ports to non-Anthropic Bedrock models via Converse if ever needed.
+- **Adapter seam**: `application/nutrition/services/aiEstimation.ts` exposes
+  `estimateFromPhoto({ imageBase64, mediaType, mealType? }): Promise<AiEstimate>` and `estimateFromText({ description }): Promise<AiEstimate>`
+  where `AiEstimate = { foods: AiFoodItem[], overallConfidence, notes }`, `AiFoodItem = { name, quantity, unit, estimatedGrams, kcal, proteinG, carbsG, fatG, confidence }`.
+  The Bedrock client is injectable (same pattern as `openFoodFacts.ts`'s injectable fetcher) — unit tests never make live calls; CI needs no AWS credentials. Client timeout 25s, `max_tokens` 1500, one retry on 5xx/timeout inside the 120s Lambda budget. Model refusal / missing tool_use block / schema-invalid input → `AiUnreadableError`.
+
+### Endpoints
+
+| Method | Path                          | Body                                                                                 | Model     |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------ | --------- |
+| POST   | `/nutrition/ai/estimate`      | `{ imageBase64: string, mediaType: 'image/jpeg'\|'image/png', mealType?: MealType }` | opus-4-6  |
+| POST   | `/nutrition/ai/estimate-text` | `{ description: string (1–1000 chars) }`                                             | haiku-4-5 |
+
+Handler order (both): `requireAuth` → `assertEntitlement(userId, 'ai_access')` (402 `ENTITLEMENT_DENIED`/`aiAccess` on deny) → [abuse ceiling: >30 `ai_usage_log` rows today → 429 `AI_DAILY_LIMIT` — pending Brad] → validate body → adapter call → `200 { data: AiEstimate }`. `ai_usage_log` insert happens in a `finally` (endpoint, request/response byte sizes, ms) — written on success AND failure.
+
+Errors: `413 image_too_large` (base64 > 5 MB), `422 ai_unreadable` (refusal/unparseable), `503 ai_unavailable` (provider outage/timeout after retry). Mobile maps 422/503 to the "Couldn't read this photo — try Quick Add instead" state.
+
+**Image transport — base64-in-JSON, not multipart.** Client downscales to ≤1080px long edge + JPEG ~0.7 quality via `expo-image-manipulator` (already a dependency) → typically 150–400 KB → ~200–530 KB as base64, far under the 6 MB Lambda payload cap. One code path through the existing Elysia `t.Object` validation and the mobile `SSTApiAdapter` JSON client; no multipart parser; the image is transient — decoded, size- and magic-byte-checked (JPEG/PNG), sent to Bedrock, never persisted.
+
+**Entitlement (closes C6):** `EntitlementFeature` gains `'ai_access'`; `assertEntitlement` implements the real check (latest sub + tier join → `subscription_tiers.ai_access`; deny reasons mirror `create_workout`'s cancelled/expired handling). `ai_workout` stub untouched. Wire payload string stays `aiAccess`.
+
+**No automated foods-table grounding (eval-locked).** Grounding worsened every model's accuracy (junk rows + wrong-nutriment products in the OFF seed). Draft card carries the model's own numbers; the user can swap any item for a DB food manually. Revisit only after a foods-table quality pass (name-length filter, kcal sanity bounds, trigram search) — captured as a future task, not v1.
+
+### Mobile flow (SnapAISheet)
+
+State machine per `fuel-sheets.jsx SnapSheet`: `capture` (camera via expo-camera + photo-library pick) → local downscale/compress → `recognizing` (pulsing sparkles) → `confirm` (AI summary card: dish name + total kcal; toggleable item rows with name/amount/kcal/confidence %, confidence < 0.7 default-unticked; serving edits recompute totals) → confirm → one `POST /nutrition/entries` per kept item (customName + macros payload, existing manual path) → `added` affirmation. Root-mounted sheet, zustand open-state, 86% height, gold accent.
+Offline: Snap button disabled + copy "Snap needs a connection — try Quick Add instead"; AI calls never queue.
+Free-text: "Or describe it…" in QuickAddSheet → text input → same recognizing/confirm flow via `estimate-text`.
+Permissions: widen the `expo-camera` plugin `cameraPermission` string (currently barcode-only) and `expo-image-picker` strings to cover meal photos; both plugins write `NSCameraUsageDescription` — verify the merged value at prebuild. Native string change ⇒ new EAS dev build.
+
+### Cost model (Brad's constraint: AI spend must not balloon vs subscription)
+
+EU Bedrock pricing (list + 10% regional): opus-4-6 $5.50/$27.50 per MTok, haiku $1.10/$5.50. Measured per snap: ~1,650 input + ~250–500 output tokens → **~$0.019/snap (≈1.5p)**; free-text ~$0.002. Heavy user (5 snaps/day) ≈ £2.20/mo vs £12.99 premium (~17%); typical 1–2/day ≈ £0.45–0.90 (3.5–7%). The 30/day ceiling caps worst-case at ~£13/mo. `ai_usage_log` gives per-user cost telemetry from day one; a future quota tier can throttle without schema change.
+
+### Test plan (M9.5 additions)
+
+Backend: handler tests — 402 (free tier), [429 at ceiling], 413 oversize, 422 refusal, 503 outage, happy path (mocked adapter), usage-log written on success + failure; adapter tests — tool-forcing request shape, image block shape, timeout/retry, refusal mapping; entitlement tests — `ai_access` allow (premium active/trialing) / deny (free, cancelled+expired reasons). No live API calls anywhere in CI.
+Mobile: gate branch (locked → upgrade prompt), capture→recognizing→confirm state machine, low-confidence default-untick, toggle/edit recompute, confirm posts N entries, offline disabled affordance, 422/503 error state + retry.
