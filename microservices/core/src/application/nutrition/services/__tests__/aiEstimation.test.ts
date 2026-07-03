@@ -153,6 +153,69 @@ describe("estimateFromPhoto", () => {
     ).rejects.toThrow(AiUnreadableError);
   });
 
+  it("throws AiUnreadableError when a numeric field is NaN (typeof number but not finite)", async () => {
+    const client = fakeClient(async () =>
+      toolUseResponse({
+        foods: [{ ...VALID_ESTIMATE_INPUT.foods[0], kcal: Number.NaN }],
+        overallConfidence: 0.8,
+        notes: "n",
+      }),
+    );
+
+    await expect(
+      estimateFromPhoto(
+        { imageBase64: "ZmFrZQ==", mediaType: "image/jpeg" },
+        { client },
+      ),
+    ).rejects.toThrow(AiUnreadableError);
+  });
+
+  it("throws AiUnreadableError when overallConfidence is Infinity", async () => {
+    const client = fakeClient(async () =>
+      toolUseResponse({
+        foods: [VALID_ESTIMATE_INPUT.foods[0]],
+        overallConfidence: Number.POSITIVE_INFINITY,
+        notes: "n",
+      }),
+    );
+
+    await expect(
+      estimateFromPhoto(
+        { imageBase64: "ZmFrZQ==", mediaType: "image/jpeg" },
+        { client },
+      ),
+    ).rejects.toThrow(AiUnreadableError);
+  });
+
+  it("clamps out-of-range numbers instead of rejecting (negative macros → 0, confidence → [0,1])", async () => {
+    // Bedrock does not hard-validate tool input against the declared
+    // schema minimums — a stray -0.1 g shouldn't discard the estimate.
+    const client = fakeClient(async () =>
+      toolUseResponse({
+        foods: [
+          {
+            ...VALID_ESTIMATE_INPUT.foods[0],
+            fatG: -0.4,
+            kcal: -12,
+            confidence: 1.7,
+          },
+        ],
+        overallConfidence: -0.2,
+        notes: "n",
+      }),
+    );
+
+    const estimate = await estimateFromPhoto(
+      { imageBase64: "ZmFrZQ==", mediaType: "image/jpeg" },
+      { client },
+    );
+
+    expect(estimate.foods[0].fatG).toBe(0);
+    expect(estimate.foods[0].kcal).toBe(0);
+    expect(estimate.foods[0].confidence).toBe(1);
+    expect(estimate.overallConfidence).toBe(0);
+  });
+
   it("retries once on a 5xx error and succeeds on the second attempt", async () => {
     const serverError = Object.assign(new Error("internal error"), {
       status: 500,

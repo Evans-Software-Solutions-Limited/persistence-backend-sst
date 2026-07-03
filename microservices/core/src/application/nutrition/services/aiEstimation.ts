@@ -24,7 +24,14 @@ const PHOTO_MODEL_ID =
 const TEXT_MODEL_ID =
   process.env.AI_TEXT_MODEL_ID ?? "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-const CLIENT_TIMEOUT_MS = 25_000;
+// Per-attempt Bedrock timeout. These handlers serve the coreAPI
+// ApiGatewayV2 (HTTP API) route, whose integration ceiling is a hard
+// 30s — NOT the 120s the cron Lambdas get. Two attempts must fit under
+// that ceiling with headroom for auth/validation/usage-log overhead:
+// 2 × 12s + overhead < 30s. Eval (2026-07-03) measured opus-4-6 median
+// 6.1s / worst ~9s on 640px photos, so 12s clears the real p99 while
+// keeping the retry affordable.
+const CLIENT_TIMEOUT_MS = 12_000;
 const MAX_TOKENS = 1500;
 const TOOL_NAME = "report_estimate";
 
@@ -283,8 +290,9 @@ export async function estimateFromText(
  * One retry on a 5xx / timeout-shaped failure. A second failure of the
  * same shape (or any non-retryable error) surfaces as
  * `AiUnavailableError` — we do not retry into a slow provider outage
- * indefinitely, and the whole call must fit well inside the Lambda's
- * 120s budget (2 × 25s client timeout + a comfortable margin).
+ * indefinitely, and both attempts must fit under the API Gateway HTTP
+ * API 30s integration ceiling (2 × 12s client timeout + overhead — see
+ * CLIENT_TIMEOUT_MS).
  */
 async function createWithRetry(
   client: MinimalBedrockClient,
@@ -374,7 +382,7 @@ function validateEstimateShape(input: unknown): AiEstimate | null {
   const obj = input as Record<string, unknown>;
 
   if (!Array.isArray(obj.foods)) return null;
-  if (typeof obj.overallConfidence !== "number") return null;
+  if (!Number.isFinite(obj.overallConfidence)) return null;
   if (typeof obj.notes !== "string") return null;
 
   const foods: AiFoodItem[] = [];
@@ -386,9 +394,26 @@ function validateEstimateShape(input: unknown): AiEstimate | null {
 
   return {
     foods,
-    overallConfidence: obj.overallConfidence,
+    overallConfidence: clamp01(obj.overallConfidence as number),
     notes: obj.notes,
   };
+}
+
+/**
+ * Bedrock does NOT hard-validate the returned `tool_use.input` against
+ * the declared `input_schema` — the schema's `minimum`/`maximum` bounds
+ * are advisory to the model. So range enforcement happens here:
+ * non-finite numbers (NaN/±Infinity) reject the whole estimate as
+ * unreadable, while merely out-of-range values are clamped rather than
+ * rejected — one `-0.1 g fat` shouldn't discard an otherwise-usable
+ * estimate the user is about to review and edit anyway.
+ */
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}
+
+function clampNonNegative(n: number): number {
+  return Math.max(0, n);
 }
 
 function validateFoodItemShape(input: unknown): AiFoodItem | null {
@@ -406,20 +431,20 @@ function validateFoodItemShape(input: unknown): AiFoodItem | null {
   ] as const;
 
   for (const field of numericFields) {
-    if (typeof obj[field] !== "number") return null;
+    if (!Number.isFinite(obj[field])) return null;
   }
   if (typeof obj.name !== "string") return null;
   if (typeof obj.unit !== "string") return null;
 
   return {
     name: obj.name,
-    quantity: obj.quantity as number,
+    quantity: clampNonNegative(obj.quantity as number),
     unit: obj.unit,
-    estimatedGrams: obj.estimatedGrams as number,
-    kcal: obj.kcal as number,
-    proteinG: obj.proteinG as number,
-    carbsG: obj.carbsG as number,
-    fatG: obj.fatG as number,
-    confidence: obj.confidence as number,
+    estimatedGrams: clampNonNegative(obj.estimatedGrams as number),
+    kcal: clampNonNegative(obj.kcal as number),
+    proteinG: clampNonNegative(obj.proteinG as number),
+    carbsG: clampNonNegative(obj.carbsG as number),
+    fatG: clampNonNegative(obj.fatG as number),
+    confidence: clamp01(obj.confidence as number),
   };
 }

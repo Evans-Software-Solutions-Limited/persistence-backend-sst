@@ -23,7 +23,18 @@ const ENDPOINT = "/nutrition/ai/estimate";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];
-const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
+// Full 8-byte PNG signature (89 50 4E 47 0D 0A 1A 0A).
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+// Elysia-schema ceiling on the base64 string itself: rejects grossly
+// oversized bodies during validation, BEFORE the handler body runs and
+// before any decode/stringify allocation. 5MB decoded ≈ 6.67MB encoded;
+// 7MB leaves headroom so legitimate near-cap uploads still reach the
+// precise MAX_IMAGE_BYTES checks below (which own the 413 semantics).
+// Beyond this ceiling the client gets Elysia's standard 422 validation
+// error — acceptable: the app never produces such payloads (client
+// downscales to ~150-530 KB).
+const MAX_IMAGE_BASE64_LENGTH = 7 * 1024 * 1024;
 
 /**
  * Decode base64 → Buffer, or `null` on malformed input. Malformed base64
@@ -161,7 +172,10 @@ export const nutritionAiEstimateHandler = new Elysia()
     },
     {
       body: t.Object({
-        imageBase64: t.String({ minLength: 1 }),
+        imageBase64: t.String({
+          minLength: 1,
+          maxLength: MAX_IMAGE_BASE64_LENGTH,
+        }),
         mediaType: t.Union([t.Literal("image/jpeg"), t.Literal("image/png")]),
         mealType: t.Optional(t.String()),
       }),

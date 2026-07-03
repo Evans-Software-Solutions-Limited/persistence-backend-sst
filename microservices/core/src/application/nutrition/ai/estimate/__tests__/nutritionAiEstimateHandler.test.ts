@@ -23,8 +23,12 @@ const VALID_ESTIMATE = {
 const VALID_JPEG_BASE64 = Buffer.from([
   0xff, 0xd8, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]).toString("base64");
-// Minimal valid PNG magic bytes (89 50 4E 47) + padding, base64-encoded.
+// Full 8-byte PNG signature (89 50 4E 47 0D 0A 1A 0A) + padding, base64-encoded.
 const VALID_PNG_BASE64 = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
+]).toString("base64");
+// First 4 signature bytes only — must FAIL the full-signature check.
+const TRUNCATED_PNG_MAGIC_BASE64 = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x00,
 ]).toString("base64");
 const INVALID_MAGIC_BASE64 = Buffer.from([0x00, 0x01, 0x02]).toString("base64");
@@ -394,6 +398,39 @@ describe("nutritionAiEstimateHandler", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as any;
     expect(body).toEqual({ data: VALID_ESTIMATE });
+  });
+
+  it("rejects a PNG carrying only the first 4 signature bytes (full 8-byte check)", async () => {
+    const { nutritionAiEstimateHandler } =
+      await import("../nutritionAiEstimateHandler");
+    const response = await nutritionAiEstimateHandler.handle(
+      authedRequest({
+        imageBase64: TRUNCATED_PNG_MAGIC_BASE64,
+        mediaType: "image/png",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as any;
+    expect(body).toEqual({ error: "invalid_image_data" });
+    expect(estimateFromPhotoMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an imageBase64 exceeding the schema maxLength at validation, before any decode", async () => {
+    // 7MB + 1 chars of 'A' — over MAX_IMAGE_BASE64_LENGTH, so Elysia's
+    // schema validation rejects it (422) before the handler body (and
+    // its Buffer allocations) ever runs.
+    const { nutritionAiEstimateHandler } =
+      await import("../nutritionAiEstimateHandler");
+    const response = await nutritionAiEstimateHandler.handle(
+      authedRequest({
+        imageBase64: "A".repeat(7 * 1024 * 1024 + 1),
+        mediaType: "image/jpeg",
+      }),
+    );
+
+    expect(response.status).toBe(422);
+    expect(estimateFromPhotoMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 invalid_image_data when the base64 string decodes to zero bytes", async () => {
