@@ -2,8 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   personalRecords,
   profiles,
-  programWeeks,
-  programWorkouts,
+  programAssignments,
   ptClientRelationships,
   subscriptionTiers,
   trainerInvitations,
@@ -694,10 +693,10 @@ export class TrainerRepository {
 
   /**
    * Program stats: programmes created by the trainer, each with a count of
-   * distinct clients having an active `workout_assignments` row whose
-   * workout_id belongs to that program (joined through program_weeks →
-   * program_workouts). Returns top `TOP_PROGRAMS_LIMIT` by activeClients and
-   * the count of programmes with ≥1 active client.
+   * distinct clients having a LIVE `program_assignments` row (specs/19-programs
+   * — the flat model replaced the old program_weeks join). Returns top
+   * `TOP_PROGRAMS_LIMIT` by activeClients and the count of programmes with
+   * ≥1 active client.
    */
   async getProgramStats(
     trainerId: string,
@@ -715,37 +714,28 @@ export class TrainerRepository {
 
     const programIds = programs.map((p) => p.id);
 
-    // Distinct active clients per program. Active = an `assigned` or `started`
-    // assignment (not completed / skipped) — i.e. currently in-flight — whose
-    // workout is part of the program, for one of the trainer's active clients.
+    // Distinct live-assignment clients per program. Live = `assigned` or
+    // `started` (not completed / skipped) — currently in-flight.
     let counts: { programId: string; activeClients: number }[] = [];
     if (clientIds.length > 0) {
       counts = await db
         .select({
-          programId: programWeeks.programId,
-          activeClients: sql<number>`count(distinct ${workoutAssignments.clientId})::int`,
+          programId: programAssignments.programId,
+          activeClients: sql<number>`count(distinct ${programAssignments.clientId})::int`,
         })
-        .from(programWeeks)
-        .innerJoin(
-          programWorkouts,
-          eq(programWorkouts.programWeekId, programWeeks.id),
-        )
-        .innerJoin(
-          workoutAssignments,
-          eq(workoutAssignments.workoutId, programWorkouts.workoutId),
-        )
+        .from(programAssignments)
         .where(
           and(
-            // Only count assignments THIS trainer made — a workout can appear
-            // in another trainer's program too, which would otherwise leak a
-            // co-trainer's assignment into this program's active-client count.
-            eq(workoutAssignments.trainerId, trainerId),
-            inArray(programWeeks.programId, programIds),
-            inArray(workoutAssignments.clientId, clientIds),
-            inArray(workoutAssignments.status, ["assigned", "started"]),
+            // Only count assignments THIS trainer made — a jointly coached
+            // client could also hold a co-trainer's assignment, which must
+            // not leak into this trainer's active-client count.
+            eq(programAssignments.assignedBy, trainerId),
+            inArray(programAssignments.programId, programIds),
+            inArray(programAssignments.clientId, clientIds),
+            inArray(programAssignments.status, ["assigned", "started"]),
           ),
         )
-        .groupBy(programWeeks.programId);
+        .groupBy(programAssignments.programId);
     }
 
     const countByProgram = new Map(

@@ -752,35 +752,60 @@ export const ptClientRelationships = pgTable(
 
 // ─── Workout Assignments ──────────────────────────────────────────────────────
 
-export const workoutAssignments = pgTable("workout_assignments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  trainerId: uuid("trainer_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "cascade" }),
-  clientId: uuid("client_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "cascade" }),
-  workoutId: uuid("workout_id")
-    .notNull()
-    .references(() => workouts.id, { onDelete: "cascade" }),
-  assignedDate: text("assigned_date").notNull(),
-  dueDate: text("due_date"),
-  status: assignmentStatusEnum("status").default("assigned"),
-  completedSessionId: uuid("completed_session_id").references(
-    () => workoutSessions.id,
-    { onDelete: "set null" },
-  ),
-  trainerNotes: text("trainer_notes"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-});
+export const workoutAssignments = pgTable(
+  "workout_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    workoutId: uuid("workout_id")
+      .notNull()
+      .references(() => workouts.id, { onDelete: "cascade" }),
+    assignedDate: text("assigned_date").notNull(),
+    dueDate: text("due_date"),
+    status: assignmentStatusEnum("status").default("assigned"),
+    completedSessionId: uuid("completed_session_id").references(
+      () => workoutSessions.id,
+      { onDelete: "set null" },
+    ),
+    trainerNotes: text("trainer_notes"),
+    // NULL = ad-hoc single-workout assignment; non-NULL = a materialised
+    // occurrence of a programme assignment (specs/19-programs D2).
+    programAssignmentId: uuid("program_assignment_id").references(
+      () => programAssignments.id,
+      { onDelete: "cascade" },
+    ),
+    /** 0-based occurrence number within its programme assignment; NULL ad-hoc. */
+    occurrenceIndex: integer("occurrence_index"),
+    showInPlan: boolean("show_in_plan").notNull().default(true),
+    showInLibrary: boolean("show_in_library").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    // Materialisation idempotency — concurrent horizon top-ups race safely
+    // via ON CONFLICT DO NOTHING against this index.
+    uniqueIndex("workout_assignments_pa_occurrence_uq")
+      .on(t.programAssignmentId, t.occurrenceIndex)
+      .where(sql`${t.programAssignmentId} is not null`),
+    index("workout_assignments_client_due_idx").on(t.clientId, t.dueDate),
+  ],
+);
 
 // ─── Workout Programs ─────────────────────────────────────────────────────────
 
+// Flat-cycle model per specs/19-programs (D1): a programme is an ordered
+// cycle of workouts. duration_weeks NULL = INDEFINITE programme (ongoing —
+// e.g. weight loss); days_per_week drives occurrence scheduling.
 export const workoutPrograms = pgTable("workout_programs", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   description: text("description"),
-  totalWeeks: integer("total_weeks").notNull(),
+  durationWeeks: integer("duration_weeks"),
+  daysPerWeek: integer("days_per_week").notNull().default(3),
   createdBy: uuid("created_by").references(() => profiles.id, {
     onDelete: "cascade",
   }),
@@ -789,35 +814,62 @@ export const workoutPrograms = pgTable("workout_programs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
-export const programWeeks = pgTable(
-  "program_weeks",
+export const programWorkouts = pgTable(
+  "program_workouts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     programId: uuid("program_id")
       .notNull()
       .references(() => workoutPrograms.id, { onDelete: "cascade" }),
-    weekNumber: integer("week_number").notNull(),
-    name: text("name"),
-    description: text("description"),
+    workoutId: uuid("workout_id")
+      .notNull()
+      .references(() => workouts.id, { onDelete: "cascade" }),
+    /** 0-based order within the cycle; the same workout may repeat. */
+    position: integer("position").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
-    uniqueIndex("program_weeks_program_week_idx").on(t.programId, t.weekNumber),
+    uniqueIndex("program_workouts_program_position_uq").on(
+      t.programId,
+      t.position,
+    ),
   ],
 );
 
-export const programWorkouts = pgTable("program_workouts", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  programWeekId: uuid("program_week_id")
-    .notNull()
-    .references(() => programWeeks.id, { onDelete: "cascade" }),
-  workoutId: uuid("workout_id")
-    .notNull()
-    .references(() => workouts.id, { onDelete: "cascade" }),
-  dayOfWeek: integer("day_of_week"),
-  sortOrder: integer("sort_order").default(1),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-});
+// One row per programme→client assignment. end_date stored at assign time
+// (NULL = indefinite). At most one LIVE (assigned/started) row per
+// (programme, client) — enforced by a partial unique index in SQL; Drizzle's
+// uniqueIndex().where() mirrors it below.
+export const programAssignments = pgTable(
+  "program_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    programId: uuid("program_id")
+      .notNull()
+      .references(() => workoutPrograms.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    assignedBy: uuid("assigned_by")
+      .notNull()
+      .references(() => profiles.id),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    status: assignmentStatusEnum("status").notNull().default("assigned"),
+    // Programme-level defaults copied onto materialised occurrences (D3).
+    showInPlan: boolean("show_in_plan").notNull().default(true),
+    showInLibrary: boolean("show_in_library").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("program_assignments_live_uq")
+      .on(t.programId, t.clientId)
+      .where(sql`${t.status} in ('assigned', 'started')`),
+    index("program_assignments_client_status_idx").on(t.clientId, t.status),
+    index("program_assignments_assigned_by_idx").on(t.assignedBy),
+  ],
+);
 
 // ─── Goals ────────────────────────────────────────────────────────────────────
 
@@ -1393,11 +1445,11 @@ export type NewWorkoutAssignment = typeof workoutAssignments.$inferInsert;
 export type WorkoutProgram = typeof workoutPrograms.$inferSelect;
 export type NewWorkoutProgram = typeof workoutPrograms.$inferInsert;
 
-export type ProgramWeek = typeof programWeeks.$inferSelect;
-export type NewProgramWeek = typeof programWeeks.$inferInsert;
-
 export type ProgramWorkout = typeof programWorkouts.$inferSelect;
 export type NewProgramWorkout = typeof programWorkouts.$inferInsert;
+
+export type ProgramAssignment = typeof programAssignments.$inferSelect;
+export type NewProgramAssignment = typeof programAssignments.$inferInsert;
 
 export type UserGoal = typeof userGoals.$inferSelect;
 export type NewUserGoal = typeof userGoals.$inferInsert;
