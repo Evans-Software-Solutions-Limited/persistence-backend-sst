@@ -44,6 +44,8 @@ export type FuelPresenterProps = {
 
   // Quick add
   aiLocked: boolean;
+  /** True when offline — Snap is disabled independently of the AI entitlement. */
+  snapOffline?: boolean;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -84,6 +86,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     celebrate,
     noTarget,
     aiLocked,
+    snapOffline = false,
     slots,
     waterCups,
     waterGoal,
@@ -180,6 +183,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
           />
           <QuickAddRowPresenter
             aiLocked={aiLocked}
+            snapOffline={snapOffline}
             onScan={onScan}
             onSnap={onSnap}
             onSearch={onSearch}

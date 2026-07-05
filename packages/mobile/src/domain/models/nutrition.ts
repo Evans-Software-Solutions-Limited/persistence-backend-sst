@@ -242,3 +242,42 @@ export type ResolveBarcodeResult =
   | { status: "not-found" }
   | { status: "cache-miss-offline" }
   | { status: "service-unavailable" };
+
+// -- M9.5 Tier B: AI photo / free-text food estimation --
+//
+// Mirrors the backend `AiEstimate`/`AiFoodItem` shapes EXACTLY (camelCase;
+// `application/nutrition/services/aiEstimation.ts`). Online-only — these
+// never enter the sync queue (design.md § Revised 2026-07-03 › Mobile flow).
+
+/** A single recognised food item from an AI photo/text estimate. */
+export type AiFoodItem = {
+  name: string;
+  quantity: number;
+  unit: string;
+  estimatedGrams: number;
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  /** 0..1 — confidence < 0.7 renders default-unticked in the draft card. */
+  confidence: number;
+};
+
+/** `POST /nutrition/ai/estimate` and `/nutrition/ai/estimate-text` response. */
+export type AiEstimate = {
+  foods: AiFoodItem[];
+  overallConfidence: number;
+  notes: string | null;
+};
+
+/** `POST /nutrition/ai/estimate` request body. */
+export type EstimateFromPhotoInput = {
+  imageBase64: string;
+  mediaType: "image/jpeg" | "image/png";
+  mealType?: MealSlot;
+};
+
+/** `POST /nutrition/ai/estimate-text` request body. */
+export type EstimateFromTextInput = {
+  description: string;
+};

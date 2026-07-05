@@ -41,6 +41,7 @@ import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
  * | --- | --- |
  * | `create_workout` | `paymentStatus IN ('active', 'trialing')` AND tier `workoutLimit === null OR workoutLimit > 0`. Brief: client cannot detect actual-count-vs-limit ('limit' reason) without a usage counter, so for M10.5 we collapse to 'tier' reason on a non-active sub. |
  * | `ai_workout` | `paymentStatus IN ('active', 'trialing')` AND `tier.aiAccess === true`. Trial users count. |
+ * | `ai_access` | Same rule as `ai_workout` — `paymentStatus IN ('active', 'trialing')` AND `tier.aiAccess === true`. M9.5 Tier B nutrition AI (photo/free-text estimation); a separate feature key from `ai_workout` but identical gate logic (specs/13-nutrition-tracking/design.md § Revised 2026-07-03). |
  * | `gym_buddy` | `tier.gymBuddyAccess === true`. |
  * | `unlimited_exercise_library` | Always — stub matching backend. |
  * | `trainer_clients` | `tier.isTrainerTier === true`. |
@@ -86,6 +87,7 @@ function isExpiresAtInFuture(expiresAt: string | null): boolean {
 const FEATURE_DISPLAY_NAMES: Record<EntitlementFeature, string> = {
   create_workout: "Custom workouts beyond your monthly limit",
   ai_workout: "AI Workouts",
+  ai_access: "AI photo & text food logging",
   gym_buddy: "Gym Buddy access",
   unlimited_exercise_library: "Unlimited exercise library",
   trainer_clients: "Trainer client management",
@@ -195,7 +197,8 @@ export function computeFeatureGateVerdict(
       // — sweep #1: dropping the no-op ternary).
       return { allowed, reason: "tier" };
     }
-    case "ai_workout": {
+    case "ai_workout":
+    case "ai_access": {
       if (!isEntitled) {
         return {
           allowed: false,

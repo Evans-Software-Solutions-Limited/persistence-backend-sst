@@ -23,10 +23,13 @@ import {
   scaleRecipeMacros,
 } from "@/domain/services/nutrition.service";
 import type {
+  AiEstimate,
   CreateFoodInput,
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimateFromPhotoInput,
+  EstimateFromTextInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -1533,6 +1536,53 @@ export class InMemoryApiAdapter implements ApiPort {
     };
     this.meals.push(meal);
     return ok(meal);
+  }
+
+  // -- M9.5 Tier B: AI photo / free-text food estimation --
+
+  /** Canned estimate `estimateFromPhoto`/`estimateFromText` return by default. */
+  public aiEstimate: AiEstimate = {
+    foods: [
+      {
+        name: "Grilled chicken breast",
+        quantity: 180,
+        unit: "g",
+        estimatedGrams: 180,
+        kcal: 300,
+        proteinG: 56,
+        carbsG: 0,
+        fatG: 7,
+        confidence: 0.94,
+      },
+    ],
+    overallConfidence: 0.94,
+    notes: null,
+  };
+  /** When set, both AI estimate methods return this error instead. */
+  public nextAiEstimateError: { status: number; message: string } | null = null;
+  public estimateFromPhotoCalls: EstimateFromPhotoInput[] = [];
+  public estimateFromTextCalls: EstimateFromTextInput[] = [];
+
+  async estimateFromPhoto(
+    input: EstimateFromPhotoInput,
+  ): Promise<Result<AiEstimate, ApiError>> {
+    this.estimateFromPhotoCalls.push(input);
+    if (this.nextAiEstimateError) {
+      const { status, message } = this.nextAiEstimateError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<AiEstimate>(this.aiEstimate);
+  }
+
+  async estimateFromText(
+    input: EstimateFromTextInput,
+  ): Promise<Result<AiEstimate, ApiError>> {
+    this.estimateFromTextCalls.push(input);
+    if (this.nextAiEstimateError) {
+      const { status, message } = this.nextAiEstimateError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<AiEstimate>(this.aiEstimate);
   }
 
   /** Client-side relationships fixture (Requests screen + You section). */

@@ -26,6 +26,30 @@ describe("useFuelSheets", () => {
     expect(useFuelSheets.getState().sheet).toBeNull();
   });
 
+  it("opens the snap sheet with a slot", () => {
+    act(() => useFuelSheets.getState().openSnap("dinner"));
+    expect(useFuelSheets.getState().sheet).toBe("snap");
+    expect(useFuelSheets.getState().slot).toBe("dinner");
+  });
+
+  it("opens the snap sheet, defaulting the slot to breakfast", () => {
+    act(() => useFuelSheets.getState().openSnap());
+    expect(useFuelSheets.getState().sheet).toBe("snap");
+    expect(useFuelSheets.getState().slot).toBe("breakfast");
+  });
+
+  it("a quickAdd→snap handoff does not clobber the store (guard convention)", () => {
+    // Mirrors the quickAdd→scan handoff: opening snap while quickAdd is open
+    // flips `sheet` to "snap" — the quickAdd container's guarded onClose
+    // (only clears when ITS `visible` is true) must see `sheet !== "quickAdd"`
+    // and no-op, matching the ScanBarcodeSheetContainer/QuickAddSheetContainer
+    // convention documented at the top of this file.
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    act(() => useFuelSheets.getState().openSnap());
+    expect(useFuelSheets.getState().sheet).toBe("snap");
+    expect(useFuelSheets.getState().slot).toBe("breakfast");
+  });
+
   it("bumps the mutation revision", () => {
     act(() => useFuelSheets.getState().notifyMutated());
     act(() => useFuelSheets.getState().notifyMutated());

@@ -291,6 +291,73 @@ describe("computeFeatureGateVerdict (pure)", () => {
     expect(verdict.reason).toBe("tier");
   });
 
+  // M9.5 Tier B nutrition AI (Snap / free-text estimation) — `ai_access` is a
+  // distinct feature key from `ai_workout` but shares identical gate logic
+  // (specs/13-nutrition-tracking/design.md § Revised 2026-07-03).
+  it("ai_access: active + aiAccess=true → allowed", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_access",
+      makeSub({ tierName: "premium", aiAccess: true }),
+    );
+    expect(verdict.allowed).toBe(true);
+  });
+
+  it("ai_access: trialing + aiAccess=true → allowed (trial users count)", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_access",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "trialing",
+        aiAccess: true,
+      }),
+    );
+    expect(verdict.allowed).toBe(true);
+  });
+
+  it("ai_access: free tier (aiAccess=false) → denied", () => {
+    const verdict = computeFeatureGateVerdict("ai_access", makeSub());
+    expect(verdict.allowed).toBe(false);
+  });
+
+  it("ai_access: cancelled → denied with reason 'cancelled'", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_access",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "cancelled",
+        aiAccess: true,
+      }),
+    );
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toBe("cancelled");
+  });
+
+  it("ai_access: cancelled with FUTURE expiresAt + aiAccess → allowed (mirrors server)", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_access",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "cancelled",
+        aiAccess: true,
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    );
+    expect(verdict.allowed).toBe(true);
+  });
+
+  it("ai_access: past_due (non-active, non-cancelled) → denied with reason 'tier'", () => {
+    const verdict = computeFeatureGateVerdict(
+      "ai_access",
+      makeSub({
+        tierName: "premium",
+        paymentStatus: "past_due",
+        aiAccess: true,
+      }),
+    );
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toBe("tier");
+  });
+
   it("gym_buddy: gymBuddyAccess=true (premium) → allowed", () => {
     const verdict = computeFeatureGateVerdict(
       "gym_buddy",

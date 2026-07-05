@@ -95,10 +95,13 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type {
+  AiEstimate,
   CreateFoodInput,
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimateFromPhotoInput,
+  EstimateFromTextInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -1383,6 +1386,32 @@ export class SSTApiAdapter implements ApiPort {
 
   async createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>> {
     return this.requestEnvelope<Meal>("/meals", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  // -- M9.5 Tier B: AI photo / free-text food estimation --
+  //
+  // Single `{ data }` envelopes, camelCase == domain shape (passthrough).
+  // Online-only — never routed through the sync-queue worker. 402/422/503
+  // surface through the normal `requestEnvelope` → `mapHttpErrorToApiError`
+  // path (402 → `entitlement_denied`; 422/503 → `server` code, distinguished
+  // by `status`, matching `importRecipeUrl`'s established pattern).
+
+  async estimateFromPhoto(
+    input: EstimateFromPhotoInput,
+  ): Promise<Result<AiEstimate, ApiError>> {
+    return this.requestEnvelope<AiEstimate>("/nutrition/ai/estimate", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async estimateFromText(
+    input: EstimateFromTextInput,
+  ): Promise<Result<AiEstimate, ApiError>> {
+    return this.requestEnvelope<AiEstimate>("/nutrition/ai/estimate-text", {
       method: "POST",
       body: input,
     });

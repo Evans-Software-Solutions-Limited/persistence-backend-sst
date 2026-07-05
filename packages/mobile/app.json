@@ -15,7 +15,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Persistence needs access to your health data to track your fitness progress, including steps, workouts, and activity levels.",
         "NSHealthUpdateUsageDescription": "Persistence requests write permission to verify authorization status. We do not write or modify your health data.",
-        "NSPhotoLibraryUsageDescription": "Persistence needs access to your photos so you can choose a profile picture from your library."
+        "NSPhotoLibraryUsageDescription": "Persistence needs access to your photos so you can choose a profile picture or snap a photo of your meals for AI food logging."
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
@@ -93,8 +93,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Persistence needs access to your photos so you can choose a profile picture from your library.",
-          "cameraPermission": "Persistence needs access to your camera so you can take a profile picture."
+          "photosPermission": "Persistence needs access to your photos so you can choose a profile picture or snap a photo of your meals for AI food logging.",
+          "cameraPermission": "Persistence uses the camera to scan food barcodes, take a profile picture, and snap photos of your meals for AI food logging."
         }
       ],
       "expo-font",
@@ -103,7 +103,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Persistence uses the camera to scan food barcodes."
+          "cameraPermission": "Persistence uses the camera to scan food barcodes and snap photos of your meals for AI food logging."
         }
       ]
     ],

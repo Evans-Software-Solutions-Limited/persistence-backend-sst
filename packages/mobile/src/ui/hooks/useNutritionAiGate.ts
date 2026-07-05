@@ -1,12 +1,15 @@
 import { useFeatureGate, type FeatureGateResult } from "./useFeatureGate";
 
 /**
- * Tier-B (Snap / AI auto-estimate) lock for M9. These surfaces render LOCKED;
- * tapping routes to the upgrade prompt. M9 reuses the existing `ai_workout`
- * feature gate as the placeholder — there is no AI nutrition write path in M9,
- * and the dedicated `aiAccess` nutrition key is reconciled in M9.5 (Conflict
- * C6). Consume `allowed`/`gateProps`; do NOT wire any AI call behind it.
+ * Tier-B (Snap / AI auto-estimate) gate — M9.5, LIVE. Gates the
+ * `POST /nutrition/ai/estimate` (photo) and `/nutrition/ai/estimate-text`
+ * (free-text) flows behind the real `ai_access` feature key (server-enforced
+ * per specs/13-nutrition-tracking/design.md § Revised 2026-07-03; closes
+ * Conflict C6 — `ai_access` replaces the M9 `ai_workout` placeholder used
+ * before the AI endpoints shipped). `allowed === false` → render the
+ * upgrade prompt via `gateProps`; `allowed === true` → the Snap sheet /
+ * "Or describe it…" CTA are reachable.
  */
 export function useNutritionAiGate(): FeatureGateResult {
-  return useFeatureGate("ai_workout");
+  return useFeatureGate("ai_access");
 }

@@ -1,4 +1,5 @@
 import type {
+  AiFoodItem,
   Food,
   FuelToday,
   NutritionEntry,
@@ -28,10 +29,12 @@ import {
   presetSplit,
   recomputeFuelToday,
   recommendedSplit,
+  rescaleAiFoodItem,
   scaleFoodMacros,
   scaleRecipeMacros,
   setFuelTargets,
   setFuelWater,
+  sumKeptAiItemsKcal,
   tdee,
   withinBand,
 } from "../nutrition.service";
@@ -676,5 +679,89 @@ describe("computeManualFuelTargetsPreview + manualKcalInRange", () => {
     expect(manualKcalInRange(MANUAL_KCAL_MAX)).toBe(true);
     expect(manualKcalInRange(MANUAL_KCAL_MIN - 0.01)).toBe(false);
     expect(manualKcalInRange(null)).toBe(false);
+  });
+});
+
+// ── AI estimate item rescaling (Snap / free-text draft card, M9.5) ──────────
+
+const aiItem = (over: Partial<AiFoodItem> = {}): AiFoodItem => ({
+  name: "Jasmine rice",
+  quantity: 250,
+  unit: "g",
+  estimatedGrams: 250,
+  kcal: 320,
+  proteinG: 6,
+  carbsG: 70,
+  fatG: 1,
+  confidence: 0.91,
+  ...over,
+});
+
+describe("rescaleAiFoodItem", () => {
+  it("scales kcal/macros/quantity proportionally to the new grams", () => {
+    const next = rescaleAiFoodItem(aiItem(), 125); // half the grams
+    expect(next.estimatedGrams).toBe(125);
+    expect(next.quantity).toBe(125);
+    expect(next.kcal).toBe(160);
+    expect(next.proteinG).toBe(3);
+    expect(next.carbsG).toBe(35);
+    expect(next.fatG).toBe(1); // 0.5 rounds to nearest even/away — Math.round(0.5)=1
+  });
+
+  it("scales up proportionally", () => {
+    const next = rescaleAiFoodItem(
+      aiItem({ estimatedGrams: 100, kcal: 100 }),
+      200,
+    );
+    expect(next.kcal).toBe(200);
+    expect(next.estimatedGrams).toBe(200);
+  });
+
+  it("leaves the item's macros untouched when grams are unchanged", () => {
+    const item = aiItem();
+    const next = rescaleAiFoodItem(item, item.estimatedGrams);
+    expect(next).toEqual(item);
+  });
+
+  it("guards a zero/negative original gram figure (no divide-by-zero blowup)", () => {
+    const zeroGramItem = aiItem({ estimatedGrams: 0 });
+    const next = rescaleAiFoodItem(zeroGramItem, 150);
+    expect(next.estimatedGrams).toBe(150);
+    // Macros pass through unchanged — nothing to scale from.
+    expect(next.kcal).toBe(zeroGramItem.kcal);
+    expect(next.proteinG).toBe(zeroGramItem.proteinG);
+  });
+
+  it("clamps a negative new-grams entry to zero", () => {
+    const next = rescaleAiFoodItem(aiItem({ estimatedGrams: 0 }), -20);
+    expect(next.estimatedGrams).toBe(0);
+  });
+
+  it("rescaling to zero grams zeroes out kcal/macros", () => {
+    const next = rescaleAiFoodItem(aiItem(), 0);
+    expect(next.estimatedGrams).toBe(0);
+    expect(next.kcal).toBe(0);
+    expect(next.proteinG).toBe(0);
+    expect(next.carbsG).toBe(0);
+    expect(next.fatG).toBe(0);
+  });
+});
+
+describe("sumKeptAiItemsKcal", () => {
+  it("sums only items with on: true", () => {
+    const items = [
+      { kcal: 300, on: true },
+      { kcal: 320, on: true },
+      { kcal: 40, on: false },
+    ];
+    expect(sumKeptAiItemsKcal(items)).toBe(620);
+  });
+
+  it("returns 0 when every item is unticked", () => {
+    expect(sumKeptAiItemsKcal([{ kcal: 100, on: false }])).toBe(0);
+  });
+
+  it("returns 0 for an empty list", () => {
+    expect(sumKeptAiItemsKcal([])).toBe(0);
   });
 });
