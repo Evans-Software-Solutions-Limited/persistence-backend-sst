@@ -108,7 +108,7 @@ Audit infra (10.1 table/enum, 10.2 helpers), on-behalf endpoints (10.3 sessions/
 
 ## Phase 10.9 — Coach Home + Clients list + Client detail (1 PR — large)
 
-- [ ] **T-10.9.1** `<CoachHomePresenter>` + sub-presenters per `coach.jsx:12–48` + `design.md`. Implements STORY-001.
+- [ ] **T-10.9.1** `<CoachHomePresenter>` + sub-presenters per `~/Downloads/handoff/design-source/screens/coach-home.jsx` (the prototype's triage screen — extracted verbatim 2026-07-05; the old `coach.jsx:12–48` reference wrongly pointed at `CoachYouScreen`) + `design.md § Coach Home layout reconciliation`. **Coach Home v1 ships WITHOUT the "Today's Schedule" hero** — appointments/scheduling is deferred to its own future spec. Implements STORY-001.
 - [ ] **T-10.9.2** `<ClientsListPresenter>` per `extra.jsx:190–241`. Implements STORY-002.
 - [ ] **T-10.9.3** `<ClientDetailPresenter>` per `client-detail.jsx`. 5-tab strip. Implements STORY-003.
 - [ ] **T-10.9.4** Mode-branching at `(app)/(tabs)/index.tsx` — `<HomeContainer>` (athlete) | `<CoachHomeContainer>` (coach). Implements `design.md § Mode-aware screen branching`.
