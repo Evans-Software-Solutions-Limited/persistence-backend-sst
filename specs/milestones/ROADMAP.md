@@ -183,6 +183,21 @@ Coaches should be able to **see a client's body-weight history** and **record a 
 
 **SHIPPED 2026-07-02** via #145 (HealthKit weight/body-fat push) + #146 (coach body-fat logging, `GET /clients/:clientId/body-trend`, Client Detail interim trend + Log weight CTA).
 
+### 5.3 — AI import of programs/workouts (screenshots / photos / links / PDF)
+
+**Brad-committed 2026-07-05.** Coaches and premium athletes can import an external
+program or workout — screenshot, photo, shared link, or PDF — and the app parses it
+into real, loggable rows in the unified Programs/Workouts model (spec 19). Big product
+USP alongside the AI client summary.
+
+Deliberately **its own workstream** — NOT part of the coach-completion brief. When
+picked up: Phase-0 accuracy eval first (sample screenshots/links → parse quality, per
+the M9.5 playbook), then an own spec triplet (suggest `specs/20-content-import/`).
+Reuses shipped foundations: the Bedrock forced-tool-use adapter seam (M9.5), the
+SSRF-hardened link fetch (`/recipes/import`), the `ai_access` gate + daily AI ceilings,
+and the always-editable-draft-before-create principle. Hard problem to eval early:
+fuzzy exercise-name → exercise-library resolution.
+
 ---
 
-_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off) · Revised 2026-06-26 (Section 5) · Revised 2026-07-05 (status refresh: Section 1 continued table, phase-status table, 5.2 shipped)_
+_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off) · Revised 2026-06-26 (Section 5) · Revised 2026-07-05 (status refresh: Section 1 continued table, phase-status table, 5.2 shipped) · Revised 2026-07-05 (§ 5.3 queued — AI program/workout import)_
