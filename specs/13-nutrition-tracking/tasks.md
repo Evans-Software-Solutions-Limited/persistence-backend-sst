@@ -30,12 +30,15 @@
 - [ ] **T-13.3.5** OFF curated seed ETL script (`seedOpenFoodFacts.ts`) — Parquet-sourced curated subset → `foods` (`source='openfoodfacts'`), idempotent upsert on `barcode`. Own PR. BACKEND_BRIEF § 9a.
 - [ ] **T-13.3.6** OFF delta-refresh cron (`offDeltaCron.ts` + `sst.aws.Cron`) — applies OFF daily deltas; logs `[off-delta:summary]`. BACKEND_BRIEF § 9b.
 
-## Phase 13.4 — M9.5 Tier B backend endpoints (1 PR) — **deferred to M9.5**
+## Phase 13.4 — M9.5 Tier B backend endpoints (1 PR) — **M9.5 launch scope (revised 2026-07-03)**
 
-- [ ] **T-13.4.1** `/nutrition/ai/recognize-photo` — multipart photo → LLM/vision recognition. AI gating + `ai_usage_log` per cross-cuts § 4. Implements STORY-011.
-- [ ] **T-13.4.2** `/nutrition/ai/estimate-text` — text → macro estimate. Implements STORY-012.
-- [ ] **T-13.4.3** `/recipes/ai/extract-photo` — OCR + LLM extract. Implements STORY-013.
-- [ ] **T-13.4.4** Each handler asserts `aiAccess` entitlement first; 402 + `ENTITLEMENT_DENIED` payload per cross-cuts § 4.1.
+- [ ] **T-13.4.1** `ai_access` real entitlement check: add `'ai_access'` to `EntitlementFeature`, implement tier-flag check in `assertEntitlement` (closes C6). Wire payload keeps `entitlement: 'aiAccess'`.
+- [ ] **T-13.4.2** Bedrock adapter `application/nutrition/services/aiEstimation.ts` — `@anthropic-ai/bedrock-sdk`, forced tool use, injectable client, timeout/retry/refusal mapping (design.md § Revised 2026-07-03).
+- [ ] **T-13.4.3** `POST /nutrition/ai/estimate` — base64 JSON photo → `AiEstimate`. Gate + size/magic-byte checks + `ai_usage_log` in `finally`. Implements STORY-011.
+- [ ] **T-13.4.4** `POST /nutrition/ai/estimate-text` — text → `AiEstimate` on the text model. Implements STORY-012.
+- [ ] **T-13.4.5** Infra: `bedrock:InvokeModel` IAM permission on the two inference-profile ARNs in `infra/api.ts` + `AI_PHOTO_MODEL_ID`/`AI_TEXT_MODEL_ID` env. No secret.
+- [ ] **T-13.4.6** (pending Brad) 30/day abuse ceiling → `429 AI_DAILY_LIMIT` via `ai_usage_log` count.
+- [ ] ~~T-13.4.x `/recipes/ai/extract-photo`~~ — STORY-013 stays **deferred** (post-M9.5).
 
 ## Phase 13.5 — Frontend domain + adapters (1 PR)
 
@@ -77,12 +80,14 @@
 - [ ] **T-13.10.3** `<ImportRecipeURLPresenter>` per STORY-008.
 - [ ] **T-13.10.4** `<CreateMealFromLoggedSheetPresenter>` per STORY-007.
 
-## Phase 13.11 — Tier B AI flows (1 PR)
+## Phase 13.11 — Tier B AI flows (1 PR) — **M9.5 launch scope (revised 2026-07-03)**
 
-- [ ] **T-13.11.1** `<SnapAISheet>` integration with `/nutrition/ai/recognize-photo`. Recognising animation. Editable confidence cards.
-- [ ] **T-13.11.2** "Or describe it…" CTA in Quick Add → `<EstimateTextSheet>` → `/nutrition/ai/estimate-text`.
-- [ ] **T-13.11.3** `<SnapRecipePhotoSheet>` → `/recipes/ai/extract-photo`.
-- [ ] **T-13.11.4** All entry points show upgrade prompt when `!aiEntitled`.
+- [ ] **T-13.11.1** `<SnapAISheet>` per `fuel-sheets.jsx SnapSheet`: capture (camera + library pick) → `expo-image-manipulator` downscale/compress → `POST /nutrition/ai/estimate` → recognizing animation → editable draft card (per-item confidence %, <0.7 default-unticked) → confirm → `POST /nutrition/entries` per kept item.
+- [ ] **T-13.11.2** "Or describe it…" CTA in Quick Add → text input → `/nutrition/ai/estimate-text` → same draft-card confirm flow.
+- [ ] **T-13.11.3** Offline: Snap affordance disabled ("Snap needs a connection — try Quick Add instead"); AI calls never queue. Failure: 422/503 → "Couldn't read this photo" + retry.
+- [ ] **T-13.11.4** All entry points show upgrade prompt when `!aiEntitled` (gate hook keys off `tier.aiAccess`). Add `'ai_access'` to the mobile `EntitlementFeature` union (`domain/models/entitlement.ts`) — the strict 402 parser casts `feature` to it. Compile-breaks to fix at the same time: `FEATURE_DISPLAY_NAMES` `Record<EntitlementFeature, string>` maps in `useFeatureGate.ts` and `SyncBlockedPresenter.tsx` need an `ai_access` entry; refresh the stale "stubs" doc comments in both unions.
+- [ ] **T-13.11.5** Widen `expo-camera`/`expo-image-picker` permission strings for meal photos; verify merged `NSCameraUsageDescription` at prebuild; new EAS dev build.
+- [ ] ~~T-13.11.x `<SnapRecipePhotoSheet>`~~ — STORY-013 stays **deferred**.
 
 ## Phase 13.12 — Cleanup + verification
 

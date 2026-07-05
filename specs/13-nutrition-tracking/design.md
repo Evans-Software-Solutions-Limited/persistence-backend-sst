@@ -14,7 +14,7 @@ microservices/core/src/application/
 │   ├── water/                         ← water log
 │   ├── barcode/                       ← POST /nutrition/barcode/resolve
 │   ├── ai/
-│   │   ├── recognize-photo/           ← Tier B (M9.5)
+│   │   ├── estimate/                  ← Tier B (M9.5; renamed 2026-07-03, was recognize-photo/)
 │   │   ├── estimate-text/             ← Tier B
 │   │   └── extract-recipe-photo/      ← Tier B
 │   └── streaks/                       ← daily kcal-in-target evaluation
@@ -257,11 +257,11 @@ row shapes with macro columns coerced to `number`.
 
 ### M9.5 Tier B — **deferred to M9.5** (all gate on `aiAccess` via `assertEntitlement` per cross-cuts § 4.1)
 
-| Method | Path                            | Description                         | Status               |
-| ------ | ------------------------------- | ----------------------------------- | -------------------- |
-| POST   | `/nutrition/ai/recognize-photo` | Multipart photo → recognised items  | **deferred to M9.5** |
-| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate          | **deferred to M9.5** |
-| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe | **deferred to M9.5** |
+| Method | Path                            | Description                                                                                         | Status                |
+| ------ | ------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| POST   | `/nutrition/ai/recognize-photo` | ~~Multipart photo~~ → renamed `POST /nutrition/ai/estimate`, base64 JSON — see § Revised 2026-07-03 | **M9.5 launch scope** |
+| POST   | `/nutrition/ai/estimate-text`   | Free-text → macro estimate                                                                          | **deferred to M9.5**  |
+| POST   | `/recipes/ai/extract-photo`     | OCR + LLM extract structured recipe                                                                 | **deferred to M9.5**  |
 
 All AI endpoints (M9.5):
 
@@ -455,7 +455,7 @@ Per `fuel-sheets.jsx` (Scan section). Camera view + scanning-line animation (Rea
 
 ### `<SnapAISheetPresenter>` (Tier B)
 
-Per `fuel-sheets.jsx` (Snap section). Camera capture button + recognising animation ("Recognizing…" with pulsing sparkles). On capture, uploads to `/nutrition/ai/recognize-photo`. Receives recognised items → editable list → Add. If `!aiEntitled`, sheet immediately shows upgrade prompt instead.
+Per `fuel-sheets.jsx` (Snap section). Camera capture button + recognising animation ("Recognizing…" with pulsing sparkles). On capture, uploads to `/nutrition/ai/estimate` (renamed 2026-07-03; base64 JSON — see § Revised 2026-07-03). Receives recognised items → editable draft card → Add. If `!aiEntitled`, sheet immediately shows upgrade prompt instead.
 
 ### `<QuickAddSheetPresenter>`
 
@@ -548,7 +548,7 @@ if (!entitlement.granted) {
 await assertEntitlement(ctx.userId, "aiAccess");
 ```
 
-Failure → 402 + `{ code: 'ENTITLEMENT_DENIED', entitlement: 'aiAccess', message, upgradeUrl }` per cross-cuts § 4.1.
+Failure → 402. ~~`{ code: 'ENTITLEMENT_DENIED', entitlement: 'aiAccess', message, upgradeUrl }` per cross-cuts § 4.1~~ — corrected 2026-07-03: that shape was never shipped; the real wire contract is the M10.5 handler's `{ code: 'ENTITLEMENT_DENIED', error, feature, reason, current_tier, upgrade_to, upgrade_price_monthly }` (see § Revised 2026-07-03 › 402 wire shape).
 
 ---
 
@@ -628,3 +628,57 @@ M7 owns delivery.
 ---
 
 _End of `13-nutrition-tracking/design.md` · 2026-05-27 (rewritten from scratch)_
+
+---
+
+## Revised 2026-07-03 — M9.5 Tier B design (photo + free-text estimation, launch scope)
+
+Supersedes the "M9.5 Tier B — deferred" endpoint table above. STORY-013 (`POST /recipes/ai/extract-photo`) remains deferred and is unchanged.
+
+### Provider architecture — Claude on AWS Bedrock, IAM auth
+
+- **No API-key secret.** The core Lambda gets an IAM policy allowing `bedrock:InvokeModel` (+ `InvokeModelWithResponseStream` unused-but-harmless omitted) on the two inference-profile ARNs, granted in `infra/api.ts` via the function's `permissions`. This kills the whole secret-rotation/leak class for a public repo — nothing to set in CI, nothing in the SST secret store.
+- **SDK**: `@anthropic-ai/bedrock-sdk` (`AnthropicBedrock` client) — identical Messages request/response shape to the direct Anthropic API; auth is SigV4 from the Lambda role.
+- **Models** (deploy-time env config `AI_PHOTO_MODEL_ID` / `AI_TEXT_MODEL_ID`, defaults):
+  - Photo: `eu.anthropic.claude-opus-4-6-v1` (EU cross-region inference profile; invocable from eu-west-2). Opus 4.8/4.7 are account-gated on Bedrock — revisit if access is granted; same price class.
+  - Free-text: `eu.anthropic.claude-haiku-4-5-20251001-v1:0`.
+- **Structured output = forced tool use**: one tool (`report_estimate`) whose `input_schema` is the estimate schema, `tool_choice: { type: 'tool', name: 'report_estimate' }`. Chosen over `output_config.format` because structured-outputs support is fragmented across Bedrock endpoints/models (the Bedrock Messages path rejects it outright), while tool-forcing works on every Claude model on every rail — and ports to non-Anthropic Bedrock models via Converse if ever needed.
+- **Adapter seam**: `application/nutrition/services/aiEstimation.ts` exposes
+  `estimateFromPhoto({ imageBase64, mediaType, mealType? }): Promise<AiEstimate>` and `estimateFromText({ description }): Promise<AiEstimate>`
+  where `AiEstimate = { foods: AiFoodItem[], overallConfidence, notes }`, `AiFoodItem = { name, quantity, unit, estimatedGrams, kcal, proteinG, carbsG, fatG, confidence }`.
+  The Bedrock client is injectable (same pattern as `openFoodFacts.ts`'s injectable fetcher) — unit tests never make live calls; CI needs no AWS credentials. Client timeout 25s, `max_tokens` 1500, one retry on 5xx/timeout inside the 120s Lambda budget. Model refusal / missing tool_use block / schema-invalid input → `AiUnreadableError`.
+
+### Endpoints
+
+| Method | Path                          | Body                                                                                 | Model     |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------ | --------- |
+| POST   | `/nutrition/ai/estimate`      | `{ imageBase64: string, mediaType: 'image/jpeg'\|'image/png', mealType?: MealType }` | opus-4-6  |
+| POST   | `/nutrition/ai/estimate-text` | `{ description: string (1–1000 chars) }`                                             | haiku-4-5 |
+
+Handler order (both): `requireAuth` → `const v = await assertEntitlement(userId, 'ai_access')`; on `!v.allowed` `throw new EntitlementError(v, 'ai_access')` (the helper returns a verdict, it does not throw — same two-step pattern as the `create_workout` callers; the shared error handler maps it to 402) → [abuse ceiling: >30 `ai_usage_log` rows today → 429 `AI_DAILY_LIMIT` — pending Brad; best-effort under concurrency since the usage-log write lands in the `finally`, so a concurrent burst can slightly overshoot — acceptable for a cost backstop, not a precise quota] → validate body → adapter call → `200 { data: AiEstimate }`. `ai_usage_log` insert happens in a `finally` (endpoint, request/response byte sizes, ms) — written on success AND failure.
+
+Errors: `413 image_too_large` (base64 > 5 MB), `422 ai_unreadable` (refusal/unparseable), `503 ai_unavailable` (provider outage/timeout after retry). Mobile maps 422/503 to the "Couldn't read this photo — try Quick Add instead" state.
+
+**Image transport — base64-in-JSON, not multipart.** Client downscales to ≤1080px long edge + JPEG ~0.7 quality via `expo-image-manipulator` (already a dependency) → typically 150–400 KB → ~200–530 KB as base64, far under the 6 MB Lambda payload cap. One code path through the existing Elysia `t.Object` validation and the mobile `SSTApiAdapter` JSON client; no multipart parser; the image is transient — decoded, size- and magic-byte-checked (JPEG/PNG), sent to Bedrock, never persisted.
+
+**Entitlement (closes C6):** `EntitlementFeature` gains `'ai_access'` (backend union AND the mobile mirror in `packages/mobile/src/domain/models/entitlement.ts` — the strict 402 parser casts `feature` to that union); `assertEntitlement` implements the real check (latest sub + tier join → `subscription_tiers.ai_access`; deny reasons mirror `create_workout`'s cancelled/expired handling). `ai_workout` stub untouched.
+
+**402 wire shape — SHIPPED contract, not the cross-cuts § 4.1 draft.** The shipped error handler (`shared/errorHandler.ts`) + mobile parser (`parseEntitlement.ts`, strict) use: `{ code: 'ENTITLEMENT_DENIED', error, feature: 'ai_access', reason, current_tier, upgrade_to, upgrade_price_monthly }` — snake_case, `feature` not `entitlement`, no `upgradeUrl`/`message`. Cross-cuts § 4.1's `{ entitlement: 'aiAccess', upgradeUrl }` shape was never shipped (M10.5 superseded it); this section and the § AI entitlement gating block above (which quoted the stale shape) are corrected to the shipped contract, and cross-cuts § 4.1 carries a matching Revised 2026-07-03 amendment. No error-handler changes needed — adding the union member is sufficient.
+
+**No automated foods-table grounding (eval-locked).** Grounding worsened every model's accuracy (junk rows + wrong-nutriment products in the OFF seed). Draft card carries the model's own numbers; the user can swap any item for a DB food manually. Revisit only after a foods-table quality pass (name-length filter, kcal sanity bounds, trigram search) — captured as a future task, not v1.
+
+### Mobile flow (SnapAISheet)
+
+State machine per `fuel-sheets.jsx SnapSheet`: `capture` (camera via expo-camera + photo-library pick) → local downscale/compress → `recognizing` (pulsing sparkles) → `confirm` (AI summary card: dish name + total kcal; toggleable item rows with name/amount/kcal/confidence %, confidence < 0.7 default-unticked; serving edits recompute totals) → confirm → one `POST /nutrition/entries` per kept item (customName + macros payload, existing manual path) → `added` affirmation. Root-mounted sheet, zustand open-state, 86% height, gold accent.
+Offline: Snap button disabled + copy "Snap needs a connection — try Quick Add instead"; AI calls never queue.
+Free-text: "Or describe it…" in QuickAddSheet → text input → same recognizing/confirm flow via `estimate-text`.
+Permissions: widen the `expo-camera` plugin `cameraPermission` string (currently barcode-only) and `expo-image-picker` strings to cover meal photos; both plugins write `NSCameraUsageDescription` — verify the merged value at prebuild. Native string change ⇒ new EAS dev build.
+
+### Cost model (Brad's constraint: AI spend must not balloon vs subscription)
+
+EU Bedrock pricing (list + 10% regional): opus-4-6 $5.50/$27.50 per MTok, haiku $1.10/$5.50. Measured per snap: ~1,650 input + ~250–500 output tokens → **~$0.019/snap (≈1.5p)**; free-text ~$0.002. Heavy user (5 snaps/day) ≈ £2.20/mo vs £12.99 premium (~17%); typical 1–2/day ≈ £0.45–0.90 (3.5–7%). The 30/day ceiling caps worst-case at ~£13/mo. `ai_usage_log` gives per-user cost telemetry from day one; a future quota tier can throttle without schema change.
+
+### Test plan (M9.5 additions)
+
+Backend: handler tests — 402 (free tier), [429 at ceiling], 413 oversize, 422 refusal, 503 outage, happy path (mocked adapter), usage-log written on success + failure; adapter tests — tool-forcing request shape, image block shape, timeout/retry, refusal mapping; entitlement tests — `ai_access` allow (premium active/trialing) / deny (free, cancelled+expired reasons). No live API calls anywhere in CI.
+Mobile: gate branch (locked → upgrade prompt), capture→recognizing→confirm state machine, low-confidence default-untick, toggle/edit recompute, confirm posts N entries, offline disabled affordance, 422/503 error state + retry.
