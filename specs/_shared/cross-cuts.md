@@ -303,6 +303,8 @@ This shape is **identical** to the M10.5 / M10.6 contract — the mobile sync qu
 - Per-call rate limiting (e.g. "10 photo recognitions per day") — `aiAccess` is binary for now. Quota model is M9.5 follow-up at earliest.
 - Free-tier trial of AI features (e.g. "5 free recognitions") — same.
 
+**Revised 2026-07-05:** M9.5 adds a **cost backstop** (Brad's call): per-user, per-endpoint daily inference ceilings (photo 12/day, free-text 30/day; env-tunable) returning `429 { error: 'ai_daily_limit' }`. This is deliberately NOT the quota model deferred above — it is sized so no legitimate user encounters it; its only purpose is bounding worst-case per-user AI spend below subscription revenue (with buffer for future trainer-granted client access). Product quota tiers and free-trial allowances remain out of scope. Implementation detail is owned by `13-nutrition-tracking § Revised 2026-07-03/05`.
+
 ---
 
 ## 5. Cross-feature notification taxonomy

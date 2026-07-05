@@ -553,6 +553,25 @@ describe("QuickAddSheetContainer", () => {
       expect(mockProbe.last?.describeError).toBeTruthy();
     });
 
+    it("shows the daily-limit copy on a 429 describe failure", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      api.nextAiEstimateError = { status: 429, message: "ai_daily_limit" };
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      act(() => mockProbe.last!.onDescribeTextChange("mystery meal"));
+
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      expect(mockProbe.last?.describeError).toContain("Daily AI limit reached");
+    });
+
     it("toggling and editing grams recomputes the total in the draft", async () => {
       const { adapters } = makeAdapters();
       const api = adapters.api as InMemoryApiAdapter;

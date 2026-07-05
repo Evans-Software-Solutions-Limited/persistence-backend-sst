@@ -101,6 +101,11 @@ coreAPI.route("$default", {
     // Opus 4.8 access and a cheaper/faster model id becomes preferable.
     AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
     AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // Daily per-user inference ceilings (cross-cuts § 4.3 Revised
+    // 2026-07-05) — a cost backstop with a profit buffer, not a product
+    // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.
+    AI_PHOTO_DAILY_LIMIT: "12",
+    AI_TEXT_DAILY_LIMIT: "30",
   },
 });
 

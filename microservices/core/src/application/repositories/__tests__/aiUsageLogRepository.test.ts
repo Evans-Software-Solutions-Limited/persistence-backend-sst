@@ -54,4 +54,30 @@ describe("AiUsageLogRepository", () => {
       ms: null,
     });
   });
+
+  it("countForUserToday counts rows for the user+endpoint since UTC midnight", async () => {
+    const where = vi.fn().mockResolvedValue([{ n: 7 }]);
+    const from = vi.fn().mockReturnValue({ where });
+    const select = vi.fn().mockReturnValue({ from });
+    (getDb as any).mockReturnValue({ select });
+
+    const repo = new AiUsageLogRepository();
+    const n = await repo.countForUserToday("user-1", "/nutrition/ai/estimate");
+
+    expect(n).toBe(7);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("countForUserToday returns 0 when no rows exist", async () => {
+    const where = vi.fn().mockResolvedValue([]);
+    const from = vi.fn().mockReturnValue({ where });
+    const select = vi.fn().mockReturnValue({ from });
+    (getDb as any).mockReturnValue({ select });
+
+    const repo = new AiUsageLogRepository();
+    const n = await repo.countForUserToday("user-1", "/nutrition/ai/estimate");
+
+    expect(n).toBe(0);
+  });
 });
