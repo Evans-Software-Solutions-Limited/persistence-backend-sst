@@ -41,7 +41,6 @@ Brad runs many sessions across this repo and occasionally switches Claude accoun
 - **Skills + ntfy topic + Slack channel ID are filesystem-resident** in `~/.claude/.../skills/slack-progress-updates/` — survive everything. The Slack channel ID `C0ATYL6T11V` for `#brad-claude-agents` is hardcoded.
 - **Stripe / Supabase MCP project credentials are project-scoped on the service side**, not Claude-side — they survive the account switch as long as the MCP connector itself is re-enabled.
 
-
 **Don't pre-empt `@inspector-brad`.** Brad fires it himself on the PR when he wants a sweep. Don't run it speculatively.
 
 ## What This Repo Is
