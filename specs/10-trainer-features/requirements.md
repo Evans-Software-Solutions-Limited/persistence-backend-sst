@@ -80,7 +80,7 @@ Authoritative references:
 - 3.4 [ ] **Module a (Adherence):** overall 28-day % + 5-band rating reusing the shipped `clientRosterBand` (`stellar/strong/wobbling/atRisk/crisis`); category rows for calorie/protein/check-in/sleep render unavailable ("—") in v1; empty state "Not enough data yet" (never 0%/Crisis for a brand-new client).
 - 3.5 [ ] **Module b (PR highlights):** exact-rep records only (`1rm/3rm/5rm/10rm/max_weight/max_volume`), **no Epley**; empty state "No PRs logged yet".
 - 3.6 [ ] **Module c (Volume):** weekly volume via `dailyVolume` (user-local week); preserve the 42803 ordinal-GROUP-BY + PgDialect render guard; "—" when no sessions.
-- 3.7 [ ] **Module d (Calorie hit):** read-only for coach; **totals + ±10% "hit" adherence, NOT the food-level log** (privacy default — pending Brad); coach read + on-behalf target PUT are Phase 3 builds.
+- 3.7 [ ] **Module d (Calorie hit):** read-only for coach; **totals + ±10% "hit" adherence, NOT the food-level log** (privacy line confirmed by Brad 2026-07-05); coach read + on-behalf target PUT are Phase 3 builds.
 - 3.8 [ ] **Module e (Goals):** primary active `user_goals` row (name via `goal_types`, no title column; `is_active`, not a status enum); weight axis from `body_measurements` + goal `target_value`; assign/edit-own are Phase 3; attribution "Goal set by Coach {name}" from `profiles.full_name`.
 - 3.9 [ ] **Module f (Habits):** coach view of habit configs + weekly satisfaction + collection streak; weekly-satisfaction compute + coach read + authorship routes are to-build (per `18-habit-setup`); coach-set habits are complete-only and transfer to the client on relationship end.
 - 3.10 [ ] **Module g (AI Client Summary):** **launch scope** — see STORY-014 (revised 2026-07-05).

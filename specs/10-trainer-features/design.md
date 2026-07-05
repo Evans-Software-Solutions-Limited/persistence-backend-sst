@@ -602,8 +602,8 @@ type VolumeModule = {
 
 ### Module d — Calorie hit
 
-- **Read-only for the coach.** ⚠ **PRIVACY LINE — pending Brad's confirmation in the sign-off ping.**
-  **Default:** coach sees **per-day totals + the "hit" adherence count, NOT the food-level entry log.**
+- **Read-only for the coach. PRIVACY LINE — confirmed by Brad 2026-07-05:** coach sees
+  **per-day totals + the "hit" adherence count, NOT the food-level entry log.**
 - **Data (existing, self-scope today):** `nutrition_targets` (`schema.ts:1714`:
   `daily_kcal / protein_g / carbs_g / fat_g / water_cups / set_by_user_id`) via `GET /nutrition/targets`;
   daily consumed via `summariseConsumed()` (`nutritionTodayHandler.ts:30–40`) →
@@ -611,7 +611,7 @@ type VolumeModule = {
 - **To build (Phase 3/5):** there is **no coach read of client nutrition** and **no
   `PUT /trainers/me/clients/:clientId/nutrition/target`** (the `set_by_user_id` column at `schema.ts:1725`
   is never written). Phase 3 builds the coach read (**totals + targets only**, no entries — enforces the
-  privacy default) + the on-behalf target PUT (audit `nutrition_target_set`).
+  confirmed privacy line) + the on-behalf target PUT (audit `nutrition_target_set`).
 - **"Hit" band:** a day counts as hit when daily kcal is within **target ± 10%** — reuse the
   Calories-habit tolerance default (`habitCategories.ts:90`, `tolerancePct.default = 10`), the **same
   rule** as `nutrition_streak`'s `within_tolerance` (cross-cuts § 3.1). Week = `X / 7` days hit.
