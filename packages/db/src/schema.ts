@@ -196,6 +196,20 @@ export const noteTypeEnum = pgEnum("note_type", [
   "general",
 ]);
 
+// 10-trainer-features — audit of every trainer on-behalf write. cross-cuts § 1.4.
+// Migration: 20260705140000_trainer_actions_audit.sql. Append-only.
+export const actionTypeEnum = pgEnum("action_type_enum", [
+  "workout_logged_on_behalf",
+  "measurement_logged_on_behalf",
+  "nutrition_entry_logged_on_behalf",
+  "goal_assigned",
+  "nutrition_target_set",
+  "workout_assigned",
+  "client_note_added",
+  "client_note_updated",
+  "client_note_deleted",
+]);
+
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
 
 export const muscleGroups = pgTable("muscle_groups", {
@@ -746,6 +760,37 @@ export const ptClientRelationships = pgTable(
     uniqueIndex("pt_client_relationships_trainer_client_idx").on(
       t.trainerId,
       t.clientId,
+    ),
+  ],
+);
+
+// ─── Trainer Actions Audit ────────────────────────────────────────────────────
+// Every trainer on-behalf write logs one row here INSIDE the same transaction as
+// the target-row write (cross-cuts § 1.4.2). Append-only; retention forever.
+// Migration: 20260705140000_trainer_actions_audit.sql.
+export const trainerActionsAudit = pgTable(
+  "trainer_actions_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id),
+    actionType: actionTypeEnum("action_type").notNull(),
+    targetTable: text("target_table").notNull(),
+    targetRowId: uuid("target_row_id").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("trainer_actions_audit_client_ts").on(t.clientId, t.createdAt.desc()),
+    index("trainer_actions_audit_trainer_ts").on(
+      t.trainerId,
+      t.createdAt.desc(),
     ),
   ],
 );
@@ -1438,6 +1483,10 @@ export type NewFriendship = typeof friendships.$inferInsert;
 
 export type PtClientRelationship = typeof ptClientRelationships.$inferSelect;
 export type NewPtClientRelationship = typeof ptClientRelationships.$inferInsert;
+
+export type TrainerActionAudit = typeof trainerActionsAudit.$inferSelect;
+export type NewTrainerActionAudit = typeof trainerActionsAudit.$inferInsert;
+export type ActionType = (typeof actionTypeEnum.enumValues)[number];
 
 export type WorkoutAssignment = typeof workoutAssignments.$inferSelect;
 export type NewWorkoutAssignment = typeof workoutAssignments.$inferInsert;
