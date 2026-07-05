@@ -48,17 +48,25 @@ import { getDb } from "@persistence/db/client";
 // ─── Public types ─────────────────────────────────────────────────────
 
 /**
- * The set of feature gates the platform may enforce server-side. Two
+ * The set of feature gates the platform may enforce server-side. Three
  * categories today:
  *   - `create_workout`: ENFORCED in M10.5 on POST /workouts and on the
  *     fresh-workout branch of POST /sessions/record.
- *   - everything else: STUB — returns `{ allowed: true }` today, wired
- *     into the read path so the helper signature stabilises before the
- *     consuming feature ships. Switching a stub on is a one-line change
- *     once the M8 / AI / gym-buddy endpoints land.
+ *   - `ai_access`: ENFORCED in M9.5 on `POST /nutrition/ai/estimate` and
+ *     `POST /nutrition/ai/estimate-text` (closes cross-cuts § 4.1 C6).
+ *     Gates on `subscription_tiers.ai_access` — a binary flag, not a
+ *     usage counter, so denies only ever carry reason `'tier'` /
+ *     `'cancelled'` / `'expired'`, never `'limit'`.
+ *   - everything else (`ai_workout`, `gym_buddy`,
+ *     `unlimited_exercise_library`, `trainer_clients`): STUB — returns
+ *     `{ allowed: true }` today, wired into the read path so the helper
+ *     signature stabilises before the consuming feature ships. Switching
+ *     a stub on is a one-line change once the M8 / gym-buddy endpoints
+ *     land.
  */
 export type EntitlementFeature =
   | "create_workout"
+  | "ai_access"
   | "ai_workout"
   | "gym_buddy"
   | "unlimited_exercise_library"
@@ -84,7 +92,7 @@ export type SubscriptionTierName =
  * Why an entitlement assertion was denied. Mobile uses this to pick the
  * gate-prompt copy:
  *   - `tier`: user is on a tier that has the feature flag disabled
- *     (only reachable through stubs today; e.g. `gym_buddy` on basic).
+ *     (`ai_access` on free tier; stubs never reach this today).
  *   - `limit`: feature flag is on but the per-month counter is at cap.
  *   - `cancelled`: sub was cancelled and the grace expires_at has
  *     passed — the user reverts to free-tier rules, so this reason only
@@ -187,6 +195,33 @@ export class EntitlementError extends Error {
  *     (upgrade_to = null — reinstate / fix payment instead).
  *   - Otherwise → allowed.
  *
+ * Verdict logic for `ai_access` (M9.5, cross-cuts § 4.1):
+ *   - Binary flag gate, not a usage counter — `subscription_tiers.ai_access`
+ *     directly decides allow/deny. There is no `subscription_limits` row
+ *     to consult, so denies here only ever carry reason `'tier'` (flag
+ *     off), `'cancelled'`, or `'expired'` — never `'limit'`.
+ *   - No sub row → free tier → check free tier's `ai_access` (false today)
+ *     → deny reason `'tier'` if false.
+ *   - `payment_status` classifies as cancelled/expired (same
+ *     `classifySubscriptionStatus` used by `create_workout`) → the user
+ *     reverts to free-tier rules for the flag check (not just the
+ *     limit), and if the free tier's flag is also off, deny reason is
+ *     `'cancelled'` / `'expired'` (not `'tier'`) — mirrors
+ *     `create_workout`'s revert-to-free treatment exactly, just gating a
+ *     flag instead of a counter.
+ *   - Otherwise: effective tier's `ai_access === true` → allowed;
+ *     `false` → deny reason `'tier'`.
+ *   - `upgradeTo` for a `'tier'` deny reuses `pickUpgradeTier` — per
+ *     `20260526120000_simplify_tier_model.sql`, "AI access becomes a
+ *     paid-tier USP: Premium + any Trainer tier all get AI", i.e. EVERY
+ *     paid tier in the catalog has `ai_access = true`. That makes the
+ *     cheapest ai_access=true tier for a given role identical to the
+ *     cheapest paid tier for that role, which is exactly what
+ *     `pickUpgradeTier` already resolves for `create_workout` — no
+ *     separate "query subscription_tiers for the cheapest ai_access=true
+ *     row" lookup is needed unless the catalog ever ships a paid tier
+ *     without AI (it doesn't today).
+ *
  * Stub features (`ai_workout`, `gym_buddy`, `unlimited_exercise_library`,
  * `trainer_clients`) always return `{ allowed: true }` today. The read
  * path is wired but the verdict short-circuits — see AC 9.5.
@@ -199,8 +234,12 @@ export async function assertEntitlement(
   // place so consumers can call `assertEntitlement(uid, 'ai_workout')`
   // already; flipping the stub off when the AI endpoint ships is a
   // one-line change inside this branch.
-  if (feature !== "create_workout") {
+  if (feature !== "create_workout" && feature !== "ai_access") {
     return { allowed: true };
+  }
+
+  if (feature === "ai_access") {
+    return assertAiAccess(userId);
   }
 
   const db = getDb();
@@ -360,6 +399,115 @@ export async function assertEntitlement(
   return { allowed: true };
 }
 
+/**
+ * `ai_access` verdict — see the doc comment above `assertEntitlement` for
+ * the full rules. Split out of the main function because the shape of
+ * the check (a boolean flag, no `subscription_limits` counter) diverges
+ * enough from `create_workout`'s limit-check flow that interleaving both
+ * in one function body would obscure both. Shares `loadTier`,
+ * `classifySubscriptionStatus`, `coerceTierName`, `normaliseRole`,
+ * `pickUpgradeTier`, and `buildDenyVerdict` with the `create_workout`
+ * path.
+ */
+async function assertAiAccess(userId: string): Promise<EntitlementVerdict> {
+  const db = getDb();
+
+  // 1. Profile slice — same schema-corruption guard as create_workout.
+  const profileRows = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+
+  const profile = profileRows[0];
+  if (!profile) {
+    throw new Error(
+      `assertEntitlement: no profiles row for user ${userId} — schema corruption (JWT-bound user without profile)`,
+    );
+  }
+  const role = normaliseRole(profile.role);
+
+  // 2. Latest subscription joined with the tier, this time for the
+  //    ai_access flag rather than workout_limit.
+  const subRows = await db
+    .select({
+      tierName: userSubscriptions.tierName,
+      paymentStatus: userSubscriptions.paymentStatus,
+      expiresAt: userSubscriptions.expiresAt,
+      aiAccess: subscriptionTiers.aiAccess,
+    })
+    .from(userSubscriptions)
+    .leftJoin(
+      subscriptionTiers,
+      eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+    )
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+
+  const subRow = subRows[0] ?? null;
+
+  // Resolve effective tier + ai_access flag. Same three cases as
+  // create_workout's workoutLimit resolution:
+  //   (a) no sub row → free tier catalog flag
+  //   (b) sub row with a known tier → joined flag
+  //   (c) sub row with an unknown/deleted tier → coerced to 'free', the
+  //       joined flag is null in that case, treated as false below.
+  let effectiveTierName: SubscriptionTierName;
+  let aiAccessFlag: boolean | null;
+
+  if (subRow === null) {
+    const freeTier = await loadTier(db, "free");
+    if (!freeTier) {
+      throw new Error(
+        "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+      );
+    }
+    effectiveTierName = "free";
+    aiAccessFlag = freeTier.aiAccess;
+  } else {
+    effectiveTierName = coerceTierName(subRow.tierName);
+    aiAccessFlag = subRow.aiAccess ?? null;
+  }
+
+  // 3. Status check BEFORE the flag check — cancelled/expired subs
+  //    revert to free-tier rules (per create_workout's precedent), and
+  //    if the free tier also lacks ai_access, the deny reason surfaces
+  //    as 'cancelled' / 'expired' rather than 'tier' so mobile shows the
+  //    reinstate / fix-payment CTA instead of a plain upgrade prompt.
+  let denyReason: EntitlementDenyReason = "tier";
+  if (subRow !== null) {
+    const statusDeny = classifySubscriptionStatus(
+      subRow.paymentStatus,
+      subRow.expiresAt,
+    );
+    if (statusDeny !== null) {
+      const freeTier = await loadTier(db, "free");
+      if (!freeTier) {
+        throw new Error(
+          "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+        );
+      }
+      aiAccessFlag = freeTier.aiAccess;
+      denyReason = statusDeny;
+    }
+  }
+
+  if (aiAccessFlag === true) {
+    return { allowed: true };
+  }
+
+  return buildDenyVerdict({
+    // 'tier' for an active-but-flag-off tier (today only reachable via
+    // free — every paid tier ships ai_access=true); 'cancelled' /
+    // 'expired' for a reverted sub whose free-tier fallback also lacks
+    // the flag.
+    reason: denyReason,
+    currentTier: effectiveTierName,
+    role,
+  });
+}
+
 // ─── Pure helpers (exported for testing) ──────────────────────────────
 
 /**
@@ -500,6 +648,7 @@ type Db = ReturnType<typeof getDb>;
 interface TierMeta {
   tierName: string;
   workoutLimit: number | null;
+  aiAccess: boolean;
   priceMonthly: number | null;
 }
 
@@ -513,6 +662,7 @@ async function loadTier(db: Db, tierName: string): Promise<TierMeta | null> {
     .select({
       tierName: subscriptionTiers.tierName,
       workoutLimit: subscriptionTiers.workoutLimit,
+      aiAccess: subscriptionTiers.aiAccess,
       priceMonthly: subscriptionTiers.priceMonthly,
     })
     .from(subscriptionTiers)
@@ -524,6 +674,7 @@ async function loadTier(db: Db, tierName: string): Promise<TierMeta | null> {
   return {
     tierName: row.tierName,
     workoutLimit: row.workoutLimit ?? null,
+    aiAccess: row.aiAccess ?? false,
     priceMonthly: parsePriceDecimal(row.priceMonthly),
   };
 }

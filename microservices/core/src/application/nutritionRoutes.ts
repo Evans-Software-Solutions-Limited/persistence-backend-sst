@@ -13,6 +13,8 @@ import { nutritionTargetsSetHandler } from "./nutrition/targets/set/nutritionTar
 import { nutritionWaterGetHandler } from "./nutrition/water/get/nutritionWaterGetHandler";
 import { nutritionWaterPatchHandler } from "./nutrition/water/patch/nutritionWaterPatchHandler";
 import { nutritionBarcodeResolveHandler } from "./nutrition/barcode/nutritionBarcodeResolveHandler";
+import { nutritionAiEstimateHandler } from "./nutrition/ai/estimate/nutritionAiEstimateHandler";
+import { nutritionAiEstimateTextHandler } from "./nutrition/ai/estimateText/nutritionAiEstimateTextHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -40,6 +42,9 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionWaterGetHandler)
   .use(nutritionWaterPatchHandler)
   .use(nutritionBarcodeResolveHandler)
+  // AI Tier B (M9.5) — both gate on `ai_access` inside the handler.
+  .use(nutritionAiEstimateHandler)
+  .use(nutritionAiEstimateTextHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import
