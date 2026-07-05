@@ -46,7 +46,25 @@ Folders deleted; git is canonical.
 | **M7 Notifications backend**      | 6 endpoints + JSONB preferences + atomic merge + COALESCE read semantics    | #81            | 2026-05-27              |
 | **M12 Compliance / legal / help** | Privacy, terms, help, contact, privacy-settings ported 1:1                  | #80            | 2026-05-27              |
 
-11 milestone-tracked deliveries shipped. Plus spec authoring PRs (#74–#79) and the design-port spec rewrites on 2026-05-27/28 (this session — not yet committed; will land via one or more chore PRs).
+11 milestone-tracked deliveries shipped. Plus spec authoring PRs (#74–#79) and the design-port spec rewrites on 2026-05-27/28.
+
+### Shipped (continued — status refresh 2026-07-05)
+
+| Delivery                                 | What shipped                                                                                                                                                                  | Merged PRs                   | Shipped    |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------- |
+| **04-workout-management (design-port)**  | Train hub: Workouts list, Exercises list, CreateExerciseSheet, ExerciseDetail + Editor                                                                                        | #95–#97, #99                 | 2026-06    |
+| **05-active-session (design-port)**      | Active session rebuild, minimise overlay, Summary, Rating (phases 05.1–05.7)                                                                                                  | #110                         | 2026-06-08 |
+| **06-progress-goals (M4 + design-port)** | Backend streaks/habits/volume/Home/You + mobile Home re-skin, You, WeighInSheet, offline cache                                                                                | #116–#118, #122              | 2026-06    |
+| **09-notifications-social (mobile)**     | Notifications feature (list/preferences/badge) + push delivery via Expo Push API                                                                                              | #104, #142, #143             | 2026-06    |
+| **17-payments-reliability**              | Stripe hardening phases A–D + client idempotency keys                                                                                                                         | #100, #101                   | 2026-06    |
+| **07-health-integration (connect)**      | Apple Health connect screen, steps→Home rings, HealthKit weight/body-fat push (cross-device)                                                                                  | #121, #145                   | 2026-06/07 |
+| **11-payments (RevenueCat rail)**        | Manage-subscription drawer + RevenueCat webhook backend; native Apple Sign In                                                                                                 | #126, #133                   | 2026-06    |
+| **10-trainer-features (partial)**        | Coach You + invites, Clients roster, client accept flow, coach body-fat/weight + Client Detail interim trend                                                                  | #123, #125, #136, #146       | 2026-06/07 |
+| **12-production-readiness (compliance)** | OFF foods + exercise seed, NSPhotoLibrary string, in-app account deletion (Apple 5.1.1(v)), push delivery                                                                     | #139–#142                    | 2026-06-28 |
+| **13-nutrition M9 Tier A (Fuel)**        | Backend (entries/targets/water/barcode/recipes/meals/streak/OFF seed) + mobile Fuel + Targets TDEE + follow-ups                                                               | #124, #135, #138, #144, #147 | 2026-06/07 |
+| **18-habit-setup (backend chunk 1)**     | Habit config schema + backend                                                                                                                                                 | #129                         | 2026-06    |
+| **19-programs (unified model, backend)** | Spec + schema/scheduling/repositories + endpoints/adherence/dashboard/library integration                                                                                     | #148, #149, #152             | 2026-07    |
+| **13-nutrition M9.5 Tier B (Snap AI)**   | Bedrock AI photo + free-text estimation: spec, backend (`ai_access`, both endpoints, usage log), mobile Snap sheet + free-text, daily cost ceilings, trainer-tier `ai_access` | #151, #153–#156              | 2026-07-05 |
 
 ---
 
@@ -81,20 +99,22 @@ Goal: port the May 2026 prototype + design package into V2. Ten specs rewritten 
 
 Plus one small append to `03-exercise-library` (per Section 3 below) — `GET /exercises/:id` user-history extension, scheduled to land in the M4 backend window so it can read from `personal_records` table once that ships.
 
-### Phase status (2026-05-28)
+### Phase status (refreshed 2026-07-05; original sign-off 2026-05-28)
 
-| Spec                      | Status                                            | Owns                                                                     | Key gates                                                  |
-| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `01-design-system`        | **ready**                                         | 22 primitives, tokens, fonts, codemod, adoption sweep                    | Foundation for every downstream spec                       |
-| `14-navigation`           | **ready**                                         | Option 3 nav, `useUserMode`, drawer mount, Train hub, deep-link redirect | Unlocks 08 + 04 + 05 + 06 + 10                             |
-| `08-profile-settings`     | **ready**                                         | ProfileDrawer body, mode-switch, sub-page refreshes                      | Unlocks mode-switching end-to-end                          |
-| `04-workout-management`   | **ready**                                         | Workouts list/detail/create/edit, CreateExercise as bottom-sheet         | Train hub content                                          |
-| `05-active-session`       | **ready**                                         | Active session rebuild + minimise overlay + Summary + Rating             | Companion to 04                                            |
-| `06-progress-goals`       | **ready** (includes Home)                         | Home + You/Progress + M4 backend (streaks/habits/PRs)                    | Big M4 backend migration block                             |
-| `09-notifications-social` | **ready** (mobile frontend only; backend per #81) | List + preferences + bell badge + push registration + deep-link dispatch | New event types added via cross-cuts + this spec ownership |
-| `10-trainer-features`     | **ready**                                         | Coach mode, on-behalf, audit log, programs, notes, attribution badges    | Implements cross-cuts §1, §2, §4 fully                     |
-| `13-nutrition-tracking`   | **ready**                                         | Fuel M9 Tier A + M9.5 Tier B (AI gated on `aiAccess`)                    | New domain; gates on M10.5 entitlement helper              |
-| `12-production-readiness` | **ready** (terminal)                              | LegacyTheme retire, a11y, perf, Sentry, EAS, Apple IAP, App Store        | Everything else first                                      |
+| Spec                      | Status                                                                                                                                                                                                                                             | Owns                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `01-design-system`        | **shipped** (#83)                                                                                                                                                                                                                                  | 22 primitives, tokens, fonts, codemod, adoption sweep                  |
+| `14-navigation`           | **shipped** (#93)                                                                                                                                                                                                                                  | Option 3 nav, `useUserMode`, drawer mount, Train hub                   |
+| `08-profile-settings`     | **shipped** (#94, +#132 fix)                                                                                                                                                                                                                       | ProfileDrawer body, mode-switch, sub-page refreshes                    |
+| `04-workout-management`   | **shipped** (#95–#97, #99; 04.4/04.5/04.7 residual cleanup)                                                                                                                                                                                        | Workouts list/detail/create/edit, CreateExercise sheet, ExerciseDetail |
+| `05-active-session`       | **shipped** (#110)                                                                                                                                                                                                                                 | Active session rebuild + minimise overlay + Summary + Rating           |
+| `06-progress-goals`       | **shipped** (#116–#118, #122; habits-setup mobile screen still missing — see 18)                                                                                                                                                                   | Home + You/Progress + M4 backend (streaks/habits/PRs)                  |
+| `09-notifications-social` | **shipped** (#81 backend, #104 mobile, #142 push delivery; social features remain post-launch)                                                                                                                                                     | List + preferences + bell badge + push registration                    |
+| `10-trainer-features`     | **partial** — Coach You/invites/roster/accept (#123/#125/#136), body-fat + Client Detail interim (#146). Open: Coach Home (needs design call), full Client Detail 10.9.3, on-behalf + audit, notes, EditNutritionTargets sheet, programs mobile    | Coach mode, on-behalf, audit log, notes, attribution badges            |
+| `13-nutrition-tracking`   | **shipped** M9 Tier A (#124/#135/#138/#144/#147) + M9.5 Tier B Snap AI (#151/#153–#156). Open: STORY-013 recipe-photo extract (deferred), Fuel day-picker (needs spec), trainer-granted client `ai_access` (needs spec)                            | Fuel + AI estimation                                                   |
+| `12-production-readiness` | **partial** — compliance blockers done (#139–#142: seeds, permission string, account deletion, push). Open: **Apple IAP mobile purchase flow (react-native-purchases) = the App Store blocker**, perf/a11y/Sentry/EAS pipeline, LegacyTheme retire | Terminal polish + App Store readiness                                  |
+
+Specs added after the 2026-05-28 sign-off: `17-payments-reliability` (**shipped** #100/#101), `18-habit-setup` (**backend chunk 1** #129; mobile setup screen not started), `19-programs` unified Programs/Workouts model (**backend shipped** #148/#149/#152; mobile coach F1 + athlete Home F2 not started), `15/16-exercise AI + media` (specced in #97's window, not implemented).
 
 Each spec's `tasks.md` lists its phases + per-PR scope. Implementation picks a phase + opens PRs against the spec.
 
@@ -161,8 +181,8 @@ Coaches should be able to **see a client's body-weight history** and **record a 
 - **`10-trainer-features`:** reuse the existing on-behalf write + attribution + audit pattern (`set_by` / `logged_by_user_id` per `_shared/cross-cuts.md` §1) so a coach-recorded weight is attributed + audited, and surface the client's weight trend in Client Detail.
 - **`06-progress-goals`:** the `body_measurements` log + weigh-in flow already exist for the athlete; this extends read + on-behalf write to the trainer surface.
 
-Backend on-behalf measurement endpoint + the Client-Detail weight read are the main work. Not started; raised 2026-06-26.
+**SHIPPED 2026-07-02** via #145 (HealthKit weight/body-fat push) + #146 (coach body-fat logging, `GET /clients/:clientId/body-trend`, Client Detail interim trend + Log weight CTA).
 
 ---
 
-_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off) · Revised 2026-06-26 (Section 5 — queued post-merge follow-ups)_
+_End of `specs/milestones/ROADMAP.md` · 2026-05-28 (scope sign-off) · Revised 2026-06-26 (Section 5) · Revised 2026-07-05 (status refresh: Section 1 continued table, phase-status table, 5.2 shipped)_
