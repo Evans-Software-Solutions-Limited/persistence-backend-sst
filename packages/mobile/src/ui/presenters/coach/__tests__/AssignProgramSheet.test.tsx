@@ -322,4 +322,68 @@ describe("AssignProgramSheet", () => {
       screen.getByTestId("assign-client-c-priya").props.accessibilityState,
     ).toMatchObject({ selected: false });
   });
+
+  // -- client-anchored mode (openForClient, from Client Detail) --
+
+  const PROGRAMME = {
+    id: "prog-9",
+    name: "Hypertrophy 8wk",
+    description: null,
+    durationWeeks: 8,
+    daysPerWeek: 5,
+    workoutCount: 5,
+    activeClientCount: 0,
+    createdAt: null,
+    updatedAt: null,
+  };
+
+  it("client-anchored: picks a PROGRAMME and assigns it to the fixed client", async () => {
+    const { adapters, api } = makeAdapters();
+    api.programs = [PROGRAMME];
+    const onAssigned = jest.fn();
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <AssignProgramSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useAssignProgramSheet.getState().openForClient("client-42", onAssigned);
+    });
+    // Program picker (not the client picker) is shown.
+    await waitFor(() =>
+      expect(screen.getByTestId("assign-program-prog-9")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("assign-client-c-priya")).toBeNull();
+
+    fireEvent.press(screen.getByTestId("assign-program-prog-9"));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("assign-submit"));
+    });
+
+    await waitFor(() => expect(onAssigned).toHaveBeenCalledTimes(1));
+    expect(api.assignProgramCalls[0]).toMatchObject({
+      programId: "prog-9",
+      input: { clientId: "client-42" },
+    });
+    expect(useAssignProgramSheet.getState().open).toBe(false);
+  });
+
+  it("client-anchored: disables Assign until a programme is picked", async () => {
+    const { adapters, api } = makeAdapters();
+    api.programs = [PROGRAMME];
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <AssignProgramSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useAssignProgramSheet.getState().openForClient("client-42");
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("assign-submit")).toBeTruthy(),
+    );
+    expect(
+      screen.getByTestId("assign-submit").props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+  });
 });

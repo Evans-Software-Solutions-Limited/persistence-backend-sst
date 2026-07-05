@@ -34,14 +34,21 @@ import {
   ClientDetailContainer,
   buildClientBodyTrend,
 } from "@/ui/containers/ClientDetailContainer";
+import { useAssignProgramSheet } from "@/state/assign-program-sheet";
+import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 
 function props(): ClientDetailProps {
   if (!mockCaptured.props) throw new Error("presenter not rendered");
   return mockCaptured.props;
 }
 
-function renderWithApi(getClientBodyTrend: jest.Mock) {
-  const adapters = { api: { getClientBodyTrend } } as unknown as Adapters;
+function renderWithApi(
+  getClientBodyTrend: jest.Mock,
+  getClientActiveProgramme: jest.Mock = jest.fn(async () => ok(null)),
+) {
+  const adapters = {
+    api: { getClientBodyTrend, getClientActiveProgramme },
+  } as unknown as Adapters;
   const wrapper = ({ children }: { children: ReactNode }) => (
     <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
   );
@@ -124,5 +131,59 @@ describe("ClientDetailContainer", () => {
     await waitFor(() => expect(props().isLoading).toBe(false));
     props().onBack();
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  // -- 19-programs T-19.3.5: active programme + assign wiring --
+
+  const ACTIVE = {
+    assignmentId: "pa1",
+    programId: "p1",
+    name: "Strength Foundations",
+    week: 4,
+    totalWeeks: 12,
+    endDate: "2026-08-01",
+    startDate: "2026-05-01",
+  };
+
+  it("fetches + passes the client's active programme", async () => {
+    const getProgramme = jest.fn(async () => ok(ACTIVE));
+    renderWithApi(
+      jest.fn(async () => ok([])),
+      getProgramme,
+    );
+    await waitFor(() => expect(props().activeProgramme).not.toBeNull());
+    expect(getProgramme).toHaveBeenCalledWith("client-1");
+    expect(props().activeProgramme?.programId).toBe("p1");
+    props().onOpenProgramme();
+    expect(mockPush).toHaveBeenCalledWith("/(app)/programs/p1");
+  });
+
+  it("onAssignProgramme opens the client-anchored assign sheet", async () => {
+    useAssignProgramSheet.setState({
+      open: false,
+      programId: null,
+      clientId: null,
+      onAssigned: null,
+    });
+    renderWithApi(jest.fn(async () => ok([])));
+    await waitFor(() => expect(props().isLoading).toBe(false));
+    props().onAssignProgramme();
+    const s = useAssignProgramSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
+  });
+
+  it("onAssignWorkout opens the ad-hoc assign-workout sheet", async () => {
+    useAssignWorkoutSheet.setState({
+      open: false,
+      clientId: null,
+      onAssigned: null,
+    });
+    renderWithApi(jest.fn(async () => ok([])));
+    await waitFor(() => expect(props().isLoading).toBe(false));
+    props().onAssignWorkout();
+    const s = useAssignWorkoutSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
   });
 });

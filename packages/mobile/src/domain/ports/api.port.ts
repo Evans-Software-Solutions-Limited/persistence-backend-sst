@@ -36,6 +36,7 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { Streak } from "@/domain/models/streak";
 import type {
+  ActiveProgramme,
   HomePayload,
   Rings,
   WeeklyVolume,
@@ -548,6 +549,18 @@ export interface ApiPort {
     clientId: string,
     window?: string,
   ): Promise<Result<BodyTrendPoint[], ApiError>>;
+
+  /**
+   * Coach reads a client's currently-live programme for the Client Detail
+   * `ProgrammeCard` (`GET /trainers/me/clients/:clientId/active-programme`,
+   * specs/19-programs AC 4.5). Same `ActiveProgramme` wire shape as the
+   * athlete's own Home card, so `<ProgrammeCard>` is reused unchanged. `null`
+   * = the client has no live plan-visible programme. Server-guarded by an
+   * active trainer↔client relationship (403 `not_your_client`).
+   */
+  getClientActiveProgramme(
+    clientId: string,
+  ): Promise<Result<ActiveProgramme | null, ApiError>>;
 
   // -- Trainers / Coach You (10-trainer-features) --
   /**

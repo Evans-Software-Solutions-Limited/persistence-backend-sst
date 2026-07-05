@@ -1125,6 +1125,17 @@ export class InMemoryApiAdapter implements ApiPort {
     );
   }
 
+  /** Fixture for `getClientActiveProgramme`, keyed by clientId (default null). */
+  public clientActiveProgrammes: Record<string, ActiveProgramme | null> = {};
+  public getClientActiveProgrammeCalls: string[] = [];
+
+  async getClientActiveProgramme(clientId: string) {
+    this.getClientActiveProgrammeCalls.push(clientId);
+    return this.mayFail<ActiveProgramme | null>(
+      this.clientActiveProgrammes[clientId] ?? null,
+    );
+  }
+
   // -- Trainers / Coach You (10-trainer-features) --
   public coachOverview: CoachOverview | null = null;
   public invitations: TrainerInvitation[] = [];

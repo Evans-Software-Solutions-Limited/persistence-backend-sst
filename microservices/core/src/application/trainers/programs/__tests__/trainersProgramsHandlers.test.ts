@@ -13,9 +13,25 @@ const assignmentMocks = {
   unassign: vi.fn(),
   createAdHoc: vi.fn(),
   deleteAdHoc: vi.fn(),
+  getActiveProgrammeForClient: vi.fn(),
 };
 const trainerMocks = { isTrainer: vi.fn() };
 const guardMocks = { hasActiveRelationship: vi.fn() };
+
+// `trainersClientActiveProgrammeGetHandler` checks the relationship with a
+// direct getDb() query (mirrors body-trend) rather than the shared guard, so
+// stub getDb to resolve `relRows` for that .select().from().where().limit()
+// chain. The other handlers go through mocked repos and never hit getDb.
+let relRows: Array<{ id: string }> = [{ id: "rel-1" }];
+vi.mock("@persistence/db/client", () => ({
+  getDb: () => {
+    const chain: any = {};
+    for (const k of ["from", "where", "limit"]) chain[k] = () => chain;
+    chain.then = (res: any, rej: any) =>
+      Promise.resolve(relRows).then(res, rej);
+    return { select: () => chain };
+  },
+}));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -69,6 +85,67 @@ describe("programme handlers", () => {
     vi.clearAllMocks();
     trainerMocks.isTrainer.mockResolvedValue(true);
     guardMocks.hasActiveRelationship.mockResolvedValue(true);
+    relRows = [{ id: "rel-1" }];
+  });
+
+  describe("GET /trainers/me/clients/:clientId/active-programme", () => {
+    const load = () =>
+      import("../trainersClientActiveProgrammeGetHandler").then(
+        (m) => m.trainersClientActiveProgrammeGetHandler,
+      );
+
+    it("requires auth", async () => {
+      const h = await load();
+      const res = await h.handle(
+        new Request("http://localhost/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("403 when no active relationship with the client", async () => {
+      relRows = [];
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(403);
+      expect(
+        assignmentMocks.getActiveProgrammeForClient,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("returns the client's active programme", async () => {
+      const summary = {
+        assignmentId: "pa1",
+        programId: "p1",
+        name: "Strength Foundations",
+        week: 4,
+        totalWeeks: 12,
+        endDate: "2026-08-01",
+        startDate: "2026-05-01",
+      };
+      assignmentMocks.getActiveProgrammeForClient.mockResolvedValue(summary);
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as any).data).toEqual(summary);
+      expect(assignmentMocks.getActiveProgrammeForClient).toHaveBeenCalledWith(
+        "c1",
+        expect.any(String),
+      );
+    });
+
+    it("returns null when the client has no live programme", async () => {
+      assignmentMocks.getActiveProgrammeForClient.mockResolvedValue(null);
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as any).data).toBeNull();
+    });
   });
 
   describe("GET /trainers/me/programs", () => {

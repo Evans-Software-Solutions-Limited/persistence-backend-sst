@@ -2,13 +2,14 @@ import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
-import { Section } from "@/ui/components/composite";
+import { ProgrammeCard, Section } from "@/ui/components/composite";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconBack, IconPlus } from "@/ui/components/icons";
 import {
   BodyTrendPresenter,
   type TrendData,
 } from "@/ui/presenters/BodyTrendPresenter";
+import type { ActiveProgramme } from "@/domain/models/progress";
 
 /**
  * <ClientDetailPresenter> — interim Client Detail slice (10-trainer-features
@@ -22,20 +23,32 @@ import {
 export type ClientDetailProps = {
   clientName: string | null;
   bodyTrend: { weight: TrendData & { unit: "kg" | "lb" }; bodyFat: TrendData };
+  /** The client's live programme, or null (specs/19-programs AC 4.5). */
+  activeProgramme: ActiveProgramme | null;
   /** True until the first trend fetch resolves. */
   isLoading: boolean;
   error: string | null;
   onLogWeight: () => void;
   onBack: () => void;
+  /** Tap the ProgrammeCard → open the programme editor. */
+  onOpenProgramme: () => void;
+  /** Open the assign-programme sheet (client-anchored). */
+  onAssignProgramme: () => void;
+  /** Open the ad-hoc assign-workout sheet (STORY-006). */
+  onAssignWorkout: () => void;
 };
 
 export function ClientDetailPresenter({
   clientName,
   bodyTrend,
+  activeProgramme,
   isLoading,
   error,
   onLogWeight,
   onBack,
+  onOpenProgramme,
+  onAssignProgramme,
+  onAssignWorkout,
 }: ClientDetailProps) {
   const insets = useSafeAreaInsets();
   const hasData =
@@ -88,8 +101,58 @@ export function ClientDetailPresenter({
           ) : null}
         </Section>
 
+        <Section
+          eyebrow="PROGRAMME"
+          title="Training plan"
+          testID="client-detail-programme"
+        >
+          {activeProgramme ? (
+            <View gap={12}>
+              <ProgrammeCard
+                programName={activeProgramme.name}
+                week={activeProgramme.week}
+                totalWeeks={activeProgramme.totalWeeks}
+                accent="trainer"
+                onPress={onOpenProgramme}
+                testID="client-detail-programme-card"
+              />
+              <Btn
+                variant="ghost"
+                tone="trainer"
+                onPress={onAssignWorkout}
+                testID="client-detail-assign-workout"
+              >
+                Assign a one-off workout
+              </Btn>
+            </View>
+          ) : (
+            <View gap={10}>
+              <Text fontSize={13} color="$text3">
+                No active programme — assign one to schedule this client&rsquo;s
+                training.
+              </Text>
+              <Btn
+                variant="soft"
+                tone="trainer"
+                onPress={onAssignProgramme}
+                testID="client-detail-assign-programme"
+              >
+                Assign programme
+              </Btn>
+              <Btn
+                variant="ghost"
+                tone="trainer"
+                onPress={onAssignWorkout}
+                testID="client-detail-assign-workout"
+              >
+                Assign a one-off workout
+              </Btn>
+            </View>
+          )}
+        </Section>
+
         <Text fontSize={12} color="$text3">
-          Programs, notes and session history arrive in a later slice.
+          Notes and session history arrive in a later slice.
         </Text>
       </ScrollView>
 

@@ -73,6 +73,7 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { Streak } from "@/domain/models/streak";
 import type {
+  ActiveProgramme,
   HomePayload,
   Rings,
   WeeklyVolume,
@@ -1199,6 +1200,14 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<BodyTrendPoint[]>(
       `/clients/${clientId}/body-trend`,
       { params: window ? { window } : undefined },
+    );
+  }
+
+  async getClientActiveProgramme(
+    clientId: string,
+  ): Promise<Result<ActiveProgramme | null, ApiError>> {
+    return this.requestEnvelope<ActiveProgramme | null>(
+      `/trainers/me/clients/${clientId}/active-programme`,
     );
   }
 

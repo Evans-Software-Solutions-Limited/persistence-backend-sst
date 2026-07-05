@@ -1127,6 +1127,49 @@ describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", ()
     expect(result.error.code).toBe("network");
   });
 
+  it("getClientActiveProgramme unwraps the envelope + hits the trainer path", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            assignmentId: "pa1",
+            programId: "p1",
+            name: "Strength Foundations",
+            week: 4,
+            totalWeeks: 12,
+            endDate: "2026-08-01",
+            startDate: "2026-05-01",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getClientActiveProgramme("client-9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value?.programId).toBe("p1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/trainers/me/clients/client-9/active-programme",
+    );
+  });
+
+  it("getClientActiveProgramme returns null when the client has no live plan", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getClientActiveProgramme("client-9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeNull();
+  });
+
   it("getProgram unwraps the { data: ProgramDetail } envelope", async () => {
     installFetchMock(async () => {
       return new Response(

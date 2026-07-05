@@ -8,26 +8,28 @@ import { toneHex } from "@/ui/components/foundation/tones";
 import { IconCheck } from "@/ui/components/icons";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
+import { useGetPrograms } from "@/ui/hooks/useGetPrograms";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import type { TrainerClient } from "@/domain/models/trainerClient";
+import type { ProgramSummary } from "@/domain/models/program";
 
 /** Concrete track colour for the visibility Switches (RN consumer, not Tamagui). */
 const SWITCH_ON = toneHex("trainer").base;
 
 /**
- * <AssignProgramSheet> — root-mounted coach flow for assigning a programme to
- * an active client (specs/19-programs STORY-003). Driven by the
- * `useAssignProgramSheet` store: the Programs editor's "Assign to client" CTA
- * calls `openSheet(programId, onAssigned)`.
+ * <AssignProgramSheet> — root-mounted coach assign flow (specs/19-programs
+ * STORY-003 + T-19.3.5). Driven by `useAssignProgramSheet`, which opens it in
+ * one of two modes:
+ *  - **program-anchored** (`openSheet(programId)`, Programs editor): programme
+ *    fixed → pick an active CLIENT.
+ *  - **client-anchored** (`openForClient(clientId)`, Client Detail): client
+ *    fixed → pick a PROGRAMME.
  *
- * Fields (prototype AssignProgramSheet): active-client picker, start date
- * (default today), and the two visibility toggles — "Show in training plan"
- * (`showInPlan`) and "Show in workouts library" (`showInLibrary`). Assign is a
- * DIRECT online call (`api.assignProgram`) — coach writes aren't queued (the
- * server materialises occurrences in one tx). Domain failures map from
- * `ProgramApiError.programCode` to friendly copy.
- *
- * Mounted at root (feedback_sheets_mount_at_root) so it overlays the tab bar.
+ * Shared fields: start date (default today) + the two visibility toggles.
+ * Assign is a DIRECT online call (`api.assignProgram`) — coach writes aren't
+ * queued (the server materialises occurrences in one tx). Domain failures map
+ * from `ProgramApiError.programCode` to friendly copy. Mounted at root
+ * (feedback_sheets_mount_at_root) so it overlays the tab bar.
  */
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,21 +54,107 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text
+      fontFamily="$display"
+      fontSize={10.5}
+      fontWeight="600"
+      letterSpacing={1.7}
+      textTransform="uppercase"
+      color="$text3"
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** A selectable row (client or programme) in the picker. */
+function PickerRow({
+  title,
+  subtitle,
+  selected,
+  onPress,
+  avatarInitials,
+  testID,
+}: {
+  title: string;
+  subtitle?: string;
+  selected: boolean;
+  onPress: () => void;
+  avatarInitials?: string;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      testID={testID}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <View
+        flexDirection="row"
+        alignItems="center"
+        gap={12}
+        padding={12}
+        borderRadius={12}
+        borderWidth={1}
+        borderColor={selected ? "$accentTrainer" : "$border"}
+        backgroundColor={selected ? "$accentTrainerDim" : "$surface2"}
+      >
+        {avatarInitials ? (
+          <Avatar initials={avatarInitials} size={36} tone="trainer" />
+        ) : null}
+        <View flex={1} minWidth={0}>
+          <Text
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={14}
+            color="$text"
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text fontFamily="$body" fontSize={11} color="$text3">
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+        {selected ? <IconCheck size={16} color="#A78BFA" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export function AssignProgramSheet() {
   const open = useAssignProgramSheet((s) => s.open);
-  const programId = useAssignProgramSheet((s) => s.programId);
+  const anchoredProgramId = useAssignProgramSheet((s) => s.programId);
+  const anchoredClientId = useAssignProgramSheet((s) => s.clientId);
   const onAssigned = useAssignProgramSheet((s) => s.onAssigned);
   const closeSheet = useAssignProgramSheet((s) => s.closeSheet);
 
   const { api } = useAdapters();
   const clientsState = useGetTrainerClients();
+  const programsState = useGetPrograms();
+
+  // client-anchored ⇒ pick a programme; otherwise ⇒ pick a client.
+  const clientAnchored = anchoredClientId !== null;
 
   const activeClients = useMemo(
     () => (clientsState.data ?? []).filter((c) => c.status === "active"),
     [clientsState.data],
   );
+  const programmes = useMemo(
+    () => programsState.data ?? [],
+    [programsState.data],
+  );
 
-  const [clientId, setClientId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(
+    null,
+  );
   const [startDate, setStartDate] = useState(todayISO());
   const [showInPlan, setShowInPlan] = useState(true);
   const [showInLibrary, setShowInLibrary] = useState(true);
@@ -76,7 +164,8 @@ export function AssignProgramSheet() {
   // Reset the form each time the sheet closes.
   useEffect(() => {
     if (!open) {
-      setClientId(null);
+      setSelectedClientId(null);
+      setSelectedProgramId(null);
       setStartDate(todayISO());
       setShowInPlan(true);
       setShowInLibrary(true);
@@ -85,22 +174,25 @@ export function AssignProgramSheet() {
     }
   }, [open]);
 
+  const effectiveProgramId = anchoredProgramId ?? selectedProgramId;
+  const effectiveClientId = anchoredClientId ?? selectedClientId;
+
   const canAssign =
-    programId !== null &&
-    clientId !== null &&
+    effectiveProgramId !== null &&
+    effectiveClientId !== null &&
     ISO_DATE.test(startDate) &&
     !submitting;
 
   const handleAssign = useCallback(async () => {
-    if (programId === null || clientId === null) return;
+    if (effectiveProgramId === null || effectiveClientId === null) return;
     if (!ISO_DATE.test(startDate)) {
       setError("Enter a start date as YYYY-MM-DD.");
       return;
     }
     setError(null);
     setSubmitting(true);
-    const result = await api.assignProgram(programId, {
-      clientId,
+    const result = await api.assignProgram(effectiveProgramId, {
+      clientId: effectiveClientId,
       startDate,
       showInPlan,
       showInLibrary,
@@ -114,8 +206,8 @@ export function AssignProgramSheet() {
     setError(assignErrorCopy(result.error.programCode));
   }, [
     api,
-    programId,
-    clientId,
+    effectiveProgramId,
+    effectiveClientId,
     startDate,
     showInPlan,
     showInLibrary,
@@ -132,77 +224,56 @@ export function AssignProgramSheet() {
       height="default"
     >
       <View gap={16} testID="assign-program-sheet">
-        {/* Client picker. */}
-        <View gap={8}>
-          <Text
-            fontFamily="$display"
-            fontSize={10.5}
-            fontWeight="600"
-            letterSpacing={1.7}
-            textTransform="uppercase"
-            color="$text3"
-          >
-            Client
-          </Text>
-          {activeClients.length === 0 ? (
-            <Text fontFamily="$body" fontSize={13} color="$text3">
-              No active clients yet — invite one from the Clients tab.
-            </Text>
-          ) : (
-            activeClients.map((c: TrainerClient) => {
-              const selected = c.id === clientId;
-              return (
-                <Pressable
+        {/* Picker — programme (client-anchored) or client (program-anchored). */}
+        {clientAnchored ? (
+          <View gap={8}>
+            <SectionLabel>Programme</SectionLabel>
+            {programmes.length === 0 ? (
+              <Text fontFamily="$body" fontSize={13} color="$text3">
+                No programmes yet — create one from the Programmes tab.
+              </Text>
+            ) : (
+              programmes.map((p: ProgramSummary) => (
+                <PickerRow
+                  key={p.id}
+                  title={p.name}
+                  subtitle={
+                    p.durationWeeks !== null
+                      ? `${p.durationWeeks} wks · ${p.daysPerWeek} days/wk`
+                      : `Ongoing · ${p.daysPerWeek} days/wk`
+                  }
+                  selected={p.id === selectedProgramId}
+                  onPress={() => setSelectedProgramId(p.id)}
+                  testID={`assign-program-${p.id}`}
+                />
+              ))
+            )}
+          </View>
+        ) : (
+          <View gap={8}>
+            <SectionLabel>Client</SectionLabel>
+            {activeClients.length === 0 ? (
+              <Text fontFamily="$body" fontSize={13} color="$text3">
+                No active clients yet — invite one from the Clients tab.
+              </Text>
+            ) : (
+              activeClients.map((c: TrainerClient) => (
+                <PickerRow
                   key={c.id}
-                  onPress={() => setClientId(c.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
+                  title={c.name}
+                  avatarInitials={c.initials}
+                  selected={c.id === selectedClientId}
+                  onPress={() => setSelectedClientId(c.id)}
                   testID={`assign-client-${c.id}`}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-                >
-                  <View
-                    flexDirection="row"
-                    alignItems="center"
-                    gap={12}
-                    padding={12}
-                    borderRadius={12}
-                    borderWidth={1}
-                    borderColor={selected ? "$accentTrainer" : "$border"}
-                    backgroundColor={
-                      selected ? "$accentTrainerDim" : "$surface2"
-                    }
-                  >
-                    <Avatar initials={c.initials} size={36} tone="trainer" />
-                    <Text
-                      flex={1}
-                      fontFamily="$display"
-                      fontWeight="600"
-                      fontSize={14}
-                      color="$text"
-                      numberOfLines={1}
-                    >
-                      {c.name}
-                    </Text>
-                    {selected ? <IconCheck size={16} color="#A78BFA" /> : null}
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
-        </View>
+                />
+              ))
+            )}
+          </View>
+        )}
 
         {/* Start date. */}
         <View gap={8}>
-          <Text
-            fontFamily="$display"
-            fontSize={10.5}
-            fontWeight="600"
-            letterSpacing={1.7}
-            textTransform="uppercase"
-            color="$text3"
-          >
-            Start date
-          </Text>
+          <SectionLabel>Start date</SectionLabel>
           <TextInput
             value={startDate}
             onChangeText={setStartDate}
