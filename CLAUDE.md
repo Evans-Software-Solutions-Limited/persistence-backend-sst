@@ -1,13 +1,17 @@
 # CLAUDE.md – Persistence Backend SST
 
-## Current execution model (as of 2026-04-19)
+**Canonical state ledger: [`./STATE.md`](./STATE.md) — read at session
+start, update before ending any session.** Milestone status, open
+failures, and parked tasks live there, not here.
+
+## Current execution model
 
 Work ships via milestone-driven parallel agents. Specs are the source of truth; briefs drive PRs.
 
 - **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
 - **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
 - **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
-- **`specs/milestones/ROADMAP.md` status refreshed 2026-07-05** (§ Phase status table). It can still lag merged PRs — cross-check with `git log --oneline -30` and the auto-memory ledger (`~/.claude/projects/.../memory/MEMORY.md`) before assuming anything is "pending".
+- **The authoritative status ledger is [`./STATE.md`](./STATE.md).** `specs/milestones/ROADMAP.md` (§ Phase status) was refreshed 2026-07-05 but can lag merged PRs — cross-check `STATE.md` + `git log --oneline -30` before assuming any milestone is "pending".
 
 See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the M0 → M11 layout, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
 
@@ -32,12 +36,11 @@ See `feedback_port_then_revamp.md` in memory for the full discipline rules (whic
 Brad runs many sessions across this repo and occasionally switches Claude accounts. Most context survives because it lives on disk, not in the Claude account. The few things that DON'T survive:
 
 - **MCP connectors are account-scoped on the Claude side.** Supabase, Stripe, Slack, Notion, Atlassian, Figma, etc. — each one needs the connector re-enabled in the new account's Claude Code settings. If a `mcp__*` tool errors with "connector not connected" or returns a 401, that's the first thing to check. Don't fall through to slower tools — surface the disconnect to Brad so he can re-auth in one go.
-- **The user's auto-memory survives** (it's on the local filesystem at `~/.claude/projects/-Users-bradleysimms-evans-Documents-projects-personal-persistence-backend-sst/memory/MEMORY.md`). Read it. It's the canonical state ledger — last shipped milestones, active gotchas, decisions Brad has explicitly baked in. Anything that contradicts MEMORY.md is wrong by default.
-- **CLAUDE.md (this file) and `specs/` are in the repo** — survive everything.
+- **`STATE.md` (in-repo) is the canonical state ledger** — last shipped milestones, active gotchas, parked tasks, decisions Brad has explicitly baked in. Read it at session start; update it before ending any session. Anything that contradicts STATE.md is wrong by default.
+- **CLAUDE.md (this file), `STATE.md`, and `specs/` are in the repo** — survive everything.
 - **Skills + ntfy topic + Slack channel ID are filesystem-resident** in `~/.claude/.../skills/slack-progress-updates/` — survive everything. The Slack channel ID `C0ATYL6T11V` for `#brad-claude-agents` is hardcoded.
 - **Stripe / Supabase MCP project credentials are project-scoped on the service side**, not Claude-side — they survive the account switch as long as the MCP connector itself is re-enabled.
 
-**Where things stand as of 2026-07-05:** the design-port specs (01/14/08/04/05/06), notifications (backend #81 + mobile #104 + push #142), M4 progress (#116–#118), M9 Fuel Tier A (#124/#135/#138/#144/#147), M9.5 Snap AI end-to-end (#151/#153–#156: Bedrock photo + free-text estimation, `ai_access` entitlement, daily cost ceilings), coaching partials (#123/#125/#136/#146), programs unified-model backend (#148/#149/#152), payments hardening (#100/#101), RevenueCat rail (#133), and all four App Store compliance blockers (#139–#142) are MERGED. The authoritative per-spec status table is `specs/milestones/ROADMAP.md § Phase status (refreshed 2026-07-05)`. Headline remaining: Apple IAP mobile purchase flow (the App Store blocker), programs mobile (coach F1 + athlete Home F2), Coach Home design call, habits-setup mobile screen, M9.5 post-merge audit + EAS dev build device test.
 
 **Don't pre-empt `@inspector-brad`.** Brad fires it himself on the PR when he wants a sweep. Don't run it speculatively.
 
@@ -179,14 +182,6 @@ bun run test:unit      # Vitest (90% coverage required)
   - Idempotent migrations: can be run multiple times safely
   - Test migrations: apply forward and backward without data loss
   - Connection: singleton pattern in `getDb()` (one per cold start)
-
-## Current Priorities
-
-1. **Data isolation verification** — audit all repo methods to ensure userId filtering
-2. **PT/trainer relationship logic** — access control when PT views assigned user's data
-3. **Workout visibility enforcement** — friends/public visibility correctly applied
-4. **Migration from Supabase RLS** — ensure explicit authorization replaces RLS
-5. **Neon cold-start optimization** — minimize latency on first query
 
 ## PR Checklist
 

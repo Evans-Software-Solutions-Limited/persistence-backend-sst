@@ -201,6 +201,30 @@ Authoritative references:
 - 14.3 [ ] When wired: card shows summary text + `<IconSparkles>` + "Regenerate" Btn (rate-limited; consumes `aiAccess` entitlement per cross-cuts § 4).
 - 14.4 [ ] `POST /trainers/me/clients/:clientId/ai-summary/regenerate` → ai-usage-log row + entitlement check + LLM call.
 
+### STORY-015: As a coach I want to share an invite code (with QR); as an athlete I want to redeem one — no email required
+
+> **Backend already shipped (#136), no mobile callers yet.** `POST /trainers/me/invite-codes`
+> mints a short code for the coach (24 h expiry, reuses the trainer's still-valid code);
+> `POST /trainers/accept-invite-code` lets an athlete redeem it, which creates a **pending**
+> `pt_client_relationships` row and sends the trainer a `pt_request` / `physio_request`
+> notification ("… joined via your invite code"). **Redeeming does not auto-connect** — it
+> sends a training request the trainer must still accept (same handshake as #136). This
+> story is FRONTEND on both sides.
+
+**Acceptance Criteria — coach share:**
+
+- 15.1 [ ] Inside `<AddClientSheet>` (STORY-005), alongside the email-invite form, a "Share a code instead" affordance calls `POST /trainers/me/invite-codes`. The response shape is `{ data: { id, code, expiresAt, isExisting } }` — there is **no** server-supplied deep link. The sheet displays `data.code` prominently (large `$mono`, tap-to-copy) and surfaces `data.expiresAt` ("expires in 24h").
+- 15.2 [ ] A **QR code** renders a **client-constructed** deep link `persistencemobile://accept-invite?code=<data.code>` (the app scheme is `persistencemobile`, per `packages/mobile/app.json`) so an athlete can scan it in person. QR is drawn by a **pure-JS QR library** (SVG) — deep-link rendering only, **no camera, no new native permissions, no EAS/native-module impact** on the coach side.
+- 15.3 [ ] A native Share sheet action lets the coach send the code + deep link via any channel (Messages, WhatsApp, email).
+- 15.4 [ ] Offline: code generation requires connectivity; the sheet disables the generate action and shows the standard offline copy when disconnected (mirrors SnapAISheet's offline-disabled pattern).
+
+**Acceptance Criteria — athlete redeem:**
+
+- 15.5 [ ] A "Have a coach's code?" entry point lives in the **Requests / trainer section on the You screen** (the natural home the PT-request handshake from #136 already occupies).
+- 15.6 [ ] Entering a code fires `POST /trainers/accept-invite-code`; on success the endpoint returns `{ data: { success, relationshipId, trainerName, message: "Training request sent to <trainer>" } }`. The athlete's "Your trainer" section reflects a **pending request awaiting the trainer's acceptance** (NOT an active relationship) — refresh `GET /clients/me/relationships` to render the pending state. The trainer receives the `pt_request` / `physio_request` notification.
+- 15.7 [ ] Opening a `persistencemobile://accept-invite?code=...` deep link routes to this redeem entry with the code pre-filled (the coach's QR scanned by any generic camera / QR reader resolves here). **The `accept-invite` deep-link route must be registered in the mobile router as part of this story** — it does not exist yet.
+- 15.8 [ ] Invalid / expired / already-redeemed codes surface the endpoint's error message inline; no relationship row is created.
+
 ---
 
 ## Out of scope

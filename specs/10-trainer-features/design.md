@@ -304,27 +304,99 @@ Backend joins sessions, PRs, streaks, goal assignments, missed-day computations 
 
 ## Frontend — Coach Home (`<CoachHomePresenter>`)
 
-Per `coach.jsx:12–48`.
+Layout authority: `~/Downloads/handoff/design-source/screens/coach-home.jsx` (extracted
+verbatim 2026-07-05 from the interactive prototype's inline `CoachHome`). See
+**§ Coach Home layout reconciliation** below — the old `coach.jsx:12–48`
+reference pointed at `CoachYouScreen`, not Coach Home.
+
+Coach Home is a **daily triage screen**, not the business dashboard. Blocks, top to bottom:
+
+1. **Header** — date eyebrow + "Good morning, Coach" + `IconBell` + `Avatar badge="COACH"` (opens drawer).
+2. **Today's Schedule hero** — `<Card>` counting appointments + `<ScheduleRow>` list. **DEFERRED from v1** (see reconciliation below).
+3. **"Needs you today"** — flagged clients (`<Card>` of rows, tone-tinted subtitle, tap → Client Detail) + "All clients" link.
+4. **Programme alerts** — `<Card>` of rows (programme nearing end, tap → Client Detail / program).
+5. **Train yourself** — accented `<Card>` button that switches to athlete mode (`SWITCHES MODE` pill).
 
 ```ts
 type CoachHomeProps = {
   trainer: { name: string; initials: string };
-  businessStats: BusinessStats;
-  clientHealthBreakdown: { label: string; count: number; color: string }[];
+  flaggedClients: {
+    clientId: string;
+    name: string;
+    initials: string;
+    sub: string; // e.g. "4 days idle · Cut wk 6" | "🏆 New PR · Mobility wk 1"
+    tone: "error" | "ember" | "gold";
+  }[];
+  programmeAlerts: {
+    clientId: string;
+    programId?: string;
+    client: string;
+    text: string; // e.g. "Strength Foundations ends in 2 weeks"
+    tone: "trainer" | "ember";
+  }[];
   yourTrainingPeek: {
     streak: number;
-    lastSession?: { name: string; daysAgo: number };
+    queuedWorkout?: string;
   };
-  programStats: { activeCount: number; assignmentsCount: number };
-  recentActivity: RecentActivityEvent[];
+  // v1-DEFERRED — populated only once the appointments domain lands:
+  schedule?: {
+    start: string;
+    end: string;
+    clientId: string;
+    name: string;
+    initials: string;
+    kind: "session" | "check-in" | "review";
+    tone: string;
+    mode: string;
+    soon?: boolean;
+  }[];
   onOpenDrawer: () => void;
-  onSwitchToAthlete: () => void;
+  onTrainYourself: () => void; // switches mode → athlete
   onOpenClient: (clientId: string) => void;
-  onOpenProgram: (programId: string) => void;
+  onOpenClients: () => void;
+  onOpenProgram?: (programId: string) => void;
 };
 ```
 
-Sub-presenters: `<BusinessStatsPresenter>` (2×2 grid), `<ClientOverviewDonutPresenter>` (donut SVG), `<YourTrainingPeekPresenter>` (small card), `<ProgramStatsPresenter>`, `<RecentActivityFeedPresenter>`.
+Sub-presenters: `<FlaggedClientsPresenter>` (rows → Client Detail), `<ProgrammeAlertsPresenter>`, `<TrainYourselfCardPresenter>` (mode switch), and — deferred — `<ScheduleHeroPresenter>` + `<ScheduleRow>`.
+
+### Coach Home layout reconciliation (2026-07-05)
+
+The 2026-05-27 spec described Coach Home as a business dashboard (business-stats
+grid, client-health donut, your-training peek, program stats, recent-activity
+feed) referencing `coach.jsx:12–48`. That reference and layout are **wrong for
+Coach Home**: `coach.jsx:12` is `CoachYouScreen`, the coach's own dashboard,
+which is what those blocks actually describe (and is already shipped as
+`CoachYouPresenter` per T-10.13.1). The prototype's real Coach Home
+(`CoachHome`, inline in `Persistence - Interactive Prototype.html` ~L759–925)
+is the daily **triage** screen above. STORY-001's acceptance criteria (AC 1.2–1.7)
+still describe the dashboard layout and will be revised to the triage layout when
+Coach Home v1 lands (Phase 10.9.1); the business/donut/recent-activity content
+lives on Coach You.
+
+### Decision — appointments / scheduling domain DEFERRED (2026-07-05)
+
+The "Today's Schedule" hero (block 2) depends on an appointments/scheduling
+domain that **does not exist** — there is no appointments table, no booking
+endpoints, no calendar model anywhere in the backend. Rather than invent one to
+satisfy a hero card, **appointments/scheduling (and add-to-calendar export) is
+parked as its own future spec.** Consequences:
+
+- **Coach Home v1 ships WITHOUT the schedule hero.** The remaining three blocks
+  all wire to endpoints that exist today: **flagged clients** derive from
+  `GET /trainers/me/clients` (the roster carries per-client 28-day adherence +
+  band + last-seen + derivable flags — filter to At-Risk/Wobbling/idle rows; note
+  `GET /trainers/me/overview` powers **Coach You**, not Coach Home, so it is NOT the
+  flagged-clients source), **programme alerts** from the programs adherence/dashboard
+  endpoints (#152), and **train-yourself** from the athlete-mode streak/last-session hooks.
+- **Client Detail v1 ships WITHOUT any scheduling / add-to-calendar module.**
+- The `CoachHomeProps.schedule` field + `<ScheduleHeroPresenter>` + `<ScheduleRow>`
+  are kept in the design (and in the extracted `coach-home.jsx`) so the hero can
+  be re-enabled unchanged once the appointments spec lands.
+
+> **Default pending Brad's confirmation** (Phase-0 ping): v1 = no schedule hero.
+> If Brad wants a stopgap hero backed by a lightweight appointments table, that
+> is a separate scoping decision, not part of this coach-mode completion mandate.
 
 ---
 
@@ -375,6 +447,46 @@ When trainer taps "Log session for client" on Client Detail → Workouts tab:
 4. `<ActiveSessionPresenter>` renders the trainer banner (per `05-active-session` STORY-004).
 5. Set logs route through the same trainer-on-behalf endpoint per existing pattern.
 6. Session-end behaves identically; backend writes `logged_by_user_id` + audit row.
+
+---
+
+## Frontend — Invite by code + QR (STORY-015)
+
+Backend shipped in #136; this is the two-sided mobile wiring.
+
+**Coach side — inside `<AddClientSheetPresenter>`:**
+
+- The sheet gains a second path beside the email-invite form. "Share a code" calls
+  `POST /trainers/me/invite-codes` → `{ data: { id, code, expiresAt, isExisting } }`
+  (24 h expiry; a still-valid code is reused, `isExisting: true`). **No server-supplied
+  deep link** — the client constructs it from `data.code`.
+- `data.code` is shown large in `$mono`, tap-to-copy, with `data.expiresAt` as
+  "expires in 24h". Below it, a QR renders the deep link.
+- **QR generation:** a pure-JS library (e.g. `react-native-qrcode-svg`, SVG-native, no
+  native module) draws the matrix into an SVG. This is **rendering only** — the coach
+  never scans anything, so there is **no camera permission and no EAS rebuild**. The deep
+  link encodes `persistencemobile://accept-invite?code=<data.code>` (app scheme is
+  `persistencemobile`, per `packages/mobile/app.json`).
+- A `Share.share()` action sends code + link through the OS share sheet.
+- Offline: generate is disabled; standard offline banner (mirrors `SnapAISheet`).
+
+**Athlete side — Requests / trainer section on `you.tsx`:**
+
+- A "Have a coach's code?" row opens a small input (bottom sheet or inline field).
+- Submit → `POST /trainers/accept-invite-code` `{ code }` → `{ data: { success,
+relationshipId, trainerName, message } }`. This creates a **pending**
+  `pt_client_relationships` row (status `pending`) and sends the trainer a
+  `pt_request` / `physio_request` notification — it does **not** auto-connect. Refresh
+  `GET /clients/me/relationships` (the #136 handshake) so "Your trainer" renders the
+  **pending request** state ("Training request sent to <trainer>"), awaiting the
+  trainer's acceptance. There is no redeem-confirmed notification back to the athlete.
+- **New deep-link route:** register `persistencemobile://accept-invite` in the mobile
+  router (it does not exist yet) to route here with `code` pre-filled, so a coach's QR
+  scanned by any generic reader lands on redeem.
+- Invalid/expired/redeemed → inline error from the endpoint; no row created.
+
+No new backend, no new native permissions, no migration. Pure frontend + a JS QR dep +
+one new deep-link route.
 
 ---
 
