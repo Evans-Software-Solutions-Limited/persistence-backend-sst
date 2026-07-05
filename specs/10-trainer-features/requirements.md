@@ -211,13 +211,13 @@ Authoritative references:
 
 **Acceptance Criteria:**
 
-- 14.1 [ ] `useClientAISummary(clientId)` returns `{ summary: string | null; generatedDate: string | null; stale: boolean; canRegenerate: boolean }` (matches the `aiSummary` module on the aggregate).
+- 14.1 [ ] `useClientAISummary(clientId)` returns `{ summary: string | null; coversDate: string | null; generatedAt: string | null; canManualRefresh: boolean }` (matches the `aiSummary` module on the aggregate).
 - 14.2 [ ] Inputs are modules a–f for the client; generated via the M9.5 **Bedrock seam** (`MinimalBedrockClient` + `getDefaultClient()`, forced tool use, injectable client, **no live calls in CI**).
-- 14.3 [ ] Card shows summary text + `<IconSparkles>` + "Regenerate" Btn; **gated on the coach's `ai_access`** via `assertEntitlement(coachUserId, "ai_access")` (402 on denial per cross-cuts § 4.1) and the coach's **daily AI ceiling** (429 `ai_daily_limit`, dedicated `AI_COACH_SUMMARY_DAILY_LIMIT`).
-- 14.4 [ ] Cached per (trainer, client, day) in a **new `client_ai_summaries` table** (DDL in `design.md § Module g`); regenerate-on-demand upserts the day's row; every generation writes `ai_usage_log`.
-- 14.5 [ ] `POST /trainers/me/clients/:clientId/ai-summary/regenerate` (Phase 6): role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check → Bedrock → cache upsert → `ai_usage_log`.
-- 14.6 [ ] Staleness copy ("Updated {relativeTime}" / "Summary from {date} · Regenerate") + failure fallback: on Bedrock error / ceiling / no `ai_access` the card **degrades to the raw modules a–f**, never a blank or hard-error card.
-- 14.7 [ ] **No auto-generation (token guardrail):** reads never infer (cached row served on open); the first-run state shows raw modules a–f + a "Generate summary" CTA (no lazy auto-gen); cache is per (trainer, client, day) so same-day regenerates overwrite one row; the daily ceiling bounds worst-case spend. Every inference is an explicit coach tap.
+- 14.3 [ ] **One update per client per concluded day** (Brad 2026-07-05): the summary covers the previous, concluded **client-local** day; default trigger is **lazy** (generated on the coach's first open on/after the day rolls over), plus **at most one manual refresh** per client per day. **Hard cap 2 inferences/client/day (1 auto + 1 manual).** No cron.
+- 14.4 [ ] Card shows summary text + `<IconSparkles>` + a refresh affordance; **gated on the coach's `ai_access`** via `assertEntitlement(coachUserId, "ai_access")` (402 per cross-cuts § 4.1) and a **dedicated per-coach daily ceiling** `AI_COACH_SUMMARY_DAILY_LIMIT` (429 `ai_daily_limit`) as an absolute backstop.
+- 14.5 [ ] Cached in a **new `client_ai_summaries` table** (`UNIQUE (trainer_id, client_id, covers_date)` + `refresh_count`; DDL in `design.md § Module g`) — the unique constraint **is** the once-a-day cap; `refresh_count` enforces the single manual refresh. Every generation writes `ai_usage_log`.
+- 14.6 [ ] `POST /trainers/me/clients/:clientId/ai-summary` `{ manual?: boolean }` (Phase 6): role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check → row-state check (generate if no row for today's `covers_date`; regenerate once if `manual && refresh_count < 1`; else return cached, no inference) → cache upsert → `ai_usage_log`.
+- 14.7 [ ] **Reads never infer** (aggregate serves the cached row); once the manual refresh is used the affordance reads "Next update tomorrow" (disabled). Failure / not-yet-generated fallback: the card **degrades to the raw modules a–f**, never a blank or hard-error card.
 
 ### STORY-015: As a coach I want to share an invite code (with QR); as an athlete I want to redeem one — no email required
 

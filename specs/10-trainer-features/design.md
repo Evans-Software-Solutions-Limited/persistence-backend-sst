@@ -683,55 +683,64 @@ type GoalModule = {
 - **Entitlement:** gate on the **coach's** `ai_access` via `assertEntitlement(coachUserId, "ai_access")`
   (`entitlement/assertEntitlement.ts:229`). Trainer tiers carry `ai_access = true` (M9.5). Denial → 402
   `ENTITLEMENT_DENIED` per the shipped cross-cuts § 4.1 shape.
-- **Cache — new table (`client_ai_summaries`), one row per (trainer, client, day):**
+- **Generation model — one summary per client per concluded day (confirmed Brad 2026-07-05):** the
+  coach gets **one update per client per day**, covering the **concluded** (previous) client-local day, so
+  it is always a whole-day view — never a shifting partial-day one. Default trigger is **lazy** (generated
+  the first time the coach opens that client on/after the day rolls over), plus **at most one manual
+  refresh** per client per day. **Hard cap: 2 inferences per client per day (1 auto + 1 manual).** No cron
+  / background batch — tokens are only ever spent on clients the coach actually opens.
+- **Cache — new table (`client_ai_summaries`), one row per (trainer, client, concluded day):**
 
   ```sql
   CREATE TABLE client_ai_summaries (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    trainer_id  uuid NOT NULL REFERENCES profiles(id),
-    client_id   uuid NOT NULL REFERENCES profiles(id),
-    date        date NOT NULL,               -- coach-local day
-    summary     text NOT NULL,
-    model       text NOT NULL,               -- resolved AI_COACH_SUMMARY_MODEL_ID
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (trainer_id, client_id, date)     -- regenerate-on-demand upserts the day's row
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    trainer_id    uuid NOT NULL REFERENCES profiles(id),
+    client_id     uuid NOT NULL REFERENCES profiles(id),
+    covers_date   date NOT NULL,             -- the concluded CLIENT-local day the summary describes (profiles.timezone)
+    summary       text NOT NULL,
+    model         text NOT NULL,             -- resolved AI_COACH_SUMMARY_MODEL_ID
+    refresh_count int  NOT NULL DEFAULT 0,   -- 0 = initial lazy gen; 1 = one manual refresh used → caps at 2 inferences/client/day
+    generated_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (trainer_id, client_id, covers_date)  -- one row per concluded day ⇒ one auto-update/day, structurally
   );
-  CREATE INDEX client_ai_summaries_trainer_client_date ON client_ai_summaries (trainer_id, client_id, date DESC);
+  CREATE INDEX client_ai_summaries_trainer_client_date ON client_ai_summaries (trainer_id, client_id, covers_date DESC);
   ```
 
-- **Daily ceiling (per #156 pattern):** counts toward the coach's daily AI spend via a **dedicated**
-  ceiling line — env `AI_COACH_SUMMARY_DAILY_LIMIT` (fail-safe parse, matching
-  `AI_PHOTO_DAILY_LIMIT`), enforced with
+  The `UNIQUE (trainer_id, client_id, covers_date)` constraint **is** the once-a-day cap — `covers_date`
+  advances only when the client's day concludes, so a given day yields exactly one summary row; the manual
+  refresh overwrites that row and bumps `refresh_count` (blocked once it hits 1).
+
+- **Endpoint (Phase 6):** `POST /trainers/me/clients/:clientId/ai-summary` (single path for both lazy-first
+  and manual refresh; body `{ manual?: boolean }`). Order:
+  role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → per-coach daily-ceiling check →
+  **row-state check** → generate (Bedrock) → upsert `client_ai_summaries` → `ai_usage_log`. Row-state logic:
+  - no row for the current `covers_date` → **generate** (auto), insert `refresh_count = 0`;
+  - row exists, `manual = true`, `refresh_count < 1` → **regenerate**, set `refresh_count = 1`;
+  - row exists and (`manual` false **or** `refresh_count ≥ 1`) → **return cached, NO inference.**
+- **Reads never infer.** The aggregate `GET /trainers/me/clients/:clientId` returns the cached `aiSummary`
+  row for the current `covers_date` (or null) — **zero Bedrock calls on read**, however many times the coach
+  opens the screen. The card triggers the lazy generation via the POST above only when the row is missing
+  for today's `covers_date` ("Generating today's summary…" state), then it is cached for the day.
+- **Per-coach daily backstop (per #156 pattern):** on top of the per-client cap, a **dedicated** ceiling —
+  env `AI_COACH_SUMMARY_DAILY_LIMIT` (fail-safe parse, matching `AI_PHOTO_DAILY_LIMIT`), enforced with
   `aiUsageLogRepository.countForUserToday(coachUserId, "/trainers/me/clients/:clientId/ai-summary")`
-  (`aiUsageLogRepository.ts:46`, **UTC-midnight** boundary, only successful inferences counted). Over
-  the ceiling → **429 `{ error: "ai_daily_limit" }`**. Every successful generation also writes
-  `ai_usage_log` (`schema.ts:1743`).
-- **Endpoint (Phase 6):** `POST /trainers/me/clients/:clientId/ai-summary/regenerate`. Order:
-  role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check →
-  generate (Bedrock) → upsert `client_ai_summaries` → `ai_usage_log`. A plain read of the cached row
-  rides on the aggregate (`aiSummary` below); regenerate is the only inference path.
-- **No auto-generation anywhere — every inference is an explicit coach action (token guardrail):**
-  1. **Reads never infer.** Opening Client Detail returns the cached `aiSummary` row for the day (or the
-     most recent) — **zero Bedrock calls on read**, no matter how many times a coach opens the screen.
-  2. **First-run state (no row yet for this client):** the card shows the **raw modules a–f + a "Generate
-     summary" CTA** — it does **not** lazily auto-generate on first open. The coach must tap Generate.
-  3. **Cached per (trainer, client, day)** via `UNIQUE (trainer_id, client_id, date)` — repeated Regenerate
-     taps the same day **overwrite one row**, they don't accumulate calls beyond what the daily ceiling allows.
-  4. **Daily ceiling** (`AI_COACH_SUMMARY_DAILY_LIMIT`) caps worst-case spend even under a coach hammering
-     Regenerate. Net effect: at most `ceiling` inferences per coach per day, and typically **one per client
-     per day** (first Generate, then cached).
-- **Staleness copy:** "Updated {relativeTime}"; if the cached row's `date` < today →
-  "Summary from {date} · Regenerate".
-- **Failure fallback:** on Bedrock error, ceiling-429, or missing `ai_access`, the card **degrades to
-  the raw modules a–f** it was built from — never a blank card and never a hard error surface.
+  (`aiUsageLogRepository.ts:46`, **UTC-midnight** boundary, only successful inferences counted). Over the
+  ceiling → **429 `{ error: "ai_daily_limit" }`**. Every successful generation also writes `ai_usage_log`
+  (`schema.ts:1743`). Net worst case: `min(2 × opened-clients, AI_COACH_SUMMARY_DAILY_LIMIT)` inferences/coach/day.
+- **Staleness copy:** "Updated {relativeTime}" against `generated_at`; the summary is understood to cover
+  `covers_date` (e.g. "Yesterday, 18 Mar"). When `refresh_count ≥ 1`, the manual-refresh affordance reads
+  "Next update tomorrow" (disabled) rather than offering another spend.
+- **Failure fallback:** on Bedrock error, ceiling-429, missing `ai_access`, or simply **not yet generated
+  today**, the card **degrades to the raw modules a–f** it was built from — never a blank card and never a
+  hard error surface.
 - This is the **design**; **Phase 6 builds it.**
 
 ```ts
 type AiSummaryModule = {
-  summary: string | null; // cached text for today, or most recent
-  generatedDate: string | null; // YYYY-MM-DD
-  stale: boolean; // generatedDate < today
-  canRegenerate: boolean; // coach has ai_access AND under daily ceiling
+  summary: string | null; // cached text for the current concluded day, or null if not generated yet
+  coversDate: string | null; // YYYY-MM-DD — the concluded client-local day the summary describes
+  generatedAt: string | null; // ISO — drives "Updated {relativeTime}"
+  canManualRefresh: boolean; // row exists, refresh_count < 1, coach has ai_access, under daily ceiling
 };
 ```
 
