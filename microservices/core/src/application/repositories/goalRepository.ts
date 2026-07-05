@@ -1,6 +1,7 @@
 import { and, eq, desc } from "drizzle-orm";
 import { userGoals, type UserGoal, type NewUserGoal } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DbOrTx } from "./personalRecordsRepository";
 
 export class GoalRepository {
   static readonly key = "GoalRepository";
@@ -32,8 +33,13 @@ export class GoalRepository {
   async create(
     userId: string,
     data: Omit<NewUserGoal, "userId" | "createdAt" | "updatedAt">,
+    // Optional transaction handle — the coach on-behalf goal-assign write
+    // threads its `db.transaction` handle through here so the goal insert and
+    // the `trainer_actions_audit` insert land in ONE transaction (cross-cuts
+    // § 1.4.2). Same optional-`tx` pattern as `MeasurementRepository.create`.
+    tx?: DbOrTx,
   ): Promise<UserGoal> {
-    const db = getDb();
+    const db = tx ?? getDb();
 
     const result = await db
       .insert(userGoals)

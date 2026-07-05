@@ -172,8 +172,13 @@ export class SessionRepository {
   async create(
     userId: string,
     data: Omit<NewWorkoutSession, "userId" | "startedAt" | "createdAt">,
+    // Optional transaction handle — the coach on-behalf session write threads
+    // its `db.transaction` handle through here so the session insert and the
+    // `trainer_actions_audit` insert land in ONE transaction (cross-cuts
+    // § 1.4.2). Same optional-`tx` pattern as `MeasurementRepository.create`.
+    tx?: DbOrTx,
   ): Promise<WorkoutSession> {
-    const db = getDb();
+    const db = tx ?? getDb();
 
     const result = await db
       .insert(workoutSessions)

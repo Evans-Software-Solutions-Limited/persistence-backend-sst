@@ -847,6 +847,11 @@ describe("defaultNotificationPreferences", () => {
       streak_milestone: true,
       streak_at_risk: true,
       freeze_token_applied: true,
+      // M8 (10-trainer-features) Phase 3 on-behalf events — default opt-in "on".
+      goal_assigned_by_trainer: true,
+      workout_logged_on_behalf: true,
+      measurement_logged_on_behalf: true,
+      nutrition_target_set_by_trainer: true,
     });
   });
 
@@ -966,6 +971,11 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       streak_milestone: true,
       streak_at_risk: true,
       freeze_token_applied: true,
+      // M8 (10-trainer-features) Phase 3 on-behalf events — default opt-in "on".
+      goal_assigned_by_trainer: true,
+      workout_logged_on_behalf: true,
+      measurement_logged_on_behalf: true,
+      nutrition_target_set_by_trainer: true,
     });
   });
 

@@ -454,8 +454,14 @@ export class ProgramAssignmentRepository {
       trainerNotes?: string | null;
     },
     today: string,
+    // Optional transaction handle — the coach on-behalf assignment threads its
+    // `db.transaction` handle through so the readability check + assignment
+    // insert + `trainer_actions_audit` insert land in ONE transaction
+    // (cross-cuts § 1.4.2). Same optional-`tx` pattern as
+    // `MeasurementRepository.create`.
+    tx?: DbOrTx,
   ): Promise<{ assignment: WorkoutAssignment } | { error: "invalid_workout" }> {
-    const db = getDb();
+    const db = tx ?? getDb();
     const readable = await db
       .select({ id: workouts.id })
       .from(workouts)
