@@ -12,6 +12,7 @@
  *       specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § Domain service
  */
 import type {
+  AiFoodItem,
   Consumed,
   Food,
   FuelToday,
@@ -576,4 +577,42 @@ export function portionToServings(
   const size = food.servingSize > 0 ? food.servingSize : 100;
   const grams = mode === "cups" ? value * GRAMS_PER_CUP : value;
   return grams / size;
+}
+
+// ── AI estimate item rescaling (Snap / free-text draft card) ────────────────
+
+/**
+ * Rescale an AI-recognised item's kcal/macros when the user edits its serving
+ * grams in the confirm draft card (specs/13-nutrition-tracking/design.md
+ * § Revised 2026-07-03 › Mobile flow: "serving edits recompute totals").
+ * Linear scale by the grams ratio — the model's own numbers are the only
+ * source of truth (no automated foods-table grounding, eval-locked), so
+ * there's no per-gram reference to re-derive from; we simply scale the whole
+ * item proportionally. Guards a zero/absent original gram figure (→ item
+ * unchanged except the new gram figure, avoiding a divide-by-zero blowup).
+ */
+export function rescaleAiFoodItem(
+  item: AiFoodItem,
+  newGrams: number,
+): AiFoodItem {
+  if (item.estimatedGrams <= 0 || newGrams < 0) {
+    return { ...item, estimatedGrams: Math.max(0, newGrams) };
+  }
+  const ratio = newGrams / item.estimatedGrams;
+  return {
+    ...item,
+    estimatedGrams: newGrams,
+    quantity: +(item.quantity * ratio).toFixed(2),
+    kcal: Math.round(item.kcal * ratio),
+    proteinG: Math.round(item.proteinG * ratio),
+    carbsG: Math.round(item.carbsG * ratio),
+    fatG: Math.round(item.fatG * ratio),
+  };
+}
+
+/** Sum kcal across the KEPT (`on: true`) items in an AI draft-card list. */
+export function sumKeptAiItemsKcal(
+  items: readonly { kcal: number; on: boolean }[],
+): number {
+  return items.filter((i) => i.on).reduce((sum, i) => sum + i.kcal, 0);
 }

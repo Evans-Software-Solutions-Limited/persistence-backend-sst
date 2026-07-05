@@ -1,4 +1,4 @@
-import { Pressable } from "react-native";
+import { Pressable, TextInput } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Text, View } from "@tamagui/core";
 import {
@@ -18,37 +18,54 @@ import {
   IconChevronR,
   IconClipboard,
   IconEdit,
+  IconLock,
   IconPlus,
   IconSearch,
+  IconSparkles,
   IconSwap,
 } from "@/ui/components/icons";
 import type { Food, MealSlot } from "@/domain/models/nutrition";
 import { scaleFoodMacros } from "@/domain/services";
+import {
+  AiDraftConfirmPresenter,
+  type AiDraftItem,
+} from "./AiDraftConfirmPresenter";
 import { MealPickerPresenter } from "./MealPickerPresenter";
 import { PortionStepperPresenter } from "./PortionStepperPresenter";
 
 /**
  * <QuickAddSheetPresenter> — the per-meal Quick-add MENU (fuel-sheets.jsx
  * QuickAddSheet): "From yesterday" + saved meals + action tiles (Scan / Snap /
- * Search / Manual). The Search tile switches the sheet to a food-search stage
- * (the prototype stubs search; we make it functional with the design-system
- * <SearchBar>). Built from design-system components — <Card>, <Btn>, <IconBtn>,
- * <Pill>, <Stat>, <SearchBar>, <Segmented> (via <MealPicker>).
+ * Search / Manual) + the M9.5 STORY-012 "Or describe it…" free-text AI CTA.
+ * The Search tile switches the sheet to a food-search stage (the prototype
+ * stubs search; we make it functional with the design-system <SearchBar>).
+ * The "Or describe it…" CTA switches to a `describe` stage (a text input +
+ * submit) then a `describeConfirm` stage that reuses the SAME
+ * <AiDraftConfirmPresenter> the Snap sheet's confirm stage uses — the two
+ * M9.5 Tier B entry points share one draft-review implementation rather than
+ * duplicating it. Built from design-system components — <Card>, <Btn>,
+ * <IconBtn>, <Pill>, <Stat>, <SearchBar>, <Segmented> (via <MealPicker>).
  *
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <QuickAddSheet>
+ *             specs/13-nutrition-tracking/design.md § Revised 2026-07-03 › Mobile flow
+ *             specs/13-nutrition-tracking/tasks.md T-13.11.2
  */
 
 const intl = (n: number) => Math.round(n).toLocaleString("en-US");
 
 export type QuickAddYesterday = { items: string[]; kcal: number };
 export type QuickAddMeal = { id: string; name: string; kcal: number };
+export type QuickAddStage = "menu" | "search" | "describe" | "describeConfirm";
 
 export type QuickAddSheetProps = {
   visible: boolean;
   onClose: () => void;
   mealLabel: string;
-  stage: "menu" | "search";
+  stage: QuickAddStage;
   aiLocked: boolean;
+  /** True when offline — Snap AND "Or describe it…" are disabled (both are
+   * online-only AI calls that never queue). */
+  aiOffline: boolean;
   // Menu data
   yesterday: QuickAddYesterday | null;
   savedMeals: readonly QuickAddMeal[];
@@ -58,6 +75,7 @@ export type QuickAddSheetProps = {
   onSnap: () => void;
   onSearch: () => void;
   onManual: () => void;
+  onDescribe: () => void;
   // Search stage
   query: string;
   onQueryChange: (q: string) => void;
@@ -72,6 +90,21 @@ export type QuickAddSheetProps = {
   onSlotChange: (slot: MealSlot) => void;
   onAdd: () => void;
   onBackToMenu: () => void;
+  // Describe (free-text AI) stage
+  describeText: string;
+  onDescribeTextChange: (text: string) => void;
+  isEstimatingText: boolean;
+  describeError: string | null;
+  onSubmitDescribe: () => void;
+  // Describe confirm stage (shared <AiDraftConfirmPresenter>)
+  describeItems: readonly AiDraftItem[];
+  onToggleDescribeItem: (index: number) => void;
+  onEditDescribeGrams: (index: number, grams: number) => void;
+  describeTotalKcal: number;
+  describeAdded: boolean;
+  /** True while the describe-draft confirm is in flight. */
+  describeConfirming?: boolean;
+  onConfirmDescribe: () => void;
   testID?: string;
 };
 
@@ -96,21 +129,32 @@ function ActionTile({
   label,
   onPress,
   locked = false,
+  disabled = false,
+  accessibilityLabel,
   testID,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   locked?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
   testID: string;
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={locked ? `${label} (locked)` : label}
-      style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.7 : 1 })}
+      accessibilityState={{ disabled }}
+      accessibilityLabel={
+        accessibilityLabel ?? (locked ? `${label} (locked)` : label)
+      }
+      style={({ pressed }) => ({
+        flex: 1,
+        opacity: disabled ? 0.5 : pressed ? 0.7 : 1,
+      })}
     >
       <View
         backgroundColor="$surface2"
@@ -136,8 +180,8 @@ function ActionTile({
         </Text>
         {locked ? (
           <View position="absolute" top={8} right={8} testID={`${testID}-ai`}>
-            <Pill tone="gold" size="xs">
-              AI
+            <Pill tone={disabled ? "neutral" : "gold"} size="xs">
+              {disabled ? <IconLock size={9} /> : "AI"}
             </Pill>
           </View>
         ) : null}
@@ -149,6 +193,7 @@ function ActionTile({
 function MenuStage(props: QuickAddSheetProps) {
   const {
     aiLocked,
+    aiOffline,
     yesterday,
     savedMeals,
     onLogYesterday,
@@ -157,9 +202,11 @@ function MenuStage(props: QuickAddSheetProps) {
     onSnap,
     onSearch,
     onManual,
+    onDescribe,
   } = props;
   const primary = toneHex("primary").base;
   const gold = toneHex("gold").base;
+  const snapLocked = aiLocked || aiOffline;
 
   return (
     <View gap={14}>
@@ -290,10 +337,16 @@ function MenuStage(props: QuickAddSheetProps) {
           />
           <ActionTile
             testID="quick-add-tile-snap"
-            icon={<IconCamera size={20} color={aiLocked ? gold : primary} />}
+            icon={<IconCamera size={20} color={snapLocked ? gold : primary} />}
             label="AI snap photo"
             onPress={onSnap}
-            locked={aiLocked}
+            locked={snapLocked}
+            disabled={aiOffline}
+            accessibilityLabel={
+              aiOffline
+                ? "AI snap photo — Snap needs a connection, try Quick Add instead"
+                : undefined
+            }
           />
         </View>
         <View flexDirection="row" gap={8}>
@@ -311,6 +364,68 @@ function MenuStage(props: QuickAddSheetProps) {
           />
         </View>
       </View>
+
+      {!aiLocked ? (
+        <View>
+          <SectionLabel>Or describe it in words</SectionLabel>
+          <Pressable
+            onPress={aiOffline ? undefined : onDescribe}
+            disabled={aiOffline}
+            testID="quick-add-describe-cta"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: aiOffline }}
+            accessibilityLabel={
+              aiOffline
+                ? "Or describe it… — Snap needs a connection, try Quick Add instead"
+                : "Or describe it…"
+            }
+            style={({ pressed }) => ({
+              opacity: aiOffline ? 0.5 : pressed ? 0.7 : 1,
+            })}
+          >
+            <View
+              flexDirection="row"
+              alignItems="center"
+              gap={12}
+              backgroundColor="$surface2"
+              borderColor="$goldDim"
+              borderWidth={1}
+              borderRadius={14}
+              padding={14}
+            >
+              <View
+                width={38}
+                height={38}
+                borderRadius={10}
+                alignItems="center"
+                justifyContent="center"
+                backgroundColor="$goldDim"
+              >
+                <IconSparkles size={18} color={gold} />
+              </View>
+              <View flex={1}>
+                <Text
+                  fontFamily="$display"
+                  fontWeight="700"
+                  fontSize={14}
+                  color="$text"
+                >
+                  Or describe it…
+                </Text>
+                <Text
+                  fontFamily="$body"
+                  fontSize={11.5}
+                  color="$text3"
+                  numberOfLines={1}
+                >
+                  &ldquo;Two eggs, toast, and a coffee&rdquo; — AI estimates the
+                  macros
+                </Text>
+              </View>
+            </View>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -517,6 +632,124 @@ function SearchStage(props: QuickAddSheetProps) {
   );
 }
 
+function DescribeStage(props: QuickAddSheetProps) {
+  const {
+    describeText,
+    onDescribeTextChange,
+    isEstimatingText,
+    describeError,
+    onSubmitDescribe,
+    onBackToMenu,
+  } = props;
+  const canSubmit =
+    describeText.trim().length > 0 &&
+    describeText.length <= 1000 &&
+    !isEstimatingText;
+
+  return (
+    <View gap={16} testID="quick-add-describe">
+      <View flexDirection="row" alignItems="center" gap={10}>
+        <IconBtn
+          icon={<IconBack size={18} />}
+          tone="neutral"
+          onPress={onBackToMenu}
+          testID="quick-add-describe-back"
+          accessibilityLabel="Back"
+        />
+        <Text
+          fontFamily="$display"
+          fontWeight="700"
+          fontSize={16}
+          color="$text"
+        >
+          Describe your meal
+        </Text>
+      </View>
+      <TextInput
+        value={describeText}
+        onChangeText={onDescribeTextChange}
+        placeholder="e.g. Two eggs, a slice of toast, and a black coffee"
+        placeholderTextColor="#8A8A98"
+        multiline
+        editable={!isEstimatingText}
+        maxLength={1000}
+        testID="quick-add-describe-input"
+        accessibilityLabel="Describe your meal"
+        style={{
+          minHeight: 90,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: "#232735",
+          backgroundColor: "#181B26",
+          padding: 14,
+          color: "#F4F4F8",
+          fontFamily: "Geist",
+          fontSize: 15,
+          textAlignVertical: "top",
+        }}
+      />
+      <Text
+        fontFamily="$body"
+        fontSize={11}
+        color="$text3"
+        testID="quick-add-describe-count"
+      >
+        {describeText.length}/1000
+      </Text>
+      {describeError ? (
+        <Text
+          fontFamily="$body"
+          fontSize={13}
+          color="$gold"
+          testID="quick-add-describe-error"
+        >
+          {describeError}
+        </Text>
+      ) : null}
+      <Btn
+        variant="filled"
+        tone="gold"
+        size="lg"
+        full
+        icon={<IconSparkles size={16} />}
+        onPress={onSubmitDescribe}
+        disabled={!canSubmit}
+        testID="quick-add-describe-submit"
+      >
+        {isEstimatingText ? "Estimating…" : "Estimate with AI"}
+      </Btn>
+    </View>
+  );
+}
+
+function DescribeConfirmStage(props: QuickAddSheetProps) {
+  const {
+    describeItems,
+    onToggleDescribeItem,
+    onEditDescribeGrams,
+    describeTotalKcal,
+    slot,
+    onSlotChange,
+    describeAdded,
+    describeConfirming,
+    onConfirmDescribe,
+  } = props;
+  return (
+    <AiDraftConfirmPresenter
+      items={describeItems}
+      onToggleItem={onToggleDescribeItem}
+      onEditGrams={onEditDescribeGrams}
+      totalKcal={describeTotalKcal}
+      slot={slot}
+      onSlotChange={onSlotChange}
+      onConfirm={onConfirmDescribe}
+      added={describeAdded}
+      confirming={describeConfirming}
+      testID="quick-add-describe-confirm"
+    />
+  );
+}
+
 export function QuickAddSheetPresenter(props: QuickAddSheetProps) {
   const {
     visible,
@@ -537,6 +770,10 @@ export function QuickAddSheetPresenter(props: QuickAddSheetProps) {
     >
       {stage === "search" ? (
         <SearchStage {...props} />
+      ) : stage === "describe" ? (
+        <DescribeStage {...props} />
+      ) : stage === "describeConfirm" ? (
+        <DescribeConfirmStage {...props} />
       ) : (
         <MenuStage {...props} />
       )}

@@ -47,4 +47,22 @@ describe("QuickAddRowPresenter", () => {
     expect(props.onSearch).toHaveBeenCalledTimes(1);
     expect(props.onRecipes).toHaveBeenCalledTimes(1);
   });
+
+  it("disables Snap and shows a neutral lock badge when offline", () => {
+    const { getByTestId, props } = render({
+      aiLocked: false,
+      snapOffline: true,
+    });
+    fireEvent.press(getByTestId("fuel-quick-snap"));
+    expect(props.onSnap).not.toHaveBeenCalled();
+    expect(getByTestId("fuel-quick-snap-lock")).toBeTruthy();
+    expect(getByTestId("fuel-quick-snap").props.accessibilityLabel).toBe(
+      "Snap needs a connection — try Quick Add instead",
+    );
+  });
+
+  it("offline takes precedence over the AI-allowed state for the lock badge", () => {
+    const { getByTestId } = render({ aiLocked: false, snapOffline: true });
+    expect(getByTestId("fuel-quick-snap-lock")).toBeTruthy();
+  });
 });

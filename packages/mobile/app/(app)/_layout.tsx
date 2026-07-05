@@ -4,6 +4,7 @@ import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetC
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
+import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync";
@@ -229,14 +230,17 @@ export default function AppLayout() {
       <AddClientSheetContainer />
       {/*
         M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
-        Both read useFuelSheets().sheet to drive their <BottomSheet> visibility;
-        the Fuel screen's Scan / Search / slot-Add affordances open them. Always
-        mounted so the slide-out animates on dismiss.
+        All three read useFuelSheets().sheet to drive their <BottomSheet>
+        visibility; the Fuel screen's Scan / Snap / Search / slot-Add
+        affordances open them. Always mounted so the slide-out animates on
+        dismiss.
 
         Spec: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § Sheets (mounted at root)
+              specs/13-nutrition-tracking/design.md § Revised 2026-07-03 › Mobile flow (SnapAISheet)
       */}
       <QuickAddSheetContainer />
       <ScanBarcodeSheetContainer />
+      <SnapAISheetContainer />
     </ExerciseFiltersProvider>
   );
 }

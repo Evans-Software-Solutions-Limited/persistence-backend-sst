@@ -57,10 +57,13 @@ import type {
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
 import type {
+  AiEstimate,
   CreateFoodInput,
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimateFromPhotoInput,
+  EstimateFromTextInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -673,6 +676,28 @@ export interface ApiPort {
 
   /** Save a meal preset (`POST /meals`); server materialises totals from items. */
   createMeal(input: CreateMealInput): Promise<Result<Meal, ApiError>>;
+
+  /**
+   * M9.5 Tier B — AI photo estimation (`POST /nutrition/ai/estimate`).
+   * ONLINE-ONLY, never queued (design.md § Revised 2026-07-03 › Mobile
+   * flow). Gated server-side by `ai_access`; a denied caller sees a 402
+   * (`err.code === "entitlement_denied"`). Failure modes: `422 ai_unreadable`
+   * (refusal/unparseable — status 422), `503 ai_unavailable` (provider
+   * outage/timeout — status 503). Callers distinguish by `err.status`
+   * (mirrors `useImportRecipeUrl`'s 422 pattern — `ApiError.code` collapses
+   * both to `"server"`).
+   */
+  estimateFromPhoto(
+    input: EstimateFromPhotoInput,
+  ): Promise<Result<AiEstimate, ApiError>>;
+
+  /**
+   * M9.5 Tier B — AI free-text estimation (`POST /nutrition/ai/estimate-text`).
+   * Same online-only / gating / error-mapping contract as `estimateFromPhoto`.
+   */
+  estimateFromText(
+    input: EstimateFromTextInput,
+  ): Promise<Result<AiEstimate, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

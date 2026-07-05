@@ -7,6 +7,11 @@ import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSearchFoods } from "@/ui/hooks/useSearchFoods";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
+import {
+  useAiDraftItems,
+  draftItemsFromEstimate,
+} from "@/ui/hooks/useAiDraftItems";
 import { localDayISO } from "@/shared/utils";
 import {
   MEAL_SLOTS,
@@ -17,6 +22,7 @@ import type { Food, MealSlot } from "@/domain/models/nutrition";
 import {
   QuickAddSheetPresenter,
   type QuickAddMeal,
+  type QuickAddStage,
   type QuickAddYesterday,
 } from "@/ui/presenters/QuickAddSheetPresenter";
 
@@ -24,10 +30,15 @@ import {
  * <QuickAddSheetContainer> — the per-meal Quick-add menu (fuel-sheets.jsx
  * QuickAddSheet). Surfaces "same as yesterday" (re-logs yesterday's entries for
  * the slot), saved meals (one-tap log), and the new-food action tiles. The
- * Search tile opens a functional food-search stage. Snap is the locked Tier-B
- * affordance (routes to upgrade); Scan hands off to the barcode sheet.
+ * Search tile opens a functional food-search stage. Snap hands off to the
+ * root-mounted Snap sheet (gate-checked here); "Or describe it…" is the
+ * M9.5 STORY-012 free-text AI flow, sharing the same `useAiDraftItems`
+ * confirm logic and <AiDraftConfirmPresenter> UI as the Snap sheet. Scan
+ * hands off to the barcode sheet.
  *
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <QuickAddSheet>
+ *             specs/13-nutrition-tracking/design.md § Revised 2026-07-03 › Mobile flow
+ *             specs/13-nutrition-tracking/tasks.md T-13.11.2
  */
 
 /** YYYY-MM-DD for the day before `dayIso` (UTC-anchored so it can't double-step
@@ -40,7 +51,7 @@ function previousDayISO(dayIso: string): string {
 }
 
 export function QuickAddSheetContainer() {
-  const { storage } = useAdapters();
+  const { storage, api } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
@@ -48,16 +59,17 @@ export function QuickAddSheetContainer() {
   const slotFromStore = useFuelSheets((s) => s.slot);
   const close = useFuelSheets((s) => s.close);
   const openScan = useFuelSheets((s) => s.openScan);
+  const openSnap = useFuelSheets((s) => s.openSnap);
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
   const visible = sheet === "quickAdd";
 
   // gorhom fires `onClose` on ANY close — including the CONTROLLED close that
-  // happens when this sheet hands off to another (Quick-add → Scan flips the
-  // shared store, so this sheet's `visible` drops to false and gorhom animates
-  // it shut). Clearing the store unconditionally there would null `sheet` right
-  // after `openScan` set it, snapping the just-opened Scan sheet closed. Guard
-  // on `visible`: only a genuine dismiss (this sheet still active) clears the
-  // store; a handoff is a no-op.
+  // happens when this sheet hands off to another (Quick-add → Scan/Snap flips
+  // the shared store, so this sheet's `visible` drops to false and gorhom
+  // animates it shut). Clearing the store unconditionally there would null
+  // `sheet` right after `openScan`/`openSnap` set it, snapping the just-opened
+  // sheet closed. Guard on `visible`: only a genuine dismiss (this sheet still
+  // active) clears the store; a handoff is a no-op.
   const onSheetClose = useCallback(() => {
     if (visible) close();
   }, [visible, close]);
@@ -65,15 +77,22 @@ export function QuickAddSheetContainer() {
   const meals = useGetMeals();
   const logEntry = useLogEntry();
   const aiGate = useNutritionAiGate();
+  const online = useOnlineStatus();
+  const describeDraft = useAiDraftItems();
 
-  const [stage, setStage] = useState<"menu" | "search">("menu");
+  const [stage, setStage] = useState<QuickAddStage>("menu");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Food | null>(null);
   const [servings, setServings] = useState(1);
   const [slot, setSlot] = useState<MealSlot>(slotFromStore);
+  const [describeText, setDescribeText] = useState("");
+  const [isEstimatingText, setIsEstimatingText] = useState(false);
+  const [describeError, setDescribeError] = useState<string | null>(null);
+  const [describeAdded, setDescribeAdded] = useState(false);
 
   const search = useSearchFoods(query);
 
+  const { setItems: setDescribeItems } = describeDraft;
   useEffect(() => {
     if (visible) {
       setStage("menu");
@@ -81,8 +100,13 @@ export function QuickAddSheetContainer() {
       setSelected(null);
       setServings(1);
       setSlot(slotFromStore);
+      setDescribeText("");
+      setIsEstimatingText(false);
+      setDescribeError(null);
+      setDescribeAdded(false);
+      setDescribeItems([]);
     }
-  }, [visible, slotFromStore]);
+  }, [visible, slotFromStore, setDescribeItems]);
 
   const mealLabel = MEAL_SLOTS.find((m) => m.slot === slot)?.label ?? "Meal";
 
@@ -183,6 +207,34 @@ export function QuickAddSheetContainer() {
     close();
   }, [selected, slot, servings, logEntry, notifyMutated, close]);
 
+  const onSubmitDescribe = useCallback(async () => {
+    const description = describeText.trim();
+    if (description.length === 0 || description.length > 1000) return;
+    setIsEstimatingText(true);
+    setDescribeError(null);
+    const result = await api.estimateFromText({ description });
+    setIsEstimatingText(false);
+    if (!result.ok) {
+      setDescribeError(
+        "Couldn't estimate that — try rephrasing or use Quick Add instead.",
+      );
+      return;
+    }
+    setDescribeItems(draftItemsFromEstimate(result.value));
+    setStage("describeConfirm");
+  }, [api, describeText, setDescribeItems]);
+
+  const { confirm: confirmDescribeDraft } = describeDraft;
+  const onConfirmDescribe = useCallback(async () => {
+    const count = await confirmDescribeDraft(slot);
+    if (count === 0) return;
+    notifyMutated();
+    setDescribeAdded(true);
+    setTimeout(() => {
+      close();
+    }, 900);
+  }, [confirmDescribeDraft, slot, notifyMutated, close]);
+
   return (
     <QuickAddSheetPresenter
       visible={visible}
@@ -190,6 +242,7 @@ export function QuickAddSheetContainer() {
       mealLabel={mealLabel}
       stage={stage}
       aiLocked={!aiGate.allowed}
+      aiOffline={!online}
       yesterday={yesterday}
       savedMeals={savedMeals}
       onLogYesterday={() => void onLogYesterday()}
@@ -201,9 +254,19 @@ export function QuickAddSheetContainer() {
         // race the handoff.
         openScan(slot);
       }}
-      onSnap={() => aiGate.gateProps.onUpgrade()}
+      onSnap={() => {
+        if (!online) return;
+        if (aiGate.allowed) {
+          // Handoff to the Snap sheet, mirroring the Scan handoff above — no
+          // explicit close() here either.
+          openSnap(slot);
+          return;
+        }
+        aiGate.gateProps.onUpgrade();
+      }}
       onSearch={() => setStage("search")}
       onManual={() => setStage("search")}
+      onDescribe={() => setStage("describe")}
       query={query}
       onQueryChange={setQuery}
       results={search.results}
@@ -221,6 +284,18 @@ export function QuickAddSheetContainer() {
         setSelected(null);
         setQuery("");
       }}
+      describeText={describeText}
+      onDescribeTextChange={setDescribeText}
+      isEstimatingText={isEstimatingText}
+      describeError={describeError}
+      onSubmitDescribe={() => void onSubmitDescribe()}
+      describeItems={describeDraft.items}
+      onToggleDescribeItem={describeDraft.onToggleItem}
+      onEditDescribeGrams={describeDraft.onEditGrams}
+      describeTotalKcal={describeDraft.totalKcal}
+      describeAdded={describeAdded}
+      describeConfirming={describeDraft.confirming}
+      onConfirmDescribe={() => void onConfirmDescribe()}
     />
   );
 }

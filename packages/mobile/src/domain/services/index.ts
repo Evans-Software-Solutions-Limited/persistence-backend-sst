@@ -77,4 +77,6 @@ export {
   goalLabel,
   withinBand,
   detectDailyGoalHit,
+  rescaleAiFoodItem,
+  sumKeptAiItemsKcal,
 } from "./nutrition.service";

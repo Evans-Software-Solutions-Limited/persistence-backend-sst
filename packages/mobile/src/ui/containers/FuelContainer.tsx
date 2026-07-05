@@ -9,6 +9,7 @@ import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSetWater } from "@/ui/hooks/useSetWater";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { localDayISO } from "@/shared/utils";
 import { toneHex } from "@/ui/components/foundation/tones";
@@ -65,8 +66,10 @@ export function FuelContainer() {
   const meals = useGetMeals();
   const setWater = useSetWater();
   const aiGate = useNutritionAiGate();
+  const online = useOnlineStatus();
   const openScan = useFuelSheets((s) => s.openScan);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
+  const openSnap = useFuelSheets((s) => s.openSnap);
   const sheetRev = useFuelSheets((s) => s.rev);
 
   const data = fuel.data;
@@ -221,6 +224,7 @@ export function FuelContainer() {
       celebrate={goalHit.all}
       noTarget={target === null}
       aiLocked={!aiGate.allowed}
+      snapOffline={!online}
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
@@ -229,7 +233,18 @@ export function FuelContainer() {
         /* day-picker is post-M9 (today-only in Tier A) */
       }}
       onScan={() => openScan("breakfast")}
-      onSnap={() => aiGate.gateProps.onUpgrade()}
+      onSnap={() => {
+        // Offline takes precedence — the row button is already disabled in
+        // this state (QuickAddRowPresenter), but defend here too in case a
+        // stale press lands mid-transition. AI calls are online-only and
+        // never queue (design.md § Revised 2026-07-03 › Mobile flow).
+        if (!online) return;
+        if (aiGate.allowed) {
+          openSnap("breakfast");
+          return;
+        }
+        aiGate.gateProps.onUpgrade();
+      }}
       onSearch={() => openQuickAdd("breakfast")}
       onRecipes={() => router.push("/(app)/fuel/recipes")}
       onAddToSlot={(slot: MealSlot) => openQuickAdd(slot)}

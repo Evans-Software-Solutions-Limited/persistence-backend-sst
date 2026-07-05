@@ -25,11 +25,15 @@ jest.mock("@/ui/presenters/QuickAddSheetPresenter", () => ({
     return null;
   },
 }));
+const mockAiGate: {
+  allowed: boolean;
+  onUpgrade: jest.Mock;
+} = { allowed: false, onUpgrade: jest.fn() };
 jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
   useNutritionAiGate: () => ({
-    allowed: false,
+    allowed: mockAiGate.allowed,
     reason: "tier",
-    gateProps: { onUpgrade: jest.fn() },
+    gateProps: { onUpgrade: mockAiGate.onUpgrade },
   }),
 }));
 
@@ -116,6 +120,8 @@ describe("QuickAddSheetContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
     jest.clearAllMocks();
+    mockAiGate.allowed = false;
+    mockAiGate.onUpgrade = jest.fn();
     act(() =>
       useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }),
     );
@@ -255,6 +261,107 @@ describe("QuickAddSheetContainer", () => {
     expect(useFuelSheets.getState().sheet).toBeNull();
   });
 
+  it("resolves yesterday's recipe/meal-referenced entries via the name lookups", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheRecipe(USER, {
+      id: "r1",
+      userId: USER,
+      name: "Protein oats",
+      photoUrl: null,
+      servings: 1,
+      instructions: null,
+      source: "manual",
+      sourceUrl: null,
+      totalKcal: 420,
+      totalProteinG: 32,
+      totalCarbsG: 58,
+      totalFatG: 8,
+      ingredients: [],
+    });
+    storage.cacheMeal(USER, meal);
+    const y = new Date(`${localDayISO()}T00:00:00.000Z`);
+    y.setUTCDate(y.getUTCDate() - 1);
+    const yIso = y.toISOString().slice(0, 10);
+    storage.cacheFuelToday(USER, yIso, {
+      date: yIso,
+      targets: null,
+      consumed: {
+        kcal: 900,
+        proteinG: 62,
+        carbsG: 108,
+        fatG: 20,
+        waterCups: 0,
+      },
+      remainingKcal: 0,
+      entriesBySlot: {
+        breakfast: [
+          {
+            id: "y-recipe",
+            userId: USER,
+            foodId: null,
+            recipeId: "r1",
+            mealId: null,
+            mealSlot: "breakfast",
+            servings: 1,
+            kcal: 420,
+            proteinG: 32,
+            carbsG: 58,
+            fatG: 8,
+            loggedAt: `${yIso}T08:00:00.000Z`,
+            loggedByUserId: null,
+            aiEstimated: false,
+            aiConfidence: null,
+          },
+          {
+            id: "y-meal",
+            userId: USER,
+            foodId: null,
+            recipeId: null,
+            mealId: "m1",
+            mealSlot: "breakfast",
+            servings: 1,
+            kcal: 480,
+            proteinG: 30,
+            carbsG: 50,
+            fatG: 12,
+            loggedAt: `${yIso}T08:00:00.000Z`,
+            loggedByUserId: null,
+            aiEstimated: false,
+            aiConfidence: null,
+          },
+        ],
+        lunch: [],
+        snack: [],
+        dinner: [],
+      },
+    });
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+    await waitFor(() =>
+      expect(mockProbe.last?.yesterday?.items).toEqual([
+        "Protein oats",
+        "Standard breakfast",
+      ]),
+    );
+  });
+
+  it("onClose is a no-op when the sheet is already hidden (handoff guard)", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    // Never opened — `visible` is false. Calling onClose should not attempt
+    // to clear a store slot another sheet might have just claimed.
+    act(() => mockProbe.last!.onClose());
+    expect(useFuelSheets.getState().sheet).toBeNull();
+  });
+
   it("toggles between search and menu and clears a selection", () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheMeals(USER, [meal]);
@@ -272,5 +379,274 @@ describe("QuickAddSheetContainer", () => {
     act(() => mockProbe.last!.onBackToMenu());
     expect(mockProbe.last?.stage).toBe("menu");
     act(() => mockProbe.last!.onSnap());
+  });
+
+  it("onSnap routes to the upgrade prompt when the AI gate denies", () => {
+    const { adapters } = makeAdapters();
+    mockAiGate.allowed = false;
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    act(() => mockProbe.last!.onSnap());
+    expect(mockAiGate.onUpgrade).toHaveBeenCalled();
+    expect(useFuelSheets.getState().sheet).toBe("quickAdd");
+  });
+
+  it("onSnap hands off to the snap sheet when the AI gate allows and online", () => {
+    const { adapters } = makeAdapters();
+    mockAiGate.allowed = true;
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    act(() => mockProbe.last!.onSnap());
+    expect(useFuelSheets.getState().sheet).toBe("snap");
+    expect(useFuelSheets.getState().slot).toBe("lunch");
+    expect(mockAiGate.onUpgrade).not.toHaveBeenCalled();
+  });
+
+  it("onSnap does nothing when offline, even if the AI gate allows", () => {
+    const { adapters } = makeAdapters();
+    mockAiGate.allowed = true;
+    (adapters as { netInfo: unknown }).netInfo = {
+      isConnected: async () => false,
+      subscribe: (cb: (c: boolean) => void) => {
+        cb(false);
+        return () => {};
+      },
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    act(() => mockProbe.last!.onSnap());
+    expect(useFuelSheets.getState().sheet).toBe("quickAdd");
+    expect(mockAiGate.onUpgrade).not.toHaveBeenCalled();
+  });
+
+  it("passes aiOffline=true to the presenter when offline", async () => {
+    const { adapters } = makeAdapters();
+    (adapters as { netInfo: unknown }).netInfo = {
+      isConnected: async () => false,
+      subscribe: (cb: (c: boolean) => void) => {
+        cb(false);
+        return () => {};
+      },
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    await waitFor(() => expect(mockProbe.last?.aiOffline).toBe(true));
+  });
+
+  describe("free-text (Or describe it…) flow", () => {
+    beforeEach(() => {
+      mockAiGate.allowed = true;
+    });
+
+    it("routes onDescribe to the describe stage", () => {
+      const { adapters } = makeAdapters();
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      expect(mockProbe.last?.stage).toBe("describe");
+    });
+
+    it("submits a description, gets a draft, and confirms N entries", async () => {
+      const { adapters, storage } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      api.aiEstimate = {
+        foods: [
+          {
+            name: "Two eggs",
+            quantity: 2,
+            unit: "egg",
+            estimatedGrams: 100,
+            kcal: 140,
+            proteinG: 12,
+            carbsG: 1,
+            fatG: 10,
+            confidence: 0.9,
+          },
+          {
+            name: "Toast",
+            quantity: 1,
+            unit: "slice",
+            estimatedGrams: 30,
+            kcal: 80,
+            proteinG: 3,
+            carbsG: 15,
+            fatG: 1,
+            confidence: 0.5,
+          },
+        ],
+        overallConfidence: 0.7,
+        notes: null,
+      };
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      act(() => mockProbe.last!.onDescribeTextChange("Two eggs and toast"));
+
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      await waitFor(() =>
+        expect(mockProbe.last?.stage).toBe("describeConfirm"),
+      );
+      // Low-confidence item (0.5 < 0.7) starts unticked.
+      expect(mockProbe.last?.describeItems[0]?.on).toBe(true);
+      expect(mockProbe.last?.describeItems[1]?.on).toBe(false);
+      expect(mockProbe.last?.describeTotalKcal).toBe(140);
+
+      jest.useFakeTimers();
+      await act(async () => {
+        await mockProbe.last!.onConfirmDescribe();
+      });
+      expect(
+        storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.breakfast
+          .length,
+      ).toBe(1);
+      expect(mockProbe.last?.describeAdded).toBe(true);
+      expect(useFuelSheets.getState().sheet).toBe("quickAdd"); // not yet closed
+
+      act(() => jest.advanceTimersByTime(900));
+      expect(useFuelSheets.getState().sheet).toBeNull();
+      jest.useRealTimers();
+    });
+
+    it("shows an error and stays on the describe stage on failure", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      api.nextAiEstimateError = { status: 422, message: "ai_unreadable" };
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      act(() => mockProbe.last!.onDescribeTextChange("mystery meal"));
+
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      expect(mockProbe.last?.stage).toBe("describe");
+      expect(mockProbe.last?.describeError).toBeTruthy();
+    });
+
+    it("toggling and editing grams recomputes the total in the draft", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      api.aiEstimate = {
+        foods: [
+          {
+            name: "Oats",
+            quantity: 1,
+            unit: "bowl",
+            estimatedGrams: 100,
+            kcal: 200,
+            proteinG: 6,
+            carbsG: 30,
+            fatG: 4,
+            confidence: 0.95,
+          },
+        ],
+        overallConfidence: 0.95,
+        notes: null,
+      };
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      act(() => mockProbe.last!.onDescribeTextChange("A bowl of oats"));
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      await waitFor(() =>
+        expect(mockProbe.last?.stage).toBe("describeConfirm"),
+      );
+
+      act(() => mockProbe.last!.onEditDescribeGrams(0, 50));
+      await waitFor(() => expect(mockProbe.last?.describeTotalKcal).toBe(100));
+
+      act(() => mockProbe.last!.onToggleDescribeItem(0));
+      await waitFor(() => expect(mockProbe.last?.describeTotalKcal).toBe(0));
+    });
+
+    it("onSubmitDescribe is a no-op for empty or over-length text", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+
+      act(() => mockProbe.last!.onDescribeTextChange("   "));
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      expect(api.estimateFromTextCalls).toHaveLength(0);
+
+      act(() => mockProbe.last!.onDescribeTextChange("a".repeat(1001)));
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      expect(api.estimateFromTextCalls).toHaveLength(0);
+      expect(mockProbe.last?.stage).toBe("describe");
+    });
+
+    it("onConfirmDescribe is a no-op when nothing is kept", async () => {
+      const { adapters, storage } = makeAdapters();
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      act(() => mockProbe.last!.onDescribe());
+      act(() => mockProbe.last!.onDescribeTextChange("A bowl of oats"));
+      await act(async () => {
+        await mockProbe.last!.onSubmitDescribe();
+      });
+      await waitFor(() =>
+        expect(mockProbe.last?.stage).toBe("describeConfirm"),
+      );
+
+      act(() => mockProbe.last!.onToggleDescribeItem(0)); // untick the only item
+      await act(async () => {
+        await mockProbe.last!.onConfirmDescribe();
+      });
+      expect(mockProbe.last?.describeAdded).toBe(false);
+      expect(
+        storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.breakfast
+          .length ?? 0,
+      ).toBe(0);
+      expect(useFuelSheets.getState().sheet).toBe("quickAdd"); // still open
+    });
   });
 });

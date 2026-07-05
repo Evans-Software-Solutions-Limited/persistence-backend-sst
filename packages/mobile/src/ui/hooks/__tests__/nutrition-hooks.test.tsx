@@ -605,10 +605,10 @@ describe("mutation hooks are no-ops when signed out", () => {
 });
 
 describe("useNutritionAiGate", () => {
-  it("delegates to the ai_workout feature gate (Tier-B placeholder)", () => {
+  it("delegates to the ai_access feature gate (M9.5 Tier B, live)", () => {
     const { wrapper } = setup();
     const { result } = renderHook(() => useNutritionAiGate(), { wrapper });
-    expect(mockUseFeatureGate).toHaveBeenCalledWith("ai_workout");
+    expect(mockUseFeatureGate).toHaveBeenCalledWith("ai_access");
     expect(result.current.allowed).toBe(false);
   });
 });

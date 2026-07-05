@@ -43,6 +43,7 @@ import {
 const FEATURE_DISPLAY_NAMES: Record<EntitlementFeature, string> = {
   create_workout: "Custom workouts beyond your monthly limit",
   ai_workout: "AI Workouts",
+  ai_access: "AI photo & text food logging",
   gym_buddy: "Gym Buddy access",
   unlimited_exercise_library: "Unlimited exercise library",
   trainer_clients: "Trainer client management",
