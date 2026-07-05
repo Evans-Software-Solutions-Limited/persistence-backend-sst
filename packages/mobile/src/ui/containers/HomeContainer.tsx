@@ -229,6 +229,8 @@ export function HomeContainer() {
         user={user}
         greeting={greeting}
         home={homeData}
+        activeProgramme={homeData?.activeProgramme ?? null}
+        todaysTraining={homeData?.todaysTraining ?? []}
         workouts={workoutItems}
         workoutsLoading={workoutsLoading}
         habits={habitsState.habits}

@@ -57,6 +57,15 @@ import type {
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
 import type {
+  AssignProgramInput,
+  AssignWorkoutInput,
+  CreateProgramInput,
+  ProgramAssignmentRow,
+  ProgramDetail,
+  ProgramSummary,
+  UpdateProgramInput,
+} from "@/domain/models/program";
+import type {
   AiEstimate,
   CreateFoodInput,
   CreateMealInput,
@@ -724,7 +733,135 @@ export interface ApiPort {
     relationshipId: string,
     action: RelationshipResponseAction,
   ): Promise<Result<RelationshipResponseResult, ApiError>>;
+
+  // -- Programs (19-programs, Phase 9 mobile — coach F1) --
+  //
+  // All under `/trainers/me`, single `{ data }` envelopes, trainer-role-gated
+  // server-side (403 non-trainer). camelCase wire == domain shape (no
+  // snake_case mapping for programs). Domain-coded failures (409/422/403)
+  // arrive as a flat `{ code, message }` body — the adapter surfaces `code`
+  // on `ProgramApiError.programCode`, mirroring `InviteApiError`.
+
+  /**
+   * List the trainer's programmes (`GET /trainers/me/programs`). Single
+   * `{ data: ProgramSummary[] }` envelope. `isActive` is NOT on the wire —
+   * derive client-side as `activeClientCount > 0`.
+   */
+  listPrograms(): Promise<Result<ProgramSummary[], ApiError>>;
+
+  /**
+   * Fetch a programme's full detail, including its ordered workouts and
+   * client assignments (`GET /trainers/me/programs/:id`). 404 `not_found`
+   * when not found / not owned.
+   */
+  getProgram(id: string): Promise<Result<ProgramDetail, ApiError>>;
+
+  /**
+   * Create a programme (`POST /trainers/me/programs`). 422
+   * `invalid_workouts` when `workoutIds` references a workout the trainer
+   * doesn't own / doesn't exist.
+   */
+  createProgram(
+    input: CreateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>>;
+
+  /**
+   * Update a programme (`PUT /trainers/me/programs/:id`); all fields
+   * optional (partial update). "Changes apply to future weeks only" — no
+   * retroactive rewrite of client progress. 404 `not_found`; 422
+   * `invalid_workouts`.
+   */
+  updateProgram(
+    id: string,
+    input: UpdateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>>;
+
+  /**
+   * Delete a programme (`DELETE /trainers/me/programs/:id`). 409
+   * `PROGRAM_HAS_LIVE_ASSIGNMENTS` when clients are still actively assigned
+   * (assigned/started) — the trainer must unassign first. 404 `not_found`.
+   */
+  deleteProgram(
+    id: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>>;
+
+  /**
+   * Assign a programme to a client (`POST /trainers/me/programs/:id/assign`).
+   * Returns the raw `ProgramAssignment` DB row (NOT the list-friendly
+   * `ProgramAssignmentEntry`). 403 `not_your_client`; 404 `not_found`; 409
+   * `already_assigned`; 422 `PROGRAM_EMPTY` (no workouts in the cycle).
+   */
+  assignProgram(
+    programId: string,
+    input: AssignProgramInput,
+  ): Promise<Result<ProgramAssignmentRow, ProgramApiError>>;
+
+  /**
+   * Unassign a client from a programme
+   * (`DELETE /trainers/me/programs/:id/assignments/:assignmentId`). 404
+   * when not found / not owned.
+   */
+  unassignProgram(
+    programId: string,
+    assignmentId: string,
+  ): Promise<Result<{ unassigned: true }, ApiError>>;
+
+  /**
+   * Assign a standalone workout to a client
+   * (`POST /trainers/me/clients/:clientId/workout-assignments`), independent
+   * of any programme. 403 `not_your_client`; 422 `invalid_workout`.
+   */
+  assignWorkout(
+    clientId: string,
+    input: AssignWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>>;
+
+  /**
+   * Remove a standalone workout assignment
+   * (`DELETE /trainers/me/clients/:clientId/workout-assignments/:id`). 404
+   * when not found / not owned; 409 `not_deletable` (e.g. already completed).
+   */
+  unassignWorkout(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>>;
 }
+
+/**
+ * `ApiError` extended with the structured programs-domain `code` the
+ * backend returns on a flat `{ code, message }` error body (create/update/
+ * delete/assign/unassign-workout). `programCode` is undefined for
+ * transport/auth errors that don't carry a domain code.
+ */
+export type ProgramApiError = ApiError & {
+  programCode?:
+    | "invalid_workouts"
+    | "not_found"
+    | "PROGRAM_HAS_LIVE_ASSIGNMENTS"
+    | "not_your_client"
+    | "already_assigned"
+    | "PROGRAM_EMPTY"
+    | "invalid_workout"
+    | "not_deletable";
+};
+
+/**
+ * Raw DB row returned by
+ * `POST /trainers/me/clients/:clientId/workout-assignments`.
+ */
+export type WorkoutAssignmentRow = {
+  id: string;
+  clientId: string;
+  workoutId: string;
+  assignedBy: string;
+  dueDate: string | null;
+  showInPlan: boolean;
+  showInLibrary: boolean;
+  trainerNotes: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 /**
  * `ApiError` extended with the structured invite-domain `code` the backend

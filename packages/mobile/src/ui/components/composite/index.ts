@@ -24,3 +24,5 @@ export { HabitTile, habitTilePressStyle } from "./HabitTile";
 export type { HabitTileProps, HabitState, HabitTone } from "./HabitTile";
 export { SearchBar } from "./SearchBar";
 export type { SearchBarProps } from "./SearchBar";
+export { ProgrammeCard } from "./ProgrammeCard";
+export type { ProgrammeCardProps } from "./ProgrammeCard";

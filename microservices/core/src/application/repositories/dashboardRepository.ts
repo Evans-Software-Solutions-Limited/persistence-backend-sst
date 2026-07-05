@@ -862,7 +862,7 @@ export class DashboardRepository {
  * Falls back to `null` for roles the mobile UI can't render
  * (e.g. `user`, `admin`, or a missing profile row on the left-join).
  */
-function mapTrainerRoleToAssignedByType(
+export function mapTrainerRoleToAssignedByType(
   role: string | null,
 ): AssignedByType | null {
   if (role === "personal_trainer") return "personal_trainer";

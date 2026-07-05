@@ -37,6 +37,8 @@ function makeHome(overrides: Partial<HomePayload> = {}): HomePayload {
     ],
     habits: [],
     todayWorkout: [],
+    activeProgramme: null,
+    todaysTraining: [],
     ...overrides,
   };
 }
@@ -171,5 +173,73 @@ describe("HomePresenter (V2)", () => {
     const { getByTestId } = render({ onOpenNotifications });
     fireEvent.press(getByTestId("home-bell"));
     expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  // -- 19-programs F2: "Your programme" card + "Today's training" section --
+
+  it("hides the programme card + today's training by default (no live plan)", () => {
+    const { queryByTestId } = render();
+    expect(queryByTestId("home-active-programme")).toBeNull();
+    expect(queryByTestId("home-todays-training")).toBeNull();
+  });
+
+  it("renders the 'Your programme' card when a live programme is present", () => {
+    const { getByTestId, getByText } = render({
+      activeProgramme: {
+        assignmentId: "pa1",
+        programId: "p1",
+        name: "Strength Foundations",
+        week: 4,
+        totalWeeks: 12,
+        endDate: "2026-08-01",
+        startDate: "2026-05-01",
+      },
+    });
+    expect(getByTestId("home-active-programme")).toBeTruthy();
+    expect(getByTestId("home-programme-card")).toBeTruthy();
+    expect(getByText("Strength Foundations")).toBeTruthy();
+    expect(getByText("Week 4 / 12")).toBeTruthy();
+  });
+
+  it("renders 'Today's training' rows with attribution badge + due label, and opens the workout", () => {
+    const onOpenWorkout = jest.fn();
+    const { getByTestId, getByText } = render({
+      onOpenWorkout,
+      todayISO: "2026-06-10",
+      todaysTraining: [
+        {
+          assignmentId: "wa1",
+          workoutId: "w9",
+          name: "Upper Body",
+          estimatedDurationMinutes: 45,
+          dueDate: "2026-06-10",
+          assignedByType: "personal_trainer",
+        },
+      ],
+    });
+    expect(getByTestId("home-todays-training")).toBeTruthy();
+    expect(getByText("Upper Body")).toBeTruthy();
+    expect(getByText("Set by coach")).toBeTruthy();
+    expect(getByText("45 min · Today")).toBeTruthy();
+    fireEvent.press(getByTestId("todays-training-w9"));
+    expect(onOpenWorkout).toHaveBeenCalledWith("w9");
+  });
+
+  it("labels an overdue occurrence and omits the badge for self/ad-hoc rows", () => {
+    const { getByText, queryByText } = render({
+      todayISO: "2026-06-10",
+      todaysTraining: [
+        {
+          assignmentId: "wa2",
+          workoutId: "w2",
+          name: "Legs",
+          estimatedDurationMinutes: null,
+          dueDate: "2026-06-08",
+          assignedByType: null,
+        },
+      ],
+    });
+    expect(getByText("Overdue")).toBeTruthy();
+    expect(queryByText("Set by coach")).toBeNull();
   });
 });

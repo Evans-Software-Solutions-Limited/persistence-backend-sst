@@ -5,6 +5,7 @@ import type {
 } from "@/domain/models/dashboard";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
+import type { ProgramSummary } from "@/domain/models/program";
 import type {
   Food,
   FuelToday,
@@ -307,6 +308,16 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- userId; payload is the full JSON-serialised TrainerClient[].
       -- Same shape as cached_coach_overview; staleness enforced by the hook.
       CREATE TABLE IF NOT EXISTS cached_trainer_clients (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      -- 19-programs (Phase 9 mobile — coach F1): Programmes list cache. One
+      -- row per trainer userId; payload is the full JSON-serialised
+      -- ProgramSummary[]. Same shape as cached_trainer_clients; staleness
+      -- enforced by the hook. Programme DETAIL is never cached (live fetch).
+      CREATE TABLE IF NOT EXISTS cached_programs (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -1115,6 +1126,38 @@ export class SQLiteStorageAdapter implements StoragePort {
     const db = this.getDb();
     const rows = db.getAllSync(
       `SELECT synced_at FROM cached_trainer_clients WHERE user_id = ?`,
+      [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  // -- Programmes List Cache (19-programs, Phase 9 mobile — coach F1) --
+
+  getCachedPrograms(userId: string): ProgramSummary[] | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT payload FROM cached_programs WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return JSON.parse(row.payload) as ProgramSummary[];
+  }
+
+  cachePrograms(userId: string, payload: ProgramSummary[]): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_programs (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getProgramsAge(userId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_programs WHERE user_id = ?`,
       [userId],
     ) as { synced_at: string }[];
     return rows[0]?.synced_at ?? null;
@@ -2041,6 +2084,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_profile_page;
       DELETE FROM cached_coach_overview;
       DELETE FROM cached_trainer_clients;
+      DELETE FROM cached_programs;
       DELETE FROM cached_notifications;
       DELETE FROM cached_notification_preferences;
       DELETE FROM cached_fuel_today;

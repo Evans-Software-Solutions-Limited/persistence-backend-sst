@@ -3,6 +3,7 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
+import type { ProgramSummary } from "@/domain/models/program";
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",
@@ -1321,6 +1322,54 @@ describe("InMemoryStorageAdapter", () => {
       storage.cacheProfilePage("user-1", sampleProfilePage);
       storage.clearAll();
       expect(storage.getCachedProfilePage("user-1")).toBeNull();
+    });
+  });
+
+  describe("programmes list cache (19-programs, Phase 9 mobile — coach F1)", () => {
+    const samplePrograms: ProgramSummary[] = [
+      {
+        id: "program-1",
+        name: "Strength Block",
+        description: null,
+        durationWeeks: 12,
+        daysPerWeek: 4,
+        workoutCount: 8,
+        activeClientCount: 2,
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+    ];
+
+    it("returns null when nothing is cached", () => {
+      expect(storage.getCachedPrograms("user-1")).toBeNull();
+      expect(storage.getProgramsAge("user-1")).toBeNull();
+    });
+
+    it("caches and reads back the programmes list, stamping an age", () => {
+      storage.cachePrograms("user-1", samplePrograms);
+      expect(storage.getCachedPrograms("user-1")).toEqual(samplePrograms);
+      expect(storage.getProgramsAge("user-1")).not.toBeNull();
+    });
+
+    it("overwrites the previous payload on re-cache", () => {
+      storage.cachePrograms("user-1", samplePrograms);
+      const updated = [{ ...samplePrograms[0], activeClientCount: 5 }];
+      storage.cachePrograms("user-1", updated);
+      expect(storage.getCachedPrograms("user-1")?.[0].activeClientCount).toBe(
+        5,
+      );
+    });
+
+    it("scopes per-user — trainer A's cache doesn't leak to trainer B", () => {
+      storage.cachePrograms("trainer-A", samplePrograms);
+      expect(storage.getCachedPrograms("trainer-A")).not.toBeNull();
+      expect(storage.getCachedPrograms("trainer-B")).toBeNull();
+    });
+
+    it("clearAll wipes the programmes cache (sign-out hygiene)", () => {
+      storage.cachePrograms("user-1", samplePrograms);
+      storage.clearAll();
+      expect(storage.getCachedPrograms("user-1")).toBeNull();
     });
   });
 });

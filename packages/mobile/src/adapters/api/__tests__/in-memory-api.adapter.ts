@@ -72,6 +72,8 @@ import type {
   DeleteHabitCompletionInput,
   HabitConfigEntry,
   InviteApiError,
+  ProgramApiError,
+  WorkoutAssignmentRow,
 } from "@/domain/ports/api.port";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
@@ -83,7 +85,18 @@ import type {
   WeeklyVolume,
   VolumeStats,
   BodyTrendPoint,
+  ActiveProgramme,
+  TodaysTrainingItem,
 } from "@/domain/models/progress";
+import type {
+  AssignProgramInput,
+  AssignWorkoutInput,
+  CreateProgramInput,
+  ProgramAssignmentRow,
+  ProgramDetail,
+  ProgramSummary,
+  UpdateProgramInput,
+} from "@/domain/models/program";
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionResult,
@@ -962,6 +975,10 @@ export class InMemoryApiAdapter implements ApiPort {
     adherencePct: null,
     byMuscle: [],
   };
+  /** 19-programs Phase 9 F2 fixture for `getHome`'s `activeProgramme`. */
+  public nextActiveProgramme: ActiveProgramme | null = null;
+  /** 19-programs Phase 9 F2 fixture for `getHome`'s `todaysTraining`. */
+  public nextTodaysTraining: TodaysTrainingItem[] = [];
 
   async getHome() {
     return this.mayFail<HomePayload>({
@@ -971,6 +988,8 @@ export class InMemoryApiAdapter implements ApiPort {
       recentPRs: this.recentPRs,
       habits: [],
       todayWorkout: [],
+      activeProgramme: this.nextActiveProgramme,
+      todaysTraining: this.nextTodaysTraining,
     });
   }
   async getTodayRings() {
@@ -1618,5 +1637,256 @@ export class InMemoryApiAdapter implements ApiPort {
       );
     }
     return result;
+  }
+
+  // -- Programs (19-programs, Phase 9 mobile — coach F1) --
+
+  /** List fixture returned by `listPrograms`. Defaults to empty. */
+  public programs: ProgramSummary[] = [];
+  /** Detail fixture returned by `getProgram`. Defaults to null (404). */
+  public programDetail: ProgramDetail | null = null;
+  /** Count of `listPrograms` calls (refresh-path assertions). */
+  public listProgramsCalls = 0;
+  public getProgramCalls: string[] = [];
+  public createProgramCalls: CreateProgramInput[] = [];
+  public updateProgramCalls: { id: string; input: UpdateProgramInput }[] = [];
+  public deleteProgramCalls: string[] = [];
+  public assignProgramCalls: {
+    programId: string;
+    input: AssignProgramInput;
+  }[] = [];
+  public unassignProgramCalls: {
+    programId: string;
+    assignmentId: string;
+  }[] = [];
+  public assignWorkoutCalls: { clientId: string; input: AssignWorkoutInput }[] =
+    [];
+  public unassignWorkoutCalls: {
+    clientId: string;
+    assignmentId: string;
+  }[] = [];
+  /**
+   * When set, the next mutating programs call (create/update/delete/assign/
+   * unassign-workout) fails with this domain-coded error instead of
+   * succeeding. Mirrors `nextInviteError`. Consumed once per call — tests
+   * re-set it between assertions if they need repeated failures.
+   */
+  public nextProgramError: {
+    code:
+      | "invalid_workouts"
+      | "not_found"
+      | "PROGRAM_HAS_LIVE_ASSIGNMENTS"
+      | "not_your_client"
+      | "already_assigned"
+      | "PROGRAM_EMPTY"
+      | "invalid_workout"
+      | "not_deletable";
+    message: string;
+  } | null = null;
+
+  private programErrorStatus(
+    code: NonNullable<InMemoryApiAdapter["nextProgramError"]>["code"],
+  ): number {
+    switch (code) {
+      case "invalid_workouts":
+      case "invalid_workout":
+      case "PROGRAM_EMPTY":
+        return 422;
+      case "not_found":
+        return 404;
+      case "not_your_client":
+        return 403;
+      case "already_assigned":
+      case "PROGRAM_HAS_LIVE_ASSIGNMENTS":
+      case "not_deletable":
+        return 409;
+    }
+  }
+
+  private failProgram<T>(): Result<T, ProgramApiError> | null {
+    if (this.shouldFail) {
+      return fail<ProgramApiError>(this.failError as ProgramApiError);
+    }
+    if (this.nextProgramError !== null) {
+      const { code, message } = this.nextProgramError;
+      this.nextProgramError = null;
+      return fail<ProgramApiError>({
+        kind: "api",
+        code: "server",
+        message,
+        status: this.programErrorStatus(code),
+        programCode: code,
+      });
+    }
+    return null;
+  }
+
+  async listPrograms(): Promise<Result<ProgramSummary[], ApiError>> {
+    this.listProgramsCalls += 1;
+    return this.mayFail<ProgramSummary[]>([...this.programs]);
+  }
+
+  async getProgram(id: string): Promise<Result<ProgramDetail, ApiError>> {
+    this.getProgramCalls.push(id);
+    if (this.programDetail === null || this.programDetail.id !== id) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Program not found",
+        status: 404,
+      });
+    }
+    return this.mayFail<ProgramDetail>(this.programDetail);
+  }
+
+  async createProgram(
+    input: CreateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>> {
+    this.createProgramCalls.push(input);
+    const failure = this.failProgram<ProgramDetail>();
+    if (failure) return failure;
+    const now = new Date().toISOString();
+    const detail: ProgramDetail = {
+      id: `program-${this.programs.length + 1}`,
+      name: input.name,
+      description: input.description ?? null,
+      durationWeeks: input.durationWeeks,
+      daysPerWeek: input.daysPerWeek,
+      workoutCount: input.workoutIds.length,
+      activeClientCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      workouts: input.workoutIds.map((workoutId, idx) => ({
+        id: `pw-${idx}`,
+        workoutId,
+        position: idx,
+        name: `Workout ${idx + 1}`,
+        estimatedDurationMinutes: null,
+      })),
+      assignments: [],
+    };
+    this.programs.push(detail);
+    this.programDetail = detail;
+    return ok(detail);
+  }
+
+  async updateProgram(
+    id: string,
+    input: UpdateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>> {
+    this.updateProgramCalls.push({ id, input });
+    const failure = this.failProgram<ProgramDetail>();
+    if (failure) return failure;
+    if (this.programDetail === null || this.programDetail.id !== id) {
+      return fail<ProgramApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Program not found",
+        status: 404,
+        programCode: "not_found",
+      });
+    }
+    const updated: ProgramDetail = {
+      ...this.programDetail,
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.description !== undefined && {
+        description: input.description,
+      }),
+      ...(input.durationWeeks !== undefined && {
+        durationWeeks: input.durationWeeks,
+      }),
+      ...(input.daysPerWeek !== undefined && {
+        daysPerWeek: input.daysPerWeek,
+      }),
+      ...(input.workoutIds !== undefined && {
+        workoutCount: input.workoutIds.length,
+        workouts: input.workoutIds.map((workoutId, idx) => ({
+          id: `pw-${idx}`,
+          workoutId,
+          position: idx,
+          name: `Workout ${idx + 1}`,
+          estimatedDurationMinutes: null,
+        })),
+      }),
+      updatedAt: new Date().toISOString(),
+    };
+    this.programDetail = updated;
+    this.programs = this.programs.map((p) => (p.id === id ? updated : p));
+    return ok(updated);
+  }
+
+  async deleteProgram(
+    id: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>> {
+    this.deleteProgramCalls.push(id);
+    const failure = this.failProgram<{ deleted: true }>();
+    if (failure) return failure;
+    this.programs = this.programs.filter((p) => p.id !== id);
+    if (this.programDetail?.id === id) this.programDetail = null;
+    return ok({ deleted: true });
+  }
+
+  async assignProgram(
+    programId: string,
+    input: AssignProgramInput,
+  ): Promise<Result<ProgramAssignmentRow, ProgramApiError>> {
+    this.assignProgramCalls.push({ programId, input });
+    const failure = this.failProgram<ProgramAssignmentRow>();
+    if (failure) return failure;
+    const now = new Date().toISOString();
+    return ok<ProgramAssignmentRow>({
+      id: `assignment-${this.assignProgramCalls.length}`,
+      programId,
+      clientId: input.clientId,
+      assignedBy: "trainer-test",
+      startDate: input.startDate,
+      endDate: null,
+      status: "assigned",
+      showInPlan: input.showInPlan ?? true,
+      showInLibrary: input.showInLibrary ?? true,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async unassignProgram(
+    programId: string,
+    assignmentId: string,
+  ): Promise<Result<{ unassigned: true }, ApiError>> {
+    this.unassignProgramCalls.push({ programId, assignmentId });
+    return this.mayFail<{ unassigned: true }>({ unassigned: true });
+  }
+
+  async assignWorkout(
+    clientId: string,
+    input: AssignWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>> {
+    this.assignWorkoutCalls.push({ clientId, input });
+    const failure = this.failProgram<WorkoutAssignmentRow>();
+    if (failure) return failure;
+    const now = new Date().toISOString();
+    return ok<WorkoutAssignmentRow>({
+      id: `wa-${this.assignWorkoutCalls.length}`,
+      clientId,
+      workoutId: input.workoutId,
+      assignedBy: "trainer-test",
+      dueDate: input.dueDate ?? null,
+      showInPlan: input.showInPlan ?? true,
+      showInLibrary: input.showInLibrary ?? true,
+      trainerNotes: input.trainerNotes ?? null,
+      status: "assigned",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async unassignWorkout(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>> {
+    this.unassignWorkoutCalls.push({ clientId, assignmentId });
+    const failure = this.failProgram<{ deleted: true }>();
+    if (failure) return failure;
+    return ok({ deleted: true });
   }
 }
