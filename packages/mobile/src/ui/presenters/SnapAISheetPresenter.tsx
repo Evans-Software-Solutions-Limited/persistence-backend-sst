@@ -64,6 +64,8 @@ export type SnapAISheetProps = {
   slot: MealSlot;
   onSlotChange: (slot: MealSlot) => void;
   onConfirm: () => void;
+  /** True while the confirm is in flight — disables the Add button. */
+  confirming?: boolean;
   errorMessage: string | null;
   onRetry: () => void;
   onChooseAnother: () => void;
@@ -261,6 +263,7 @@ export function SnapAISheetPresenter(props: SnapAISheetProps) {
     slot,
     onSlotChange,
     onConfirm,
+    confirming,
     errorMessage,
     onRetry,
     onChooseAnother,
@@ -309,6 +312,7 @@ export function SnapAISheetPresenter(props: SnapAISheetProps) {
           onSlotChange={onSlotChange}
           onConfirm={onConfirm}
           added={stage === "added"}
+          confirming={confirming}
           testID="snap-confirm"
         />
       ) : (

@@ -221,4 +221,81 @@ describe("useAiDraftItems", () => {
       ).toBe(2),
     );
   });
+
+  it("a double-tap confirm logs the draft exactly once (in-flight guard)", async () => {
+    const { adapters, storage } = makeAdapters();
+    const { result } = renderHook(() => useAiDraftItems(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => result.current.setItems(draftItemsFromEstimate(estimate)));
+
+    let first = 0;
+    let second = -1;
+    await act(async () => {
+      // Fire both taps before either resolves — the second must be
+      // rejected synchronously by the in-flight ref guard.
+      const p1 = result.current.confirm("lunch");
+      const p2 = result.current.confirm("lunch");
+      [first, second] = await Promise.all([p1, p2]);
+    });
+    expect(first).toBe(1);
+    expect(second).toBe(0);
+    expect(
+      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.lunch
+        .length,
+    ).toBe(1);
+  });
+
+  it("exposes confirming=true while a confirm is in flight, false after", async () => {
+    const { adapters } = makeAdapters();
+    const { result } = renderHook(() => useAiDraftItems(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => result.current.setItems(draftItemsFromEstimate(estimate)));
+    expect(result.current.confirming).toBe(false);
+
+    let pending: Promise<number> | null = null;
+    act(() => {
+      pending = result.current.confirm("lunch");
+    });
+    expect(result.current.confirming).toBe(true);
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.confirming).toBe(false);
+  });
+
+  it("zeroing grams then re-editing recovers macros from the original AI basis", () => {
+    const { adapters } = makeAdapters();
+    const { result } = renderHook(() => useAiDraftItems(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => result.current.setItems(draftItemsFromEstimate(estimate)));
+    const originalKcal = result.current.items[0]!.kcal; // 300 @ 180g
+
+    act(() => result.current.onEditGrams(0, 0)); // cleared input
+    expect(result.current.items[0]?.kcal).toBe(0);
+
+    act(() => result.current.onEditGrams(0, 180)); // back to original grams
+    expect(result.current.items[0]?.kcal).toBe(originalKcal);
+
+    act(() => result.current.onEditGrams(0, 90)); // and rescaling still works
+    expect(result.current.items[0]?.kcal).toBe(originalKcal / 2);
+  });
+
+  it("repeated grams edits rescale from the original basis (no cumulative drift)", () => {
+    const { adapters } = makeAdapters();
+    const { result } = renderHook(() => useAiDraftItems(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => result.current.setItems(draftItemsFromEstimate(estimate)));
+    const originalKcal = result.current.items[0]!.kcal;
+
+    for (const grams of [37, 291, 64, 180]) {
+      act(() => result.current.onEditGrams(0, grams));
+    }
+    // Final edit returned to the original 180g — kcal must be exactly the
+    // original, not a drifted product of intermediate roundings.
+    expect(result.current.items[0]?.kcal).toBe(originalKcal);
+  });
 });

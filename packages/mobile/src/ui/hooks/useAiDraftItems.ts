@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { rescaleAiFoodItem, sumKeptAiItemsKcal } from "@/domain/services";
 import { localDayISO } from "@/shared/utils";
@@ -40,47 +40,78 @@ export type UseAiDraftItems = {
   totalKcal: number;
   onToggleItem: (index: number) => void;
   onEditGrams: (index: number, grams: number) => void;
+  /** True while a confirm is in flight — thread into the Add button's
+   * `disabled` so a double-tap can't log the draft twice. */
+  confirming: boolean;
   /** Logs one entry per kept item into `slot`, then resolves. Returns the
-   * number of entries created (0 when nothing is kept — no-op). */
+   * number of entries created (0 when nothing is kept, or when a confirm
+   * is already in flight — both no-ops for the caller). */
   confirm: (slot: MealSlot) => Promise<number>;
 };
 
 export function useAiDraftItems(): UseAiDraftItems {
   const logEntry = useLogEntry();
-  const [items, setItems] = useState<AiDraftItem[]>([]);
+  const [items, setItemsState] = useState<AiDraftItem[]>([]);
+  // Original AI-estimated items as set by the container. Grams edits always
+  // rescale from THIS basis, not the current (already-rescaled) item — so
+  // clearing the grams field to 0 (which zeroes the macros) is recoverable
+  // on the next edit, and repeated edits don't accumulate rounding drift.
+  const originalsRef = useRef<AiDraftItem[]>([]);
+  // Ref (not state) so a second tap during the same in-flight confirm is
+  // rejected synchronously — state updates are async and would leave a
+  // window where both taps pass the guard.
+  const confirmingRef = useRef(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const setItems = useCallback((next: AiDraftItem[]) => {
+    originalsRef.current = next;
+    setItemsState(next);
+  }, []);
 
   const onToggleItem = useCallback((index: number) => {
-    setItems((prev) =>
+    setItemsState((prev) =>
       prev.map((it, i) => (i === index ? { ...it, on: !it.on } : it)),
     );
   }, []);
 
   const onEditGrams = useCallback((index: number, grams: number) => {
-    setItems((prev) =>
-      prev.map((it, i) =>
-        i === index ? { ...rescaleAiFoodItem(it, grams), on: it.on } : it,
-      ),
+    setItemsState((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const basis = originalsRef.current[index] ?? it;
+        return { ...rescaleAiFoodItem(basis, grams), on: it.on };
+      }),
     );
   }, []);
 
   const confirm = useCallback(
     async (slot: MealSlot) => {
+      if (confirmingRef.current) return 0;
       const kept = items.filter((i) => i.on);
       if (kept.length === 0) return 0;
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const loggedAt = `${localDayISO()}T12:00:00.000Z`;
-      for (const item of kept) {
-        await logEntry.mutate({
-          mealSlot: slot,
-          servings: 1,
-          kcal: item.kcal,
-          proteinG: item.proteinG,
-          carbsG: item.carbsG,
-          fatG: item.fatG,
-          loggedAt,
-        });
+      confirmingRef.current = true;
+      setConfirming(true);
+      try {
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+        const loggedAt = `${localDayISO()}T12:00:00.000Z`;
+        for (const item of kept) {
+          await logEntry.mutate({
+            mealSlot: slot,
+            servings: 1,
+            kcal: item.kcal,
+            proteinG: item.proteinG,
+            carbsG: item.carbsG,
+            fatG: item.fatG,
+            loggedAt,
+          });
+        }
+        return kept.length;
+      } finally {
+        confirmingRef.current = false;
+        setConfirming(false);
       }
-      return kept.length;
     },
     [items, logEntry],
   );
@@ -91,6 +122,7 @@ export function useAiDraftItems(): UseAiDraftItems {
     totalKcal: sumKeptAiItemsKcal(items),
     onToggleItem,
     onEditGrams,
+    confirming,
     confirm,
   };
 }

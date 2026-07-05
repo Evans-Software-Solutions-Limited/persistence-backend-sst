@@ -102,6 +102,8 @@ export type QuickAddSheetProps = {
   onEditDescribeGrams: (index: number, grams: number) => void;
   describeTotalKcal: number;
   describeAdded: boolean;
+  /** True while the describe-draft confirm is in flight. */
+  describeConfirming?: boolean;
   onConfirmDescribe: () => void;
   testID?: string;
 };
@@ -729,6 +731,7 @@ function DescribeConfirmStage(props: QuickAddSheetProps) {
     slot,
     onSlotChange,
     describeAdded,
+    describeConfirming,
     onConfirmDescribe,
   } = props;
   return (
@@ -741,6 +744,7 @@ function DescribeConfirmStage(props: QuickAddSheetProps) {
       onSlotChange={onSlotChange}
       onConfirm={onConfirmDescribe}
       added={describeAdded}
+      confirming={describeConfirming}
       testID="quick-add-describe-confirm"
     />
   );

@@ -188,6 +188,7 @@ export function SnapAISheetContainer() {
       slot={slot}
       onSlotChange={setSlot}
       onConfirm={() => void onConfirm()}
+      confirming={draft.confirming}
       errorMessage={errorMessage}
       onRetry={onRetry}
       onChooseAnother={onChooseAnother}

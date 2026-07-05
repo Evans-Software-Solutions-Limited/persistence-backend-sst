@@ -36,6 +36,9 @@ export type AiDraftConfirmProps = {
   onConfirm: () => void;
   /** Renders "Added ✓" and disables the button when true. */
   added?: boolean;
+  /** True while the confirm is in flight — disables the button so a
+   * double-tap can't log the draft twice. */
+  confirming?: boolean;
   testID?: string;
 };
 
@@ -86,6 +89,7 @@ export function AiDraftConfirmPresenter({
   onSlotChange,
   onConfirm,
   added = false,
+  confirming = false,
   testID = "ai-draft-confirm",
 }: AiDraftConfirmProps) {
   const keptCount = items.filter((i) => i.on).length;
@@ -223,10 +227,10 @@ export function AiDraftConfirmPresenter({
         full
         icon={<IconCheck size={16} strokeWidth={2.5} />}
         onPress={onConfirm}
-        disabled={keptCount === 0 || added}
+        disabled={keptCount === 0 || added || confirming}
         testID={`${testID}-add`}
       >
-        {added ? "Added ✓" : "Add to meal"}
+        {added ? "Added ✓" : confirming ? "Adding…" : "Add to meal"}
       </Btn>
     </View>
   );

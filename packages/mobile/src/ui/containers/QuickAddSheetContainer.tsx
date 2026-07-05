@@ -294,6 +294,7 @@ export function QuickAddSheetContainer() {
       onEditDescribeGrams={describeDraft.onEditGrams}
       describeTotalKcal={describeDraft.totalKcal}
       describeAdded={describeAdded}
+      describeConfirming={describeDraft.confirming}
       onConfirmDescribe={() => void onConfirmDescribe()}
     />
   );
