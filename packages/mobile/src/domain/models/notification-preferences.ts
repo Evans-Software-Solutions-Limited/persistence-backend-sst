@@ -7,12 +7,13 @@
  *       requirements.md STORY-003
  *
  * Backend contract (PR #81): `POST /notifications/preferences` validates
- * every key against the 9-value `NOTIFICATION_TYPES` enum and 400s on an
- * unknown key, then atomically JSONB-merges the partial. `GET` applies
- * defaults for missing keys (empty column reads as "all enabled") and
- * drops stale keys. So the client preference map is keyed by the 9 known
- * types only — sending a design.md-era key (streak_milestone, etc.) would
- * be rejected. Those types are registered by their producing specs later.
+ * every key against the `NOTIFICATION_TYPES` enum and 400s on an unknown
+ * key, then atomically JSONB-merges the partial. `GET` applies defaults for
+ * missing keys (empty column reads as "all enabled") and drops stale keys.
+ * So the client preference map is keyed by the known types only — sending an
+ * unregistered key (e.g. a streak type still on the forward-compat path)
+ * would be rejected. The M8 Coach Mode Phase 3 on-behalf types were added to
+ * both sides (backend enum + this union) together, so they validate.
  */
 
 import type { NotificationType } from "./notification";
@@ -54,6 +55,14 @@ export const CATEGORIES: readonly NotificationCategory[] = [
       "physio_request",
       "physio_accepted",
       "trainer_feedback",
+      // M8 Coach Mode Phase 3 — coach on-behalf / assignment events. Grouped
+      // here (rather than split across Workouts/Goals) because every one is a
+      // "your coach did X for you" notification; a single coach bucket is the
+      // clearer mental model than scattering them by domain.
+      "goal_assigned_by_trainer",
+      "workout_logged_on_behalf",
+      "measurement_logged_on_behalf",
+      "nutrition_target_set_by_trainer",
     ],
   },
   { title: "Social", types: ["friend_request"] },

@@ -35,7 +35,7 @@ export function NotificationPreferenceRow({
   disabled = false,
 }: NotificationPreferenceRowProps) {
   const { Icon, tone } = notificationVisual(type);
-  // The 9 known types only ever map to trainer / primary / gold / success.
+  // The registered types only ever map to trainer / primary / gold / success.
   // `trainer` is special-cased because its token family is `$accentTrainer*`
   // (not `$trainer*`); every other tone follows the `$<tone>Dim` / `$<tone>`
   // convention.

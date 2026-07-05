@@ -22,7 +22,13 @@
  * widened `WireNotificationType`, not the strict union.
  */
 
-/** Known notification types — the 9 values with live producers (PR #81). */
+/**
+ * Known notification types. The first 9 shipped with PR #81; the trailing
+ * four are the M8 (10-trainer-features) Coach Mode Phase 3 on-behalf events,
+ * registered here now their backend producers ship (cross-cuts § 5, DB enum
+ * migration 20260705150000). Streak/nutrition producer types (06/13) remain
+ * unregistered and ride the forward-compatible `WireNotificationType` path.
+ */
 export type NotificationType =
   | "workout_assigned"
   | "friend_request"
@@ -32,7 +38,12 @@ export type NotificationType =
   | "physio_accepted"
   | "workout_reminder"
   | "goal_milestone"
-  | "trainer_feedback";
+  | "trainer_feedback"
+  // M8 Coach Mode Phase 3 — coach on-behalf / assignment events.
+  | "goal_assigned_by_trainer"
+  | "workout_logged_on_behalf"
+  | "measurement_logged_on_behalf"
+  | "nutrition_target_set_by_trainer";
 
 /**
  * The 9 known types as a runtime array. Drives the preferences screen's
@@ -49,6 +60,10 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_reminder",
   "goal_milestone",
   "trainer_feedback",
+  "goal_assigned_by_trainer",
+  "workout_logged_on_behalf",
+  "measurement_logged_on_behalf",
+  "nutrition_target_set_by_trainer",
 ] as const;
 
 /**
@@ -82,6 +97,10 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   workout_reminder: "Workout reminders",
   goal_milestone: "Goal milestones",
   trainer_feedback: "Trainer feedback",
+  goal_assigned_by_trainer: "Goals assigned by coach",
+  workout_logged_on_behalf: "Workouts logged by coach",
+  measurement_logged_on_behalf: "Measurements logged by coach",
+  nutrition_target_set_by_trainer: "Nutrition targets set by coach",
 };
 
 /**
