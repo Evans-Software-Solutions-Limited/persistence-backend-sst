@@ -93,8 +93,14 @@ export function SnapAISheetContainer() {
         // 402 entitlement_denied shouldn't normally arrive here (the caller
         // gates opening this sheet on aiGate.allowed), but handle it
         // defensively with the same generic error copy — the gate is the
-        // primary defence, not this fallback.
-        setErrorMessage("Couldn't read this photo — try Quick Add instead.");
+        // primary defence, not this fallback. 429 = the daily AI ceiling
+        // (cross-cuts § 4.3 Revised 2026-07-05) — name it, since "try
+        // again" would be wrong advice for the rest of the day.
+        setErrorMessage(
+          result.error.status === 429
+            ? "Daily AI limit reached — it resets tomorrow. Log with Quick Add instead."
+            : "Couldn't read this photo — try Quick Add instead.",
+        );
         setStage("error");
         return;
       }

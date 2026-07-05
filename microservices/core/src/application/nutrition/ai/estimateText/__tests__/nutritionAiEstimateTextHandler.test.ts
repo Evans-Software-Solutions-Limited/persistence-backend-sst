@@ -42,6 +42,7 @@ const estimateFromTextMock = vi.hoisted(() =>
 );
 
 const usageLogRecordMock = vi.hoisted(() => vi.fn(async () => undefined));
+const usageLogCountMock = vi.hoisted(() => vi.fn(async () => 0));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -88,6 +89,7 @@ vi.mock("../../../services/aiEstimation", async () => {
 vi.mock("../../../../repositories/aiUsageLogRepository", () => ({
   AiUsageLogRepository: vi.fn().mockImplementation(() => ({
     record: usageLogRecordMock,
+    countForUserToday: usageLogCountMock,
   })),
 }));
 
@@ -172,7 +174,7 @@ describe("nutritionAiEstimateTextHandler", () => {
     expect(estimateFromTextMock).not.toHaveBeenCalled();
   });
 
-  it("writes a usage-log row on a 402 deny", async () => {
+  it("does NOT write a usage-log row on a 402 deny (pre-model rejection)", async () => {
     assertEntitlementMock.mockResolvedValueOnce({
       allowed: false,
       reason: "cancelled",
@@ -192,13 +194,36 @@ describe("nutritionAiEstimateTextHandler", () => {
 
     await app.handle(authedRequest({ description: "a bowl of porridge" }));
 
-    expect(usageLogRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "test-user-id",
-        endpoint: "/nutrition/ai/estimate-text",
-        responseSizeBytes: null,
-      }),
+    // Pre-model rejections cost nothing and must not consume the daily
+    // ceiling — no row is written (cross-cuts § 4.3 Revised 2026-07-05).
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 ai_daily_limit at the text ceiling without calling the model or logging", async () => {
+    usageLogCountMock.mockResolvedValueOnce(30); // AI_TEXT_DAILY_LIMIT
+    const { nutritionAiEstimateTextHandler } =
+      await import("../nutritionAiEstimateTextHandler");
+    const response = await nutritionAiEstimateTextHandler.handle(
+      authedRequest({ description: "a bowl of porridge" }),
     );
+
+    expect(response.status).toBe(429);
+    const body = (await response.json()) as any;
+    expect(body).toEqual({ error: "ai_daily_limit" });
+    expect(estimateFromTextMock).not.toHaveBeenCalled();
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("proceeds normally one call under the text ceiling", async () => {
+    usageLogCountMock.mockResolvedValueOnce(29);
+    const { nutritionAiEstimateTextHandler } =
+      await import("../nutritionAiEstimateTextHandler");
+    const response = await nutritionAiEstimateTextHandler.handle(
+      authedRequest({ description: "a bowl of porridge" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(estimateFromTextMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a description over 1000 chars with Elysia's own 422 validation", async () => {

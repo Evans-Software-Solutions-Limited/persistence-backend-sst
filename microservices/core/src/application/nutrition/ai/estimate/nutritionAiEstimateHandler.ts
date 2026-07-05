@@ -17,6 +17,21 @@ import {
 
 const ENDPOINT = "/nutrition/ai/estimate";
 
+// Daily per-user inference ceiling (cross-cuts § 4.3 Revised 2026-07-05).
+// A cost backstop with a deliberate profit buffer, NOT a product quota:
+// 12 photo estimates/day ≈ 2× the heaviest legitimate use (every meal +
+// retries), and a worst-case abuser costs ~£5.50/mo against a £12.99
+// premium sub. Counted against ACTUAL inferences only (see the
+// reached-model gate on the usage-log write below).
+// Fail-safe parse: a mis-set env var (garbage → NaN, "" → 0) must not
+// silently disable the cost guard — anything non-finite/non-positive
+// falls back to the default.
+const parsedPhotoLimit = Number(process.env.AI_PHOTO_DAILY_LIMIT);
+const AI_PHOTO_DAILY_LIMIT =
+  Number.isFinite(parsedPhotoLimit) && parsedPhotoLimit > 0
+    ? parsedPhotoLimit
+    : 12;
+
 // 5 MB — the client downscales + compresses to ~150-530 KB before
 // sending (design.md § Revised 2026-07-03 "Image transport"), so this
 // cap is a generous abuse guard, not the expected steady-state size.
@@ -82,11 +97,26 @@ export const nutritionAiEstimateHandler = new Elysia()
       const startedAt = Date.now();
       const requestSizeBytes = Buffer.byteLength(JSON.stringify(ctx.body));
       let responseSizeBytes: number | null = null;
+      // The usage log records ACTUAL inferences (success, 422, 503) — not
+      // pre-model rejections (402/400/413/429), which cost nothing and
+      // must not consume the daily ceiling.
+      let reachedModel = false;
 
       try {
         const verdict = await assertEntitlement(userId, "ai_access");
         if (!verdict.allowed) {
           throw new EntitlementError(verdict, "ai_access");
+        }
+
+        // Daily ceiling. Best-effort under concurrency (the counted rows
+        // are committed post-inference), which is fine for a backstop.
+        const usedToday = await ctx.AiUsageLogRepository.countForUserToday(
+          userId,
+          ENDPOINT,
+        );
+        if (usedToday >= AI_PHOTO_DAILY_LIMIT) {
+          ctx.set.status = 429;
+          return { error: "ai_daily_limit" };
         }
 
         const { imageBase64, mediaType, mealType } = ctx.body;
@@ -124,6 +154,7 @@ export const nutritionAiEstimateHandler = new Elysia()
           return body;
         }
 
+        reachedModel = true;
         const estimate = await estimateFromPhoto({
           imageBase64,
           mediaType,
@@ -152,13 +183,15 @@ export const nutritionAiEstimateHandler = new Elysia()
         throw error;
       } finally {
         try {
-          await ctx.AiUsageLogRepository.record({
-            userId,
-            endpoint: ENDPOINT,
-            requestSizeBytes,
-            responseSizeBytes,
-            ms: Date.now() - startedAt,
-          });
+          if (reachedModel) {
+            await ctx.AiUsageLogRepository.record({
+              userId,
+              endpoint: ENDPOINT,
+              requestSizeBytes,
+              responseSizeBytes,
+              ms: Date.now() - startedAt,
+            });
+          }
         } catch (logError) {
           // Best-effort telemetry (cross-cuts § 4.2) — never fail the
           // user-facing response because the usage-log insert failed.

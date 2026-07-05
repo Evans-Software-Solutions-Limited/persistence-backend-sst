@@ -216,7 +216,9 @@ export function QuickAddSheetContainer() {
     setIsEstimatingText(false);
     if (!result.ok) {
       setDescribeError(
-        "Couldn't estimate that — try rephrasing or use Quick Add instead.",
+        result.error.status === 429
+          ? "Daily AI limit reached — it resets tomorrow. Log with Quick Add instead."
+          : "Couldn't estimate that — try rephrasing or use Quick Add instead.",
       );
       return;
     }

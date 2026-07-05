@@ -56,6 +56,7 @@ const estimateFromPhotoMock = vi.hoisted(() =>
 );
 
 const usageLogRecordMock = vi.hoisted(() => vi.fn(async () => undefined));
+const usageLogCountMock = vi.hoisted(() => vi.fn(async () => 0));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -102,6 +103,7 @@ vi.mock("../../../services/aiEstimation", async () => {
 vi.mock("../../../../repositories/aiUsageLogRepository", () => ({
   AiUsageLogRepository: vi.fn().mockImplementation(() => ({
     record: usageLogRecordMock,
+    countForUserToday: usageLogCountMock,
   })),
 }));
 
@@ -195,7 +197,7 @@ describe("nutritionAiEstimateHandler", () => {
     expect(estimateFromPhotoMock).not.toHaveBeenCalled();
   });
 
-  it("writes a usage-log row on a 402 deny", async () => {
+  it("does NOT write a usage-log row on a 402 deny (pre-model rejection)", async () => {
     assertEntitlementMock.mockResolvedValueOnce({
       allowed: false,
       reason: "tier",
@@ -220,13 +222,9 @@ describe("nutritionAiEstimateHandler", () => {
       }),
     );
 
-    expect(usageLogRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "test-user-id",
-        endpoint: "/nutrition/ai/estimate",
-        responseSizeBytes: null, // thrown before a response body was built
-      }),
-    );
+    // Pre-model rejections cost nothing and must not consume the daily
+    // ceiling — no row is written (cross-cuts § 4.3 Revised 2026-07-05).
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
   });
 
   it("returns 413 image_too_large when the decoded image exceeds 5MB", async () => {
@@ -246,7 +244,7 @@ describe("nutritionAiEstimateHandler", () => {
     expect(estimateFromPhotoMock).not.toHaveBeenCalled();
   });
 
-  it("writes a usage-log row on a 413 reject", async () => {
+  it("does NOT write a usage-log row on a 413 reject (pre-model rejection)", async () => {
     const oversized = Buffer.alloc(5 * 1024 * 1024 + 1, 0xff).toString(
       "base64",
     );
@@ -256,9 +254,40 @@ describe("nutritionAiEstimateHandler", () => {
       authedRequest({ imageBase64: oversized, mediaType: "image/jpeg" }),
     );
 
-    expect(usageLogRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({ endpoint: "/nutrition/ai/estimate" }),
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 ai_daily_limit at the photo ceiling without calling the model or logging", async () => {
+    usageLogCountMock.mockResolvedValueOnce(12); // AI_PHOTO_DAILY_LIMIT
+    const { nutritionAiEstimateHandler } =
+      await import("../nutritionAiEstimateHandler");
+    const response = await nutritionAiEstimateHandler.handle(
+      authedRequest({
+        imageBase64: VALID_JPEG_BASE64,
+        mediaType: "image/jpeg",
+      }),
     );
+
+    expect(response.status).toBe(429);
+    const body = (await response.json()) as any;
+    expect(body).toEqual({ error: "ai_daily_limit" });
+    expect(estimateFromPhotoMock).not.toHaveBeenCalled();
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("proceeds normally one call under the photo ceiling", async () => {
+    usageLogCountMock.mockResolvedValueOnce(11);
+    const { nutritionAiEstimateHandler } =
+      await import("../nutritionAiEstimateHandler");
+    const response = await nutritionAiEstimateHandler.handle(
+      authedRequest({
+        imageBase64: VALID_JPEG_BASE64,
+        mediaType: "image/jpeg",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(estimateFromPhotoMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns 400 invalid_image_data when the magic bytes don't match the declared mediaType", async () => {

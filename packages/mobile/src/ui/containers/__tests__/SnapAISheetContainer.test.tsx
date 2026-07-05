@@ -288,6 +288,22 @@ describe("SnapAISheetContainer", () => {
     expect(api.estimateFromPhotoCalls).toHaveLength(2);
   });
 
+  it("shows the daily-limit copy on a 429 (not the generic unreadable copy)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.nextAiEstimateError = { status: 429, message: "ai_daily_limit" };
+    render(
+      <Wrapper adapters={adapters}>
+        <SnapAISheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openSnap());
+    await act(async () => {
+      await mockProbe.last!.onShutterPress();
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("error"));
+    expect(mockProbe.last?.errorMessage).toContain("Daily AI limit reached");
+  });
+
   it("choose-another returns to capture and clears the retained photo", async () => {
     const { adapters, api } = makeAdapters();
     api.nextAiEstimateError = { status: 503, message: "ai_unavailable" };
