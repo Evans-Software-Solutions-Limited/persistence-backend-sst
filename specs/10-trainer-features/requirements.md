@@ -75,13 +75,24 @@ Authoritative references:
 **Acceptance Criteria:**
 
 - 3.1 [ ] Route `(app)/clients/[id].tsx` renders `<ClientDetailContainer>`. Full-screen route (not a tab).
-- 3.2 [ ] Layout per `client-detail.jsx`: header with client name + status badge + back IconBtn; tab strip (Overview / Workouts / Nutrition / Notes / Settings); per-tab content.
-- 3.3 [ ] **Overview** tab: AI Summary card + Streak hero (reused from `06-progress-goals`) + Body trend (reused) + Volume stats (reused) + recent PRs.
-- 3.4 [ ] **Workouts** tab: assigned workouts list + recent sessions list. Trainer can tap "Log session for client" → on-behalf session creator flow.
-- 3.5 [ ] **Nutrition** tab: nutrition targets card + recent days summary. Trainer can edit targets via "Edit targets" Btn → on-behalf nutrition-target PUT.
-- 3.6 [ ] **Notes** tab: list of trainer's private notes about the client + Add Note Btn. Each note: timestamp + text + edit/delete affordances.
-- 3.7 [ ] **Settings** tab: relationship status (active / archived) + assigned-since date + programs assigned + archive button.
-- 3.8 [ ] AI Summary card: `<Card>` with `<IconSparkles>` + summary text + "Regenerate" Btn. Data: `useClientAISummary(clientId)`. Out of scope until later — see STORY-014.
+- 3.2 [ ] Layout per `client-detail.jsx`: a **single scrolling screen** (NOT a tab strip), header with client name + status badge + back IconBtn, then the section stack: `ClientHeader` → `LiveSessionCTA` → `QuickActionsRow` → `AISummaryCard` → `GoalCard` → `TargetsCard` → `ThisWeekCard` → `AdherenceBreakdown` → `ProgrammeCard` → `CoachNotesCard`.
+- 3.3 [ ] Data source: `GET /trainers/me/clients/:clientId` → `{ data: ClientDetail }` (Phase 5 builds it), gated by role + `assertTrainerCanActForClient`. Full per-module contract in `design.md § Client Detail — functional contract`.
+- 3.4 [ ] **Module a (Adherence):** overall 28-day % + 5-band rating reusing the shipped `clientRosterBand` (`stellar/strong/wobbling/atRisk/crisis`); category rows for calorie/protein/check-in/sleep render unavailable ("—") in v1; empty state "Not enough data yet" (never 0%/Crisis for a brand-new client).
+- 3.5 [ ] **Module b (PR highlights):** exact-rep records only (`1rm/3rm/5rm/10rm/max_weight/max_volume`), **no Epley**; empty state "No PRs logged yet".
+- 3.6 [ ] **Module c (Volume):** weekly volume via `dailyVolume` (user-local week); preserve the 42803 ordinal-GROUP-BY + PgDialect render guard; "—" when no sessions.
+- 3.7 [ ] **Module d (Calorie hit):** read-only for coach; **totals + ±10% "hit" adherence, NOT the food-level log** (privacy default — pending Brad); coach read + on-behalf target PUT are Phase 3 builds.
+- 3.8 [ ] **Module e (Goals):** primary active `user_goals` row (name via `goal_types`, no title column; `is_active`, not a status enum); weight axis from `body_measurements` + goal `target_value`; assign/edit-own are Phase 3; attribution "Goal set by Coach {name}" from `profiles.full_name`.
+- 3.9 [ ] **Module f (Habits):** coach view of habit configs + weekly satisfaction + collection streak; weekly-satisfaction compute + coach read + authorship routes are to-build (per `18-habit-setup`); coach-set habits are complete-only and transfer to the client on relationship end.
+- 3.10 [ ] **Module g (AI Client Summary):** **launch scope** — see STORY-014 (revised 2026-07-05).
+- 3.11 [ ] **Scheduling / add-to-calendar: out of scope** (parked). The "Schedule" quick action is hidden/disabled and `LiveSessionCTA` shows "No active programme" until `program_assignments` lands.
+
+> **Revised 2026-07-05 (Phase 4 — functional contract).** STORY-003's original AC 3.2–3.8
+> described a 5-tab strip (Overview / Workouts / Nutrition / Notes / Settings). That was
+> wrong — the prototype is a single scroll. AC 3.2–3.11 above replace it, and the module-by-module
+> read/write contract now lives in `design.md § Client Detail — functional contract` (grounded on
+> endpoints/repos verified in code 2026-07-05). Most per-client reads (the aggregate,
+> on-behalf GETs, goals/nutrition writes, notes, habits) are **not yet built** — they are Phase 3/5
+> work, not "already live." The AI Client Summary is **launch scope** (module g).
 
 ### STORY-004: As a trainer, I want to log a workout on behalf of a client (M8)
 
@@ -192,14 +203,20 @@ Authoritative references:
 - 13.4 [ ] Measurement row in body-trend renders the same when `logged_by_user_id IS NOT NULL`.
 - 13.5 [ ] Client can NOT edit/delete these rows. Trailing chevron is replaced with a "view only" badge or context-menu showing "Ask coach to remove" (out-of-band per cross-cuts § 1.5 — surfaces this in the UI but the action is out-of-app).
 
-### STORY-014: AI summary card (Tier B — deferred but contract specified)
+### STORY-014: AI Client Summary card (LAUNCH scope — revised 2026-07-05)
+
+> **Revised 2026-07-05 (Brad):** promoted from Tier-B-deferred to **launch scope** ("a big USP").
+> Designed in Phase 4 (`design.md § Client Detail — functional contract § Module g`), **built in
+> Phase 6**. The original "coming soon" stub ACs are superseded by the ACs below.
 
 **Acceptance Criteria:**
 
-- 14.1 [ ] `useClientAISummary(clientId)` hook returns `{ summary?: string; lastGeneratedAt?: Date; canRegenerate: boolean }`.
-- 14.2 [ ] Until the AI service is implemented, hook returns `{ summary: undefined, canRegenerate: false }` and the card shows: "AI summary coming soon".
-- 14.3 [ ] When wired: card shows summary text + `<IconSparkles>` + "Regenerate" Btn (rate-limited; consumes `aiAccess` entitlement per cross-cuts § 4).
-- 14.4 [ ] `POST /trainers/me/clients/:clientId/ai-summary/regenerate` → ai-usage-log row + entitlement check + LLM call.
+- 14.1 [ ] `useClientAISummary(clientId)` returns `{ summary: string | null; generatedDate: string | null; stale: boolean; canRegenerate: boolean }` (matches the `aiSummary` module on the aggregate).
+- 14.2 [ ] Inputs are modules a–f for the client; generated via the M9.5 **Bedrock seam** (`MinimalBedrockClient` + `getDefaultClient()`, forced tool use, injectable client, **no live calls in CI**).
+- 14.3 [ ] Card shows summary text + `<IconSparkles>` + "Regenerate" Btn; **gated on the coach's `ai_access`** via `assertEntitlement(coachUserId, "ai_access")` (402 on denial per cross-cuts § 4.1) and the coach's **daily AI ceiling** (429 `ai_daily_limit`, dedicated `AI_COACH_SUMMARY_DAILY_LIMIT`).
+- 14.4 [ ] Cached per (trainer, client, day) in a **new `client_ai_summaries` table** (DDL in `design.md § Module g`); regenerate-on-demand upserts the day's row; every generation writes `ai_usage_log`.
+- 14.5 [ ] `POST /trainers/me/clients/:clientId/ai-summary/regenerate` (Phase 6): role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check → Bedrock → cache upsert → `ai_usage_log`.
+- 14.6 [ ] Staleness copy ("Updated {relativeTime}" / "Summary from {date} · Regenerate") + failure fallback: on Bedrock error / ceiling / no `ai_access` the card **degrades to the raw modules a–f**, never a blank or hard-error card.
 
 ### STORY-015: As a coach I want to share an invite code (with QR); as an athlete I want to redeem one — no email required
 
@@ -229,7 +246,8 @@ Authoritative references:
 
 ## Out of scope
 
-- **AI summary LLM implementation** — Tier B (M9.5+). Contract specified; backend / LLM integration is later.
+- ~~**AI summary LLM implementation** — Tier B (M9.5+).~~ **Revised 2026-07-05:** the AI Client Summary is now **launch scope** (STORY-014, module g) — designed Phase 4, built Phase 6. No longer out of scope.
+- **Scheduling / add-to-calendar** — parked as its own future spec (no appointments/calendar model exists). Client Detail v1 ships without it; the "Schedule" quick action is hidden/disabled.
 - **Trainer-to-client messaging / inbox** — Option 4 nav had an Inbox tab. Out of scope for Option 3.
 - **Bulk-assign workouts/goals/programs** — Tier B; flagged as M8.5 follow-up.
 - **Athlete-mode surfaces (Home, You/Progress, Train, Fuel)** — owned by their respective specs. This spec ships coach-mode variants.
