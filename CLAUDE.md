@@ -7,7 +7,7 @@ Work ships via milestone-driven parallel agents. Specs are the source of truth; 
 - **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
 - **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
 - **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
-- **Don't trust `specs/milestones/ROADMAP.md` for current status** — it lags merged PRs by weeks. The authoritative ledger is `~/.claude/projects/.../memory/MEMORY.md` (the `project_current_state.md` row). Cross-check with `git log --oneline -30` before assuming any milestone is "pending."
+- **`specs/milestones/ROADMAP.md` status refreshed 2026-07-05** (§ Phase status table). It can still lag merged PRs — cross-check with `git log --oneline -30` and the auto-memory ledger (`~/.claude/projects/.../memory/MEMORY.md`) before assuming anything is "pending".
 
 See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the M0 → M11 layout, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
 
@@ -37,7 +37,7 @@ Brad runs many sessions across this repo and occasionally switches Claude accoun
 - **Skills + ntfy topic + Slack channel ID are filesystem-resident** in `~/.claude/.../skills/slack-progress-updates/` — survive everything. The Slack channel ID `C0ATYL6T11V` for `#brad-claude-agents` is hardcoded.
 - **Stripe / Supabase MCP project credentials are project-scoped on the service side**, not Claude-side — they survive the account switch as long as the MCP connector itself is re-enabled.
 
-**Where things stand as of 2026-05-27:** PR #73 (`feat/m10-5-wave2-and-m10-6`) is the live PR — M10.5 Wave 2 + M10.6 sync-queue + tier simplification (drops Basic, drops Standard trainer variants, renames `_pro` → no suffix) + subscription routing rebuild. Just landed sweep #4 Inspector Brad fixes (`f0c4383`). Awaiting Brad's next `@inspector-brad` trigger. Task #22 is parked: refactor `TrainerSubscriptionCard` to single-tier shape post tier-simplification.
+**Where things stand as of 2026-07-05:** the design-port specs (01/14/08/04/05/06), notifications (backend #81 + mobile #104 + push #142), M4 progress (#116–#118), M9 Fuel Tier A (#124/#135/#138/#144/#147), M9.5 Snap AI end-to-end (#151/#153–#156: Bedrock photo + free-text estimation, `ai_access` entitlement, daily cost ceilings), coaching partials (#123/#125/#136/#146), programs unified-model backend (#148/#149/#152), payments hardening (#100/#101), RevenueCat rail (#133), and all four App Store compliance blockers (#139–#142) are MERGED. The authoritative per-spec status table is `specs/milestones/ROADMAP.md § Phase status (refreshed 2026-07-05)`. Headline remaining: Apple IAP mobile purchase flow (the App Store blocker), programs mobile (coach F1 + athlete Home F2), Coach Home design call, habits-setup mobile screen, M9.5 post-merge audit + EAS dev build device test.
 
 **Don't pre-empt `@inspector-brad`.** Brad fires it himself on the PR when he wants a sweep. Don't run it speculatively.
 
