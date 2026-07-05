@@ -86,6 +86,7 @@ import { trainersAcceptInviteCodeHandler } from "./application/trainers/invite-c
 import { trainersClientRelationshipsListHandler } from "./application/trainers/relationships/trainersClientRelationshipsListHandler";
 import { trainersRespondToRequestHandler } from "./application/trainers/relationships/trainersRespondToRequestHandler";
 import { trainersLogClientMeasurementHandler } from "./application/trainers/measurements/trainersLogClientMeasurementHandler";
+import { trainersMeLogClientMeasurementHandler } from "./application/trainers/measurements/trainersMeLogClientMeasurementHandler";
 import { trainersClientBodyTrendHandler } from "./application/trainers/measurements/trainersClientBodyTrendHandler";
 import { trainersProgramsListHandler } from "./application/trainers/programs/trainersProgramsListHandler";
 import { trainersProgramsCreateHandler } from "./application/trainers/programs/trainersProgramsCreateHandler";
@@ -191,6 +192,7 @@ const app = new Elysia()
   .use(trainersClientRelationshipsListHandler)
   .use(trainersRespondToRequestHandler)
   .use(trainersLogClientMeasurementHandler)
+  .use(trainersMeLogClientMeasurementHandler)
   .use(trainersClientBodyTrendHandler)
   // M13 — programmes (specs/19-programs): coach CRUD + assign/unassign +
   // ad-hoc single-workout assignment.

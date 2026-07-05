@@ -1176,7 +1176,7 @@ export class SSTApiAdapter implements ApiPort {
     input: LogMeasurementInput,
   ): Promise<Result<ApiMeasurement, ApiError>> {
     return this.requestEnvelope<ApiMeasurement>(
-      `/clients/${clientId}/measurements`,
+      `/trainers/me/clients/${clientId}/measurements`,
       { method: "POST", body: input },
     );
   }

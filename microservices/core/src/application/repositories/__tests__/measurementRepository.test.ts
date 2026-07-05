@@ -73,6 +73,39 @@ describe("MeasurementRepository", () => {
 
       expect(result).toEqual(mockMeasurement);
     });
+
+    it("should use the passed tx handle instead of getDb() when provided", async () => {
+      const mockMeasurement = {
+        id: "m2",
+        userId: "u1",
+        weightKg: 80,
+        notes: null,
+        measuredAt: new Date(),
+      };
+
+      const txDb = {
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([mockMeasurement]),
+          }),
+        }),
+      };
+      const mockDb = { insert: vi.fn() };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { MeasurementRepository } =
+        await import("../measurementRepository");
+      const repo = new MeasurementRepository();
+      const result = await repo.create(
+        "u1",
+        { weightKg: 80, measuredAt: new Date() } as any,
+        txDb as any,
+      );
+
+      expect(result).toEqual(mockMeasurement);
+      expect(txDb.insert).toHaveBeenCalledTimes(1);
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
   });
 
   describe("list", () => {
