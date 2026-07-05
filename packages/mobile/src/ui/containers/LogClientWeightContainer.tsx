@@ -8,7 +8,7 @@ import {
 
 /**
  * <LogClientWeightContainer> — wires the coach log-weight form (weight +
- * optional body fat) to POST /clients/:clientId/measurements
+ * optional body fat) to POST /trainers/me/clients/:clientId/measurements
  * (`api.logClientWeight`). Reads the client id (and optional name) from the
  * route params. On success it briefly shows "Logged ✓" then pops back to the
  * client detail.

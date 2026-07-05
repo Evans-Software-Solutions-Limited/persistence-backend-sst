@@ -32,7 +32,7 @@ const auth = {
   "Content-Type": "application/json",
 };
 
-describe("trainersLogClientMeasurementHandler (legacy alias)", () => {
+describe("trainersMeLogClientMeasurementHandler (canonical)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     logClientMeasurementOnBehalf.mockResolvedValue({
@@ -48,22 +48,28 @@ describe("trainersLogClientMeasurementHandler (legacy alias)", () => {
   });
 
   function post(clientId: string, body: unknown, headers = auth) {
-    return new Request(`http://localhost/clients/${clientId}/measurements`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    return new Request(
+      `http://localhost/trainers/me/clients/${clientId}/measurements`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      },
+    );
   }
 
   it("requires auth", async () => {
-    const { trainersLogClientMeasurementHandler } =
-      await import("../trainersLogClientMeasurementHandler");
-    const res = await trainersLogClientMeasurementHandler.handle(
-      new Request("http://localhost/clients/client-1/measurements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weightKg: 80 }),
-      }),
+    const { trainersMeLogClientMeasurementHandler } =
+      await import("../trainersMeLogClientMeasurementHandler");
+    const res = await trainersMeLogClientMeasurementHandler.handle(
+      new Request(
+        "http://localhost/trainers/me/clients/client-1/measurements",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weightKg: 80 }),
+        },
+      ),
     );
     expect(res.status).toBe(401);
   });
@@ -72,25 +78,22 @@ describe("trainersLogClientMeasurementHandler (legacy alias)", () => {
     logClientMeasurementOnBehalf.mockResolvedValue({
       ok: false,
       status: 403,
-      body: {
-        code: "not_your_client",
-        message: "You can only act for your active clients",
-      },
+      body: { code: "not_a_trainer", message: "nope" },
     });
-    const { trainersLogClientMeasurementHandler } =
-      await import("../trainersLogClientMeasurementHandler");
-    const res = await trainersLogClientMeasurementHandler.handle(
+    const { trainersMeLogClientMeasurementHandler } =
+      await import("../trainersMeLogClientMeasurementHandler");
+    const res = await trainersMeLogClientMeasurementHandler.handle(
       post("client-1", { weightKg: 80 }),
     );
     expect(res.status).toBe(403);
     const body = (await res.json()) as any;
-    expect(body.code).toBe("not_your_client");
+    expect(body.code).toBe("not_a_trainer");
   });
 
   it("201s and delegates to the shared core fn, stamping logged_by", async () => {
-    const { trainersLogClientMeasurementHandler } =
-      await import("../trainersLogClientMeasurementHandler");
-    const res = await trainersLogClientMeasurementHandler.handle(
+    const { trainersMeLogClientMeasurementHandler } =
+      await import("../trainersMeLogClientMeasurementHandler");
+    const res = await trainersMeLogClientMeasurementHandler.handle(
       post("client-1", { weightKg: 80.5 }),
     );
     expect(res.status).toBe(201);

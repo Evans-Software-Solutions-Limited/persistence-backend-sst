@@ -7,21 +7,30 @@ import {
 import { logClientMeasurementOnBehalf } from "./logClientMeasurement";
 
 /**
- * POST /clients/:clientId/measurements — TEMPORARY alias for older app
- * builds. The canonical route is now `POST /trainers/me/clients/:clientId/
- * measurements` (`trainersMeLogClientMeasurementHandler`), added under
- * cross-cuts § 1.2. This handler is a thin wrapper around the shared
- * `logClientMeasurementOnBehalf` core so the two routes can never diverge in
- * authorization or audit behaviour. Remove this alias once older builds have
- * aged out (specs/10-trainer-features R-1).
+ * POST /trainers/me/clients/:clientId/measurements — canonical route (cross-
+ * cuts § 1.2) for a coach logging a body measurement (typically weight) ON
+ * BEHALF OF a client they actively train.
+ *
+ * Authorization + write logic lives in the shared `logClientMeasurementOnBehalf`
+ * core (role-first-then-active-relationship via `assertTrainerCanActForClient`,
+ * plus an audit row written in the same transaction as the measurement — see
+ * `logClientMeasurement.ts`). The legacy `/clients/:clientId/measurements`
+ * path (`trainersLogClientMeasurementHandler`) stays mounted as a temporary
+ * alias for older app builds and calls the same core.
+ *
+ * The measurement is written for the CLIENT (`user_id = clientId`) with
+ * `logged_by_user_id = trainerId`. The client's app picks coach-logged
+ * weights up on next open and writes them into HealthKit (see mobile
+ * `useHealthWeightSync`). The measurement streak is advanced for the CLIENT,
+ * matching self-logged parity.
  */
-export const trainersLogClientMeasurementHandler = new Elysia()
+export const trainersMeLogClientMeasurementHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
   .post(
-    "/clients/:clientId/measurements",
+    "/trainers/me/clients/:clientId/measurements",
     async (ctx) => {
       const { sub: trainerId } = getUser(ctx);
       const { clientId } = ctx.params as { clientId: string };

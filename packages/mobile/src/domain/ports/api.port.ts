@@ -517,9 +517,10 @@ export interface ApiPort {
 
   /**
    * Coach logs a measurement (typically weight) on behalf of a client
-   * (`POST /clients/:clientId/measurements`). Server-guarded by an active
-   * trainer↔client relationship; stamps `loggedByUserId`. The client's app
-   * later writes coach-logged weights into HealthKit (`useHealthWeightSync`).
+   * (`POST /trainers/me/clients/:clientId/measurements`). Server-guarded by
+   * an active trainer↔client relationship; stamps `loggedByUserId`. The
+   * client's app later writes coach-logged weights into HealthKit
+   * (`useHealthWeightSync`).
    */
   logClientWeight(
     clientId: string,
