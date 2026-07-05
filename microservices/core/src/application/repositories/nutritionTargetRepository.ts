@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { nutritionTargets, profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DbOrTx } from "./personalRecordsRepository";
 
 /** Wire shape — macros as numbers (numeric→number boundary). */
 export type NutritionTargetDTO = {
@@ -110,5 +111,49 @@ export class NutritionTargetRepository {
     const out = await this.get(userId);
     if (!out) throw new Error("nutrition_target_upsert_failed");
     return out;
+  }
+
+  /**
+   * Trainer on-behalf upsert (cross-cuts § 1.2 / § 1.5). Writes the client's
+   * target AND stamps `set_by_user_id = setByUserId` so the client's Fuel
+   * screen renders "Set by Coach X". Unlike the self `upsert`, this method
+   * accepts a transaction handle so the write and the
+   * `trainer_actions_audit` insert land in ONE transaction (cross-cuts
+   * § 1.4.2), and it does NOT re-read — the caller re-reads via `get()`
+   * post-commit for the `setByName`-enriched DTO.
+   */
+  async upsertForClient(
+    clientId: string,
+    input: UpsertTargetInput,
+    setByUserId: string,
+    tx?: DbOrTx,
+  ): Promise<void> {
+    const db = tx ?? getDb();
+    await db
+      .insert(nutritionTargets)
+      .values({
+        userId: clientId,
+        dailyKcal: String(input.dailyKcal),
+        proteinG: String(input.proteinG),
+        carbsG: String(input.carbsG),
+        fatG: String(input.fatG),
+        waterCups: input.waterCups,
+        preset: input.preset ?? "custom",
+        setByUserId,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: nutritionTargets.userId,
+        set: {
+          dailyKcal: String(input.dailyKcal),
+          proteinG: String(input.proteinG),
+          carbsG: String(input.carbsG),
+          fatG: String(input.fatG),
+          waterCups: input.waterCups,
+          preset: input.preset ?? "custom",
+          setByUserId,
+          updatedAt: new Date(),
+        },
+      });
   }
 }

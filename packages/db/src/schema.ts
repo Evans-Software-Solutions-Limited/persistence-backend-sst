@@ -161,6 +161,16 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // ownership is 09-notifications-social's per cross-cuts § 5; M9 sequences
   // the ADD VALUE before the nutrition-streak cron emits.
   "daily_nutrition_target_hit",
+  // M8 (10-trainer-features) trainer on-behalf / assignment events. Companion
+  // enum migration: 20260705150000_coach_notification_type_on_behalf_values.sql.
+  // Enum ownership is 09-notifications-social's per cross-cuts § 5; Phase 3
+  // (10.3) sequences the ADD VALUE before the on-behalf handlers emit.
+  // (workout_assigned already exists above — the workout-assignment handler
+  // reuses it.)
+  "goal_assigned_by_trainer",
+  "workout_logged_on_behalf",
+  "measurement_logged_on_behalf",
+  "nutrition_target_set_by_trainer",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.

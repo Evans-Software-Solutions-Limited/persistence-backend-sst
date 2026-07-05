@@ -13,13 +13,9 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
   auditTrainerAction: vi.fn(),
 }));
 
-vi.mock("../../../streaks/evaluate", () => ({
-  safeEvaluateStreaks: vi.fn(async () => {}),
-}));
-
 const repoCreate = vi.fn();
-vi.mock("../../../repositories/measurementRepository", () => ({
-  MeasurementRepository: vi.fn(() => ({ create: repoCreate })),
+vi.mock("../../../repositories/sessionRepository", () => ({
+  SessionRepository: vi.fn(() => ({ create: repoCreate })),
 }));
 
 vi.mock("../../onBehalfNotifications", () => ({
@@ -29,13 +25,9 @@ vi.mock("../../onBehalfNotifications", () => ({
 import { getDb } from "@persistence/db/client";
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";
 import { auditTrainerAction } from "../../../relationships/auditTrainerAction";
-import { safeEvaluateStreaks } from "../../../streaks/evaluate";
 import { emitTrainerOnBehalfNotification } from "../../onBehalfNotifications";
-import { logClientMeasurementOnBehalf } from "../logClientMeasurement";
+import { logClientSessionOnBehalf } from "../logClientSession";
 
-/** A minimal `db.transaction(async (tx) => ...)` stub — `tx` is opaque here
- * since the repo + audit calls are mocked; we only need `transaction` to
- * invoke the callback and propagate rejection. */
 function makeDb(txStub: unknown = {}) {
   return {
     transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -47,19 +39,18 @@ function makeDb(txStub: unknown = {}) {
 const ARGS = {
   trainerId: "trainer-1",
   clientId: "client-1",
-  body: { weightKg: 80.5, notes: "note" },
+  body: { workoutId: "w-1", name: "Leg day", status: "completed" as const },
 };
 
-describe("logClientMeasurementOnBehalf", () => {
+describe("logClientSessionOnBehalf", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (getDb as any).mockReturnValue(makeDb());
     repoCreate.mockResolvedValue({
-      id: "m-1",
+      id: "s-1",
       userId: "client-1",
       loggedByUserId: "trainer-1",
-      weightKg: "80.5",
-      measuredAt: new Date(),
+      status: "completed",
     });
     (auditTrainerAction as any).mockResolvedValue(undefined);
   });
@@ -72,7 +63,7 @@ describe("logClientMeasurementOnBehalf", () => {
       body: { code: "not_a_trainer", message: "nope" },
     });
 
-    const result = await logClientMeasurementOnBehalf(ARGS);
+    const result = await logClientSessionOnBehalf(ARGS);
 
     expect(result).toEqual({
       ok: false,
@@ -81,6 +72,7 @@ describe("logClientMeasurementOnBehalf", () => {
     });
     expect(repoCreate).not.toHaveBeenCalled();
     expect(auditTrainerAction).not.toHaveBeenCalled();
+    expect(emitTrainerOnBehalfNotification).not.toHaveBeenCalled();
   });
 
   it("403s with no_relationship when there's no active relationship", async () => {
@@ -91,7 +83,7 @@ describe("logClientMeasurementOnBehalf", () => {
       body: { code: "not_your_client", message: "nope" },
     });
 
-    const result = await logClientMeasurementOnBehalf(ARGS);
+    const result = await logClientSessionOnBehalf(ARGS);
 
     expect(result).toEqual({
       ok: false,
@@ -99,82 +91,76 @@ describe("logClientMeasurementOnBehalf", () => {
       body: { code: "not_your_client", message: "nope" },
     });
     expect(repoCreate).not.toHaveBeenCalled();
-    expect(auditTrainerAction).not.toHaveBeenCalled();
   });
 
-  it("happy path: creates the measurement, audits inside the tx, advances the streak, returns ok", async () => {
-    (assertTrainerCanActForClient as any).mockResolvedValue({
-      allowed: true,
-    });
+  it("happy path: creates the session for the client stamped with the trainer, audits inside the tx, notifies", async () => {
+    (assertTrainerCanActForClient as any).mockResolvedValue({ allowed: true });
     const txStub = { marker: "tx" };
     (getDb as any).mockReturnValue(makeDb(txStub));
 
-    const result = await logClientMeasurementOnBehalf(ARGS);
+    const result = await logClientSessionOnBehalf(ARGS);
 
     expect(result).toEqual({
       ok: true,
-      measurement: expect.objectContaining({ id: "m-1" }),
+      session: expect.objectContaining({ id: "s-1" }),
     });
 
-    // Measurement created for the CLIENT, stamped with the trainer, on the tx.
     expect(repoCreate).toHaveBeenCalledWith(
       "client-1",
       expect.objectContaining({
         loggedByUserId: "trainer-1",
-        weightKg: "80.5",
-        notes: "note",
+        workoutId: "w-1",
+        name: "Leg day",
+        status: "completed",
       }),
       txStub,
     );
 
-    // Audit written inside the SAME transaction handle, after the measurement
-    // id is known, before the transaction resolves.
     expect(auditTrainerAction).toHaveBeenCalledWith(
       expect.objectContaining({
         trainerId: "trainer-1",
         clientId: "client-1",
-        actionType: "measurement_logged_on_behalf",
-        targetTable: "body_measurements",
-        targetRowId: "m-1",
+        actionType: "workout_logged_on_behalf",
+        targetTable: "workout_sessions",
+        targetRowId: "s-1",
         payload: ARGS.body,
         tx: txStub,
       }),
     );
 
-    // Streak advance happens after commit, error-tolerant.
-    expect(safeEvaluateStreaks).toHaveBeenCalledWith(
-      "client-1",
-      "measurement_logged",
-      expect.any(Date),
-    );
-
-    // Phase 3 backfill: measurement_logged_on_behalf notification emitted
-    // post-commit to the client.
     expect(emitTrainerOnBehalfNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: "client-1",
         trainerId: "trainer-1",
-        type: "measurement_logged_on_behalf",
-        deepLink: "/progress/measurements/m-1",
-        relatedEntityType: "body_measurement",
-        relatedEntityId: "m-1",
+        type: "workout_logged_on_behalf",
+        deepLink: "/sessions/s-1",
+        relatedEntityType: "workout_session",
+        relatedEntityId: "s-1",
       }),
     );
   });
 
-  it("rolls back the transaction (no measurement persisted) if the audit write throws", async () => {
-    (assertTrainerCanActForClient as any).mockResolvedValue({
-      allowed: true,
+  it("defaults status to 'completed' when the body omits it", async () => {
+    (assertTrainerCanActForClient as any).mockResolvedValue({ allowed: true });
+    await logClientSessionOnBehalf({
+      trainerId: "trainer-1",
+      clientId: "client-1",
+      body: {},
     });
-    const boom = new Error("audit insert failed");
-    (auditTrainerAction as any).mockRejectedValue(boom);
-
-    await expect(logClientMeasurementOnBehalf(ARGS)).rejects.toThrow(
-      "audit insert failed",
+    expect(repoCreate).toHaveBeenCalledWith(
+      "client-1",
+      expect.objectContaining({ status: "completed", workoutId: null }),
+      expect.anything(),
     );
+  });
 
-    // The streak side-effect + notification only run after a successful commit.
-    expect(safeEvaluateStreaks).not.toHaveBeenCalled();
+  it("rolls back (no notification) if the audit write throws", async () => {
+    (assertTrainerCanActForClient as any).mockResolvedValue({ allowed: true });
+    (auditTrainerAction as any).mockRejectedValue(new Error("audit failed"));
+
+    await expect(logClientSessionOnBehalf(ARGS)).rejects.toThrow(
+      "audit failed",
+    );
     expect(emitTrainerOnBehalfNotification).not.toHaveBeenCalled();
   });
 });
