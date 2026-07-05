@@ -217,6 +217,7 @@ Authoritative references:
 - 14.4 [ ] Cached per (trainer, client, day) in a **new `client_ai_summaries` table** (DDL in `design.md § Module g`); regenerate-on-demand upserts the day's row; every generation writes `ai_usage_log`.
 - 14.5 [ ] `POST /trainers/me/clients/:clientId/ai-summary/regenerate` (Phase 6): role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check → Bedrock → cache upsert → `ai_usage_log`.
 - 14.6 [ ] Staleness copy ("Updated {relativeTime}" / "Summary from {date} · Regenerate") + failure fallback: on Bedrock error / ceiling / no `ai_access` the card **degrades to the raw modules a–f**, never a blank or hard-error card.
+- 14.7 [ ] **No auto-generation (token guardrail):** reads never infer (cached row served on open); the first-run state shows raw modules a–f + a "Generate summary" CTA (no lazy auto-gen); cache is per (trainer, client, day) so same-day regenerates overwrite one row; the daily ceiling bounds worst-case spend. Every inference is an explicit coach tap.
 
 ### STORY-015: As a coach I want to share an invite code (with QR); as an athlete I want to redeem one — no email required
 

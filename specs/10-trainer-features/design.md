@@ -710,6 +710,16 @@ type GoalModule = {
   role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → daily-ceiling check →
   generate (Bedrock) → upsert `client_ai_summaries` → `ai_usage_log`. A plain read of the cached row
   rides on the aggregate (`aiSummary` below); regenerate is the only inference path.
+- **No auto-generation anywhere — every inference is an explicit coach action (token guardrail):**
+  1. **Reads never infer.** Opening Client Detail returns the cached `aiSummary` row for the day (or the
+     most recent) — **zero Bedrock calls on read**, no matter how many times a coach opens the screen.
+  2. **First-run state (no row yet for this client):** the card shows the **raw modules a–f + a "Generate
+     summary" CTA** — it does **not** lazily auto-generate on first open. The coach must tap Generate.
+  3. **Cached per (trainer, client, day)** via `UNIQUE (trainer_id, client_id, date)` — repeated Regenerate
+     taps the same day **overwrite one row**, they don't accumulate calls beyond what the daily ceiling allows.
+  4. **Daily ceiling** (`AI_COACH_SUMMARY_DAILY_LIMIT`) caps worst-case spend even under a coach hammering
+     Regenerate. Net effect: at most `ceiling` inferences per coach per day, and typically **one per client
+     per day** (first Generate, then cached).
 - **Staleness copy:** "Updated {relativeTime}"; if the cached row's `date` < today →
   "Summary from {date} · Regenerate".
 - **Failure fallback:** on Bedrock error, ceiling-429, or missing `ai_access`, the card **degrades to
