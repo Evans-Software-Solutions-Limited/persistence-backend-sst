@@ -44,6 +44,7 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -629,6 +630,55 @@ export interface ApiPort {
     clientId: string,
   ): Promise<Result<ActiveProgramme | null, ApiError>>;
 
+  /**
+   * Coach reads the full Client Detail aggregate for the single-scroll screen
+   * (`GET /trainers/me/clients/:clientId`, M8 Coach Phase 5). Single
+   * `{ data: ClientDetail }` envelope — the adapter unwraps once; camelCase
+   * wire == domain shape (no field mapping). Composes modules a–f + the
+   * aiSummary stub + thisWeek + recentSessions + notes server-side. Trainer-
+   * role + active-relationship gated (403 verdict body). The active programme
+   * is NOT folded in — mobile still consumes `getClientActiveProgramme`
+   * separately (avoid churn); the aggregate only uses it for `workoutsPlanned`.
+   */
+  getClientDetail(clientId: string): Promise<Result<ClientDetail, ApiError>>;
+
+  /**
+   * Coach assigns a goal to a client on their behalf
+   * (`POST /trainers/me/clients/:clientId/goals`, Phase 3). The goal is written
+   * for the CLIENT with `assigned_by_user_id = trainerId`. Domain failures
+   * arrive as a flat `{ code, message }` body — the adapter surfaces `code` on
+   * `GoalApiError.goalCode` (mirrors `InviteApiError`). 403 `not_assigner` is
+   * only possible on the edit path, not here.
+   */
+  assignClientGoal(
+    clientId: string,
+    input: AssignClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>>;
+
+  /**
+   * Coach edits a goal it previously assigned
+   * (`PUT /trainers/me/clients/:clientId/goals/:id`, Phase 3 — edit-own only).
+   * The server returns 403 `not_assigner` when the caller isn't the goal's
+   * assigner; the adapter surfaces it on `GoalApiError.goalCode` so the sheet
+   * can render graceful copy without string-matching.
+   */
+  updateClientGoal(
+    clientId: string,
+    goalId: string,
+    input: UpdateClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>>;
+
+  /**
+   * Coach sets/edits a client's daily nutrition target
+   * (`PUT /trainers/me/clients/:clientId/nutrition/target`, Phase 3). Stamps
+   * `set_by_user_id = trainerId`. Single `{ data: NutritionTarget }` envelope.
+   * The one nutrition write in scope for the coach surface.
+   */
+  setClientNutritionTarget(
+    clientId: string,
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>>;
+
   // -- Trainers / Coach You (10-trainer-features) --
   /**
    * Fetch the Coach You aggregate (`GET /trainers/me/overview`). Single
@@ -950,6 +1000,34 @@ export type WorkoutAssignmentRow = {
  */
 export type InviteApiError = ApiError & {
   inviteCode?: InviteErrorCode;
+};
+
+/**
+ * `ApiError` extended with the structured goal-domain `code` the coach
+ * on-behalf goal write/edit returns on a flat `{ code, message }` body.
+ * `goalCode` is undefined for transport/auth errors that carry no domain code.
+ * `not_assigner` (403) is the edit-own guard; `goal_not_found` a raced delete;
+ * `no_fields` an empty PUT body.
+ */
+export type GoalApiError = ApiError & {
+  goalCode?: "not_assigner" | "goal_not_found" | "no_fields";
+};
+
+/** Body for `POST /trainers/me/clients/:clientId/goals` (coach on-behalf). */
+export type AssignClientGoalInput = {
+  goalTypeId: string;
+  priority?: number;
+  isActive?: boolean;
+  targetDate?: string;
+  notes?: string;
+};
+
+/** Body for `PUT /trainers/me/clients/:clientId/goals/:id` (edit-own). */
+export type UpdateClientGoalInput = {
+  priority?: number;
+  isActive?: boolean;
+  targetDate?: string;
+  notes?: string;
 };
 
 // -- API data shapes (mirror backend response types) --

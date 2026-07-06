@@ -314,6 +314,99 @@ describe("InMemoryApiAdapter", () => {
     });
   });
 
+  describe("client detail aggregate (M8 Coach Phase 5)", () => {
+    it("returns a configured fixture + captures the call", async () => {
+      api.clientDetails["c-1"] = {
+        client: {
+          id: "c-1",
+          name: "Marcus Reid",
+          initials: "MR",
+          avatarUrl: null,
+          status: "active",
+          ageYears: 32,
+          heightCm: 178,
+        },
+        adherence: { overall: 64, band: "atRisk", categories: [] },
+        prs: [],
+        volume: { weekKg: null, daily: [] },
+        calorieHit: null,
+        goal: null,
+        habits: null,
+        aiSummary: {
+          summary: null,
+          coversDate: null,
+          generatedAt: null,
+          canManualRefresh: false,
+        },
+        thisWeek: {
+          workoutsCompleted: 0,
+          workoutsPlanned: null,
+          volumeKg: null,
+          prs: 0,
+          checkIns: null,
+        },
+        recentSessions: [],
+        notes: [],
+      };
+      const result = await api.getClientDetail("c-1");
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.client.name).toBe("Marcus Reid");
+      expect(api.getClientDetailCalls).toContain("c-1");
+    });
+
+    it("fails not_found when no fixture is configured", async () => {
+      const result = await api.getClientDetail("missing");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("not_found");
+    });
+
+    it("assignClientGoal captures the call + returns the goal", async () => {
+      const result = await api.assignClientGoal("c-1", {
+        goalTypeId: "gt-1",
+        targetDate: "2026-09-01",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.goalTypeId).toBe("gt-1");
+      expect(api.assignClientGoalCalls[0]).toEqual({
+        clientId: "c-1",
+        input: { goalTypeId: "gt-1", targetDate: "2026-09-01" },
+      });
+    });
+
+    it("updateClientGoal returns a 403 not_assigner when primed", async () => {
+      api.nextGoalError = {
+        code: "not_assigner",
+        message: "You can only edit goals you assigned",
+      };
+      const result = await api.updateClientGoal("c-1", "g-1", {
+        targetDate: "2026-09-01",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.status).toBe(403);
+        expect(result.error.goalCode).toBe("not_assigner");
+      }
+      // one-shot: cleared after use.
+      expect(api.nextGoalError).toBeNull();
+    });
+
+    it("setClientNutritionTarget captures the call + stamps trainer attribution", async () => {
+      const result = await api.setClientNutritionTarget("c-1", {
+        dailyKcal: 2400,
+        proteinG: 180,
+        carbsG: 250,
+        fatG: 70,
+        waterCups: 8,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.dailyKcal).toBe(2400);
+        expect(result.value.setByUserId).toBe("trainer-test");
+      }
+      expect(api.setClientNutritionTargetCalls[0].clientId).toBe("c-1");
+    });
+  });
+
   describe("exercises", () => {
     const seedExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
       id: overrides.id ?? `seed-${api.exercises.length + 1}`,

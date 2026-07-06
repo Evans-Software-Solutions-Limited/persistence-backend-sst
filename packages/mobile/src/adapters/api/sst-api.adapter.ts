@@ -59,6 +59,9 @@ import type {
   ConfigureHabitInput,
   ProgramApiError,
   WorkoutAssignmentRow,
+  GoalApiError,
+  AssignClientGoalInput,
+  UpdateClientGoalInput,
 } from "@/domain/ports/api.port";
 import type {
   AssignProgramInput,
@@ -82,6 +85,7 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -1279,6 +1283,81 @@ export class SSTApiAdapter implements ApiPort {
   ): Promise<Result<ActiveProgramme | null, ApiError>> {
     return this.requestEnvelope<ActiveProgramme | null>(
       `/trainers/me/clients/${clientId}/active-programme`,
+    );
+  }
+
+  async getClientDetail(
+    clientId: string,
+  ): Promise<Result<ClientDetail, ApiError>> {
+    return this.requestEnvelope<ClientDetail>(
+      `/trainers/me/clients/${clientId}`,
+    );
+  }
+
+  async assignClientGoal(
+    clientId: string,
+    input: AssignClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>> {
+    return this.requestGoalWrite<ApiGoal>(
+      `/trainers/me/clients/${clientId}/goals`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async updateClientGoal(
+    clientId: string,
+    goalId: string,
+    input: UpdateClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>> {
+    return this.requestGoalWrite<ApiGoal>(
+      `/trainers/me/clients/${clientId}/goals/${goalId}`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  async setClientNutritionTarget(
+    clientId: string,
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>> {
+    return this.requestEnvelope<NutritionTarget>(
+      `/trainers/me/clients/${clientId}/nutrition/target`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  /**
+   * Shared write path for the coach on-behalf goal endpoints, which can fail
+   * with a flat domain-coded body (`{ code, message }`, e.g. 403
+   * `not_assigner`) instead of the usual `{ data }` envelope. Mirrors
+   * `requestProgramWrite`: the success body is `{ data: T }`; a non-2xx (or
+   * unexpected shape) maps through `mapHttpErrorToApiError` and — when a
+   * string `code` is present — stamps it onto `GoalApiError.goalCode`.
+   */
+  private async requestGoalWrite<T>(
+    path: string,
+    options: RequestOptions,
+  ): Promise<Result<T, GoalApiError>> {
+    const result = await this.requestRaw<
+      { data: T } | { code: string; message: string }
+    >(path, options);
+    if (!result.ok) {
+      return fail<GoalApiError>(result.error);
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+    const code =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as GoalApiError["goalCode"])
+        : undefined;
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : "Request failed";
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<GoalApiError>(
+      code !== undefined ? { ...base, goalCode: code } : base,
     );
   }
 

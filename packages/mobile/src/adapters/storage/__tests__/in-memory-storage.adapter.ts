@@ -14,6 +14,7 @@ import type {
 import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
 import type { PersonalRecord } from "@/domain/models/record";
@@ -72,6 +73,10 @@ export class InMemoryStorageAdapter implements StoragePort {
   private coachOverviewCache: Map<
     string,
     { payload: CoachOverview; syncedAt: string }
+  > = new Map();
+  private clientDetailCache: Map<
+    string,
+    { payload: ClientDetail; syncedAt: string }
   > = new Map();
   private trainerClientsCache: Map<
     string,
@@ -344,6 +349,37 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   getCoachOverviewAge(userId: string): string | null {
     return this.coachOverviewCache.get(userId)?.syncedAt ?? null;
+  }
+
+  // -- Client Detail Cache (M8 Coach Phase 5) --
+
+  private clientDetailKey(userId: string, clientId: string): string {
+    return `${userId}:${clientId}`;
+  }
+
+  getCachedClientDetail(userId: string, clientId: string): ClientDetail | null {
+    return (
+      this.clientDetailCache.get(this.clientDetailKey(userId, clientId))
+        ?.payload ?? null
+    );
+  }
+
+  cacheClientDetail(
+    userId: string,
+    clientId: string,
+    payload: ClientDetail,
+  ): void {
+    this.clientDetailCache.set(this.clientDetailKey(userId, clientId), {
+      payload,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  getClientDetailAge(userId: string, clientId: string): string | null {
+    return (
+      this.clientDetailCache.get(this.clientDetailKey(userId, clientId))
+        ?.syncedAt ?? null
+    );
   }
 
   // -- Clients Roster Cache (10-trainer-features) --
@@ -810,6 +846,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.referenceLists.clear();
     this.dashboardCache.clear();
     this.coachOverviewCache.clear();
+    this.clientDetailCache.clear();
     this.trainerClientsCache.clear();
     this.programsCache.clear();
     this.profilePageCache.clear();

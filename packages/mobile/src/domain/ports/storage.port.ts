@@ -38,6 +38,7 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
 import type {
@@ -301,6 +302,26 @@ export interface StoragePort {
    * Age of the cached overview as an ISO timestamp, or null when no row.
    */
   getCoachOverviewAge(userId: string): string | null;
+
+  // -- Client Detail Cache (M8 Coach Phase 5) --
+  /**
+   * Read the cached Client Detail aggregate for `(traineruserId, clientId)`, or
+   * null if none. Keyed by BOTH ids so a coach browsing many clients keeps a
+   * per-client slot, and one coach's cache never bleeds into another's.
+   * Staleness is enforced by the hook (cache-first then refresh).
+   */
+  getCachedClientDetail(userId: string, clientId: string): ClientDetail | null;
+  /**
+   * Write-through the latest backend aggregate for `(userId, clientId)`,
+   * stamping `synced_at = now()`.
+   */
+  cacheClientDetail(
+    userId: string,
+    clientId: string,
+    payload: ClientDetail,
+  ): void;
+  /** Age of the cached aggregate as an ISO timestamp, or null when no row. */
+  getClientDetailAge(userId: string, clientId: string): string | null;
 
   // -- Clients Roster Cache (10-trainer-features) --
   /**

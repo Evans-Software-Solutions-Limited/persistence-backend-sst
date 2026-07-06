@@ -4,6 +4,7 @@ import type {
   DashboardPayload,
 } from "@/domain/models/dashboard";
 import type { CoachOverview } from "@/domain/models/coachOverview";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
 import type {
@@ -303,6 +304,19 @@ export class SQLiteStorageAdapter implements StoragePort {
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
+      );
+
+      -- M8 Coach Phase 5: Client Detail aggregate cache. One row per
+      -- (trainer userId, clientId); payload is the full JSON-serialised
+      -- ClientDetail. Keyed by BOTH ids so a coach browsing many clients keeps
+      -- per-client slots and no coach's cache bleeds into another's. Staleness
+      -- enforced by the hook.
+      CREATE TABLE IF NOT EXISTS cached_client_detail (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
       );
 
       -- 10-trainer-features: Clients roster cache. One row per trainer
@@ -1109,6 +1123,42 @@ export class SQLiteStorageAdapter implements StoragePort {
     const rows = db.getAllSync(
       `SELECT synced_at FROM cached_coach_overview WHERE user_id = ?`,
       [userId],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  // -- Client Detail Cache (M8 Coach Phase 5) --
+
+  getCachedClientDetail(userId: string, clientId: string): ClientDetail | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT payload FROM cached_client_detail WHERE user_id = ? AND client_id = ?`,
+      [userId, clientId],
+    ) as { payload: string }[];
+    const row = rows[0];
+    if (!row) return null;
+    return JSON.parse(row.payload) as ClientDetail;
+  }
+
+  cacheClientDetail(
+    userId: string,
+    clientId: string,
+    payload: ClientDetail,
+  ): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_client_detail (user_id, client_id, payload, synced_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, client_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, clientId, JSON.stringify(payload), syncedAt],
+    );
+  }
+
+  getClientDetailAge(userId: string, clientId: string): string | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT synced_at FROM cached_client_detail WHERE user_id = ? AND client_id = ?`,
+      [userId, clientId],
     ) as { synced_at: string }[];
     return rows[0]?.synced_at ?? null;
   }
@@ -2215,6 +2265,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_dashboard;
       DELETE FROM cached_profile_page;
       DELETE FROM cached_coach_overview;
+      DELETE FROM cached_client_detail;
       DELETE FROM cached_trainer_clients;
       DELETE FROM cached_programs;
       DELETE FROM cached_notifications;

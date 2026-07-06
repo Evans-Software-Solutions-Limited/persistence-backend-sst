@@ -1170,6 +1170,147 @@ describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", ()
     expect(result.value).toBeNull();
   });
 
+  it("getClientDetail unwraps the { data: ClientDetail } envelope + hits the aggregate path", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            client: {
+              id: "client-9",
+              name: "Marcus Reid",
+              initials: "MR",
+              avatarUrl: null,
+              status: "active",
+              ageYears: 32,
+              heightCm: 178,
+            },
+            adherence: { overall: 64, band: "atRisk", categories: [] },
+            prs: [],
+            volume: { weekKg: null, daily: [] },
+            calorieHit: null,
+            goal: null,
+            habits: null,
+            aiSummary: {
+              summary: null,
+              coversDate: null,
+              generatedAt: null,
+              canManualRefresh: false,
+            },
+            thisWeek: {
+              workoutsCompleted: 0,
+              workoutsPlanned: null,
+              volumeKg: null,
+              prs: 0,
+              checkIns: null,
+            },
+            recentSessions: [],
+            notes: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getClientDetail("client-9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.client.name).toBe("Marcus Reid");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/trainers/me/clients/client-9",
+    );
+  });
+
+  it("assignClientGoal returns the goal on 201 + POSTs to the on-behalf path", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "goal-1",
+            userId: "client-9",
+            goalTypeId: "gt-1",
+            priority: 1,
+            targetDate: null,
+            isActive: true,
+            createdAt: "2026-07-06T00:00:00.000Z",
+            updatedAt: "2026-07-06T00:00:00.000Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.assignClientGoal("client-9", {
+      goalTypeId: "gt-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBe("goal-1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/trainers/me/clients/client-9/goals",
+    );
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+  });
+
+  it("updateClientGoal surfaces not_assigner on a 403 body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "not_assigner",
+          message: "You can only edit goals you assigned",
+        }),
+        { status: 403 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.updateClientGoal("client-9", "goal-1", {
+      targetDate: "2026-09-01",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.goalCode).toBe("not_assigner");
+  });
+
+  it("setClientNutritionTarget PUTs the target + unwraps the envelope", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            userId: "client-9",
+            dailyKcal: 2400,
+            proteinG: 180,
+            carbsG: 250,
+            fatG: 70,
+            waterCups: 8,
+            preset: "custom",
+            setByUserId: "trainer-1",
+            setByName: "Coach Test",
+            updatedAt: "2026-07-06T00:00:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.setClientNutritionTarget("client-9", {
+      dailyKcal: 2400,
+      proteinG: 180,
+      carbsG: 250,
+      fatG: 70,
+      waterCups: 8,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.dailyKcal).toBe(2400);
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/trainers/me/clients/client-9/nutrition/target",
+    );
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("PUT");
+  });
+
   it("getProgram unwraps the { data: ProgramDetail } envelope", async () => {
     installFetchMock(async () => {
       return new Response(

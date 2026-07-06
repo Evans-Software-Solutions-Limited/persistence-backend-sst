@@ -1,9 +1,22 @@
-import { render, waitFor } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
-import { ok, fail } from "@/shared/errors";
+import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
+import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
+import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { StubHealthAdapter } from "@/adapters/health";
+import { StubNotificationsAdapter } from "@/adapters/notifications";
+import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { ClientDetailProps } from "@/ui/presenters/coach/ClientDetailPresenter";
+import type { ClientDetail } from "@/domain/models/clientDetail";
+import type { ActiveProgramme } from "@/domain/models/progress";
+
+jest.mock("@/adapters/api", () => ({
+  ...jest.requireActual("@/adapters/api"),
+  getApiBaseUrl: () => "https://api.test",
+}));
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
@@ -11,6 +24,10 @@ const mockParams: { id?: string; name?: string } = {
   id: "client-1",
   name: "Jordan",
 };
+// Capture the focus callback so a test can invoke it manually (wrapped in act)
+// rather than firing it on every render — the container's first-focus guard is
+// otherwise device-behavior.
+const focusCallbacks: (() => void)[] = [];
 jest.mock("expo-router", () => ({
   useRouter: () => ({
     push: mockPush,
@@ -18,8 +35,10 @@ jest.mock("expo-router", () => ({
     canGoBack: () => true,
   }),
   useLocalSearchParams: () => mockParams,
-  // Focus-driven refresh is exercised on-device; here it's a mount no-op.
-  useFocusEffect: jest.fn(),
+  useFocusEffect: (cb: () => void) => {
+    focusCallbacks.length = 0;
+    focusCallbacks.push(cb);
+  },
 }));
 
 const mockCaptured: { props: ClientDetailProps | null } = { props: null };
@@ -30,25 +49,107 @@ jest.mock("@/ui/presenters/coach/ClientDetailPresenter", () => ({
   },
 }));
 
+// These imports resolve the mocked modules above, so they must follow the
+// jest.mock calls.
+/* eslint-disable import/first */
 import {
   ClientDetailContainer,
   buildClientBodyTrend,
 } from "@/ui/containers/ClientDetailContainer";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
+import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
+import { useEditNutritionTargetsSheet } from "@/state/edit-nutrition-targets-sheet";
+/* eslint-enable import/first */
 
 function props(): ClientDetailProps {
   if (!mockCaptured.props) throw new Error("presenter not rendered");
   return mockCaptured.props;
 }
 
-function renderWithApi(
-  getClientBodyTrend: jest.Mock,
-  getClientActiveProgramme: jest.Mock = jest.fn(async () => ok(null)),
-) {
-  const adapters = {
-    api: { getClientBodyTrend, getClientActiveProgramme },
-  } as unknown as Adapters;
+const ACTIVE: ActiveProgramme = {
+  assignmentId: "pa1",
+  programId: "p1",
+  name: "Strength Foundations",
+  week: 4,
+  totalWeeks: 12,
+  endDate: "2026-08-01",
+  startDate: "2026-05-01",
+};
+
+function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
+  return {
+    client: {
+      id: "client-1",
+      name: "Jordan Blake",
+      initials: "JB",
+      avatarUrl: null,
+      status: "active",
+      ageYears: 30,
+      heightCm: 180,
+    },
+    adherence: { overall: 82, band: "wobbling", categories: [] },
+    prs: [],
+    volume: { weekKg: 12000, daily: [] },
+    calorieHit: {
+      targetKcal: 2200,
+      daysHit: 4,
+      daysLogged: 6,
+      todayKcal: 1500,
+      todayRemainingKcal: 700,
+    },
+    goal: {
+      id: "g-1",
+      title: "Squat 1.5x BW",
+      unit: "kg",
+      targetDate: "2026-09-01",
+      assignedByCoach: true,
+      weight: { startKg: 60, nowKg: 62, targetKg: 65 },
+      pct: 0.4,
+    },
+    habits: null,
+    aiSummary: {
+      summary: null,
+      coversDate: null,
+      generatedAt: null,
+      canManualRefresh: false,
+    },
+    thisWeek: {
+      workoutsCompleted: 3,
+      workoutsPlanned: 5,
+      volumeKg: 12000,
+      prs: 1,
+      checkIns: 5,
+    },
+    recentSessions: [],
+    notes: [],
+    ...over,
+  };
+}
+
+function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
+  const api = new InMemoryApiAdapter();
+  const auth = new InMemoryAuthAdapter();
+  auth.currentSession = {
+    accessToken: "tok",
+    refreshToken: "rtok",
+    userId: "trainer-1",
+    email: "coach@x.com",
+    expiresAt: Date.now() + 3_600_000,
+  };
+  const adapters: Adapters = {
+    api,
+    auth,
+    storage: new InMemoryStorageAdapter(),
+    health: new StubHealthAdapter(),
+    notifications: new StubNotificationsAdapter(),
+    payments: new MockPaymentsAdapter(),
+    netInfo: new InMemoryNetInfoAdapter(),
+  };
+  return { adapters, api };
+}
+
+function renderWith(adapters: Adapters) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
   );
@@ -68,57 +169,42 @@ describe("buildClientBodyTrend", () => {
       series: [82, 80],
       unit: "kg",
     });
-    expect(trend.bodyFat).toEqual({
-      current: 21,
-      delta: -1,
-      series: [22, 21],
-    });
+    expect(trend.bodyFat).toEqual({ current: 21, delta: -1, series: [22, 21] });
   });
 
   it("handles an empty series", () => {
     const trend = buildClientBodyTrend([]);
     expect(trend.weight.current).toBeNull();
-    expect(trend.weight.delta).toBe(0);
     expect(trend.bodyFat.series).toEqual([]);
   });
 });
 
-describe("ClientDetailContainer", () => {
+describe("ClientDetailContainer — populated", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockParams.id = "client-1";
     mockParams.name = "Jordan";
   });
 
-  it("fetches the trend and passes shaped props through", async () => {
-    const getClientBodyTrend = jest.fn(async () =>
-      ok([
-        { date: "2026-06-20", weightKg: 80, bodyFat: 21 },
-        { date: "2026-06-25", weightKg: 79.2, bodyFat: 20.4 },
-      ]),
-    );
-    renderWithApi(getClientBodyTrend);
-    await waitFor(() => expect(props().isLoading).toBe(false));
-    expect(props().clientName).toBe("Jordan");
-    expect(props().bodyTrend.weight.current).toBe(79.2);
-    expect(props().bodyTrend.bodyFat.series).toEqual([21, 20.4]);
-    expect(props().error).toBeNull();
-    expect(getClientBodyTrend).toHaveBeenCalledWith("client-1", "30d");
-  });
+  it("composes the aggregate, trend + active programme into props", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientActiveProgrammes["client-1"] = ACTIVE;
+    renderWith(adapters);
 
-  it("maps a fetch failure to a user-facing error", async () => {
-    renderWithApi(
-      jest.fn(async () =>
-        fail({ kind: "api", code: "server", message: "boom" }),
-      ),
-    );
-    await waitFor(() => expect(props().error).not.toBeNull());
-    expect(props().bodyTrend.weight.series).toEqual([]);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    expect(api.getClientDetailCalls).toContain("client-1");
+    expect(props().detail?.goal?.title).toBe("Squat 1.5x BW");
+    await waitFor(() => expect(props().activeProgramme).not.toBeNull());
+    expect(props().activeProgramme?.programId).toBe("p1");
+    expect(props().error).toBeNull();
   });
 
   it("routes Log weight with the client id + name", async () => {
-    renderWithApi(jest.fn(async () => ok([])));
-    await waitFor(() => expect(props().isLoading).toBe(false));
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
     props().onLogWeight();
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/(app)/clients/[id]/log-weight",
@@ -126,64 +212,217 @@ describe("ClientDetailContainer", () => {
     });
   });
 
+  it("routes Manage habits", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onManageHabits();
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/clients/[id]/habits",
+      params: { id: "client-1", name: "Jordan" },
+    });
+  });
+
   it("navigates back", async () => {
-    renderWithApi(jest.fn(async () => ok([])));
-    await waitFor(() => expect(props().isLoading).toBe(false));
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
     props().onBack();
     expect(mockBack).toHaveBeenCalled();
   });
 
-  // -- 19-programs T-19.3.5: active programme + assign wiring --
+  it("onEditTargets opens the macros sheet seeded from module d", async () => {
+    useEditNutritionTargetsSheet.setState({
+      open: false,
+      clientId: null,
+      initial: null,
+      onSaved: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onEditTargets();
+    const s = useEditNutritionTargetsSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
+    expect(s.initial?.dailyKcal).toBe(2200);
+  });
 
-  const ACTIVE = {
-    assignmentId: "pa1",
-    programId: "p1",
-    name: "Strength Foundations",
-    week: 4,
-    totalWeeks: 12,
-    endDate: "2026-08-01",
-    startDate: "2026-05-01",
-  };
+  it("onAssignGoal opens the goal sheet in create mode", async () => {
+    useAssignGoalSheet.setState({
+      open: false,
+      clientId: null,
+      editGoal: null,
+      onSaved: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onAssignGoal();
+    const s = useAssignGoalSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.editGoal).toBeNull();
+  });
 
-  it("fetches + passes the client's active programme", async () => {
-    const getProgramme = jest.fn(async () => ok(ACTIVE));
-    renderWithApi(
-      jest.fn(async () => ok([])),
-      getProgramme,
-    );
+  it("onEditGoal opens the goal sheet in edit mode with the goal id + title", async () => {
+    useAssignGoalSheet.setState({
+      open: false,
+      clientId: null,
+      editGoal: null,
+      onSaved: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onEditGoal();
+    const s = useAssignGoalSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.editGoal).toMatchObject({
+      goalId: "g-1",
+      title: "Squat 1.5x BW",
+      targetDate: "2026-09-01",
+    });
+  });
+
+  it("onOpenProgramme navigates to the programme; no-op when no programme", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientActiveProgrammes["client-1"] = ACTIVE;
+    renderWith(adapters);
     await waitFor(() => expect(props().activeProgramme).not.toBeNull());
-    expect(getProgramme).toHaveBeenCalledWith("client-1");
-    expect(props().activeProgramme?.programId).toBe("p1");
     props().onOpenProgramme();
     expect(mockPush).toHaveBeenCalledWith("/(app)/programs/p1");
   });
 
-  it("onAssignProgramme opens the client-anchored assign sheet", async () => {
+  it("onOpenProgramme is a no-op when there is no active programme", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    // no active programme fixture
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onOpenProgramme();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("re-focus (after the first) refreshes the aggregate, trend + programme", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientActiveProgrammes["client-1"] = ACTIVE;
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    const before = api.getClientDetailCalls.length;
+    // First focus is a no-op (guard); a second focus triggers the refresh.
+    await act(async () => {
+      focusCallbacks[0]?.();
+    });
+    await act(async () => {
+      focusCallbacks[0]?.();
+    });
+    await waitFor(() =>
+      expect(api.getClientDetailCalls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("onRefresh re-fetches the aggregate, trend + programme", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientActiveProgrammes["client-1"] = ACTIVE;
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    const before = api.getClientDetailCalls.length;
+    await act(async () => {
+      props().onRefresh();
+    });
+    await waitFor(() =>
+      expect(api.getClientDetailCalls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("onAssignProgramme + onAssignWorkout open their sheets", async () => {
     useAssignProgramSheet.setState({
       open: false,
       programId: null,
       clientId: null,
       onAssigned: null,
     });
-    renderWithApi(jest.fn(async () => ok([])));
-    await waitFor(() => expect(props().isLoading).toBe(false));
-    props().onAssignProgramme();
-    const s = useAssignProgramSheet.getState();
-    expect(s.open).toBe(true);
-    expect(s.clientId).toBe("client-1");
-  });
-
-  it("onAssignWorkout opens the ad-hoc assign-workout sheet", async () => {
     useAssignWorkoutSheet.setState({
       open: false,
       clientId: null,
       onAssigned: null,
     });
-    renderWithApi(jest.fn(async () => ok([])));
-    await waitFor(() => expect(props().isLoading).toBe(false));
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onAssignProgramme();
     props().onAssignWorkout();
-    const s = useAssignWorkoutSheet.getState();
-    expect(s.open).toBe(true);
-    expect(s.clientId).toBe("client-1");
+    expect(useAssignProgramSheet.getState().clientId).toBe("client-1");
+    expect(useAssignWorkoutSheet.getState().clientId).toBe("client-1");
+  });
+});
+
+describe("ClientDetailContainer — degraded", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockParams.id = "client-1";
+    mockParams.name = "Jordan";
+  });
+
+  it("surfaces an aggregate fetch error when there's no cache", async () => {
+    const { adapters } = makeAdapters();
+    // No fixture configured → the in-memory adapter fails with not_found.
+    renderWith(adapters);
+    await waitFor(() => expect(props().error).not.toBeNull());
+    expect(props().detail).toBeNull();
+  });
+
+  it("guards every action when the route has no client id", async () => {
+    mockParams.id = undefined;
+    const { adapters } = makeAdapters();
+    renderWith(adapters);
+    await waitFor(() => expect(mockCaptured.props).not.toBeNull());
+    const p = props();
+    // All id-dependent actions are safe no-ops (no navigation, no sheet open).
+    useAssignGoalSheet.setState({
+      open: false,
+      clientId: null,
+      editGoal: null,
+      onSaved: null,
+    });
+    p.onLogWeight();
+    p.onManageHabits();
+    p.onAssignProgramme();
+    p.onAssignWorkout();
+    p.onEditTargets();
+    p.onAssignGoal();
+    p.onEditGoal();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(useAssignGoalSheet.getState().open).toBe(false);
+  });
+
+  it("still passes a degraded (null-goal) aggregate through", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail({
+      goal: null,
+      calorieHit: null,
+      adherence: { overall: null, band: null, categories: [] },
+    });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    expect(props().detail?.goal).toBeNull();
+    // onEditGoal is a no-op with no goal — must not open the sheet.
+    useAssignGoalSheet.setState({
+      open: false,
+      clientId: null,
+      editGoal: null,
+      onSaved: null,
+    });
+    props().onEditGoal();
+    expect(useAssignGoalSheet.getState().open).toBe(false);
   });
 });

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useGetClientBodyTrend } from "@/ui/hooks/useGetClientBodyTrend";
+import { useGetClientDetail } from "@/ui/hooks/useGetClientDetail";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
+import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
+import {
+  initialFromCalorieHit,
+  useEditNutritionTargetsSheet,
+} from "@/state/edit-nutrition-targets-sheet";
 import { ClientDetailPresenter } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
@@ -41,22 +47,31 @@ export function buildClientBodyTrend(pts: BodyTrendPoint[]): {
 }
 
 /**
- * <ClientDetailContainer> — interim Client Detail (10-trainer-features
- * 10.9.3): fetches the client's body trend and wires the Log-weight action.
- * Re-fetches on re-focus so a weight logged via the Log-weight screen shows
- * up the moment the coach pops back.
+ * <ClientDetailContainer> — the full Client Detail screen (M8 Coach Phase 5).
+ * Fetches THREE things and composes them into the single-scroll presenter:
+ *   1. the aggregate (`useGetClientDetail`, cache-first),
+ *   2. the client's body trend (`useGetClientBodyTrend`, #146),
+ *   3. the client's active programme (`getClientActiveProgramme`, #166).
+ * The aggregate deliberately does NOT fold in the programme (avoid churn); the
+ * container fetches it directly, refreshing all three on re-focus + after an
+ * assign / weight-log / sheet submit.
  */
 export function ClientDetailContainer() {
   const router = useRouter();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
+  const detail = useGetClientDetail(id);
   const trend = useGetClientBodyTrend(id);
   const { api } = useAdapters();
   const openAssignProgram = useAssignProgramSheet((s) => s.openForClient);
   const openAssignWorkout = useAssignWorkoutSheet((s) => s.openSheet);
+  const openAssignGoalCreate = useAssignGoalSheet((s) => s.openForCreate);
+  const openAssignGoalEdit = useAssignGoalSheet((s) => s.openForEdit);
+  const openEditTargets = useEditNutritionTargetsSheet((s) => s.openSheet);
 
-  // The client's live programme for the ProgrammeCard (specs/19-programs
-  // AC 4.5). Fetched directly (no cached-resource hook — a single derived read
-  // per screen visit); refreshed on re-focus + after an assign.
+  // The client's live programme for the ProgrammeCard + LiveSessionCTA
+  // (specs/19-programs AC 4.5). Fetched directly (no cached-resource hook — a
+  // single derived read per screen visit); refreshed on re-focus + after an
+  // assign.
   const [activeProgramme, setActiveProgramme] =
     useState<ActiveProgramme | null>(null);
   const loadProgramme = useCallback(async () => {
@@ -68,20 +83,28 @@ export function ClientDetailContainer() {
     void loadProgramme();
   }, [loadProgramme]);
 
-  // Refresh on re-focus (returning from Log weight) — skip the initial focus,
-  // which coincides with the hook's own mount fetch.
+  // Refresh on re-focus (returning from Log weight / Manage habits) — skip the
+  // initial focus, which coincides with the hooks' own mount fetches.
   const firstFocus = useRef(true);
-  const refresh = trend.refresh;
+  const refreshDetail = detail.refresh;
+  const refreshTrend = trend.refresh;
   useFocusEffect(
     useCallback(() => {
       if (firstFocus.current) {
         firstFocus.current = false;
         return;
       }
-      void refresh();
+      void refreshDetail();
+      void refreshTrend();
       void loadProgramme();
-    }, [refresh, loadProgramme]),
+    }, [refreshDetail, refreshTrend, loadProgramme]),
   );
+
+  const refreshAll = useCallback(() => {
+    void refreshDetail();
+    void refreshTrend();
+    void loadProgramme();
+  }, [refreshDetail, refreshTrend, loadProgramme]);
 
   const bodyTrend = useMemo(
     () => buildClientBodyTrend(trend.data ?? []),
@@ -120,22 +143,58 @@ export function ClientDetailContainer() {
 
   const onAssignWorkout = useCallback(() => {
     if (!id) return;
-    openAssignWorkout(id, () => void refresh());
-  }, [id, openAssignWorkout, refresh]);
+    openAssignWorkout(id, refreshAll);
+  }, [id, openAssignWorkout, refreshAll]);
+
+  const onEditTargets = useCallback(() => {
+    if (!id) return;
+    openEditTargets(
+      id,
+      initialFromCalorieHit(detail.data?.calorieHit ?? null),
+      refreshAll,
+    );
+  }, [id, openEditTargets, detail.data, refreshAll]);
+
+  const onAssignGoal = useCallback(() => {
+    if (!id) return;
+    openAssignGoalCreate(id, refreshAll);
+  }, [id, openAssignGoalCreate, refreshAll]);
+
+  const onEditGoal = useCallback(() => {
+    const goal = detail.data?.goal;
+    if (!id || !goal) return;
+    openAssignGoalEdit(
+      id,
+      {
+        goalId: goal.id,
+        title: goal.title,
+        targetDate: goal.targetDate,
+      },
+      refreshAll,
+    );
+  }, [id, detail.data, openAssignGoalEdit, refreshAll]);
 
   return (
     <ClientDetailPresenter
+      detail={detail.data}
       clientName={name ?? null}
       bodyTrend={bodyTrend}
       activeProgramme={activeProgramme}
-      isLoading={trend.isLoading}
-      error={trend.error ? "Couldn't load this client's trend." : null}
-      onLogWeight={onLogWeight}
+      isLoading={
+        detail.data === null && (detail.isRefreshing || trend.isLoading)
+      }
+      isRefreshing={detail.isRefreshing}
+      error={detail.error}
+      onRefresh={refreshAll}
       onBack={onBack}
+      onLogWeight={onLogWeight}
       onManageHabits={onManageHabits}
+      onAssignWorkout={onAssignWorkout}
+      onEditTargets={onEditTargets}
+      onAssignGoal={onAssignGoal}
+      onEditGoal={onEditGoal}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}
-      onAssignWorkout={onAssignWorkout}
     />
   );
 }

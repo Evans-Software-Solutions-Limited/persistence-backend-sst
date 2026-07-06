@@ -4,6 +4,7 @@ import type { PersonalRecord } from "@/domain/models/record";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
 import type { ProgramSummary } from "@/domain/models/program";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",
@@ -1471,6 +1472,81 @@ describe("InMemoryStorageAdapter", () => {
       storage.cachePrograms("user-1", samplePrograms);
       storage.clearAll();
       expect(storage.getCachedPrograms("user-1")).toBeNull();
+    });
+  });
+
+  describe("client detail cache (M8 Coach Phase 5)", () => {
+    const detail: ClientDetail = {
+      client: {
+        id: "c-1",
+        name: "Marcus Reid",
+        initials: "MR",
+        avatarUrl: null,
+        status: "active",
+        ageYears: 32,
+        heightCm: 178,
+      },
+      adherence: { overall: 64, band: "atRisk", categories: [] },
+      prs: [],
+      volume: { weekKg: 14200, daily: [] },
+      calorieHit: null,
+      goal: null,
+      habits: null,
+      aiSummary: {
+        summary: null,
+        coversDate: null,
+        generatedAt: null,
+        canManualRefresh: false,
+      },
+      thisWeek: {
+        workoutsCompleted: 0,
+        workoutsPlanned: null,
+        volumeKg: null,
+        prs: 0,
+        checkIns: null,
+      },
+      recentSessions: [],
+      notes: [],
+    };
+
+    it("returns null when nothing is cached", () => {
+      expect(storage.getCachedClientDetail("trainer-1", "c-1")).toBeNull();
+      expect(storage.getClientDetailAge("trainer-1", "c-1")).toBeNull();
+    });
+
+    it("caches + reads back keyed by (userId, clientId), stamping an age", () => {
+      storage.cacheClientDetail("trainer-1", "c-1", detail);
+      expect(storage.getCachedClientDetail("trainer-1", "c-1")).toEqual(detail);
+      expect(storage.getClientDetailAge("trainer-1", "c-1")).not.toBeNull();
+    });
+
+    it("scopes per client — one client's slot doesn't answer another's", () => {
+      storage.cacheClientDetail("trainer-1", "c-1", detail);
+      expect(storage.getCachedClientDetail("trainer-1", "c-2")).toBeNull();
+    });
+
+    it("scopes per trainer — trainer A's cache doesn't leak to trainer B", () => {
+      storage.cacheClientDetail("trainer-A", "c-1", detail);
+      expect(storage.getCachedClientDetail("trainer-A", "c-1")).not.toBeNull();
+      expect(storage.getCachedClientDetail("trainer-B", "c-1")).toBeNull();
+    });
+
+    it("overwrites the previous payload on re-cache", () => {
+      storage.cacheClientDetail("trainer-1", "c-1", detail);
+      const updated = {
+        ...detail,
+        adherence: { overall: 90, band: "stellar" as const, categories: [] },
+      };
+      storage.cacheClientDetail("trainer-1", "c-1", updated);
+      expect(
+        storage.getCachedClientDetail("trainer-1", "c-1")?.adherence.overall,
+      ).toBe(90);
+    });
+
+    it("clearAll wipes the client-detail cache (sign-out hygiene)", () => {
+      storage.cacheClientDetail("trainer-1", "c-1", detail);
+      storage.clearAll();
+      expect(storage.getCachedClientDetail("trainer-1", "c-1")).toBeNull();
     });
   });
 });
