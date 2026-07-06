@@ -38,6 +38,7 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
+import type { ProgramSummary } from "@/domain/models/program";
 import type {
   Food,
   FuelToday,
@@ -316,6 +317,25 @@ export interface StoragePort {
    * Age of the cached roster as an ISO timestamp, or null when no row.
    */
   getTrainerClientsAge(userId: string): string | null;
+
+  // -- Programmes List Cache (19-programs, Phase 9 mobile — coach F1) --
+  /**
+   * Read the cached programmes list for a trainer, or null if none. One row
+   * per userId; `payload` is the full JSON-serialised `ProgramSummary[]`.
+   * Staleness is enforced by the hook (cache-first then refresh). Programme
+   * DETAIL is never cached — the editor fetches it live.
+   */
+  getCachedPrograms(userId: string): ProgramSummary[] | null;
+  /**
+   * Write-through the latest backend programmes list for a trainer,
+   * stamping `syncedAt = now()`.
+   */
+  cachePrograms(userId: string, payload: ProgramSummary[]): void;
+  /**
+   * Age of the cached programmes list as an ISO timestamp, or null when no
+   * row.
+   */
+  getProgramsAge(userId: string): string | null;
 
   // -- Notifications Cache (09) --
   /**

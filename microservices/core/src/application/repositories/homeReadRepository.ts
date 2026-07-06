@@ -8,9 +8,19 @@ import {
   profiles,
   userAchievements,
   userStreaks,
+  workoutAssignments,
+  workouts,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { localDateISO } from "../streaks/period";
+import {
+  ProgramAssignmentRepository,
+  type ActiveProgrammeSummary,
+} from "./programAssignmentRepository";
+import {
+  mapTrainerRoleToAssignedByType,
+  type AssignedByType,
+} from "./dashboardRepository";
 
 export interface RecentPR {
   id: string;
@@ -38,6 +48,22 @@ export interface BodyTrendPoint {
 }
 
 /**
+ * One occurrence in the Home "Today's training" section (specs/19-programs
+ * STORY-005): an OPEN, plan-visible assigned workout, due-date ascending so
+ * overdue → today → upcoming reads naturally. `assignedByType` drives the
+ * trainer attribution badge.
+ */
+export interface TodaysTrainingItem {
+  /** workout_assignments occurrence row id (stable list key). */
+  assignmentId: string;
+  workoutId: string;
+  name: string | null;
+  estimatedDurationMinutes: number | null;
+  dueDate: string | null;
+  assignedByType: AssignedByType | null;
+}
+
+/**
  * Read-side composition for the Home + You screens (06-progress-goals, Phase
  * 06.5). Each method is JWT-scoped by `userId`. Volume comes from
  * VolumeRepository; this repo owns steps / PRs / achievements / body-trend /
@@ -45,6 +71,86 @@ export interface BodyTrendPoint {
  */
 export class HomeReadRepository {
   static readonly key = "HomeReadRepository";
+
+  // Composed for the programme slices on the Home aggregate (specs/19-programs
+  // STORY-005). Kept as a field so tests can substitute a stub. Mirrors
+  // dashboardRepository's composition.
+  private readonly programAssignmentRepository =
+    new ProgramAssignmentRepository();
+
+  /**
+   * Roll indefinite-programme occurrences forward before the Home reads so the
+   * "Today's training" list always has runway (specs/19-programs
+   * § Materialisation). Error-tolerant by contract: the caller wraps this in a
+   * try/catch — a top-up failure must never take down the Home render.
+   */
+  async ensureProgrammeMaterialized(
+    userId: string,
+    todayLocalISO: string,
+  ): Promise<void> {
+    await this.programAssignmentRepository.ensureMaterializedForClient(
+      userId,
+      todayLocalISO,
+    );
+  }
+
+  /**
+   * The client's live programme for the Home "Your programme" card, or null
+   * when none is live + plan-visible. Delegates to the shared assignment repo
+   * so the coach-side and athlete-side derivations can't drift.
+   */
+  async getActiveProgramme(
+    userId: string,
+    todayLocalISO: string,
+  ): Promise<ActiveProgrammeSummary | null> {
+    return this.programAssignmentRepository.getActiveProgrammeForClient(
+      userId,
+      todayLocalISO,
+    );
+  }
+
+  /**
+   * OPEN, plan-visible assigned occurrences for the Home "Today's training"
+   * section, due-date ascending (nulls last). Mirrors the assigned slice of
+   * dashboardRepository.getRecentWorkouts so both surfaces order + attribute
+   * identically.
+   */
+  async getTodaysTraining(
+    userId: string,
+    limit = 10,
+  ): Promise<TodaysTrainingItem[]> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        assignmentId: workoutAssignments.id,
+        workoutId: workouts.id,
+        name: workouts.name,
+        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+        dueDate: workoutAssignments.dueDate,
+        trainerRole: profiles.role,
+      })
+      .from(workoutAssignments)
+      .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
+      .leftJoin(profiles, eq(workoutAssignments.trainerId, profiles.id))
+      .where(
+        and(
+          eq(workoutAssignments.clientId, userId),
+          eq(workoutAssignments.status, "assigned"),
+          eq(workoutAssignments.showInPlan, true),
+        ),
+      )
+      .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
+      .limit(limit);
+
+    return rows.map((r) => ({
+      assignmentId: r.assignmentId,
+      workoutId: r.workoutId,
+      name: r.name,
+      estimatedDurationMinutes: r.estimatedDurationMinutes,
+      dueDate: r.dueDate ?? null,
+      assignedByType: mapTrainerRoleToAssignedByType(r.trainerRole),
+    }));
+  }
 
   /** Sum of today's (user-local) step count across health sources. */
   async getTodaySteps(userId: string, todayLocalISO: string): Promise<number> {

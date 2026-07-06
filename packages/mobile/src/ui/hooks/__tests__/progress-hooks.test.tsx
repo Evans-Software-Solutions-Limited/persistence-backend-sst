@@ -115,6 +115,8 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       recentPRs: [],
       habits: [],
       todayWorkout: [],
+      activeProgramme: null,
+      todaysTraining: [],
     });
     const { result } = renderHook(() => useGetTodayRings(), { wrapper });
     expect(result.current.data?.move.current).toBe(5); // cache-first

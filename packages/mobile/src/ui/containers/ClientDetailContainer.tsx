@@ -1,8 +1,11 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useGetClientBodyTrend } from "@/ui/hooks/useGetClientBodyTrend";
+import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAssignProgramSheet } from "@/state/assign-program-sheet";
+import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { ClientDetailPresenter } from "@/ui/presenters/coach/ClientDetailPresenter";
-import type { BodyTrendPoint } from "@/domain/models/progress";
+import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
 
 /**
@@ -47,6 +50,23 @@ export function ClientDetailContainer() {
   const router = useRouter();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const trend = useGetClientBodyTrend(id);
+  const { api } = useAdapters();
+  const openAssignProgram = useAssignProgramSheet((s) => s.openForClient);
+  const openAssignWorkout = useAssignWorkoutSheet((s) => s.openSheet);
+
+  // The client's live programme for the ProgrammeCard (specs/19-programs
+  // AC 4.5). Fetched directly (no cached-resource hook — a single derived read
+  // per screen visit); refreshed on re-focus + after an assign.
+  const [activeProgramme, setActiveProgramme] =
+    useState<ActiveProgramme | null>(null);
+  const loadProgramme = useCallback(async () => {
+    if (!id) return;
+    const result = await api.getClientActiveProgramme(id);
+    if (result.ok) setActiveProgramme(result.value);
+  }, [api, id]);
+  useEffect(() => {
+    void loadProgramme();
+  }, [loadProgramme]);
 
   // Refresh on re-focus (returning from Log weight) — skip the initial focus,
   // which coincides with the hook's own mount fetch.
@@ -59,7 +79,8 @@ export function ClientDetailContainer() {
         return;
       }
       void refresh();
-    }, [refresh]),
+      void loadProgramme();
+    }, [refresh, loadProgramme]),
   );
 
   const bodyTrend = useMemo(
@@ -79,14 +100,33 @@ export function ClientDetailContainer() {
     if (router.canGoBack()) router.back();
   }, [router]);
 
+  const onOpenProgramme = useCallback(() => {
+    if (!activeProgramme) return;
+    router.push(`/(app)/programs/${activeProgramme.programId}` as never);
+  }, [router, activeProgramme]);
+
+  const onAssignProgramme = useCallback(() => {
+    if (!id) return;
+    openAssignProgram(id, () => void loadProgramme());
+  }, [id, openAssignProgram, loadProgramme]);
+
+  const onAssignWorkout = useCallback(() => {
+    if (!id) return;
+    openAssignWorkout(id, () => void refresh());
+  }, [id, openAssignWorkout, refresh]);
+
   return (
     <ClientDetailPresenter
       clientName={name ?? null}
       bodyTrend={bodyTrend}
+      activeProgramme={activeProgramme}
       isLoading={trend.isLoading}
       error={trend.error ? "Couldn't load this client's trend." : null}
       onLogWeight={onLogWeight}
       onBack={onBack}
+      onOpenProgramme={onOpenProgramme}
+      onAssignProgramme={onAssignProgramme}
+      onAssignWorkout={onAssignWorkout}
     />
   );
 }

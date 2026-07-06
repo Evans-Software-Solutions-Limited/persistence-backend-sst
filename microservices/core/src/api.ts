@@ -95,6 +95,7 @@ import { trainersProgramsUpdateHandler } from "./application/trainers/programs/t
 import { trainersProgramsDeleteHandler } from "./application/trainers/programs/trainersProgramsDeleteHandler";
 import { trainersProgramsAssignHandler } from "./application/trainers/programs/trainersProgramsAssignHandler";
 import { trainersProgramsUnassignHandler } from "./application/trainers/programs/trainersProgramsUnassignHandler";
+import { trainersClientActiveProgrammeGetHandler } from "./application/trainers/programs/trainersClientActiveProgrammeGetHandler";
 import { trainersClientWorkoutAssignmentsCreateHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsCreateHandler";
 import { trainersClientWorkoutAssignmentsDeleteHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsDeleteHandler";
 // M8 Coach Mode Phase 3 (10.3) — trainer on-behalf endpoints, grouped into one
@@ -206,6 +207,7 @@ const app = new Elysia()
   .use(trainersProgramsDeleteHandler)
   .use(trainersProgramsAssignHandler)
   .use(trainersProgramsUnassignHandler)
+  .use(trainersClientActiveProgrammeGetHandler)
   .use(trainersClientWorkoutAssignmentsCreateHandler)
   .use(trainersClientWorkoutAssignmentsDeleteHandler)
   // Coach Mode Phase 3 (10.3) — trainer on-behalf writes + parity GETs

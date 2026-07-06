@@ -64,6 +64,38 @@ export type BodyTrendPoint = {
   bodyFat: number | null;
 };
 
+/**
+ * The athlete's currently-active programme (19-programs, Phase 9 F2). Null
+ * when the athlete has no live programme assignment. `week`/`totalWeeks`
+ * feed the same segmented-progress-bar shape as the coach's `ProgrammeCard`
+ * (`totalWeeks: null` = indefinite/ongoing — render "Week N · Ongoing").
+ */
+export type ActiveProgramme = {
+  assignmentId: string;
+  programId: string;
+  name: string;
+  week: number;
+  totalWeeks: number | null;
+  endDate: string | null;
+  startDate: string;
+};
+
+/**
+ * A due-ordered "Today's training" row (19-programs, Phase 9 F2) — a
+ * workout assigned to the athlete either via a live programme assignment
+ * (`assignmentId` set) or a standalone coach workout-assignment.
+ * `assignedByType` attributes the row to a trainer/physio badge; null for
+ * self-assigned/programme-only rows without a distinct assigner.
+ */
+export type TodaysTrainingItem = {
+  assignmentId: string | null;
+  workoutId: string;
+  name: string | null;
+  estimatedDurationMinutes: number | null;
+  dueDate: string | null;
+  assignedByType: "personal_trainer" | "physiotherapist" | null;
+};
+
 /** Aggregate cold-start payload for Home (GET /users/me/home). */
 export type HomePayload = {
   rings: Rings;
@@ -72,6 +104,10 @@ export type HomePayload = {
   recentPRs: PersonalRecord[];
   habits: Habit[];
   todayWorkout: unknown[];
+  /** 19-programs Phase 9 F2 — null when no live programme assignment. */
+  activeProgramme: ActiveProgramme | null;
+  /** 19-programs Phase 9 F2 — due-ordered; empty when nothing is assigned. */
+  todaysTraining: TodaysTrainingItem[];
 };
 
 export const HOME_STALE_AFTER_MS = 5 * 60 * 1000; // 5 min, matches dashboard

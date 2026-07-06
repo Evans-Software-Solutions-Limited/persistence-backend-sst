@@ -8,7 +8,14 @@ import { HomeReadRepository } from "../homeReadRepository";
 
 function chain(result: unknown) {
   const c: any = {};
-  for (const k of ["from", "innerJoin", "where", "orderBy", "limit"]) {
+  for (const k of [
+    "from",
+    "innerJoin",
+    "leftJoin",
+    "where",
+    "orderBy",
+    "limit",
+  ]) {
     c[k] = () => c;
   }
   c.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
@@ -132,6 +139,98 @@ describe("HomeReadRepository", () => {
       "Australia/Sydney",
     );
     expect(series[0].date).toBe("2026-06-02");
+  });
+
+  it("getTodaysTraining maps occurrences + derives assignedByType from role", async () => {
+    (getDb as any).mockReturnValue({
+      select: () =>
+        chain([
+          {
+            assignmentId: "wa1",
+            workoutId: "w1",
+            name: "Upper Body",
+            estimatedDurationMinutes: 45,
+            dueDate: "2026-06-10",
+            trainerRole: "personal_trainer",
+          },
+          {
+            assignmentId: "wa2",
+            workoutId: "w2",
+            name: "Rehab Flow",
+            estimatedDurationMinutes: null,
+            dueDate: null,
+            trainerRole: "physiotherapist",
+          },
+          {
+            assignmentId: "wa3",
+            workoutId: "w3",
+            name: "Self Push",
+            estimatedDurationMinutes: 30,
+            dueDate: "2026-06-11",
+            // No trainer profile joined (self/ad-hoc) → null attribution.
+            trainerRole: null,
+          },
+        ]),
+    });
+    const items = await new HomeReadRepository().getTodaysTraining("u1");
+    expect(items).toEqual([
+      {
+        assignmentId: "wa1",
+        workoutId: "w1",
+        name: "Upper Body",
+        estimatedDurationMinutes: 45,
+        dueDate: "2026-06-10",
+        assignedByType: "personal_trainer",
+      },
+      {
+        assignmentId: "wa2",
+        workoutId: "w2",
+        name: "Rehab Flow",
+        estimatedDurationMinutes: null,
+        dueDate: null,
+        assignedByType: "physiotherapist",
+      },
+      {
+        assignmentId: "wa3",
+        workoutId: "w3",
+        name: "Self Push",
+        estimatedDurationMinutes: 30,
+        dueDate: "2026-06-11",
+        assignedByType: null,
+      },
+    ]);
+  });
+
+  it("getActiveProgramme + ensureProgrammeMaterialized delegate to the assignment repo", async () => {
+    const repo = new HomeReadRepository();
+    const summary = {
+      assignmentId: "pa1",
+      programId: "p1",
+      name: "Strength Foundations",
+      week: 4,
+      totalWeeks: 12,
+      endDate: "2026-08-01",
+      startDate: "2026-05-01",
+    };
+    const ensureMaterializedForClient = vi.fn().mockResolvedValue(undefined);
+    const getActiveProgrammeForClient = vi.fn().mockResolvedValue(summary);
+    (repo as any).programAssignmentRepository = {
+      ensureMaterializedForClient,
+      getActiveProgrammeForClient,
+    };
+
+    await repo.ensureProgrammeMaterialized("u1", "2026-06-10");
+    expect(ensureMaterializedForClient).toHaveBeenCalledWith(
+      "u1",
+      "2026-06-10",
+    );
+
+    const active = await repo.getActiveProgramme("u1", "2026-06-10");
+    expect(getActiveProgrammeForClient).toHaveBeenCalledWith(
+      "u1",
+      "2026-06-10",
+    );
+    expect(active).toEqual(summary);
   });
 
   it("getUserTimezone returns the profile tz, default Europe/London", async () => {

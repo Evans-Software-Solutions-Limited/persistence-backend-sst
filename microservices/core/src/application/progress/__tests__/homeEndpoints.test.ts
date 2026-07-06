@@ -14,6 +14,26 @@ const homeMock = vi.hoisted(() => ({
   getRecentPRs: vi.fn(async () => [{ id: "pr1" }] as any[]),
   getBodyTrend: vi.fn(async () => [{ date: "2026-06-01" }] as any[]),
   getAchievements: vi.fn(async () => [{ id: "ua1" }] as any[]),
+  ensureProgrammeMaterialized: vi.fn(async () => undefined),
+  getActiveProgramme: vi.fn(async () => ({
+    assignmentId: "pa1",
+    programId: "p1",
+    name: "Strength Foundations",
+    week: 4,
+    totalWeeks: 12,
+    endDate: "2026-08-01",
+    startDate: "2026-05-01",
+  })),
+  getTodaysTraining: vi.fn(async () => [
+    {
+      assignmentId: "wa1",
+      workoutId: "w1",
+      name: "Upper Body",
+      estimatedDurationMinutes: 45,
+      dueDate: "2026-06-10",
+      assignedByType: "personal_trainer",
+    },
+  ]),
 }));
 const habitMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as any[]) }));
 const nutEntryMock = vi.hoisted(() => ({
@@ -126,6 +146,35 @@ describe("Home/You endpoints", () => {
     expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: 5 });
     expect(data.recentPRs).toHaveLength(1);
     expect(Array.isArray(data.habits)).toBe(true);
+    // specs/19-programs STORY-005 — programme slices are topped up first, then
+    // surfaced on the aggregate.
+    expect(homeMock.ensureProgrammeMaterialized).toHaveBeenCalledWith(
+      "u1",
+      expect.any(String),
+    );
+    expect(data.activeProgramme).toMatchObject({
+      programId: "p1",
+      week: 4,
+      totalWeeks: 12,
+    });
+    expect(data.todaysTraining).toHaveLength(1);
+    expect(data.todaysTraining[0]).toMatchObject({
+      workoutId: "w1",
+      assignedByType: "personal_trainer",
+    });
+  });
+
+  it("GET /users/me/home survives a programme top-up failure", async () => {
+    homeMock.ensureProgrammeMaterialized.mockRejectedValueOnce(
+      new Error("neon timeout"),
+    );
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    // The top-up is best-effort — the Home render must not 500 on its failure.
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as any;
+    expect(data.rings).toBeDefined();
   });
 
   it("GET /users/me/prs parses limit (default 5, cap 50)", async () => {

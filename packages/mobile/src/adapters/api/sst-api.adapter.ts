@@ -56,12 +56,24 @@ import type {
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
   HabitConfigEntry,
+  ProgramApiError,
+  WorkoutAssignmentRow,
 } from "@/domain/ports/api.port";
+import type {
+  AssignProgramInput,
+  AssignWorkoutInput,
+  CreateProgramInput,
+  ProgramAssignmentRow,
+  ProgramDetail,
+  ProgramSummary,
+  UpdateProgramInput,
+} from "@/domain/models/program";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { Streak } from "@/domain/models/streak";
 import type {
+  ActiveProgramme,
   HomePayload,
   Rings,
   WeeklyVolume,
@@ -1191,6 +1203,14 @@ export class SSTApiAdapter implements ApiPort {
     );
   }
 
+  async getClientActiveProgramme(
+    clientId: string,
+  ): Promise<Result<ActiveProgramme | null, ApiError>> {
+    return this.requestEnvelope<ActiveProgramme | null>(
+      `/trainers/me/clients/${clientId}/active-programme`,
+    );
+  }
+
   // -- Trainers / Coach You (10-trainer-features) --
   //
   // GET overview + GET invitations are single `{ data }` envelopes (camelCase
@@ -1434,6 +1454,127 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<RelationshipResponseResult>(
       `/clients/me/relationships/${relationshipId}/respond`,
       { method: "POST", body: { action } },
+    );
+  }
+
+  // -- Programs (19-programs, Phase 9 mobile — coach F1) --
+  //
+  // GET list/detail are plain `{ data }` envelopes. The write endpoints
+  // (create/update/delete/assign/unassign-workout) can fail with a domain
+  // `{ code, message }` body (409/422/403) — those go through `requestRaw`
+  // so the adapter can stamp `code` onto `ProgramApiError.programCode`,
+  // mirroring `inviteClient`.
+
+  async listPrograms(): Promise<Result<ProgramSummary[], ApiError>> {
+    return this.requestEnvelope<ProgramSummary[]>("/trainers/me/programs");
+  }
+
+  async getProgram(id: string): Promise<Result<ProgramDetail, ApiError>> {
+    return this.requestEnvelope<ProgramDetail>(`/trainers/me/programs/${id}`);
+  }
+
+  async createProgram(
+    input: CreateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>> {
+    return this.requestProgramWrite<ProgramDetail>("/trainers/me/programs", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async updateProgram(
+    id: string,
+    input: UpdateProgramInput,
+  ): Promise<Result<ProgramDetail, ProgramApiError>> {
+    return this.requestProgramWrite<ProgramDetail>(
+      `/trainers/me/programs/${id}`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  async deleteProgram(
+    id: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>> {
+    return this.requestProgramWrite<{ deleted: true }>(
+      `/trainers/me/programs/${id}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async assignProgram(
+    programId: string,
+    input: AssignProgramInput,
+  ): Promise<Result<ProgramAssignmentRow, ProgramApiError>> {
+    return this.requestProgramWrite<ProgramAssignmentRow>(
+      `/trainers/me/programs/${programId}/assign`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async unassignProgram(
+    programId: string,
+    assignmentId: string,
+  ): Promise<Result<{ unassigned: true }, ApiError>> {
+    return this.requestEnvelope<{ unassigned: true }>(
+      `/trainers/me/programs/${programId}/assignments/${assignmentId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async assignWorkout(
+    clientId: string,
+    input: AssignWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>> {
+    return this.requestProgramWrite<WorkoutAssignmentRow>(
+      `/trainers/me/clients/${clientId}/workout-assignments`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async unassignWorkout(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<{ deleted: true }, ProgramApiError>> {
+    return this.requestProgramWrite<{ deleted: true }>(
+      `/trainers/me/clients/${clientId}/workout-assignments/${assignmentId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Shared write path for the programs endpoints that can fail with a flat
+   * domain-coded body (`{ code, message }`) instead of the usual `{ data }`
+   * envelope. Mirrors `inviteClient`'s `requestRaw` special-case: the
+   * success body is `{ data: T }`; a non-2xx (or unexpected shape) response
+   * maps through `mapHttpErrorToApiError` and — when a string `code` is
+   * present on the body — stamps it onto `ProgramApiError.programCode` so
+   * callers can branch without string-matching `message`.
+   */
+  private async requestProgramWrite<T>(
+    path: string,
+    options: RequestOptions,
+  ): Promise<Result<T, ProgramApiError>> {
+    const result = await this.requestRaw<
+      { data: T } | { code: string; message: string }
+    >(path, options);
+    if (!result.ok) {
+      return fail<ProgramApiError>(result.error);
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+    const code =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as ProgramApiError["programCode"])
+        : undefined;
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : "Request failed";
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<ProgramApiError>(
+      code !== undefined ? { ...base, programCode: code } : base,
     );
   }
 

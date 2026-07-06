@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
+import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
+import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
@@ -102,6 +104,8 @@ export default function AppLayout() {
           name="clients/[id]/index"
           options={{ headerShown: false }}
         />
+        <Stack.Screen name="programs/create" options={{ headerShown: false }} />
+        <Stack.Screen name="programs/[id]" options={{ headerShown: false }} />
         <Stack.Screen
           name="exercises/[id]/edit"
           options={{ headerShown: false }}
@@ -228,6 +232,21 @@ export default function AppLayout() {
         Spec: feedback_sheets_mount_at_root
       */}
       <AddClientSheetContainer />
+      {/*
+        AssignProgramSheet — the coach assign-programme-to-client bottom sheet
+        (19-programs STORY-003). Root-mounted (sibling of the Stack) so it
+        overlays the tab bar; reads useAssignProgramSheet().open to drive the
+        slide animation. The Programs editor's "Assign to client" CTA opens it.
+
+        Spec: feedback_sheets_mount_at_root
+      */}
+      <AssignProgramSheet />
+      {/*
+        AssignWorkoutSheet — ad-hoc single-workout assignment from Client Detail
+        (19-programs STORY-006). Root-mounted sibling; reads
+        useAssignWorkoutSheet().open.
+      */}
+      <AssignWorkoutSheet />
       {/*
         M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
         All three read useFuelSheets().sheet to drive their <BottomSheet>

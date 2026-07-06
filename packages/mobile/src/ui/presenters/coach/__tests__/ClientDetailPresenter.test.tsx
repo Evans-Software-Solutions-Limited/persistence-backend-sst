@@ -12,10 +12,14 @@ function render(over: Partial<ClientDetailProps> = {}) {
       weight: { current: 79.2, delta: -0.8, series: [80, 79.2], unit: "kg" },
       bodyFat: { current: 20.4, delta: -0.6, series: [21, 20.4] },
     },
+    activeProgramme: null,
     isLoading: false,
     error: null,
     onLogWeight: jest.fn(),
     onBack: jest.fn(),
+    onOpenProgramme: jest.fn(),
+    onAssignProgramme: jest.fn(),
+    onAssignWorkout: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<ClientDetailPresenter {...props} />) };
@@ -68,5 +72,46 @@ describe("ClientDetailPresenter", () => {
   it("falls back to a generic title without a client name", () => {
     const { getByText } = render({ clientName: null });
     expect(getByText("Client")).toBeTruthy();
+  });
+
+  // -- 19-programs T-19.3.5: programme section --
+
+  const ACTIVE = {
+    assignmentId: "pa1",
+    programId: "p1",
+    name: "Strength Foundations",
+    week: 4,
+    totalWeeks: 12,
+    endDate: "2026-08-01",
+    startDate: "2026-05-01",
+  };
+
+  it("shows the ProgrammeCard + opens the editor when a programme is active", () => {
+    const { props, getByTestId, queryByTestId } = render({
+      activeProgramme: ACTIVE,
+    });
+    expect(getByTestId("client-detail-programme-card")).toBeTruthy();
+    expect(queryByTestId("client-detail-assign-programme")).toBeNull();
+    fireEvent.press(getByTestId("client-detail-programme-card-pressable"));
+    expect(props.onOpenProgramme).toHaveBeenCalled();
+  });
+
+  it("shows the Assign programme CTA when there is no active programme", () => {
+    const { props, getByTestId, queryByTestId } = render({
+      activeProgramme: null,
+    });
+    expect(queryByTestId("client-detail-programme-card")).toBeNull();
+    fireEvent.press(getByTestId("client-detail-assign-programme"));
+    expect(props.onAssignProgramme).toHaveBeenCalled();
+  });
+
+  it("offers the ad-hoc Assign-workout action in both states", () => {
+    const withPlan = render({ activeProgramme: ACTIVE });
+    fireEvent.press(withPlan.getByTestId("client-detail-assign-workout"));
+    expect(withPlan.props.onAssignWorkout).toHaveBeenCalled();
+
+    const noPlan = render({ activeProgramme: null });
+    fireEvent.press(noPlan.getByTestId("client-detail-assign-workout"));
+    expect(noPlan.props.onAssignWorkout).toHaveBeenCalled();
   });
 });

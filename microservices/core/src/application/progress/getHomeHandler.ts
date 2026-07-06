@@ -40,6 +40,16 @@ export const getHomeHandler = new Elysia()
     const tz = await ctx.VolumeRepository.getUserTimezone(userId);
 
     const today = localDateISO(now, tz);
+
+    // Roll indefinite-programme occurrences forward BEFORE the reads so the
+    // "Today's training" slice always has runway (specs/19-programs
+    // § Materialisation). Error-tolerant: a top-up failure must not take down
+    // the Home render — the already-materialised window still lists.
+    try {
+      await ctx.HomeReadRepository.ensureProgrammeMaterialized(userId, today);
+    } catch (err) {
+      console.error("home programme top-up failed", err);
+    }
     // Bars + totals both span the current calendar week so `Σ bars === totalKg`
     // (Inspector finding — a trailing 7-day window disagreed with the Mon–Sun
     // total on any non-Sunday).
@@ -66,6 +76,8 @@ export const getHomeHandler = new Elysia()
       completions,
       kcal,
       kcalTarget,
+      activeProgramme,
+      todaysTraining,
     ] = await Promise.all([
       ctx.HomeReadRepository.getTodaySteps(userId, today),
       ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
@@ -84,6 +96,8 @@ export const getHomeHandler = new Elysia()
       ctx.NutritionTargetRepository.get(userId).then(
         (t) => t?.dailyKcal ?? null,
       ),
+      ctx.HomeReadRepository.getActiveProgramme(userId, today),
+      ctx.HomeReadRepository.getTodaysTraining(userId),
     ]);
 
     const rings = buildRings(
@@ -112,6 +126,11 @@ export const getHomeHandler = new Elysia()
         recentPRs,
         habits: buildHabitsGrid(completions, now, tz),
         todayWorkout: [],
+        // specs/19-programs STORY-005 — the athlete Home "Your programme"
+        // card + "Today's training" section. Additive; null/[] when the
+        // client has no live plan-visible programme.
+        activeProgramme,
+        todaysTraining,
       },
     };
   });

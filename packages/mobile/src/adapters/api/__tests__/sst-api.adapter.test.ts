@@ -1083,3 +1083,447 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
     expect(result.error.entitlement?.feature).toBe("create_workout");
   });
 });
+
+describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", () => {
+  it("listPrograms unwraps the { data: ProgramSummary[] } envelope", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "program-1",
+              name: "Strength Block",
+              description: null,
+              durationWeeks: 12,
+              daysPerWeek: 4,
+              workoutCount: 8,
+              activeClientCount: 2,
+              createdAt: "2026-06-01T00:00:00.000Z",
+              updatedAt: "2026-06-01T00:00:00.000Z",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.listPrograms();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0].name).toBe("Strength Block");
+  });
+
+  it("listPrograms surfaces a network error", async () => {
+    installFetchMock(async () => {
+      throw new Error("DNS lookup failed");
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.listPrograms();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("network");
+  });
+
+  it("getClientActiveProgramme unwraps the envelope + hits the trainer path", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            assignmentId: "pa1",
+            programId: "p1",
+            name: "Strength Foundations",
+            week: 4,
+            totalWeeks: 12,
+            endDate: "2026-08-01",
+            startDate: "2026-05-01",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getClientActiveProgramme("client-9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value?.programId).toBe("p1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/trainers/me/clients/client-9/active-programme",
+    );
+  });
+
+  it("getClientActiveProgramme returns null when the client has no live plan", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getClientActiveProgramme("client-9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeNull();
+  });
+
+  it("getProgram unwraps the { data: ProgramDetail } envelope", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "program-1",
+            name: "Strength Block",
+            description: null,
+            durationWeeks: 12,
+            daysPerWeek: 4,
+            workoutCount: 1,
+            activeClientCount: 0,
+            createdAt: null,
+            updatedAt: null,
+            workouts: [
+              {
+                id: "pw-1",
+                workoutId: "workout-1",
+                position: 0,
+                name: "Push Day",
+                estimatedDurationMinutes: 45,
+              },
+            ],
+            assignments: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getProgram("program-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workouts).toHaveLength(1);
+  });
+
+  it("getProgram maps a 404 to a not_found ApiError", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "not found" }), {
+        status: 404,
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getProgram("missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not_found");
+  });
+
+  it("createProgram returns the created ProgramDetail on 201", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "program-2",
+            name: "New Program",
+            description: null,
+            durationWeeks: null,
+            daysPerWeek: 3,
+            workoutCount: 0,
+            activeClientCount: 0,
+            createdAt: null,
+            updatedAt: null,
+            workouts: [],
+            assignments: [],
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createProgram({
+      name: "New Program",
+      description: null,
+      durationWeeks: null,
+      daysPerWeek: 3,
+      workoutIds: [],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBe("program-2");
+  });
+
+  it("createProgram surfaces the domain code on a 422 invalid_workouts body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "invalid_workouts",
+          message: "One or more workouts do not exist",
+        }),
+        { status: 422 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createProgram({
+      name: "Bad Program",
+      description: null,
+      durationWeeks: null,
+      daysPerWeek: 3,
+      workoutIds: ["missing-workout"],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("invalid_workouts");
+    expect(result.error.status).toBe(422);
+  });
+
+  it("updateProgram returns the updated ProgramDetail", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "program-1",
+            name: "Renamed",
+            description: null,
+            durationWeeks: 8,
+            daysPerWeek: 4,
+            workoutCount: 0,
+            activeClientCount: 0,
+            createdAt: null,
+            updatedAt: null,
+            workouts: [],
+            assignments: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.updateProgram("program-1", {
+      name: "Renamed",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.name).toBe("Renamed");
+  });
+
+  it("updateProgram maps a 404 body to programCode not_found", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ code: "not_found", message: "Program not found" }),
+        { status: 404 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.updateProgram("missing", { name: "X" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("not_found");
+  });
+
+  it("deleteProgram returns { deleted: true }", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: { deleted: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.deleteProgram("program-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.deleted).toBe(true);
+  });
+
+  it("deleteProgram surfaces PROGRAM_HAS_LIVE_ASSIGNMENTS on a 409 body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "PROGRAM_HAS_LIVE_ASSIGNMENTS",
+          message: "Clients are still assigned",
+        }),
+        { status: 409 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.deleteProgram("program-1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("PROGRAM_HAS_LIVE_ASSIGNMENTS");
+    expect(result.error.status).toBe(409);
+  });
+
+  it("assignProgram returns the raw ProgramAssignment row on 201", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "assignment-1",
+            programId: "program-1",
+            clientId: "client-1",
+            assignedBy: "trainer-1",
+            startDate: "2026-07-06",
+            endDate: null,
+            status: "assigned",
+            showInPlan: true,
+            showInLibrary: true,
+            createdAt: "2026-07-05T00:00:00.000Z",
+            updatedAt: "2026-07-05T00:00:00.000Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.assignProgram("program-1", {
+      clientId: "client-1",
+      startDate: "2026-07-06",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("assigned");
+  });
+
+  it("assignProgram surfaces already_assigned on a 409 body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "already_assigned",
+          message: "Client already has this programme",
+        }),
+        { status: 409 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.assignProgram("program-1", {
+      clientId: "client-1",
+      startDate: "2026-07-06",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("already_assigned");
+  });
+
+  it("unassignProgram returns { unassigned: true }", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: { unassigned: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.unassignProgram("program-1", "assignment-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.unassigned).toBe(true);
+  });
+
+  it("unassignProgram maps a 404 to a not_found ApiError", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "not found" }), {
+        status: 404,
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.unassignProgram("program-1", "missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not_found");
+  });
+
+  it("assignWorkout returns the raw WorkoutAssignment row on 201", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "wa-1",
+            clientId: "client-1",
+            workoutId: "workout-1",
+            assignedBy: "trainer-1",
+            dueDate: null,
+            showInPlan: true,
+            showInLibrary: true,
+            trainerNotes: null,
+            status: "assigned",
+            createdAt: "2026-07-05T00:00:00.000Z",
+            updatedAt: "2026-07-05T00:00:00.000Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.assignWorkout("client-1", {
+      workoutId: "workout-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workoutId).toBe("workout-1");
+  });
+
+  it("assignWorkout surfaces invalid_workout on a 422 body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "invalid_workout",
+          message: "Workout does not exist",
+        }),
+        { status: 422 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.assignWorkout("client-1", {
+      workoutId: "missing-workout",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("invalid_workout");
+  });
+
+  it("unassignWorkout returns { deleted: true }", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: { deleted: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.unassignWorkout("client-1", "wa-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.deleted).toBe(true);
+  });
+
+  it("unassignWorkout surfaces not_deletable on a 409 body", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "not_deletable",
+          message: "Assignment already completed",
+        }),
+        { status: 409 },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.unassignWorkout("client-1", "wa-1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.programCode).toBe("not_deletable");
+  });
+});

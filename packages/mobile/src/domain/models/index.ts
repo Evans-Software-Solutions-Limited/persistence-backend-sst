@@ -126,6 +126,8 @@ export {
   type MuscleVolume,
   type VolumeStats,
   type BodyTrendPoint,
+  type ActiveProgramme,
+  type TodaysTrainingItem,
   type HomePayload,
   HOME_STALE_AFTER_MS,
   isHomeStale,
