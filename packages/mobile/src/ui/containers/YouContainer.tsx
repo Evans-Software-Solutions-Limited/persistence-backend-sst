@@ -14,7 +14,7 @@ import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
 import { useDrawer } from "@/state/drawer";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { initialsOf } from "@/shared/utils";
 import { toneHex, type Tone } from "@/ui/components/foundation/tones";
 import {
@@ -244,6 +244,7 @@ export function YouContainer() {
   const refreshAchievements = achievements.refresh;
   const refreshVolume = volume.refresh;
   const refreshBody = body.refresh;
+  const reloadBody = body.reload;
   const refreshPRs = prs.refresh;
   const refreshHealth = health.refresh;
   const refreshRelationships = relationships.refresh;
@@ -267,6 +268,19 @@ export function YouContainer() {
     refreshHealth,
     refreshRelationships,
   ]);
+
+  // The weigh-in sheet is logged from the HOME tab, but this (retained) You
+  // tab owns the body-trend chart. Tab screens aren't unmounted on blur, so
+  // returning here after a weigh-in would otherwise show a stale chart until a
+  // pull-to-refresh. A focus-time reload() re-reads the (already-written) cache
+  // synchronously — instant + offline-safe — so the new measurement shows the
+  // moment You regains focus. Mirrors ProfileContainer's focus refresh, but a
+  // sync cache read rather than a network GET (the optimistic write is local).
+  useFocusEffect(
+    useCallback(() => {
+      reloadBody();
+    }, [reloadBody]),
+  );
 
   const onUseToken = useCallback(async () => {
     if (!primary) return;

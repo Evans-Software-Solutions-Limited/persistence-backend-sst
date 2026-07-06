@@ -15,9 +15,22 @@ jest.mock("@/adapters/api", () => ({
   getApiBaseUrl: () => "https://api.test",
 }));
 jest.mock("@/state/drawer", () => ({ useDrawer: () => jest.fn() }));
+// Holder so a test can re-fire the focus callback (simulate returning to the
+// You tab). The `mock` prefix lets jest.mock reference it despite hoisting.
+const mockFocus: { cb: (() => void | (() => void)) | null } = { cb: null };
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn() }),
   useNavigation: () => ({ addListener: () => () => {} }),
+  // One-shot on mount + re-fireable via mockFocus.cb() (mirrors the shape used
+  // in ProfileContainer's test).
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const React = jest.requireActual("react") as typeof import("react");
+    mockFocus.cb = cb;
+    React.useEffect(() => {
+      const cleanup = cb();
+      return typeof cleanup === "function" ? cleanup : undefined;
+    }, [cb]);
+  },
 }));
 
 const mockProbe: { last: YouPresenterProps | null } = { last: null };
@@ -104,7 +117,64 @@ function makeAdapters() {
 describe("YouContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
+    mockFocus.cb = null;
     mockFetch.mockClear();
+  });
+
+  it("regression: returning to You (focus) reflects a weigh-in logged from another tab, without a re-mount", async () => {
+    // The weigh-in sheet is rendered by the HOME tab, but this (retained) You
+    // tab owns the body-trend chart. An optimistic weigh-in writes the
+    // body-trend cache directly; without a focus-time reload this mounted
+    // screen keeps showing the pre-weigh-in series until a pull-to-refresh.
+    const { api, adapters } = makeAdapters();
+    const initial = [
+      { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: null },
+    ];
+    api.bodyTrend = initial; // fetcher matches cache → the mount refresh is a visual no-op
+    adapters.storage.cacheBodyTrend("user-1", initial);
+    adapters.health = {
+      isAvailable: jest.fn(async () => false),
+      getPermissionStatus: jest.fn(async () => ({
+        steps: "not_determined",
+        calories: "not_determined",
+        bodyWeight: "not_determined",
+        heartRate: "not_determined",
+      })),
+      getStepsToday: jest.fn(async () => ok(0)),
+      getStepsLastNDays: jest.fn(async () => ok([])),
+      getActiveCaloriesToday: jest.fn(async () => ok(0)),
+      getBasalCaloriesToday: jest.fn(async () => ok(0)),
+      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
+      getLatestBodyWeight: jest.fn(async () => ok(null)),
+      getLatestBodyFat: jest.fn(async () => ok(null)),
+    } as unknown as Adapters["health"];
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0]),
+    );
+
+    // Weigh-in logged from Home writes the body-trend cache directly (optimistic).
+    act(() => {
+      adapters.storage.cacheBodyTrend("user-1", [
+        ...initial,
+        { date: "2026-06-29T00:00:00.000Z", weightKg: 78.5, bodyFat: null },
+      ]);
+    });
+    // Still stale — the out-of-band cache write didn't push into mounted state.
+    expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0]);
+
+    // Return to the You tab → focus fires → reloadBody() re-reads the cache.
+    act(() => {
+      mockFocus.cb?.();
+    });
+    await waitFor(() =>
+      expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0, 78.5]),
+    );
   });
 
   it("wires the streak + volume + milestone props from the API", async () => {
