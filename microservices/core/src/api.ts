@@ -98,8 +98,9 @@ import { trainersProgramsUnassignHandler } from "./application/trainers/programs
 import { trainersClientActiveProgrammeGetHandler } from "./application/trainers/programs/trainersClientActiveProgrammeGetHandler";
 import { trainersClientWorkoutAssignmentsCreateHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsCreateHandler";
 import { trainersClientWorkoutAssignmentsDeleteHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsDeleteHandler";
-// M8 Coach Mode Phase 3 (10.3) — trainer on-behalf endpoints, grouped into one
-// sub-app to keep the root `.use()` chain under TS's type-depth ceiling.
+// M8 Coach Mode Phase 3 (10.3) + Phase 5 (10.5) — trainer on-behalf endpoints
+// AND the Client Detail read aggregate, grouped into one sub-app to keep the
+// root `.use()` chain under TS's type-depth ceiling (TS2589).
 import { trainersOnBehalfRoutes } from "./application/trainersOnBehalfRoutes";
 
 const app = new Elysia()

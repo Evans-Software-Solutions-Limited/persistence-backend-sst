@@ -20,6 +20,7 @@ import { trainersMeGetClientHabitConfigHandler } from "./trainers/habits/trainer
 import { trainersMeSetClientHabitConfigHandler } from "./trainers/habits/trainersMeSetClientHabitConfigHandler";
 import { trainersMeDeleteClientHabitHandler } from "./trainers/habits/trainersMeDeleteClientHabitHandler";
 import { trainersMeListClientHabitCompletionsHandler } from "./trainers/habits/trainersMeListClientHabitCompletionsHandler";
+import { trainersClientDetailGetHandler } from "./trainers/clients/trainersClientDetailGetHandler";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create + GET list (different methods, no path collision).
@@ -39,4 +40,12 @@ export const trainersOnBehalfRoutes = new Elysia()
   .use(trainersMeGetClientHabitConfigHandler)
   .use(trainersMeSetClientHabitConfigHandler)
   .use(trainersMeDeleteClientHabitHandler)
-  .use(trainersMeListClientHabitCompletionsHandler);
+  .use(trainersMeListClientHabitCompletionsHandler)
+  // Client Detail read aggregate (Phase 5, 10.5). The bare
+  // GET /trainers/me/clients/:clientId. Mounted LAST so the more-specific
+  // sibling `…/:clientId/...` routes (habits/config, habits/completions, and —
+  // outside this sub-app — active-programme, body-trend, workout-assignments)
+  // are registered first; Elysia's radix router matches static segments before
+  // the terminal `:clientId` regardless of order, guarded by a route-ordering
+  // test.
+  .use(trainersClientDetailGetHandler);
