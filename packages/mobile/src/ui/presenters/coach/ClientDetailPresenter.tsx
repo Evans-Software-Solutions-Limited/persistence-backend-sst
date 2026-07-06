@@ -30,6 +30,8 @@ export type ClientDetailProps = {
   error: string | null;
   onLogWeight: () => void;
   onBack: () => void;
+  /** Open the client's habit-setup screen (18-habit-setup coach view). */
+  onManageHabits: () => void;
   /** Tap the ProgrammeCard → open the programme editor. */
   onOpenProgramme: () => void;
   /** Open the assign-programme sheet (client-anchored). */
@@ -46,6 +48,7 @@ export function ClientDetailPresenter({
   error,
   onLogWeight,
   onBack,
+  onManageHabits,
   onOpenProgramme,
   onAssignProgramme,
   onAssignWorkout,
@@ -149,6 +152,21 @@ export function ClientDetailPresenter({
               </Btn>
             </View>
           )}
+        </Section>
+
+        <Section
+          eyebrow="HABITS"
+          title="Daily habits"
+          testID="client-detail-habits"
+        >
+          <Btn
+            variant="soft"
+            tone="trainer"
+            onPress={onManageHabits}
+            testID="client-detail-manage-habits"
+          >
+            Manage habits
+          </Btn>
         </Section>
 
         <Text fontSize={12} color="$text3">

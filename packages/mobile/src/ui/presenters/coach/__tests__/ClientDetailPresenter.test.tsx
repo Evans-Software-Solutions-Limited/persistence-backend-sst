@@ -17,6 +17,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     error: null,
     onLogWeight: jest.fn(),
     onBack: jest.fn(),
+    onManageHabits: jest.fn(),
     onOpenProgramme: jest.fn(),
     onAssignProgramme: jest.fn(),
     onAssignWorkout: jest.fn(),

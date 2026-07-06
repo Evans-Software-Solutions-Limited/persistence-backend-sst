@@ -38,6 +38,7 @@ import {
   Ellipsis as IconMore,
   EllipsisVertical as IconMore_v,
   Flame as IconFlame,
+  Footprints as IconFootprints,
   Grid3x3 as IconGrid,
   Heart as IconHeart,
   HeartPulse as IconHealth,
@@ -52,6 +53,7 @@ import {
   Medal as IconMedal,
   MessageCircle as IconMessage,
   Minus as IconMinus,
+  Moon as IconMoon,
   Pause as IconPause,
   Pencil as IconEdit,
   Play as IconPlay,
@@ -97,6 +99,7 @@ export {
   IconEdit,
   IconFilter,
   IconFlame,
+  IconFootprints,
   IconGrid,
   IconHealth,
   IconHeart,
@@ -110,6 +113,7 @@ export {
   IconMedal,
   IconMessage,
   IconMinus,
+  IconMoon,
   IconMore,
   IconMore_v,
   IconNote,
@@ -133,6 +137,11 @@ export {
 
 // Alias per design-source/icons.jsx:51 — IconFire is IconFlame.
 export { IconFlame as IconFire };
+
+// 18-habit-setup new icons (habit-setup.jsx defines IconMoon + IconSteps): Sleep
+// uses the crescent Moon; Steps uses Footprints (the prototype's two-stride
+// glyph). IconMoon is exported directly above; IconSteps aliases Footprints.
+export { IconFootprints as IconSteps };
 
 // ────────────────────────────────────────────────────────────
 // Defaults (STORY-008 AC 8.4 + 8.5)

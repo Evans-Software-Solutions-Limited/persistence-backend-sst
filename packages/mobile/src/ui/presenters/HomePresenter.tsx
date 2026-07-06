@@ -85,6 +85,8 @@ export type HomePresenterProps = {
   onOpenMealLog: () => void;
   onLogWater: () => void;
   onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
+  /** Open the habit-setup screen (18-habit-setup STORY-007). */
+  onManageHabits: () => void;
   onOpenCoach: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
@@ -141,6 +143,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onOpenMealLog,
     onLogWater,
     onToggleHabitDay,
+    onManageHabits,
     onOpenCoach,
     scrollRef,
     todayISO = new Date().toISOString().slice(0, 10),
@@ -325,6 +328,7 @@ export function HomePresenter(props: HomePresenterProps) {
               habits={habits}
               weekDates={weekDates}
               onToggle={onToggleHabitDay}
+              onManageHabits={onManageHabits}
             />
           </Section>
         </Animated.View>

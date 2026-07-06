@@ -868,4 +868,77 @@ describe("processSyncQueue", () => {
       blocked: 0,
     });
   });
+
+  it("18-habit-setup: a flushed SELF habit_config PUT swaps the optimistic local- goalId for the server one", async () => {
+    // Optimistic first-enable wrote a local- goalId into the config cache.
+    storage.upsertHabitConfig("u1", {
+      category: "water",
+      enabled: true,
+      goalId: "local-abc",
+      assignedByCoach: false,
+      locked: false,
+      targetValue: 2,
+      unit: "l",
+      period: "daily",
+      completionRule: "value_gte",
+      daysPerWeek: 5,
+      tolerancePct: null,
+      pending: null,
+    });
+    storage.enqueueMutation({
+      entityType: "habit_config",
+      entityId: "u1:water",
+      operation: "update",
+      payload: { targetValue: 2, daysPerWeek: 5 },
+      endpoint: "/users/me/habits/water/config",
+      method: "PUT",
+    });
+
+    // The PUT echoes the server config with the REAL goalId.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          category: "water",
+          enabled: true,
+          goalId: "server-goal-xyz",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2,
+          unit: "l",
+          period: "daily",
+          completionRule: "value_gte",
+          daysPerWeek: 5,
+          tolerancePct: null,
+          pending: null,
+        },
+      }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const cached = storage.getHabitConfigs("u1");
+    expect(cached).toHaveLength(1); // de-duped on category
+    expect(cached[0].goalId).toBe("server-goal-xyz");
+  });
+
+  it("18-habit-setup: a COACH habit_config PUT does NOT mutate any local config cache", async () => {
+    storage.enqueueMutation({
+      entityType: "habit_config",
+      entityId: "client-9:water",
+      operation: "update",
+      payload: { targetValue: 2 },
+      endpoint: "/trainers/me/clients/client-9/habits/water/config",
+      method: "PUT",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { category: "water", goalId: "g" } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+    // The reconcile only fires for `/users/me/habits/...` (self); a coach write
+    // targets the client's data, which the coach device never caches.
+    expect(storage.getHabitConfigs("client-9")).toHaveLength(0);
+  });
 });

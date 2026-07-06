@@ -100,6 +100,14 @@ export function ClientDetailContainer() {
     if (router.canGoBack()) router.back();
   }, [router]);
 
+  const onManageHabits = useCallback(() => {
+    if (!id) return;
+    router.push({
+      pathname: "/(app)/clients/[id]/habits",
+      params: { id, ...(name ? { name } : {}) },
+    } as never);
+  }, [router, id, name]);
+
   const onOpenProgramme = useCallback(() => {
     if (!activeProgramme) return;
     router.push(`/(app)/programs/${activeProgramme.programId}` as never);
@@ -124,6 +132,7 @@ export function ClientDetailContainer() {
       error={trend.error ? "Couldn't load this client's trend." : null}
       onLogWeight={onLogWeight}
       onBack={onBack}
+      onManageHabits={onManageHabits}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}
       onAssignWorkout={onAssignWorkout}

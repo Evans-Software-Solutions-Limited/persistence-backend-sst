@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Habit, HabitCompletion } from "@/domain/models/habit-completion";
+import type {
+  Habit,
+  HabitCompletion,
+  HabitTileTone,
+} from "@/domain/models/habit-completion";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
-import type { HabitTileTone } from "@/domain/models/habit-completion";
+import {
+  HABIT_CATEGORY_META,
+  isHabitCategory,
+} from "@/domain/models/habit-config";
 import { localDayISO, weekStartMondayISO } from "@/shared/utils";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
@@ -42,30 +49,23 @@ export function buildHabitGrid(
     byGoal.set(c.goalId, set);
   }
 
-  // If we have configs, build from those (so all enabled habits appear).
+  // If we have configs, build from those (so all enabled habits appear). Label
+  // + tone come from the canonical category metadata (T-18.7.6) — the prototype
+  // tones (water=primary, gym=ember, steps=trainer, sleep=success,
+  // calories=gold), replacing the earlier placeholder map that mis-toned the
+  // grid (gym=success, steps=gold, sleep=primary, calories=ember).
   if (configs && configs.length > 0) {
-    const TONES: Record<string, HabitTileTone> = {
-      water: "primary",
-      gym: "success",
-      steps: "gold",
-      sleep: "primary",
-      calories: "ember",
-    };
-    const LABELS: Record<string, string> = {
-      water: "Water",
-      gym: "Gym",
-      steps: "Steps",
-      sleep: "Sleep",
-      calories: "Calories",
-    };
     return configs
       .filter((c) => c.enabled && c.goalId)
       .map((cfg) => {
         const completionDays = byGoal.get(cfg.goalId!) ?? new Set<string>();
+        const meta = isHabitCategory(cfg.category)
+          ? HABIT_CATEGORY_META[cfg.category]
+          : null;
         return {
           id: cfg.goalId!,
-          label: LABELS[cfg.category] ?? cfg.category,
-          tone: (TONES[cfg.category] ?? "primary") as HabitTileTone,
+          label: meta?.name ?? cfg.category,
+          tone: (meta?.tone ?? "primary") as HabitTileTone,
           days: weekDates.map((d) => completionDays.has(d)),
         };
       });

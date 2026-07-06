@@ -71,6 +71,7 @@ import type {
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
   HabitConfigEntry,
+  ConfigureHabitInput,
   InviteApiError,
   ProgramApiError,
   WorkoutAssignmentRow,
@@ -1022,8 +1023,90 @@ export class InMemoryApiAdapter implements ApiPort {
       : this.habitCompletions;
     return this.mayFail<HabitCompletion[]>(rows);
   }
+  /** Settable habit-config fixture (self). */
+  public habitConfigs: HabitConfigEntry[] = [];
+  /** Settable habit-config fixture (per client, coach reads). */
+  public clientHabitConfigs: Record<string, HabitConfigEntry[]> = {};
+  /** Records the last configure/disable calls so container tests can assert. */
+  public configureHabitCalls: {
+    clientId?: string;
+    category: string;
+    input: ConfigureHabitInput;
+  }[] = [];
+  public disableHabitCalls: { clientId?: string; category: string }[] = [];
+
   async getHabitConfigs() {
-    return this.mayFail<HabitConfigEntry[]>([]);
+    return this.mayFail<HabitConfigEntry[]>(this.habitConfigs);
+  }
+  async configureHabit(category: string, input: ConfigureHabitInput) {
+    this.configureHabitCalls.push({ category, input });
+    const existing = this.habitConfigs.find((c) => c.category === category);
+    const echoed: HabitConfigEntry = {
+      category,
+      enabled: true,
+      goalId: existing?.goalId ?? `goal-${category}`,
+      assignedByCoach: existing?.assignedByCoach ?? false,
+      locked: existing?.locked ?? false,
+      targetValue: input.targetValue,
+      unit: existing?.unit ?? "",
+      period: existing?.period ?? "daily",
+      completionRule: existing?.completionRule ?? "value_gte",
+      daysPerWeek: input.daysPerWeek ?? existing?.daysPerWeek ?? null,
+      tolerancePct: input.tolerancePct ?? existing?.tolerancePct ?? null,
+      pending: null,
+    };
+    return this.mayFail<HabitConfigEntry>(echoed);
+  }
+  async disableHabit(category: string) {
+    this.disableHabitCalls.push({ category });
+    return this.mayFail<{ category: string; disabled: true }>({
+      category,
+      disabled: true,
+    });
+  }
+  async getClientHabitConfigs(clientId: string) {
+    return this.mayFail<HabitConfigEntry[]>(
+      this.clientHabitConfigs[clientId] ?? [],
+    );
+  }
+  async configureClientHabit(
+    clientId: string,
+    category: string,
+    input: ConfigureHabitInput,
+  ) {
+    this.configureHabitCalls.push({ clientId, category, input });
+    const echoed: HabitConfigEntry = {
+      category,
+      enabled: true,
+      goalId: `goal-${category}`,
+      assignedByCoach: true,
+      assignedByUserId: "test-user",
+      locked: true,
+      targetValue: input.targetValue,
+      unit: "",
+      period: "daily",
+      completionRule: "value_gte",
+      daysPerWeek: input.daysPerWeek ?? null,
+      tolerancePct: input.tolerancePct ?? null,
+      pending: null,
+    };
+    return this.mayFail<HabitConfigEntry>(echoed);
+  }
+  async disableClientHabit(clientId: string, category: string) {
+    this.disableHabitCalls.push({ clientId, category });
+    return this.mayFail<{ category: string; disabled: true }>({
+      category,
+      disabled: true,
+    });
+  }
+  async getClientHabitCompletions(
+    _clientId: string,
+    params?: { goalId?: string; window?: string },
+  ) {
+    const rows = params?.goalId
+      ? this.habitCompletions.filter((h) => h.goalId === params.goalId)
+      : this.habitCompletions;
+    return this.mayFail<HabitCompletion[]>(rows);
   }
   async createHabitCompletion(input: CreateHabitCompletionInput) {
     const row: HabitCompletion = {
@@ -1045,7 +1128,15 @@ export class InMemoryApiAdapter implements ApiPort {
       deleted: this.habitCompletions.length < before,
     });
   }
-  async useFreezeToken(streakId: string) {
+  public useFreezeTokenCalls: {
+    streakId: string;
+    mode: "retroactive" | "skip";
+  }[] = [];
+  async useFreezeToken(
+    streakId: string,
+    mode: "retroactive" | "skip" = "retroactive",
+  ) {
+    this.useFreezeTokenCalls.push({ streakId, mode });
     return this.mayFail<Streak>({
       id: streakId,
       userId: "test-user",

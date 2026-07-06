@@ -34,6 +34,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type {
   ReferenceEntry,
   ReferenceList,
@@ -408,6 +409,19 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_completions_user_goal_day
         ON cached_habit_completions(user_id, goal_id, day);
+
+      -- 18-habit-setup: habit-config cache (design.md § 8). One row per
+      -- (user, category) — the unique key makes the optimistic enable/edit
+      -- idempotent and means a habit configured offline (goalId = local-…)
+      -- de-dupes on category the moment the drain swaps in the server row.
+      -- The whole HabitConfig is stored as a JSON payload (small, read-whole).
+      CREATE TABLE IF NOT EXISTS cached_habit_configs (
+        user_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, category)
+      );
 
       -- M9 (13-nutrition-tracking / Fuel). The day aggregate is the Fuel
       -- screen's primary read — keyed by (user_id, date) so each day rolls
@@ -1413,6 +1427,48 @@ export class SQLiteStorageAdapter implements StoragePort {
     this.getDb().runSync(
       `DELETE FROM cached_habit_completions WHERE user_id = ? AND goal_id = ? AND day = ?`,
       [userId, goalId, day],
+    );
+  }
+
+  getHabitConfigs(userId: string): HabitConfig[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_habit_configs WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as HabitConfig);
+  }
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_habit_configs WHERE user_id = ?`, [userId]);
+    const now = new Date().toISOString();
+    for (const c of configs) {
+      db.runSync(
+        `INSERT INTO cached_habit_configs (user_id, category, payload, synced_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, category) DO UPDATE SET
+           payload = excluded.payload, synced_at = excluded.synced_at`,
+        [userId, c.category, JSON.stringify(c), now],
+      );
+    }
+  }
+  upsertHabitConfig(userId: string, config: HabitConfig): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_habit_configs (user_id, category, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, category) DO UPDATE SET
+         payload = excluded.payload, synced_at = excluded.synced_at`,
+      [
+        userId,
+        config.category,
+        JSON.stringify(config),
+        new Date().toISOString(),
+      ],
+    );
+  }
+  removeHabitConfig(userId: string, category: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_habit_configs WHERE user_id = ? AND category = ?`,
+      [userId, category],
     );
   }
 

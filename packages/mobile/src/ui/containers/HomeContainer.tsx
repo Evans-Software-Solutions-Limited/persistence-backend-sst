@@ -202,6 +202,12 @@ export function HomeContainer() {
     [toggle],
   );
 
+  // Habits section → the habit-setup screen (18-habit-setup STORY-007): the
+  // empty-state CTA + the persistent "Manage" affordance. Pushes over the tabs.
+  const onManageHabits = useCallback(() => {
+    router.push("/(app)/habits-setup" as never);
+  }, [router]);
+
   // Home bell → notifications list (home.jsx HomeHeader; the 09.5-intended
   // entry point — the route docstring at app/(app)/notifications.tsx names the
   // Home bell as its pusher). Pushes over the tab bar.
@@ -256,6 +262,7 @@ export function HomeContainer() {
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
         onToggleHabitDay={onToggleHabitDay}
+        onManageHabits={onManageHabits}
         onOpenCoach={noop}
       />
       <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />

@@ -509,6 +509,22 @@ export interface ApiPort {
   }): Promise<Result<HabitCompletion[], ApiError>>;
   /** Fetch the user's habit config (all 5 categories, enabled or defaults). */
   getHabitConfigs(): Promise<Result<HabitConfigEntry[], ApiError>>;
+  /**
+   * Enable + configure a self habit (`PUT /users/me/habits/:category/config`,
+   * 18-habit-setup). Echoes the live + pending config. 403 when the habit is
+   * coach-locked; 422 on out-of-bounds; 404 on an unknown category.
+   */
+  configureHabit(
+    category: string,
+    input: ConfigureHabitInput,
+  ): Promise<Result<HabitConfigEntry, ApiError>>;
+  /**
+   * Disable a self habit (`DELETE /users/me/habits/:category`) — deferred to the
+   * next Monday server-side. 403 when coach-locked; 404 when not enabled.
+   */
+  disableHabit(
+    category: string,
+  ): Promise<Result<{ category: string; disabled: true }, ApiError>>;
   /** Toggle a habit ON for a day (idempotent POST). */
   createHabitCompletion(
     input: CreateHabitCompletionInput,
@@ -517,7 +533,58 @@ export interface ApiPort {
   deleteHabitCompletion(
     input: DeleteHabitCompletionInput,
   ): Promise<Result<{ deleted: boolean }, ApiError>>;
-  useFreezeToken(streakId: string): Promise<Result<Streak, ApiError>>;
+  /**
+   * Manual freeze-token spend (`POST /users/me/streaks/:id/use-token`). Default
+   * ("retroactive") protects a streak that has already fallen behind; `skip`
+   * proactively covers the current in-progress week (18-habit-setup T-18.5.4 —
+   * the setup screen's "Skip this week" CTA), spending 1 token with no count
+   * change.
+   */
+  useFreezeToken(
+    streakId: string,
+    mode?: "retroactive" | "skip",
+  ): Promise<Result<Streak, ApiError>>;
+
+  // -- Coach habit authorship (18-habit-setup § 3.2) --
+  //
+  // All under `/trainers/me/clients/:clientId`, single `{ data }` envelopes,
+  // trainer-role + active-relationship gated server-side (403 not_your_client).
+  /**
+   * A coach reads a client's habit config from the DB
+   * (`GET /trainers/me/clients/:clientId/habits/config`). Same five-category
+   * shape as the self GET plus `assignedByUserId` for attribution.
+   */
+  getClientHabitConfigs(
+    clientId: string,
+  ): Promise<Result<HabitConfigEntry[], ApiError>>;
+  /**
+   * A coach sets/edits a client's habit
+   * (`PUT /trainers/me/clients/:clientId/habits/:category/config`) — stamps
+   * `assigned_by_user_id` + audits. 403 when the habit belongs to a different
+   * coach; 422 out-of-bounds.
+   */
+  configureClientHabit(
+    clientId: string,
+    category: string,
+    input: ConfigureHabitInput,
+  ): Promise<Result<HabitConfigEntry, ApiError>>;
+  /**
+   * A coach disables a habit it assigned
+   * (`DELETE /trainers/me/clients/:clientId/habits/:category`).
+   */
+  disableClientHabit(
+    clientId: string,
+    category: string,
+  ): Promise<Result<{ category: string; disabled: true }, ApiError>>;
+  /**
+   * A coach reads a client's habit-completion history for the dashboard
+   * (`GET /trainers/me/clients/:clientId/habit-completions`). Values come from
+   * the DB (locked decision 7 — trainers never touch HealthKit).
+   */
+  getClientHabitCompletions(
+    clientId: string,
+    params?: { goalId?: string; window?: string },
+  ): Promise<Result<HabitCompletion[], ApiError>>;
   getMeasurements(
     params?: PaginationParams,
   ): Promise<Result<ApiMeasurement[], ApiError>>;
@@ -899,12 +966,24 @@ export type DeleteHabitCompletionInput = {
   date?: string;
 };
 
-/** A single habit category from GET /users/me/habits/config. */
+/**
+ * A single habit category from GET /users/me/habits/config (self) or
+ * GET /trainers/me/clients/:clientId/habits/config (coach). Mirrors the backend
+ * `HabitConfigView` (habitConfigRepository.ts) as it flows through the config
+ * handlers. `assignedByUserId` is only present on the trainer GET (the coach UI
+ * needs it to render attribution); undefined on the self GET.
+ *
+ * `pending` is the backend's `{ from, config }` envelope — `from` is the Monday
+ * the queued edit promotes, `config` the queued fields (`targetValue` /
+ * `daysPerWeek` / `tolerancePct`, or `{ enabled: false }` for a queued disable).
+ */
 export type HabitConfigEntry = {
   category: string;
   enabled: boolean;
   goalId: string | null;
   assignedByCoach: boolean;
+  /** Only on the trainer GET — the coach that assigned the habit (or null). */
+  assignedByUserId?: string | null;
   locked: boolean;
   targetValue: number;
   unit: string;
@@ -913,10 +992,16 @@ export type HabitConfigEntry = {
   daysPerWeek: number | null;
   tolerancePct: number | null;
   pending: {
-    targetValue?: number;
-    daysPerWeek?: number;
-    enabled?: boolean;
+    from: string;
+    config: Record<string, unknown>;
   } | null;
+};
+
+/** Body for PUT .../habits/:category/config (self + coach). */
+export type ConfigureHabitInput = {
+  targetValue: number;
+  daysPerWeek?: number;
+  tolerancePct?: number;
 };
 
 /** Wire shape for body_measurements (decimal columns arrive as strings). */

@@ -1,4 +1,4 @@
-import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { renderWithTheme, fireEvent } from "../../../../__tests__/test-utils";
 import { TodayHeroPresenter } from "../TodayHeroPresenter";
 import { WeeklyVolumePresenter } from "../WeeklyVolumePresenter";
 import { PRCarouselPresenter, relativeDate } from "../PRCarouselPresenter";
@@ -121,6 +121,57 @@ describe("HabitsGridPresenter", () => {
     );
     expect(getByTestId("habits-grid-empty")).toBeTruthy();
     expect(getByText("Get started by setting your habits")).toBeTruthy();
+  });
+
+  it("empty-state CTA navigates to setup when onManageHabits is wired (STORY-007 7.1)", () => {
+    const onManageHabits = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <HabitsGridPresenter
+        habits={[]}
+        weekDates={[
+          "2026-06-04",
+          "2026-06-05",
+          "2026-06-06",
+          "2026-06-07",
+          "2026-06-08",
+          "2026-06-09",
+          "2026-06-10",
+        ]}
+        onToggle={jest.fn()}
+        onManageHabits={onManageHabits}
+      />,
+    );
+    fireEvent.press(getByTestId("habits-grid-empty"));
+    expect(onManageHabits).toHaveBeenCalled();
+  });
+
+  it("shows a persistent Manage affordance once habits exist (STORY-007 7.2)", () => {
+    const onManageHabits = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <HabitsGridPresenter
+        habits={[
+          {
+            id: "g1",
+            label: "Water",
+            tone: "primary",
+            days: [false, false, false, false, false, false, false],
+          },
+        ]}
+        weekDates={[
+          "2026-06-04",
+          "2026-06-05",
+          "2026-06-06",
+          "2026-06-07",
+          "2026-06-08",
+          "2026-06-09",
+          "2026-06-10",
+        ]}
+        onToggle={jest.fn()}
+        onManageHabits={onManageHabits}
+      />,
+    );
+    fireEvent.press(getByTestId("habits-grid-manage"));
+    expect(onManageHabits).toHaveBeenCalled();
   });
 });
 

@@ -36,6 +36,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
@@ -450,6 +451,21 @@ export interface StoragePort {
   }): void;
   /** Optimistic toggle-off for a (user, goal, local day). */
   removeHabitCompletion(userId: string, goalId: string, day: string): void;
+
+  /**
+   * Habit-config cache (18-habit-setup, Phase 18.7 — design.md § 8). One row per
+   * (user, category); the setup screen reads cache-first and an
+   * enable/edit/disable writes optimistically. `configureHabitCommand` writes
+   * the PENDING config locally so the UI shows the new value + "Starts Monday"
+   * without changing what the offline streak scores this week.
+   */
+  getHabitConfigs(userId: string): HabitConfig[];
+  /** Replace the whole cached set for a user (server refresh — server wins). */
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void;
+  /** Optimistic enable/edit — idempotent per (user, category). */
+  upsertHabitConfig(userId: string, config: HabitConfig): void;
+  /** Optimistic disable — drops the (user, category) row from the cache. */
+  removeHabitConfig(userId: string, category: string): void;
 
   // -- Active Session (M3) --
   /**

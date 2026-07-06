@@ -267,8 +267,11 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
         cfg({ category: "gym", goalId: "g-gym" }),
       ]);
       expect(habits).toHaveLength(2);
+      // T-18.7.6: label/tone come from the canonical category metadata — the
+      // prototype tones (water=primary, gym=ember), replacing the earlier
+      // placeholder that mis-toned gym as success.
       expect(habits[0]).toMatchObject({ label: "Water", tone: "primary" });
-      expect(habits[1]).toMatchObject({ label: "Gym", tone: "success" });
+      expect(habits[1]).toMatchObject({ label: "Gym", tone: "ember" });
       // No completions → all 7 days false.
       expect(habits[0].days.filter(Boolean)).toHaveLength(0);
     });

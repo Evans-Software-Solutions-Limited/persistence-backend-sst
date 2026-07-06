@@ -48,6 +48,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
 import type {
   Food,
@@ -924,6 +925,27 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.habitCompletionsCache.set(
       userId,
       rows.filter((r) => !(r.goalId === goalId && dayOf(r) === day)),
+    );
+  }
+
+  private habitConfigsCache: Map<string, HabitConfig[]> = new Map();
+  getHabitConfigs(userId: string): HabitConfig[] {
+    return this.habitConfigsCache.get(userId) ?? [];
+  }
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void {
+    this.habitConfigsCache.set(userId, [...configs]);
+  }
+  upsertHabitConfig(userId: string, config: HabitConfig): void {
+    const rows = this.habitConfigsCache.get(userId) ?? [];
+    const filtered = rows.filter((c) => c.category !== config.category);
+    filtered.push(config);
+    this.habitConfigsCache.set(userId, filtered);
+  }
+  removeHabitConfig(userId: string, category: string): void {
+    const rows = this.habitConfigsCache.get(userId) ?? [];
+    this.habitConfigsCache.set(
+      userId,
+      rows.filter((c) => c.category !== category),
     );
   }
 }
