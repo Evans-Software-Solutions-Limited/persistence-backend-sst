@@ -22,6 +22,12 @@ import {
   useLogMeasurement,
   useUseFreezeToken,
 } from "@/ui/hooks";
+// `today` in these habit tests MUST be derived the SAME way the hook is
+// (device-local calendar day via localDayISO), not from `new Date().toISOString()`
+// (UTC). The two diverge just after local midnight in a positive-offset zone —
+// e.g. 00:30 BST Monday is still Sunday in UTC — which put the test's UTC "today"
+// in the PREVIOUS Mon→Sun window and failed `weekDates.indexOf(today)` on Mondays.
+import { localDayISO } from "@/shared/utils";
 
 const mockFetch = jest.fn(async () => ({
   ok: true,
@@ -212,6 +218,10 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
         userId: USER,
         goalId: "g1",
         completedAt: new Date().toISOString(),
+        // Anchor to the device-local day (same basis as the hook's window) so
+        // the completion always lands inside this week's Mon→Sun grid, even
+        // just after local midnight when the UTC day is still yesterday.
+        localCompletedDate: localDayISO(),
         value: null,
       },
     ];
@@ -319,7 +329,7 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
 
   it("buckets a habit by its local day, not the completedAt UTC slice (tz≥+12)", async () => {
     const { api, wrapper } = setup();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     // completedAt is the PRIOR calendar day in UTC, but the server's
     // authoritative local day is today — a tz≥+12 morning toggle the server
     // clamped back. The grid must mark today's column, not the prior day's.
@@ -348,13 +358,16 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
 
   it("useGetHabits exposes a Mon→Sun weekDates window aligned with the grid", async () => {
     const { api, wrapper } = setup();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     api.habitCompletions = [
       {
         id: "h1",
         userId: USER,
         goalId: "g1",
         completedAt: new Date().toISOString(),
+        // Local-day anchor (see the import note) so the completion buckets to
+        // today's column regardless of the UTC/local day offset.
+        localCompletedDate: today,
         value: null,
       },
     ];
