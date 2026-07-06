@@ -104,60 +104,83 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
     if (router.canGoBack()) router.back();
   }, [router]);
 
+  // Reflect an optimistic config write into the mounted screen. The self view
+  // writes its local cache synchronously (before the command's queue drain), so
+  // it re-reads instantly — offline-safe (the same stale-`data`-snapshot bug as
+  // the Home habit grid). The coach view has NO local cache for a client's
+  // config: the on-behalf PUT is only sent inside the queue drain (after the
+  // mutate's first await), so the re-fetch must be CHAINED onto the mutate's
+  // completion — firing it synchronously would race the GET ahead of the PUT
+  // and read the pre-edit server row.
+  const reloadSelfConfig = selfConfig.reload;
+  const refreshClientConfig = clientConfig.refresh;
+  const reflectAfter = useCallback(
+    (mutated: Promise<void>) => {
+      if (isCoachView) void mutated.then(() => refreshClientConfig());
+      else reloadSelfConfig();
+    },
+    [isCoachView, refreshClientConfig, reloadSelfConfig],
+  );
+
   const onToggle = useCallback(
     (category: HabitCategory, next: boolean) => {
       const cfg = configsByCategory[category];
-      if (next) {
-        void configure.mutate({
-          category,
-          targetValue: cfg.targetValue,
-          daysPerWeek: cfg.daysPerWeek ?? undefined,
-          tolerancePct: cfg.tolerancePct ?? undefined,
-        });
-      } else {
-        void disable.mutate(category);
-      }
+      const mutated = next
+        ? configure.mutate({
+            category,
+            targetValue: cfg.targetValue,
+            daysPerWeek: cfg.daysPerWeek ?? undefined,
+            tolerancePct: cfg.tolerancePct ?? undefined,
+          })
+        : disable.mutate(category);
+      reflectAfter(mutated);
     },
-    [configsByCategory, configure, disable],
+    [configsByCategory, configure, disable, reflectAfter],
   );
 
   const onTargetChange = useCallback(
     (category: HabitCategory, next: number) => {
       const cfg = configsByCategory[category];
-      void configure.mutate({
-        category,
-        targetValue: next,
-        daysPerWeek: cfg.daysPerWeek ?? undefined,
-        tolerancePct: cfg.tolerancePct ?? undefined,
-      });
+      reflectAfter(
+        configure.mutate({
+          category,
+          targetValue: next,
+          daysPerWeek: cfg.daysPerWeek ?? undefined,
+          tolerancePct: cfg.tolerancePct ?? undefined,
+        }),
+      );
     },
-    [configsByCategory, configure],
+    [configsByCategory, configure, reflectAfter],
   );
 
   const onFreqChange = useCallback(
     (category: HabitCategory, next: number) => {
       const cfg = configsByCategory[category];
-      void configure.mutate({
-        category,
-        targetValue: cfg.targetValue,
-        daysPerWeek: next,
-        tolerancePct: cfg.tolerancePct ?? undefined,
-      });
+      reflectAfter(
+        configure.mutate({
+          category,
+          targetValue: cfg.targetValue,
+          daysPerWeek: next,
+          tolerancePct: cfg.tolerancePct ?? undefined,
+        }),
+      );
     },
-    [configsByCategory, configure],
+    [configsByCategory, configure, reflectAfter],
   );
 
   const onLeniencyChange = useCallback(
     (category: HabitCategory, next: number) => {
       const cfg = configsByCategory[category];
-      void configure.mutate({
-        category,
-        targetValue: cfg.targetValue,
-        daysPerWeek: cfg.daysPerWeek ?? undefined,
-        tolerancePct: next,
-      });
+      reflectAfter(
+        configure.mutate({
+          category,
+          targetValue: cfg.targetValue,
+          daysPerWeek: cfg.daysPerWeek ?? undefined,
+          tolerancePct: next,
+        }),
+      );
     },
-    [configsByCategory, configure],
+    [configsByCategory, configure, reflectAfter],
   );
 
   const onSpendFreeze = useCallback(() => {

@@ -159,6 +159,7 @@ export function HomeContainer() {
   // and lint-clean.
   const refreshHome = home.refresh;
   const refreshHabits = habitsState.refresh;
+  const reloadHabits = habitsState.reload;
   const refreshWorkouts = workoutsState.refresh;
   const onRefresh = useCallback(() => {
     void Promise.all([refreshHome(), refreshHabits(), refreshWorkouts()]);
@@ -206,8 +207,16 @@ export function HomeContainer() {
       void toggle.mutate(
         value != null ? { goalId, day, done, value } : { goalId, day, done },
       );
+      // The command writes the optimistic completion to the cache
+      // synchronously (before `mutate`'s first await), so re-reading the cache
+      // now flips the tile instantly — without waiting on the network drain,
+      // and it works offline. `refresh` (on pull-to-refresh / focus) still
+      // reconciles with server truth afterward. Without this the tile stayed
+      // frozen until a re-mount (navigate away/back) — the grid's `data`
+      // snapshot only updated on a successful fetch.
+      reloadHabits();
     },
-    [toggle],
+    [toggle, reloadHabits],
   );
 
   // Calories can't be toggled from this grid — the backend scores it from
