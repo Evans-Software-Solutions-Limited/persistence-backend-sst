@@ -19,6 +19,9 @@
 - ✅ **Phase 1** audit foundation (`trainer_actions_audit` + helpers) — #160 MERGED.
 - ✅ **Phase 2** #136 measurement reconcile — #161 MERGED.
 - ✅ Hotfix CLAUDE.md prettier — #162 MERGED (staging green).
+- ✅ **Phase 3** on-behalf endpoints + `notification_type` enum — #165 MERGED (2026-07-06).
+- ✅ **Phase 4** Client Detail functional spec (modules a–g) — #164 MERGED, Brad signed off.
+- ✅ **Phase 9** Programs mobile F1+F2 + T-19.3.5 Client Detail programme surfaces — #166 MERGED (2026-07-06). spec-19 fully shipped end-to-end.
 
 ## Open Brad decisions (don't block Phase 3; bite later)
 
@@ -29,23 +32,23 @@
 
 ## Remaining phases
 
-| Phase  | What                                                                                                                        | Brief / authoritative spec                                          | Depends on                                                              | Surface             | Parallel-safe?               |
-| ------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------- | ---------------------------- |
-| **3**  | On-behalf endpoints (sessions/measurements-GET/goals/nutrition-target/workout-assignments) + `notification_type` enum ALTER | `PHASE3_ON_BEHALF_ENDPOINTS_BRIEF.md`                               | Phase 1 ✅                                                              | backend             | ✅ independent               |
-| **4**  | Client Detail **functional spec** (+ Brad sign-off)                                                                         | `PHASE4_CLIENT_DETAIL_FUNCTIONAL_SPEC_BRIEF.md`                     | —                                                                       | spec/docs           | ✅ independent               |
-| **5**  | Client Detail **build** (single-scroll, modules a–f)                                                                        | `M8-coach/CLIENT_DETAIL_BRIEF.md` + Phase-4 output                  | **Phase 4 sign-off** + Phase 3 (GETs)                                   | mobile              | after 4                      |
-| **6**  | AI Client Summary build (module g: endpoint + `client_ai_summaries` cache + card)                                           | Phase-4 output §g; Bedrock seam #153–156                            | Phase 4 + Phase 5                                                       | backend+mobile      | after 5                      |
-| **7**  | Athlete habit setup screen + coach habit authorship                                                                         | `specs/18-habit-setup/` + `~/Downloads/.../habit-setup.jsx`         | Phase 1 ✅ (authorship uses on-behalf pattern)                          | mobile+backend      | ✅ mostly independent        |
-| **8**  | Invite code + QR UI (coach share + athlete redeem)                                                                          | `10-trainer requirements STORY-015` + design § Invite by code       | decision #2; endpoints exist (#136)                                     | mobile              | ✅ independent               |
-| **9**  | Programs mobile (F1 coach surfaces + F2 athlete Home)                                                                       | `specs/19-programs/{requirements,design,tasks}.md` + `coach.jsx`    | backend merged (#148/#149/#152)                                         | mobile              | ✅ independent               |
-| **10** | Coach Home v1 (triage screen, **no schedule hero**) — replaces ComingSoon stub                                              | `~/Downloads/.../coach-home.jsx` + `10-trainer design § Coach Home` | decision #1; overview + programs-dashboard endpoints; fix STORY-001 ACs | mobile              | after decision #1            |
-| **11** | Attribution badges (athlete side): "Logged by Coach X", "Set by coach"                                                      | `10-trainer STORY-013` + cross-cuts § 1.5                           | Phase 3 (on-behalf rows to attribute)                                   | mobile              | after 3                      |
-| **12** | Notes: endpoints (table exists) + Client Detail notes section                                                               | `10-trainer design § Backend notes` + STORY-011                     | endpoints: Phase 1 ✅; UI: Phase 5                                      | backend then mobile | endpoints ✅ now; UI after 5 |
+| Phase  | What                                                                                                                        | Brief / authoritative spec                                                | Depends on                                                              | Surface             | Parallel-safe?               |
+| ------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------- | ---------------------------- |
+| **3**  | On-behalf endpoints (sessions/measurements-GET/goals/nutrition-target/workout-assignments) + `notification_type` enum ALTER | `PHASE3_ON_BEHALF_ENDPOINTS_BRIEF.md`                                     | Phase 1 ✅                                                              | backend             | ✅ independent               |
+| **4**  | Client Detail **functional spec** (+ Brad sign-off)                                                                         | `PHASE4_CLIENT_DETAIL_FUNCTIONAL_SPEC_BRIEF.md`                           | —                                                                       | spec/docs           | ✅ independent               |
+| **5**  | Client Detail **build** (aggregate endpoint + single-scroll, modules a–f)                                                   | `PHASE5_CLIENT_DETAIL_BUILD_BRIEF.md` (supersedes CLIENT_DETAIL_BRIEF.md) | Phase 4 ✅ + Phase 3 ✅ — **UNBLOCKED**                                 | backend+mobile      | ✅ ready now                 |
+| **6**  | AI Client Summary build (module g: endpoint + `client_ai_summaries` cache + card)                                           | Phase-4 output §g; Bedrock seam #153–156                                  | Phase 4 + Phase 5                                                       | backend+mobile      | after 5                      |
+| **7**  | Athlete habit setup screen + coach habit authorship                                                                         | `specs/18-habit-setup/` + `~/Downloads/.../habit-setup.jsx`               | Phase 1 ✅ (authorship uses on-behalf pattern)                          | mobile+backend      | ✅ mostly independent        |
+| **8**  | Invite code + QR UI (coach share + athlete redeem)                                                                          | `10-trainer requirements STORY-015` + design § Invite by code             | decision #2; endpoints exist (#136)                                     | mobile              | ✅ independent               |
+| ~~9~~  | ~~Programs mobile (F1 coach surfaces + F2 athlete Home)~~ ✅ **MERGED #166**                                                | `specs/19-programs/{requirements,design,tasks}.md` + `coach.jsx`          | backend merged (#148/#149/#152)                                         | mobile              | done                         |
+| **10** | Coach Home v1 (triage screen, **no schedule hero**) — replaces ComingSoon stub                                              | `~/Downloads/.../coach-home.jsx` + `10-trainer design § Coach Home`       | decision #1; overview + programs-dashboard endpoints; fix STORY-001 ACs | mobile              | after decision #1            |
+| **11** | Attribution badges (athlete side): "Logged by Coach X", "Set by coach"                                                      | `10-trainer STORY-013` + cross-cuts § 1.5                                 | Phase 3 (on-behalf rows to attribute)                                   | mobile              | after 3                      |
+| **12** | Notes: endpoints (table exists) + Client Detail notes section                                                               | `10-trainer design § Backend notes` + STORY-011                           | endpoints: Phase 1 ✅; UI: Phase 5                                      | backend then mobile | endpoints ✅ now; UI after 5 |
 
 ## Recommended fan-out for parallel sessions
 
-- **Now, independent:** Phase 3 (backend), Phase 4 (spec), Phase 9 (programs mobile), Phase 7 (habit setup). Phase 8 once decision #2 is confirmed. Phase 12 endpoints (backend) anytime.
-- **Gated:** 5 (after 4 sign-off + 3), 6 (after 5), 10 (after decision #1), 11 (after 3), 12-UI (after 5).
+- **Now, independent:** Phase 5 (Client Detail full build — 3 ✅ + 4 ✅, brief ready), Phase 7 (habit setup), Phase 11 (attribution badges — 3 ✅), Phase 12 endpoints (backend) anytime. Phase 8 once decision #2 is confirmed.
+- **Gated:** 6 (after 5), 10 (after decision #1), 12-UI (after 5).
 
 ## Out of scope (do NOT build)
 
