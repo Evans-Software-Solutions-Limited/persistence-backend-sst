@@ -352,7 +352,7 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       expect(habits[0].targetValue).toBeNull();
     });
 
-    it("regression fix: Gym stays toggleable (count doesn't require a value)", () => {
+    it("residual fix: Gym stays toggleable but gets NO targetValue (count never requires one; stays byte-identical to legacy)", () => {
       const habits = buildHabitGrid([], week, [
         cfg({
           category: "gym",
@@ -362,6 +362,10 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
         }),
       ]);
       expect(habits[0].toggleable).toBe(true);
+      // The 3-session target is real, but a completion row never carries a
+      // value for `count` — threading it would send an inert `value` the
+      // server drops. Only value_gte habits (water/steps/sleep) get one.
+      expect(habits[0].targetValue).toBeNull();
     });
   });
 

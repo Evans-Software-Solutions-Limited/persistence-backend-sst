@@ -68,7 +68,10 @@ describe("toggleHabitDayCommand", () => {
     });
   });
 
-  it("done=true with value omitted falls back to null (legacy / no-config habit)", () => {
+  it("done=true with value omitted: local cache stores null but the wire payload OMITS the value key entirely (byte-identical to legacy)", () => {
+    // Gym (count) and any legacy/no-config habit never require a value —
+    // sending `value: null` would be inert but not byte-identical to the
+    // pre-fix `{goalId, date}` shape. The key itself must be absent.
     toggleHabitDayCommand(deps(), {
       goalId: "g-legacy",
       day: "2026-06-10",
@@ -79,9 +82,9 @@ describe("toggleHabitDayCommand", () => {
     });
     expect(rows[0].value).toBeNull();
     const queued = storage.getPendingMutations();
-    expect(
-      (JSON.parse(queued[0].payload) as { value: number | null }).value,
-    ).toBeNull();
+    const payload = JSON.parse(queued[0].payload) as Record<string, unknown>;
+    expect(payload).toEqual({ goalId: "g-legacy", date: "2026-06-10" });
+    expect(Object.prototype.hasOwnProperty.call(payload, "value")).toBe(false);
   });
 
   it("done=false: optimistically removes the completion + enqueues a DELETE", () => {

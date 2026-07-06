@@ -467,6 +467,26 @@ export interface StoragePort {
   /** Optimistic disable — drops the (user, category) row from the cache. */
   removeHabitConfig(userId: string, category: string): void;
 
+  /**
+   * Rewrite a habit's optimistic `local-…` goalId to the server-assigned id
+   * once its habit_config PUT flushes (offline-first residual fix, 18-habit-
+   * setup). Unlike `swapLocalExerciseId` (where the local id lives only in the
+   * URL path), a habit's local goalId is embedded in the JSON body of any
+   * queued `/habit-completions` POST/DELETE mutation (and in the DELETE's
+   * query-string endpoint too) — this rewrites BOTH so a completion tapped
+   * before the config drain flushes still lands on the real goal instead of
+   * 404ing (`goalBelongsToUser` false) and being silently dropped after
+   * retries exhaust. Also re-keys any `cached_habit_completions` rows already
+   * written under the local id (both the PK and the embedded `goalId`), so
+   * the grid doesn't show a stale/duplicate row under the old id.
+   *
+   * No-op when the ids match or nothing references `localGoalId`. Only
+   * touches `sync_queue` rows still `pending`/`failed` (mirrors
+   * `updateMutationPayload` — never an `in_flight` entry a drain may have
+   * already serialized, nor a `completed`/`blocked_entitlement` one).
+   */
+  swapLocalHabitGoalId(localGoalId: string, serverGoalId: string): void;
+
   // -- Active Session (M3) --
   /**
    * Read the user's in-progress session, joining the three normalized

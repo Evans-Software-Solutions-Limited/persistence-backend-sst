@@ -1472,6 +1472,82 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  swapLocalHabitGoalId(localGoalId: string, serverGoalId: string): void {
+    if (localGoalId === serverGoalId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // Re-key any cached completion rows written under the local goalId.
+      // INSERT-then-DELETE (not `UPDATE goal_id`) so a row a concurrent
+      // refresh already pulled under the server goalId for the same day
+      // wins cleanly via the (user_id, goal_id, day) unique index, instead
+      // of a raw UPDATE throwing a constraint violation.
+      const rows = db.getAllSync(
+        `SELECT id, user_id, day, completed_at, value FROM cached_habit_completions
+         WHERE goal_id = ?`,
+        [localGoalId],
+      ) as {
+        id: string;
+        user_id: string;
+        day: string;
+        completed_at: string;
+        value: number | null;
+      }[];
+      for (const r of rows) {
+        db.runSync(
+          `INSERT INTO cached_habit_completions (id, user_id, goal_id, day, completed_at, value)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, goal_id, day) DO UPDATE SET
+             id = excluded.id, completed_at = excluded.completed_at, value = excluded.value`,
+          [r.id, r.user_id, serverGoalId, r.day, r.completed_at, r.value],
+        );
+      }
+      db.runSync(`DELETE FROM cached_habit_completions WHERE goal_id = ?`, [
+        localGoalId,
+      ]);
+
+      // Re-point any queued /habit-completions mutation still addressed to
+      // the local goalId — POST carries it in the JSON payload; DELETE
+      // carries it in BOTH the payload and the query-string endpoint. Only
+      // pending/failed rows are rewritable (mirrors updateMutationPayload —
+      // an in-flight entry may already be mid-flush; completed/blocked ones
+      // are done).
+      const queued = db.getAllSync(
+        `SELECT id, payload, endpoint FROM sync_queue
+         WHERE entity_type = 'habit_completion' AND status IN ('pending', 'failed')`,
+      ) as { id: number; payload: string; endpoint: string }[];
+      for (const q of queued) {
+        let payload: { goalId?: string } | null = null;
+        try {
+          payload = JSON.parse(q.payload) as { goalId?: string };
+        } catch {
+          continue; // malformed row — leave untouched, never crash the swap
+        }
+        if (payload?.goalId !== localGoalId) continue;
+
+        const newPayload = { ...payload, goalId: serverGoalId };
+        // The DELETE endpoint embeds goalId as a query param — rewrite that
+        // too, or the drain would PATCH the local id back onto the URL even
+        // after the payload is fixed.
+        const newEndpoint = q.endpoint.replace(
+          `goalId=${encodeURIComponent(localGoalId)}`,
+          `goalId=${encodeURIComponent(serverGoalId)}`,
+        );
+        db.runSync(
+          `UPDATE sync_queue SET payload = ?, endpoint = ? WHERE id = ?`,
+          [JSON.stringify(newPayload), newEndpoint, q.id],
+        );
+      }
+      // entity_id is `${goalId}:${day}` — re-key it too so a later toggle on
+      // the same (goal, day) de-dupes against this row's identity correctly.
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ? || substr(entity_id, instr(entity_id, ':'))
+         WHERE entity_type = 'habit_completion' AND status IN ('pending', 'failed')
+           AND entity_id LIKE ? || ':%'`,
+        [serverGoalId, localGoalId],
+      );
+    });
+  }
+
   /** Shared JSON-blob slot read (cached_home/streaks/achievements). */
   private readBlob<T>(table: string, userId: string): T | null {
     const rows = this.getDb().getAllSync(

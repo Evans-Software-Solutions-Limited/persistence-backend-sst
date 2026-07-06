@@ -65,17 +65,24 @@ export function buildHabitGrid(
         // Regression fix: a grid tap POSTs a habit_completion whose `value`
         // must satisfy the backend's per-category validateCompletionValue —
         // threading the config's live targetValue through lets the toggle
-        // command send it (a tap means "I met my target today"). Calories is
-        // excluded entirely: the engine scores it from nutrition_entries, so
-        // a habit_completions row there is meaningless — the tile is
-        // read-only and deep-links to Fuel instead of toggling.
+        // command send it (a tap means "I met my target today"). Gated on
+        // `completionRule === "value_gte"` (water/steps/sleep), the actual
+        // server-side signal for "requires a value" — NOT the category name.
+        // Gym (`count`) never requires a value: threading its target anyway
+        // would send an inert `value` the server drops and the engine
+        // ignores, contradicting the intended byte-identical-to-legacy wire
+        // shape, so it stays targetValue=null (toggleable, no value key at
+        // all). Calories is excluded entirely: the engine scores it from
+        // nutrition_entries, so a habit_completions row there is meaningless
+        // — the tile is read-only and deep-links to Fuel instead of toggling.
         const isCalories = cfg.category === "calories";
+        const requiresValue = cfg.completionRule === "value_gte";
         return {
           id: cfg.goalId!,
           label: meta?.name ?? cfg.category,
           tone: (meta?.tone ?? "primary") as HabitTileTone,
           days: weekDates.map((d) => completionDays.has(d)),
-          targetValue: isCalories ? null : cfg.targetValue,
+          targetValue: requiresValue ? cfg.targetValue : null,
           toggleable: !isCalories,
         };
       });

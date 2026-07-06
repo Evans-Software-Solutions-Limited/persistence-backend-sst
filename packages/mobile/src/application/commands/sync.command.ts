@@ -248,6 +248,16 @@ export async function processSyncQueue(
       // skipped — the coach device doesn't cache the client's config). Non-fatal
       // on parse failure: the PUT already succeeded, so the local id lingers
       // until the next full config refresh reconciles it.
+      //
+      // Residual fix: if the user tapped that habit's grid cell BEFORE this
+      // drain (offline-first — configureHabitCommand and toggleHabitDayCommand
+      // both enqueue independently), a `/habit-completions` mutation is queued
+      // against the OLD `local-…` goalId — and `cached_habit_completions` may
+      // already have a row under it too. Capture the pre-write local goalId
+      // and swap it (mirrors `swapLocalSessionId`/`swapLocalExerciseId`) BEFORE
+      // overwriting the config cache, so a completion tapped offline doesn't
+      // 404 (`goalBelongsToUser` false) and get silently dropped after retries
+      // exhaust.
       if (
         entry.entityType === "habit_config" &&
         entry.operation === "update" &&
@@ -256,12 +266,25 @@ export async function processSyncQueue(
       ) {
         try {
           const selfUserId = entry.entityId.split(":")[0];
+          const category = entry.entityId.split(":")[1];
           const body = (await response.json()) as {
             data?: HabitConfigEntry;
           };
           if (body.data && selfUserId) {
             const mapped = habitConfigFromEntry(body.data);
-            if (mapped) storage.upsertHabitConfig(selfUserId, mapped);
+            if (mapped) {
+              const previous = storage
+                .getHabitConfigs(selfUserId)
+                .find((c) => c.category === category);
+              if (
+                previous?.goalId &&
+                mapped.goalId &&
+                previous.goalId !== mapped.goalId
+              ) {
+                storage.swapLocalHabitGoalId(previous.goalId, mapped.goalId);
+              }
+              storage.upsertHabitConfig(selfUserId, mapped);
+            }
           }
         } catch (err) {
           console.warn(

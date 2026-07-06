@@ -15,13 +15,19 @@
  *
  * REGRESSION FIX (18-habit-setup): once a habit is configured via the setup
  * screen, the backend's `validateCompletionValue` REQUIRES a `value` for
- * value_gte/within_tolerance categories (water/steps/sleep/calories) — a bare
- * `{goalId, date}` POST 422s. A grid tap means "I met my target today", so
- * `input.value` (the habit's live `targetValue`, threaded from `buildHabitGrid`
- * via `HabitVM.targetValue`) is written into BOTH the optimistic local row and
- * the queued mutation's wire payload, so the drain's POST carries it too. Gym
- * (`count`) and any pre-configuration habit never require a value server-side,
- * so `value: undefined` there is a no-op (the field is simply omitted).
+ * value_gte categories (water/steps/sleep) — a bare `{goalId, date}` POST
+ * 422s. A grid tap means "I met my target today", so `input.value` (the
+ * habit's live `targetValue`, threaded from `buildHabitGrid` via
+ * `HabitVM.targetValue`, gated on `completionRule === "value_gte"`) is
+ * written into BOTH the optimistic local row and the queued mutation's wire
+ * payload, so the drain's POST carries it too.
+ *
+ * Gym (`count`) and any pre-configuration/legacy habit never require a value
+ * server-side — the wire payload OMITS the `value` key entirely for them
+ * (not `value: null`), so the POST stays byte-identical to the pre-fix
+ * legacy shape. The optimistic LOCAL cache row still stores `value: null`
+ * (its column always exists), but the wire payload's key presence tracks
+ * whether the caller passed a real value.
  */
 
 import type { StoragePort } from "@/domain/ports/storage.port";
@@ -78,7 +84,13 @@ export function toggleHabitDayCommand(
       entityType: "habit_completion",
       entityId: `${input.goalId}:${input.day}`,
       operation: "create",
-      payload: { goalId: input.goalId, date: wireDate, value },
+      // Omit the `value` key entirely when none was passed — a habit that
+      // doesn't require one (Gym / legacy) must stay byte-identical to the
+      // pre-fix `{goalId, date}` payload, not send an inert `value: null`.
+      payload:
+        value !== null
+          ? { goalId: input.goalId, date: wireDate, value }
+          : { goalId: input.goalId, date: wireDate },
       endpoint: "/habit-completions",
       method: "POST",
     });
