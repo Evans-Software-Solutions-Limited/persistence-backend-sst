@@ -40,7 +40,8 @@ export function WaterLogSheetPresenter({
     >
       <View gap={16}>
         <Text fontFamily="$body" fontSize={13} color="$text3">
-          Tap a cup or use +/- to set how much water you&apos;ve had today.
+          Tap a cup or use +/- (0.25 L each) to set how much water you&apos;ve
+          had today.
         </Text>
         <WaterTrackerPresenter
           cups={cups}

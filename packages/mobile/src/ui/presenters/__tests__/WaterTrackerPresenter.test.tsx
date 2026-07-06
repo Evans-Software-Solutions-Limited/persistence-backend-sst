@@ -23,7 +23,27 @@ describe("WaterTrackerPresenter", () => {
     expect(getByTestId("fuel-water-cup-7")).toBeTruthy();
   });
 
-  it("steps up with +", () => {
+  it("displays cups as litres (8 cups = 2.0 L) with the goal in litres", () => {
+    // 6 cups × 0.25 = 1.5 L, goal 8 cups × 0.25 = 2.0 L → "1.5" + "/ 2.0 L".
+    const { getByText } = render({ cups: 6, goal: 8 });
+    expect(getByText("1.5")).toBeTruthy();
+    expect(getByText("/ 2.0 L")).toBeTruthy();
+  });
+
+  it("shows a 2-dp litres value when the count lands off a 0.5 L mark", () => {
+    // 5 cups × 0.25 = 1.25 L (a 0.25 L step off 1.0 L).
+    const { getByText } = render({ cups: 5, goal: 8 });
+    expect(getByText("1.25")).toBeTruthy();
+  });
+
+  it("labels the grid cells in litres (0.25 L per cup)", () => {
+    const { getByLabelText } = render({ cups: 0, goal: 8 });
+    expect(getByLabelText("Set water to 0.25 litres")).toBeTruthy();
+    expect(getByLabelText("Set water to 2.0 litres")).toBeTruthy(); // cup 8
+  });
+
+  it("steps by one cup (= 0.25 L) — + sends cups+1", () => {
+    // A 0.25 L step maps to exactly ±1 cup: the wire grain stays integer cups.
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("fuel-water-plus"));
     expect(props.onSetCups).toHaveBeenCalledWith(7);
