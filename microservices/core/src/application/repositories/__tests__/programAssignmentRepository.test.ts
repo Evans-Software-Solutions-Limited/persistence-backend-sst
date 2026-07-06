@@ -579,16 +579,23 @@ describe("ProgramAssignmentRepository", () => {
   });
 
   describe("deleteAdHoc", () => {
-    it("deletes an untouched ad-hoc row", async () => {
-      const db = makeDb({ deleteResults: [[{ id: "wa-1" }]] });
+    it("deletes an untouched ad-hoc row and returns the deleted assignment", async () => {
+      const db = makeDb({
+        deleteResults: [[{ id: "wa-1", workoutId: "w-1", dueDate: null }]],
+      });
       vi.mocked(getDb).mockReturnValue(db);
-      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toBe("deleted");
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toEqual({
+        result: "deleted",
+        assignment: { id: "wa-1", workoutId: "w-1", dueDate: null },
+      });
     });
 
     it("not_found when no row matches at all", async () => {
       const db = makeDb({ deleteResults: [[]], selects: [[]] });
       vi.mocked(getDb).mockReturnValue(db);
-      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-x")).toBe("not_found");
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-x")).toEqual({
+        result: "not_found",
+      });
     });
 
     it("not_deletable when the row exists but is completed or programme-linked", async () => {
@@ -597,9 +604,29 @@ describe("ProgramAssignmentRepository", () => {
         selects: [[{ id: "wa-1" }]],
       });
       vi.mocked(getDb).mockReturnValue(db);
-      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toBe(
-        "not_deletable",
+      expect(await repo.deleteAdHoc(TRAINER, CLIENT, "wa-1")).toEqual({
+        result: "not_deletable",
+      });
+    });
+
+    it("threads an explicit tx handle through instead of calling getDb()", async () => {
+      const txDb = makeDb({
+        deleteResults: [
+          [{ id: "wa-2", workoutId: "w-2", dueDate: "2026-07-10" }],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(makeDb({}));
+      const result = await repo.deleteAdHoc(
+        TRAINER,
+        CLIENT,
+        "wa-2",
+        txDb as any,
       );
+      expect(result).toEqual({
+        result: "deleted",
+        assignment: { id: "wa-2", workoutId: "w-2", dueDate: "2026-07-10" },
+      });
+      expect(txDb.delete).toHaveBeenCalled();
     });
   });
 });

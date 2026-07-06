@@ -1,0 +1,22 @@
+-- M8 (10-trainer-features) — extend action_type_enum for the ad-hoc
+-- workout-assignment DELETE audit gap.
+--
+-- DELETE /trainers/me/clients/:clientId/workout-assignments/:id
+-- (trainersClientWorkoutAssignmentsDeleteHandler.ts) removes a client's
+-- ad-hoc workout assignment with NO trainer_actions_audit row — every other
+-- on-behalf write audits in-transaction per cross-cuts § 1.4.2. The CREATE
+-- path was fixed in PR #165 via assignClientWorkoutOnBehalf (action type
+-- workout_assigned, already live on the enum). This migration adds the
+-- companion DELETE-side value so the handler can audit the unassign the
+-- same way, in the same transaction as the delete.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value
+-- in the same transaction that adds it. Keeping the ADD VALUE statement in
+-- its own migration (no usage here) sidesteps that entirely — mirrors the
+-- M4 precedent (20260607120000_m4_notification_type_streak_values.sql) and
+-- the M8 precedent (20260705150000_coach_notification_type_on_behalf_values.sql).
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE action_type_enum ADD VALUE IF NOT EXISTS 'workout_unassigned';
