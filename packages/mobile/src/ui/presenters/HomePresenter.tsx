@@ -84,9 +84,16 @@ export type HomePresenterProps = {
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
   onLogWater: () => void;
-  onToggleHabitDay: (goalId: string, day: string, done: boolean) => void;
+  onToggleHabitDay: (
+    goalId: string,
+    day: string,
+    done: boolean,
+    value?: number | null,
+  ) => void;
   /** Open the habit-setup screen (18-habit-setup STORY-007). */
   onManageHabits: () => void;
+  /** Calories grid row (non-toggleable) → deep-links to Fuel instead. */
+  onOpenCaloriesFromGrid: () => void;
   onOpenCoach: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
@@ -144,6 +151,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onLogWater,
     onToggleHabitDay,
     onManageHabits,
+    onOpenCaloriesFromGrid,
     onOpenCoach,
     scrollRef,
     todayISO = new Date().toISOString().slice(0, 10),
@@ -329,6 +337,7 @@ export function HomePresenter(props: HomePresenterProps) {
               weekDates={weekDates}
               onToggle={onToggleHabitDay}
               onManageHabits={onManageHabits}
+              onOpenNonToggleable={onOpenCaloriesFromGrid}
             />
           </Section>
         </Animated.View>

@@ -39,4 +39,21 @@ export type Habit = {
   label: string;
   tone: HabitTileTone;
   days: boolean[]; // length 7, today last
+  /**
+   * The `value_gte` target the completion must carry to satisfy the backend's
+   * `validateCompletionValue` (18-habit-setup regression fix). A grid tap
+   * means "I met my target today", so the toggle command sends this as the
+   * completion's `value` — `null` (or absent) for `count`/read-only habits
+   * (Gym scores from workout_sessions; Calories from nutrition_entries), which
+   * never carry a value.
+   */
+  targetValue?: number | null;
+  /**
+   * False for a habit whose completion can't be meaningfully logged from this
+   * grid — currently only Calories, which the backend engine scores from
+   * `nutrition_entries`, never `habit_completions` (a completion row there is
+   * inert). The tile renders read-only and taps deep-link to Fuel instead of
+   * toggling. Defaults to true (every pre-18 caller stays toggleable).
+   */
+  toggleable?: boolean;
 };

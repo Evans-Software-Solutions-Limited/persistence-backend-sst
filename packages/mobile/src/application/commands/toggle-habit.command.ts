@@ -12,6 +12,16 @@
  *
  * The aggregate Home cache is invalidated so the next refresh re-pulls the grid
  * + streak micro-pill from server truth.
+ *
+ * REGRESSION FIX (18-habit-setup): once a habit is configured via the setup
+ * screen, the backend's `validateCompletionValue` REQUIRES a `value` for
+ * value_gte/within_tolerance categories (water/steps/sleep/calories) — a bare
+ * `{goalId, date}` POST 422s. A grid tap means "I met my target today", so
+ * `input.value` (the habit's live `targetValue`, threaded from `buildHabitGrid`
+ * via `HabitVM.targetValue`) is written into BOTH the optimistic local row and
+ * the queued mutation's wire payload, so the drain's POST carries it too. Gym
+ * (`count`) and any pre-configuration habit never require a value server-side,
+ * so `value: undefined` there is a no-op (the field is simply omitted).
  */
 
 import type { StoragePort } from "@/domain/ports/storage.port";
@@ -28,6 +38,13 @@ export type ToggleHabitInput = {
   /** User-local calendar day being toggled (YYYY-MM-DD). */
   day: string;
   done: boolean;
+  /**
+   * The value the completion must carry to satisfy the backend's per-category
+   * validation (value_gte/within_tolerance require one; count/legacy habits
+   * don't). Omit/undefined for a habit with no known target (falls back to
+   * `null`, matching the pre-fix wire shape for callers that predate this).
+   */
+  value?: number | null;
 };
 
 export function toggleHabitDayCommand(
@@ -46,6 +63,7 @@ export function toggleHabitDayCommand(
   // a noon-UTC instant instead would route through the tz-conversion path and
   // drift to the next local day for tz ≥ +12 (backend sweep 11).
   const wireDate = input.day;
+  const value = input.value ?? null;
 
   if (input.done) {
     storage.upsertHabitCompletion({
@@ -54,13 +72,13 @@ export function toggleHabitDayCommand(
       goalId: input.goalId,
       day: input.day,
       completedAt,
-      value: null,
+      value,
     });
     storage.enqueueMutation({
       entityType: "habit_completion",
       entityId: `${input.goalId}:${input.day}`,
       operation: "create",
-      payload: { goalId: input.goalId, date: wireDate },
+      payload: { goalId: input.goalId, date: wireDate, value },
       endpoint: "/habit-completions",
       method: "POST",
     });

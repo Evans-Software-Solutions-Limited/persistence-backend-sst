@@ -273,4 +273,39 @@ describe("HomeContainer (V2)", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/fuel");
     expect(useFuelSheets.getState().sheet).toBe("quickAdd");
   });
+
+  it("regression fix: toggling a configured habit with a value writes it to the optimistic cache row", async () => {
+    const { adapters, storage } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    await act(async () => {
+      // The grid's onToggle signature carries the habit's live targetValue as
+      // a 4th arg (threaded from buildHabitGrid) — the backend 422s a
+      // value_gte completion with none once the habit is configured.
+      mockProbe.last?.onToggleHabitDay("g-water", "2026-06-10", true, 2);
+    });
+    await waitFor(() => {
+      const rows = storage.getCachedHabitCompletions(USER, {
+        goalId: "g-water",
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].value).toBe(2);
+    });
+  });
+
+  it("regression fix: Calories deep-link (non-toggleable grid row) navigates to Fuel Targets", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last?.onOpenCaloriesFromGrid());
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
+  });
 });

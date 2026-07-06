@@ -220,27 +220,13 @@ describe("deriveCollectionStreak", () => {
     expect(streak).toBe(2); // current + 05-25; the holiday week didn't break it
   });
 
-  it("within_tolerance (calories) counts days inside target ± leniency", () => {
-    const cals = cfg({
-      category: "calories",
-      goalId: "goal-cals",
-      completionRule: "within_tolerance",
-      targetValue: 2000,
-      daysPerWeek: 5,
-      tolerancePct: 10, // 1800..2200
-      unit: "kcal",
-    });
-    const monday = "2026-06-08";
-    const rows = [0, 1, 2, 3, 4].map((i) => {
-      const d = new Date(`${monday}T00:00:00.000Z`);
-      d.setUTCDate(d.getUTCDate() + i);
-      // 2100 is within 1800..2200 → qualifies.
-      return comp("goal-cals", d.toISOString().slice(0, 10), 2100);
-    });
-    expect(deriveCollectionStreak([cals], byGoal(rows), TODAY)).toBe(1);
-  });
-
-  it("calories day OUTSIDE tolerance doesn't qualify", () => {
+  // Regression fix (orchestrator directive): within_tolerance (Calories) is
+  // scored by the backend engine from nutrition_entries, never
+  // habit_completions — and the mobile grid no longer writes a completion row
+  // for Calories at all (its tile is read-only). The offline mirror therefore
+  // treats every within_tolerance week as MET unconditionally (best-effort;
+  // server wins per design.md § 8), regardless of what habit_completions say.
+  it("within_tolerance (calories) is treated as MET even with zero completions", () => {
     const cals = cfg({
       category: "calories",
       goalId: "goal-cals",
@@ -249,15 +235,58 @@ describe("deriveCollectionStreak", () => {
       daysPerWeek: 5,
       tolerancePct: 10,
       unit: "kcal",
+      // Bound the walk to exactly one week so the assertion isn't just
+      // "hits the loop cap" — a habit not yet effective drops the week.
+      effectiveFrom: "2026-06-08",
+    });
+    expect(deriveCollectionStreak([cals], new Map(), TODAY)).toBe(1);
+  });
+
+  it("within_tolerance (calories) is met even with BAD completion values (divergence is intentional)", () => {
+    const cals = cfg({
+      category: "calories",
+      goalId: "goal-cals",
+      completionRule: "within_tolerance",
+      targetValue: 2000,
+      daysPerWeek: 5,
+      tolerancePct: 10,
+      unit: "kcal",
+      effectiveFrom: "2026-06-08",
     });
     const monday = "2026-06-08";
+    // Every day wildly over tolerance — under the OLD (pre-fix) scoring this
+    // would have scored 0 qualifying days and failed the week. The mirror now
+    // ignores habit_completions for this rule entirely.
     const rows = [0, 1, 2, 3, 4].map((i) => {
       const d = new Date(`${monday}T00:00:00.000Z`);
       d.setUTCDate(d.getUTCDate() + i);
-      return comp("goal-cals", d.toISOString().slice(0, 10), 2500); // over 2200
+      return comp("goal-cals", d.toISOString().slice(0, 10), 9999);
     });
-    // 0 qualifying days this week → grace → no prior week → 0.
-    expect(deriveCollectionStreak([cals], byGoal(rows), TODAY)).toBe(0);
+    expect(deriveCollectionStreak([cals], byGoal(rows), TODAY)).toBe(1);
+  });
+
+  it("within_tolerance (calories) doesn't block a mixed collection that has no completions for it", () => {
+    // Water is scored normally; Calories (present, enabled) is met-by-default
+    // — the collection week is satisfied by water's real completions alone,
+    // with calories never contributing (or requiring) a habit_completions row.
+    const water = cfg({
+      category: "water",
+      goalId: "goal-water",
+      daysPerWeek: 5,
+      effectiveFrom: "2026-06-08",
+    });
+    const cals = cfg({
+      category: "calories",
+      goalId: "goal-cals",
+      completionRule: "within_tolerance",
+      targetValue: 2000,
+      daysPerWeek: 5,
+      tolerancePct: 10,
+      unit: "kcal",
+      effectiveFrom: "2026-06-08",
+    });
+    const rows = fiveWaterDays("goal-water", "2026-06-08"); // no calories rows at all
+    expect(deriveCollectionStreak([water, cals], byGoal(rows), TODAY)).toBe(1);
   });
 
   it("effective_from gate: a habit not yet effective this week is excluded", () => {

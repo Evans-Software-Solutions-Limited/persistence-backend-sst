@@ -173,6 +173,66 @@ describe("HabitsGridPresenter", () => {
     fireEvent.press(getByTestId("habits-grid-manage"));
     expect(onManageHabits).toHaveBeenCalled();
   });
+
+  const WEEK = [
+    "2026-06-04",
+    "2026-06-05",
+    "2026-06-06",
+    "2026-06-07",
+    "2026-06-08",
+    "2026-06-09",
+    "2026-06-10",
+  ];
+
+  it("regression fix: tapping a configured Water tile threads targetValue through onToggle", () => {
+    const onToggle = jest.fn();
+    const { getByLabelText } = renderWithTheme(
+      <HabitsGridPresenter
+        habits={[
+          {
+            id: "g-water",
+            label: "Water",
+            tone: "primary",
+            days: [false, false, false, false, false, false, false],
+            targetValue: 2,
+          },
+        ]}
+        weekDates={WEEK}
+        onToggle={onToggle}
+      />,
+    );
+    fireEvent.press(getByLabelText("Water 2026-06-10 not done"));
+    expect(onToggle).toHaveBeenCalledWith("g-water", "2026-06-10", true, 2);
+  });
+
+  it("regression fix: Calories (toggleable=false) never calls onToggle — taps deep-link instead", () => {
+    const onToggle = jest.fn();
+    const onOpenNonToggleable = jest.fn();
+    const { getAllByLabelText } = renderWithTheme(
+      <HabitsGridPresenter
+        habits={[
+          {
+            id: "g-calories",
+            label: "Calories",
+            tone: "gold",
+            days: [false, false, false, false, false, false, false],
+            targetValue: null,
+            toggleable: false,
+          },
+        ]}
+        weekDates={WEEK}
+        onToggle={onToggle}
+        onOpenNonToggleable={onOpenNonToggleable}
+      />,
+    );
+    // Every day-cell in a read-only row shares the same "set in Fuel" label —
+    // any of the 7 taps must deep-link, never toggle.
+    const cells = getAllByLabelText("Calories — set in Fuel");
+    expect(cells).toHaveLength(7);
+    fireEvent.press(cells[3]);
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(onOpenNonToggleable).toHaveBeenCalledWith("g-calories");
+  });
 });
 
 describe("PRCarouselPresenter", () => {

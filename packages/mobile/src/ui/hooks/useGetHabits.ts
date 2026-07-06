@@ -62,11 +62,21 @@ export function buildHabitGrid(
         const meta = isHabitCategory(cfg.category)
           ? HABIT_CATEGORY_META[cfg.category]
           : null;
+        // Regression fix: a grid tap POSTs a habit_completion whose `value`
+        // must satisfy the backend's per-category validateCompletionValue —
+        // threading the config's live targetValue through lets the toggle
+        // command send it (a tap means "I met my target today"). Calories is
+        // excluded entirely: the engine scores it from nutrition_entries, so
+        // a habit_completions row there is meaningless — the tile is
+        // read-only and deep-links to Fuel instead of toggling.
+        const isCalories = cfg.category === "calories";
         return {
           id: cfg.goalId!,
           label: meta?.name ?? cfg.category,
           tone: (meta?.tone ?? "primary") as HabitTileTone,
           days: weekDates.map((d) => completionDays.has(d)),
+          targetValue: isCalories ? null : cfg.targetValue,
+          toggleable: !isCalories,
         };
       });
   }

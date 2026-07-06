@@ -249,6 +249,21 @@ export function deriveCollectionStreak(
     for (const h of enabled) {
       const eff = effectiveConfigForWeek(h, weekStartISO);
       if (!eff) continue; // not yet effective this week (fresh enable)
+      scored.push(eff);
+
+      // within_tolerance (Calories) DIVERGES from the backend on purpose here.
+      // The engine's real scoring source is `nutrition_entries` (design.md §
+      // 4.1's M9-gate wording; collection.ts), never `habit_completions` — and
+      // since the regression fix, the mobile grid no longer writes a
+      // completion row for Calories at all (its tile is read-only, deep-
+      // linking to Fuel). Without a reliable offline day-kcal total to check
+      // against, this offline mirror treats every within_tolerance week as
+      // MET (best-effort; server wins per design.md § 8) rather than reading
+      // stale/absent habit_completions and reporting a false miss. Water/
+      // Steps/Sleep (value_gte) and Gym (count) still mirror collection.ts
+      // exactly — only this one rule is a deliberate divergence.
+      if (eff.completionRule === "within_tolerance") continue;
+
       let qualifyingDays = 0;
       let sessionCount = 0;
       if (eff.completionRule === "count") {
@@ -260,18 +275,9 @@ export function deriveCollectionStreak(
         for (const d of weekDays) {
           const v = byDay.get(d);
           if (v === undefined) continue;
-          if (eff.completionRule === "value_gte") {
-            if (v >= eff.targetValue) qualifyingDays += 1;
-          } else {
-            // within_tolerance (Calories): a day qualifies within target ± tol%.
-            const tol = (eff.tolerancePct ?? 0) / 100;
-            const lo = eff.targetValue * (1 - tol);
-            const hi = eff.targetValue * (1 + tol);
-            if (v >= lo && v <= hi) qualifyingDays += 1;
-          }
+          if (v >= eff.targetValue) qualifyingDays += 1;
         }
       }
-      scored.push({ ...eff });
       if (!collectionWeekMet(eff, qualifyingDays, sessionCount)) {
         return false; // one enabled+effective habit missed → week not satisfied
       }

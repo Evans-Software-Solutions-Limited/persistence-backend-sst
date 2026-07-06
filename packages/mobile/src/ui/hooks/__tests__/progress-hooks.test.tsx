@@ -330,6 +330,39 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       expect(habits).toHaveLength(1);
       expect(habits[0].id).toBe("g-legacy");
     });
+
+    it("regression fix: threads the config's live targetValue through for a value_gte habit", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({ category: "water", goalId: "g-water", targetValue: 2.5 }),
+      ]);
+      expect(habits[0].targetValue).toBe(2.5);
+      expect(habits[0].toggleable).toBe(true);
+    });
+
+    it("regression fix: Calories is toggleable=false with targetValue null regardless of its configured target", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({
+          category: "calories",
+          goalId: "g-cals",
+          completionRule: "within_tolerance",
+          targetValue: 2000,
+        }),
+      ]);
+      expect(habits[0].toggleable).toBe(false);
+      expect(habits[0].targetValue).toBeNull();
+    });
+
+    it("regression fix: Gym stays toggleable (count doesn't require a value)", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({
+          category: "gym",
+          goalId: "g-gym",
+          completionRule: "count",
+          targetValue: 3,
+        }),
+      ]);
+      expect(habits[0].toggleable).toBe(true);
+    });
   });
 
   it("buckets a habit by its local day, not the completedAt UTC slice (tz≥+12)", async () => {
