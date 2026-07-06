@@ -5,6 +5,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { HealthPort } from "@/domain/ports/health.port";
 import { ok } from "@/shared/errors";
+import { localDayISO } from "@/shared/utils";
 import type { Adapters } from "@/shared/types";
 import type { HomePresenterProps } from "@/ui/presenters/HomePresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -258,6 +259,75 @@ describe("HomeContainer (V2)", () => {
       expect(
         storage.getCachedHabitCompletions(USER, { goalId: "g1" }),
       ).toHaveLength(1),
+    );
+  });
+
+  it("regression: toggling a habit flips the grid tile without a re-mount", async () => {
+    // Seed an ENABLED habit config so the `g-water` row is present in the grid
+    // regardless of completions (config-driven path — the real product shape).
+    // The tile boolean for a given day is what the toggle must flip. Anchor on
+    // today's LOCAL day: that's what `useGetHabits.read` reads back (its
+    // `since` = this week's Monday) and what `buildHabitGrid` indexes `days[i]`
+    // against.
+    const today = localDayISO();
+    const { adapters, api } = makeAdapters();
+    api.habitConfigs = [
+      {
+        category: "water",
+        enabled: true,
+        goalId: "g-water",
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 2,
+        unit: "l",
+        period: "daily",
+        completionRule: "value_gte",
+        daysPerWeek: 5,
+        tolerancePct: null,
+        pending: null,
+      },
+    ];
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    // The config-driven row is present; today's tile starts FALSE (no
+    // completion logged yet).
+    const weekDates = await waitFor(() => {
+      const row = mockProbe.last?.habits.find((h) => h.id === "g-water");
+      if (!row) throw new Error("g-water row not in grid yet");
+      return mockProbe.last!.weekDates;
+    });
+    const dayIndex = weekDates.indexOf(today);
+    expect(dayIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
+    ).toBe(false);
+
+    // Toggle ON: the command writes the optimistic completion to the cache
+    // synchronously (value threaded from the config target), then the container
+    // calls reloadHabits() — a mounted re-render (NO unmount/re-render of the
+    // tree here) must flip today's tile to TRUE. Pre-fix (no reload wiring) the
+    // grid stayed frozen at false until a navigate-away/back re-mount.
+    await act(async () => {
+      mockProbe.last?.onToggleHabitDay("g-water", today, true, 2);
+    });
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
+      ).toBe(true),
+    );
+
+    // Inverse: toggling done=false removes the completion synchronously and
+    // reloadHabits() re-renders the mounted grid back to false.
+    await act(async () => {
+      mockProbe.last?.onToggleHabitDay("g-water", today, false);
+    });
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
+      ).toBe(false),
     );
   });
 

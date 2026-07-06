@@ -194,6 +194,49 @@ describe("HabitSetupContainer (self)", () => {
     expect(props().freezeTokens).toBe(0);
   });
 
+  it("regression: enabling a habit flips its config in the mounted presenter (reflectConfig → reload)", async () => {
+    // Water starts DISABLED (no server row). Enabling it writes a live config
+    // (enabled:true) to the cache synchronously; reflectConfig() → reload()
+    // must re-read that cache into the mounted presenter WITHOUT a re-mount —
+    // the same frozen-snapshot bug as the Home habit grid. Pre-fix the switch
+    // stayed off until a navigate-away/back re-mount.
+    renderContainer();
+    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
+    await act(async () => props().onToggle("water", true));
+    // The presenter now reflects the enabled config — proof of the re-render.
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(props().configs.water.goalId).toBeTruthy();
+  });
+
+  it("regression: a target edit is reflected in the mounted presenter's pending config", async () => {
+    // Start from an already-active habit so a target edit writes a PENDING
+    // config (live row untouched until Monday). The mounted presenter must
+    // reflect that pending value via reflectConfig → reload, no re-mount.
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [
+        {
+          category: "water",
+          enabled: true,
+          goalId: "g-water",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2,
+          unit: "l",
+          period: "daily",
+          completionRule: "value_gte",
+          daysPerWeek: 5,
+          tolerancePct: null,
+          pending: null,
+        },
+      ];
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    await act(async () => props().onTargetChange("water", 3));
+    await waitFor(() =>
+      expect(props().configs.water.pending?.targetValue).toBe(3),
+    );
+  });
+
   it("disabling a habit fires the DELETE through the drain", async () => {
     renderContainer(undefined, (api) => {
       api.habitConfigs = [
@@ -293,6 +336,66 @@ describe("HabitSetupContainer (coach)", () => {
       String(url).endsWith("/trainers/me/clients/client-9/habits/water/config"),
     );
     expect(put).toBeDefined();
+  });
+
+  it("regression: coach edit reflects the client config in the mounted presenter (reflectConfig → chained refresh, not raced)", async () => {
+    // Coach view has no local cache for a client's config: the on-behalf PUT is
+    // sent inside the queue drain, and reflectConfig() re-FETCHES the server row
+    // to reflect it. The refresh MUST be chained onto the mutate's drain —
+    // firing it synchronously would race the GET ahead of the PUT and read the
+    // pre-edit row (the switch would stay frozen).
+    //
+    // Model the server: the drained PUT flips water to enabled in the store
+    // that getClientHabitConfigs reads. So this assertion is ORDERING-SENSITIVE
+    // — a raced (unchained) refresh reads the store BEFORE the PUT persists and
+    // stays false; only the chained refresh reads it AFTER and shows enabled.
+    const { api } = renderContainer("client-9", (a) => {
+      a.clientHabitConfigs = { "client-9": [] };
+    });
+    const spy = jest.spyOn(api, "getClientHabitConfigs");
+    mockFetch.mockImplementation(async (url: unknown, opts?: unknown) => {
+      const u = String(url);
+      const method = (opts as { method?: string } | undefined)?.method;
+      if (
+        method === "PUT" &&
+        u.endsWith("/trainers/me/clients/client-9/habits/water/config")
+      ) {
+        api.clientHabitConfigs["client-9"] = [
+          {
+            category: "water",
+            enabled: true,
+            goalId: "g-water",
+            assignedByCoach: true,
+            assignedByUserId: USER,
+            locked: true,
+            targetValue: 2,
+            unit: "l",
+            period: "daily",
+            completionRule: "value_gte",
+            daysPerWeek: 5,
+            tolerancePct: null,
+            pending: null,
+          },
+        ];
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ data: {} }),
+      };
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    expect(props().configs.water.enabled).toBe(false);
+    const before = spy.mock.calls.length;
+    await act(async () => props().onToggle("water", true));
+    // The chained refresh re-fetched AFTER the PUT persisted, so the mounted
+    // presenter now reflects the enabled config — proof of reflection + order.
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(spy.mock.calls.length).toBeGreaterThan(before);
+    // Every observed fetch targeted this client (never leaks another id).
+    expect(spy.mock.calls.every(([id]) => id === "client-9")).toBe(true);
+    spy.mockRestore();
   });
 
   it("coach Calories deep-link is a no-op (no client-side editor)", async () => {

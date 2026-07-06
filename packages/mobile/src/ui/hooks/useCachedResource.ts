@@ -37,6 +37,16 @@ export type CachedResourceState<T> = {
   isRefreshing: boolean;
   error: ApiError | null;
   refresh: () => Promise<void>;
+  /**
+   * Synchronous cache re-read: re-runs `read` and pushes the result into local
+   * state, with NO network call. This is the reactive bridge for optimistic
+   * mutations — a command writes to the cache and returns void, so without this
+   * the mounted component's `data` snapshot stays stale until a re-mount or a
+   * successful `refresh` (the habit-grid-toggle bug). Call `reload()` right
+   * after an optimistic write to reflect it instantly, offline-safe; `refresh`
+   * still reconciles with server truth afterward. Mirrors `useGetFuelToday`.
+   */
+  reload: () => void;
 };
 
 export function useCachedResource<T>(
@@ -108,6 +118,15 @@ export function useCachedResource<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, auth, storage, userId]);
 
+  const reload = useCallback(() => {
+    if (!userId) return;
+    const r = read(storage, userId);
+    setData(r.value);
+    setIsStale(r.isStale);
+    // `read` is a stable caller closure (same convention as `refresh`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage, userId]);
+
   const autoRefreshedRef = useRef<string | null>(null);
   const initialIsStale = initial.isStale;
   useEffect(() => {
@@ -121,5 +140,5 @@ export function useCachedResource<T>(
     void refresh();
   }, [userId, initialIsStale, refresh]);
 
-  return { data, isStale, isRefreshing, error, refresh };
+  return { data, isStale, isRefreshing, error, refresh, reload };
 }
