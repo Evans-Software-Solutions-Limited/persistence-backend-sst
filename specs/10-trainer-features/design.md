@@ -481,9 +481,9 @@ already exist and are callable with the **client's** userId after the auth gate.
 **Two design.md corrections that fall out of the audit** (do not silently propagate the
 old text): (1) the `assertTrainerCanActForClient` snippet earlier in this file is a stale
 2-role stub — the shipped helper allows `personal_trainer | physiotherapist | admin` and
-returns a discriminated `TrainerActionVerdict`; (2) cross-cuts § 1.5 says trainer name comes
-from `profiles.display_name`, but the real column is `profiles.full_name` (`schema.ts:273`) —
-attribution copy reads `full_name`.
+returns a discriminated `TrainerActionVerdict`; (2) cross-cuts § 1.5 said trainer name comes
+from `profiles.display_name`, but the real column is `profiles.full_name` (`schema.ts:283`) —
+attribution copy reads `full_name`. (Cross-cuts § 1.5 corrected 2026-07-06.)
 
 ### The aggregate endpoint
 

@@ -114,7 +114,7 @@ Each on-behalf handler calls `auditTrainerAction({ trainerId, clientId, actionTy
 
 ### 1.5 UI attribution
 
-When `logged_by_user_id IS NOT NULL`, the row's detail UI on the client side renders a small badge: `Logged by Coach Bradley on 25 May`. The trainer's display name comes from `profiles.display_name`; if the trainer has since deactivated the relationship the row still attributes — the column is a historical record, not a live reference.
+When `logged_by_user_id IS NOT NULL`, the row's detail UI on the client side renders a small badge: `Logged by Coach Bradley on 25 May`. The trainer's display name comes from `profiles.full_name` (**corrected 2026-07-06** — this section previously cited `profiles.display_name`, a column that does not exist on `profiles`; attribution copy reads `full_name`, per the Phase-4 key-corrections in `specs/10-trainer-features/design.md`). If the trainer has since deactivated the relationship the row still attributes — the column is a historical record, not a live reference.
 
 Client cannot delete or edit on-behalf rows directly. Edits go via the trainer (who can re-log) or via the client communicating out-of-band to ask the trainer to remove it.
 
