@@ -1,6 +1,10 @@
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { Food, FuelToday, Recipe } from "@/domain/models/nutrition";
 import {
+  defaultHabitConfig,
+  type HabitConfig,
+} from "@/domain/models/habit-config";
+import {
   createMealCommand,
   createRecipeCommand,
   deleteEntryCommand,
@@ -9,6 +13,20 @@ import {
   setTargetCommand,
   setWaterCommand,
 } from "../nutrition.command";
+
+/**
+ * An active, enabled water habit with a litres `targetValue` (value_gte) and a
+ * synced goalId — the shape the bridge in `setWaterCommand` looks for.
+ */
+function waterHabit(over: Partial<HabitConfig> = {}): HabitConfig {
+  return {
+    ...defaultHabitConfig("water"),
+    enabled: true,
+    goalId: "g-water",
+    targetValue: 2, // 2.0 L/day = 8 cups
+    ...over,
+  };
+}
 
 const USER = "u1";
 const DATE = "2026-06-21";
@@ -241,6 +259,131 @@ describe("setWaterCommand", () => {
     const storage = new InMemoryStorageAdapter();
     setWaterCommand(deps(storage), DATE, -5);
     expect(parsePayload(storage)).toEqual({ date: DATE, cups: 0 });
+  });
+
+  it("still sends INTEGER cups on the wire (storage unit unchanged)", () => {
+    // Litres is a display/bridge concern only — the PATCH grain stays cups.
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]);
+    setWaterCommand(deps(storage), DATE, 8);
+    const water = storage
+      .getPendingMutations()
+      .find((m) => m.entityType === "water_log")!;
+    expect(JSON.parse(water.payload)).toEqual({ date: DATE, cups: 8 });
+  });
+});
+
+describe("setWaterCommand → water-habit bridge", () => {
+  const completions = (storage: InMemoryStorageAdapter) =>
+    storage.getCachedHabitCompletions(USER, { goalId: "g-water" });
+  const habitMutations = (storage: InMemoryStorageAdapter) =>
+    storage
+      .getPendingMutations()
+      .filter((m) => m.entityType === "habit_completion");
+
+  it("ticks the water habit when logged litres reach the target (value = target litres)", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]); // target 2.0 L = 8 cups
+    storage.cacheHome(USER, {} as never);
+
+    setWaterCommand(deps(storage), DATE, 8); // 8 cups × 0.25 = 2.0 L ≥ 2.0
+
+    // Optimistic completion row for today, carrying the litres target.
+    const rows = completions(storage);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].localCompletedDate).toBe(DATE);
+    expect(rows[0].value).toBe(2);
+
+    // Enqueued POST /habit-completions with {goalId, date, value} (litres).
+    const posts = habitMutations(storage).filter((m) => m.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].endpoint).toBe("/habit-completions");
+    expect(JSON.parse(posts[0].payload)).toEqual({
+      goalId: "g-water",
+      date: DATE,
+      value: 2,
+    });
+
+    // Home invalidated so the grid re-reads the tick.
+    expect(storage.getCachedHome(USER)).toBeNull();
+  });
+
+  it("does NOT tick when logged litres are below the target", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]); // 2.0 L target
+
+    setWaterCommand(deps(storage), DATE, 7); // 7 cups = 1.75 L < 2.0
+
+    expect(completions(storage)).toHaveLength(0);
+    expect(habitMutations(storage)).toHaveLength(0);
+  });
+
+  it("un-ticks (DELETE) when a later log drops back below the target", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]);
+
+    setWaterCommand(deps(storage), DATE, 8); // tick at 2.0 L
+    expect(completions(storage)).toHaveLength(1);
+
+    setWaterCommand(deps(storage), DATE, 4); // 1.0 L < 2.0 → un-tick
+    expect(completions(storage)).toHaveLength(0);
+
+    const del = habitMutations(storage).find((m) => m.method === "DELETE")!;
+    expect(del.endpoint).toContain("goalId=g-water");
+    expect(del.endpoint).toContain(`date=${DATE}`);
+  });
+
+  it("no water habit configured → logs water but writes NO completion", () => {
+    const storage = new InMemoryStorageAdapter();
+    // No habit configs at all.
+    setWaterCommand(deps(storage), DATE, 8);
+    expect(completions(storage)).toHaveLength(0);
+    expect(habitMutations(storage)).toHaveLength(0);
+    // The water log itself still fired.
+    expect(
+      storage.getPendingMutations().filter((m) => m.entityType === "water_log"),
+    ).toHaveLength(1);
+  });
+
+  it("disabled water habit → no completion", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit({ enabled: false })]);
+    setWaterCommand(deps(storage), DATE, 8);
+    expect(completions(storage)).toHaveLength(0);
+    expect(habitMutations(storage)).toHaveLength(0);
+  });
+
+  it("water habit with no synced goalId → no completion", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit({ goalId: null })]);
+    setWaterCommand(deps(storage), DATE, 8);
+    expect(completions(storage)).toHaveLength(0);
+    expect(habitMutations(storage)).toHaveLength(0);
+  });
+
+  it("is idempotent: logging MORE cups while already ticked enqueues no duplicate completion", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]);
+
+    setWaterCommand(deps(storage), DATE, 8); // tick (2.0 L)
+    setWaterCommand(deps(storage), DATE, 10); // 2.5 L, still ≥ 2.0 — no change
+
+    expect(completions(storage)).toHaveLength(1);
+    // Exactly one habit mutation (the original POST); no duplicate.
+    const posts = habitMutations(storage);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].method).toBe("POST");
+  });
+
+  it("is idempotent: staying below target across taps enqueues nothing", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheHabitConfigs(USER, [waterHabit()]);
+
+    setWaterCommand(deps(storage), DATE, 2); // 0.5 L
+    setWaterCommand(deps(storage), DATE, 5); // 1.25 L — still < 2.0
+
+    expect(completions(storage)).toHaveLength(0);
+    expect(habitMutations(storage)).toHaveLength(0);
   });
 });
 

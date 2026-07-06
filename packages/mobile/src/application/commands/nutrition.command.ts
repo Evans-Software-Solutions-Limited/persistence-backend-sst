@@ -32,6 +32,8 @@ import {
   setFuelTargets,
   setFuelWater,
 } from "@/domain/services/nutrition.service";
+import { setHabitCompletion } from "@/application/commands/toggle-habit.command";
+import { cupsToLitres } from "@/shared/utils";
 
 export type NutritionCommandDeps = {
   storage: StoragePort;
@@ -222,6 +224,13 @@ export function setTargetCommand(
  * Set the day's water cups (ABSOLUTE, last-write-wins). Coalesces onto any
  * still-pending water mutation for the same day so rapid +/- taps don't bloat
  * the queue and replay stays idempotent (BACKEND_BRIEF § 4).
+ *
+ * Also BRIDGES the log to the water HABIT (fix/water-litres-habit-bridge):
+ * water is logged in cups but the water habit target is in LITRES, and logging
+ * used to never tick the habit. After writing the log we reflect the habit's
+ * binary daily threshold — a completion exists for today iff the logged litres
+ * (`cups × 0.25`) meet the habit's `targetValue` (litres). See
+ * `reflectWaterHabit`.
  */
 export function setWaterCommand(
   deps: NutritionCommandDeps,
@@ -242,16 +251,71 @@ export function setWaterCommand(
     .find((e) => e.entityType === "water_log" && e.entityId === date);
   if (pending) {
     storage.updateMutationPayload(pending.id, payload);
-    return;
+  } else {
+    storage.enqueueMutation({
+      entityType: "water_log",
+      entityId: date,
+      operation: "update",
+      payload,
+      endpoint: "/nutrition/water/today",
+      method: "PATCH",
+    });
   }
-  storage.enqueueMutation({
-    entityType: "water_log",
-    entityId: date,
-    operation: "update",
-    payload,
-    endpoint: "/nutrition/water/today",
-    method: "PATCH",
+
+  reflectWaterHabit(deps, date, next);
+}
+
+/**
+ * Reflect the day's water log into the water HABIT completion (binary daily
+ * threshold). No-op unless the user has an ACTIVE, enabled water habit with a
+ * real `goalId` and a litres `targetValue`.
+ *
+ * - logged litres (`cups × 0.25`) ≥ target → ensure TODAY is ticked with
+ *   `value = targetValue` (litres) — identical to the Home grid tile's write,
+ *   so tile + log stay consistent.
+ * - below target → ensure TODAY is un-ticked.
+ *
+ * Idempotent: only enqueues a POST when not already ticked, only a DELETE when
+ * currently ticked — checked against the cached completions for today — so
+ * repeated +/- taps at a steady state don't spam the queue. Invalidates Home
+ * once when the tick state actually changed so the grid re-reads the new state.
+ */
+function reflectWaterHabit(
+  deps: NutritionCommandDeps,
+  date: string,
+  cups: number,
+): void {
+  const { storage, userId } = deps;
+
+  const water = storage
+    .getHabitConfigs(userId)
+    .find((c) => c.category === "water");
+  if (!water || !water.enabled || !water.goalId) return;
+
+  const goalId = water.goalId;
+  const target = water.targetValue;
+  const totalLitres = cupsToLitres(cups);
+  const shouldTick = totalLitres >= target;
+
+  const alreadyTicked = storage
+    .getCachedHabitCompletions(userId, { goalId })
+    .some((r) => (r.localCompletedDate ?? r.completedAt.slice(0, 10)) === date);
+
+  // No state change → don't touch the cache or queue (idempotent).
+  if (shouldTick === alreadyTicked) return;
+
+  setHabitCompletion(storage, {
+    userId,
+    goalId,
+    day: date,
+    done: shouldTick,
+    // value_gte habit — the completion carries the litres target, matching the
+    // grid tile so the backend's onConflictDoNothing sees a constant value.
+    value: shouldTick ? target : undefined,
+    idFactory: deps.idFactory,
   });
+
+  storage.invalidateHome(userId);
 }
 
 /** Optimistically insert a recipe + enqueue its create (server materialises totals). */

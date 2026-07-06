@@ -53,60 +53,91 @@ export type ToggleHabitInput = {
   value?: number | null;
 };
 
-export function toggleHabitDayCommand(
-  deps: ToggleHabitCommandDeps,
-  input: ToggleHabitInput,
+/**
+ * Optimistic single habit-completion write for a (user, goal, local day) —
+ * the shared primitive behind both a grid toggle (`toggleHabitDayCommand`) and
+ * the Fuel water-log → water-habit bridge (`setWaterCommand`). Does the cache
+ * upsert/remove + enqueues the matching POST/DELETE; does NOT invalidate Home
+ * (callers batch that once). Idempotency vs. the queue is the caller's job.
+ */
+export function setHabitCompletion(
+  storage: StoragePort,
+  args: {
+    userId: string;
+    goalId: string;
+    /** User-local calendar day (YYYY-MM-DD). */
+    day: string;
+    done: boolean;
+    /** value_gte/within_tolerance require one; omit for count/legacy habits. */
+    value?: number | null;
+    /** Stable id for the optimistic local row (upsert only). */
+    idFactory: () => string;
+  },
 ): void {
-  const { storage, userId } = deps;
+  const { userId, goalId, day, done } = args;
   // Noon-UTC midpoint keeps the LOCAL cache row's instant inside the intended
   // calendar day for every timezone the user is plausibly in. This instant is
-  // only persisted locally; the wire payload sends the date-only `day` instead
-  // (see below).
-  const completedAt = `${input.day}T12:00:00.000Z`;
+  // only persisted locally; the wire payload sends the date-only `day` instead.
+  const completedAt = `${day}T12:00:00.000Z`;
   // The wire MUST carry the date-only `day` (YYYY-MM-DD), NOT an ISO instant.
   // The backend treats a date-only string as the authoritative user-local day
   // and the on-write streak engine evaluates that local day directly. Sending
   // a noon-UTC instant instead would route through the tz-conversion path and
   // drift to the next local day for tz ≥ +12 (backend sweep 11).
-  const wireDate = input.day;
-  const value = input.value ?? null;
+  const wireDate = day;
+  const value = args.value ?? null;
 
-  if (input.done) {
+  if (done) {
     storage.upsertHabitCompletion({
-      id: `local-${deps.idFactory()}`,
+      id: `local-${args.idFactory()}`,
       userId,
-      goalId: input.goalId,
-      day: input.day,
+      goalId,
+      day,
       completedAt,
       value,
     });
     storage.enqueueMutation({
       entityType: "habit_completion",
-      entityId: `${input.goalId}:${input.day}`,
+      entityId: `${goalId}:${day}`,
       operation: "create",
       // Omit the `value` key entirely when none was passed — a habit that
       // doesn't require one (Gym / legacy) must stay byte-identical to the
       // pre-fix `{goalId, date}` payload, not send an inert `value: null`.
       payload:
         value !== null
-          ? { goalId: input.goalId, date: wireDate, value }
-          : { goalId: input.goalId, date: wireDate },
+          ? { goalId, date: wireDate, value }
+          : { goalId, date: wireDate },
       endpoint: "/habit-completions",
       method: "POST",
     });
   } else {
-    storage.removeHabitCompletion(userId, input.goalId, input.day);
+    storage.removeHabitCompletion(userId, goalId, day);
     storage.enqueueMutation({
       entityType: "habit_completion",
-      entityId: `${input.goalId}:${input.day}`,
+      entityId: `${goalId}:${day}`,
       operation: "delete",
-      payload: { goalId: input.goalId, date: wireDate },
+      payload: { goalId, date: wireDate },
       endpoint: `/habit-completions?goalId=${encodeURIComponent(
-        input.goalId,
+        goalId,
       )}&date=${encodeURIComponent(wireDate)}`,
       method: "DELETE",
     });
   }
+}
+
+export function toggleHabitDayCommand(
+  deps: ToggleHabitCommandDeps,
+  input: ToggleHabitInput,
+): void {
+  const { storage, userId } = deps;
+  setHabitCompletion(storage, {
+    userId,
+    goalId: input.goalId,
+    day: input.day,
+    done: input.done,
+    value: input.value,
+    idFactory: deps.idFactory,
+  });
 
   // Force the next Home read to re-pull grid + streak from server truth.
   storage.invalidateHome(userId);

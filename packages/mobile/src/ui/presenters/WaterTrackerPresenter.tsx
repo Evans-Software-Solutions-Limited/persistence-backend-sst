@@ -3,12 +3,19 @@ import { Pressable } from "react-native";
 import { Card, IconBtn, Stat } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconDroplet, IconMinus, IconPlus } from "@/ui/components/icons";
+import { cupsToLitres } from "@/shared/utils";
 
 /**
  * <WaterTrackerPresenter> — cups grid vs goal (nutrition.jsx:178–214). Tap a cup
- * to set the count to that index+1; +/- step by one. Every tap fires a haptic in
- * the container (selectionAsync). Auto-resets at user-local midnight because the
- * day key in `cached_fuel_today` rolls over (handled upstream).
+ * to set the count to that index+1; +/- step by one CUP (= 0.25 L). Every tap
+ * fires a haptic in the container (selectionAsync). Auto-resets at user-local
+ * midnight because the day key in `cached_fuel_today` rolls over (upstream).
+ *
+ * DISPLAY is in LITRES (Brad 2026-07-06: 1 cup = 250 ml = 0.25 L). The
+ * count/goal render as "1.5 L / 2.0 L" and each grid cell is a 0.25 L cup. The
+ * `cups`/`onSetCups` prop contract stays in CUPS — the wire/storage grain — so
+ * the container command still enqueues integer cups; litres is a pure display
+ * conversion at this edge (never hardcode 0.25; use `cupsToLitres`).
  *
  * Pure: `cups`/`goal` + handlers are props. Water queues an ABSOLUTE cups value
  * (last-write-wins) — the container owns that mutation.
@@ -17,6 +24,15 @@ import { IconDroplet, IconMinus, IconPlus } from "@/ui/components/icons";
  */
 
 const PRIMARY = toneHex("primary").base;
+
+/**
+ * Litres label: 1 dp normally (matches "2.0 L"), 2 dp when a 0.25 L step lands
+ * on a non-zero hundredths digit (1.25 L) so the value is never truncated.
+ */
+function fmtLitres(litres: number): string {
+  const twoDp = litres.toFixed(2);
+  return twoDp.endsWith("0") ? litres.toFixed(1) : twoDp;
+}
 
 export type WaterTrackerProps = {
   cups: number;
@@ -54,8 +70,8 @@ export function WaterTrackerPresenter({
           </Text>
           <View marginTop={4}>
             <Stat
-              value={cups}
-              unit={`/ ${goal} cups`}
+              value={fmtLitres(cupsToLitres(cups))}
+              unit={`/ ${fmtLitres(cupsToLitres(goal))} L`}
               size="md"
               testID="fuel-water-count"
             />
@@ -67,14 +83,14 @@ export function WaterTrackerPresenter({
             tone="neutral"
             onPress={() => onSetCups(Math.max(0, cups - 1))}
             testID="fuel-water-minus"
-            accessibilityLabel="Remove a cup of water"
+            accessibilityLabel="Remove 0.25 litres of water"
           />
           <IconBtn
             icon={<IconPlus size={16} strokeWidth={2.5} />}
             tone="primary"
             onPress={() => onSetCups(cups + 1)}
             testID="fuel-water-plus"
-            accessibilityLabel="Add a cup of water"
+            accessibilityLabel="Add 0.25 litres of water"
           />
         </View>
       </View>
@@ -87,7 +103,9 @@ export function WaterTrackerPresenter({
               testID={`fuel-water-cup-${i}`}
               onPress={() => onSetCups(i + 1)}
               accessibilityRole="button"
-              accessibilityLabel={`Set water to ${i + 1} cups`}
+              accessibilityLabel={`Set water to ${fmtLitres(
+                cupsToLitres(i + 1),
+              )} litres`}
               style={{ flex: 1 }}
             >
               <View
