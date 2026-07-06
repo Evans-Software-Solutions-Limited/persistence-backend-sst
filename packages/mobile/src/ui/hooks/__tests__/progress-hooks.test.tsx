@@ -267,8 +267,11 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
         cfg({ category: "gym", goalId: "g-gym" }),
       ]);
       expect(habits).toHaveLength(2);
+      // T-18.7.6: label/tone come from the canonical category metadata — the
+      // prototype tones (water=primary, gym=ember), replacing the earlier
+      // placeholder that mis-toned gym as success.
       expect(habits[0]).toMatchObject({ label: "Water", tone: "primary" });
-      expect(habits[1]).toMatchObject({ label: "Gym", tone: "success" });
+      expect(habits[1]).toMatchObject({ label: "Gym", tone: "ember" });
       // No completions → all 7 days false.
       expect(habits[0].days.filter(Boolean)).toHaveLength(0);
     });
@@ -326,6 +329,43 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       );
       expect(habits).toHaveLength(1);
       expect(habits[0].id).toBe("g-legacy");
+    });
+
+    it("regression fix: threads the config's live targetValue through for a value_gte habit", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({ category: "water", goalId: "g-water", targetValue: 2.5 }),
+      ]);
+      expect(habits[0].targetValue).toBe(2.5);
+      expect(habits[0].toggleable).toBe(true);
+    });
+
+    it("regression fix: Calories is toggleable=false with targetValue null regardless of its configured target", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({
+          category: "calories",
+          goalId: "g-cals",
+          completionRule: "within_tolerance",
+          targetValue: 2000,
+        }),
+      ]);
+      expect(habits[0].toggleable).toBe(false);
+      expect(habits[0].targetValue).toBeNull();
+    });
+
+    it("residual fix: Gym stays toggleable but gets NO targetValue (count never requires one; stays byte-identical to legacy)", () => {
+      const habits = buildHabitGrid([], week, [
+        cfg({
+          category: "gym",
+          goalId: "g-gym",
+          completionRule: "count",
+          targetValue: 3,
+        }),
+      ]);
+      expect(habits[0].toggleable).toBe(true);
+      // The 3-session target is real, but a completion row never carries a
+      // value for `count` — threading it would send an inert `value` the
+      // server drops. Only value_gte habits (water/steps/sleep) get one.
+      expect(habits[0].targetValue).toBeNull();
     });
   });
 

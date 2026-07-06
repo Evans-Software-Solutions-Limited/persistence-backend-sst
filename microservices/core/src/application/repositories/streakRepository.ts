@@ -1,11 +1,13 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   achievements,
   bodyMeasurements,
   habitCompletions,
+  habitConfigs,
   nutritionEntries,
   nutritionTargets,
   profiles,
+  streakHolidays,
   userAchievements,
   userGoals,
   userStreaks,
@@ -21,6 +23,7 @@ import type {
 import type { StreakCronDataPort } from "../streaks/cron";
 import {
   lastCompletedPeriodEndISO,
+  localDateISO,
   periodsBetween,
   periodEndForDateISO,
   periodStartFromEndISO,
@@ -28,6 +31,12 @@ import {
   type Period,
 } from "../streaks/period";
 import { PERIODS_PER_FREEZE_TOKEN } from "../streaks/milestones";
+import {
+  collectionSatisfied,
+  type HabitWeekAggregate,
+} from "../streaks/collection";
+import type { HabitCompletionRule } from "../habits/habitCategories";
+import { HabitConfigRepository } from "./habitConfigRepository";
 
 /**
  * DB-backed implementation of the streak engine + cron data ports
@@ -141,21 +150,30 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     }
 
     if (streak.streakType === "habit_streak") {
-      // ≥ 1 completion for the source goal in the window. Buckets by the
-      // STORED local_completed_date (written from the user's tz at insert
-      // time) rather than re-deriving from completed_at — re-deriving with the
-      // CURRENT profile tz desyncs from the dedup key after a timezone change
-      // (Inspector finding, PR #116), and the stored column is what the
-      // unique index + grid use.
+      // The COLLECTION habit streak (source_goal_id NULL, weekly): satisfied
+      // when EVERY enabled habit's week is met (design.md § 4.2). Each habit is
+      // scored against the config effective at the week's Monday — the
+      // aggregate builder applies the `effective_from <= startDate` gate.
+      if (streak.sourceGoalId === null) {
+        const aggregates = await this.getCollectionHabitAggregates(
+          streak.userId,
+          startDate,
+          endDate,
+          tz,
+        );
+        return collectionSatisfied(aggregates);
+      }
+
+      // Legacy per-goal habit streak (pre-collection model): ≥ 1 completion for
+      // the source goal in the window. Buckets by the STORED
+      // local_completed_date (written from the user's tz at insert time).
       const rows = await db
         .select({ c: sql<number>`count(*)::int` })
         .from(habitCompletions)
         .where(
           and(
             eq(habitCompletions.userId, streak.userId),
-            streak.sourceGoalId
-              ? eq(habitCompletions.goalId, streak.sourceGoalId)
-              : sql`true`,
+            eq(habitCompletions.goalId, streak.sourceGoalId),
             sql`${habitCompletions.localCompletedDate} BETWEEN ${startDate} AND ${endDate}`,
           ),
         );
@@ -204,6 +222,289 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     // A day with no logging totals 0 → below 90% of any positive target → not
     // satisfied (correctly counts as a miss the cron then sweeps).
     return total >= t * 0.9 && total <= t * 1.1;
+  }
+
+  /**
+   * The per-habit week aggregates for the user's COLLECTION streak over the
+   * window [startDate, endDate] (design.md § 4.1). Only habits that are active
+   * AND already effective (`effective_from <= startDate` — the anti-gaming gate,
+   * § 4.4) are included; a fresh enable whose effective_from is next week is
+   * loggable but not yet part of the requirement.
+   *
+   * For each habit we compute the aggregate its rule needs:
+   *  - `value_gte` → count of DAYS whose summed value >= target;
+   *  - `within_tolerance` → count of DAYS whose kcal total is within
+   *    target ± tolerance_pct% (M9 nutrition is live, so evaluated for real);
+   *  - `count` (Gym) → count of completed workout_sessions in the window.
+   *
+   * The two day-count queries use `db.execute` with a GROUP-BY-ordinal
+   * subquery, NOT a reused parameterized sql`` expr in SELECT+GROUP BY (that
+   * throws Postgres 42803 — reference_drizzle_groupby_param_bug). Rendered SQL
+   * is asserted in the repository test.
+   */
+  async getCollectionHabitAggregates(
+    userId: string,
+    startDate: string,
+    endDate: string,
+    tz: string,
+  ): Promise<HabitWeekAggregate[]> {
+    const db = getDb();
+
+    const enabled = await db
+      .select({
+        goalId: habitConfigs.goalId,
+        completionRule: habitConfigs.completionRule,
+        targetValue: habitConfigs.targetValue,
+        daysPerWeek: habitConfigs.daysPerWeek,
+        tolerancePct: habitConfigs.tolerancePct,
+      })
+      .from(habitConfigs)
+      .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
+      .where(
+        and(
+          eq(habitConfigs.userId, userId),
+          eq(userGoals.isActive, true),
+          sql`${habitConfigs.effectiveFrom} <= ${startDate}`,
+        ),
+      );
+
+    const out: HabitWeekAggregate[] = [];
+    for (const h of enabled) {
+      const rule = h.completionRule as HabitCompletionRule;
+      const target = Number(h.targetValue);
+      let qualifyingDays = 0;
+      let sessionCount = 0;
+
+      if (rule === "value_gte") {
+        qualifyingDays = await this.countValueGteDays(
+          userId,
+          h.goalId,
+          startDate,
+          endDate,
+          target,
+        );
+      } else if (rule === "within_tolerance") {
+        const tol = h.tolerancePct != null ? Number(h.tolerancePct) : 0;
+        qualifyingDays = await this.countCalorieToleranceDays(
+          userId,
+          startDate,
+          endDate,
+          tz,
+          target,
+          tol,
+        );
+      } else {
+        // count (Gym): completed sessions in the window.
+        const rows = await db
+          .select({ c: sql<number>`count(*)::int` })
+          .from(workoutSessions)
+          .where(
+            and(
+              eq(workoutSessions.userId, userId),
+              eq(workoutSessions.status, "completed"),
+              sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}`,
+            ),
+          );
+        sessionCount = rows[0]?.c ?? 0;
+      }
+
+      out.push({
+        goalId: h.goalId,
+        completionRule: rule,
+        targetValue: target,
+        daysPerWeek: h.daysPerWeek ?? null,
+        tolerancePct: h.tolerancePct != null ? Number(h.tolerancePct) : null,
+        qualifyingDays,
+        sessionCount,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Count DAYS in [startDate, endDate] whose SUMMED habit_completions.value for
+   * `goalId` clears `target` (value_gte, design.md § 4.1). Buckets on the stored
+   * `local_completed_date` (same grain as the dedup index + the grid). Grouped
+   * by ordinal in a subquery so the parameterized sum expr is never reused
+   * across SELECT and GROUP BY (Postgres 42803 guard).
+   */
+  private async countValueGteDays(
+    userId: string,
+    goalId: string,
+    startDate: string,
+    endDate: string,
+    target: number,
+  ): Promise<number> {
+    const db = getDb();
+    const rows = (await db.execute(sql`
+      SELECT count(*)::int AS days FROM (
+        SELECT ${habitCompletions.localCompletedDate}
+        FROM ${habitCompletions}
+        WHERE ${habitCompletions.userId} = ${userId}
+          AND ${habitCompletions.goalId} = ${goalId}
+          AND ${habitCompletions.localCompletedDate} BETWEEN ${startDate} AND ${endDate}
+        GROUP BY 1
+        HAVING coalesce(sum(${habitCompletions.value}), 0) >= ${target}
+      ) d
+    `)) as unknown as Array<{ days: number }>;
+    return Number(rows[0]?.days ?? 0);
+  }
+
+  /**
+   * Count DAYS in [startDate, endDate] whose kcal total falls within
+   * `target ± tolerancePct%` (within_tolerance / Calories, design.md § 4.1).
+   * Buckets nutrition_entries by user-local day (`AT TIME ZONE tz`) — M9's
+   * nutrition_entries table is live, so this is the REAL evaluation, not the
+   * spec's M9-gated treated-as-met fallback. Grouped by ordinal in a subquery
+   * (42803 guard). A tolerance of 0 collapses to an exact-target day.
+   */
+  private async countCalorieToleranceDays(
+    userId: string,
+    startDate: string,
+    endDate: string,
+    tz: string,
+    target: number,
+    tolerancePct: number,
+  ): Promise<number> {
+    const db = getDb();
+    const factor = tolerancePct / 100;
+    const lower = target * (1 - factor);
+    const upper = target * (1 + factor);
+    const rows = (await db.execute(sql`
+      SELECT count(*)::int AS days FROM (
+        SELECT (${nutritionEntries.loggedAt} AT TIME ZONE ${tz})::date AS d
+        FROM ${nutritionEntries}
+        WHERE ${nutritionEntries.userId} = ${userId}
+          AND (${nutritionEntries.loggedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}
+        GROUP BY 1
+        HAVING coalesce(sum(${nutritionEntries.kcal}), 0) BETWEEN ${lower} AND ${upper}
+      ) t
+    `)) as unknown as Array<{ days: number }>;
+    return Number(rows[0]?.days ?? 0);
+  }
+
+  /**
+   * Whether the user has an active/any streak_holiday intersecting the week
+   * [startDate, endDate] (design.md § 4.2 step 1). A holiday with `goal_id`
+   * NULL covers ALL habits (the only kind the setup flow declares); a
+   * per-goal holiday would still pause the collection since the collection is
+   * "all habits". Ranges intersect when `start_date <= endDate AND end_date >=
+   * startDate`.
+   */
+  async weekIntersectsHoliday(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: streakHolidays.id })
+      .from(streakHolidays)
+      .where(
+        and(
+          eq(streakHolidays.userId, userId),
+          sql`${streakHolidays.startDate} <= ${endDate}`,
+          sql`${streakHolidays.endDate} >= ${startDate}`,
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * The user's collection habit-streak row (source_goal_id NULL, weekly), or
+   * null. Used by the mid-week at-risk pass + the holiday-pause cron step.
+   */
+  async getCollectionHabitStreak(userId: string): Promise<UserStreak | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.streakType, "habit_streak"),
+          isNull(userStreaks.sourceGoalId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Distinct user ids owning a collection habit streak (source_goal_id NULL,
+   * habit_streak) in ANY status — the set the nightly collection pass sweeps
+   * (holiday pause/resume, pending-config promotion, satisfied-week advance,
+   * mid-week at-risk). Includes `paused`/`broken` so a resume or restart can
+   * fire.
+   */
+  async getCollectionHabitStreakUserIds(): Promise<string[]> {
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ userId: userStreaks.userId })
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.streakType, "habit_streak"),
+          isNull(userStreaks.sourceGoalId),
+        ),
+      );
+    return rows.map((r) => r.userId);
+  }
+
+  /**
+   * Pause a collection streak for a holiday week (design.md § 4.2 step 1):
+   * status → `paused`, `last_period_end` advanced over the holiday week so the
+   * generic sweep won't later treat it as missed, NO count/token change. Pinned
+   * to the snapshot `last_period_end` for race safety. Returns the row or null.
+   */
+  async persistHolidayPause(
+    streakId: string,
+    fields: { lastPeriodEnd: string; snapshotLastPeriodEnd: string },
+  ): Promise<UserStreak | null> {
+    const db = getDb();
+    const rows = await db
+      .update(userStreaks)
+      .set({
+        status: "paused",
+        lastPeriodEnd: fields.lastPeriodEnd,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.lastPeriodEnd, fields.snapshotLastPeriodEnd),
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Resume a paused collection streak once the holiday range has passed
+   * (design.md § 4.3 — the existing M4 resume path). status → `active`, no
+   * count/token change. The next satisfied week advances it normally.
+   */
+  /**
+   * Promote a user's pending habit-config edits due today (delegates to
+   * {@link HabitConfigRepository.promotePendingEdits}). Exposed on the streak
+   * repository so the collection cron's single data port carries every method
+   * the pass needs (§ 4.3 / T-18.5.3). Returns the count promoted.
+   */
+  async promoteHabitPendingEdits(userId: string, now: Date): Promise<number> {
+    return new HabitConfigRepository().promotePendingEdits(userId, now);
+  }
+
+  async persistHolidayResume(streakId: string): Promise<UserStreak | null> {
+    const db = getDb();
+    const rows = await db
+      .update(userStreaks)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(
+        and(eq(userStreaks.id, streakId), eq(userStreaks.status, "paused")),
+      )
+      .returning();
+    return rows[0] ?? null;
   }
 
   private async resolveWorkoutThreshold(
@@ -548,6 +849,74 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
           // any concurrent advance into a clean no-op null (→ handler 400); the
           // user retries against the fresh row with the correct `missed`. Same
           // discipline as persistFreezeSpend/persistBreak (Inspector finding).
+          eq(userStreaks.lastPeriodEnd, streak.lastPeriodEnd),
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Proactive "skip this week" (18-habit-setup, T-18.5.4 / STORY-003 AC 3.4;
+   * design.md § 3.1/§ 4.2). Spend ONE freeze token to pre-emptively cover the
+   * CURRENT in-progress period so it can't break at rollover: advance
+   * `last_period_end` OVER the current period, decrement one token, and DO NOT
+   * change `current_count` (unlike the retroactive `spendTokenManually`, which
+   * covers weeks ALREADY missed). Only for a weekly streak that is up to date
+   * (`last_period_end == last completed period`) — a streak already behind must
+   * use the retroactive path first, and skipping a period the engine already
+   * advanced would double-count.
+   *
+   * Returns null (→ handler 400) when: not owned / not `active` / no token /
+   * already skipped this period (last_period_end is at or beyond the current
+   * period) / actually behind (must retro-spend instead). Pinned to the snapshot
+   * `last_period_end` for the same race discipline as every other writer.
+   */
+  async skipCurrentPeriod(
+    userId: string,
+    streakId: string,
+    now: Date = new Date(),
+  ): Promise<UserStreak | null> {
+    const db = getDb();
+    const existing = await db
+      .select()
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.status, "active"),
+        ),
+      )
+      .limit(1);
+    const streak = existing[0];
+    if (!streak) return null;
+    if (streak.freezeTokens < 1) return null;
+
+    const tz = await this.getUserTimezone(userId);
+    const period = streak.period as Period;
+    const lastCompletedEnd = lastCompletedPeriodEndISO(now, period, tz);
+    const currentEnd = periodEndForDateISO(localDateISO(now, tz), period);
+
+    // Must be up to date: last_period_end == the last completed period. Behind
+    // → the retroactive path owns it; ahead (already advanced/skipped the
+    // current period) → nothing to skip.
+    if (streak.lastPeriodEnd !== lastCompletedEnd) return null;
+
+    const rows = await db
+      .update(userStreaks)
+      .set({
+        freezeTokens: sql`${userStreaks.freezeTokens} - 1`,
+        lastPeriodEnd: currentEnd,
+        status: "active",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userStreaks.id, streakId),
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.status, "active"),
+          sql`${userStreaks.freezeTokens} >= 1`,
           eq(userStreaks.lastPeriodEnd, streak.lastPeriodEnd),
         ),
       )

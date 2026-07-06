@@ -56,6 +56,7 @@ import type {
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
   HabitConfigEntry,
+  ConfigureHabitInput,
   ProgramApiError,
   WorkoutAssignmentRow,
 } from "@/domain/ports/api.port";
@@ -1143,6 +1144,68 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<HabitConfigEntry[]>("/users/me/habits/config");
   }
 
+  async configureHabit(
+    category: string,
+    input: ConfigureHabitInput,
+  ): Promise<Result<HabitConfigEntry, ApiError>> {
+    return this.requestEnvelope<HabitConfigEntry>(
+      `/users/me/habits/${encodeURIComponent(category)}/config`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  async disableHabit(
+    category: string,
+  ): Promise<Result<{ category: string; disabled: true }, ApiError>> {
+    return this.requestEnvelope<{ category: string; disabled: true }>(
+      `/users/me/habits/${encodeURIComponent(category)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async getClientHabitConfigs(
+    clientId: string,
+  ): Promise<Result<HabitConfigEntry[], ApiError>> {
+    return this.requestEnvelope<HabitConfigEntry[]>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/habits/config`,
+    );
+  }
+
+  async configureClientHabit(
+    clientId: string,
+    category: string,
+    input: ConfigureHabitInput,
+  ): Promise<Result<HabitConfigEntry, ApiError>> {
+    return this.requestEnvelope<HabitConfigEntry>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/habits/${encodeURIComponent(
+        category,
+      )}/config`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  async disableClientHabit(
+    clientId: string,
+    category: string,
+  ): Promise<Result<{ category: string; disabled: true }, ApiError>> {
+    return this.requestEnvelope<{ category: string; disabled: true }>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/habits/${encodeURIComponent(
+        category,
+      )}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async getClientHabitCompletions(
+    clientId: string,
+    params?: { goalId?: string; window?: string },
+  ): Promise<Result<HabitCompletion[], ApiError>> {
+    return this.requestEnvelope<HabitCompletion[]>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/habit-completions`,
+      { params },
+    );
+  }
+
   async createHabitCompletion(
     input: CreateHabitCompletionInput,
   ): Promise<Result<HabitCompletion, ApiError>> {
@@ -1161,10 +1224,18 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
-  async useFreezeToken(streakId: string): Promise<Result<Streak, ApiError>> {
+  async useFreezeToken(
+    streakId: string,
+    mode: "retroactive" | "skip" = "retroactive",
+  ): Promise<Result<Streak, ApiError>> {
     return this.requestEnvelope<Streak>(
       `/users/me/streaks/${streakId}/use-token`,
-      { method: "POST" },
+      // The backend defaults an omitted body to "retroactive"; only send the
+      // body for a proactive "skip this week" so the existing retroactive
+      // callers stay byte-identical.
+      mode === "skip"
+        ? { method: "POST", body: { mode: "skip" } }
+        : { method: "POST" },
     );
   }
 

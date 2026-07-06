@@ -35,8 +35,12 @@ export {
 
 export {
   deriveStreak,
+  deriveCollectionStreak,
+  collectionWeekMet,
   type StreakDerivationPeriod,
   type DeriveStreakCompletion,
+  type StreakHolidayRange,
+  type DeriveCollectionStreakOptions,
 } from "./streak.service";
 
 export {

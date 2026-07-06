@@ -16,6 +16,10 @@ import { trainersMeAssignClientGoalHandler } from "./trainers/goals/trainersMeAs
 import { trainersMeListClientGoalsHandler } from "./trainers/goals/trainersMeListClientGoalsHandler";
 import { trainersMeUpdateClientGoalHandler } from "./trainers/goals/trainersMeUpdateClientGoalHandler";
 import { trainersMeSetClientNutritionTargetHandler } from "./trainers/nutrition/trainersMeSetClientNutritionTargetHandler";
+import { trainersMeGetClientHabitConfigHandler } from "./trainers/habits/trainersMeGetClientHabitConfigHandler";
+import { trainersMeSetClientHabitConfigHandler } from "./trainers/habits/trainersMeSetClientHabitConfigHandler";
+import { trainersMeDeleteClientHabitHandler } from "./trainers/habits/trainersMeDeleteClientHabitHandler";
+import { trainersMeListClientHabitCompletionsHandler } from "./trainers/habits/trainersMeListClientHabitCompletionsHandler";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create + GET list (different methods, no path collision).
@@ -28,4 +32,11 @@ export const trainersOnBehalfRoutes = new Elysia()
   .use(trainersMeListClientGoalsHandler)
   .use(trainersMeUpdateClientGoalHandler)
   // nutrition target — the ONE nutrition write in the coach surface's scope.
-  .use(trainersMeSetClientNutritionTargetHandler);
+  .use(trainersMeSetClientNutritionTargetHandler)
+  // habits (18-habit-setup Phase 18.3) — GET config, PUT config, DELETE, GET
+  // completions. Every route asserts trainer + active relationship; writes
+  // stamp assigned_by_user_id + a goal_assigned audit row in one transaction.
+  .use(trainersMeGetClientHabitConfigHandler)
+  .use(trainersMeSetClientHabitConfigHandler)
+  .use(trainersMeDeleteClientHabitHandler)
+  .use(trainersMeListClientHabitCompletionsHandler);

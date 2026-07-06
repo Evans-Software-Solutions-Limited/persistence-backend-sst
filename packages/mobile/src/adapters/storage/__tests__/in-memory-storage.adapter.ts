@@ -48,6 +48,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
 import type {
   Food,
@@ -925,6 +926,69 @@ export class InMemoryStorageAdapter implements StoragePort {
       userId,
       rows.filter((r) => !(r.goalId === goalId && dayOf(r) === day)),
     );
+  }
+
+  private habitConfigsCache: Map<string, HabitConfig[]> = new Map();
+  getHabitConfigs(userId: string): HabitConfig[] {
+    return this.habitConfigsCache.get(userId) ?? [];
+  }
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void {
+    this.habitConfigsCache.set(userId, [...configs]);
+  }
+  upsertHabitConfig(userId: string, config: HabitConfig): void {
+    const rows = this.habitConfigsCache.get(userId) ?? [];
+    const filtered = rows.filter((c) => c.category !== config.category);
+    filtered.push(config);
+    this.habitConfigsCache.set(userId, filtered);
+  }
+  removeHabitConfig(userId: string, category: string): void {
+    const rows = this.habitConfigsCache.get(userId) ?? [];
+    this.habitConfigsCache.set(
+      userId,
+      rows.filter((c) => c.category !== category),
+    );
+  }
+
+  swapLocalHabitGoalId(localGoalId: string, serverGoalId: string): void {
+    if (localGoalId === serverGoalId) return;
+
+    // Re-key any cached completion rows written under the local goalId
+    // (mirrors the SQLite adapter — scans every user's cache since the swap
+    // is goalId-scoped, not user-scoped).
+    for (const [userId, rows] of this.habitCompletionsCache) {
+      const swapped = rows.map((r) =>
+        r.goalId === localGoalId ? { ...r, goalId: serverGoalId } : r,
+      );
+      this.habitCompletionsCache.set(userId, swapped);
+    }
+
+    // Re-point any queued /habit-completions mutation still addressed to the
+    // local goalId — the payload JSON AND (for DELETE) the query-string
+    // endpoint. Only pending/failed rows, mirroring updateMutationPayload.
+    for (const e of this.queue) {
+      if (
+        e.entityType !== "habit_completion" ||
+        (e.status !== "pending" && e.status !== "failed")
+      ) {
+        continue;
+      }
+      let payload: { goalId?: string } | null = null;
+      try {
+        payload = JSON.parse(e.payload) as { goalId?: string };
+      } catch {
+        continue;
+      }
+      if (payload?.goalId !== localGoalId) continue;
+
+      e.payload = JSON.stringify({ ...payload, goalId: serverGoalId });
+      e.endpoint = e.endpoint.replace(
+        `goalId=${encodeURIComponent(localGoalId)}`,
+        `goalId=${encodeURIComponent(serverGoalId)}`,
+      );
+      if (e.entityId?.startsWith(`${localGoalId}:`)) {
+        e.entityId = `${serverGoalId}${e.entityId.slice(localGoalId.length)}`;
+      }
+    }
   }
 }
 

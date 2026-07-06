@@ -1,5 +1,6 @@
 import { streakCron } from "./application/streaks/cron";
 import { nutritionStreakCron } from "./application/streaks/nutritionCron";
+import { habitCollectionCron } from "./application/streaks/habitCollectionCron";
 import { StreakRepository } from "./application/repositories/streakRepository";
 import { StreakNotificationDispatcher } from "./application/streaks/notifier";
 
@@ -26,6 +27,13 @@ export async function handler(): Promise<{
   nutritionUsers: number;
   nutritionAdvanced: number;
   nutritionFailed: number;
+  habitUsers: number;
+  habitPromoted: number;
+  habitPaused: number;
+  habitResumed: number;
+  habitAdvanced: number;
+  habitAtRisk: number;
+  habitFailed: number;
 }> {
   const data = new StreakRepository();
   const notifier = new StreakNotificationDispatcher();
@@ -36,6 +44,13 @@ export async function handler(): Promise<{
   const nutrition = await nutritionStreakCron({ data, notifier, now });
   console.log(`[nutrition-streak-cron:summary] ${JSON.stringify(nutrition)}`);
 
+  // Pass 1.5: collection habit streaks (18-habit-setup) — promote pending
+  // config edits, apply holiday pause/resume, advance satisfied weeks, and emit
+  // mid-week at-risk. BEFORE the generic sweep so paused/advanced rows read as
+  // up-to-date (or excluded, when paused) there.
+  const habit = await habitCollectionCron({ data, notifier, now });
+  console.log(`[habit-collection-cron:summary] ${JSON.stringify(habit)}`);
+
   // Pass 2: generic miss/freeze/break sweep across all active streaks.
   const summary = await streakCron({ data, notifier, now });
   console.log(`[streak-cron:summary] ${JSON.stringify(summary)}`);
@@ -45,5 +60,12 @@ export async function handler(): Promise<{
     nutritionUsers: nutrition.users,
     nutritionAdvanced: nutrition.advanced,
     nutritionFailed: nutrition.failed,
+    habitUsers: habit.users,
+    habitPromoted: habit.promoted,
+    habitPaused: habit.paused,
+    habitResumed: habit.resumed,
+    habitAdvanced: habit.advanced,
+    habitAtRisk: habit.atRisk,
+    habitFailed: habit.failed,
   };
 }

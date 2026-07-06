@@ -34,6 +34,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type {
   ReferenceEntry,
   ReferenceList,
@@ -408,6 +409,19 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_completions_user_goal_day
         ON cached_habit_completions(user_id, goal_id, day);
+
+      -- 18-habit-setup: habit-config cache (design.md § 8). One row per
+      -- (user, category) — the unique key makes the optimistic enable/edit
+      -- idempotent and means a habit configured offline (goalId = local-…)
+      -- de-dupes on category the moment the drain swaps in the server row.
+      -- The whole HabitConfig is stored as a JSON payload (small, read-whole).
+      CREATE TABLE IF NOT EXISTS cached_habit_configs (
+        user_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, category)
+      );
 
       -- M9 (13-nutrition-tracking / Fuel). The day aggregate is the Fuel
       -- screen's primary read — keyed by (user_id, date) so each day rolls
@@ -1414,6 +1428,124 @@ export class SQLiteStorageAdapter implements StoragePort {
       `DELETE FROM cached_habit_completions WHERE user_id = ? AND goal_id = ? AND day = ?`,
       [userId, goalId, day],
     );
+  }
+
+  getHabitConfigs(userId: string): HabitConfig[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_habit_configs WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as HabitConfig);
+  }
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_habit_configs WHERE user_id = ?`, [userId]);
+    const now = new Date().toISOString();
+    for (const c of configs) {
+      db.runSync(
+        `INSERT INTO cached_habit_configs (user_id, category, payload, synced_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, category) DO UPDATE SET
+           payload = excluded.payload, synced_at = excluded.synced_at`,
+        [userId, c.category, JSON.stringify(c), now],
+      );
+    }
+  }
+  upsertHabitConfig(userId: string, config: HabitConfig): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_habit_configs (user_id, category, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, category) DO UPDATE SET
+         payload = excluded.payload, synced_at = excluded.synced_at`,
+      [
+        userId,
+        config.category,
+        JSON.stringify(config),
+        new Date().toISOString(),
+      ],
+    );
+  }
+  removeHabitConfig(userId: string, category: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_habit_configs WHERE user_id = ? AND category = ?`,
+      [userId, category],
+    );
+  }
+
+  swapLocalHabitGoalId(localGoalId: string, serverGoalId: string): void {
+    if (localGoalId === serverGoalId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // Re-key any cached completion rows written under the local goalId.
+      // INSERT-then-DELETE (not `UPDATE goal_id`) so a row a concurrent
+      // refresh already pulled under the server goalId for the same day
+      // wins cleanly via the (user_id, goal_id, day) unique index, instead
+      // of a raw UPDATE throwing a constraint violation.
+      const rows = db.getAllSync(
+        `SELECT id, user_id, day, completed_at, value FROM cached_habit_completions
+         WHERE goal_id = ?`,
+        [localGoalId],
+      ) as {
+        id: string;
+        user_id: string;
+        day: string;
+        completed_at: string;
+        value: number | null;
+      }[];
+      for (const r of rows) {
+        db.runSync(
+          `INSERT INTO cached_habit_completions (id, user_id, goal_id, day, completed_at, value)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, goal_id, day) DO UPDATE SET
+             id = excluded.id, completed_at = excluded.completed_at, value = excluded.value`,
+          [r.id, r.user_id, serverGoalId, r.day, r.completed_at, r.value],
+        );
+      }
+      db.runSync(`DELETE FROM cached_habit_completions WHERE goal_id = ?`, [
+        localGoalId,
+      ]);
+
+      // Re-point any queued /habit-completions mutation still addressed to
+      // the local goalId — POST carries it in the JSON payload; DELETE
+      // carries it in BOTH the payload and the query-string endpoint. Only
+      // pending/failed rows are rewritable (mirrors updateMutationPayload —
+      // an in-flight entry may already be mid-flush; completed/blocked ones
+      // are done).
+      const queued = db.getAllSync(
+        `SELECT id, payload, endpoint FROM sync_queue
+         WHERE entity_type = 'habit_completion' AND status IN ('pending', 'failed')`,
+      ) as { id: number; payload: string; endpoint: string }[];
+      for (const q of queued) {
+        let payload: { goalId?: string } | null = null;
+        try {
+          payload = JSON.parse(q.payload) as { goalId?: string };
+        } catch {
+          continue; // malformed row — leave untouched, never crash the swap
+        }
+        if (payload?.goalId !== localGoalId) continue;
+
+        const newPayload = { ...payload, goalId: serverGoalId };
+        // The DELETE endpoint embeds goalId as a query param — rewrite that
+        // too, or the drain would PATCH the local id back onto the URL even
+        // after the payload is fixed.
+        const newEndpoint = q.endpoint.replace(
+          `goalId=${encodeURIComponent(localGoalId)}`,
+          `goalId=${encodeURIComponent(serverGoalId)}`,
+        );
+        db.runSync(
+          `UPDATE sync_queue SET payload = ?, endpoint = ? WHERE id = ?`,
+          [JSON.stringify(newPayload), newEndpoint, q.id],
+        );
+      }
+      // entity_id is `${goalId}:${day}` — re-key it too so a later toggle on
+      // the same (goal, day) de-dupes against this row's identity correctly.
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ? || substr(entity_id, instr(entity_id, ':'))
+         WHERE entity_type = 'habit_completion' AND status IN ('pending', 'failed')
+           AND entity_id LIKE ? || ':%'`,
+        [serverGoalId, localGoalId],
+      );
+    });
   }
 
   /** Shared JSON-blob slot read (cached_home/streaks/achievements). */

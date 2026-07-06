@@ -133,14 +133,21 @@ describe("StreakRepository", () => {
       ).toBe(true);
     });
 
-    it("habit: handles a null source goal", async () => {
+    it("habit: collection row with no enabled habits is not satisfied", async () => {
+      // A null source_goal_id is the COLLECTION streak (18-habit-setup) — it
+      // delegates to getCollectionHabitAggregates. With no enabled+effective
+      // habits the set is empty, so the week can't advance the collection count.
       (getDb as any).mockReturnValue({
-        select: () => selectWhere([{ c: 0 }]),
+        select: () => ({
+          from: () => ({
+            innerJoin: () => ({ where: () => Promise.resolve([]) }),
+          }),
+        }),
       });
       expect(
         await new StreakRepository().isPeriodSatisfied(
           streak({ streakType: "habit_streak", sourceGoalId: null }),
-          "2026-06-07",
+          "2026-06-01",
           "2026-06-07",
           "Europe/London",
         ),
@@ -657,6 +664,298 @@ describe("StreakRepository", () => {
           "2026-06-10",
         ),
       ).toBeNull();
+    });
+  });
+
+  // ── 18-habit-setup: collection streak model ───────────────────────────────
+
+  const enabledJoin = (rows: unknown[]) => ({
+    from: () => ({
+      innerJoin: () => ({ where: () => Promise.resolve(rows) }),
+    }),
+  });
+
+  describe("getCollectionHabitAggregates (T-18.5.1)", () => {
+    it("computes value_gte qualifying days via a GROUP-BY-ordinal subquery (42803 guard)", async () => {
+      let executed: unknown;
+      (getDb as any).mockReturnValue({
+        select: () =>
+          enabledJoin([
+            {
+              goalId: "water-goal",
+              completionRule: "value_gte",
+              targetValue: "2",
+              daysPerWeek: 5,
+              tolerancePct: null,
+            },
+          ]),
+        execute: (q: unknown) => {
+          executed = q;
+          return Promise.resolve([{ days: 5 }]);
+        },
+      });
+
+      const out = await new StreakRepository().getCollectionHabitAggregates(
+        "u1",
+        "2026-06-01",
+        "2026-06-07",
+        "Europe/London",
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0].qualifyingDays).toBe(5);
+      expect(out[0].completionRule).toBe("value_gte");
+
+      // Render the raw SQL: it must GROUP BY ordinal (1), never repeat the
+      // parameterised sum() expr in both SELECT and GROUP BY (Postgres 42803).
+      const { sql } = new PgDialect().sqlToQuery(executed as never);
+      expect(sql.toLowerCase()).toContain("group by 1");
+      expect(sql.toLowerCase()).toContain("having coalesce(sum(");
+    });
+
+    it("computes within_tolerance days from nutrition_entries kcal totals (M9 live)", async () => {
+      let executed: unknown;
+      (getDb as any).mockReturnValue({
+        select: () =>
+          enabledJoin([
+            {
+              goalId: "cal-goal",
+              completionRule: "within_tolerance",
+              targetValue: "2000",
+              daysPerWeek: 6,
+              tolerancePct: "10",
+            },
+          ]),
+        execute: (q: unknown) => {
+          executed = q;
+          return Promise.resolve([{ days: 6 }]);
+        },
+      });
+
+      const out = await new StreakRepository().getCollectionHabitAggregates(
+        "u1",
+        "2026-06-01",
+        "2026-06-07",
+        "Europe/London",
+      );
+      expect(out[0].qualifyingDays).toBe(6);
+      expect(out[0].tolerancePct).toBe(10);
+
+      const { sql, params } = new PgDialect().sqlToQuery(executed as never);
+      expect(sql.toLowerCase()).toContain("group by 1");
+      expect(sql.toLowerCase()).toContain("between");
+      // target ± 10% → [1800, 2200] bounds are bound as params.
+      expect(params).toContain(1800);
+      expect(params).toContain(2200);
+    });
+
+    it("counts Gym sessions via a plain aggregate (no value/day grouping)", async () => {
+      let call = 0;
+      (getDb as any).mockReturnValue({
+        // 1st select = enabled-habits join; 2nd = the session count.
+        select: () =>
+          call++ === 0
+            ? enabledJoin([
+                {
+                  goalId: "gym-goal",
+                  completionRule: "count",
+                  targetValue: "3",
+                  daysPerWeek: null,
+                  tolerancePct: null,
+                },
+              ])
+            : selectWhere([{ c: 3 }]),
+      });
+      const out = await new StreakRepository().getCollectionHabitAggregates(
+        "u1",
+        "2026-06-01",
+        "2026-06-07",
+        "Europe/London",
+      );
+      expect(out[0].sessionCount).toBe(3);
+      expect(out[0].completionRule).toBe("count");
+    });
+
+    it("returns an empty list when no habit is enabled/effective", async () => {
+      (getDb as any).mockReturnValue({ select: () => enabledJoin([]) });
+      expect(
+        await new StreakRepository().getCollectionHabitAggregates(
+          "u1",
+          "2026-06-01",
+          "2026-06-07",
+          "Europe/London",
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  describe("weekIntersectsHoliday / getCollectionHabitStreak", () => {
+    it("weekIntersectsHoliday true when a range overlaps", async () => {
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([{ id: "h1" }]),
+      });
+      expect(
+        await new StreakRepository().weekIntersectsHoliday(
+          "u1",
+          "2026-06-01",
+          "2026-06-07",
+        ),
+      ).toBe(true);
+    });
+
+    it("weekIntersectsHoliday false when none overlaps", async () => {
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([]),
+      });
+      expect(
+        await new StreakRepository().weekIntersectsHoliday(
+          "u1",
+          "2026-06-01",
+          "2026-06-07",
+        ),
+      ).toBe(false);
+    });
+
+    it("getCollectionHabitStreak returns the null-source habit row", async () => {
+      const row = streak({ sourceGoalId: null });
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([row]),
+      });
+      expect(
+        await new StreakRepository().getCollectionHabitStreak("u1"),
+      ).toEqual(row);
+    });
+
+    it("getCollectionHabitStreakUserIds maps distinct rows", async () => {
+      (getDb as any).mockReturnValue({
+        selectDistinct: () => ({
+          from: () => ({ where: () => Promise.resolve([{ userId: "u1" }]) }),
+        }),
+      });
+      expect(
+        await new StreakRepository().getCollectionHabitStreakUserIds(),
+      ).toEqual(["u1"]);
+    });
+  });
+
+  describe("persistHolidayPause / persistHolidayResume", () => {
+    it("pause pins to the snapshot lpe + sets paused", async () => {
+      let where: unknown;
+      (getDb as any).mockReturnValue({
+        update: () => ({
+          set: () => ({
+            where: (w: unknown) => {
+              where = w;
+              return {
+                returning: () =>
+                  Promise.resolve([streak({ status: "paused" })]),
+              };
+            },
+          }),
+        }),
+      });
+      const r = await new StreakRepository().persistHolidayPause("s1", {
+        lastPeriodEnd: "2026-06-07",
+        snapshotLastPeriodEnd: "2026-05-31",
+      });
+      expect(r?.status).toBe("paused");
+      const { params } = new PgDialect().sqlToQuery(where as never);
+      expect(params).toContain("2026-05-31");
+    });
+
+    it("resume flips paused → active", async () => {
+      (getDb as any).mockReturnValue({
+        update: () => updateChain([streak({ status: "active" })]),
+      });
+      const r = await new StreakRepository().persistHolidayResume("s1");
+      expect(r?.status).toBe("active");
+    });
+
+    it("resume returns null when nothing was paused", async () => {
+      (getDb as any).mockReturnValue({ update: () => updateChain([]) });
+      expect(
+        await new StreakRepository().persistHolidayResume("s1"),
+      ).toBeNull();
+    });
+  });
+
+  describe("skipCurrentPeriod (T-18.5.4 — proactive skip)", () => {
+    const weekly = (o: Partial<UserStreak> = {}) =>
+      streak({
+        period: "weekly",
+        sourceGoalId: null,
+        freezeTokens: 2,
+        ...o,
+      });
+    // now = Wed 2026-06-10; last completed week ended Sun 2026-06-07; current
+    // week ends Sun 2026-06-14.
+    const NOW = new Date("2026-06-10T09:00:00.000Z");
+
+    it("null when the streak isn't owned/active", async () => {
+      (getDb as any).mockReturnValue({ select: () => selectWhereLimit([]) });
+      expect(
+        await new StreakRepository().skipCurrentPeriod("u1", "s1", NOW),
+      ).toBeNull();
+    });
+
+    it("null with no token", async () => {
+      (getDb as any).mockReturnValue({
+        select: () => selectWhereLimit([weekly({ freezeTokens: 0 })]),
+      });
+      expect(
+        await new StreakRepository().skipCurrentPeriod("u1", "s1", NOW),
+      ).toBeNull();
+    });
+
+    it("null when the streak is behind (must retro-spend first)", async () => {
+      // lpe = 2026-05-31 (a week behind the last completed 2026-06-07).
+      const behind = weekly({ lastPeriodEnd: "2026-05-31" });
+      let call = 0;
+      (getDb as any).mockReturnValue({
+        select: () =>
+          call++ === 0
+            ? selectWhereLimit([behind])
+            : selectWhereLimit([{ tz: "Europe/London" }]),
+      });
+      expect(
+        await new StreakRepository().skipCurrentPeriod("u1", "s1", NOW),
+      ).toBeNull();
+    });
+
+    it("spends one token + advances lpe over the current week, no count change", async () => {
+      const upToDate = weekly({ lastPeriodEnd: "2026-06-07", currentCount: 4 });
+      let where: unknown;
+      let call = 0;
+      (getDb as any).mockReturnValue({
+        select: () =>
+          call++ === 0
+            ? selectWhereLimit([upToDate])
+            : selectWhereLimit([{ tz: "Europe/London" }]),
+        update: () => ({
+          set: (s: unknown) => {
+            expect(s).not.toHaveProperty("currentCount");
+            return {
+              where: (w: unknown) => {
+                where = w;
+                return {
+                  returning: () =>
+                    Promise.resolve([
+                      weekly({
+                        lastPeriodEnd: "2026-06-14",
+                        freezeTokens: 1,
+                        currentCount: 4,
+                      }),
+                    ]),
+                };
+              },
+            };
+          },
+        }),
+      });
+      const r = await new StreakRepository().skipCurrentPeriod("u1", "s1", NOW);
+      expect(r?.lastPeriodEnd).toBe("2026-06-14");
+      expect(r?.currentCount).toBe(4); // unchanged
+      const { params } = new PgDialect().sqlToQuery(where as never);
+      expect(params).toContain("2026-06-07"); // pinned to snapshot lpe
     });
   });
 });

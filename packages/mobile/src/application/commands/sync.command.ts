@@ -5,6 +5,8 @@ import type {
   StoragePort,
 } from "@/domain/ports/storage.port";
 import type { EntitlementVerdict } from "@/domain/ports/sync.types";
+import type { HabitConfigEntry } from "@/domain/ports/api.port";
+import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
@@ -232,6 +234,61 @@ export async function processSyncQueue(
         } catch (err) {
           console.warn(
             "[sync] POST /notifications/preferences succeeded but response capture failed; cache keeps its optimistic value:",
+            err,
+          );
+        }
+      }
+
+      // 18-habit-setup: a flushed SELF `habit_config` PUT echoes the server's
+      // authoritative config (with the real goalId). Re-map it into the config
+      // cache so an offline first-enable's optimistic `local-…` goalId is
+      // swapped for the server id — the cache is keyed on category, so this
+      // de-dupes the grid row (STORY-009 AC 9.3) without a full refresh. The
+      // entityId is `${userId}:${category}` (a coach write is `${clientId}:…`,
+      // skipped — the coach device doesn't cache the client's config). Non-fatal
+      // on parse failure: the PUT already succeeded, so the local id lingers
+      // until the next full config refresh reconciles it.
+      //
+      // Residual fix: if the user tapped that habit's grid cell BEFORE this
+      // drain (offline-first — configureHabitCommand and toggleHabitDayCommand
+      // both enqueue independently), a `/habit-completions` mutation is queued
+      // against the OLD `local-…` goalId — and `cached_habit_completions` may
+      // already have a row under it too. Capture the pre-write local goalId
+      // and swap it (mirrors `swapLocalSessionId`/`swapLocalExerciseId`) BEFORE
+      // overwriting the config cache, so a completion tapped offline doesn't
+      // 404 (`goalBelongsToUser` false) and get silently dropped after retries
+      // exhaust.
+      if (
+        entry.entityType === "habit_config" &&
+        entry.operation === "update" &&
+        entry.endpoint.startsWith("/users/me/habits/") &&
+        entry.entityId
+      ) {
+        try {
+          const selfUserId = entry.entityId.split(":")[0];
+          const category = entry.entityId.split(":")[1];
+          const body = (await response.json()) as {
+            data?: HabitConfigEntry;
+          };
+          if (body.data && selfUserId) {
+            const mapped = habitConfigFromEntry(body.data);
+            if (mapped) {
+              const previous = storage
+                .getHabitConfigs(selfUserId)
+                .find((c) => c.category === category);
+              if (
+                previous?.goalId &&
+                mapped.goalId &&
+                previous.goalId !== mapped.goalId
+              ) {
+                storage.swapLocalHabitGoalId(previous.goalId, mapped.goalId);
+              }
+              storage.upsertHabitConfig(selfUserId, mapped);
+            }
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] PUT habit config succeeded but id-swap failed; local id will reconcile on the next refresh:",
             err,
           );
         }

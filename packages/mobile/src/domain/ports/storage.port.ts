@@ -36,6 +36,7 @@ import type {
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { HabitConfig } from "@/domain/models/habit-config";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
@@ -450,6 +451,41 @@ export interface StoragePort {
   }): void;
   /** Optimistic toggle-off for a (user, goal, local day). */
   removeHabitCompletion(userId: string, goalId: string, day: string): void;
+
+  /**
+   * Habit-config cache (18-habit-setup, Phase 18.7 — design.md § 8). One row per
+   * (user, category); the setup screen reads cache-first and an
+   * enable/edit/disable writes optimistically. `configureHabitCommand` writes
+   * the PENDING config locally so the UI shows the new value + "Starts Monday"
+   * without changing what the offline streak scores this week.
+   */
+  getHabitConfigs(userId: string): HabitConfig[];
+  /** Replace the whole cached set for a user (server refresh — server wins). */
+  cacheHabitConfigs(userId: string, configs: HabitConfig[]): void;
+  /** Optimistic enable/edit — idempotent per (user, category). */
+  upsertHabitConfig(userId: string, config: HabitConfig): void;
+  /** Optimistic disable — drops the (user, category) row from the cache. */
+  removeHabitConfig(userId: string, category: string): void;
+
+  /**
+   * Rewrite a habit's optimistic `local-…` goalId to the server-assigned id
+   * once its habit_config PUT flushes (offline-first residual fix, 18-habit-
+   * setup). Unlike `swapLocalExerciseId` (where the local id lives only in the
+   * URL path), a habit's local goalId is embedded in the JSON body of any
+   * queued `/habit-completions` POST/DELETE mutation (and in the DELETE's
+   * query-string endpoint too) — this rewrites BOTH so a completion tapped
+   * before the config drain flushes still lands on the real goal instead of
+   * 404ing (`goalBelongsToUser` false) and being silently dropped after
+   * retries exhaust. Also re-keys any `cached_habit_completions` rows already
+   * written under the local id (both the PK and the embedded `goalId`), so
+   * the grid doesn't show a stale/duplicate row under the old id.
+   *
+   * No-op when the ids match or nothing references `localGoalId`. Only
+   * touches `sync_queue` rows still `pending`/`failed` (mirrors
+   * `updateMutationPayload` — never an `in_flight` entry a drain may have
+   * already serialized, nor a `completed`/`blocked_entitlement` one).
+   */
+  swapLocalHabitGoalId(localGoalId: string, serverGoalId: string): void;
 
   // -- Active Session (M3) --
   /**

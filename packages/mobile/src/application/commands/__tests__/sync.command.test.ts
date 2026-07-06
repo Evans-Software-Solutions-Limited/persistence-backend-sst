@@ -1,7 +1,13 @@
 import { processSyncQueue } from "../sync.command";
+import { configureHabitCommand } from "../configure-habit.command";
+import { toggleHabitDayCommand } from "../toggle-habit.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import type { Exercise } from "@/domain/models/exercise";
+
+// Wed 2026-06-10 — deterministic clock for the offline configure→tap→drain
+// residual-fix scenario (nextMondayISO needs a fixed "now").
+const now = new Date("2026-06-10T12:00:00.000Z");
 
 const customExercise = (id: string, name = "My Lift"): Exercise => ({
   id,
@@ -867,5 +873,206 @@ describe("processSyncQueue", () => {
       failed: 0,
       blocked: 0,
     });
+  });
+
+  it("18-habit-setup: a flushed SELF habit_config PUT swaps the optimistic local- goalId for the server one", async () => {
+    // Optimistic first-enable wrote a local- goalId into the config cache.
+    storage.upsertHabitConfig("u1", {
+      category: "water",
+      enabled: true,
+      goalId: "local-abc",
+      assignedByCoach: false,
+      locked: false,
+      targetValue: 2,
+      unit: "l",
+      period: "daily",
+      completionRule: "value_gte",
+      daysPerWeek: 5,
+      tolerancePct: null,
+      pending: null,
+    });
+    storage.enqueueMutation({
+      entityType: "habit_config",
+      entityId: "u1:water",
+      operation: "update",
+      payload: { targetValue: 2, daysPerWeek: 5 },
+      endpoint: "/users/me/habits/water/config",
+      method: "PUT",
+    });
+
+    // The PUT echoes the server config with the REAL goalId.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          category: "water",
+          enabled: true,
+          goalId: "server-goal-xyz",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2,
+          unit: "l",
+          period: "daily",
+          completionRule: "value_gte",
+          daysPerWeek: 5,
+          tolerancePct: null,
+          pending: null,
+        },
+      }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const cached = storage.getHabitConfigs("u1");
+    expect(cached).toHaveLength(1); // de-duped on category
+    expect(cached[0].goalId).toBe("server-goal-xyz");
+  });
+
+  it("residual fix: airplane-mode configure-Water → tap today → drain swaps the local goalId onto the QUEUED completion POST + re-keys the cache", async () => {
+    // Airplane mode: configure Water (offline first-enable → local- goalId),
+    // then immediately tap today's grid cell — BOTH enqueue independently and
+    // neither has drained yet.
+    configureHabitCommand(
+      { storage, userId: "u1", idFactory: () => "abc", now: () => now },
+      { category: "water", targetValue: 2, daysPerWeek: 5 },
+    );
+    const localGoalId = storage.getHabitConfigs("u1")[0].goalId!;
+    expect(localGoalId).toBe("local-abc");
+
+    toggleHabitDayCommand(
+      { storage, userId: "u1", idFactory: () => "def" },
+      { goalId: localGoalId, day: "2026-06-10", done: true, value: 2 },
+    );
+
+    // Sanity: the completion cache + queue are seeded under the LOCAL id
+    // before the drain runs.
+    expect(
+      storage.getCachedHabitCompletions("u1", { goalId: localGoalId }),
+    ).toHaveLength(1);
+    const preDrainQueue = storage.getPendingMutations();
+    expect(preDrainQueue).toHaveLength(2); // config PUT + completion POST
+    expect(
+      (JSON.parse(preDrainQueue[1].payload) as { goalId: string }).goalId,
+    ).toBe(localGoalId);
+
+    // Connectivity restored: the drain flushes BOTH queued mutations, FIFO.
+    // 1) the config PUT — echoes the server's real goalId.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          category: "water",
+          enabled: true,
+          goalId: "server-goal-water",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2,
+          unit: "l",
+          period: "daily",
+          completionRule: "value_gte",
+          daysPerWeek: 5,
+          tolerancePct: null,
+          pending: null,
+        },
+      }),
+    });
+    // 2) the completion POST — succeeds now that its payload carries the
+    // real goalId (the config-PUT reconcile rewrote it in-flight).
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "completion-1" } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result).toEqual({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      blocked: 0,
+    });
+
+    // The completion POST that actually went out over the wire carried the
+    // SERVER goalId, not the stale local one.
+    const completionCall = mockFetch.mock.calls[1];
+    expect(completionCall[0]).toBe("https://api.test/habit-completions");
+    const sentBody = JSON.parse(
+      (completionCall[1] as { body: string }).body,
+    ) as { goalId: string };
+    expect(sentBody.goalId).toBe("server-goal-water");
+
+    // The cache row is re-keyed too — no stale row lingers under the local
+    // id, and the real one is queryable by the server goalId.
+    expect(
+      storage.getCachedHabitCompletions("u1", { goalId: localGoalId }),
+    ).toHaveLength(0);
+    const rekeyed = storage.getCachedHabitCompletions("u1", {
+      goalId: "server-goal-water",
+    });
+    expect(rekeyed).toHaveLength(1);
+    expect(rekeyed[0].value).toBe(2);
+  });
+
+  it("residual fix: the reconcile also rewrites a queued DELETE's payload AND its query-string endpoint", async () => {
+    configureHabitCommand(
+      { storage, userId: "u1", idFactory: () => "abc", now: () => now },
+      { category: "water", targetValue: 2, daysPerWeek: 5 },
+    );
+    const localGoalId = storage.getHabitConfigs("u1")[0].goalId!;
+
+    // Tap on, then immediately tap off (un-toggle) before the drain — the
+    // optimistic cache never sees the "on" state land, but the DELETE is
+    // still queued (mirrors a fast double-tap while offline).
+    toggleHabitDayCommand(
+      { storage, userId: "u1", idFactory: () => "def" },
+      { goalId: localGoalId, day: "2026-06-10", done: false },
+    );
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          category: "water",
+          enabled: true,
+          goalId: "server-goal-water",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2,
+          unit: "l",
+          period: "daily",
+          completionRule: "value_gte",
+          daysPerWeek: 5,
+          tolerancePct: null,
+          pending: null,
+        },
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const deleteCall = mockFetch.mock.calls[1];
+    expect(deleteCall[0]).toBe(
+      "https://api.test/habit-completions?goalId=server-goal-water&date=2026-06-10",
+    );
+  });
+
+  it("18-habit-setup: a COACH habit_config PUT does NOT mutate any local config cache", async () => {
+    storage.enqueueMutation({
+      entityType: "habit_config",
+      entityId: "client-9:water",
+      operation: "update",
+      payload: { targetValue: 2 },
+      endpoint: "/trainers/me/clients/client-9/habits/water/config",
+      method: "PUT",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { category: "water", goalId: "g" } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+    // The reconcile only fires for `/users/me/habits/...` (self); a coach write
+    // targets the client's data, which the coach device never caches.
+    expect(storage.getHabitConfigs("client-9")).toHaveLength(0);
   });
 });

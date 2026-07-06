@@ -196,11 +196,33 @@ export function HomeContainer() {
   );
 
   const onToggleHabitDay = useCallback(
-    (goalId: string, day: string, done: boolean) => {
-      void toggle.mutate({ goalId, day, done });
+    (goalId: string, day: string, done: boolean, value?: number | null) => {
+      // Regression fix (18-habit-setup): once a habit is configured,
+      // value_gte/within_tolerance completions require a `value` server-side
+      // — pass the grid's threaded targetValue through so the POST doesn't
+      // 422. `value` is intentionally omitted (not coerced to null) for a
+      // habit that doesn't carry one (Gym) so the wire payload stays
+      // unchanged for it.
+      void toggle.mutate(
+        value != null ? { goalId, day, done, value } : { goalId, day, done },
+      );
     },
     [toggle],
   );
+
+  // Calories can't be toggled from this grid — the backend scores it from
+  // nutrition_entries, never habit_completions — so its row deep-links to the
+  // Fuel Targets/today surface instead (mirrors HabitCardPresenter's Calories
+  // deep-link).
+  const onOpenCaloriesFromGrid = useCallback(() => {
+    router.push("/(app)/fuel/targets" as never);
+  }, [router]);
+
+  // Habits section → the habit-setup screen (18-habit-setup STORY-007): the
+  // empty-state CTA + the persistent "Manage" affordance. Pushes over the tabs.
+  const onManageHabits = useCallback(() => {
+    router.push("/(app)/habits-setup" as never);
+  }, [router]);
 
   // Home bell → notifications list (home.jsx HomeHeader; the 09.5-intended
   // entry point — the route docstring at app/(app)/notifications.tsx names the
@@ -256,6 +278,8 @@ export function HomeContainer() {
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
         onToggleHabitDay={onToggleHabitDay}
+        onManageHabits={onManageHabits}
+        onOpenCaloriesFromGrid={onOpenCaloriesFromGrid}
         onOpenCoach={noop}
       />
       <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />

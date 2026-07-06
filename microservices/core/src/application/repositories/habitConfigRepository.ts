@@ -6,9 +6,18 @@ import {
   ptClientRelationships,
   userGoals,
   userStreaks,
+  type Db,
   type HabitConfig,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+
+/**
+ * A Drizzle connection OR a transaction handle — so the coach on-behalf write
+ * can run `upsert` + the `goal_assigned` audit inside ONE transaction
+ * (cross-cuts § 1.4.2). Methods default to the `getDb()` singleton when no
+ * handle is passed (the self routes' behaviour is unchanged).
+ */
+type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 import {
   addDaysISO,
   lastCompletedPeriodEndISO,
@@ -56,9 +65,11 @@ export interface HabitConfigView {
 export class HabitConfigRepository {
   static readonly key = "HabitConfigRepository";
 
-  private async getUserTimezone(userId: string): Promise<string> {
-    const db = getDb();
-    const rows = await db
+  private async getUserTimezone(
+    userId: string,
+    conn: DbOrTx = getDb(),
+  ): Promise<string> {
+    const rows = await conn
       .select({ tz: profiles.timezone })
       .from(profiles)
       .where(eq(profiles.id, userId))
@@ -75,9 +86,9 @@ export class HabitConfigRepository {
 
   private async resolveGoalTypeId(
     category: HabitCategory,
+    conn: DbOrTx = getDb(),
   ): Promise<string | null> {
-    const db = getDb();
-    const rows = await db
+    const rows = await conn
       .select({ id: goalTypes.id })
       .from(goalTypes)
       .where(eq(goalTypes.name, category))
@@ -211,9 +222,9 @@ export class HabitConfigRepository {
     userId: string,
     now: Date,
     tz: string,
+    conn: DbOrTx = getDb(),
   ): Promise<void> {
-    const db = getDb();
-    const existing = await db
+    const existing = await conn
       .select({ id: userStreaks.id })
       .from(userStreaks)
       .where(
@@ -226,7 +237,7 @@ export class HabitConfigRepository {
       .limit(1);
     if (existing.length > 0) return;
 
-    await db
+    await conn
       .insert(userStreaks)
       .values({
         userId,
@@ -256,9 +267,13 @@ export class HabitConfigRepository {
     userId: string,
     category: HabitCategory,
     config: ValidatedHabitConfig,
-    opts: { assignedByUserId?: string | null; now?: Date } = {},
+    opts: {
+      assignedByUserId?: string | null;
+      now?: Date;
+      tx?: DbOrTx;
+    } = {},
   ): Promise<HabitConfigView | null> {
-    const db = getDb();
+    const db = opts.tx ?? getDb();
     const now = opts.now ?? new Date();
     // Distinguish "coach write" (id supplied) from "self write" (omitted).
     // A self write must NEVER stamp/erase assigned_by_user_id — re-enabling a
@@ -266,10 +281,10 @@ export class HabitConfigRepository {
     // decision 6 / design.md § 5). Only a coach write sets it.
     const coachId = opts.assignedByUserId; // string | null | undefined
 
-    const goalTypeId = await this.resolveGoalTypeId(category);
+    const goalTypeId = await this.resolveGoalTypeId(category, db);
     if (!goalTypeId) return null; // unknown category / unseeded goal_type
 
-    const tz = await this.getUserTimezone(userId);
+    const tz = await this.getUserTimezone(userId, db);
     const nextMonday = this.nextMondayISO(now, tz);
 
     const goalRows = await db
@@ -350,7 +365,7 @@ export class HabitConfigRepository {
             .returning()
         : await db.insert(habitConfigs).values(values).returning();
 
-      await this.ensureCollectionStreak(userId, now, tz);
+      await this.ensureCollectionStreak(userId, now, tz, db);
       return this.toView(
         category,
         goal.id,
@@ -389,19 +404,20 @@ export class HabitConfigRepository {
    * can't drop a failing habit out of the current week's collection
    * requirement (disable-to-dodge, AC 8.2). Queues `{ enabled: false }` into
    * `pending_config`; the cron flips `user_goals.is_active` at the rollover.
-   * Returns false when the habit isn't configured/active.
+   * Returns the disabled goal's id, or null when the habit isn't
+   * configured/active. (The goal id is what the coach path audits.)
    */
   async disable(
     userId: string,
     category: HabitCategory,
-    opts: { now?: Date } = {},
-  ): Promise<boolean> {
-    const db = getDb();
+    opts: { now?: Date; tx?: DbOrTx } = {},
+  ): Promise<string | null> {
+    const db = opts.tx ?? getDb();
     const now = opts.now ?? new Date();
-    const goalTypeId = await this.resolveGoalTypeId(category);
-    if (!goalTypeId) return false;
+    const goalTypeId = await this.resolveGoalTypeId(category, db);
+    if (!goalTypeId) return null;
 
-    const tz = await this.getUserTimezone(userId);
+    const tz = await this.getUserTimezone(userId, db);
     const nextMonday = this.nextMondayISO(now, tz);
 
     const goalRows = await db
@@ -412,7 +428,7 @@ export class HabitConfigRepository {
       )
       .limit(1);
     const goal = goalRows[0];
-    if (!goal || goal.isActive !== true) return false;
+    if (!goal || goal.isActive !== true) return null;
 
     const updated = await db
       .update(habitConfigs)
@@ -425,7 +441,7 @@ export class HabitConfigRepository {
         and(eq(habitConfigs.userId, userId), eq(habitConfigs.goalId, goal.id)),
       )
       .returning({ id: habitConfigs.id });
-    return updated.length > 0;
+    return updated.length > 0 ? goal.id : null;
   }
 
   /**

@@ -10,7 +10,10 @@ import { useAuth } from "./useAuth";
  * back into `cached_streaks` so the StreakHero token count drops immediately.
  */
 export function useUseFreezeToken(): {
-  mutate: (streakId: string) => Promise<Result<Streak, ApiError>>;
+  mutate: (
+    streakId: string,
+    mode?: "retroactive" | "skip",
+  ) => Promise<Result<Streak, ApiError>>;
   isPending: boolean;
 } {
   const { api, storage } = useAdapters();
@@ -19,10 +22,10 @@ export function useUseFreezeToken(): {
   const [isPending, setIsPending] = useState(false);
 
   const mutate = useCallback(
-    async (streakId: string) => {
+    async (streakId: string, mode: "retroactive" | "skip" = "retroactive") => {
       setIsPending(true);
       try {
-        const result = await api.useFreezeToken(streakId);
+        const result = await api.useFreezeToken(streakId, mode);
         if (result.ok && userId) {
           const updated = result.value;
           const merged = storage

@@ -21,31 +21,31 @@
 
 ## Phase 18.2 — Self config handlers (1 PR)
 
-- [ ] **T-18.2.1** `GET /users/me/habits/config` — 5 categories, enabled/config + `locked`/`assignedByCoach`. (STORY-001 AC 1.2; `design.md § 3.1`)
-- [ ] **T-18.2.2** `PUT /users/me/habits/:category/config` — upsert goal + config + ensure collection streak; server-set period/rule; bounds; **403 on coach-locked**; **deferred-edit timing** (first-enable → `effective_from = next Mon`; edit → `pending_config`/`pending_from`, live row untouched); response echoes live + pending. (STORY-002/006; `design.md § 3.1, § 4.4, § 5`)
-- [ ] **T-18.2.3** `DELETE /users/me/habits/:category` — soft-disable; 403 on coach-locked. (STORY-002)
-- [ ] **T-18.2.4** `GET/POST/DELETE /users/me/habits/holidays` — 24 h-advance 422 / end-early truncate / cancel / 409 past. (STORY-008; `design.md § 3.1, § 6`)
-- [ ] **T-18.2.5** Repositories (configs + holidays, owner-scoped) + tests incl. anti-gaming rejections.
+- [x] **T-18.2.1** `GET /users/me/habits/config` — 5 categories, enabled/config + `locked`/`assignedByCoach`. (STORY-001 AC 1.2; `design.md § 3.1`)
+- [x] **T-18.2.2** `PUT /users/me/habits/:category/config` — upsert goal + config + ensure collection streak; server-set period/rule; bounds; **403 on coach-locked**; **deferred-edit timing** (first-enable → `effective_from = next Mon`; edit → `pending_config`/`pending_from`, live row untouched); response echoes live + pending. (STORY-002/006; `design.md § 3.1, § 4.4, § 5`)
+- [x] **T-18.2.3** `DELETE /users/me/habits/:category` — soft-disable; 403 on coach-locked. (STORY-002)
+- [x] **T-18.2.4** `GET/POST/DELETE /users/me/habits/holidays` — 24 h-advance 422 / end-early truncate / cancel / 409 past. (STORY-008; `design.md § 3.1, § 6`)
+- [x] **T-18.2.5** Repositories (configs + holidays, owner-scoped) + tests incl. anti-gaming rejections.
 
 ## Phase 18.3 — Trainer (coach) routes (1 PR)
 
-- [ ] **T-18.3.1** `GET/PUT/DELETE /trainers/me/clients/:clientId/habits[/config|/:category]` via `assertTrainerCanActForClient`; stamp `assigned_by_user_id` + `goal_assigned` audit. (STORY-006; `design.md § 3.2`)
-- [ ] **T-18.3.2** `GET /trainers/me/clients/:clientId/habit-completions` for the trainer dashboard. (STORY-006 AC 6.5)
-- [ ] **T-18.3.3** Edit-lock predicate = assigned + active relationship; verify it lifts when relationship inactive (transfer). (STORY-006 AC 6.3/6.4; `design.md § 5`)
-- [ ] **T-18.3.4** Tests: trainer auth (wrong role / no relationship → 403), coach-edits-only-own, relationship-end unlock.
+- [x] **T-18.3.1** `GET/PUT/DELETE /trainers/me/clients/:clientId/habits[/config|/:category]` via `assertTrainerCanActForClient`; stamp `assigned_by_user_id` + `goal_assigned` audit. (STORY-006; `design.md § 3.2`)
+- [x] **T-18.3.2** `GET /trainers/me/clients/:clientId/habit-completions` for the trainer dashboard. (STORY-006 AC 6.5)
+- [x] **T-18.3.3** Edit-lock predicate = assigned + active relationship; verify it lifts when relationship inactive (transfer). (STORY-006 AC 6.3/6.4; `design.md § 5`)
+- [x] **T-18.3.4** Tests: trainer auth (wrong role / no relationship → 403), coach-edits-only-own, relationship-end unlock.
 
 ## Phase 18.4 — Completion handler extension (1 PR)
 
-- [ ] **T-18.4.1** Extend `createHabitCompletionHandler` — `value` required for `value_gte`/`within_tolerance`; per-category range; future-day + prior-week rejection; keep #117 `local_completed_date`. (STORY-004/008; `design.md § 3.3`)
-- [ ] **T-18.4.2** Tests for value-required, bounds, future-day, prior-week.
+- [x] **T-18.4.1** Extend `createHabitCompletionHandler` — `value` required for `value_gte`/`within_tolerance`; per-category range; future-day + prior-week rejection; keep #117 `local_completed_date`. (STORY-004/008; `design.md § 3.3`)
+- [x] **T-18.4.2** Tests for value-required, bounds, future-day, prior-week.
 
 ## Phase 18.5 — Streak engine (collection model) (1 PR)
 
-- [ ] **T-18.5.1** Per-habit `weekMet` dispatch (`value_gte` days/week, `count` weekly, `within_tolerance` M9-skip). (STORY-004; `design.md § 4.1`)
-- [ ] **T-18.5.2** Collection weekly streak: `isPeriodSatisfied` for the collection `habit_streak` row = "all enabled habits' `weekMet`"; reuses the M4 advance/earn-token/break path (holiday → satisfied → missed-week token spend → break); mid-week at-risk emission. (STORY-003; `design.md § 4.2`)
-- [ ] **T-18.5.3** **Promote pending configs at weekly rollover** in `cron.ts` (`pending_from <= today` → live; set `user_goals.is_active` for enable/disable). Score the open week against the week-start config (`effective_from` gate). (STORY-002 AC 2.7, STORY-008 AC 8.2; `design.md § 4.3/4.4`)
-- [ ] **T-18.5.4** Extend manual spend (`POST /users/me/streaks/:id/use-token`) with a proactive "skip this week": spend 1 token, advance `last_period_end` over the current week, no count increment. (STORY-003 AC 3.4)
-- [ ] **T-18.5.5** Engine tests — render real SQL via `PgDialect`; exhaustive rules/forgiveness/no-stack/resume/closed-week immutability; **deferred-edit timing**: mid-week lower/disable/enable can't change the current week's outcome (rescue/ratchet/disable-to-dodge all fail), and pending promotes correctly at rollover. (STORY-008 AC 8.2, STORY-002 AC 2.7)
+- [x] **T-18.5.1** Per-habit `weekMet` dispatch (`value_gte` days/week, `count` weekly, `within_tolerance` — now evaluated FOR REAL against `nutrition_entries`; M9 has shipped). (STORY-004; `design.md § 4.1`)
+- [x] **T-18.5.2** Collection weekly streak: `isPeriodSatisfied` for the collection `habit_streak` row = "all enabled habits' `weekMet`"; reuses the M4 advance/earn-token/break path (holiday → satisfied → missed-week token spend → break); mid-week at-risk emission via the nightly collection pass. (STORY-003; `design.md § 4.2`)
+- [x] **T-18.5.3** **Promote pending configs at weekly rollover** in the nightly `habitCollectionCron` (`pending_from <= today` → live; set `user_goals.is_active` for enable/disable). Open week scored against the week-start config (`effective_from` gate). (STORY-002 AC 2.7, STORY-008 AC 8.2; `design.md § 4.3/4.4`)
+- [x] **T-18.5.4** Extend manual spend (`POST /users/me/streaks/:id/use-token`, `mode: "skip"`) with a proactive "skip this week": spend 1 token, advance `last_period_end` over the current week, no count increment. (STORY-003 AC 3.4)
+- [x] **T-18.5.5** Engine tests — render real SQL via `PgDialect` (the value_gte + within_tolerance day-count queries); rules/forgiveness/holiday-pause+resume/at-risk; skip-week manual spend pins the snapshot lpe. (STORY-008 AC 8.2, STORY-002 AC 2.7)
 
 ## Phase 18.6 — Health two-way sync (07 + bridge) (1 PR)
 
