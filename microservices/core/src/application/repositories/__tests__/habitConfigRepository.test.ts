@@ -315,10 +315,16 @@ describe("HabitConfigRepository.disable", () => {
       updates: [[{ id: "c1" }]],
     });
     (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
-    const ok = await new HabitConfigRepository().disable("u1", "water", {
-      now: NOW,
-    });
-    expect(ok).toBe(true);
+    const disabledGoalId = await new HabitConfigRepository().disable(
+      "u1",
+      "water",
+      {
+        now: NOW,
+      },
+    );
+    // Now returns the disabled goal id (was a boolean) so the coach path can
+    // audit it (18-habit-setup Phase 18.3).
+    expect(disabledGoalId).toBe("g1");
     const set = rec.find((r) => r.op === "set");
     expect(
       (set!.arg as { pendingConfig: { enabled: boolean } }).pendingConfig
@@ -327,22 +333,22 @@ describe("HabitConfigRepository.disable", () => {
     expect((set!.arg as { pendingFrom: string }).pendingFrom).toBe(NEXT_MONDAY);
   });
 
-  it("returns false when the habit is not active / not configured", async () => {
+  it("returns null when the habit is not active / not configured", async () => {
     const { db } = makeDb({
       selects: [[{ id: "gt-water" }], [{ tz: TZ }], []], // no goal
     });
     (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
     expect(
       await new HabitConfigRepository().disable("u1", "water", { now: NOW }),
-    ).toBe(false);
+    ).toBeNull();
   });
 
-  it("returns false for an unknown category", async () => {
+  it("returns null for an unknown category", async () => {
     const { db } = makeDb({ selects: [[]] });
     (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
     expect(
       await new HabitConfigRepository().disable("u1", "water", { now: NOW }),
-    ).toBe(false);
+    ).toBeNull();
   });
 });
 
@@ -485,9 +491,7 @@ describe("HabitConfigRepository branch coverage", () => {
   it("disable defaults the clock when now is omitted", async () => {
     const { db } = makeDb({ selects: [[]] }); // unknown category
     (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);
-    expect(await new HabitConfigRepository().disable("u1", "water")).toBe(
-      false,
-    );
+    expect(await new HabitConfigRepository().disable("u1", "water")).toBeNull();
   });
 
   it("falls back to Europe/London when the profile timezone row is missing", async () => {

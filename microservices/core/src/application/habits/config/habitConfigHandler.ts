@@ -161,8 +161,11 @@ export const habitConfigHandler = new Elysia()
         ctx.set.status = 403;
         return { error: "This habit is managed by your coach" };
       }
-      const ok = await ctx.HabitConfigRepository.disable(userId, category);
-      if (!ok) {
+      const disabledGoalId = await ctx.HabitConfigRepository.disable(
+        userId,
+        category,
+      );
+      if (!disabledGoalId) {
         ctx.set.status = 404;
         return { error: "Habit not enabled" };
       }
