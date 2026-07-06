@@ -399,6 +399,7 @@ export class ClientDetailRepository {
         title: goalTypes.name,
         unit: userGoals.unit,
         targetValue: userGoals.targetValue,
+        targetDate: userGoals.targetDate,
         assignedByUserId: userGoals.assignedByUserId,
       })
       .from(userGoals)
@@ -436,6 +437,7 @@ export class ClientDetailRepository {
       id: g.id,
       title: g.title,
       unit: g.unit ?? null,
+      targetDate: g.targetDate ?? null,
       assignedByCoach: g.assignedByUserId === trainerId,
       weight: { startKg, nowKg, targetKg },
       pct: weightGoalPct(startKg, nowKg, targetKg),

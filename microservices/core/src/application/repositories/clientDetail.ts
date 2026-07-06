@@ -55,6 +55,7 @@ export interface GoalModule {
   id: string;
   title: string; // via goal_types
   unit: string | null;
+  targetDate: string | null; // YYYY-MM-DD — seeds the coach edit sheet
   assignedByCoach: boolean; // assigned_by_user_id === trainerId
   weight: {
     startKg: number | null;

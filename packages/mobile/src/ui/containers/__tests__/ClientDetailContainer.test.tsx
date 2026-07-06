@@ -102,6 +102,7 @@ function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
       id: "g-1",
       title: "Squat 1.5x BW",
       unit: "kg",
+      targetDate: "2026-09-01",
       assignedByCoach: true,
       weight: { startKg: 60, nowKg: 62, targetKg: 65 },
       pct: 0.4,
@@ -281,7 +282,11 @@ describe("ClientDetailContainer — populated", () => {
     props().onEditGoal();
     const s = useAssignGoalSheet.getState();
     expect(s.open).toBe(true);
-    expect(s.editGoal).toMatchObject({ goalId: "g-1", title: "Squat 1.5x BW" });
+    expect(s.editGoal).toMatchObject({
+      goalId: "g-1",
+      title: "Squat 1.5x BW",
+      targetDate: "2026-09-01",
+    });
   });
 
   it("onOpenProgramme navigates to the programme; no-op when no programme", async () => {

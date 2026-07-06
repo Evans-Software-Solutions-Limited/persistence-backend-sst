@@ -64,6 +64,8 @@ export type GoalModule = {
   /** via goal_types.name */
   title: string;
   unit: string | null;
+  /** YYYY-MM-DD — seeds the coach edit sheet. */
+  targetDate: string | null;
   /** assigned_by_user_id === trainerId */
   assignedByCoach: boolean;
   weight: {

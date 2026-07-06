@@ -40,6 +40,7 @@ function stubDetail(clientId: string, title: string): ClientDetail {
       id: "g",
       title,
       unit: "kg",
+      targetDate: null,
       assignedByCoach: true,
       weight: { startKg: null, nowKg: null, targetKg: null },
       pct: null,

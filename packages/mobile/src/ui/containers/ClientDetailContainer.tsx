@@ -168,7 +168,7 @@ export function ClientDetailContainer() {
       {
         goalId: goal.id,
         title: goal.title,
-        targetDate: null,
+        targetDate: goal.targetDate,
       },
       refreshAll,
     );

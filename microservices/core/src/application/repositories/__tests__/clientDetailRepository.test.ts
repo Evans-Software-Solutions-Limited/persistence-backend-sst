@@ -379,6 +379,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
               title: "Lose weight",
               unit: "kg",
               targetValue: "80",
+              targetDate: "2026-10-01",
               assignedByUserId: "trainer-1",
             },
           ],
@@ -398,6 +399,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
       id: "goal-1",
       title: "Lose weight",
       unit: "kg",
+      targetDate: "2026-10-01",
       assignedByCoach: true, // assigned_by_user_id === trainerId
       weight: { startKg: 90, nowKg: 85, targetKg: 80 },
       pct: 0.5, // (85-90)/(80-90) = 0.5
