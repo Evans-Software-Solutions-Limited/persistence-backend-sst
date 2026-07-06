@@ -1,5 +1,10 @@
 # M8 Coach — Client Detail (read-only v1) brief
 
+> **⛔ SUPERSEDED (2026-07-06) by `PHASE5_CLIENT_DETAIL_BUILD_BRIEF.md`.** This brief
+> predates the Coach Mode Completion mandate — Phases 1–4 + 9 have since merged, so its
+> premises (no `assertTrainerCanActForClient`, no audit infra, no on-behalf writes, no
+> programmes) are all false now. Kept for history only; do not execute from it.
+
 > Vertical slice, backend-then-frontend, one PR (two agents) — same shape as Coach You (#123)
 > and Clients list (#125). This is the **row-tap target** from the Clients roster: replaces the
 > `app/(app)/clients/[id]` `ComingSoon` stub with the real client screen.
