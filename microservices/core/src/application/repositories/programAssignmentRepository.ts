@@ -498,13 +498,24 @@ export class ProgramAssignmentRepository {
    * Remove an ad-hoc assignment. Only untouched (`assigned`) rows without a
    * programme linkage are deletable — completed history stays, and
    * programme occurrences are managed via unassign, not this path.
+   *
+   * Optional transaction handle — the handler threads its `db.transaction`
+   * through so the delete + `trainer_actions_audit` insert (action
+   * `workout_unassigned`) land in ONE transaction (cross-cuts § 1.4.2). Same
+   * optional-`tx` pattern as `createAdHoc` / `MeasurementRepository.create`.
+   * Returns the deleted row (not just its id) so the caller has enough to
+   * build the audit payload without a second read.
    */
   async deleteAdHoc(
     trainerId: string,
     clientId: string,
     assignmentId: string,
-  ): Promise<"deleted" | "not_found" | "not_deletable"> {
-    const db = getDb();
+    tx?: DbOrTx,
+  ): Promise<
+    | { result: "deleted"; assignment: WorkoutAssignment }
+    | { result: "not_found" | "not_deletable" }
+  > {
+    const db = tx ?? getDb();
     const deleted = await db
       .delete(workoutAssignments)
       .where(
@@ -516,8 +527,10 @@ export class ProgramAssignmentRepository {
           sql`${workoutAssignments.programAssignmentId} is null`,
         ),
       )
-      .returning({ id: workoutAssignments.id });
-    if (deleted.length > 0) return "deleted";
+      .returning();
+    if (deleted.length > 0) {
+      return { result: "deleted", assignment: deleted[0] };
+    }
 
     // Distinguish 404 from 409: does the row exist for this trainer+client
     // at all (just not deletable)?
@@ -532,6 +545,6 @@ export class ProgramAssignmentRepository {
         ),
       )
       .limit(1);
-    return exists[0] ? "not_deletable" : "not_found";
+    return { result: exists[0] ? "not_deletable" : "not_found" };
   }
 }

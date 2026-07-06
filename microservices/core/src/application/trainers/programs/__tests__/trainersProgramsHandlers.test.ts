@@ -447,31 +447,14 @@ describe("programme handlers", () => {
     });
   });
 
-  describe("ad-hoc workout assignments", () => {
-    // NOTE: the ad-hoc CREATE handler was re-homed in Coach Mode Phase 3 onto
-    // the shared `assignClientWorkoutOnBehalf` core (assertTrainerCanActForClient
-    // gate + audit-in-tx + post-commit notification). Its 403 / 422 / 201 paths
-    // are now covered by
-    //   trainers/clients/__tests__/assignClientWorkout.test.ts (core) and
-    //   trainers/clients/__tests__/trainersClientWorkoutAssignmentsCreateHandler.test.ts
-    // so the old inline-auth CREATE tests were removed from here. The DELETE
-    // handler is unchanged and stays tested below.
-    it("DELETE maps 404 / 409 / 200", async () => {
-      const { trainersClientWorkoutAssignmentsDeleteHandler } =
-        await import("../../clients/trainersClientWorkoutAssignmentsDeleteHandler");
-      for (const [verdict, status] of [
-        ["not_found", 404],
-        ["not_deletable", 409],
-        ["deleted", 200],
-      ] as const) {
-        assignmentMocks.deleteAdHoc.mockResolvedValueOnce(verdict);
-        const res = await trainersClientWorkoutAssignmentsDeleteHandler.handle(
-          authed("/trainers/me/clients/client-1/workout-assignments/wa-1", {
-            method: "DELETE",
-          }),
-        );
-        expect(res.status).toBe(status);
-      }
-    });
-  });
+  // NOTE: the ad-hoc CREATE handler was re-homed in Coach Mode Phase 3 onto
+  // the shared `assignClientWorkoutOnBehalf` core (assertTrainerCanActForClient
+  // gate + audit-in-tx + post-commit notification), and the DELETE handler was
+  // re-homed onto an in-handler transaction + `auditTrainerAction` (closing the
+  // audit gap, cross-cuts § 1.4.2). Both are now covered by their own handler
+  // test files:
+  //   trainers/clients/__tests__/assignClientWorkout.test.ts (CREATE core)
+  //   trainers/clients/__tests__/trainersClientWorkoutAssignmentsCreateHandler.test.ts
+  //   trainers/clients/__tests__/trainersClientWorkoutAssignmentsDeleteHandler.test.ts
+  // so the old inline-auth ad-hoc assignment tests were removed from here.
 });

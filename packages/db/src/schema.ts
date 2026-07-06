@@ -218,6 +218,12 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   "client_note_added",
   "client_note_updated",
   "client_note_deleted",
+  // Ad-hoc workout-assignment delete (DELETE
+  // /trainers/me/clients/:clientId/workout-assignments/:id) — the create path
+  // (workout_assigned) has audited since Phase 3; this closes the gap on the
+  // delete path (cross-cuts § 1.4.2). Companion enum migration:
+  // 20260706170000_workout_unassigned_audit_value.sql.
+  "workout_unassigned",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
