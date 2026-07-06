@@ -2,7 +2,7 @@ import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 
-import { HeaderBar, IconBtn } from "@/ui/components/foundation";
+import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, IconInfo } from "@/ui/components/icons";
 import {
   HABIT_ORDER,
@@ -18,8 +18,13 @@ import { StreakSectionPresenter } from "./StreakSectionPresenter";
  * (~/Downloads/habit_design/habit-setup.jsx + README § Layout): header (back +
  * "HABIT SETUP" eyebrow + "Your habits" + intro), the collection
  * `StreakSection`, five `HabitCard`s in order (water, gym, steps, sleep,
- * calories), and a footer note pointing to Home for holidays. Pure — the
- * container owns all data + callbacks.
+ * calories), and a footer note pointing to Home for holidays, plus a sticky
+ * Save footer. Pure — the container owns all data + callbacks.
+ *
+ * Save model: toggles/targets/freq/leniency update the container's local draft
+ * instantly (no server write); the sticky Save button commits the batch. It's
+ * pinned outside the ScrollView so it stays visible while the cards scroll, and
+ * is disabled until the draft is dirty (and while a save is in flight).
  */
 
 export type HabitSetupPresenterProps = {
@@ -30,6 +35,12 @@ export type HabitSetupPresenterProps = {
   freezeTokens: number;
   atRisk: boolean;
   skipped: boolean;
+  /** Coach view → the Save button reads the trainer accent. */
+  isCoach?: boolean;
+  /** Draft diverges from the last-saved baseline and no save is in flight. */
+  canSave: boolean;
+  /** A save is committing → Save shows "Saving…" and is disabled. */
+  saving: boolean;
   /** Optional intro override (coach view swaps the copy). */
   intro?: string;
   /** Optional coach-attribution eyebrow shown under the title (coach view). */
@@ -41,6 +52,7 @@ export type HabitSetupPresenterProps = {
   onLeniencyChange: (category: HabitCategory, next: number) => void;
   onSpendFreeze: () => void;
   onAdjustNutrition: () => void;
+  onSave: () => void;
   testID?: string;
 };
 
@@ -54,6 +66,9 @@ export function HabitSetupPresenter({
   freezeTokens,
   atRisk,
   skipped,
+  isCoach = false,
+  canSave,
+  saving,
   intro,
   coachSubtitle,
   onBack,
@@ -63,6 +78,7 @@ export function HabitSetupPresenter({
   onLeniencyChange,
   onSpendFreeze,
   onAdjustNutrition,
+  onSave,
   testID = "habit-setup",
 }: HabitSetupPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -90,7 +106,8 @@ export function HabitSetupPresenter({
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 2,
-          paddingBottom: insets.bottom + 40,
+          // Extra bottom room so the last card clears the sticky Save footer.
+          paddingBottom: 88,
           gap: 14,
         }}
       >
@@ -160,6 +177,31 @@ export function HabitSetupPresenter({
           </Text>
         </View>
       </ScrollView>
+
+      {/* Sticky Save footer — pinned above the bottom safe-area inset so it's
+          always visible while the cards scroll. Disabled until the draft is
+          dirty; shows "Saving…" while a commit is in flight. */}
+      <View
+        paddingHorizontal={16}
+        paddingTop={12}
+        paddingBottom={insets.bottom + 12}
+        backgroundColor="$bg"
+        borderTopWidth={1}
+        borderColor="$border"
+        testID={`${testID}-save-footer`}
+      >
+        <Btn
+          variant="filled"
+          tone={isCoach ? "trainer" : "primary"}
+          size="lg"
+          full
+          onPress={onSave}
+          disabled={!canSave}
+          testID={`${testID}-save`}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Btn>
+      </View>
     </View>
   );
 }

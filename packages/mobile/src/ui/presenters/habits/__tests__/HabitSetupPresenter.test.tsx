@@ -22,6 +22,8 @@ function render(over: Partial<Parameters<typeof HabitSetupPresenter>[0]> = {}) {
     freezeTokens: 0,
     atRisk: false,
     skipped: false,
+    canSave: false,
+    saving: false,
     onBack: jest.fn(),
     onToggle: jest.fn(),
     onTargetChange: jest.fn(),
@@ -29,6 +31,7 @@ function render(over: Partial<Parameters<typeof HabitSetupPresenter>[0]> = {}) {
     onLeniencyChange: jest.fn(),
     onSpendFreeze: jest.fn(),
     onAdjustNutrition: jest.fn(),
+    onSave: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<HabitSetupPresenter {...props} />) };
@@ -88,5 +91,20 @@ describe("HabitSetupPresenter", () => {
     const { getByTestId, props } = render({ freezeTokens: 2 });
     fireEvent.press(getByTestId("habit-streak-section-freeze-cta"));
     expect(props.onSpendFreeze).toHaveBeenCalled();
+  });
+
+  it("Save button: disabled when !canSave, fires onSave when enabled", () => {
+    const disabled = render({ canSave: false });
+    fireEvent.press(disabled.getByTestId("habit-setup-save"));
+    expect(disabled.props.onSave).not.toHaveBeenCalled();
+
+    const enabled = render({ canSave: true });
+    fireEvent.press(enabled.getByTestId("habit-setup-save"));
+    expect(enabled.props.onSave).toHaveBeenCalled();
+  });
+
+  it("Save button shows 'Saving…' while a save is in flight", () => {
+    const { getByText } = render({ canSave: false, saving: true });
+    expect(getByText("Saving…")).toBeTruthy();
   });
 });
