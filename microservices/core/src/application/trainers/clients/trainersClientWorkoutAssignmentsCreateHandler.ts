@@ -1,64 +1,49 @@
 import Elysia, { t } from "elysia";
-import { ProgramService } from "../../repositories/programService";
-import { TrainerService } from "../../repositories/trainerService";
 import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { hasActiveRelationship } from "../relationships/activeRelationshipGuard";
-import { ISO_DATE_PATTERN, todayIso } from "../programs/shared";
+import { ISO_DATE_PATTERN } from "../programs/shared";
+import { assignClientWorkoutOnBehalf } from "./assignClientWorkout";
 
 /**
  * POST /trainers/me/clients/:clientId/workout-assignments — ad-hoc
  * single-workout assignment (specs/19-programs STORY-006): a
  * `workout_assignments` row with NO programme linkage. Feeds adherence /
  * dashboard / library identically to programme occurrences.
+ *
+ * Re-homed in Phase 3 onto the shared `assignClientWorkoutOnBehalf` core so
+ * the write is authorized through `assertTrainerCanActForClient` (role-first,
+ * then active relationship), audited in the same transaction as the insert,
+ * and emits a `workout_assigned` client notification post-commit.
  */
 export const trainersClientWorkoutAssignmentsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
-  .use(TrainerService)
-  .use(ProgramService)
   .post(
     "/trainers/me/clients/:clientId/workout-assignments",
     async (ctx) => {
-      const { sub: userId } = getUser(ctx);
-      const { clientId } = ctx.params;
+      const { sub: trainerId } = getUser(ctx);
+      const { clientId } = ctx.params as { clientId: string };
 
-      if (!(await ctx.TrainerRepository.isTrainer(userId))) {
-        ctx.set.status = 403;
-        return { message: "Forbidden" };
-      }
-      if (!(await hasActiveRelationship(userId, clientId))) {
-        ctx.set.status = 403;
-        return {
-          code: "not_your_client",
-          message: "You can only assign workouts to your active clients",
-        };
-      }
-
-      const result = await ctx.ProgramAssignmentRepository.createAdHoc(
-        userId,
+      const result = await assignClientWorkoutOnBehalf({
+        trainerId,
         clientId,
-        {
+        body: {
           workoutId: ctx.body.workoutId,
           dueDate: ctx.body.dueDate ?? null,
           showInPlan: ctx.body.showInPlan,
           showInLibrary: ctx.body.showInLibrary,
           trainerNotes: ctx.body.trainerNotes ?? null,
         },
-        todayIso(),
-      );
+      });
 
-      if ("error" in result) {
-        ctx.set.status = 422;
-        return {
-          code: "invalid_workout",
-          message: "The workout must be your own or public",
-        };
+      if (!result.ok) {
+        ctx.set.status = result.status;
+        return result.body;
       }
 
       ctx.set.status = 201;

@@ -31,6 +31,27 @@ describe("weekStartMondayISO", () => {
     // 2026-07-01 is a Wednesday → Monday 2026-06-29.
     expect(weekStartMondayISO("2026-07-01")).toBe("2026-06-29");
   });
+
+  // Regression: the Mon→Sun window `[monday, monday+6]` must ALWAYS contain its
+  // own anchor day — including at the boundaries (Monday → index 0, Sunday →
+  // index 6). A Monday-boundary off-by-one here is what made the habits grid's
+  // `weekDates.indexOf(today)` return -1 on Mondays.
+  it("builds a Mon→Sun window that always contains the anchor day", () => {
+    const addDays = (iso: string, n: number) => {
+      const d = new Date(`${iso}T00:00:00.000Z`);
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    // 2026-07-06 Mon … 2026-07-12 Sun — one anchor per weekday.
+    for (let i = 0; i < 7; i++) {
+      const day = addDays("2026-07-06", i);
+      const monday = weekStartMondayISO(day);
+      const window = Array.from({ length: 7 }, (_, k) => addDays(monday, k));
+      expect(new Date(`${monday}T00:00:00.000Z`).getUTCDay()).toBe(1); // Monday
+      expect(window).toContain(day);
+      expect(window.indexOf(day)).toBe(i); // Mon=0 … Sun=6
+    }
+  });
 });
 
 describe("localDayISO", () => {

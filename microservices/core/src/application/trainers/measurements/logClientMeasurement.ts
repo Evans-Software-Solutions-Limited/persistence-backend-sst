@@ -3,6 +3,7 @@ import { assertTrainerCanActForClient } from "../../relationships/assertTrainerC
 import { auditTrainerAction } from "../../relationships/auditTrainerAction";
 import { MeasurementRepository } from "../../repositories/measurementRepository";
 import { safeEvaluateStreaks } from "../../streaks/evaluate";
+import { emitTrainerOnBehalfNotification } from "../onBehalfNotifications";
 import type { BodyMeasurement } from "@persistence/db";
 
 export interface LogClientMeasurementBody {
@@ -50,6 +51,11 @@ const toStr = (v: string | number | undefined) =>
  * The measurement streak advance happens AFTER the transaction commits and
  * is error-tolerant (matches the pre-existing handler behaviour) — a streak
  * hiccup must never fail an otherwise-successful measurement log.
+ *
+ * Phase 3 backfill: the `measurement_logged_on_behalf` client notification
+ * (cross-cuts § 5) is emitted post-commit, best-effort. Phase 2 deliberately
+ * deferred this — it needed the `notification_type` enum ALTER that Phase 3
+ * lands — so the emit is wired here now that the enum value exists.
  */
 export async function logClientMeasurementOnBehalf({
   trainerId,
@@ -100,6 +106,19 @@ export async function logClientMeasurementOnBehalf({
   // Advance the CLIENT's measurement streak — error-tolerant, the
   // measurement already committed.
   await safeEvaluateStreaks(clientId, "measurement_logged", new Date());
+
+  // Notify the client their coach logged a measurement (cross-cuts § 5) —
+  // post-commit, best-effort. See docstring re: Phase 2 deferral.
+  await emitTrainerOnBehalfNotification({
+    clientId,
+    trainerId,
+    type: "measurement_logged_on_behalf",
+    title: "Measurement logged by your coach",
+    buildMessage: (coachName) => `${coachName} logged a measurement for you`,
+    deepLink: `/progress/measurements/${measurement.id}`,
+    relatedEntityType: "body_measurement",
+    relatedEntityId: measurement.id,
+  });
 
   return { ok: true, measurement };
 }

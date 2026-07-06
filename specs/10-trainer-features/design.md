@@ -208,7 +208,7 @@ Endpoints:
 
 ## Backend — trainer notes
 
-Existing table `trainerClientNotes` → `trainer_client_notes` (`packages/db/src/schema.ts:908`):
+Existing table `trainerClientNotes` → `trainer_client_notes` (`packages/db/src/schema.ts:1394`):
 
 ```
 trainer_client_notes
@@ -425,7 +425,351 @@ Layout: `<HeaderBar large>` + summary chip row + `<SearchBar>` + `<Segmented>` +
 
 ## Frontend — Client Detail (`<ClientDetailPresenter>`)
 
-Per `client-detail.jsx`. Tab strip with 5 tabs (Overview / Workouts / Nutrition / Notes / Settings). Each tab's content reuses athlete-side composites where possible (Overview = `<StreakHero>` + `<BodyTrend>` + `<VolumeStats>` from `06-progress-goals`; Nutrition Targets uses form from `13-nutrition-tracking`).
+Per `client-detail.jsx`. **Client Detail is a single scrolling screen, not a tab
+strip.** (The earlier "5-tab (Overview / Workouts / Nutrition / Notes / Settings)"
+description was wrong — the prototype `client-detail.jsx` and `M8-coach/CLIENT_DETAIL_BRIEF.md`
+are one vertical scroll; prototype wins per `feedback_prototype_first_source_of_truth`.)
+Sections top-to-bottom: `ClientHeader` → `LiveSessionCTA` → `QuickActionsRow` →
+`AISummaryCard` → `GoalCard` → `TargetsCard` → `ThisWeekCard` → `AdherenceBreakdown`
+→ `ProgrammeCard` → `CoachNotesCard`. Athlete-side composites are reused where they
+fit (`<BodyTrend>` / weight axis + `<VolumeStats>` from `06-progress-goals`;
+`EditNutritionTargets` reuses the shipped Fuel Targets editor from `13-nutrition-tracking`).
+
+The per-module data/write contract is defined in **§ Client Detail — functional
+contract** below.
+
+---
+
+## Client Detail — functional contract
+
+> **Added 2026-07-05 (Coach Mode Completion, Phase 4).** Supersedes the "5-tab strip"
+> description above and in STORY-003. `client-detail.jsx` is **layout authority only** —
+> this section defines what each module _reads/writes_, against endpoints/repos that
+> were **verified to exist in code on 2026-07-05** (or are flagged as to-be-built).
+> Scheduling / add-to-calendar is explicitly **out of scope** (parked — its own future
+> spec). The AI Client Summary (module g) is **launch scope** (Brad, 2026-07-05).
+
+### Backend reality check (verified 2026-07-05)
+
+The brief framed all per-client reads as "backend already live to consume." Code
+inspection says otherwise. This table is the honest grounding — Phase 5 builds the
+aggregate + the missing per-client routes; the underlying athlete repos it composes
+already exist and are callable with the **client's** userId after the auth gate.
+
+| Surface                                                         | Status                | Location                                                                         |
+| --------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
+| `GET /trainers/me/overview` (Coach You aggregate)               | **LIVE**              | `trainers/overview/trainersOverviewHandler.ts:20`                                |
+| `GET /trainers/me/clients` (roster: adherence + 5-band + flags) | **LIVE**              | `trainers/clients/trainersClientsListHandler.ts:21`                              |
+| `GET /trainers/me/clients/:clientId` (this screen's aggregate)  | **NOT BUILT (Ph 5)**  | —                                                                                |
+| `assertTrainerCanActForClient` (role + active-rel gate)         | **LIVE**              | `relationships/assertTrainerCanActForClient.ts:65`                               |
+| `clientRosterBand(pct)` — 5-band classifier                     | **LIVE**              | `repositories/trainerRepository.ts:271` (`ADHERENCE_WINDOW_DAYS = 28`, :182)     |
+| `volumeRepository.dailyVolume(userId, tz, start, end)`          | **LIVE**              | `repositories/volumeRepository.ts:41` (42803 guard `groupBy(sql\`1\`)`, :71–76)  |
+| Personal-records compute (exact-rep, no Epley)                  | **LIVE**              | `repositories/personalRecordsRepository.ts:85–114,185–188`                       |
+| `GET /clients/:clientId/body-trend` (coach body-trend, #146)    | **LIVE**              | `trainers/measurements/trainersClientBodyTrendHandler.ts:34`                     |
+| `getActiveStreaksForUser(userId)` / `GET /users/me/streaks`     | **LIVE**              | `repositories/streakRepository.ts:89`                                            |
+| `GET /nutrition/targets` + `summariseConsumed()` (self-scope)   | **LIVE**              | `nutrition/targets/get/…:16`, `nutrition/today/nutritionTodayHandler.ts:30–75`   |
+| `POST /trainers/me/clients/:clientId/measurements` (audited)    | **LIVE**              | `trainers/measurements/trainersMeLogClientMeasurementHandler.ts:33`              |
+| `POST/DELETE …/workout-assignments`                             | **LIVE (⚠ no audit)** | `trainers/clients/trainersClientWorkoutAssignmentsCreateHandler.ts:26`           |
+| Programs coach CRUD + assign + `GET …/programs/:id`             | **LIVE**              | `trainers/programs/*` (`trainersProgramsGetHandler.ts:24`)                       |
+| On-behalf **GET** sessions/measurements/goals                   | **NOT BUILT (Ph 3)**  | —                                                                                |
+| `POST …/goals`, `PUT …/goals/:id`                               | **NOT BUILT (Ph 3)**  | —                                                                                |
+| `PUT …/nutrition/target` + coach read of client nutrition       | **NOT BUILT (Ph 3)**  | `nutrition_targets.set_by_user_id` column exists (schema.ts:1725), never written |
+| Trainer notes CRUD (`…/notes`)                                  | **NOT BUILT**         | `trainer_client_notes` table exists (schema.ts:1394)                             |
+| Coach habit routes (`…/habits/…`) + weekly-satisfaction compute | **NOT BUILT**         | grid-only `habits/habitsView.ts:26`; no `%` computed                             |
+| `client_ai_summaries` cache table (module g)                    | **NOT BUILT (Ph 6)**  | new table — DDL in module g                                                      |
+
+**Two design.md corrections that fall out of the audit** (do not silently propagate the
+old text): (1) the `assertTrainerCanActForClient` snippet earlier in this file is a stale
+2-role stub — the shipped helper allows `personal_trainer | physiotherapist | admin` and
+returns a discriminated `TrainerActionVerdict`; (2) cross-cuts § 1.5 says trainer name comes
+from `profiles.display_name`, but the real column is `profiles.full_name` (`schema.ts:273`) —
+attribution copy reads `full_name`.
+
+### The aggregate endpoint
+
+`GET /trainers/me/clients/:clientId` → `{ data: ClientDetail }`. **Phase 5 builds it.**
+Gate order (reuse the shipped helper): JWT → role ∈ `{personal_trainer, physiotherapist, admin}`
+→ `assertTrainerCanActForClient(trainerId, clientId)` (403 on no active relationship) → compose.
+The handler composes modules a–f by calling the existing athlete repos with the **client's**
+userId (never a global query). The aggregate is the read; on-behalf writes stay on their own
+`/trainers/me/clients/:clientId/...` routes (§ On-behalf entry points).
+
+```ts
+interface ClientDetail {
+  client: {
+    id: string;
+    name: string; // profiles.full_name
+    initials: string;
+    avatarUrl: string | null;
+    status: "active" | "pending";
+    ageYears: number | null; // derived from profiles.date_of_birth (schema.ts:278); null if absent
+    heightCm: number | null; // profiles.height_cm (schema.ts:283); null if absent
+  };
+  adherence: AdherenceModule; // module a
+  prs: PrHighlight[]; // module b
+  volume: VolumeModule; // module c
+  calorieHit: CalorieHitModule | null; // module d — null until nutrition read is built / client has no nutrition
+  goal: GoalModule | null; // module e — null when no active goal
+  habits: HabitsModule | null; // module f — null until coach habit read is built / no habits
+  aiSummary: AiSummaryModule; // module g (launch scope)
+  thisWeek: {
+    workoutsCompleted: number;
+    workoutsPlanned: number | null; // null until program_assignments feeds it
+    volumeKg: number | null;
+    prs: number;
+    checkIns: number | null; // null until habits/HealthKit feed it
+  };
+  recentSessions: {
+    id: string;
+    name: string | null;
+    completedAt: string;
+    volumeKg: number | null;
+  }[]; // client's completed sessions, newest first, ~10
+  notes: {
+    id: string;
+    noteType: string;
+    title: string;
+    content: string;
+    createdAt: string;
+  }[]; // read-only, WHERE trainer_id = self
+}
+```
+
+### Module a — Adherence rating
+
+- **Data:** `adherence.overall` = the client's **28-day** completed-vs-target adherence %,
+  the same computation the roster row uses (`trainerRepository.ts`, `ADHERENCE_WINDOW_DAYS = 28`,
+  :182) — so the number on Client Detail equals the number on the row the coach just tapped.
+- **Bands:** reuse the shipped **5-band** `clientRosterBand(pct)` (`trainerRepository.ts:271`) as
+  the single source of truth — `stellar ≥95 · strong 85–94 · wobbling 65–84 · atRisk 40–64 · crisis <40`.
+  Do **not** re-implement the prototype's inline 4-band `AdherenceBreakdown` thresholds or Coach You's
+  3-band donut. Presenter tone map: `stellar → gold`, `strong → success`, `wobbling → gold`,
+  `atRisk → ember`, `crisis → error`. (The prototype had no "Stellar" tier; surfacing it is a small
+  deliberate addition kept for band-definition consistency across roster + detail — flag to Brad if
+  strict prototype fidelity is preferred, in which case collapse stellar+strong under "Strong".)
+- **Category breakdown** (`categories: { label, pct, sub, available }[]`): the prototype shows five
+  rows (Workouts / Calorie / Protein / Check-in / Sleep). **v1: only "Workouts completed" is `available`**;
+  calorie + protein depend on module d, check-in on habits, sleep on HealthKit — all render
+  `available:false`, `pct:null`, muted "—" with an "available with Fuel/Health" hint.
+- **Empty states:** brand-new client with **no program and no sessions in the window** →
+  `overall:null`, `band:null`, presenter shows "Not enough data yet" (do **not** render 0% / "Crisis" —
+  never label a new client as failing). Program assigned but zero sessions → 0% is legitimate.
+
+```ts
+type AdherenceModule = {
+  overall: number | null;
+  band: "stellar" | "strong" | "wobbling" | "atRisk" | "crisis" | null;
+  categories: {
+    label: string;
+    pct: number | null;
+    sub: string;
+    available: boolean;
+  }[];
+};
+```
+
+### Module b — PR highlights
+
+- **Data:** the client's personal records, **exact-rep parity only** — record types
+  `1rm · 3rm · 5rm · 10rm · max_weight · max_volume` (`personalRecordsRepository.ts:85–92`),
+  rep→type map at :101–114 (7/8/12-rep sets earn **no** rep-max PR). **NO Epley / estimated 1RM**
+  on this surface — locked legacy-parity rule, enforced by the existing writer's comment
+  (:185–188: "a 55 kg × 10-rep set is not a 73.3 kg one-rep max").
+- **Read to build (Phase 5):** no per-client records _read_ route exists; the writer
+  `recordPRsForSession(userId, …)` (:232) proves the table is userId-scoped, so Phase 5 reads the
+  client's `personal_records` rows after the gate. Fields: `{ type, exerciseName, value, unit, achievedAt }`,
+  newest first. `thisWeek.prs` = count achieved in the current week.
+- **Empty state:** no records → empty list, "No PRs logged yet".
+
+### Module c — Volume highlights
+
+- **Data:** `volumeRepository.dailyVolume(clientUserId, tz, startISO, endISO)` (`volumeRepository.ts:41`)
+  → `{ date, volumeKg }[]`. Weekly total = sum over the current **user-local** week (`tz` from
+  `profiles.timezone`, default `Europe/London`). Feeds `thisWeek.volumeKg` + the daily-activity chart.
+- **⚠ 42803 guard already present — do not "fix" it:** the query groups by the select-list **ordinal**
+  (`groupBy(sql\`1\`)`, :71–76), not a re-rendered `dayExpr`; re-rendering would emit a second
+`AT TIME ZONE $N`bind slot and Postgres rejects with 42803. The unit suite mocks`getDb`, so a
+SQL regression ships green — Phase 5 must keep the **PgDialect render guard** test
+(per `reference_drizzle_groupby_param_bug`).
+- **Empty state:** no sessions in window → `volumeKg: null` / "—".
+
+```ts
+type VolumeModule = {
+  weekKg: number | null;
+  daily: { date: string; volumeKg: number }[];
+};
+```
+
+### Module d — Calorie hit
+
+- **Read-only for the coach. PRIVACY LINE — confirmed by Brad 2026-07-05:** coach sees
+  **per-day totals + the "hit" adherence count, NOT the food-level entry log.**
+- **Data (existing, self-scope today):** `nutrition_targets` (`schema.ts:1714`:
+  `daily_kcal / protein_g / carbs_g / fat_g / water_cups / set_by_user_id`) via `GET /nutrition/targets`;
+  daily consumed via `summariseConsumed()` (`nutritionTodayHandler.ts:30–40`) →
+  `{ kcal, proteinG, carbsG, fatG }`, with `remainingKcal` derived in the handler at `:75`.
+- **To build (Phase 3/5):** there is **no coach read of client nutrition** and **no
+  `PUT /trainers/me/clients/:clientId/nutrition/target`** (the `set_by_user_id` column at `schema.ts:1725`
+  is never written). Phase 3 builds the coach read (**totals + targets only**, no entries — enforces the
+  confirmed privacy line) + the on-behalf target PUT (audit `nutrition_target_set`).
+- **"Hit" band:** a day counts as hit when daily kcal is within **target ± 10%** — reuse the
+  Calories-habit tolerance default (`habitCategories.ts:90`, `tolerancePct.default = 10`), the **same
+  rule** as `nutrition_streak`'s `within_tolerance` (cross-cuts § 3.1). Week = `X / 7` days hit.
+- **Empty state:** nutrition not set up / no entries → "No nutrition data".
+
+```ts
+type CalorieHitModule = {
+  targetKcal: number | null;
+  daysHit: number; // days within ±10% this week
+  daysLogged: number; // out of 7
+  todayKcal: number | null;
+  todayRemainingKcal: number | null;
+  // NO per-entry food log — privacy default (confirm w/ Brad)
+};
+```
+
+### Module e — Goals
+
+- **Data:** `user_goals` (`schema.ts:921`) — `target_value / current_value / unit / assigned_by_user_id /
+is_active`. **No `title` column** (goal name resolves via the `goal_types` FK) and **no status enum**
+  (use `is_active`). Primary goal = most-recent `is_active` row for the client.
+- **Weight axis** (GoalCard start/now/target): `start` = earliest `body_measurements.weight_kg` in window,
+  `now` = latest, `target` = the goal's `target_value` when the goal is weight-typed (else the axis is
+  hidden). `pct = (now − start) / (target − start)`, clamped 0..1, `null` if not computable.
+- **Reads/writes (Phase 3, not built):** parity `GET /trainers/me/clients/:clientId/goals`; assign
+  `POST …/goals` (audit `goal_assigned`); edit-own `PUT …/goals/:id` (**403 if not the assigner**) —
+  per cross-cuts § 2.2. **No new data model** — the cross-cuts § 2 columns already exist.
+- **Attribution:** when `assigned_by_user_id = self` → "Goal set by Coach {name}" ({name} = `profiles.full_name`).
+  Client can mark complete; cannot edit/delete a trainer-assigned goal.
+- **Empty state:** no active goal → GoalCard hidden.
+
+```ts
+type GoalModule = {
+  id: string;
+  title: string; // via goal_types
+  unit: string | null;
+  assignedByCoach: boolean; // assigned_by_user_id === trainerId
+  weight: {
+    startKg: number | null;
+    nowKg: number | null;
+    targetKg: number | null;
+  };
+  pct: number | null;
+};
+```
+
+### Module f — Habits
+
+- **Data:** `habit_configs` (`schema.ts:1039`) + `habit_completions` (`schema.ts:999`). Coach view =
+  the client's enabled habit configs + **per-habit weekly satisfaction** + the weekly **collection streak**
+  (cross-cuts § 3.7).
+- **To build:** (1) **no** coach habit routes (`/trainers/me/clients/:clientId/habits/…`); (2) weekly
+  satisfaction **is not computed anywhere** — only `buildHabitsGrid()` (`habitsView.ts:26`) returns a
+  7-day boolean grid. Phase 5/later builds the weekly-satisfaction computation per cross-cuts § 3.7
+  (`count` / `value_gte` / `within_tolerance`, each × `days_per_week`) + the coach read + the coach
+  **authorship** routes per `specs/18-habit-setup`.
+- **Coach-set habits:** complete-only for the client; edit-lock is conditioned on an **active**
+  relationship — when the relationship ends the habits **transfer to the client** (stay active, streak
+  unbroken, attribution kept), per cross-cuts § 3.7.
+- **Empty state:** no habits configured → "No habits set up".
+
+### Module g — AI Client Summary (launch scope)
+
+- **Inputs = modules a–f** (adherence, PRs, volume, calorie hit, goals, habits) for this client. The
+  summary is generated _from the same structured data the card already displays_ — no separate data pull.
+- **Generation:** reuse the M9.5 **Bedrock seam** — `MinimalBedrockClient` + `getDefaultClient()`
+  (`nutrition/services/aiEstimation.ts:127,144`), **forced tool use** (`tool_choice:{type:"tool", …}`),
+  **injectable `deps.client`**, **NO live calls in CI** (tests pass a fake client).
+- **Entitlement:** gate on the **coach's** `ai_access` via `assertEntitlement(coachUserId, "ai_access")`
+  (`entitlement/assertEntitlement.ts:229`). Trainer tiers carry `ai_access = true` (M9.5). Denial → 402
+  `ENTITLEMENT_DENIED` per the shipped cross-cuts § 4.1 shape.
+- **Generation model — one summary per client per concluded day (confirmed Brad 2026-07-05):** the
+  coach gets **one update per client per day**, covering the **concluded** (previous) client-local day, so
+  it is always a whole-day view — never a shifting partial-day one. Default trigger is **lazy** (generated
+  the first time the coach opens that client on/after the day rolls over), plus **at most one manual
+  refresh** per client per day. **Hard cap: 2 inferences per client per day (1 auto + 1 manual).** No cron
+  / background batch — tokens are only ever spent on clients the coach actually opens.
+- **Cache — new table (`client_ai_summaries`), one row per (trainer, client, concluded day):**
+
+  ```sql
+  CREATE TABLE client_ai_summaries (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    trainer_id    uuid NOT NULL REFERENCES profiles(id),
+    client_id     uuid NOT NULL REFERENCES profiles(id),
+    covers_date   date NOT NULL,             -- the concluded CLIENT-local day the summary describes (profiles.timezone)
+    summary       text NOT NULL,
+    model         text NOT NULL,             -- resolved AI_COACH_SUMMARY_MODEL_ID
+    refresh_count int  NOT NULL DEFAULT 0,   -- 0 = initial lazy gen; 1 = one manual refresh used → caps at 2 inferences/client/day
+    generated_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (trainer_id, client_id, covers_date)  -- one row per concluded day ⇒ one auto-update/day, structurally
+  );
+  CREATE INDEX client_ai_summaries_trainer_client_date ON client_ai_summaries (trainer_id, client_id, covers_date DESC);
+  ```
+
+  The `UNIQUE (trainer_id, client_id, covers_date)` constraint **is** the once-a-day cap — `covers_date`
+  advances only when the client's day concludes, so a given day yields exactly one summary row; the manual
+  refresh overwrites that row and bumps `refresh_count` (blocked once it hits 1).
+
+- **Endpoint (Phase 6):** `POST /trainers/me/clients/:clientId/ai-summary` (single path for both lazy-first
+  and manual refresh; body `{ manual?: boolean }`). Order:
+  role → `assertTrainerCanActForClient` → `assertEntitlement(ai_access)` → per-coach daily-ceiling check →
+  **row-state check** → generate (Bedrock) → upsert `client_ai_summaries` → `ai_usage_log`. Row-state logic:
+  - no row for the current `covers_date` → **generate** (auto), insert `refresh_count = 0`;
+  - row exists, `manual = true`, `refresh_count < 1` → **regenerate**, set `refresh_count = 1`;
+  - row exists and (`manual` false **or** `refresh_count ≥ 1`) → **return cached, NO inference.**
+- **Reads never infer.** The aggregate `GET /trainers/me/clients/:clientId` returns the cached `aiSummary`
+  row for the current `covers_date` (or null) — **zero Bedrock calls on read**, however many times the coach
+  opens the screen. The card triggers the lazy generation via the POST above only when the row is missing
+  for today's `covers_date` ("Generating today's summary…" state), then it is cached for the day.
+- **Per-coach daily backstop (per #156 pattern):** on top of the per-client cap, a **dedicated** ceiling —
+  env `AI_COACH_SUMMARY_DAILY_LIMIT` (fail-safe parse, matching `AI_PHOTO_DAILY_LIMIT`), enforced with
+  `aiUsageLogRepository.countForUserToday(coachUserId, "/trainers/me/clients/:clientId/ai-summary")`
+  (`aiUsageLogRepository.ts:46`, **UTC-midnight** boundary, only successful inferences counted). Over the
+  ceiling → **429 `{ error: "ai_daily_limit" }`**. Every successful generation also writes `ai_usage_log`
+  (`schema.ts:1743`). Net worst case: `min(2 × opened-clients, AI_COACH_SUMMARY_DAILY_LIMIT)` inferences/coach/day.
+- **Staleness copy:** "Updated {relativeTime}" against `generated_at`; the summary is understood to cover
+  `covers_date` (e.g. "Yesterday, 18 Mar"). When `refresh_count ≥ 1`, the manual-refresh affordance reads
+  "Next update tomorrow" (disabled) rather than offering another spend.
+- **Failure fallback:** on Bedrock error, ceiling-429, missing `ai_access`, or simply **not yet generated
+  today**, the card **degrades to the raw modules a–f** it was built from — never a blank card and never a
+  hard error surface.
+- This is the **design**; **Phase 6 builds it.**
+
+```ts
+type AiSummaryModule = {
+  summary: string | null; // cached text for the current concluded day, or null if not generated yet
+  coversDate: string | null; // YYYY-MM-DD — the concluded client-local day the summary describes
+  generatedAt: string | null; // ISO — drives "Updated {relativeTime}"
+  canManualRefresh: boolean; // row exists, refresh_count < 1, coach has ai_access, under daily ceiling
+};
+```
+
+### On-behalf entry points (consumed by the Phase 5 build)
+
+| Entry point (sheet / CTA)  | Route                                                     | Status                      | Audit action                   |
+| -------------------------- | --------------------------------------------------------- | --------------------------- | ------------------------------ |
+| Log weight                 | `POST /trainers/me/clients/:clientId/measurements`        | **LIVE**                    | `measurement_logged_on_behalf` |
+| Assign-goal sheet          | `POST /trainers/me/clients/:clientId/goals`               | **BUILD (Ph 3)**            | `goal_assigned`                |
+| EditNutritionTargets sheet | `PUT /trainers/me/clients/:clientId/nutrition/target`     | **BUILD (Ph 3)**            | `nutrition_target_set`         |
+| Log session on-behalf      | `POST /trainers/me/clients/:clientId/sessions`            | **BUILD (Ph 3)**            | `workout_logged_on_behalf`     |
+| Assign workout             | `POST /trainers/me/clients/:clientId/workout-assignments` | **LIVE — ⚠ no audit today** | `workout_assigned` (missing)   |
+
+- **Reuse, don't rebuild:** the EditNutritionTargets sheet composes the **shipped Fuel Targets editor
+  presenters** (`13-nutrition-tracking`, PR #144) — port the presenters, swap the container's write to
+  the on-behalf PUT.
+- **⚠ Audit gap:** the live `workout-assignments` create/delete handlers do **not** call
+  `auditTrainerAction`, yet this file's endpoint catalog and cross-cuts § 1.4.1 promise a
+  `workout_assigned` audit row. **Phase 5 must add `auditTrainerAction` (in-tx) to those handlers** to
+  close the gap before wiring the QuickActionsRow "Assign" action.
+
+### Explicitly out of scope — scheduling / add-to-calendar
+
+The prototype's `QuickActionsRow` "Schedule" action and the `LiveSessionCTA` "today's session" framing
+imply an appointments/scheduling domain that **does not exist** (no appointments table, no booking
+endpoints, no calendar model). Per the Phase-0 decision this is **parked as its own future spec**.
+Client Detail v1 ships **without** any scheduling / add-to-calendar module: the "Schedule" quick action
+is hidden/disabled, and `LiveSessionCTA` renders the "No active programme" empty state until
+`program_assignments` feeds it. Do not design a calendar model to satisfy these chrome elements.
 
 ---
 

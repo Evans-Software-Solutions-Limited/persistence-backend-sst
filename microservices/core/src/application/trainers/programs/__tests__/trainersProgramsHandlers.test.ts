@@ -448,54 +448,14 @@ describe("programme handlers", () => {
   });
 
   describe("ad-hoc workout assignments", () => {
-    it("POST 403 without an active relationship", async () => {
-      guardMocks.hasActiveRelationship.mockResolvedValue(false);
-      const { trainersClientWorkoutAssignmentsCreateHandler } =
-        await import("../../clients/trainersClientWorkoutAssignmentsCreateHandler");
-      const res = await trainersClientWorkoutAssignmentsCreateHandler.handle(
-        authed("/trainers/me/clients/client-1/workout-assignments", {
-          method: "POST",
-          body: { workoutId: "w-a" },
-        }),
-      );
-      expect(res.status).toBe(403);
-    });
-
-    it("POST 422 unreadable workout / 201 on success", async () => {
-      const { trainersClientWorkoutAssignmentsCreateHandler } =
-        await import("../../clients/trainersClientWorkoutAssignmentsCreateHandler");
-      assignmentMocks.createAdHoc.mockResolvedValueOnce({
-        error: "invalid_workout",
-      });
-      expect(
-        (
-          await trainersClientWorkoutAssignmentsCreateHandler.handle(
-            authed("/trainers/me/clients/client-1/workout-assignments", {
-              method: "POST",
-              body: { workoutId: "w-x" },
-            }),
-          )
-        ).status,
-      ).toBe(422);
-
-      assignmentMocks.createAdHoc.mockResolvedValueOnce({
-        assignment: { id: "wa-1" },
-      });
-      const ok = await trainersClientWorkoutAssignmentsCreateHandler.handle(
-        authed("/trainers/me/clients/client-1/workout-assignments", {
-          method: "POST",
-          body: { workoutId: "w-a", dueDate: "2026-07-10" },
-        }),
-      );
-      expect(ok.status).toBe(201);
-      expect(assignmentMocks.createAdHoc).toHaveBeenCalledWith(
-        "trainer-id",
-        "client-1",
-        expect.objectContaining({ workoutId: "w-a", dueDate: "2026-07-10" }),
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      );
-    });
-
+    // NOTE: the ad-hoc CREATE handler was re-homed in Coach Mode Phase 3 onto
+    // the shared `assignClientWorkoutOnBehalf` core (assertTrainerCanActForClient
+    // gate + audit-in-tx + post-commit notification). Its 403 / 422 / 201 paths
+    // are now covered by
+    //   trainers/clients/__tests__/assignClientWorkout.test.ts (core) and
+    //   trainers/clients/__tests__/trainersClientWorkoutAssignmentsCreateHandler.test.ts
+    // so the old inline-auth CREATE tests were removed from here. The DELETE
+    // handler is unchanged and stays tested below.
     it("DELETE maps 404 / 409 / 200", async () => {
       const { trainersClientWorkoutAssignmentsDeleteHandler } =
         await import("../../clients/trainersClientWorkoutAssignmentsDeleteHandler");

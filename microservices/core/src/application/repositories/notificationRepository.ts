@@ -28,7 +28,15 @@ export type NotificationType =
   // "on" per cross-cuts § 5 (the JSONB prefs default '{}' reads as all-on).
   | "streak_milestone"
   | "streak_at_risk"
-  | "freeze_token_applied";
+  | "freeze_token_applied"
+  // M8 (10-trainer-features) trainer on-behalf / assignment events. DB enum
+  // extended in 20260705150000_coach_notification_type_on_behalf_values.sql
+  // (Phase 3 / 10.3). Default opt-in "on" per cross-cuts § 5.
+  // (workout_assigned above is reused for the workout-assignment emit.)
+  | "goal_assigned_by_trainer"
+  | "workout_logged_on_behalf"
+  | "measurement_logged_on_behalf"
+  | "nutrition_target_set_by_trainer";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -43,6 +51,10 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "streak_milestone",
   "streak_at_risk",
   "freeze_token_applied",
+  "goal_assigned_by_trainer",
+  "workout_logged_on_behalf",
+  "measurement_logged_on_behalf",
+  "nutrition_target_set_by_trainer",
 ] as const;
 
 /**

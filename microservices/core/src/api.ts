@@ -98,6 +98,9 @@ import { trainersProgramsUnassignHandler } from "./application/trainers/programs
 import { trainersClientActiveProgrammeGetHandler } from "./application/trainers/programs/trainersClientActiveProgrammeGetHandler";
 import { trainersClientWorkoutAssignmentsCreateHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsCreateHandler";
 import { trainersClientWorkoutAssignmentsDeleteHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsDeleteHandler";
+// M8 Coach Mode Phase 3 (10.3) — trainer on-behalf endpoints, grouped into one
+// sub-app to keep the root `.use()` chain under TS's type-depth ceiling.
+import { trainersOnBehalfRoutes } from "./application/trainersOnBehalfRoutes";
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -207,6 +210,12 @@ const app = new Elysia()
   .use(trainersClientActiveProgrammeGetHandler)
   .use(trainersClientWorkoutAssignmentsCreateHandler)
   .use(trainersClientWorkoutAssignmentsDeleteHandler)
+  // Coach Mode Phase 3 (10.3) — trainer on-behalf writes + parity GETs
+  // (sessions, measurements-GET, goals, nutrition target), grouped into one
+  // sub-app. Each write: assertTrainerCanActForClient + auditTrainerAction
+  // (same tx) + best-effort client notification post-commit (cross-cuts
+  // § 1.2/§ 1.4/§ 5).
+  .use(trainersOnBehalfRoutes)
   // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
   // ./application/nutritionRoutes) — keeps the Eden Treaty type in
   // packages/web under TS's instantiation-depth ceiling.

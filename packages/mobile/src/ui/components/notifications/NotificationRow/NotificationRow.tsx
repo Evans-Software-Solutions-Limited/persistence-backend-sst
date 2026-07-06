@@ -9,7 +9,9 @@ import type {
 import { isUnread, notificationTypeLabel } from "@/domain/models/notification";
 import { relativeTime } from "@/application/notifications/grouping";
 import {
+  IconApple,
   IconBell,
+  IconChart,
   IconChevronR,
   IconCheck,
   IconClock,
@@ -62,6 +64,9 @@ const TONE_VISUAL: Record<NotifTone, { tileBg: string; iconColor: string }> = {
  * The `default` arm is the forward-compatible fallback for any unknown /
  * future type.
  */
+// NOTE: keep every registered `NotificationType` mapped to a case below; the
+// shared <NotificationPreferenceRow> relies on the returned `tone` being one of
+// trainer / primary / gold / success for its tile-colour lookup.
 export function notificationVisual(type: WireNotificationType): Visual {
   switch (type) {
     case "workout_assigned":
@@ -82,6 +87,16 @@ export function notificationVisual(type: WireNotificationType): Visual {
       return { Icon: IconTarget, tone: "success" };
     case "trainer_feedback":
       return { Icon: IconMessage, tone: "trainer" };
+    // M8 Coach Mode Phase 3 — coach on-behalf / assignment events. All use the
+    // `trainer` tone (coach-driven), matching pt_* and trainer_feedback.
+    case "goal_assigned_by_trainer":
+      return { Icon: IconTarget, tone: "trainer" };
+    case "workout_logged_on_behalf":
+      return { Icon: IconDumbbell, tone: "trainer" };
+    case "measurement_logged_on_behalf":
+      return { Icon: IconChart, tone: "trainer" };
+    case "nutrition_target_set_by_trainer":
+      return { Icon: IconApple, tone: "trainer" };
     default:
       return { Icon: IconBell, tone: "neutral" };
   }
