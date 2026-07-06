@@ -6,6 +6,12 @@ const habitMock = {
   list: vi.fn(),
   remove: vi.fn(),
   goalBelongsToUser: vi.fn(async () => true),
+  // 18-habit-setup: category resolution drives per-category value validation.
+  // Default null = "not a configured habit" so value validation is skipped
+  // (back-compat with the pre-18 grid). `userLocalDate` feeds the prior-week
+  // guard; the existing fixtures log in the week of 2026-06-04.
+  getHabitCategoryForGoal: vi.fn(async () => null),
+  userLocalDate: vi.fn(async () => "2026-06-04"),
 };
 const evaluateMock = vi
   .fn()
@@ -170,6 +176,67 @@ describe("createHabitCompletionHandler", () => {
       post({ goalId: "someone-elses-goal" }),
     );
     expect(res.status).toBe(404);
+    expect(habitMock.create).not.toHaveBeenCalled();
+  });
+
+  // ── 18-habit-setup T-18.4.1: per-category value + prior-week guards ────────
+
+  it("422s a value-carrying habit (Water) with no value", async () => {
+    habitMock.getHabitCategoryForGoal.mockResolvedValueOnce("water" as any);
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-06-04" }),
+    );
+    expect(res.status).toBe(422);
+    expect(habitMock.create).not.toHaveBeenCalled();
+  });
+
+  it("422s an out-of-range value for the category", async () => {
+    habitMock.getHabitCategoryForGoal.mockResolvedValueOnce("water" as any);
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-06-04", value: 999 }), // water max 40
+    );
+    expect(res.status).toBe(422);
+    expect(habitMock.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid value_gte completion and persists the value", async () => {
+    habitMock.getHabitCategoryForGoal.mockResolvedValueOnce("water" as any);
+    habitMock.create.mockResolvedValue({ id: "h1", goalId: "g1" });
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-06-04", value: 2.5 }),
+    );
+    expect(res.status).toBe(201);
+    expect(habitMock.create.mock.calls[0][1].value).toBe(2.5);
+  });
+
+  it("drops a value for a count habit (Gym)", async () => {
+    habitMock.getHabitCategoryForGoal.mockResolvedValueOnce("gym" as any);
+    habitMock.create.mockResolvedValue({ id: "h1", goalId: "g1" });
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-06-04", value: 5 }),
+    );
+    expect(res.status).toBe(201);
+    expect(habitMock.create.mock.calls[0][1].value).toBeNull();
+  });
+
+  it("422s a completion for a prior week (no backfilling closed weeks)", async () => {
+    // today-local is 2026-06-04 → current week Mon = 2026-06-01; 2026-05-30 is
+    // the prior week.
+    habitMock.getHabitCategoryForGoal.mockResolvedValueOnce(null);
+    const { createHabitCompletionHandler } =
+      await import("../createHabitCompletionHandler");
+    const res = await createHabitCompletionHandler.handle(
+      post({ goalId: "g1", date: "2026-05-30" }),
+    );
+    expect(res.status).toBe(422);
     expect(habitMock.create).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   HABIT_CATEGORIES,
   HABIT_CATEGORY_ORDER,
+  completionValueRequired,
   isHabitCategory,
+  validateCompletionValue,
   validateHabitConfigInput,
 } from "../habitCategories";
 
@@ -190,5 +192,63 @@ describe("validateHabitConfigInput", () => {
       });
       expect(r.ok).toBe(true);
     }
+  });
+});
+
+describe("completionValueRequired / validateCompletionValue (T-18.4.1)", () => {
+  it("requires a value for value_gte + within_tolerance, not for count", () => {
+    expect(completionValueRequired("water")).toBe(true);
+    expect(completionValueRequired("steps")).toBe(true);
+    expect(completionValueRequired("sleep")).toBe(true);
+    expect(completionValueRequired("calories")).toBe(true);
+    expect(completionValueRequired("gym")).toBe(false);
+  });
+
+  it("drops any value for a count habit (Gym)", () => {
+    expect(validateCompletionValue("gym", 3)).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(validateCompletionValue("gym", undefined)).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+
+  it("rejects a missing value for a value-carrying habit", () => {
+    const r = validateCompletionValue("water", undefined);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/requires a value/);
+  });
+
+  it("accepts an in-band value and returns it", () => {
+    expect(validateCompletionValue("water", 2.5)).toEqual({
+      ok: true,
+      value: 2.5,
+    });
+    expect(validateCompletionValue("steps", 12000)).toEqual({
+      ok: true,
+      value: 12000,
+    });
+    expect(validateCompletionValue("sleep", 7.5)).toEqual({
+      ok: true,
+      value: 7.5,
+    });
+    expect(validateCompletionValue("calories", 2100)).toEqual({
+      ok: true,
+      value: 2100,
+    });
+  });
+
+  it("rejects an out-of-band value per category", () => {
+    expect(validateCompletionValue("water", -1).ok).toBe(false);
+    expect(validateCompletionValue("water", 41).ok).toBe(false);
+    expect(validateCompletionValue("steps", 200001).ok).toBe(false);
+    expect(validateCompletionValue("sleep", 25).ok).toBe(false);
+    expect(validateCompletionValue("calories", 20001).ok).toBe(false);
+  });
+
+  it("accepts 0 (a real below-target day) for a value-carrying habit", () => {
+    expect(validateCompletionValue("water", 0)).toEqual({ ok: true, value: 0 });
   });
 });

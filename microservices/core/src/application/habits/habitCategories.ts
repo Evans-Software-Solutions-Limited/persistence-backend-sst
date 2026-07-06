@@ -134,6 +134,62 @@ function inRange(v: number, b: { min: number; max: number }): boolean {
 }
 
 /**
+ * Whether a completion `value` is REQUIRED for a category — true for the
+ * value-carrying rules (`value_gte`, `within_tolerance`), false for `count`
+ * (Gym; satisfaction is derived from logged workout_sessions, not a value).
+ */
+export function completionValueRequired(category: HabitCategory): boolean {
+  const rule = HABIT_CATEGORIES[category].completionRule;
+  return rule === "value_gte" || rule === "within_tolerance";
+}
+
+/**
+ * Accepted range for a logged completion `value` per category (litres / steps /
+ * hours / kcal). Bounds mirror the target bounds' scale (design.md § 1.1) with
+ * the floor dropped to 0 (a partial day still logs a real value below target)
+ * and a headroom cap so an obviously-bogus value (negative, or absurdly large —
+ * a fat-fingered "80000 l") is rejected before persistence (anti-gaming
+ * AC 8.5). `count` (Gym) carries no value, so it has no band.
+ */
+const COMPLETION_VALUE_BOUNDS: Partial<Record<HabitCategory, NumericBound>> = {
+  water: { min: 0, max: 40, default: 0 }, // litres/day
+  steps: { min: 0, max: 200000, default: 0 }, // steps/day
+  sleep: { min: 0, max: 24, default: 0 }, // hours/night
+  calories: { min: 0, max: 20000, default: 0 }, // kcal/day
+};
+
+export type CompletionValueResult =
+  | { ok: true; value: number | null }
+  | { ok: false; error: string };
+
+/**
+ * Validate the `value` on a habit completion for `category` (T-18.4.1 /
+ * design.md § 3.3). For a value-carrying rule the value is REQUIRED and must
+ * fall inside the per-category band; for `count` (Gym) any supplied value is
+ * ignored (returned as null). Pure — no DB, no clock.
+ */
+export function validateCompletionValue(
+  category: HabitCategory,
+  value: number | undefined,
+): CompletionValueResult {
+  if (!completionValueRequired(category)) {
+    // Gym / count: no value semantics — drop whatever was sent.
+    return { ok: true, value: null };
+  }
+  if (value === undefined || value === null) {
+    return { ok: false, error: `${category} completion requires a value` };
+  }
+  const bounds = COMPLETION_VALUE_BOUNDS[category];
+  if (bounds && !inRange(value, bounds)) {
+    return {
+      ok: false,
+      error: `value must be between ${bounds.min} and ${bounds.max} for ${category}`,
+    };
+  }
+  return { ok: true, value };
+}
+
+/**
  * Validate + normalise a client config payload for `category`. Enforces the
  * per-category bounds (anti-gaming AC 8.5) and fills the server-authoritative
  * `period` / `completion_rule` / `unit`. `daysPerWeek` must be a 1–7 integer

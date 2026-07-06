@@ -1,12 +1,14 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   habitCompletions,
+  habitConfigs,
   profiles,
   userGoals,
   type HabitCompletion,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { localDateISO } from "../streaks/period";
+import type { HabitCategory } from "../habits/habitCategories";
 
 /**
  * Habit-completion reads + writes (06-progress-goals, Phase 06.3).
@@ -47,6 +49,32 @@ export class HabitRepository {
       .where(and(eq(userGoals.id, goalId), eq(userGoals.userId, userId)))
       .limit(1);
     return rows.length > 0;
+  }
+
+  /**
+   * The habit category configured against `goalId` for `userId`, or null when
+   * the goal isn't a habit (no habit_configs row) or isn't the user's. Lets the
+   * completion handler pick the per-category value validation (T-18.4.1). Scoped
+   * by user_id so a foreign goal id can't leak its category.
+   */
+  async getHabitCategoryForGoal(
+    userId: string,
+    goalId: string,
+  ): Promise<HabitCategory | null> {
+    const db = getDb();
+    const rows = await db
+      .select({ category: habitConfigs.category })
+      .from(habitConfigs)
+      .where(
+        and(eq(habitConfigs.goalId, goalId), eq(habitConfigs.userId, userId)),
+      )
+      .limit(1);
+    return (rows[0]?.category as HabitCategory | undefined) ?? null;
+  }
+
+  /** The user-local calendar date (YYYY-MM-DD) of `at`, per profiles.timezone. */
+  async userLocalDate(userId: string, at: Date): Promise<string> {
+    return this.localDate(userId, at);
   }
 
   /**

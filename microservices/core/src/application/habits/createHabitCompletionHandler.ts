@@ -7,6 +7,12 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { safeEvaluateStreaks, resolveEventTs } from "../streaks/evaluate";
 import { parseHabitDay, latestLocalDateOnEarth } from "./habitDay";
+import { validateCompletionValue } from "./habitCategories";
+import {
+  compareISO,
+  periodEndForDateISO,
+  periodStartFromEndISO,
+} from "../streaks/period";
 
 /**
  * POST /habit-completions — mark a habit complete for a user-local day
@@ -58,6 +64,49 @@ export const createHabitCompletionHandler = new Elysia()
         return { error: "Goal not found" };
       }
 
+      // Per-category value validation (T-18.4.1 / design.md § 3.3). A
+      // value_gte / within_tolerance habit REQUIRES a value in the category's
+      // band; Gym (count) carries none (dropped to null). A goal that isn't a
+      // configured habit (no habit_configs row) has no rule, so we skip value
+      // validation and store whatever numeric value was sent (back-compat with
+      // the pre-18 completion grid).
+      const category = await ctx.HabitRepository.getHabitCategoryForGoal(
+        userId,
+        goalId,
+      );
+      let normalizedValue: number | null = value ?? null;
+      if (category) {
+        const valid = validateCompletionValue(category, value);
+        if (!valid.ok) {
+          ctx.set.status = 422;
+          return { error: valid.error };
+        }
+        normalizedValue = valid.value;
+      }
+
+      // Prior-week rejection (anti-gaming AC 8.1): completions may only land
+      // inside the CURRENT Mon–Sun week (up to today) — backfilling a closed
+      // week would let a user inflate `longest`. `today` is the user-local day;
+      // for a date-only cell we compare against the current week's Monday, for
+      // an instant the derived local day is inherently now so it can't be
+      // prior-week (still guarded once we know the day). Future days are already
+      // rejected above (date-only) / clamped to now (instant).
+      const todayLocal = await ctx.HabitRepository.userLocalDate(
+        userId,
+        new Date(),
+      );
+      const currentWeekStart = periodStartFromEndISO(
+        periodEndForDateISO(todayLocal, "weekly"),
+        "weekly",
+      );
+      if (
+        day.kind === "day" &&
+        compareISO(day.localDate, currentWeekStart) < 0
+      ) {
+        ctx.set.status = 422;
+        return { error: "Cannot log a completion for a prior week" };
+      }
+
       // For a date-only day, anchor the stored instant at noon UTC of that day
       // (clamped to now). Noon UTC keeps the instant inside the day for tz in
       // (-12, +12), but drifts to the next local day for tz ≥ +12 — so the
@@ -75,7 +124,7 @@ export const createHabitCompletionHandler = new Elysia()
         goalId,
         completedAt,
         localDate,
-        value: value ?? null,
+        value: normalizedValue,
       });
 
       // Pass the authoritative local day through so the engine evaluates the
