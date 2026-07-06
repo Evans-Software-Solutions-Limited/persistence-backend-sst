@@ -115,7 +115,7 @@ Path `microservices/core/src/application/nutrition/today/`. Returns everything t
 
 `microservices/core/src/application/nutrition/targets/`. Repository `nutritionTargetRepository.ts`.
 
-- `GET /nutrition/targets` → `{ data: NutritionTarget | null }` (null if never set). When `set_by_user_id IS NOT NULL`, include the setter's `profiles.display_name` as `setByName` so the FE banner (cross-cuts § 1.5) renders without a second call.
+- `GET /nutrition/targets` → `{ data: NutritionTarget | null }` (null if never set). When `set_by_user_id IS NOT NULL`, include the setter's `profiles.full_name` as `setByName` so the FE banner (cross-cuts § 1.5) renders without a second call (corrected 2026-07-06 — shipped `nutritionTargetRepository` already reads `full_name`).
 - `PUT /nutrition/targets` — upsert on `user_id` (PK). Body: `{ dailyKcal, proteinG, carbsG, fatG, waterCups, preset }`. **Self-write only: `set_by_user_id` stays untouched** (NULL on first self-set; the trainer route in M8 is the only writer of a non-null `set_by_user_id`). Returns the upserted row.
 - **Do NOT build `PUT /trainers/me/clients/:clientId/nutrition/target`** — that's `10-trainer-features`/M8. M9 ships only the column + the self-route.
 
