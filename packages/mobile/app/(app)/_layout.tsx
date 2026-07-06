@@ -1,8 +1,10 @@
 import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
+import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
 import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
 import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
+import { EditNutritionTargetsSheet } from "../../src/ui/presenters/coach/EditNutritionTargetsSheet";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
@@ -247,6 +249,14 @@ export default function AppLayout() {
         useAssignWorkoutSheet().open.
       */}
       <AssignWorkoutSheet />
+      {/*
+        EditNutritionTargetsSheet + AssignGoalSheet — the M8 Coach Phase 5
+        Client Detail quick-action sheets (Macros / Goals). Root-mounted
+        siblings (feedback_sheets_mount_at_root); read their zustand open-state
+        stores to drive the <BottomSheet> slide animation.
+      */}
+      <EditNutritionTargetsSheet />
+      <AssignGoalSheet />
       {/*
         M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
         All three read useFuelSheets().sheet to drive their <BottomSheet>

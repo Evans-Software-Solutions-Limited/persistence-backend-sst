@@ -75,7 +75,11 @@ import type {
   InviteApiError,
   ProgramApiError,
   WorkoutAssignmentRow,
+  GoalApiError,
+  AssignClientGoalInput,
+  UpdateClientGoalInput,
 } from "@/domain/ports/api.port";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
@@ -1225,6 +1229,133 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<ActiveProgramme | null>(
       this.clientActiveProgrammes[clientId] ?? null,
     );
+  }
+
+  // -- Client Detail aggregate (M8 Coach Phase 5) --
+  /** Fixture for `getClientDetail`, keyed by clientId. */
+  public clientDetails: Record<string, ClientDetail> = {};
+  public getClientDetailCalls: string[] = [];
+  /** Captures every on-behalf goal assign. */
+  public assignClientGoalCalls: {
+    clientId: string;
+    input: AssignClientGoalInput;
+  }[] = [];
+  /** Captures every on-behalf goal edit. */
+  public updateClientGoalCalls: {
+    clientId: string;
+    goalId: string;
+    input: UpdateClientGoalInput;
+  }[] = [];
+  /** Captures every on-behalf nutrition-target write. */
+  public setClientNutritionTargetCalls: {
+    clientId: string;
+    input: SetTargetsInput;
+  }[] = [];
+  /**
+   * When set, the next goal write returns this domain error instead of
+   * success (drives the `not_assigner` 403 test path). One-shot.
+   */
+  public nextGoalError: {
+    code: NonNullable<GoalApiError["goalCode"]>;
+    message: string;
+  } | null = null;
+
+  async getClientDetail(
+    clientId: string,
+  ): Promise<Result<ClientDetail, ApiError>> {
+    this.getClientDetailCalls.push(clientId);
+    const detail = this.clientDetails[clientId];
+    if (detail === undefined) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No client detail fixture configured",
+      });
+    }
+    return this.mayFail<ClientDetail>(detail);
+  }
+
+  private failGoal(): Result<ApiGoal, GoalApiError> | null {
+    if (this.shouldFail) {
+      return fail<GoalApiError>(this.failError as GoalApiError);
+    }
+    if (this.nextGoalError !== null) {
+      const { code, message } = this.nextGoalError;
+      this.nextGoalError = null;
+      return fail<GoalApiError>({
+        kind: "api",
+        code: "server",
+        message,
+        status: code === "not_assigner" ? 403 : 400,
+        goalCode: code,
+      });
+    }
+    return null;
+  }
+
+  async assignClientGoal(
+    clientId: string,
+    input: AssignClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>> {
+    this.assignClientGoalCalls.push({ clientId, input });
+    const failure = this.failGoal();
+    if (failure) return failure;
+    const goal: ApiGoal = {
+      id: `goal-${this.goals.length + 1}`,
+      userId: clientId,
+      goalTypeId: input.goalTypeId,
+      priority: input.priority ?? 1,
+      targetDate: input.targetDate ?? null,
+      isActive: input.isActive ?? true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.goals.push(goal);
+    return ok(goal);
+  }
+
+  async updateClientGoal(
+    clientId: string,
+    goalId: string,
+    input: UpdateClientGoalInput,
+  ): Promise<Result<ApiGoal, GoalApiError>> {
+    this.updateClientGoalCalls.push({ clientId, goalId, input });
+    const failure = this.failGoal();
+    if (failure) return failure;
+    const now = new Date().toISOString();
+    const existing = this.goals.find((g) => g.id === goalId);
+    const goal: ApiGoal = {
+      id: goalId,
+      userId: clientId,
+      goalTypeId: existing?.goalTypeId ?? "goal-type-1",
+      priority: input.priority ?? existing?.priority ?? 1,
+      targetDate: input.targetDate ?? existing?.targetDate ?? null,
+      isActive: input.isActive ?? existing?.isActive ?? true,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    return ok(goal);
+  }
+
+  async setClientNutritionTarget(
+    clientId: string,
+    input: SetTargetsInput,
+  ): Promise<Result<NutritionTarget, ApiError>> {
+    this.setClientNutritionTargetCalls.push({ clientId, input });
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const next: NutritionTarget = {
+      userId: clientId,
+      dailyKcal: input.dailyKcal,
+      proteinG: input.proteinG,
+      carbsG: input.carbsG,
+      fatG: input.fatG,
+      waterCups: input.waterCups,
+      preset: input.preset ?? "custom",
+      setByUserId: "trainer-test",
+      setByName: "Coach Test",
+      updatedAt: new Date().toISOString(),
+    };
+    return ok(next);
   }
 
   // -- Trainers / Coach You (10-trainer-features) --
