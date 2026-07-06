@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -27,6 +27,20 @@ import { deriveCollectionStreak } from "@/domain/services";
  * coach mode (`clientId` set) reads/writes a client's config via the trainer
  * routes, showing attribution + locking nothing (the coach owns the edits).
  *
+ * DRAFT + explicit SAVE model. The screen holds a local draft of all five
+ * configs; toggles/targets/frequency/leniency mutate the DRAFT only (instant,
+ * no server write). Nothing is written until the user taps Save, which commits
+ * the diff against the last-saved baseline (a configure PUT per enabled edit, a
+ * disable DELETE per turned-off habit) then reconciles. Back discards the draft
+ * simply by navigating away (nothing was written).
+ *
+ * This replaces the old per-toggle mutate approach, which wrote a *pending*
+ * `{enabled:false}` on disable (the backend defers disables to next Monday) but
+ * left the live row enabled — so the switch, driven by the live `enabled`, snap-
+ * ped back ON on reload and the habit couldn't be turned off. The draft model
+ * shows off instantly, and the pending-aware BASELINE (below) keeps a *saved*
+ * disable off on re-open.
+ *
  * The collection streak hero reads the server `habit_streak` row when present
  * (server wins), falling back to the offline `deriveCollectionStreak` mirror.
  * At-risk is derived from the offline mirror (this week not yet safe + no
@@ -51,19 +65,91 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
   const streaks = useGetStreaks();
 
   const [skipped, setSkipped] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Key the config list by category so the presenter can index directly; any
-  // missing category falls back to its disabled default (defensive — the hooks
-  // already merge all five).
-  const configsByCategory = useMemo(() => {
+  // Baseline = the user's last SAVED INTENT, keyed by category. We start from
+  // the loaded live config, but apply any queued pending edit OVER it so the
+  // baseline reflects what the user last committed — not just the live row.
+  // This is the fix for the re-open snap-back: a previously-saved disable lands
+  // as `pending.enabled = false` over a live `enabled = true`, so the baseline
+  // (and therefore the draft + the switch) shows OFF on load. Missing categories
+  // fall back to their disabled default.
+  const baseline = useMemo(() => {
     const map = {} as Record<HabitCategory, HabitConfig>;
     for (const category of HABIT_ORDER) {
-      map[category] =
+      const live =
         configsList.find((c) => c.category === category) ??
         defaultHabitConfig(category);
+      const pending = live.pending;
+      map[category] = {
+        ...live,
+        enabled: pending?.enabled ?? live.enabled,
+        targetValue: pending?.targetValue ?? live.targetValue,
+        daysPerWeek:
+          pending && pending.daysPerWeek !== undefined
+            ? pending.daysPerWeek
+            : live.daysPerWeek,
+        tolerancePct:
+          pending && pending.tolerancePct !== undefined
+            ? pending.tolerancePct
+            : live.tolerancePct,
+        // The draft edits the last-saved intent, not the queued edit itself —
+        // drop `pending` so the presenter renders a clean control (no stale
+        // "Starts Monday" tag on top of the draft value).
+        pending: null,
+      };
     }
     return map;
   }, [configsList]);
+
+  const [draft, setDraft] = useState<Record<HabitCategory, HabitConfig> | null>(
+    null,
+  );
+
+  // A stable signature of a config set's editable fields — used to detect a
+  // baseline change (re-seed) and whether the draft has been touched.
+  const signatureOf = useCallback(
+    (configs: Record<HabitCategory, HabitConfig>) =>
+      HABIT_ORDER.map((category) => {
+        const c = configs[category];
+        return `${category}:${c.enabled}:${c.targetValue}:${c.daysPerWeek}:${c.tolerancePct}`;
+      }).join("|"),
+    [],
+  );
+
+  const baselineSignature = useMemo(
+    () => signatureOf(baseline),
+    [baseline, signatureOf],
+  );
+
+  // `dirty` = the draft diverges from the baseline on any editable field.
+  const dirty = useMemo(() => {
+    if (!draft) return false;
+    return signatureOf(draft) !== baselineSignature;
+  }, [draft, baselineSignature, signatureOf]);
+
+  // Seed the draft when the baseline first resolves, and re-seed on a baseline
+  // change so long as the user hasn't edited the draft AWAY from the baseline it
+  // was last seeded from. We compare the draft to the *previously seeded*
+  // baseline (not the new one) so a background refresh / post-save reconcile
+  // re-seeds cleanly, while genuine in-progress edits are preserved.
+  const seededSignature = useRef<string | null>(null);
+  useEffect(() => {
+    if (draft === null) {
+      setDraft(baseline);
+      seededSignature.current = baselineSignature;
+      return;
+    }
+    const draftUntouched = signatureOf(draft) === seededSignature.current;
+    if (draftUntouched && baselineSignature !== seededSignature.current) {
+      setDraft(baseline);
+      seededSignature.current = baselineSignature;
+    }
+  }, [draft, baseline, baselineSignature, signatureOf]);
+
+  // The presenter always renders the draft (falling back to the baseline while
+  // the draft is still null on the very first render before the effect runs).
+  const presented = draft ?? baseline;
 
   // The single collection habit streak row (weekly, no source goal).
   const collectionStreak = useMemo(
@@ -101,87 +187,116 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
   }, [isCoachView, collectionStreak?.status, streak, offlineStreak]);
 
   const onBack = useCallback(() => {
+    // Discard is implicit: nothing was written to the server, so navigating
+    // away drops the unsaved draft.
     if (router.canGoBack()) router.back();
   }, [router]);
 
-  // Reflect an optimistic config write into the mounted screen. The self view
-  // writes its local cache synchronously (before the command's queue drain), so
-  // it re-reads instantly — offline-safe (the same stale-`data`-snapshot bug as
-  // the Home habit grid). The coach view has NO local cache for a client's
-  // config: the on-behalf PUT is only sent inside the queue drain (after the
-  // mutate's first await), so the re-fetch must be CHAINED onto the mutate's
-  // completion — firing it synchronously would race the GET ahead of the PUT
-  // and read the pre-edit server row.
-  const reloadSelfConfig = selfConfig.reload;
-  const refreshClientConfig = clientConfig.refresh;
-  const reflectAfter = useCallback(
-    (mutated: Promise<void>) => {
-      if (isCoachView) void mutated.then(() => refreshClientConfig());
-      else reloadSelfConfig();
+  // --- Draft mutators — local only, instant, no server write ---
+  const patchDraft = useCallback(
+    (category: HabitCategory, patch: Partial<HabitConfig>) => {
+      setDraft((prev) => {
+        const base = prev ?? baseline;
+        return { ...base, [category]: { ...base[category], ...patch } };
+      });
     },
-    [isCoachView, refreshClientConfig, reloadSelfConfig],
+    [baseline],
   );
 
   const onToggle = useCallback(
     (category: HabitCategory, next: boolean) => {
-      const cfg = configsByCategory[category];
-      const mutated = next
-        ? configure.mutate({
-            category,
-            targetValue: cfg.targetValue,
-            daysPerWeek: cfg.daysPerWeek ?? undefined,
-            tolerancePct: cfg.tolerancePct ?? undefined,
-          })
-        : disable.mutate(category);
-      reflectAfter(mutated);
+      patchDraft(category, { enabled: next });
     },
-    [configsByCategory, configure, disable, reflectAfter],
+    [patchDraft],
   );
 
   const onTargetChange = useCallback(
     (category: HabitCategory, next: number) => {
-      const cfg = configsByCategory[category];
-      reflectAfter(
-        configure.mutate({
-          category,
-          targetValue: next,
-          daysPerWeek: cfg.daysPerWeek ?? undefined,
-          tolerancePct: cfg.tolerancePct ?? undefined,
-        }),
-      );
+      patchDraft(category, { targetValue: next });
     },
-    [configsByCategory, configure, reflectAfter],
+    [patchDraft],
   );
 
   const onFreqChange = useCallback(
     (category: HabitCategory, next: number) => {
-      const cfg = configsByCategory[category];
-      reflectAfter(
-        configure.mutate({
-          category,
-          targetValue: cfg.targetValue,
-          daysPerWeek: next,
-          tolerancePct: cfg.tolerancePct ?? undefined,
-        }),
-      );
+      patchDraft(category, { daysPerWeek: next });
     },
-    [configsByCategory, configure, reflectAfter],
+    [patchDraft],
   );
 
   const onLeniencyChange = useCallback(
     (category: HabitCategory, next: number) => {
-      const cfg = configsByCategory[category];
-      reflectAfter(
-        configure.mutate({
-          category,
-          targetValue: cfg.targetValue,
-          daysPerWeek: cfg.daysPerWeek ?? undefined,
-          tolerancePct: next,
-        }),
-      );
+      patchDraft(category, { tolerancePct: next });
     },
-    [configsByCategory, configure, reflectAfter],
+    [patchDraft],
   );
+
+  const configureMutate = configure.mutate;
+  const disableMutate = disable.mutate;
+  const reloadSelfConfig = selfConfig.reload;
+  const refreshClientConfig = clientConfig.refresh;
+
+  // Commit the draft: one write per category that diverges from the baseline.
+  //  - draft enabled            → configure PUT (enable/edit).
+  //  - was enabled, now disabled → disable DELETE.
+  //  - both disabled            → no write.
+  // Enable-then-disable before Save collapses back to the baseline (draft ==
+  // baseline for that category) → no write, for free.
+  const onSave = useCallback(async () => {
+    if (saving || !dirty || !draft) return;
+    setSaving(true);
+    try {
+      const writes: Promise<void>[] = [];
+      for (const category of HABIT_ORDER) {
+        const d = draft[category];
+        const b = baseline[category];
+        const changed =
+          d.enabled !== b.enabled ||
+          d.targetValue !== b.targetValue ||
+          d.daysPerWeek !== b.daysPerWeek ||
+          d.tolerancePct !== b.tolerancePct;
+        if (!changed) continue;
+        if (d.enabled) {
+          writes.push(
+            configureMutate({
+              category,
+              targetValue: d.targetValue,
+              daysPerWeek: d.daysPerWeek ?? undefined,
+              tolerancePct: d.tolerancePct ?? undefined,
+            }),
+          );
+        } else if (b.enabled) {
+          // was enabled, now off → disable.
+          writes.push(disableMutate(category));
+        }
+        // else: both disabled — nothing to write.
+      }
+      await Promise.all(writes);
+      // Reconcile so the baseline picks up the server's queued-pending state
+      // (self reads its own cache; coach re-fetches the client row).
+      if (isCoachView) await refreshClientConfig();
+      else reloadSelfConfig();
+      // Re-seed the draft from the freshly reconciled baseline (clears dirty).
+      // The baseline recompute is async (depends on the reload/refresh landing
+      // in state), so mark the draft null to force a re-seed on the next render.
+      setDraft(null);
+      seededSignature.current = null;
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    saving,
+    dirty,
+    draft,
+    baseline,
+    configureMutate,
+    disableMutate,
+    isCoachView,
+    refreshClientConfig,
+    reloadSelfConfig,
+  ]);
+
+  const canSave = dirty && !saving;
 
   const onSpendFreeze = useCallback(() => {
     if (!collectionStreak || freezeTokens <= 0 || skipped) return;
@@ -205,12 +320,15 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
 
   return (
     <HabitSetupPresenter
-      configs={configsByCategory}
+      configs={presented}
       streak={streak}
       longest={longest}
       freezeTokens={freezeTokens}
       atRisk={atRisk}
       skipped={skipped}
+      isCoach={isCoachView}
+      canSave={canSave}
+      saving={saving}
       intro={
         isCoachView
           ? "Set each target and how often they'll hit it. Changes start next Monday."
@@ -226,6 +344,7 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
       onLeniencyChange={onLeniencyChange}
       onSpendFreeze={onSpendFreeze}
       onAdjustNutrition={onAdjustNutrition}
+      onSave={onSave}
     />
   );
 }

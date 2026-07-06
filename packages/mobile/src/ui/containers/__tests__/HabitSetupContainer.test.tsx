@@ -6,6 +6,7 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import type { Streak } from "@/domain/models/streak";
+import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { HabitSetupPresenterProps } from "@/ui/presenters/habits/HabitSetupPresenter";
 
@@ -23,7 +24,8 @@ jest.mock("@/ui/presenters/habits/HabitSetupPresenter", () => ({
   },
 }));
 
-// Avoid the real network drain firing on mutations.
+// The sync drain calls `fetch` directly. We spy on it so we can assert which
+// habit endpoints were hit (and, for test #1, that NONE were until Save).
 const mockFetch = jest.fn(async (..._args: unknown[]) => ({
   ok: true,
   status: 200,
@@ -94,6 +96,13 @@ function props(): HabitSetupPresenterProps {
   return captured.props;
 }
 
+/** How many habit-config network calls the drain has fired so far. */
+function habitFetchCount(): number {
+  return mockFetch.mock.calls.filter(([url]) =>
+    String(url).includes("/habits/"),
+  ).length;
+}
+
 const collectionStreak: Streak = {
   id: "streak-1",
   userId: USER,
@@ -107,10 +116,38 @@ const collectionStreak: Streak = {
   status: "active",
 };
 
+/** An enabled water config entry (wire shape) used across several tests. */
+function waterEnabled(
+  overrides: Partial<HabitConfigEntry> = {},
+): HabitConfigEntry {
+  return {
+    category: "water",
+    enabled: true,
+    goalId: "g-water",
+    assignedByCoach: false,
+    locked: false,
+    targetValue: 2,
+    unit: "l",
+    period: "daily",
+    completionRule: "value_gte",
+    daysPerWeek: 5,
+    tolerancePct: null,
+    pending: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   captured.props = null;
   mockPush.mockClear();
+  mockBack.mockClear();
   mockFetch.mockClear();
+  mockFetch.mockImplementation(async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    json: async () => ({ data: {} }),
+  }));
 });
 
 describe("HabitSetupContainer (self)", () => {
@@ -131,14 +168,213 @@ describe("HabitSetupContainer (self)", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
   });
 
-  it("enabling a habit fires the configure PUT through the drain", async () => {
+  it("no server streak: falls back to the offline deriveCollectionStreak mirror", async () => {
+    renderContainer(undefined, (api, storage) => {
+      // No streak row; one enabled water habit hit 5/7 this + prior weeks.
+      api.habitConfigs = [waterEnabled({ daysPerWeek: 1 })];
+      const today = new Date();
+      const iso = today.toISOString().slice(0, 10);
+      storage.cacheHabitCompletions(USER, [
+        {
+          id: "c1",
+          userId: USER,
+          goalId: "g-water",
+          completedAt: `${iso}T09:00:00.000Z`,
+          localCompletedDate: iso,
+          value: 3,
+        },
+      ]);
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(typeof props().streak).toBe("number");
+    expect(props().freezeTokens).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test #1 — THE core regression (can't-toggle-off). Toggling OFF flips the
+  // presenter's config IMMEDIATELY (the switch reads the draft, so off shows
+  // off) and fires ZERO network writes until Save.
+  // -------------------------------------------------------------------------
+  it("toggling a habit OFF updates the presenter instantly and fires NO mutate until Save", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [waterEnabled()];
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    const before = habitFetchCount();
+
+    act(() => props().onToggle("water", false));
+
+    // Draft reflects OFF immediately (this is what the live-`enabled`-driven
+    // switch could NOT do pre-fix — it snapped back on).
+    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
+    // And nothing has been written to the server yet.
+    expect(habitFetchCount()).toBe(before);
+  });
+
+  it("enabling a disabled habit flips the draft on instantly, no mutate yet", async () => {
+    // Water starts disabled (no server row).
+    renderContainer();
+    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
+    const before = habitFetchCount();
+
+    act(() => props().onToggle("water", true));
+
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(habitFetchCount()).toBe(before);
+  });
+
+  it("canSave: false initially, true after an edit, false again after Save", async () => {
     renderContainer();
     await waitFor(() => expect(captured.props).not.toBeNull());
-    await act(async () => props().onToggle("water", true));
+    expect(props().canSave).toBe(false);
+
+    act(() => props().onToggle("water", true));
+    await waitFor(() => expect(props().canSave).toBe(true));
+
+    await act(async () => props().onSave());
+    await waitFor(() => expect(props().canSave).toBe(false));
+    expect(props().saving).toBe(false);
+  });
+
+  it("onSave commits: enable → configure PUT, disable → DELETE, then reloads", async () => {
+    // gym starts disabled; water starts enabled → we enable gym + disable water.
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [waterEnabled()];
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+
+    act(() => props().onToggle("gym", true));
+    act(() => props().onToggle("water", false));
+    await waitFor(() => expect(props().canSave).toBe(true));
+
+    // Nothing written before Save.
+    expect(habitFetchCount()).toBe(0);
+
+    await act(async () => props().onSave());
+
+    const put = mockFetch.mock.calls.find(
+      ([url, opts]) =>
+        String(url).endsWith("/users/me/habits/gym/config") &&
+        (opts as { method?: string })?.method === "PUT",
+    );
+    const del = mockFetch.mock.calls.find(
+      ([url, opts]) =>
+        String(url).endsWith("/users/me/habits/water") &&
+        (opts as { method?: string })?.method === "DELETE",
+    );
+    expect(put).toBeDefined();
+    expect(del).toBeDefined();
+    // After save, dirty is cleared (reload re-seeded the draft from baseline).
+    await waitFor(() => expect(props().canSave).toBe(false));
+  });
+
+  it("enable-then-disable the SAME habit before Save writes nothing for it", async () => {
+    // gym starts disabled. Enable then disable → draft == baseline → no write.
+    renderContainer();
+    await waitFor(() => expect(props().configs.gym.enabled).toBe(false));
+
+    act(() => props().onToggle("gym", true));
+    await waitFor(() => expect(props().configs.gym.enabled).toBe(true));
+    act(() => props().onToggle("gym", false));
+    await waitFor(() => expect(props().configs.gym.enabled).toBe(false));
+
+    // Draft is back to baseline → nothing to save.
+    expect(props().canSave).toBe(false);
+
+    // Even if Save is invoked, it's a no-op (guarded by canSave/dirty).
+    await act(async () => props().onSave());
+    expect(habitFetchCount()).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test #6 — pending-aware seed (the re-open snap-back fix). A config loaded
+  // with a queued disable (`pending.enabled = false`) over a live `enabled:
+  // true` must render OFF on first paint — proving a SAVED disable stays off
+  // when the screen is re-opened.
+  // -------------------------------------------------------------------------
+  it("pending-aware seed: a queued disable renders the habit OFF on load", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [
+        waterEnabled({
+          enabled: true, // live row still enabled (backend defers the disable)
+          pending: { from: "2026-07-13", config: { enabled: false } },
+        }),
+      ];
+    });
+    // The baseline applies the pending intent over the live value → OFF.
+    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
+    // Not dirty — this is the SAVED state, not an in-progress edit.
+    expect(props().canSave).toBe(false);
+  });
+
+  it("target edit updates the draft target instantly, no mutate until Save", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [waterEnabled()];
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    const before = habitFetchCount();
+
+    act(() => props().onTargetChange("water", 3));
+    await waitFor(() => expect(props().configs.water.targetValue).toBe(3));
+    expect(habitFetchCount()).toBe(before);
+
+    await act(async () => props().onSave());
     const put = mockFetch.mock.calls.find(([url]) =>
       String(url).endsWith("/users/me/habits/water/config"),
     );
     expect(put).toBeDefined();
+  });
+
+  it("freq + leniency edits update the draft instantly, commit on Save", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [
+        waterEnabled(),
+        {
+          category: "calories",
+          enabled: true,
+          goalId: "g-cals",
+          assignedByCoach: false,
+          locked: false,
+          targetValue: 2000,
+          unit: "kcal",
+          period: "daily",
+          completionRule: "within_tolerance",
+          daysPerWeek: 6,
+          tolerancePct: 10,
+          pending: null,
+        },
+      ];
+    });
+    await waitFor(() => expect(props().configs.calories.enabled).toBe(true));
+    const before = habitFetchCount();
+
+    act(() => props().onFreqChange("water", 6));
+    act(() => props().onLeniencyChange("calories", 15));
+    await waitFor(() => expect(props().configs.water.daysPerWeek).toBe(6));
+    expect(props().configs.calories.tolerancePct).toBe(15);
+    // Local only until Save.
+    expect(habitFetchCount()).toBe(before);
+
+    await act(async () => props().onSave());
+    const waterPut = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/users/me/habits/water/config"),
+    );
+    const calPut = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/users/me/habits/calories/config"),
+    );
+    expect(waterPut).toBeDefined();
+    expect(calPut).toBeDefined();
+  });
+
+  it("back button pops the stack (discards the unsaved draft)", async () => {
+    renderContainer();
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    // An edit that we then abandon by going Back.
+    act(() => props().onToggle("water", true));
+    act(() => props().onBack());
+    expect(mockBack).toHaveBeenCalled();
+    // Nothing was written.
+    expect(habitFetchCount()).toBe(0);
   });
 
   it("spend freeze: calls the skip mode + marks skipped", async () => {
@@ -155,144 +391,12 @@ describe("HabitSetupContainer (self)", () => {
     await waitFor(() => expect(props().skipped).toBe(true));
   });
 
-  it("no server streak: falls back to the offline deriveCollectionStreak mirror", async () => {
-    renderContainer(undefined, (api, storage) => {
-      // No streak row; one enabled water habit hit 5/7 this + prior weeks.
-      api.habitConfigs = [
-        {
-          category: "water",
-          enabled: true,
-          goalId: "g-water",
-          assignedByCoach: false,
-          locked: false,
-          targetValue: 2,
-          unit: "l",
-          period: "daily",
-          completionRule: "value_gte",
-          daysPerWeek: 1, // easy to satisfy
-          tolerancePct: null,
-          pending: null,
-        },
-      ];
-      // A completion this week + last week (relative to now) → offline streak ≥ 1.
-      const today = new Date();
-      const iso = today.toISOString().slice(0, 10);
-      storage.cacheHabitCompletions(USER, [
-        {
-          id: "c1",
-          userId: USER,
-          goalId: "g-water",
-          completedAt: `${iso}T09:00:00.000Z`,
-          localCompletedDate: iso,
-          value: 3,
-        },
-      ]);
-    });
-    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
-    // Offline mirror produces a numeric streak (freezeTokens default 0 with no row).
-    expect(typeof props().streak).toBe("number");
-    expect(props().freezeTokens).toBe(0);
-  });
-
-  it("regression: enabling a habit flips its config in the mounted presenter (reflectConfig → reload)", async () => {
-    // Water starts DISABLED (no server row). Enabling it writes a live config
-    // (enabled:true) to the cache synchronously; reflectConfig() → reload()
-    // must re-read that cache into the mounted presenter WITHOUT a re-mount —
-    // the same frozen-snapshot bug as the Home habit grid. Pre-fix the switch
-    // stayed off until a navigate-away/back re-mount.
-    renderContainer();
-    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
-    await act(async () => props().onToggle("water", true));
-    // The presenter now reflects the enabled config — proof of the re-render.
-    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
-    expect(props().configs.water.goalId).toBeTruthy();
-  });
-
-  it("regression: a target edit is reflected in the mounted presenter's pending config", async () => {
-    // Start from an already-active habit so a target edit writes a PENDING
-    // config (live row untouched until Monday). The mounted presenter must
-    // reflect that pending value via reflectConfig → reload, no re-mount.
-    renderContainer(undefined, (api) => {
-      api.habitConfigs = [
-        {
-          category: "water",
-          enabled: true,
-          goalId: "g-water",
-          assignedByCoach: false,
-          locked: false,
-          targetValue: 2,
-          unit: "l",
-          period: "daily",
-          completionRule: "value_gte",
-          daysPerWeek: 5,
-          tolerancePct: null,
-          pending: null,
-        },
-      ];
-    });
-    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
-    await act(async () => props().onTargetChange("water", 3));
-    await waitFor(() =>
-      expect(props().configs.water.pending?.targetValue).toBe(3),
-    );
-  });
-
-  it("disabling a habit fires the DELETE through the drain", async () => {
-    renderContainer(undefined, (api) => {
-      api.habitConfigs = [
-        {
-          category: "water",
-          enabled: true,
-          goalId: "g-water",
-          assignedByCoach: false,
-          locked: false,
-          targetValue: 2,
-          unit: "l",
-          period: "daily",
-          completionRule: "value_gte",
-          daysPerWeek: 5,
-          tolerancePct: null,
-          pending: null,
-        },
-      ];
-    });
-    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
-    await act(async () => props().onToggle("water", false));
-    const del = mockFetch.mock.calls.find(
-      ([url, opts]) =>
-        String(url).endsWith("/users/me/habits/water") &&
-        (opts as { method?: string })?.method === "DELETE",
-    );
-    expect(del).toBeDefined();
-  });
-
-  it("target / freq / leniency edits fire configure PUTs", async () => {
-    renderContainer();
-    await waitFor(() => expect(captured.props).not.toBeNull());
-    await act(async () => props().onTargetChange("water", 3));
-    await act(async () => props().onFreqChange("water", 6));
-    await act(async () => props().onLeniencyChange("calories", 15));
-    const puts = mockFetch.mock.calls.filter(([url]) =>
-      String(url).includes("/users/me/habits/"),
-    );
-    expect(puts.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("back button pops the stack", async () => {
-    renderContainer();
-    await waitFor(() => expect(captured.props).not.toBeNull());
-    act(() => props().onBack());
-    expect(mockBack).toHaveBeenCalled();
-  });
-
   it("failed freeze spend reverts the skipped flag", async () => {
     const { api } = renderContainer(undefined, (a, storage) => {
       a.streaks = [collectionStreak];
       storage.cacheStreaks(USER, [collectionStreak]);
     });
     await waitFor(() => expect(props().freezeTokens).toBe(3));
-    // Force the freeze spend (api.useFreezeToken) to fail → the container
-    // should revert its optimistic `skipped` flag.
     api.shouldFail = true;
     await act(async () => props().onSpendFreeze());
     await waitFor(() => expect(props().skipped).toBe(false));
@@ -304,55 +408,29 @@ describe("HabitSetupContainer (coach)", () => {
     renderContainer("client-9", (api) => {
       api.clientHabitConfigs = {
         "client-9": [
-          {
-            category: "water",
-            enabled: true,
-            goalId: "g-water",
+          waterEnabled({
             assignedByCoach: true,
             assignedByUserId: USER,
             locked: true,
-            targetValue: 2,
-            unit: "l",
-            period: "daily",
-            completionRule: "value_gte",
-            daysPerWeek: 5,
-            tolerancePct: null,
-            pending: null,
-          },
+          }),
         ],
       };
     });
-    await waitFor(() => expect(captured.props?.coachSubtitle).toBeTruthy());
-    expect(props().configs.water.enabled).toBe(true);
+    // The client GET is async → wait for the enabled config to seed the draft.
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(props().coachSubtitle).toBeTruthy();
+    expect(props().isCoach).toBe(true);
     // Coach view never surfaces at-risk (no local streak mirror for a client).
     expect(props().atRisk).toBe(false);
   });
 
-  it("coach edit routes the PUT to the trainer endpoint", async () => {
-    renderContainer("client-9");
-    await waitFor(() => expect(captured.props).not.toBeNull());
-    await act(async () => props().onToggle("water", true));
-    const put = mockFetch.mock.calls.find(([url]) =>
-      String(url).endsWith("/trainers/me/clients/client-9/habits/water/config"),
-    );
-    expect(put).toBeDefined();
-  });
-
-  it("regression: coach edit reflects the client config in the mounted presenter (reflectConfig → chained refresh, not raced)", async () => {
-    // Coach view has no local cache for a client's config: the on-behalf PUT is
-    // sent inside the queue drain, and reflectConfig() re-FETCHES the server row
-    // to reflect it. The refresh MUST be chained onto the mutate's drain —
-    // firing it synchronously would race the GET ahead of the PUT and read the
-    // pre-edit row (the switch would stay frozen).
-    //
-    // Model the server: the drained PUT flips water to enabled in the store
-    // that getClientHabitConfigs reads. So this assertion is ORDERING-SENSITIVE
-    // — a raced (unchained) refresh reads the store BEFORE the PUT persists and
-    // stays false; only the chained refresh reads it AFTER and shows enabled.
+  it("coach edit updates the draft, then Save routes to the trainer endpoint + refreshes", async () => {
     const { api } = renderContainer("client-9", (a) => {
       a.clientHabitConfigs = { "client-9": [] };
     });
     const spy = jest.spyOn(api, "getClientHabitConfigs");
+    // Model the server: the drained PUT flips water enabled in the store the
+    // refresh re-reads (so the reconcile can only see it AFTER the PUT).
     mockFetch.mockImplementation(async (url: unknown, opts?: unknown) => {
       const u = String(url);
       const method = (opts as { method?: string } | undefined)?.method;
@@ -361,21 +439,11 @@ describe("HabitSetupContainer (coach)", () => {
         u.endsWith("/trainers/me/clients/client-9/habits/water/config")
       ) {
         api.clientHabitConfigs["client-9"] = [
-          {
-            category: "water",
-            enabled: true,
-            goalId: "g-water",
+          waterEnabled({
             assignedByCoach: true,
             assignedByUserId: USER,
             locked: true,
-            targetValue: 2,
-            unit: "l",
-            period: "daily",
-            completionRule: "value_gte",
-            daysPerWeek: 5,
-            tolerancePct: null,
-            pending: null,
-          },
+          }),
         ];
       }
       return {
@@ -385,17 +453,55 @@ describe("HabitSetupContainer (coach)", () => {
         json: async () => ({ data: {} }),
       };
     });
+
     await waitFor(() => expect(captured.props).not.toBeNull());
     expect(props().configs.water.enabled).toBe(false);
-    const before = spy.mock.calls.length;
-    await act(async () => props().onToggle("water", true));
-    // The chained refresh re-fetched AFTER the PUT persisted, so the mounted
-    // presenter now reflects the enabled config — proof of reflection + order.
+
+    // Edit the draft — instant, no write.
+    act(() => props().onToggle("water", true));
     await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+    expect(habitFetchCount()).toBe(0);
+
+    const before = spy.mock.calls.length;
+    await act(async () => props().onSave());
+
+    // The trainer PUT fired, scoped to this client.
+    const put = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/trainers/me/clients/client-9/habits/water/config"),
+    );
+    expect(put).toBeDefined();
+    // A refresh re-fetched the client config AFTER the PUT persisted.
     expect(spy.mock.calls.length).toBeGreaterThan(before);
-    // Every observed fetch targeted this client (never leaks another id).
     expect(spy.mock.calls.every(([id]) => id === "client-9")).toBe(true);
+    // Save cleared dirty via the reconcile.
+    await waitFor(() => expect(props().canSave).toBe(false));
     spy.mockRestore();
+  });
+
+  it("coach disable Save routes the DELETE to the trainer endpoint, scoped to the client", async () => {
+    renderContainer("client-9", (api) => {
+      api.clientHabitConfigs = {
+        "client-9": [
+          waterEnabled({
+            assignedByCoach: true,
+            assignedByUserId: USER,
+            locked: false,
+          }),
+        ],
+      };
+    });
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+
+    act(() => props().onToggle("water", false));
+    await waitFor(() => expect(props().configs.water.enabled).toBe(false));
+
+    await act(async () => props().onSave());
+    const del = mockFetch.mock.calls.find(
+      ([url, opts]) =>
+        String(url).endsWith("/trainers/me/clients/client-9/habits/water") &&
+        (opts as { method?: string })?.method === "DELETE",
+    );
+    expect(del).toBeDefined();
   });
 
   it("coach Calories deep-link is a no-op (no client-side editor)", async () => {
