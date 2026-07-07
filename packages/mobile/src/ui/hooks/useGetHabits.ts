@@ -56,7 +56,20 @@ export function buildHabitGrid(
   // grid (gym=success, steps=gold, sleep=primary, calories=ember).
   if (configs && configs.length > 0) {
     return configs
-      .filter((c) => c.enabled && c.goalId)
+      .filter((c) => {
+        // Reflect the user's INTENDED enabled state, not just the live row: a
+        // disable is deferred server-side to next Monday (live stays enabled +
+        // a pending `{enabled:false}`), so filtering on live `enabled` alone
+        // left a disabled habit lingering on the grid until Monday. Honour the
+        // pending intent so a disabled habit drops immediately (and a pending
+        // ENABLE appears immediately), matching the setup screen. The streak
+        // still scores the live config until Monday server-side — anti-gaming
+        // is untouched; this is display intent only.
+        const pendingEnabled = (
+          c.pending?.config as { enabled?: boolean } | undefined
+        )?.enabled;
+        return (pendingEnabled ?? c.enabled) && c.goalId;
+      })
       .map((cfg) => {
         const completionDays = byGoal.get(cfg.goalId!) ?? new Set<string>();
         const meta = isHabitCategory(cfg.category)

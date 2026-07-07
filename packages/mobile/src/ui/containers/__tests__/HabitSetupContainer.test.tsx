@@ -168,6 +168,25 @@ describe("HabitSetupContainer (self)", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
   });
 
+  it("surfaces deferredChangesPending when a loaded config has a pending change", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [
+        waterEnabled({
+          pending: { from: "2026-07-13", config: { enabled: false } },
+        }),
+      ];
+    });
+    await waitFor(() => expect(props().deferredChangesPending).toBe(true));
+  });
+
+  it("no deferredChangesPending when nothing is pending", async () => {
+    renderContainer(undefined, (api) => {
+      api.habitConfigs = [waterEnabled()];
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    expect(props().deferredChangesPending).toBe(false);
+  });
+
   it("no server streak: falls back to the offline deriveCollectionStreak mirror", async () => {
     renderContainer(undefined, (api, storage) => {
       // No streak row; one enabled water habit hit 5/7 this + prior weeks.

@@ -59,6 +59,15 @@ describe("HabitSetupPresenter", () => {
     expect(props.onToggle).toHaveBeenCalledWith("water", true);
   });
 
+  it("deferred-changes banner: shown only when a saved change is pending", () => {
+    expect(render().queryByTestId("habit-setup-deferred-banner")).toBeNull();
+    expect(
+      render({ deferredChangesPending: true }).getByTestId(
+        "habit-setup-deferred-banner",
+      ),
+    ).toBeTruthy();
+  });
+
   it("coach view: renders the attribution subtitle", () => {
     const { getByTestId } = render({
       coachSubtitle: "You're editing this client's habits",
