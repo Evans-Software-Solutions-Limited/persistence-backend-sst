@@ -64,6 +64,17 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
   const freeze = useUseFreezeToken();
   const streaks = useGetStreaks();
 
+  // A saved edit/disable is deferred server-side to next Monday (the loaded
+  // config carries a `pending` block until the rollover). The draft+baseline
+  // flattens pending away for a clean control, so surface it at the screen
+  // level instead — otherwise the deferral (esp. "I turned this off") is
+  // invisible, which is exactly what read as broken. Computed from the raw
+  // loaded configs, independent of the draft.
+  const hasDeferredChanges = useMemo(
+    () => configsList.some((c) => c.pending != null),
+    [configsList],
+  );
+
   const [skipped, setSkipped] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -329,6 +340,7 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
       isCoach={isCoachView}
       canSave={canSave}
       saving={saving}
+      deferredChangesPending={hasDeferredChanges}
       intro={
         isCoachView
           ? "Set each target and how often they'll hit it. Changes start next Monday."

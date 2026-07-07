@@ -305,6 +305,29 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       expect(habits[0].label).toBe("Water");
     });
 
+    it("drops a habit with a PENDING disable (deferred to Monday) immediately, and shows a pending ENABLE", () => {
+      // A disable defers server-side: live `enabled:true` + pending
+      // `{config:{enabled:false}}`. The grid must reflect the INTENDED state
+      // (off) so the habit drops right away — not linger until Monday.
+      const habits = buildHabitGrid([], week, [
+        cfg({
+          category: "water",
+          goalId: "g-water",
+          enabled: true,
+          pending: { from: "2026-06-29", config: { enabled: false } },
+        }),
+        // A pending ENABLE (live off, pending on) appears immediately.
+        cfg({
+          category: "gym",
+          goalId: "g-gym",
+          enabled: false,
+          pending: { from: "2026-06-29", config: { enabled: true } },
+        }),
+      ]);
+      expect(habits).toHaveLength(1);
+      expect(habits[0].label).toBe("Gym");
+    });
+
     it("falls back to the category name + primary tone for an unknown category", () => {
       const habits = buildHabitGrid([], week, [
         cfg({ category: "meditation", goalId: "g-x" }),

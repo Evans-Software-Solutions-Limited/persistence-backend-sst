@@ -41,6 +41,9 @@ export type HabitSetupPresenterProps = {
   canSave: boolean;
   /** A save is committing → Save shows "Saving…" and is disabled. */
   saving: boolean;
+  /** A saved edit/disable is deferred to next Monday → show the "starts
+   *  Monday" banner so the deferral (esp. turning a habit off) isn't invisible. */
+  deferredChangesPending?: boolean;
   /** Optional intro override (coach view swaps the copy). */
   intro?: string;
   /** Optional coach-attribution eyebrow shown under the title (coach view). */
@@ -69,6 +72,7 @@ export function HabitSetupPresenter({
   isCoach = false,
   canSave,
   saving,
+  deferredChangesPending = false,
   intro,
   coachSubtitle,
   onBack,
@@ -120,6 +124,43 @@ export function HabitSetupPresenter({
           >
             {coachSubtitle}
           </Text>
+        ) : null}
+
+        {deferredChangesPending ? (
+          <View
+            flexDirection="row"
+            gap={10}
+            paddingVertical={13}
+            paddingHorizontal={14}
+            backgroundColor="$surface"
+            borderWidth={1}
+            borderColor="$border"
+            borderRadius={14}
+            testID={`${testID}-deferred-banner`}
+          >
+            <View style={{ flexShrink: 0, marginTop: 1 }}>
+              <IconInfo size={15} color="#5A5A66" />
+            </View>
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              color="$text2"
+              lineHeight={17}
+              flex={1}
+            >
+              Changes take effect{" "}
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                color="$text"
+                lineHeight={17}
+              >
+                next Monday
+              </Text>
+              . Habits you&rsquo;ve turned off still count this week, then drop
+              off — this keeps your streak fair.
+            </Text>
+          </View>
         ) : null}
 
         <StreakSectionPresenter
