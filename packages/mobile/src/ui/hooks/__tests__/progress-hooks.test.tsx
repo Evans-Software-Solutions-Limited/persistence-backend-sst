@@ -305,27 +305,28 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       expect(habits[0].label).toBe("Water");
     });
 
-    it("drops a habit with a PENDING disable (deferred to Monday) immediately, and shows a pending ENABLE", () => {
-      // A disable defers server-side: live `enabled:true` + pending
-      // `{config:{enabled:false}}`. The grid must reflect the INTENDED state
-      // (off) so the habit drops right away — not linger until Monday.
+    it("keeps a pending-DISABLE this week (it still counts) and hides a pending-ENABLE until Monday", () => {
+      // A disable defers to Monday: live `enabled:true` + pending
+      // `{config:{enabled:false}}`. It STILL scores this week, so it must stay
+      // on the grid so the user can hit it — dropping it would strand a habit
+      // that still counts (guaranteed miss). It leaves on Monday. A pending
+      // ENABLE (live off) is NOT counting yet, so it stays hidden until Monday.
       const habits = buildHabitGrid([], week, [
         cfg({
           category: "water",
           goalId: "g-water",
-          enabled: true,
+          enabled: true, // live-on, disable pending → still counts this week
           pending: { from: "2026-06-29", config: { enabled: false } },
         }),
-        // A pending ENABLE (live off, pending on) appears immediately.
         cfg({
           category: "gym",
           goalId: "g-gym",
-          enabled: false,
+          enabled: false, // live-off, enable pending → not counting yet
           pending: { from: "2026-06-29", config: { enabled: true } },
         }),
       ]);
       expect(habits).toHaveLength(1);
-      expect(habits[0].label).toBe("Gym");
+      expect(habits[0].label).toBe("Water");
     });
 
     it("falls back to the category name + primary tone for an unknown category", () => {
