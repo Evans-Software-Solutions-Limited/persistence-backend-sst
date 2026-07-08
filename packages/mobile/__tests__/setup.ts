@@ -91,6 +91,40 @@ jest.mock("react-native-gesture-handler", () => {
   };
 });
 
+// Mock ReanimatedSwipeable (subpath import) — the Fuel meal-log rows wrap each
+// logged entry in a swipe-to-delete Swipeable. The real component pulls native
+// reanimated/gesture bindings; in Jest we render the row content AND eagerly
+// render the right-actions (the Delete panel) so tests can press Delete without
+// driving a real gesture. `close()` is a noop.
+jest.mock("react-native-gesture-handler/ReanimatedSwipeable", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  const Swipeable = ({
+    children,
+    renderRightActions,
+  }: {
+    children: React.ReactNode;
+    renderRightActions?: (
+      progress: unknown,
+      translation: unknown,
+      methods: { close: () => void },
+    ) => React.ReactNode;
+  }) =>
+    React.createElement(
+      View,
+      null,
+      children,
+      renderRightActions
+        ? renderRightActions(
+            { value: 0 },
+            { value: 0 },
+            { close: () => undefined },
+          )
+        : null,
+    );
+  return { __esModule: true, default: Swipeable };
+});
+
 // Mock SemiCircleSlider — the WorkoutRatingPresenter consumes it as
 // the rating control. Tests interact with the presenter via the
 // per-value `workout-rating-{n}` testIDs the legacy segmented buttons

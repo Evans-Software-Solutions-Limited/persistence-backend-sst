@@ -106,6 +106,7 @@ function makeFuel(): FuelToday {
           loggedByUserId: null,
           aiEstimated: false,
           aiConfidence: null,
+          customName: null,
         },
       ],
       lunch: [],
@@ -295,5 +296,54 @@ describe("FuelContainer", () => {
     // Snap routes to the upgrade prompt (gate stubbed); calendar is a no-op.
     act(() => mockProbe.last!.onSnap());
     act(() => mockProbe.last!.onOpenCalendar());
+  });
+
+  it("delete optimistically removes the entry and drains the DELETE", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]);
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    expect(
+      mockProbe.last!.slots.find((s) => s.slot === "breakfast")!.rows,
+    ).toHaveLength(1);
+
+    // Swipe→Delete calls onDeleteEntry directly (no confirm dialog): the entry
+    // drops from the log immediately and the DELETE drains behind it.
+    await act(async () => {
+      mockProbe.last!.onDeleteEntry!("e1", "breakfast");
+    });
+    await waitFor(() =>
+      expect(
+        mockProbe.last!.slots.find((s) => s.slot === "breakfast")!.rows,
+      ).toHaveLength(0),
+    );
+    expect(mockProbe.last!.consumedKcal).toBe(0);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.test/nutrition/entries/e1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("exposes a P/C/F macro breakdown on each logged row", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]);
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    const row = mockProbe.last!.slots.find((s) => s.slot === "breakfast")!
+      .rows[0]!;
+    expect(row.proteinG).toBe(10);
+    expect(row.carbsG).toBe(50);
+    expect(row.fatG).toBe(5);
   });
 });

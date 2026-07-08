@@ -26,6 +26,7 @@ export type NutritionEntryDTO = {
   loggedByUserId: string | null;
   aiEstimated: boolean;
   aiConfidence: number | null;
+  customName: string | null;
 };
 
 export type CreateEntryInput = {
@@ -39,12 +40,19 @@ export type CreateEntryInput = {
   carbsG: number;
   fatG: number;
   loggedAt: string;
+  customName?: string | null;
 };
 
 export type UpdateEntryInput = Partial<
   Pick<
     CreateEntryInput,
-    "mealSlot" | "servings" | "kcal" | "proteinG" | "carbsG" | "fatG"
+    | "mealSlot"
+    | "servings"
+    | "kcal"
+    | "proteinG"
+    | "carbsG"
+    | "fatG"
+    | "customName"
   >
 >;
 
@@ -68,6 +76,7 @@ function toDTO(row: NutritionEntry): NutritionEntryDTO {
     loggedByUserId: row.loggedByUserId,
     aiEstimated: row.aiEstimated,
     aiConfidence: row.aiConfidence === null ? null : Number(row.aiConfidence),
+    customName: row.customName,
   };
 }
 
@@ -153,6 +162,7 @@ export class NutritionEntryRepository {
         carbsG: String(input.carbsG),
         fatG: String(input.fatG),
         loggedAt: new Date(input.loggedAt),
+        customName: input.customName ?? null,
       })
       .returning();
 
@@ -174,6 +184,7 @@ export class NutritionEntryRepository {
     if (input.proteinG !== undefined) patch.proteinG = String(input.proteinG);
     if (input.carbsG !== undefined) patch.carbsG = String(input.carbsG);
     if (input.fatG !== undefined) patch.fatG = String(input.fatG);
+    if (input.customName !== undefined) patch.customName = input.customName;
 
     const result = await db
       .update(nutritionEntries)

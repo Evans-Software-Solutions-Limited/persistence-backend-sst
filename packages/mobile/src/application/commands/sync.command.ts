@@ -208,6 +208,30 @@ export async function processSyncQueue(
         }
       }
 
+      // Nutrition-entry create: the optimistic entry (and any DELETE/PUT a fast
+      // swipe-delete/edit enqueued while this POST was in flight) still address
+      // the `local-…` id. Swap it to the server id so that follow-up mutation
+      // hits the real row instead of 404-looping — and so a delete after this
+      // point can't orphan a server row. Mirrors the exercise swap above.
+      if (
+        entry.entityType === "nutrition_entry" &&
+        entry.operation === "create" &&
+        entry.entityId !== null
+      ) {
+        try {
+          const body = (await response.json()) as { data?: { id?: string } };
+          const serverId = body.data?.id;
+          if (serverId && serverId !== entry.entityId) {
+            storage.swapLocalNutritionEntryId(entry.entityId, serverId);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /nutrition/entries succeeded but id-swap failed; local id will reconcile on the next refresh:",
+            err,
+          );
+        }
+      }
+
       // 09: a flushed `POST /notifications/preferences` echoes the
       // server's authoritative merged JSONB column (RETURNING). Reset the
       // local cache to it so an optimistic toggle that raced a concurrent

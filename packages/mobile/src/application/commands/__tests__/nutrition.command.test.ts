@@ -147,6 +147,22 @@ describe("logEntryCommand", () => {
     });
     expect(entry.kcal).toBe(200); // 800 / 4 × 1
   });
+
+  it("carries customName onto the optimistic entry and the queued payload", () => {
+    const storage = new InMemoryStorageAdapter();
+    const entry = logEntryCommand(deps(storage), {
+      mealSlot: "lunch",
+      servings: 1,
+      kcal: 90,
+      proteinG: 1,
+      carbsG: 23,
+      fatG: 0,
+      customName: "Banana",
+      loggedAt: `${DATE}T12:00:00.000Z`,
+    });
+    expect(entry.customName).toBe("Banana");
+    expect(parsePayload(storage).customName).toBe("Banana");
+  });
 });
 
 describe("editEntryCommand", () => {
@@ -171,18 +187,42 @@ describe("editEntryCommand", () => {
 });
 
 describe("deleteEntryCommand", () => {
-  it("removes the entry, recomputes to empty, and enqueues a DELETE", () => {
+  it("enqueues a DELETE for a server-synced entry (no pending create)", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.cacheFoods([food]);
-    storage.cacheFuelToday(USER, DATE, emptyFuel());
-    const entry = logEntryCommand(deps(storage), {
-      foodId: "f1",
-      mealSlot: "breakfast",
-      servings: 1,
-      loggedAt: `${DATE}T08:00:00.000Z`,
+    // A server-truth day: the entry came back from a refresh with a server id,
+    // so there's no create queued behind it.
+    storage.cacheFuelToday(USER, DATE, {
+      ...emptyFuel(),
+      consumed: { kcal: 300, proteinG: 10, carbsG: 27, fatG: 3, waterCups: 0 },
+      remainingKcal: 1700,
+      entriesBySlot: {
+        breakfast: [
+          {
+            id: "server-e1",
+            userId: USER,
+            foodId: "f1",
+            recipeId: null,
+            mealId: null,
+            mealSlot: "breakfast",
+            servings: 2,
+            kcal: 300,
+            proteinG: 10,
+            carbsG: 27,
+            fatG: 3,
+            loggedAt: `${DATE}T08:00:00.000Z`,
+            loggedByUserId: null,
+            aiEstimated: false,
+            aiConfidence: null,
+            customName: null,
+          },
+        ],
+        lunch: [],
+        snack: [],
+        dinner: [],
+      },
     });
 
-    deleteEntryCommand(deps(storage), entry.id, DATE);
+    deleteEntryCommand(deps(storage), "server-e1", DATE);
 
     const fuel = storage.getCachedFuelToday(USER, DATE)!;
     expect(fuel.consumed.kcal).toBe(0);
@@ -190,7 +230,55 @@ describe("deleteEntryCommand", () => {
     const del = storage
       .getPendingMutations()
       .find((m) => m.method === "DELETE")!;
-    expect(del.endpoint).toBe(`/nutrition/entries/${entry.id}`);
+    expect(del.endpoint).toBe("/nutrition/entries/server-e1");
+  });
+
+  it("COALESCES: deleting an entry whose create is still pending cancels the create and enqueues NO delete", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheFoods([food]);
+    storage.cacheFuelToday(USER, DATE, emptyFuel());
+    // Logged offline (create queued, never sent), then deleted before any drain.
+    const entry = logEntryCommand(deps(storage), {
+      foodId: "f1",
+      mealSlot: "breakfast",
+      servings: 1,
+      loggedAt: `${DATE}T08:00:00.000Z`,
+    });
+    expect(storage.getPendingMutations()).toHaveLength(1); // the create
+
+    deleteEntryCommand(deps(storage), entry.id, DATE);
+
+    // Cache reflects the removal…
+    const fuel = storage.getCachedFuelToday(USER, DATE)!;
+    expect(fuel.consumed.kcal).toBe(0);
+    expect(fuel.entriesBySlot.breakfast).toHaveLength(0);
+    // …and the queue is empty: the un-sent create is cancelled, no DELETE queued
+    // (a DELETE against the never-synced local id would 404-loop + orphan a row).
+    expect(storage.getPendingMutations()).toHaveLength(0);
+  });
+
+  it("COALESCES a queued edit too: create + update + delete all cancel, leaving no doomed PUT", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheFoods([food]);
+    storage.cacheFuelToday(USER, DATE, emptyFuel());
+    // Offline: logged, then edited (queues a PUT against the local id), then
+    // deleted — all before any drain.
+    const entry = logEntryCommand(deps(storage), {
+      foodId: "f1",
+      mealSlot: "breakfast",
+      servings: 1,
+      loggedAt: `${DATE}T08:00:00.000Z`,
+    });
+    editEntryCommand(deps(storage), entry.id, DATE, { servings: 2, kcal: 300 });
+    expect(storage.getPendingMutations()).toHaveLength(2); // create + update
+
+    deleteEntryCommand(deps(storage), entry.id, DATE);
+
+    // Both the un-sent create AND the update for the never-synced local id are
+    // cancelled — nothing left to 404-loop against a server row that never was.
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    const fuel = storage.getCachedFuelToday(USER, DATE)!;
+    expect(fuel.entriesBySlot.breakfast).toHaveLength(0);
   });
 });
 

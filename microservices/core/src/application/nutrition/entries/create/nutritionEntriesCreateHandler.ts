@@ -69,6 +69,7 @@ export const nutritionEntriesCreateHandler = new Elysia()
         carbsG,
         fatG,
         loggedAt: body.loggedAt,
+        customName: body.customName ?? null,
       });
 
       ctx.set.status = 201;
@@ -94,6 +95,9 @@ export const nutritionEntriesCreateHandler = new Elysia()
         carbsG: t.Optional(t.Number({ minimum: 0 })),
         fatG: t.Optional(t.Number({ minimum: 0 })),
         loggedAt: t.String(),
+        // Client-supplied label for one-off/AI entries — stored/returned
+        // verbatim, never derived or validated against a food (BRIEF).
+        customName: t.Optional(t.String({ maxLength: 200 })),
       }),
     },
   );

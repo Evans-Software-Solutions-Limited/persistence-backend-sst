@@ -49,6 +49,12 @@ export type NutritionEntry = {
   loggedByUserId: string | null;
   aiEstimated: boolean;
   aiConfidence: number | null;
+  /**
+   * Client-supplied label for a one-off / AI-estimated entry (no food/recipe/
+   * meal ref to resolve a name from). Null for referenced entries — their name
+   * comes from the linked food/recipe/meal cache. See `entryDisplayLabel`.
+   */
+  customName: string | null;
 };
 
 /** The user's daily kcal/macro/water target (one row per user). */
@@ -170,6 +176,8 @@ export type LogEntryInput = {
   proteinG?: number;
   carbsG?: number;
   fatG?: number;
+  /** Label for a one-off / AI entry (no ref). Persisted to `custom_name`. */
+  customName?: string;
   /** ISO timestamp. */
   loggedAt: string;
 };

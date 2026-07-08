@@ -239,6 +239,94 @@ describe("processSyncQueue", () => {
     expect(storage.getCachedExercise("local-def")?.id).toBe("local-def");
   });
 
+  it("swaps a nutrition entry's local id on create success: re-keys the cached day + re-points a queued delete (in-flight-create race)", async () => {
+    const date = "2026-06-10";
+    const localId = "local-nabc";
+    const serverId = "server-nxyz";
+    storage.cacheFuelToday("u1", date, {
+      date,
+      targets: null,
+      consumed: { kcal: 90, proteinG: 1, carbsG: 23, fatG: 0, waterCups: 0 },
+      remainingKcal: 0,
+      entriesBySlot: {
+        breakfast: [
+          {
+            id: localId,
+            userId: "u1",
+            foodId: null,
+            recipeId: null,
+            mealId: null,
+            mealSlot: "breakfast",
+            servings: 1,
+            kcal: 90,
+            proteinG: 1,
+            carbsG: 23,
+            fatG: 0,
+            loggedAt: `${date}T12:00:00.000Z`,
+            loggedByUserId: null,
+            aiEstimated: false,
+            aiConfidence: null,
+            customName: "Banana",
+          },
+        ],
+        lunch: [],
+        snack: [],
+        dinner: [],
+      },
+    });
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: localId,
+      operation: "create",
+      payload: { customName: "Banana" },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    // A swipe-delete queued against the local id while the create was in flight.
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: localId,
+      operation: "delete",
+      payload: {},
+      endpoint: `/nutrition/entries/${localId}`,
+      method: "DELETE",
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: serverId } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: serverId, deleted: true } }),
+      });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(2);
+    // The cached entry is re-keyed to the server id…
+    expect(
+      storage.getCachedFuelToday("u1", date)?.entriesBySlot.breakfast[0]?.id,
+    ).toBe(serverId);
+    // …and the queued DELETE is re-pointed to the REAL id, never the doomed
+    // local one. NOTE: this drain sends the DELETE to serverId because the
+    // in-memory adapter's getPendingMutations returns live object references, so
+    // the swap's endpoint rewrite is seen by the already-snapshotted entry. In
+    // production (SQLite returns fresh row copies) a same-drain DELETE would 404
+    // once against the local id, but the swap has ALREADY corrected the DB row's
+    // endpoint, so the next drain retries against serverId and succeeds — no
+    // permanent orphan either way. This asserts the swap re-points the queued
+    // mutation + re-keys the cache; the cross-drain self-heal is inherent.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://api.test/nutrition/entries/${serverId}`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      `https://api.test/nutrition/entries/${localId}`,
+      expect.anything(),
+    );
+  });
+
   it("does not swap when the create response omits a server id", async () => {
     storage.saveCustomExercise(customExercise("local-ghi"));
     storage.enqueueMutation({

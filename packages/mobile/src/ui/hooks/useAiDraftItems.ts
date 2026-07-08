@@ -16,10 +16,11 @@ import { useLogEntry } from "./useLogEntry";
  * Confirm logs ONE entry per KEPT item via the SAME `useLogEntry` command
  * path QuickAdd uses for manual/custom foods (a one-off entry — no
  * `foodId`/`recipeId`/`mealId` reference — carrying the item's own
- * kcal/macros). The shipped `POST /nutrition/entries` schema has no
- * `customName`/`aiEstimated`/`aiConfidence` fields (verified against
- * `nutritionEntriesCreateHandler.ts`'s `t.Object` body), so those are NOT
- * sent — per the brief, we don't invent new backend fields.
+ * kcal/macros PLUS `customName` = the AI's item name, so the logged row
+ * renders the food name rather than the generic "Quick entry" fallback).
+ * `aiEstimated`/`aiConfidence` are still NOT sent — the create schema has no
+ * such fields and we don't invent backend fields beyond the agreed
+ * `custom_name` column.
  *
  * Implements: specs/13-nutrition-tracking/design.md § Revised 2026-07-03
  *             › Mobile flow (SnapAISheet)
@@ -104,6 +105,9 @@ export function useAiDraftItems(): UseAiDraftItems {
             proteinG: item.proteinG,
             carbsG: item.carbsG,
             fatG: item.fatG,
+            // Persist the AI's item name so the logged row shows e.g. "Banana"
+            // instead of the generic "Quick entry" fallback (custom_name column).
+            customName: item.name,
             loggedAt,
           });
         }
