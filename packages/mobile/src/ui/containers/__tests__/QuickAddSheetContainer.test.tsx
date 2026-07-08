@@ -234,6 +234,7 @@ describe("QuickAddSheetContainer", () => {
             loggedByUserId: null,
             aiEstimated: false,
             aiConfidence: null,
+            customName: null,
           },
         ],
         lunch: [],
@@ -311,6 +312,7 @@ describe("QuickAddSheetContainer", () => {
             loggedByUserId: null,
             aiEstimated: false,
             aiConfidence: null,
+            customName: null,
           },
           {
             id: "y-meal",
@@ -328,6 +330,7 @@ describe("QuickAddSheetContainer", () => {
             loggedByUserId: null,
             aiEstimated: false,
             aiConfidence: null,
+            customName: null,
           },
         ],
         lunch: [],

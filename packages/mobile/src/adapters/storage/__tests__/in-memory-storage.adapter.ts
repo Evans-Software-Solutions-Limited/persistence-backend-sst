@@ -298,6 +298,25 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  swapLocalNutritionEntryId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const { payload } of this.fuelTodayCache.values()) {
+      for (const list of Object.values(payload.entriesBySlot)) {
+        for (const e of list) {
+          if (e.id === localId) e.id = serverId;
+        }
+      }
+    }
+    for (const e of this.queue) {
+      if (e.entityType === "nutrition_entry" && e.entityId === localId) {
+        e.entityId = serverId;
+        if (e.endpoint === `/nutrition/entries/${localId}`) {
+          e.endpoint = `/nutrition/entries/${serverId}`;
+        }
+      }
+    }
+  }
+
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
     return this.referenceLists.get(kind) ?? null;
   }

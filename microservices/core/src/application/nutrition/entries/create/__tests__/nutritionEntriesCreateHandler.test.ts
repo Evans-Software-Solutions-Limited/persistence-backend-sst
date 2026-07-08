@@ -53,6 +53,7 @@ const created = {
   loggedByUserId: null,
   aiEstimated: false,
   aiConfidence: null,
+  customName: null,
 };
 
 describe("nutritionEntriesCreateHandler", () => {
@@ -156,6 +157,55 @@ describe("nutritionEntriesCreateHandler", () => {
     expect(entryMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({ kcal: 120 }),
+    );
+  });
+
+  it("round-trips customName for a one-off entry", async () => {
+    entryMocks.create.mockResolvedValue({
+      ...created,
+      foodId: null,
+      customName: "Mum's lasagne",
+    });
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        mealSlot: "dinner",
+        servings: 1,
+        kcal: 450,
+        proteinG: 25,
+        carbsG: 40,
+        fatG: 18,
+        loggedAt: "2026-06-21T19:00:00.000Z",
+        customName: "Mum's lasagne",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ customName: "Mum's lasagne" }),
+    );
+    const body = (await res.json()) as any;
+    expect(body.data.customName).toBe("Mum's lasagne");
+  });
+
+  it("persists customName as null when not supplied", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    await nutritionEntriesCreateHandler.handle(
+      post({
+        mealSlot: "snack",
+        servings: 1,
+        kcal: 120,
+        proteinG: 2,
+        carbsG: 25,
+        fatG: 1,
+        loggedAt: "2026-06-21T15:00:00.000Z",
+      }),
+    );
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ customName: null }),
     );
   });
 

@@ -29,7 +29,11 @@ vi.mock("../../../repositories/waterLogRepository", () => ({
   WaterLogRepository: vi.fn().mockImplementation(() => waterMocks),
 }));
 
-function entry(slot: string, kcal: number): any {
+function entry(
+  slot: string,
+  kcal: number,
+  customName: string | null = null,
+): any {
   return {
     id: `${slot}-${kcal}`,
     mealSlot: slot,
@@ -37,6 +41,7 @@ function entry(slot: string, kcal: number): any {
     proteinG: 10,
     carbsG: 20,
     fatG: 5,
+    customName,
   };
 }
 
@@ -73,7 +78,9 @@ describe("summariseConsumed / groupBySlot (pure)", () => {
 describe("nutritionTodayHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    entryMocks.listByDate.mockResolvedValue([entry("breakfast", 300)]);
+    entryMocks.listByDate.mockResolvedValue([
+      entry("breakfast", 300, "Mum's lasagne"),
+    ]);
     targetMocks.get.mockResolvedValue({ dailyKcal: 2000, waterCups: 8 });
     waterMocks.getCups.mockResolvedValue(4);
   });
@@ -99,6 +106,9 @@ describe("nutritionTodayHandler", () => {
     expect(body.data.consumed.waterCups).toBe(4);
     expect(body.data.remainingKcal).toBe(1700);
     expect(body.data.entriesBySlot.breakfast).toHaveLength(1);
+    expect(body.data.entriesBySlot.breakfast[0].customName).toBe(
+      "Mum's lasagne",
+    );
   });
 
   it("remainingKcal is 0 when no target is set", async () => {

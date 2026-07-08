@@ -888,6 +888,49 @@ export class SQLiteStorageAdapter implements StoragePort {
     });
   }
 
+  swapLocalNutritionEntryId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // An entry's id lives inside the day-aggregate blob (no per-entry row),
+      // so re-key it in every cached day that references it.
+      const rows = db.getAllSync(
+        `SELECT user_id, date, payload FROM cached_fuel_today`,
+      ) as { user_id: string; date: string; payload: string }[];
+      for (const r of rows) {
+        const fuel = JSON.parse(r.payload) as FuelToday;
+        let touched = false;
+        for (const list of Object.values(fuel.entriesBySlot)) {
+          for (const e of list) {
+            if (e.id === localId) {
+              e.id = serverId;
+              touched = true;
+            }
+          }
+        }
+        if (touched) {
+          db.runSync(
+            `UPDATE cached_fuel_today SET payload = ? WHERE user_id = ? AND date = ?`,
+            [JSON.stringify(fuel), r.user_id, r.date],
+          );
+        }
+      }
+      // Re-point any queued entry mutations still addressed to the local id
+      // (e.g. a DELETE/PUT enqueued before the create flushed) so they hit the
+      // real resource instead of 404ing on `/nutrition/entries/local-…`.
+      db.runSync(
+        `UPDATE sync_queue SET endpoint = ?
+         WHERE entity_type = 'nutrition_entry' AND endpoint = ?`,
+        [`/nutrition/entries/${serverId}`, `/nutrition/entries/${localId}`],
+      );
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?
+         WHERE entity_type = 'nutrition_entry' AND entity_id = ?`,
+        [serverId, localId],
+      );
+    });
+  }
+
   // -- Reference-List Cache --
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {

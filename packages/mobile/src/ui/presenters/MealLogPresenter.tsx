@@ -1,7 +1,8 @@
 import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Card, IconBtn } from "@/ui/components/foundation";
-import { IconPlus } from "@/ui/components/icons";
+import { IconPlus, IconTrash } from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
 
 /**
@@ -22,6 +23,9 @@ export type MealRowVM = {
   /** e.g. "1 serving" — secondary line. */
   sub: string;
   kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
 };
 
 export type MealSlotVM = {
@@ -36,12 +40,41 @@ export type MealLogProps = {
   onAddToSlot: (slot: MealSlot) => void;
   /** Tap a logged row to edit it (optional in M9 — wired to the edit sheet). */
   onPressRow?: (id: string, slot: MealSlot) => void;
+  /** Swipe a logged row left to reveal Delete; tap it to remove the entry. */
+  onDeleteEntry?: (id: string, slot: MealSlot) => void;
   testID?: string;
 };
 
 const intl = (n: number) => Math.round(n).toLocaleString("en-US");
 
-function MealRow({
+/** The red "Delete" panel revealed by a left-swipe on a logged entry row. */
+function DeleteAction({ id, onDelete }: { id: string; onDelete: () => void }) {
+  return (
+    <Pressable
+      testID={`fuel-entry-delete-${id}`}
+      onPress={onDelete}
+      accessibilityRole="button"
+      accessibilityLabel="Delete entry"
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+    >
+      <View
+        backgroundColor="$error"
+        width={88}
+        height="100%"
+        alignItems="center"
+        justifyContent="center"
+        gap={3}
+      >
+        <IconTrash size={18} color="#fff" strokeWidth={2.2} />
+        <Text fontFamily="$body" fontSize={11} fontWeight="700" color="#fff">
+          Delete
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function MealRowBody({
   row,
   slot,
   onPressRow,
@@ -57,6 +90,7 @@ function MealRow({
       accessibilityRole={onPressRow ? "button" : undefined}
       style={({ pressed }) => ({ opacity: pressed && onPressRow ? 0.7 : 1 })}
     >
+      {/* Opaque surface so the row slides over the red Delete panel on swipe. */}
       <View
         flexDirection="row"
         alignItems="center"
@@ -65,6 +99,7 @@ function MealRow({
         paddingHorizontal={14}
         borderTopWidth={1}
         borderColor="$border"
+        backgroundColor="$surface"
       >
         <View flex={1} paddingRight={10}>
           <Text
@@ -83,6 +118,15 @@ function MealRow({
           >
             {row.sub}
           </Text>
+          <Text
+            fontFamily="$mono"
+            fontSize={11}
+            color="$text3"
+            fontVariant={["tabular-nums"]}
+            testID={`fuel-entry-macros-${row.id}`}
+          >
+            {`P ${intl(row.proteinG)}g · C ${intl(row.carbsG)}g · F ${intl(row.fatG)}g`}
+          </Text>
         </View>
         <Text
           fontFamily="$mono"
@@ -97,10 +141,47 @@ function MealRow({
   );
 }
 
+function MealRow({
+  row,
+  slot,
+  onPressRow,
+  onDeleteEntry,
+}: {
+  row: MealRowVM;
+  slot: MealSlot;
+  onPressRow?: (id: string, slot: MealSlot) => void;
+  onDeleteEntry?: (id: string, slot: MealSlot) => void;
+}) {
+  const body = <MealRowBody row={row} slot={slot} onPressRow={onPressRow} />;
+  if (!onDeleteEntry) return body;
+  // Swipe left to reveal a destructive Delete (iOS-standard). Tapping it removes
+  // the entry immediately (optimistic — re-loggable); the container owns the
+  // command + reflect.
+  return (
+    <ReanimatedSwipeable
+      testID={`fuel-entry-swipe-${row.id}`}
+      renderRightActions={(_progress, _translation, methods) => (
+        <DeleteAction
+          id={row.id}
+          onDelete={() => {
+            onDeleteEntry(row.id, slot);
+            methods.close();
+          }}
+        />
+      )}
+      rightThreshold={40}
+      overshootRight={false}
+    >
+      {body}
+    </ReanimatedSwipeable>
+  );
+}
+
 export function MealLogPresenter({
   slots,
   onAddToSlot,
   onPressRow,
+  onDeleteEntry,
   testID = "fuel-meal-log",
 }: MealLogProps) {
   return (
@@ -158,6 +239,7 @@ export function MealLogPresenter({
                 row={row}
                 slot={m.slot}
                 onPressRow={onPressRow}
+                onDeleteEntry={onDeleteEntry}
               />
             ))
           ) : (

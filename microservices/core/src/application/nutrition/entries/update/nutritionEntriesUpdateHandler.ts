@@ -84,6 +84,9 @@ export const nutritionEntriesUpdateHandler = new Elysia()
         proteinG: t.Optional(t.Number({ minimum: 0 })),
         carbsG: t.Optional(t.Number({ minimum: 0 })),
         fatG: t.Optional(t.Number({ minimum: 0 })),
+        // Client-supplied label for one-off/AI entries — only touched when
+        // present in the PATCH; absent leaves the existing value untouched.
+        customName: t.Optional(t.String({ maxLength: 200 })),
       }),
     },
   );

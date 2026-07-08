@@ -170,10 +170,12 @@ describe("useAiDraftItems", () => {
       count = await result.current.confirm("lunch");
     });
     expect(count).toBe(1); // only the kept item
-    expect(
-      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.lunch
-        .length,
-    ).toBe(1);
+    const lunch = storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot
+      .lunch;
+    expect(lunch?.length).toBe(1);
+    // The AI item's name is persisted as customName so the logged row shows
+    // "Grilled chicken breast", not the "Quick entry" fallback.
+    expect(lunch?.[0]?.customName).toBe("Grilled chicken breast");
   });
 
   it("confirm is a no-op (returns 0) when nothing is kept", async () => {

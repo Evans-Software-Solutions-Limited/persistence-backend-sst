@@ -8,6 +8,7 @@ import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSetWater } from "@/ui/hooks/useSetWater";
+import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
@@ -65,6 +66,7 @@ export function FuelContainer() {
   const recipes = useGetRecipes();
   const meals = useGetMeals();
   const setWater = useSetWater();
+  const deleteEntry = useDeleteEntry();
   const aiGate = useNutritionAiGate();
   const online = useOnlineStatus();
   const openScan = useFuelSheets((s) => s.openScan);
@@ -110,6 +112,9 @@ export function FuelContainer() {
           name: entryDisplayLabel(e, lookups),
           sub: `${e.servings} ${e.servings === 1 ? "serving" : "servings"}`,
           kcal: e.kcal,
+          proteinG: e.proteinG,
+          carbsG: e.carbsG,
+          fatG: e.fatG,
         })),
       };
     });
@@ -203,6 +208,20 @@ export function FuelContainer() {
     [setWater, date, fuel],
   );
 
+  // Swipe a logged entry left → tap the revealed Delete → optimistic remove.
+  // The swipe+tap is the deliberate action (iOS-standard), so there's no extra
+  // confirm dialog; the ring + slot totals reflect immediately off the cache and
+  // the DELETE drains behind it.
+  const onDeleteEntry = useCallback(
+    (id: string, _slot: MealSlot) => {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      void deleteEntry.mutate({ id, date }).then(() => fuel.reload());
+      // Optimistic reflect immediately (offline-safe); reconcile online.
+      fuel.reload();
+    },
+    [deleteEntry, date, fuel],
+  );
+
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&
     data === null;
@@ -249,6 +268,7 @@ export function FuelContainer() {
       onRecipes={() => router.push("/(app)/fuel/recipes")}
       onAddToSlot={(slot: MealSlot) => openQuickAdd(slot)}
       onSetWater={onSetWater}
+      onDeleteEntry={onDeleteEntry}
       onLog={() => openQuickAdd("breakfast")}
     />
   );

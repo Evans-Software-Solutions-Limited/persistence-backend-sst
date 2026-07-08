@@ -1712,6 +1712,9 @@ export const nutritionEntries = pgTable(
     loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
     aiEstimated: boolean("ai_estimated").notNull().default(false),
     aiConfidence: numeric("ai_confidence"), // 0..1, populated when ai_estimated (M9.5)
+    // Client-supplied label for one-off/AI-estimated entries (no foodId/recipeId/
+    // mealId) — stored and returned verbatim, never derived or validated server-side.
+    customName: text("custom_name"),
   },
   (t) => [
     index("nutrition_entries_user_date").on(t.userId, t.loggedAt),

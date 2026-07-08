@@ -108,6 +108,7 @@ export function logEntryCommand(
     loggedByUserId: null,
     aiEstimated: false,
     aiConfidence: null,
+    customName: input.customName ?? null,
   };
 
   const fuel = readFuel(storage, userId, date);
@@ -128,6 +129,7 @@ export function logEntryCommand(
       proteinG: input.proteinG,
       carbsG: input.carbsG,
       fatG: input.fatG,
+      customName: input.customName,
       loggedAt: input.loggedAt,
     },
     endpoint: "/nutrition/entries",
@@ -161,7 +163,33 @@ export function editEntryCommand(
   });
 }
 
-/** Delete an entry from a cached day. */
+/**
+ * Delete an entry from a cached day (optimistic removal + recompute).
+ *
+ * Offline-first COALESCING: if this entry's own `create` is still pending on the
+ * queue (logged then deleted before the create ever drained — offline, or the
+ * brief window before the post-log refresh), we CANCEL that create and enqueue
+ * NO delete. The server never learned of the entry, so a
+ * `DELETE /nutrition/entries/local-…` would 404 every retry (stuck-failed) AND
+ * the create would still land first — orphaning a server row the user believes
+ * they removed, which then reappears on the next refresh. Marking the create
+ * completed drops it from the pending set (pruned on the next drain) without
+ * sending it. `getPendingMutations` excludes in-flight entries, so a create a
+ * concurrent drain has already claimed won't match here — that race falls
+ * through to a DELETE against the `local-…` id, but the create's reply-path
+ * `swapLocalNutritionEntryId` (sync.command) re-points that queued DELETE to the
+ * real id once the POST returns, so the row can't be orphaned.
+ *
+ * When we cancel the create we ALSO cancel any other queued mutation for the
+ * same local id — e.g. an `update` (edit) enqueued after the create but before
+ * the drain. Leaving that behind would fire `PUT /nutrition/entries/local-…`
+ * against an id the server never created, 404-looping into a stuck-failed entry
+ * (the very failure this coalescing exists to prevent). The edit path has no UI
+ * yet, so this is latent today, but the guard is cheap and future-proof.
+ *
+ * Otherwise (a server-synced entry — its id came back on a refresh) enqueue the
+ * DELETE as normal.
+ */
 export function deleteEntryCommand(
   deps: NutritionCommandDeps,
   id: string,
@@ -171,6 +199,22 @@ export function deleteEntryCommand(
   const fuel = readFuel(storage, userId, date);
   const entries = flattenFuelEntries(fuel).filter((e) => e.id !== id);
   storage.cacheFuelToday(userId, date, recomputeFuelToday(fuel, entries));
+
+  const pending = storage.getPendingMutations();
+  const pendingCreate = pending.find(
+    (m) =>
+      m.entityType === "nutrition_entry" &&
+      m.operation === "create" &&
+      m.entityId === id,
+  );
+  if (pendingCreate) {
+    for (const m of pending) {
+      if (m.entityType === "nutrition_entry" && m.entityId === id) {
+        storage.markMutationCompleted(m.id);
+      }
+    }
+    return;
+  }
 
   storage.enqueueMutation({
     entityType: "nutrition_entry",

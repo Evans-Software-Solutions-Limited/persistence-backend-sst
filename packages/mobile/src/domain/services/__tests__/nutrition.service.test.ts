@@ -55,6 +55,7 @@ const entry = (over: Partial<NutritionEntry> = {}): NutritionEntry => ({
   loggedByUserId: null,
   aiEstimated: false,
   aiConfidence: null,
+  customName: null,
   ...over,
 });
 

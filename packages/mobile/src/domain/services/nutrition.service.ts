@@ -539,13 +539,16 @@ export type EntryNameLookups = {
  * isn't cached → "Quick entry" for a macro-only one-off. Pure.
  */
 export function entryDisplayLabel(
-  entry: Pick<NutritionEntry, "foodId" | "recipeId" | "mealId">,
+  entry: Pick<NutritionEntry, "foodId" | "recipeId" | "mealId" | "customName">,
   lookups: EntryNameLookups,
 ): string {
   if (entry.foodId) return lookups.food(entry.foodId) ?? "Logged food";
   if (entry.recipeId) return lookups.recipe(entry.recipeId) ?? "Recipe";
   if (entry.mealId) return lookups.meal(entry.mealId) ?? "Meal";
-  return "Quick entry";
+  // One-off / AI entry: the persisted label (e.g. the AI's item name) beats the
+  // generic "Quick entry" fallback.
+  const custom = entry.customName?.trim();
+  return custom && custom.length > 0 ? custom : "Quick entry";
 }
 
 // ── Portion picker (Scan/Quick-add sheets, fuel-sheets.jsx PortionStepper) ───

@@ -136,6 +136,17 @@ describe("QuickAddSheetPresenter — search stage", () => {
     expect(props.onSelect).toHaveBeenCalledWith(food);
   });
 
+  it("shows a P/C/F macro line on each search result", () => {
+    const { getByTestId } = render({
+      stage: "search",
+      query: "oat",
+      results: [food],
+    });
+    expect(getByTestId("quick-add-result-macros-f1").props.children).toBe(
+      `P ${food.proteinG}g · C ${food.carbsG}g · F ${food.fatG}g`,
+    );
+  });
+
   it("shows the selected-food detail with OFF credit + confirms", () => {
     const { getByTestId, props } = render({ stage: "search", selected: food });
     expect(getByTestId("quick-add-detail")).toBeTruthy();

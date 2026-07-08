@@ -28,6 +28,7 @@ function rawRow(overrides: Record<string, unknown> = {}) {
     loggedByUserId: null,
     aiEstimated: false,
     aiConfidence: null,
+    customName: null,
     ...overrides,
   };
 }
@@ -74,11 +75,16 @@ describe("NutritionEntryRepository", () => {
   describe("getById", () => {
     it("returns the parsed entry when owned", async () => {
       (getDb as any).mockReturnValue({
-        select: vi.fn().mockReturnValue(makeGetByIdChain([rawRow()])),
+        select: vi
+          .fn()
+          .mockReturnValue(
+            makeGetByIdChain([rawRow({ customName: "Mum's lasagne" })]),
+          ),
       });
       const out = await new NutritionEntryRepository().getById("e1", "u1");
       expect(out?.kcal).toBe(300);
       expect(out?.foodId).toBe("f1");
+      expect(out?.customName).toBe("Mum's lasagne");
     });
     it("returns null when missing / not owned", async () => {
       (getDb as any).mockReturnValue({
@@ -106,6 +112,20 @@ describe("NutritionEntryRepository", () => {
       expect(e.proteinG).toBe(20);
       expect(e.loggedAt).toBe(loggedAt.toISOString());
       expect(e.aiConfidence).toBeNull();
+      expect(e.customName).toBeNull();
+    });
+
+    it("passes through a persisted customName", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi
+          .fn()
+          .mockReturnValue(
+            makeListChain([rawRow({ customName: "Mum's lasagne" })]),
+          ),
+      });
+      const repo = new NutritionEntryRepository();
+      const out = await repo.listByDate("u1", "2026-06-21");
+      expect(out[0].customName).toBe("Mum's lasagne");
     });
 
     it("returns [] for an empty day", async () => {
@@ -174,6 +194,32 @@ describe("NutritionEntryRepository", () => {
       expect(passed.servings).toBe("2");
       expect(passed.userId).toBe("u1");
       expect(passed.loggedAt).toBeInstanceOf(Date);
+      expect(passed.customName).toBeNull();
+    });
+
+    it("persists a client-supplied customName", async () => {
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi
+          .fn()
+          .mockResolvedValue([rawRow({ customName: "Mum's lasagne" })]),
+      });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      const repo = new NutritionEntryRepository();
+      const out = await repo.create("u1", {
+        mealSlot: "dinner",
+        servings: 1,
+        kcal: 450,
+        proteinG: 25,
+        carbsG: 40,
+        fatG: 18,
+        loggedAt: loggedAt.toISOString(),
+        customName: "Mum's lasagne",
+      });
+
+      expect(valuesSpy.mock.calls[0][0].customName).toBe("Mum's lasagne");
+      expect(out.customName).toBe("Mum's lasagne");
     });
   });
 
@@ -195,6 +241,42 @@ describe("NutritionEntryRepository", () => {
       });
       const repo = new NutritionEntryRepository();
       expect(await repo.update("e1", "other", { kcal: 1 })).toBeNull();
+    });
+
+    it("includes customName in the patch when provided", async () => {
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi
+            .fn()
+            .mockResolvedValue([rawRow({ customName: "Leftover curry" })]),
+        }),
+      });
+      (getDb as any).mockReturnValue({
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+      });
+      const repo = new NutritionEntryRepository();
+      const out = await repo.update("e1", "u1", {
+        customName: "Leftover curry",
+      });
+      expect(setSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ customName: "Leftover curry" }),
+      );
+      expect(out?.customName).toBe("Leftover curry");
+    });
+
+    it("omits customName from the patch when not provided (no clobber)", async () => {
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([rawRow({ servings: "3" })]),
+        }),
+      });
+      (getDb as any).mockReturnValue({
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+      });
+      const repo = new NutritionEntryRepository();
+      await repo.update("e1", "u1", { servings: 3 });
+      const patch = setSpy.mock.calls[0][0];
+      expect(patch).not.toHaveProperty("customName");
     });
   });
 

@@ -41,6 +41,7 @@ function entry(over: Partial<NutritionEntry>): NutritionEntry {
     loggedByUserId: null,
     aiEstimated: false,
     aiConfidence: null,
+    customName: null,
     ...over,
   };
 }
@@ -115,8 +116,25 @@ describe("nutrition.service Fuel view-model helpers", () => {
       );
       expect(entryDisplayLabel(entry({ mealId: "x" }), lookups)).toBe("Meal");
     });
+    it("uses the persisted customName for a one-off / AI entry", () => {
+      expect(entryDisplayLabel(entry({ customName: "Banana" }), lookups)).toBe(
+        "Banana",
+      );
+    });
+    it("prefers a resolved food name over a stray customName", () => {
+      expect(
+        entryDisplayLabel(
+          entry({ foodId: "f1", customName: "ignore me" }),
+          lookups,
+        ),
+      ).toBe("Oatmeal");
+    });
     it("labels a macro-only one-off as Quick entry", () => {
       expect(entryDisplayLabel(entry({}), lookups)).toBe("Quick entry");
+      // A blank/whitespace customName must not win over the fallback.
+      expect(entryDisplayLabel(entry({ customName: "  " }), lookups)).toBe(
+        "Quick entry",
+      );
     });
   });
 });

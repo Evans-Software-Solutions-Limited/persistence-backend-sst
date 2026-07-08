@@ -1586,6 +1586,7 @@ export class InMemoryApiAdapter implements ApiPort {
       loggedByUserId: null,
       aiEstimated: false,
       aiConfidence: null,
+      customName: null,
     };
     this.nutritionEntries.push(entry);
     return ok(entry);

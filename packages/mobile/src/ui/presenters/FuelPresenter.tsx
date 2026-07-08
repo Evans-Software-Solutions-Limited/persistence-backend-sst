@@ -64,6 +64,8 @@ export type FuelPresenterProps = {
   onAddToSlot: (slot: MealSlot) => void;
   onSetWater: (cups: number) => void;
   onPressRow?: (id: string, slot: MealSlot) => void;
+  /** Swipe a logged entry left → tap Delete to remove it (handled in the container). */
+  onDeleteEntry?: (id: string, slot: MealSlot) => void;
   onLog: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
@@ -99,6 +101,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onAddToSlot,
     onSetWater,
     onPressRow,
+    onDeleteEntry,
     onLog,
     scrollRef,
     testID = "fuel-screen",
@@ -193,6 +196,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
             slots={slots}
             onAddToSlot={onAddToSlot}
             onPressRow={onPressRow}
+            onDeleteEntry={onDeleteEntry}
           />
           <WaterTrackerPresenter
             cups={waterCups}

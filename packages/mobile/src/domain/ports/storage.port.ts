@@ -672,6 +672,24 @@ export interface StoragePort {
   swapLocalExerciseId(localId: string, serverId: string): void;
 
   /**
+   * Rewrite a nutrition entry's optimistic `local-…` id to the server-assigned
+   * id once its create POST flushes. Unlike a custom exercise, an entry's id
+   * lives INSIDE the `cached_fuel_today` day-aggregate blob (there's no per-entry
+   * table row), so this rewrites the id in every cached day whose entries
+   * reference it, and re-points any queued entry mutations (a DELETE/PUT a fast
+   * swipe-delete / edit enqueued while the create was still in flight) from
+   * `/nutrition/entries/local-…` to the real id.
+   *
+   * Without this, deleting a just-logged entry mid-create enqueues
+   * `DELETE /nutrition/entries/local-…` which 404-loops forever while the create
+   * lands under a real id — orphaning the row the user meant to delete (it
+   * reappears on the next refresh). Mirrors `swapLocalExerciseId`/
+   * `swapLocalSessionId`. Called from the sync worker's reply path. No-op when
+   * the ids match or nothing references `localId`.
+   */
+  swapLocalNutritionEntryId(localId: string, serverId: string): void;
+
+  /**
    * Read the rest-timer state (started-at + total-seconds) for the
    * user's active session. Stored inline on `active_sessions` per
    * EXECUTION_PLAN § 3.1 — single-active-session invariant means a

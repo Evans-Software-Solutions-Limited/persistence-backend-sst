@@ -467,6 +467,15 @@ function FoodRow({
             {intl(food.kcal)} kcal / {food.servingSize}
             {food.servingUnit}
           </Text>
+          <Text
+            fontFamily="$mono"
+            fontSize={11}
+            color="$text3"
+            fontVariant={["tabular-nums"]}
+            testID={`quick-add-result-macros-${food.id}`}
+          >
+            {`P ${intl(food.proteinG)}g · C ${intl(food.carbsG)}g · F ${intl(food.fatG)}g`}
+          </Text>
         </View>
         <IconBtn
           size={28}

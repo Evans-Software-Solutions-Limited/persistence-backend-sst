@@ -25,7 +25,9 @@ vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
 describe("nutritionEntriesListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    entryMocks.listByDate.mockResolvedValue([{ id: "e1", kcal: 300 }]);
+    entryMocks.listByDate.mockResolvedValue([
+      { id: "e1", kcal: 300, customName: "Mum's lasagne" },
+    ]);
   });
 
   it("requires auth", async () => {
@@ -46,7 +48,9 @@ describe("nutritionEntriesListHandler", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(((await res.json()) as any).data).toHaveLength(1);
+    const body = (await res.json()) as any;
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].customName).toBe("Mum's lasagne");
     expect(entryMocks.listByDate).toHaveBeenCalledWith(
       "test-user-id",
       "2026-06-21",

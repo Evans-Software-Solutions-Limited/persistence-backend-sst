@@ -102,4 +102,38 @@ describe("nutritionEntriesUpdateHandler", () => {
     expect(foodMocks.getById).not.toHaveBeenCalled();
     expect(entryMocks.update.mock.calls[0][2]).toEqual({ kcal: 120 });
   });
+
+  it("updates customName when supplied", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: null,
+      servings: 1,
+    });
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    const res = await nutritionEntriesUpdateHandler.handle(
+      put({ customName: "Leftover curry" }),
+    );
+    expect(res.status).toBe(200);
+    expect(entryMocks.update.mock.calls[0][2]).toEqual({
+      customName: "Leftover curry",
+    });
+    const body = (await res.json()) as any;
+    expect(body.data.customName).toBe("Leftover curry");
+  });
+
+  it("does not null an existing customName when absent from the PATCH", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: null,
+      servings: 1,
+      customName: "Existing label",
+    });
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    await nutritionEntriesUpdateHandler.handle(put({ kcal: 120 }));
+    const patch = entryMocks.update.mock.calls[0][2];
+    expect(patch).not.toHaveProperty("customName");
+    expect(patch).toEqual({ kcal: 120 });
+  });
 });
