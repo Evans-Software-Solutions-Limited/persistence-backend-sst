@@ -21,6 +21,7 @@ import { trainersMeSetClientHabitConfigHandler } from "./trainers/habits/trainer
 import { trainersMeDeleteClientHabitHandler } from "./trainers/habits/trainersMeDeleteClientHabitHandler";
 import { trainersMeListClientHabitCompletionsHandler } from "./trainers/habits/trainersMeListClientHabitCompletionsHandler";
 import { trainersClientDetailGetHandler } from "./trainers/clients/trainersClientDetailGetHandler";
+import { trainersMeGenerateClientAiSummaryHandler } from "./trainers/clients/trainersMeGenerateClientAiSummaryHandler";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create + GET list (different methods, no path collision).
@@ -41,6 +42,10 @@ export const trainersOnBehalfRoutes = new Elysia()
   .use(trainersMeSetClientHabitConfigHandler)
   .use(trainersMeDeleteClientHabitHandler)
   .use(trainersMeListClientHabitCompletionsHandler)
+  // AI Client Summary (Phase 6, 10.g) — POST .../ai-summary generate/refresh.
+  // Static `ai-summary` segment, so it never collides with the bare
+  // `:clientId` GET; mounted before it for good measure.
+  .use(trainersMeGenerateClientAiSummaryHandler)
   // Client Detail read aggregate (Phase 5, 10.5). The bare
   // GET /trainers/me/clients/:clientId. Mounted LAST so the more-specific
   // sibling `…/:clientId/...` routes (habits/config, habits/completions, and —

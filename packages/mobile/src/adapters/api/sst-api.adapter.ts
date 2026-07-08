@@ -85,7 +85,10 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
-import type { ClientDetail } from "@/domain/models/clientDetail";
+import type {
+  AiSummaryModule,
+  ClientDetail,
+} from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -1291,6 +1294,16 @@ export class SSTApiAdapter implements ApiPort {
   ): Promise<Result<ClientDetail, ApiError>> {
     return this.requestEnvelope<ClientDetail>(
       `/trainers/me/clients/${clientId}`,
+    );
+  }
+
+  async generateClientAiSummary(
+    clientId: string,
+    manual: boolean,
+  ): Promise<Result<AiSummaryModule, ApiError>> {
+    return this.requestEnvelope<AiSummaryModule>(
+      `/trainers/me/clients/${clientId}/ai-summary`,
+      { method: "POST", body: { manual } },
     );
   }
 
