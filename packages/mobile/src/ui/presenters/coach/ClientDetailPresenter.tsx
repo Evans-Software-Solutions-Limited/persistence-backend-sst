@@ -104,6 +104,10 @@ export type ClientDetailProps = {
   onOpenProgramme: () => void;
   /** Open the assign-programme sheet (client-anchored). */
   onAssignProgramme: () => void;
+  /** Notes card "+" → open the note composer (create). */
+  onAddNote: () => void;
+  /** Tap a note → open the note composer (edit/delete). */
+  onEditNote: (note: ClientDetail["notes"][number]) => void;
   /** True while an AI-summary generate/refresh is in flight (Phase 6). */
   isGeneratingSummary: boolean;
   /** Whether the device is online — AI generation is online-only. */
@@ -131,6 +135,8 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onEditGoal,
     onOpenProgramme,
     onAssignProgramme,
+    onAddNote,
+    onEditNote,
     isGeneratingSummary,
     online,
     onRegenerateSummary,
@@ -221,7 +227,11 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
             onManageHabits={onManageHabits}
           />
 
-          <CoachNotesCard notes={detail?.notes ?? []} />
+          <CoachNotesCard
+            notes={detail?.notes ?? []}
+            onAddNote={onAddNote}
+            onEditNote={onEditNote}
+          />
         </View>
       </ScrollView>
     </View>
@@ -1244,8 +1254,16 @@ function ProgrammeSection({
   );
 }
 
-// ── CoachNotesCard (read-only, Phase 12) ─────────────────────────────────────
-function CoachNotesCard({ notes }: { notes: ClientDetail["notes"] }) {
+// ── CoachNotesCard (Phase 12) ────────────────────────────────────────────────
+function CoachNotesCard({
+  notes,
+  onAddNote,
+  onEditNote,
+}: {
+  notes: ClientDetail["notes"];
+  onAddNote: () => void;
+  onEditNote: (note: ClientDetail["notes"][number]) => void;
+}) {
   return (
     <Card pad={16} radius={16} testID="client-detail-notes">
       <View
@@ -1272,9 +1290,8 @@ function CoachNotesCard({ notes }: { notes: ClientDetail["notes"] }) {
           icon={<IconPlus size={14} strokeWidth={2.5} />}
           tone="ghost"
           size={28}
-          disabled
-          onPress={() => {}}
-          accessibilityLabel="Add note (coming soon)"
+          onPress={onAddNote}
+          accessibilityLabel="Add note"
           testID="client-detail-notes-add"
         />
       </View>
@@ -1291,14 +1308,18 @@ function CoachNotesCard({ notes }: { notes: ClientDetail["notes"] }) {
       ) : (
         <View gap={8}>
           {notes.map((n) => (
-            <View
+            <Pressable
               key={n.id}
-              padding={12}
-              backgroundColor="$surface2"
-              borderRadius={10}
-              borderWidth={1}
-              borderColor="$border"
+              onPress={() => onEditNote(n)}
               testID={`client-detail-note-${n.id}`}
+              accessibilityLabel="Edit note"
+              style={{
+                padding: 12,
+                backgroundColor: "#1A1D29",
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#232735",
+              }}
             >
               <Text
                 fontFamily="$display"
@@ -1330,7 +1351,7 @@ function CoachNotesCard({ notes }: { notes: ClientDetail["notes"] }) {
               >
                 {n.content}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       )}

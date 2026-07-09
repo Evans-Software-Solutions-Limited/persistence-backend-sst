@@ -1466,11 +1466,16 @@ export const trainerClientNotes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
+  // Mirrors the real DB (migration 20260117234613): plain per-column indexes and
+  // a composite FK to pt_client_relationships — there is NO unique constraint on
+  // (trainer_id, client_id), so a coach keeps MANY notes per client. (An earlier
+  // schema mirror wrongly declared a uniqueIndex here, which never existed in
+  // Supabase; corrected 2026-07-09 with the notes-CRUD work.)
   (t) => [
-    uniqueIndex("trainer_client_notes_trainer_client_fk").on(
-      t.trainerId,
-      t.clientId,
-    ),
+    index("idx_trainer_client_notes_trainer").on(t.trainerId),
+    index("idx_trainer_client_notes_client").on(t.clientId),
+    index("idx_trainer_client_notes_type").on(t.noteType),
+    index("idx_trainer_client_notes_created").on(t.createdAt.desc()),
   ],
 );
 

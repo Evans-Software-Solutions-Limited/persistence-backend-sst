@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
+import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
 import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
 import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
 import { EditNutritionTargetsSheet } from "../../src/ui/presenters/coach/EditNutritionTargetsSheet";
@@ -257,6 +258,12 @@ export default function AppLayout() {
       */}
       <EditNutritionTargetsSheet />
       <AssignGoalSheet />
+      {/*
+        CoachNoteSheet — the M8 Coach Phase 12 add/edit/delete-note composer.
+        Root-mounted sibling (feedback_sheets_mount_at_root); reads
+        useCoachNoteSheet().open. Opened from Client Detail's Notes card.
+      */}
+      <CoachNoteSheet />
       {/*
         M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
         All three read useFuelSheets().sheet to drive their <BottomSheet>
