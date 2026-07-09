@@ -79,8 +79,13 @@ import type {
   GoalType,
   AssignClientGoalInput,
   UpdateClientGoalInput,
+  CreateClientNoteInput,
+  UpdateClientNoteInput,
 } from "@/domain/ports/api.port";
-import type { ClientDetail } from "@/domain/models/clientDetail";
+import type {
+  ClientDetail,
+  ClientDetailNote,
+} from "@/domain/models/clientDetail";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
@@ -1360,6 +1365,57 @@ export class InMemoryApiAdapter implements ApiPort {
       updatedAt: now,
     };
     return ok(goal);
+  }
+
+  /** Captures + fixtures for coach notes CRUD. */
+  public createClientNoteCalls: {
+    clientId: string;
+    input: CreateClientNoteInput;
+  }[] = [];
+  public updateClientNoteCalls: {
+    clientId: string;
+    noteId: string;
+    input: UpdateClientNoteInput;
+  }[] = [];
+  public deleteClientNoteCalls: { clientId: string; noteId: string }[] = [];
+
+  async createClientNote(
+    clientId: string,
+    input: CreateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>> {
+    this.createClientNoteCalls.push({ clientId, input });
+    const note: ClientDetailNote = {
+      id: `note-${this.createClientNoteCalls.length}`,
+      noteType: input.noteType ?? "general",
+      title: input.title ?? "",
+      content: input.content,
+      createdAt: new Date().toISOString(),
+    };
+    return this.mayFail<ClientDetailNote>(note);
+  }
+
+  async updateClientNote(
+    clientId: string,
+    noteId: string,
+    input: UpdateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>> {
+    this.updateClientNoteCalls.push({ clientId, noteId, input });
+    const note: ClientDetailNote = {
+      id: noteId,
+      noteType: input.noteType ?? "general",
+      title: input.title ?? "",
+      content: input.content ?? "",
+      createdAt: new Date().toISOString(),
+    };
+    return this.mayFail<ClientDetailNote>(note);
+  }
+
+  async deleteClientNote(
+    clientId: string,
+    noteId: string,
+  ): Promise<Result<{ deleted: true }, ApiError>> {
+    this.deleteClientNoteCalls.push({ clientId, noteId });
+    return this.mayFail<{ deleted: true }>({ deleted: true });
   }
 
   async setClientNutritionTarget(

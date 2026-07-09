@@ -44,7 +44,10 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
-import type { ClientDetail } from "@/domain/models/clientDetail";
+import type {
+  ClientDetail,
+  ClientDetailNote,
+} from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -676,6 +679,26 @@ export interface ApiPort {
   ): Promise<Result<ApiGoal, GoalApiError>>;
 
   /**
+   * Coach notes CRUD (`/trainers/me/clients/:clientId/notes`, Phase 12). Private
+   * to the coach; each write is server-gated (active relationship) + audited.
+   * ONLINE-ONLY direct adapter calls (never the sync queue) — the Client Detail
+   * container refreshes the aggregate after a write so the Notes card re-reads.
+   */
+  createClientNote(
+    clientId: string,
+    input: CreateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>>;
+  updateClientNote(
+    clientId: string,
+    noteId: string,
+    input: UpdateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>>;
+  deleteClientNote(
+    clientId: string,
+    noteId: string,
+  ): Promise<Result<{ deleted: true }, ApiError>>;
+
+  /**
    * Coach sets/edits a client's daily nutrition target
    * (`PUT /trainers/me/clients/:clientId/nutrition/target`, Phase 3). Stamps
    * `set_by_user_id = trainerId`. Single `{ data: NutritionTarget }` envelope.
@@ -1048,6 +1071,20 @@ export type UpdateClientGoalInput = {
   isActive?: boolean;
   targetDate?: string;
   notes?: string;
+};
+
+/** Body for `POST /trainers/me/clients/:clientId/notes` (private coach note). */
+export type CreateClientNoteInput = {
+  content: string;
+  title?: string;
+  noteType?: string;
+};
+
+/** Body for `PUT /trainers/me/clients/:clientId/notes/:noteId`. */
+export type UpdateClientNoteInput = {
+  content?: string;
+  title?: string;
+  noteType?: string;
 };
 
 // -- API data shapes (mirror backend response types) --

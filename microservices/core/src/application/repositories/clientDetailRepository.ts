@@ -550,8 +550,9 @@ export class ClientDetailRepository {
   ): Promise<ClientDetailNote[]> {
     const db = getDb();
     // Read-only, scoped to (trainerId, clientId) — notes NEVER leak across
-    // trainers. UNIQUE(trainer_id, client_id) means ≤1 row today; render what
-    // is there, newest first (CRUD + UNIQUE-drop are Phase 12).
+    // trainers. A coach keeps MANY notes per client (there is no unique
+    // constraint on the pair — see the note in schema.ts); render them all,
+    // newest first. CRUD is the coach note sheet (Phase 12).
     const rows = await db
       .select({
         id: trainerClientNotes.id,

@@ -6,10 +6,12 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
+import { useCoachNoteSheet } from "@/state/coach-note-sheet";
 import {
   initialFromCalorieHit,
   useEditNutritionTargetsSheet,
 } from "@/state/edit-nutrition-targets-sheet";
+import type { ClientDetail } from "@/domain/models/clientDetail";
 import { ClientDetailPresenter } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
@@ -67,6 +69,8 @@ export function ClientDetailContainer() {
   const openAssignGoalCreate = useAssignGoalSheet((s) => s.openForCreate);
   const openAssignGoalEdit = useAssignGoalSheet((s) => s.openForEdit);
   const openEditTargets = useEditNutritionTargetsSheet((s) => s.openSheet);
+  const openNoteCreate = useCoachNoteSheet((s) => s.openForCreate);
+  const openNoteEdit = useCoachNoteSheet((s) => s.openForEdit);
 
   // The client's live programme for the ProgrammeCard + LiveSessionCTA
   // (specs/19-programs AC 4.5). Fetched directly (no cached-resource hook — a
@@ -174,6 +178,19 @@ export function ClientDetailContainer() {
     );
   }, [id, detail.data, openAssignGoalEdit, refreshAll]);
 
+  const onAddNote = useCallback(() => {
+    if (!id) return;
+    openNoteCreate(id, refreshAll);
+  }, [id, openNoteCreate, refreshAll]);
+
+  const onEditNote = useCallback(
+    (note: ClientDetail["notes"][number]) => {
+      if (!id) return;
+      openNoteEdit(id, { noteId: note.id, content: note.content }, refreshAll);
+    },
+    [id, openNoteEdit, refreshAll],
+  );
+
   return (
     <ClientDetailPresenter
       detail={detail.data}
@@ -195,6 +212,8 @@ export function ClientDetailContainer() {
       onEditGoal={onEditGoal}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}
+      onAddNote={onAddNote}
+      onEditNote={onEditNote}
     />
   );
 }

@@ -60,6 +60,7 @@ import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useEditNutritionTargetsSheet } from "@/state/edit-nutrition-targets-sheet";
+import { useCoachNoteSheet } from "@/state/coach-note-sheet";
 /* eslint-enable import/first */
 
 function props(): ClientDetailProps {
@@ -341,6 +342,43 @@ describe("ClientDetailContainer — populated", () => {
     await waitFor(() =>
       expect(api.getClientDetailCalls.length).toBeGreaterThan(before),
     );
+  });
+
+  it("onAddNote opens the note sheet in create mode; onEditNote in edit mode with the note", async () => {
+    useCoachNoteSheet.setState({
+      open: false,
+      clientId: null,
+      editNote: null,
+      onSaved: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail({
+      notes: [
+        {
+          id: "note-7",
+          noteType: "general",
+          title: "",
+          content: "Swap heavy squat for leg press.",
+          createdAt: "2026-07-01T09:00:00.000Z",
+        },
+      ],
+    });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+
+    props().onAddNote();
+    let s = useCoachNoteSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
+    expect(s.editNote).toBeNull(); // create mode
+
+    props().onEditNote(props().detail!.notes[0]);
+    s = useCoachNoteSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.editNote).toEqual({
+      noteId: "note-7",
+      content: "Swap heavy squat for leg press.",
+    });
   });
 
   it("onAssignProgramme + onAssignWorkout open their sheets", async () => {

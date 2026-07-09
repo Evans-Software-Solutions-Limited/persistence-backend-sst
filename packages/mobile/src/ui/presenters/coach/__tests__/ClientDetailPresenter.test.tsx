@@ -139,6 +139,8 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onEditGoal: jest.fn(),
     onOpenProgramme: jest.fn(),
     onAssignProgramme: jest.fn(),
+    onAddNote: jest.fn(),
+    onEditNote: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<ClientDetailPresenter {...props} />) };
@@ -364,12 +366,22 @@ describe("ClientDetailPresenter — ProgrammeCard + habits entry", () => {
 });
 
 describe("ClientDetailPresenter — CoachNotesCard", () => {
-  it("renders the notes list + a disabled add button", () => {
-    const { getByTestId } = render();
+  it("renders the notes list + an ENABLED add button that fires onAddNote", () => {
+    const { getByTestId, props } = render();
     expect(getByTestId("client-detail-note-n-1")).toBeTruthy();
-    expect(
-      getByTestId("client-detail-notes-add").props.accessibilityState,
-    ).toMatchObject({ disabled: true });
+    const add = getByTestId("client-detail-notes-add");
+    expect(add.props.accessibilityState).toMatchObject({ disabled: false });
+    fireEvent.press(add);
+    expect(props.onAddNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("tapping a note fires onEditNote with that note", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("client-detail-note-n-1"));
+    expect(props.onEditNote).toHaveBeenCalledTimes(1);
+    expect(props.onEditNote).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "n-1" }),
+    );
   });
 
   it("shows the empty state with no notes", () => {

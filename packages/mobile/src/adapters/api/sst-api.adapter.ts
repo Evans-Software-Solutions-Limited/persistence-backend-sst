@@ -63,6 +63,8 @@ import type {
   GoalType,
   AssignClientGoalInput,
   UpdateClientGoalInput,
+  CreateClientNoteInput,
+  UpdateClientNoteInput,
 } from "@/domain/ports/api.port";
 import type {
   AssignProgramInput,
@@ -86,7 +88,10 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
-import type { ClientDetail } from "@/domain/models/clientDetail";
+import type {
+  ClientDetail,
+  ClientDetailNote,
+} from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -1317,6 +1322,37 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestGoalWrite<ApiGoal>(
       `/trainers/me/clients/${clientId}/goals/${goalId}`,
       { method: "PUT", body: input },
+    );
+  }
+
+  async createClientNote(
+    clientId: string,
+    input: CreateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>> {
+    return this.requestEnvelope<ClientDetailNote>(
+      `/trainers/me/clients/${clientId}/notes`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async updateClientNote(
+    clientId: string,
+    noteId: string,
+    input: UpdateClientNoteInput,
+  ): Promise<Result<ClientDetailNote, ApiError>> {
+    return this.requestEnvelope<ClientDetailNote>(
+      `/trainers/me/clients/${clientId}/notes/${noteId}`,
+      { method: "PUT", body: input },
+    );
+  }
+
+  async deleteClientNote(
+    clientId: string,
+    noteId: string,
+  ): Promise<Result<{ deleted: true }, ApiError>> {
+    return this.requestEnvelope<{ deleted: true }>(
+      `/trainers/me/clients/${clientId}/notes/${noteId}`,
+      { method: "DELETE" },
     );
   }
 
