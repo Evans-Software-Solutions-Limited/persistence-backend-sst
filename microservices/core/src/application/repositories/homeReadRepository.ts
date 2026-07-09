@@ -61,6 +61,12 @@ export interface TodaysTrainingItem {
   estimatedDurationMinutes: number | null;
   dueDate: string | null;
   assignedByType: AssignedByType | null;
+  /**
+   * The assigning trainer's display name (`profiles.full_name`) for the coach
+   * attribution badge (Phase 11 / cross-cuts § 1.5). Null when the row has no
+   * distinct assigner (self-assigned) or the trainer profile has no name.
+   */
+  assignedByName: string | null;
 }
 
 /**
@@ -128,6 +134,7 @@ export class HomeReadRepository {
         estimatedDurationMinutes: workouts.estimatedDurationMinutes,
         dueDate: workoutAssignments.dueDate,
         trainerRole: profiles.role,
+        trainerName: profiles.fullName,
       })
       .from(workoutAssignments)
       .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
@@ -149,6 +156,7 @@ export class HomeReadRepository {
       estimatedDurationMinutes: r.estimatedDurationMinutes,
       dueDate: r.dueDate ?? null,
       assignedByType: mapTrainerRoleToAssignedByType(r.trainerRole),
+      assignedByName: r.trainerName ?? null,
     }));
   }
 

@@ -40,13 +40,8 @@ import {
 } from "@/ui/components/foundation";
 import { toneHex, type Tone } from "@/ui/components/foundation/tones";
 import { LinearSlider } from "@/ui/components/foundation/LinearSlider";
-import {
-  IconDroplet,
-  IconInfo,
-  IconMinus,
-  IconPlus,
-  IconX,
-} from "@/ui/components/icons";
+import { IconDroplet, IconMinus, IconPlus, IconX } from "@/ui/components/icons";
+import { CoachAttribution } from "@/ui/components/composite";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { color } from "@/ui/theme/tokens";
 import {
@@ -252,7 +247,13 @@ export function FuelTargetsPresenter({
           </View>
         ) : null}
 
-        {trainerName ? <TrainerAttributionBanner name={trainerName} /> : null}
+        {trainerName ? (
+          <CoachAttribution
+            variant="banner"
+            name={trainerName}
+            testID="fuel-targets-trainer-banner"
+          />
+        ) : null}
 
         <CalorieModeToggle value={calorieMode} onChange={onCalorieModeChange} />
 
@@ -298,29 +299,6 @@ export function FuelTargetsPresenter({
         <WaterGoalSection cups={waterCups} onChange={onWaterCupsChange} />
       </ScrollView>
     </View>
-  );
-}
-
-// ── Trainer attribution banner ──────────────────────────────────────────────
-
-function TrainerAttributionBanner({ name }: { name: string }) {
-  return (
-    <Card
-      pad={12}
-      radius={12}
-      accent="trainer"
-      testID="fuel-targets-trainer-banner"
-    >
-      <View flexDirection="row" alignItems="center" gap={8}>
-        <IconInfo size={14} color={color.$accentTrainer} />
-        <Text fontFamily="$body" fontSize={12.5} color="$text2" flex={1}>
-          Targets set by{" "}
-          <Text fontWeight="600" color="$text">
-            {name}
-          </Text>
-        </Text>
-      </View>
-    </Card>
   );
 }
 

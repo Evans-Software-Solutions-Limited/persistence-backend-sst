@@ -74,17 +74,53 @@ describe("HabitCardPresenter", () => {
     expect(props.onAdjustNutrition).toHaveBeenCalled();
   });
 
-  it("coach-locked: shows attribution + disables the switch", () => {
+  it("coach-locked: shows named attribution + disables the switch", () => {
     const locked: HabitConfig = {
       ...enabledWater(),
       assignedByCoach: true,
+      assignedByName: "Bradley Evans",
       locked: true,
     };
-    const { getByTestId, props } = render(locked);
-    expect(getByTestId("card-locked")).toBeTruthy();
+    const { getByTestId, getByText, props } = render(locked);
+    expect(getByTestId("card-attribution")).toBeTruthy();
+    // The coach's real name is rendered (Phase 11), not a generic string.
+    expect(getByText("Bradley Evans")).toBeTruthy();
     // The switch is disabled — pressing it does nothing.
     fireEvent.press(getByTestId("card-switch"));
     expect(props.onToggle).not.toHaveBeenCalled();
+  });
+
+  it("coach-assigned without a resolved name: falls back to the generic line", () => {
+    const assigned: HabitConfig = {
+      ...enabledWater(),
+      assignedByCoach: true,
+      assignedByName: null,
+      locked: true,
+    };
+    const { getByTestId, getByText } = render(assigned);
+    expect(getByTestId("card-attribution")).toBeTruthy();
+    expect(getByText("Set by your coach")).toBeTruthy();
+  });
+
+  it("self-set habit: no coach attribution", () => {
+    const { queryByTestId } = render(enabledWater());
+    expect(queryByTestId("card-attribution")).toBeNull();
+  });
+
+  it("coach-assigned but unlocked (relationship ended): attribution persists as history, controls enabled", () => {
+    const transferred: HabitConfig = {
+      ...enabledWater(),
+      assignedByCoach: true,
+      assignedByName: "Bradley Evans",
+      locked: false,
+    };
+    const { getByTestId, getByText, props } = render(transferred);
+    // Badge still attributes (§1.5 historical record)…
+    expect(getByTestId("card-attribution")).toBeTruthy();
+    expect(getByText("Bradley Evans")).toBeTruthy();
+    // …but the client now owns the habit — the switch is live again.
+    fireEvent.press(getByTestId("card-switch"));
+    expect(props.onToggle).toHaveBeenCalled();
   });
 
   it("pending edit: shows the new value + a Starts Monday tag", () => {

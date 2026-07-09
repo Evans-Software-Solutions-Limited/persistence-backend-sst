@@ -19,6 +19,7 @@ function cfg(
     enabled: true,
     goalId: `goal-${over.category}`,
     assignedByCoach: false,
+    assignedByName: null,
     locked: false,
     targetValue: 2,
     unit: "l",

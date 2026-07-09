@@ -422,6 +422,7 @@ describe("ProgramAssignmentRepository", () => {
               durationWeeks: 4,
               startDate: "2026-06-26",
               endDate: "2026-07-23",
+              assignedByName: "Bradley Evans",
             },
           ],
         ],
@@ -435,7 +436,29 @@ describe("ProgramAssignmentRepository", () => {
         totalWeeks: 4,
         endDate: "2026-07-23",
         startDate: "2026-06-26",
+        assignedByName: "Bradley Evans",
       });
+    });
+
+    it("null-safes the coach name when the trainer profile has none", async () => {
+      const db = makeDb({
+        selects: [
+          [
+            {
+              assignmentId: "pa-1",
+              programId: "prog-1",
+              name: "Strength 4wk",
+              durationWeeks: 4,
+              startDate: "2026-06-26",
+              endDate: "2026-07-23",
+              assignedByName: null,
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.getActiveProgrammeForClient(CLIENT, TODAY);
+      expect(out?.assignedByName).toBeNull();
     });
 
     it("indefinite programme reports null totalWeeks/endDate", async () => {

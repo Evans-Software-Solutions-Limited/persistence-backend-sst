@@ -86,6 +86,7 @@ describe("GET /users/me/habits/config", () => {
         goalId: "g1",
         enabled: true,
         assignedByUserId: "coach1",
+        assignedByName: "Coach One",
         targetValue: 3,
         unit: "l",
         period: "daily",
@@ -105,6 +106,7 @@ describe("GET /users/me/habits/config", () => {
     const water = body.data.find((d) => d.category === "water");
     expect(water.enabled).toBe(true);
     expect(water.assignedByCoach).toBe(true);
+    expect(water.assignedByName).toBe("Coach One");
     expect(water.locked).toBe(true);
     expect(water.targetValue).toBe(3);
     // Coach-lock is only probed for assigned habits.

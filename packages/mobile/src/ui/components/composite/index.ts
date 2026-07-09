@@ -26,3 +26,5 @@ export { SearchBar } from "./SearchBar";
 export type { SearchBarProps } from "./SearchBar";
 export { ProgrammeCard } from "./ProgrammeCard";
 export type { ProgrammeCardProps } from "./ProgrammeCard";
+export { CoachAttribution } from "./CoachAttribution";
+export type { CoachAttributionProps } from "./CoachAttribution";

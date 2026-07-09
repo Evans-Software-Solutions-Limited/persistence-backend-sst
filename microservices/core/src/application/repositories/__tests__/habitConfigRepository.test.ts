@@ -424,6 +424,8 @@ describe("HabitConfigRepository.listForUser / getAssigner", () => {
     expect(list).toHaveLength(1);
     expect(list[0].category).toBe("water");
     expect(list[0].targetValue).toBe(2);
+    // Self-set habit (no assigner) → no coach attribution name.
+    expect(list[0].assignedByName).toBeNull();
   });
 
   it("surfaces a pending edit + numeric tolerance in the view", async () => {
@@ -438,6 +440,7 @@ describe("HabitConfigRepository.listForUser / getAssigner", () => {
               pendingFrom: NEXT_MONDAY,
             }),
             goal: { isActive: true, assignedByUserId: "coach1" },
+            assignedByName: "Coach One",
           },
         ],
       ],
@@ -446,6 +449,8 @@ describe("HabitConfigRepository.listForUser / getAssigner", () => {
     const [v] = await new HabitConfigRepository().listForUser("u1");
     expect(v.tolerancePct).toBe(10);
     expect(v.assignedByUserId).toBe("coach1");
+    // Coach-assigned habit → the assigning coach's name is resolved for the badge.
+    expect(v.assignedByName).toBe("Coach One");
     expect(v.pending).not.toBeNull();
   });
 

@@ -49,6 +49,13 @@ export interface HabitConfigView {
   enabled: boolean;
   /** Non-null when a coach assigned this habit (cross-cuts § 2). */
   assignedByUserId: string | null;
+  /**
+   * The assigning coach's display name (`profiles.full_name`) for the athlete
+   * attribution badge (Phase 11 / cross-cuts § 1.5). Resolved only on the
+   * canonical `listForUser` read; the write-path views return null (the
+   * subsequent GET carries the name).
+   */
+  assignedByName: string | null;
   targetValue: number;
   unit: string;
   period: string;
@@ -102,12 +109,14 @@ export class HabitConfigRepository {
     enabled: boolean,
     assignedByUserId: string | null,
     cfg: HabitConfig,
+    assignedByName: string | null = null,
   ): HabitConfigView {
     return {
       category,
       goalId,
       enabled,
       assignedByUserId,
+      assignedByName,
       targetValue: Number(cfg.targetValue),
       unit: cfg.unit,
       period: cfg.period,
@@ -125,9 +134,14 @@ export class HabitConfigRepository {
   async listForUser(userId: string): Promise<HabitConfigView[]> {
     const db = getDb();
     const rows = await db
-      .select({ config: habitConfigs, goal: userGoals })
+      .select({
+        config: habitConfigs,
+        goal: userGoals,
+        assignedByName: profiles.fullName,
+      })
       .from(habitConfigs)
       .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
+      .leftJoin(profiles, eq(profiles.id, userGoals.assignedByUserId))
       .where(eq(habitConfigs.userId, userId));
 
     return rows
@@ -139,6 +153,7 @@ export class HabitConfigRepository {
           r.goal.isActive ?? false,
           r.goal.assignedByUserId ?? null,
           r.config,
+          r.goal.assignedByUserId ? (r.assignedByName ?? null) : null,
         ),
       );
   }
