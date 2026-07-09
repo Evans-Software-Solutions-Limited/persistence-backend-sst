@@ -2,20 +2,14 @@ import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import Animated from "react-native-reanimated";
 import { Text, View } from "@tamagui/core";
+import { Avatar, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
 import {
-  Avatar,
-  Card,
-  HeaderBar,
-  IconBtn,
-  Pill,
-} from "@/ui/components/foundation";
-import {
-  CoachAttribution,
   ProgrammeCard,
   Section,
+  TodaysTrainingSection,
 } from "@/ui/components/composite";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
-import { IconBell, IconChevronR } from "@/ui/components/icons";
+import { IconBell } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
 import type {
   ActiveProgramme,
@@ -104,39 +98,6 @@ export type HomePresenterProps = {
   /** Injected today (YYYY-MM-DD) for deterministic due-label tests. */
   todayISO?: string;
 };
-
-/**
- * Generic (nameless) attribution for a "Today's training" row — the fallback
- * when the trainer's name isn't resolved (older cached payload / nameless
- * profile). The named path uses <CoachAttribution> (Phase 11 / cross-cuts
- * § 1.5).
- */
-function attributionLabel(
-  assignedByType: TodaysTrainingItem["assignedByType"],
-): string | null {
-  if (assignedByType === "personal_trainer") return "Set by coach";
-  if (assignedByType === "physiotherapist") return "From physio";
-  return null;
-}
-
-/**
- * Leading copy for the NAMED attribution line. A physio keeps a role-neutral
- * "Set by" (so "Set by Jane Doe"); a PT / unknown assigner reads "Set by
- * Coach". Same trainer accent either way.
- */
-function attributionPrefix(
-  assignedByType: TodaysTrainingItem["assignedByType"],
-): string {
-  return assignedByType === "physiotherapist" ? "Set by" : "Set by Coach";
-}
-
-/** Short due label: Today / Overdue / the ISO date. Null due → no label. */
-function dueLabel(dueDate: string | null, todayISO: string): string | null {
-  if (!dueDate) return null;
-  if (dueDate === todayISO) return "Today";
-  if (dueDate < todayISO) return "Overdue";
-  return dueDate;
-}
 
 export function HomePresenter(props: HomePresenterProps) {
   const {
@@ -254,92 +215,14 @@ export function HomePresenter(props: HomePresenterProps) {
         ) : null}
 
         {/* "Today's training" — schedule-aware assigned occurrences, due-order
-            (specs/19-programs STORY-005 AC 5.2). Hidden when empty. */}
-        {todaysTraining.length > 0 ? (
-          <View testID="home-todays-training">
-            <Section eyebrow="TODAY" title="Today's training">
-              <View gap={8}>
-                {todaysTraining.map((item) => {
-                  // Only attribute when the assigner is currently classified as
-                  // a coach/physio (assignedByType set), so both the named line
-                  // and the fallback pill gate identically — a former coach
-                  // whose role reverted to `user` attributes on neither path.
-                  const coachName = item.assignedByType
-                    ? (item.assignedByName ?? null)
-                    : null;
-                  // Generic role pill only when we couldn't resolve a name.
-                  const fallbackBadge = coachName
-                    ? null
-                    : attributionLabel(item.assignedByType);
-                  const due = dueLabel(item.dueDate, todayISO);
-                  const meta = [
-                    item.estimatedDurationMinutes != null
-                      ? `${item.estimatedDurationMinutes} min`
-                      : null,
-                    due,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <Card
-                      key={item.assignmentId ?? item.workoutId}
-                      pad={12}
-                      radius={12}
-                      onPress={() => onOpenWorkout(item.workoutId)}
-                      testID={`todays-training-${item.workoutId}`}
-                      accessibilityLabel={`Today's training: ${item.name ?? "Workout"}`}
-                    >
-                      <View flexDirection="row" alignItems="center" gap={12}>
-                        <View flex={1} minWidth={0}>
-                          <View
-                            flexDirection="row"
-                            alignItems="center"
-                            gap={6}
-                            marginBottom={coachName || meta ? 2 : 0}
-                          >
-                            <Text
-                              fontFamily="$display"
-                              fontWeight="600"
-                              fontSize={14}
-                              color="$text"
-                              numberOfLines={1}
-                            >
-                              {item.name ?? "Workout"}
-                            </Text>
-                            {fallbackBadge ? (
-                              <Pill tone="trainer" size="xs">
-                                {fallbackBadge}
-                              </Pill>
-                            ) : null}
-                          </View>
-                          {coachName ? (
-                            <View marginBottom={meta ? 2 : 0}>
-                              <CoachAttribution
-                                name={coachName}
-                                label={attributionPrefix(item.assignedByType)}
-                                testID={`todays-training-${item.workoutId}-coach`}
-                              />
-                            </View>
-                          ) : null}
-                          {meta ? (
-                            <Text
-                              fontFamily="$body"
-                              fontSize={11}
-                              color="$text3"
-                            >
-                              {meta}
-                            </Text>
-                          ) : null}
-                        </View>
-                        <IconChevronR size={14} color="#8A8A98" />
-                      </View>
-                    </Card>
-                  );
-                })}
-              </View>
-            </Section>
-          </View>
-        ) : null}
+            (specs/19-programs STORY-005 AC 5.2). Hidden when empty. Shared with
+            the Train overview via <TodaysTrainingSection> (M16). */}
+        <TodaysTrainingSection
+          items={todaysTraining}
+          onOpenWorkout={onOpenWorkout}
+          todayISO={todayISO}
+          testID="home-todays-training"
+        />
 
         <Animated.View style={style(1)} testID="home-workouts">
           <Section

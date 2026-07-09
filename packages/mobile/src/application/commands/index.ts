@@ -21,3 +21,11 @@ export {
   logMeasurementCommand,
   type LogMeasurementCommandDeps,
 } from "./log-measurement.command";
+export {
+  createGoalCommand,
+  updateGoalCommand,
+  deleteGoalCommand,
+  type GoalCommandDeps,
+  type CreateGoalCommandInput,
+  type UpdateGoalCommandInput,
+} from "./goals.command";

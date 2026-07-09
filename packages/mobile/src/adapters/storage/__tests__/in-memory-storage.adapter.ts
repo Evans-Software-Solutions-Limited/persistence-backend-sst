@@ -48,6 +48,7 @@ import type {
 } from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
+import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
@@ -908,6 +909,22 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
   invalidateHome(userId: string): void {
     this.homeCache.delete(userId);
+  }
+
+  // -- Goals cache (M16 — Athlete Training page) --
+  private goalsCache: Map<string, { goals: Goal[]; syncedAt: string }> =
+    new Map();
+  getCachedGoals(userId: string): Goal[] | null {
+    return this.goalsCache.get(userId)?.goals ?? null;
+  }
+  getGoalsAge(userId: string): string | null {
+    return this.goalsCache.get(userId)?.syncedAt ?? null;
+  }
+  cacheGoals(userId: string, goals: Goal[]): void {
+    this.goalsCache.set(userId, { goals, syncedAt: new Date().toISOString() });
+  }
+  invalidateGoals(userId: string): void {
+    this.goalsCache.delete(userId);
   }
 
   getCachedStreaks(userId: string): Streak[] {

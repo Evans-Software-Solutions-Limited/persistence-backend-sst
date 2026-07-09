@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 
 /**
- * useTrainSegment — Train hub segment slice (Workouts | Exercises).
+ * useTrainSegment — Train hub segment slice (Training | Workouts | Exercises).
  *
  * Spec: specs/14-navigation/design.md § <TrainHubContainer> — Segmented
  *       composition
@@ -15,7 +15,7 @@ import { create } from "zustand";
  * pattern (`useUserMode`, `useDrawer`).
  */
 
-export type TrainSegment = "Workouts" | "Exercises";
+export type TrainSegment = "Training" | "Workouts" | "Exercises";
 
 export interface TrainSegmentState {
   segment: TrainSegment;
@@ -49,11 +49,13 @@ export interface TrainSegmentState {
 const KEY = "persistence.train.segment";
 
 function isTrainSegment(value: string | null): value is TrainSegment {
-  return value === "Workouts" || value === "Exercises";
+  return value === "Training" || value === "Workouts" || value === "Exercises";
 }
 
 export const useTrainSegment = create<TrainSegmentState>((set, get) => ({
-  segment: "Workouts",
+  // The Train tab LEADS with the Training overview (M16), so a fresh install
+  // lands there; a returning user keeps their last-persisted segment.
+  segment: "Training",
   pendingCreate: false,
   pendingSegment: null,
   hydrated: false,
@@ -79,7 +81,7 @@ export const useTrainSegment = create<TrainSegmentState>((set, get) => ({
     // so the next account's module-load hydration (if it re-runs) doesn't
     // resurrect the prior segment. Disk clear is best-effort (fire-and-forget).
     set({
-      segment: "Workouts",
+      segment: "Training",
       pendingCreate: false,
       pendingSegment: null,
       hydrated: true,

@@ -51,6 +51,17 @@ jest.mock("@/ui/containers/ExerciseListContainer", () => {
   };
 });
 
+jest.mock("@/ui/containers/TrainOverviewContainer", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  return {
+    TrainOverviewContainer: () =>
+      React.createElement(Text, { testID: "overview-body" }, "Overview body"),
+  };
+});
+
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
@@ -74,6 +85,30 @@ beforeEach(() => {
 });
 
 describe("TrainHubContainer", () => {
+  it("leads with the Training overview (default segment) + no top-right action", () => {
+    // The store default is now "Training" (M16); assert it here (beforeEach
+    // pins the other tests to Workouts).
+    useTrainSegment.setState({ segment: "Training", hydrated: true });
+    const { getByTestId, queryByText, queryByLabelText } = renderWithTheme(
+      <TrainHubContainer />,
+    );
+    const header = within(getByTestId("train-header"));
+    expect(header.getByText("Training")).toBeTruthy();
+    expect(getByTestId("overview-body")).toBeTruthy();
+    // Training has neither the Create button nor the Workouts search action.
+    expect(queryByText("Create")).toBeNull();
+    expect(queryByLabelText("Search workouts")).toBeNull();
+  });
+
+  it("switches to Training from another segment", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <TrainHubContainer />,
+    );
+    fireEvent.press(getByTestId("train-segment-option-Training"));
+    expect(getByTestId("overview-body")).toBeTruthy();
+    expect(queryByTestId("workouts-body")).toBeNull();
+  });
+
   it("renders the TRAIN eyebrow + Workouts title + workouts body by default", () => {
     const { getByTestId } = renderWithTheme(<TrainHubContainer />);
     const header = within(getByTestId("train-header"));

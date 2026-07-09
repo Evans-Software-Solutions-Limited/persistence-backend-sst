@@ -1373,6 +1373,20 @@ export type ApiGoal = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // -- M16 enrichment (GET /goals LEFT JOINs goal_types + profiles) --
+  /** `goal_types.name` — null only if the type row is missing. */
+  goalTypeName?: string | null;
+  goalTypeIconName?: string | null;
+  goalTypeCategory?: string | null;
+  /** NULL = self-set; non-null = the assigning coach/physio (cross-cuts § 2). */
+  assignedByUserId?: string | null;
+  /** Assigner display name (`profiles.full_name`); null for self-set goals. */
+  assignedByName?: string | null;
+  /** M4 progress fields (nullable; no write path yet — carried for later). */
+  targetValue?: number | null;
+  currentValue?: number | null;
+  unit?: string | null;
+  notes?: string | null;
 };
 
 // -- Input types --

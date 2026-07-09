@@ -34,6 +34,7 @@ import type {
 } from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
+import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type {
@@ -383,6 +384,11 @@ export class SQLiteStorageAdapter implements StoragePort {
       -- M4 (06-progress-goals): per-user JSON-blob slots, same shape as
       -- cached_dashboard. 5-min TTL enforced by the query/hook layer.
       CREATE TABLE IF NOT EXISTS cached_home (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_goals (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -1412,6 +1418,22 @@ export class SQLiteStorageAdapter implements StoragePort {
   }
   invalidateHome(userId: string): void {
     this.getDb().runSync(`DELETE FROM cached_home WHERE user_id = ?`, [userId]);
+  }
+
+  // -- Goals cache (M16 — Athlete Training page) --
+  getCachedGoals(userId: string): Goal[] | null {
+    return this.readBlob<Goal[]>("cached_goals", userId);
+  }
+  getGoalsAge(userId: string): string | null {
+    return this.readBlobSyncedAt("cached_goals", userId);
+  }
+  cacheGoals(userId: string, goals: Goal[]): void {
+    this.writeBlob("cached_goals", userId, goals);
+  }
+  invalidateGoals(userId: string): void {
+    this.getDb().runSync(`DELETE FROM cached_goals WHERE user_id = ?`, [
+      userId,
+    ]);
   }
 
   getCachedStreaks(userId: string): Streak[] {

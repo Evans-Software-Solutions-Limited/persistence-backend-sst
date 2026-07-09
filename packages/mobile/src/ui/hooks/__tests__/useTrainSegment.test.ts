@@ -44,11 +44,11 @@ async function loadFresh() {
 }
 
 describe("useTrainSegment", () => {
-  it("defaults to 'Workouts' when nothing is persisted", async () => {
+  it("defaults to 'Training' when nothing is persisted", async () => {
     mockGetItem.mockResolvedValue(null);
     const { useTrainSegment } = await loadFresh();
 
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
     expect(useTrainSegment.getState().hydrated).toBe(true);
   });
 
@@ -64,7 +64,7 @@ describe("useTrainSegment", () => {
     mockGetItem.mockResolvedValue("Garbage");
     const { useTrainSegment } = await loadFresh();
 
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
     expect(useTrainSegment.getState().hydrated).toBe(true);
   });
 
@@ -155,9 +155,9 @@ describe("useTrainSegment", () => {
     const { useTrainSegment } = await loadFresh();
 
     useTrainSegment.getState().setPendingSegment("Workouts");
-    // The pending one-shot is intent-only; the live segment is unchanged until
-    // a consumer applies it via setSegment.
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    // The pending one-shot is intent-only; the live segment is unchanged (still
+    // the default) until a consumer applies it via setSegment.
+    expect(useTrainSegment.getState().segment).toBe("Training");
     expect(mockSetItem).not.toHaveBeenCalled();
   });
 
@@ -166,7 +166,7 @@ describe("useTrainSegment", () => {
     const { useTrainSegment } = await loadFresh();
 
     expect(useTrainSegment.getState().hydrated).toBe(true);
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
   });
 
   it("reset() clears segment + pendingCreate + pendingSegment + drops the persisted key", async () => {
@@ -181,7 +181,7 @@ describe("useTrainSegment", () => {
     useTrainSegment.getState().reset();
 
     const s = useTrainSegment.getState();
-    expect(s.segment).toBe("Workouts");
+    expect(s.segment).toBe("Training");
     expect(s.pendingCreate).toBe(false);
     expect(s.pendingSegment).toBeNull();
     expect(mockRemoveItem).toHaveBeenCalledWith(KEY);
@@ -194,7 +194,7 @@ describe("useTrainSegment", () => {
     useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
 
     expect(() => useTrainSegment.getState().reset()).not.toThrow();
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
     // Let the rejected removeItem promise settle so the .catch runs.
     await Promise.resolve();
   });
