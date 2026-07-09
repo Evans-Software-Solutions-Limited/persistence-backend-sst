@@ -40,6 +40,23 @@ vi.mock("../programAssignmentRepository", () => ({
   ProgramAssignmentRepository: vi.fn(() => programmes),
 }));
 
+// Module g reads (only exercised when a client_ai_summaries row exists). The
+// cache row itself comes through the getDb mock (byTable.client_ai_summaries);
+// entitlement + the usage counter back `canManualRefresh` and are mocked so the
+// suite never touches live entitlement SQL.
+const assertEntitlementMock = vi.hoisted(() =>
+  vi.fn(async () => ({ allowed: true }) as { allowed: boolean }),
+);
+vi.mock("../../entitlement/assertEntitlement", () => ({
+  assertEntitlement: assertEntitlementMock,
+}));
+const countSummaryTodayMock = vi.hoisted(() => vi.fn(async () => 0));
+vi.mock("../aiUsageLogRepository", () => ({
+  AiUsageLogRepository: vi.fn(() => ({
+    countForUserToday: countSummaryTodayMock,
+  })),
+}));
+
 import { ClientDetailRepository } from "../clientDetailRepository";
 
 /**
@@ -96,7 +113,12 @@ function resetDelegates() {
   streaks.getCollectionHabitAggregates.mockResolvedValue([]);
   streaks.getCollectionHabitStreak.mockResolvedValue(null);
   programmes.getActiveProgrammeForClient.mockResolvedValue(null);
+  assertEntitlementMock.mockResolvedValue({ allowed: true });
+  countSummaryTodayMock.mockResolvedValue(0);
 }
+
+// The concluded (previous) client-local day for NOW=2026-07-08 (Europe/London).
+const COVERS_DATE = "2026-07-07";
 
 describe("ClientDetailRepository.getClientDetail", () => {
   beforeEach(() => {
@@ -137,13 +159,17 @@ describe("ClientDetailRepository.getClientDetail", () => {
     expect(out.thisWeek.workoutsPlanned).toBeNull();
     expect(out.thisWeek.checkIns).toBeNull();
     expect(out.thisWeek.workoutsCompleted).toBe(0);
-    // aiSummary — the Phase-5 stub shape (module g not built until Phase 6).
+    // aiSummary — no cached row for the concluded day ⇒ null shell (coversDate
+    // is still the concluded client-local day). The read NEVER infers, and with
+    // no row it never even checks entitlement/ceiling.
     expect(out.aiSummary).toEqual({
       summary: null,
-      coversDate: null,
+      coversDate: COVERS_DATE,
       generatedAt: null,
       canManualRefresh: false,
     });
+    expect(assertEntitlementMock).not.toHaveBeenCalled();
+    expect(countSummaryTodayMock).not.toHaveBeenCalled();
   });
 
   it("resolves timezone + header from the CLIENT's profile, deriving age/height/initials", async () => {
@@ -596,5 +622,100 @@ describe("ClientDetailRepository.getClientDetail", () => {
     );
     expect(out.thisWeek.workoutsPlanned).toBe(3);
     expect(out.thisWeek.workoutsCompleted).toBe(2);
+  });
+
+  // ── Module g (AI summary) read — the aggregate NEVER infers ─────────────────
+
+  const CACHED_ROW = {
+    id: "sum-1",
+    summary: "Solid week — hit calories 4/6 logged days. Focus: protein.",
+    model: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    refreshCount: 0,
+    generatedAt: new Date("2026-07-08T06:00:00.000Z"),
+  };
+
+  it("aiSummary — cached row for the concluded day, refresh unused + coach can spend ⇒ canManualRefresh true", async () => {
+    countSummaryTodayMock.mockResolvedValue(3); // under the 40 default
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          client_ai_summaries: [CACHED_ROW],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.aiSummary).toEqual({
+      summary: CACHED_ROW.summary,
+      coversDate: COVERS_DATE,
+      generatedAt: "2026-07-08T06:00:00.000Z",
+      canManualRefresh: true,
+    });
+    expect(assertEntitlementMock).toHaveBeenCalledWith(
+      "trainer-1",
+      "ai_access",
+    );
+  });
+
+  it("aiSummary — the one manual refresh already spent (refresh_count ≥ 1) ⇒ canManualRefresh false, no entitlement/ceiling read", async () => {
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          client_ai_summaries: [{ ...CACHED_ROW, refreshCount: 1 }],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.aiSummary.summary).toBe(CACHED_ROW.summary);
+    expect(out.aiSummary.canManualRefresh).toBe(false);
+    // Short-circuits on the spent refresh — never spends a read on entitlement.
+    expect(assertEntitlementMock).not.toHaveBeenCalled();
+    expect(countSummaryTodayMock).not.toHaveBeenCalled();
+  });
+
+  it("aiSummary — coach over the daily ceiling ⇒ canManualRefresh false", async () => {
+    countSummaryTodayMock.mockResolvedValue(40); // at the 40 default ceiling
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          client_ai_summaries: [CACHED_ROW],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.aiSummary.canManualRefresh).toBe(false);
+  });
+
+  it("aiSummary — coach lacks ai_access ⇒ canManualRefresh false (ceiling not even read)", async () => {
+    assertEntitlementMock.mockResolvedValue({ allowed: false });
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          client_ai_summaries: [CACHED_ROW],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.aiSummary.canManualRefresh).toBe(false);
+    expect(countSummaryTodayMock).not.toHaveBeenCalled();
   });
 });

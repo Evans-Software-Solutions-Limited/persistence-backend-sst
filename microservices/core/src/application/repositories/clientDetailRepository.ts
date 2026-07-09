@@ -17,6 +17,13 @@ import { VolumeRepository } from "./volumeRepository";
 import { NutritionTargetRepository } from "./nutritionTargetRepository";
 import { StreakRepository } from "./streakRepository";
 import { ProgramAssignmentRepository } from "./programAssignmentRepository";
+import { AiUsageLogRepository } from "./aiUsageLogRepository";
+import {
+  AI_COACH_SUMMARY_DAILY_LIMIT,
+  AI_COACH_SUMMARY_ENDPOINT,
+  ClientAiSummaryRepository,
+} from "./clientAiSummaryRepository";
+import { assertEntitlement } from "../entitlement/assertEntitlement";
 import {
   addDaysISO,
   localDateISO,
@@ -30,6 +37,7 @@ import {
   habitProgressPct,
   weightGoalPct,
   type AdherenceModule,
+  type AiSummaryModule,
   type CalorieHitModule,
   type ClientDetail,
   type ClientDetailHeader,
@@ -68,6 +76,8 @@ export class ClientDetailRepository {
   private readonly nutritionTargets = new NutritionTargetRepository();
   private readonly streaks = new StreakRepository();
   private readonly programmes = new ProgramAssignmentRepository();
+  private readonly aiSummaries = new ClientAiSummaryRepository();
+  private readonly aiUsage = new AiUsageLogRepository();
 
   async getClientDetail(
     trainerId: string,
@@ -82,6 +92,9 @@ export class ClientDetailRepository {
     const todayISO = localDateISO(now, tz);
     // 28-day adherence window (same grain the roster row uses).
     const windowStart = addDaysISO(todayISO, -(ADHERENCE_WINDOW_DAYS - 1));
+    // The AI summary covers the CONCLUDED (previous) client-local day, so the
+    // card is always a whole-day view (design.md § Module g).
+    const coversDate = addDaysISO(todayISO, -1);
 
     const [
       client,
@@ -95,6 +108,7 @@ export class ClientDetailRepository {
       adherence,
       workoutsCompleted,
       workoutsPlanned,
+      aiSummary,
     ] = await Promise.all([
       this.getHeader(trainerId, clientId, now),
       this.getCalorieHit(clientId, tz, weekStart, weekEnd, todayISO),
@@ -107,6 +121,7 @@ export class ClientDetailRepository {
       this.getAdherence(trainerId, clientId, windowStart, todayISO),
       this.volume.completedSessionCount(clientId, tz, weekStart, weekEnd),
       this.getWorkoutsPlannedThisWeek(clientId, todayISO, weekStart, weekEnd),
+      this.getAiSummaryModule(trainerId, clientId, coversDate),
     ]);
 
     const prs: PrHighlight[] = prsRaw.map((r) => ({
@@ -174,14 +189,9 @@ export class ClientDetailRepository {
       calorieHit,
       goal,
       habits,
-      // Module g — stub only; the client_ai_summaries table does not exist
-      // until Phase 6 (design.md § Module g). Reads never infer.
-      aiSummary: {
-        summary: null,
-        coversDate: null,
-        generatedAt: null,
-        canManualRefresh: false,
-      },
+      // Module g — the cached summary for the concluded day (or null). The read
+      // NEVER triggers an inference (design.md § Module g "Reads never infer").
+      aiSummary,
       thisWeek: {
         workoutsCompleted,
         workoutsPlanned,
@@ -202,6 +212,59 @@ export class ClientDetailRepository {
       .where(eq(profiles.id, clientId))
       .limit(1);
     return rows[0]?.tz ?? DEFAULT_TZ;
+  }
+
+  /**
+   * Module g read — the cached summary row for the concluded day, or a null
+   * shell. NEVER triggers a Bedrock inference (design.md § Module g): the
+   * generation path is the POST endpoint only. `canManualRefresh` mirrors the
+   * design contract — a row exists, its one manual refresh is unused
+   * (refresh_count < 1), the coach still has `ai_access`, AND the coach is under
+   * the per-coach daily ceiling. The entitlement + ceiling reads are cheap and
+   * only run when a refreshable row actually exists (no row / spent row →
+   * short-circuit false, zero extra reads).
+   */
+  private async getAiSummaryModule(
+    trainerId: string,
+    clientId: string,
+    coversDate: string,
+  ): Promise<AiSummaryModule> {
+    const row = await this.aiSummaries.getForDay(
+      trainerId,
+      clientId,
+      coversDate,
+    );
+    if (!row) {
+      return {
+        summary: null,
+        coversDate,
+        generatedAt: null,
+        canManualRefresh: false,
+      };
+    }
+    const canManualRefresh =
+      row.refreshCount < 1 && (await this.coachCanSpendOnSummary(trainerId));
+    return {
+      summary: row.summary,
+      coversDate,
+      generatedAt: row.generatedAt,
+      canManualRefresh,
+    };
+  }
+
+  /**
+   * Whether the coach may spend another summary inference right now: has
+   * `ai_access` AND is under the per-coach daily ceiling. Used only to gate the
+   * manual-refresh affordance on a read — a read never spends a token.
+   */
+  private async coachCanSpendOnSummary(trainerId: string): Promise<boolean> {
+    const entitlement = await assertEntitlement(trainerId, "ai_access");
+    if (!entitlement.allowed) return false;
+    const usedToday = await this.aiUsage.countForUserToday(
+      trainerId,
+      AI_COACH_SUMMARY_ENDPOINT,
+    );
+    return usedToday < AI_COACH_SUMMARY_DAILY_LIMIT;
   }
 
   private async getHeader(

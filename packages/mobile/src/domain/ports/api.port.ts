@@ -44,7 +44,10 @@ import type {
   BodyTrendPoint,
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
-import type { ClientDetail } from "@/domain/models/clientDetail";
+import type {
+  AiSummaryModule,
+  ClientDetail,
+} from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type {
   ClientRelationshipStatus,
@@ -641,6 +644,22 @@ export interface ApiPort {
    * separately (avoid churn); the aggregate only uses it for `workoutsPlanned`.
    */
   getClientDetail(clientId: string): Promise<Result<ClientDetail, ApiError>>;
+
+  /**
+   * Coach generates (or refreshes) the AI Client Summary for the concluded
+   * client-local day (`POST /trainers/me/clients/:clientId/ai-summary`, M8
+   * Coach Phase 6). ONLINE-ONLY (like Snap AI — it never enters the sync
+   * queue): the container calls this lazily on open when the cached summary is
+   * null, and on the explicit Regenerate tap with `manual: true`. The server
+   * caps it at one auto-gen + one manual refresh per client per day and returns
+   * the fresh `{ data: AiSummaryModule }`; the container then refreshes the
+   * aggregate so the card renders the cached row. A 503 (`ai_unavailable`) /
+   * 429 (`ai_daily_limit`) / 402 leaves the card on its module-a–f fallback.
+   */
+  generateClientAiSummary(
+    clientId: string,
+    manual: boolean,
+  ): Promise<Result<AiSummaryModule, ApiError>>;
 
   /**
    * Coach assigns a goal to a client on their behalf
