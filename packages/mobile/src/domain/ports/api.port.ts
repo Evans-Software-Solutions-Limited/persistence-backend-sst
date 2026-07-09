@@ -669,6 +669,13 @@ export interface ApiPort {
    * `GoalApiError.goalCode` (mirrors `InviteApiError`). 403 `not_assigner` is
    * only possible on the edit path, not here.
    */
+  /**
+   * Fetch the shared `goal_types` reference catalog (`GET /goal-types`) for the
+   * coach's goal-type picker. Authenticated read, no ownership — the same
+   * catalog for every user. Sorted server-side (category, then name).
+   */
+  getGoalTypes(): Promise<Result<GoalType[], ApiError>>;
+
   assignClientGoal(
     clientId: string,
     input: AssignClientGoalInput,
@@ -1030,6 +1037,19 @@ export type InviteApiError = ApiError & {
  */
 export type GoalApiError = ApiError & {
   goalCode?: "not_assigner" | "goal_not_found" | "no_fields";
+};
+
+/**
+ * A row of the shared `goal_types` reference catalog (`GET /goal-types`). Feeds
+ * the coach's goal-type picker so assigning a goal is a selection, not a raw
+ * UUID entry. `category` groups the picker; `iconName` is an optional glyph key.
+ */
+export type GoalType = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  iconName: string | null;
 };
 
 /** Body for `POST /trainers/me/clients/:clientId/goals` (coach on-behalf). */

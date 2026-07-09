@@ -60,6 +60,7 @@ import type {
   ProgramApiError,
   WorkoutAssignmentRow,
   GoalApiError,
+  GoalType,
   AssignClientGoalInput,
   UpdateClientGoalInput,
 } from "@/domain/ports/api.port";
@@ -1295,6 +1296,10 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<ClientDetail>(
       `/trainers/me/clients/${clientId}`,
     );
+  }
+
+  async getGoalTypes(): Promise<Result<GoalType[], ApiError>> {
+    return this.requestEnvelope<GoalType[]>("/goal-types");
   }
 
   async generateClientAiSummary(
