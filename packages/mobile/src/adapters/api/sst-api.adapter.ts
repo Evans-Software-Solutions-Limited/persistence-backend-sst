@@ -65,6 +65,8 @@ import type {
   UpdateClientGoalInput,
   CreateClientNoteInput,
   UpdateClientNoteInput,
+  SendClientBriefInput,
+  SentClientBrief,
 } from "@/domain/ports/api.port";
 import type {
   AssignProgramInput,
@@ -1364,6 +1366,16 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<{ deleted: true }>(
       `/trainers/me/clients/${clientId}/notes/${noteId}`,
       { method: "DELETE" },
+    );
+  }
+
+  async sendClientBrief(
+    clientId: string,
+    input: SendClientBriefInput,
+  ): Promise<Result<SentClientBrief, ApiError>> {
+    return this.requestEnvelope<SentClientBrief>(
+      `/trainers/me/clients/${clientId}/brief`,
+      { method: "POST", body: input },
     );
   }
 

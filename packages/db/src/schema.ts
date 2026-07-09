@@ -171,6 +171,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "workout_logged_on_behalf",
   "measurement_logged_on_behalf",
   "nutrition_target_set_by_trainer",
+  // M17 (Send brief) — coach → client free-text brief; the notification row
+  // is the deliverable and deep-links to the athlete Training page. Companion
+  // enum migration: 20260709120000_coach_brief_notification_type.sql.
+  "coach_brief",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -224,6 +228,11 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // delete path (cross-cuts § 1.4.2). Companion enum migration:
   // 20260706170000_workout_unassigned_audit_value.sql.
   "workout_unassigned",
+  // M17 (Send brief) — POST /trainers/me/clients/:clientId/brief. The client's
+  // notification row + this audit row land in ONE transaction (cross-cuts
+  // § 1.4.2). Companion enum migration:
+  // 20260709120100_coach_brief_sent_audit_value.sql.
+  "brief_sent",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────

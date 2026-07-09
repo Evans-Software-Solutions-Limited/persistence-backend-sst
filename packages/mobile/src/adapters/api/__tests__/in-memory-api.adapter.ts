@@ -81,6 +81,8 @@ import type {
   UpdateClientGoalInput,
   CreateClientNoteInput,
   UpdateClientNoteInput,
+  SendClientBriefInput,
+  SentClientBrief,
 } from "@/domain/ports/api.port";
 import type {
   AiSummaryModule,
@@ -1436,6 +1438,22 @@ export class InMemoryApiAdapter implements ApiPort {
   ): Promise<Result<{ deleted: true }, ApiError>> {
     this.deleteClientNoteCalls.push({ clientId, noteId });
     return this.mayFail<{ deleted: true }>({ deleted: true });
+  }
+
+  /** Captures for the coach Send-brief write (M17). */
+  public sendClientBriefCalls: {
+    clientId: string;
+    input: SendClientBriefInput;
+  }[] = [];
+
+  async sendClientBrief(
+    clientId: string,
+    input: SendClientBriefInput,
+  ): Promise<Result<SentClientBrief, ApiError>> {
+    this.sendClientBriefCalls.push({ clientId, input });
+    return this.mayFail<SentClientBrief>({
+      id: `brief-${this.sendClientBriefCalls.length}`,
+    });
   }
 
   async setClientNutritionTarget(

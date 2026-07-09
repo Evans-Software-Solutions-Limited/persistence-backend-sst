@@ -61,6 +61,7 @@ import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useEditNutritionTargetsSheet } from "@/state/edit-nutrition-targets-sheet";
 import { useCoachNoteSheet } from "@/state/coach-note-sheet";
+import { useSendBriefSheet } from "@/state/send-brief-sheet";
 /* eslint-enable import/first */
 
 function props(): ClientDetailProps {
@@ -392,6 +393,24 @@ describe("ClientDetailContainer — populated", () => {
       noteId: "note-7",
       content: "Swap heavy squat for leg press.",
     });
+  });
+
+  it("onSendBrief opens the Send-brief sheet with the client id + name", async () => {
+    useSendBriefSheet.setState({
+      open: false,
+      clientId: null,
+      clientName: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+
+    props().onSendBrief();
+    const s = useSendBriefSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
+    expect(s.clientName).toBe("Jordan");
   });
 
   it("onAssignProgramme + onAssignWorkout open their sheets", async () => {

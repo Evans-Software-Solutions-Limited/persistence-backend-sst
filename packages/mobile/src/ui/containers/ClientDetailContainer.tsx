@@ -8,6 +8,7 @@ import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useCoachNoteSheet } from "@/state/coach-note-sheet";
+import { useSendBriefSheet } from "@/state/send-brief-sheet";
 import {
   initialFromCalorieHit,
   useEditNutritionTargetsSheet,
@@ -73,6 +74,7 @@ export function ClientDetailContainer() {
   const openEditTargets = useEditNutritionTargetsSheet((s) => s.openSheet);
   const openNoteCreate = useCoachNoteSheet((s) => s.openForCreate);
   const openNoteEdit = useCoachNoteSheet((s) => s.openForEdit);
+  const openSendBrief = useSendBriefSheet((s) => s.openSheet);
 
   // The client's live programme for the ProgrammeCard + LiveSessionCTA
   // (specs/19-programs AC 4.5). Fetched directly (no cached-resource hook — a
@@ -233,6 +235,11 @@ export function ClientDetailContainer() {
     );
   }, [id, detail.data, openAssignGoalEdit, refreshAll]);
 
+  const onSendBrief = useCallback(() => {
+    if (!id) return;
+    openSendBrief(id, name);
+  }, [id, openSendBrief, name]);
+
   const onAddNote = useCallback(() => {
     if (!id) return;
     openNoteCreate(id, refreshAll);
@@ -264,6 +271,7 @@ export function ClientDetailContainer() {
       onAssignWorkout={onAssignWorkout}
       onEditTargets={onEditTargets}
       onAssignGoal={onAssignGoal}
+      onSendBrief={onSendBrief}
       onEditGoal={onEditGoal}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}

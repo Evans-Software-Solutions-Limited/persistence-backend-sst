@@ -8,6 +8,7 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { NotificationsListPresenter } from "@/ui/presenters/NotificationsListPresenter";
 import { makeNotification } from "@/application/notifications/__tests__/notification.fixture";
+import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { NotificationsListContainer } from "../NotificationsListContainer";
 
 jest.mock("@/ui/presenters/NotificationsListPresenter");
@@ -211,6 +212,29 @@ describe("NotificationsListContainer", () => {
     const { getByTestId } = renderContainer(api, storage);
     fireEvent.press(getByTestId("tap"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("tapping a coach_brief routes to the Train hub AND primes the Training segment (M17)", async () => {
+    useTrainSegment.setState({
+      segment: "Workouts",
+      pendingSegment: null,
+      hydrated: true,
+    });
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheNotifications([
+      makeNotification({
+        id: "brief-1",
+        type: "coach_brief",
+        deepLink: "persistencemobile://train",
+      }),
+    ]);
+
+    const { getByTestId } = renderContainer(api, storage);
+    fireEvent.press(getByTestId("tap"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/train");
+    expect(useTrainSegment.getState().pendingSegment).toBe("Training");
+    expect(useTrainSegment.getState().segment).toBe("Training");
   });
 
   it("mark-all-read clears the unread count optimistically", async () => {

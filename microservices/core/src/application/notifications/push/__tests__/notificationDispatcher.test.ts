@@ -254,6 +254,35 @@ describe("NotificationDispatcher.createAndDispatch", () => {
   });
 });
 
+describe("NotificationDispatcher.dispatchExisting", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("pushes an already-persisted row WITHOUT creating a new one", async () => {
+    const { dispatcher, f } = makeDispatcher();
+    await dispatcher.dispatchExisting("user-1", makeRow());
+
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.send.mock.calls[0][0][0].to).toBe("ExponentPushToken[a]");
+  });
+
+  it("never throws when the push send fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { dispatcher, f } = makeDispatcher({
+      send: vi.fn(async () => {
+        throw new Error("expo down");
+      }),
+    });
+
+    await expect(
+      dispatcher.dispatchExisting("user-1", makeRow()),
+    ).resolves.toBeUndefined();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe("toExpoMessage", () => {
   it("mirrors the legacy message shape and carries routing data", () => {
     const row = makeRow();

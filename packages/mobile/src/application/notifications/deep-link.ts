@@ -15,6 +15,15 @@
 export const HOME_ROUTE = "/(app)/(tabs)";
 
 /**
+ * The Train hub route — exported so notification dispatch sites can detect
+ * a train-bound resolution and prime the Training-segment one-shot (M17
+ * Send-brief lands the athlete on Train → Training even when a persisted
+ * "Workouts"/"Exercises" segment would otherwise win). See
+ * `ui/navigation/notificationRoute.ts`.
+ */
+export const TRAIN_ROUTE = "/(app)/(tabs)/train";
+
+/**
  * Legacy → current path remaps. Extend additively as new producers emit
  * deep links. Keys are the raw `data.deepLink` values; values are valid
  * Expo Router paths.
@@ -39,6 +48,9 @@ const SCHEME_HOSTS: Record<string, string> = {
   requests: "/(app)/requests",
   clients: "/(app)/(tabs)/clients",
   profile: "/(app)/(tabs)/you",
+  // M17 Send-brief — the coach_brief notification lands on the athlete
+  // Training page (Train tab; the dispatch sites prime the Training segment).
+  train: TRAIN_ROUTE,
 };
 
 function resolveSchemeLink(rest: string): string {

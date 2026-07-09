@@ -716,6 +716,19 @@ export interface ApiPort {
   ): Promise<Result<{ deleted: true }, ApiError>>;
 
   /**
+   * Coach sends a client a free-text brief
+   * (`POST /trainers/me/clients/:clientId/brief`, M17 Send brief). Server-gated
+   * (active relationship) + audited; the client receives a `coach_brief`
+   * notification (+ best-effort push) deep-linking their Training page.
+   * ONLINE-ONLY direct adapter call (never the sync queue) — same posture as
+   * the other coach writes.
+   */
+  sendClientBrief(
+    clientId: string,
+    input: SendClientBriefInput,
+  ): Promise<Result<SentClientBrief, ApiError>>;
+
+  /**
    * Coach sets/edits a client's daily nutrition target
    * (`PUT /trainers/me/clients/:clientId/nutrition/target`, Phase 3). Stamps
    * `set_by_user_id = trainerId`. Single `{ data: NutritionTarget }` envelope.
@@ -1102,6 +1115,20 @@ export type UpdateClientNoteInput = {
   content?: string;
   title?: string;
   noteType?: string;
+};
+
+/** Body for `POST /trainers/me/clients/:clientId/brief` (M17 Send brief). */
+export type SendClientBriefInput = {
+  /** Free-text brief body, 1–500 chars (trimmed server-side). */
+  message: string;
+};
+
+/**
+ * Minimal slice of the created `coach_brief` notification row the send
+ * endpoint returns — the sheet only needs delivery confirmation.
+ */
+export type SentClientBrief = {
+  id: string;
 };
 
 // -- API data shapes (mirror backend response types) --

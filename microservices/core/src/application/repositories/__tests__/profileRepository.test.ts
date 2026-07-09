@@ -852,6 +852,8 @@ describe("defaultNotificationPreferences", () => {
       workout_logged_on_behalf: true,
       measurement_logged_on_behalf: true,
       nutrition_target_set_by_trainer: true,
+      // M17 Send brief — default opt-in "on".
+      coach_brief: true,
     });
   });
 
@@ -976,6 +978,8 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       workout_logged_on_behalf: true,
       measurement_logged_on_behalf: true,
       nutrition_target_set_by_trainer: true,
+      // M17 Send brief — default opt-in "on".
+      coach_brief: true,
     });
   });
 
