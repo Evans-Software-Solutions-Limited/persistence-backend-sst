@@ -2,6 +2,7 @@ import { and, eq, desc, asc, sql } from "drizzle-orm";
 import {
   userGoals,
   goalTypes,
+  profiles,
   type UserGoal,
   type NewUserGoal,
 } from "@persistence/db";
@@ -14,6 +15,109 @@ export interface GoalTypeRow {
   description: string | null;
   category: string | null;
   iconName: string | null;
+}
+
+/**
+ * Enriched athlete-read shape for a goal. Mirrors the `nutritionTargetRepository`
+ * pattern: the raw `user_goals` row LEFT JOINed with `goal_types` (type
+ * name/icon/category) and `profiles` (the assigner's `full_name` when the goal
+ * was coach-assigned). `targetValue` / `currentValue` are converted from the
+ * Postgres `numeric` string boundary to `number`; timestamps to ISO strings.
+ */
+export interface UserGoalDTO {
+  id: string;
+  userId: string;
+  goalTypeId: string;
+  priority: number | null;
+  isActive: boolean | null;
+  targetDate: string | null;
+  notes: string | null;
+  assignedByUserId: string | null;
+  targetValue: number | null;
+  currentValue: number | null;
+  unit: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  /** From `goal_types` (LEFT JOIN) — null only if the type row is missing. */
+  goalTypeName: string | null;
+  goalTypeIconName: string | null;
+  goalTypeCategory: string | null;
+  /**
+   * Assigner display name when `assigned_by_user_id` is non-null (coach-assigned
+   * goal, cross-cuts § 1.5). Null for self-set goals.
+   */
+  assignedByName: string | null;
+}
+
+/** Columns selected for the enriched list/getById reads. */
+const goalSelectColumns = {
+  id: userGoals.id,
+  userId: userGoals.userId,
+  goalTypeId: userGoals.goalTypeId,
+  priority: userGoals.priority,
+  isActive: userGoals.isActive,
+  targetDate: userGoals.targetDate,
+  notes: userGoals.notes,
+  assignedByUserId: userGoals.assignedByUserId,
+  targetValue: userGoals.targetValue,
+  currentValue: userGoals.currentValue,
+  unit: userGoals.unit,
+  createdAt: userGoals.createdAt,
+  updatedAt: userGoals.updatedAt,
+  goalTypeName: goalTypes.name,
+  goalTypeIconName: goalTypes.iconName,
+  goalTypeCategory: goalTypes.category,
+  assignedByName: profiles.fullName,
+} as const;
+
+/** Raw shape returned by the enriched select (numeric→string, timestamp→Date). */
+interface GoalSelectRow {
+  id: string;
+  userId: string;
+  goalTypeId: string;
+  priority: number | null;
+  isActive: boolean | null;
+  targetDate: string | null;
+  notes: string | null;
+  assignedByUserId: string | null;
+  targetValue: string | null;
+  currentValue: string | null;
+  unit: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  goalTypeName: string | null;
+  goalTypeIconName: string | null;
+  goalTypeCategory: string | null;
+  assignedByName: string | null;
+}
+
+function toIso(value: Date | string | null): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return value ? String(value) : null;
+}
+
+function mapGoalRow(r: GoalSelectRow): UserGoalDTO {
+  return {
+    id: r.id,
+    userId: r.userId,
+    goalTypeId: r.goalTypeId,
+    priority: r.priority ?? null,
+    isActive: r.isActive ?? null,
+    targetDate: r.targetDate ?? null,
+    notes: r.notes ?? null,
+    assignedByUserId: r.assignedByUserId ?? null,
+    targetValue: r.targetValue != null ? Number(r.targetValue) : null,
+    currentValue: r.currentValue != null ? Number(r.currentValue) : null,
+    unit: r.unit ?? null,
+    createdAt: toIso(r.createdAt),
+    updatedAt: toIso(r.updatedAt),
+    goalTypeName: r.goalTypeName ?? null,
+    goalTypeIconName: r.goalTypeIconName ?? null,
+    goalTypeCategory: r.goalTypeCategory ?? null,
+    // Only surface the name when the goal was actually assigned by someone
+    // (mirrors nutritionTargetRepository.get()).
+    assignedByName: r.assignedByUserId ? (r.assignedByName ?? null) : null,
+  };
 }
 
 export class GoalRepository {
@@ -42,28 +146,34 @@ export class GoalRepository {
     }));
   }
 
-  async list(userId: string, limit = 20, offset = 0): Promise<UserGoal[]> {
+  async list(userId: string, limit = 20, offset = 0): Promise<UserGoalDTO[]> {
     const db = getDb();
 
-    return db
-      .select()
+    const rows = await db
+      .select(goalSelectColumns)
       .from(userGoals)
+      .leftJoin(goalTypes, eq(goalTypes.id, userGoals.goalTypeId))
+      .leftJoin(profiles, eq(profiles.id, userGoals.assignedByUserId))
       .where(eq(userGoals.userId, userId))
       .orderBy(desc(userGoals.createdAt))
       .limit(limit)
       .offset(offset);
+
+    return rows.map(mapGoalRow);
   }
 
-  async getById(id: string, userId: string): Promise<UserGoal | null> {
+  async getById(id: string, userId: string): Promise<UserGoalDTO | null> {
     const db = getDb();
 
-    const result = await db
-      .select()
+    const rows = await db
+      .select(goalSelectColumns)
       .from(userGoals)
+      .leftJoin(goalTypes, eq(goalTypes.id, userGoals.goalTypeId))
+      .leftJoin(profiles, eq(profiles.id, userGoals.assignedByUserId))
       .where(and(eq(userGoals.id, id), eq(userGoals.userId, userId)))
       .limit(1);
 
-    return result[0] ?? null;
+    return rows[0] ? mapGoalRow(rows[0]) : null;
   }
 
   async create(
