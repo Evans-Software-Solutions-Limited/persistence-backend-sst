@@ -55,7 +55,10 @@ export async function deleteClientNoteOnBehalf({
       return {
         ok: false,
         status: 404,
-        body: { code: "note_not_found", message: "That note no longer exists." },
+        body: {
+          code: "note_not_found",
+          message: "That note no longer exists.",
+        },
       };
     }
     throw err;

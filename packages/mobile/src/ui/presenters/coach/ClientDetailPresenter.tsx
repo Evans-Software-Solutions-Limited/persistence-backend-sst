@@ -1,4 +1,9 @@
-import { RefreshControl, ScrollView, Pressable } from "react-native";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import {
@@ -30,12 +35,14 @@ import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import type { ApiError } from "@/shared/errors";
 import type {
   AdherenceModule,
+  AiSummaryModule,
   CalorieHitModule,
   ClientDetail,
   GoalModule,
   VolumeModule,
 } from "@/domain/models/clientDetail";
 import type { ActiveProgramme } from "@/domain/models/progress";
+import { relativeTime } from "@/ui/presenters/coach/RecentActivityFeedPresenter";
 
 /**
  * <ClientDetailPresenter> — the full single-scroll Client Detail screen
@@ -101,6 +108,12 @@ export type ClientDetailProps = {
   onAddNote: () => void;
   /** Tap a note → open the note composer (edit/delete). */
   onEditNote: (note: ClientDetail["notes"][number]) => void;
+  /** True while an AI-summary generate/refresh is in flight (Phase 6). */
+  isGeneratingSummary: boolean;
+  /** Whether the device is online — AI generation is online-only. */
+  online: boolean;
+  /** Regenerate tap → POST ai-summary { manual: true }, then refresh. */
+  onRegenerateSummary: () => void;
 };
 
 export function ClientDetailPresenter(props: ClientDetailProps) {
@@ -124,6 +137,9 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onAssignProgramme,
     onAddNote,
     onEditNote,
+    isGeneratingSummary,
+    online,
+    onRegenerateSummary,
   } = props;
 
   const insets = useSafeAreaInsets();
@@ -174,7 +190,12 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
             onAssignGoal={onAssignGoal}
           />
 
-          <AISummaryCard />
+          <AISummaryCard
+            aiSummary={detail?.aiSummary ?? null}
+            isGenerating={isGeneratingSummary}
+            online={online}
+            onRegenerate={onRegenerateSummary}
+          />
 
           {detail?.goal ? (
             <GoalCard goal={detail.goal} onEdit={onEditGoal} />
@@ -519,8 +540,26 @@ function QuickActionsRow({
   );
 }
 
-// ── AISummaryCard (STORY-014 stub) ───────────────────────────────────────────
-function AISummaryCard() {
+// ── AISummaryCard (STORY-014, Phase 6) ───────────────────────────────────────
+function AISummaryCard({
+  aiSummary,
+  isGenerating,
+  online,
+  onRegenerate,
+}: {
+  aiSummary: AiSummaryModule | null;
+  isGenerating: boolean;
+  online: boolean;
+  onRegenerate: () => void;
+}) {
+  const summary = aiSummary?.summary ?? null;
+  const generatedAt = aiSummary?.generatedAt ?? null;
+  // The Regenerate affordance: only when the server says the one manual refresh
+  // is still available (row exists, unused, ai_access, under ceiling) AND we're
+  // online AND nothing is already in flight.
+  const canRegenerate =
+    (aiSummary?.canManualRefresh ?? false) && online && !isGenerating;
+
   return (
     <Card
       pad={16}
@@ -547,29 +586,70 @@ function AISummaryCard() {
             AI weekly summary
           </Text>
         </View>
+        {summary != null && generatedAt != null ? (
+          <Text
+            fontFamily="$body"
+            fontSize={11}
+            color="$text3"
+            testID="client-detail-ai-summary-updated"
+          >
+            Updated {relativeTime(generatedAt, Date.now())} ago
+          </Text>
+        ) : null}
       </View>
-      <Text
-        fontFamily="$body"
-        fontSize={14}
-        lineHeight={20}
-        color="$text3"
-        testID="client-detail-ai-summary-stub"
-      >
-        AI insights arrive soon — weekly summaries and suggested actions for
-        this client will appear here.
-      </Text>
-      <View marginTop={12} alignSelf="flex-start">
-        <Btn
-          variant="soft"
-          tone="trainer"
-          size="sm"
-          disabled
-          onPress={() => {}}
-          testID="client-detail-ai-regenerate"
+
+      {isGenerating ? (
+        <View
+          flexDirection="row"
+          alignItems="center"
+          gap={8}
+          testID="client-detail-ai-summary-generating"
         >
-          Regenerate
-        </Btn>
-      </View>
+          <ActivityIndicator size="small" color={toneHex("trainer").base} />
+          <Text fontFamily="$body" fontSize={14} lineHeight={20} color="$text3">
+            Generating today’s summary…
+          </Text>
+        </View>
+      ) : summary != null ? (
+        <Text
+          fontFamily="$body"
+          fontSize={14}
+          lineHeight={20}
+          color="$text1"
+          testID="client-detail-ai-summary-text"
+        >
+          {summary}
+        </Text>
+      ) : (
+        <Text
+          fontFamily="$body"
+          fontSize={14}
+          lineHeight={20}
+          color="$text3"
+          testID="client-detail-ai-summary-empty"
+        >
+          {online
+            ? "No summary yet — one will be generated from this client’s recent training and nutrition."
+            : "Connect to the internet to generate this client’s AI summary."}
+        </Text>
+      )}
+
+      {summary != null ? (
+        <View marginTop={12} alignSelf="flex-start">
+          <Btn
+            variant="soft"
+            tone="trainer"
+            size="sm"
+            disabled={!canRegenerate}
+            onPress={onRegenerate}
+            testID="client-detail-ai-regenerate"
+          >
+            {aiSummary?.canManualRefresh
+              ? "Regenerate"
+              : "Next update tomorrow"}
+          </Btn>
+        </View>
+      ) : null}
     </Card>
   );
 }

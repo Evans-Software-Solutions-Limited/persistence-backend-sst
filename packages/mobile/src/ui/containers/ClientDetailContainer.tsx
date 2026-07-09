@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useGetClientBodyTrend } from "@/ui/hooks/useGetClientBodyTrend";
 import { useGetClientDetail } from "@/ui/hooks/useGetClientDetail";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
@@ -63,7 +64,8 @@ export function ClientDetailContainer() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const detail = useGetClientDetail(id);
   const trend = useGetClientBodyTrend(id);
-  const { api } = useAdapters();
+  const { api, netInfo } = useAdapters();
+  const online = useOnlineStatus();
   const openAssignProgram = useAssignProgramSheet((s) => s.openForClient);
   const openAssignWorkout = useAssignWorkoutSheet((s) => s.openSheet);
   const openAssignGoalCreate = useAssignGoalSheet((s) => s.openForCreate);
@@ -114,6 +116,59 @@ export function ClientDetailContainer() {
     () => buildClientBodyTrend(trend.data ?? []),
     [trend.data],
   );
+
+  // AI Client Summary (M8 Coach Phase 6, design.md § Module g). ONLINE-ONLY —
+  // a direct adapter call, never the sync queue (mirrors Snap AI). The server
+  // caps it at one auto-gen + one manual refresh per client per day; after
+  // either, we refresh the aggregate so the card renders the cached row.
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const generateSummary = useCallback(
+    async (manual: boolean) => {
+      if (!id) return;
+      setIsGeneratingSummary(true);
+      try {
+        // Ownership/entitlement/ceiling are all server-enforced; a 402/429/503
+        // just leaves the card on its modules-a–f fallback (design.md §
+        // Failure fallback), so we don't branch on the result here.
+        await api.generateClientAiSummary(id, manual);
+      } finally {
+        setIsGeneratingSummary(false);
+        void refreshDetail();
+      }
+    },
+    [api, id, refreshDetail],
+  );
+
+  // Lazy trigger — fire ONCE per screen visit when the concluded day has no
+  // cached summary and we're online (design.md: "generated the first time the
+  // coach opens that client on/after the day rolls over"). The ref guards
+  // against a re-fire when a failed generation leaves summary still null.
+  const autoFiredSummary = useRef(false);
+  useEffect(() => {
+    autoFiredSummary.current = false;
+  }, [id]);
+  useEffect(() => {
+    if (autoFiredSummary.current) return;
+    if (!detail.data || detail.data.aiSummary.summary != null || !online)
+      return;
+    // `online` starts optimistically true and settles from netInfo within a
+    // tick, so confirm connectivity authoritatively before spending — a
+    // truly-offline open must never fire (design.md: offline shows cached, no
+    // generation). On a confirmed-offline read we release the guard so a later
+    // reconnect (online flips true → effect re-runs) can still fire once.
+    autoFiredSummary.current = true;
+    void (async () => {
+      if (!(await netInfo.isConnected())) {
+        autoFiredSummary.current = false;
+        return;
+      }
+      await generateSummary(false);
+    })();
+  }, [detail.data, online, generateSummary, netInfo]);
+
+  const onRegenerateSummary = useCallback(() => {
+    void generateSummary(true);
+  }, [generateSummary]);
 
   const onLogWeight = useCallback(() => {
     if (!id) return;
@@ -214,6 +269,9 @@ export function ClientDetailContainer() {
       onAssignProgramme={onAssignProgramme}
       onAddNote={onAddNote}
       onEditNote={onEditNote}
+      isGeneratingSummary={isGeneratingSummary}
+      online={online}
+      onRegenerateSummary={onRegenerateSummary}
     />
   );
 }

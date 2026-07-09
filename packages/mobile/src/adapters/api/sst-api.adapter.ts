@@ -89,6 +89,7 @@ import type {
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type {
+  AiSummaryModule,
   ClientDetail,
   ClientDetailNote,
 } from "@/domain/models/clientDetail";
@@ -1302,6 +1303,16 @@ export class SSTApiAdapter implements ApiPort {
 
   async getGoalTypes(): Promise<Result<GoalType[], ApiError>> {
     return this.requestEnvelope<GoalType[]>("/goal-types");
+  }
+
+  async generateClientAiSummary(
+    clientId: string,
+    manual: boolean,
+  ): Promise<Result<AiSummaryModule, ApiError>> {
+    return this.requestEnvelope<AiSummaryModule>(
+      `/trainers/me/clients/${clientId}/ai-summary`,
+      { method: "POST", body: { manual } },
+    );
   }
 
   async assignClientGoal(

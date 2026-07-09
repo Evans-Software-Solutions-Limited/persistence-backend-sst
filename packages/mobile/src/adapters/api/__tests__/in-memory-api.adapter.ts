@@ -83,6 +83,7 @@ import type {
   UpdateClientNoteInput,
 } from "@/domain/ports/api.port";
 import type {
+  AiSummaryModule,
   ClientDetail,
   ClientDetailNote,
 } from "@/domain/models/clientDetail";
@@ -1279,6 +1280,25 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return this.mayFail<ClientDetail>(detail);
+  }
+
+  /** Captures every AI-summary generate/refresh (online-only, no queue). */
+  public generateClientAiSummaryCalls: { clientId: string; manual: boolean }[] =
+    [];
+  /** Fixture the next generate resolves to (default a generated stub). */
+  public nextAiSummary: AiSummaryModule = {
+    summary: "Generated summary.",
+    coversDate: "2026-07-07",
+    generatedAt: "2026-07-08T06:00:00.000Z",
+    canManualRefresh: true,
+  };
+
+  async generateClientAiSummary(
+    clientId: string,
+    manual: boolean,
+  ): Promise<Result<AiSummaryModule, ApiError>> {
+    this.generateClientAiSummaryCalls.push({ clientId, manual });
+    return this.mayFail<AiSummaryModule>(this.nextAiSummary);
   }
 
   private failGoal(): Result<ApiGoal, GoalApiError> | null {

@@ -811,6 +811,45 @@ export const trainerActionsAudit = pgTable(
   ],
 );
 
+// ─── Client AI Summaries (Coach Mode Phase 6) ────────────────────────────────
+//
+// One row per (trainer, client, concluded client-local day) — the cache behind
+// the coach's Client Detail "AI weekly summary" card (design.md § Module g).
+// UNIQUE(trainer_id, client_id, covers_date) is the once-a-day cap; the manual
+// refresh overwrites the row and bumps refresh_count (blocked at 1 ⇒ ≤2
+// inferences/client/day). Backend-only (RLS on, no policies — see migration).
+export const clientAiSummaries = pgTable(
+  "client_ai_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id),
+    coversDate: date("covers_date").notNull(),
+    summary: text("summary").notNull(),
+    model: text("model").notNull(),
+    refreshCount: integer("refresh_count").notNull().default(0),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("client_ai_summaries_trainer_client_date_key").on(
+      t.trainerId,
+      t.clientId,
+      t.coversDate,
+    ),
+    index("client_ai_summaries_trainer_client_date").on(
+      t.trainerId,
+      t.clientId,
+      t.coversDate.desc(),
+    ),
+  ],
+);
+
 // ─── Workout Assignments ──────────────────────────────────────────────────────
 
 export const workoutAssignments = pgTable(
@@ -1507,6 +1546,8 @@ export type NewPtClientRelationship = typeof ptClientRelationships.$inferInsert;
 
 export type TrainerActionAudit = typeof trainerActionsAudit.$inferSelect;
 export type NewTrainerActionAudit = typeof trainerActionsAudit.$inferInsert;
+export type ClientAiSummary = typeof clientAiSummaries.$inferSelect;
+export type NewClientAiSummary = typeof clientAiSummaries.$inferInsert;
 export type ActionType = (typeof actionTypeEnum.enumValues)[number];
 
 export type WorkoutAssignment = typeof workoutAssignments.$inferSelect;

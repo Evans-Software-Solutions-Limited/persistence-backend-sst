@@ -22,7 +22,11 @@ export interface UpdateClientNoteArgs {
 
 export type UpdateClientNoteResult =
   | { ok: true; note: NoteRow }
-  | { ok: false; status: 403 | 404 | 400; body: { code: string; message: string } };
+  | {
+      ok: false;
+      status: 403 | 404 | 400;
+      body: { code: string; message: string };
+    };
 
 /**
  * Shared core for a coach editing one of their own private notes for a client.
@@ -85,7 +89,10 @@ export async function updateClientNoteOnBehalf({
       return {
         ok: false,
         status: 404,
-        body: { code: "note_not_found", message: "That note no longer exists." },
+        body: {
+          code: "note_not_found",
+          message: "That note no longer exists.",
+        },
       };
     }
     throw err;

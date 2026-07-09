@@ -141,6 +141,9 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onAssignProgramme: jest.fn(),
     onAddNote: jest.fn(),
     onEditNote: jest.fn(),
+    isGeneratingSummary: false,
+    online: true,
+    onRegenerateSummary: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<ClientDetailPresenter {...props} />) };
@@ -231,10 +234,67 @@ describe("ClientDetailPresenter — QuickActionsRow", () => {
   });
 });
 
-describe("ClientDetailPresenter — AISummaryCard stub", () => {
-  it("renders the STORY-014 stub with a locked Regenerate", () => {
-    const { getByTestId } = render();
-    expect(getByTestId("client-detail-ai-summary-stub")).toBeTruthy();
+describe("ClientDetailPresenter — AISummaryCard", () => {
+  const withSummary = (over: Partial<ClientDetail["aiSummary"]> = {}) =>
+    fullDetail({
+      aiSummary: {
+        summary: "Solid week — hit calories 5/7 days. Focus: sleep.",
+        coversDate: "2026-07-07",
+        generatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        canManualRefresh: true,
+        ...over,
+      },
+    });
+
+  it("empty state (no cached summary, online) — no Regenerate button yet", () => {
+    const { getByTestId, queryByTestId } = render();
+    expect(getByTestId("client-detail-ai-summary-empty")).toBeTruthy();
+    // Nothing to regenerate until a summary exists.
+    expect(queryByTestId("client-detail-ai-regenerate")).toBeNull();
+  });
+
+  it("offline empty state prompts to connect", () => {
+    const { getByTestId } = render({ online: false });
+    expect(
+      getByTestId("client-detail-ai-summary-empty").props.children,
+    ).toContain("Connect to the internet");
+  });
+
+  it("generating state shows the spinner copy", () => {
+    const { getByTestId, queryByTestId } = render({
+      isGeneratingSummary: true,
+    });
+    expect(getByTestId("client-detail-ai-summary-generating")).toBeTruthy();
+    expect(queryByTestId("client-detail-ai-summary-empty")).toBeNull();
+  });
+
+  it("loaded state renders the summary text + 'Updated …' + an enabled Regenerate", () => {
+    const { getByTestId, props } = render({ detail: withSummary() });
+    expect(
+      getByTestId("client-detail-ai-summary-text").props.children,
+    ).toContain("Solid week");
+    expect(getByTestId("client-detail-ai-summary-updated")).toBeTruthy();
+    const btn = getByTestId("client-detail-ai-regenerate");
+    expect(btn.props.accessibilityState).toMatchObject({ disabled: false });
+    fireEvent.press(btn);
+    expect(props.onRegenerateSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("loaded + refresh spent → Regenerate disabled, reads 'Next update tomorrow'", () => {
+    const { getByTestId, getByText } = render({
+      detail: withSummary({ canManualRefresh: false }),
+    });
+    expect(
+      getByTestId("client-detail-ai-regenerate").props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    expect(getByText("Next update tomorrow")).toBeTruthy();
+  });
+
+  it("loaded but offline → Regenerate disabled even if the server would allow it", () => {
+    const { getByTestId } = render({
+      detail: withSummary({ canManualRefresh: true }),
+      online: false,
+    });
     expect(
       getByTestId("client-detail-ai-regenerate").props.accessibilityState,
     ).toMatchObject({ disabled: true });

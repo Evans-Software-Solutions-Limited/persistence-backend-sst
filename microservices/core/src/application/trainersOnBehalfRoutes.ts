@@ -22,6 +22,7 @@ import { trainersMeDeleteClientHabitHandler } from "./trainers/habits/trainersMe
 import { trainersMeListClientHabitCompletionsHandler } from "./trainers/habits/trainersMeListClientHabitCompletionsHandler";
 import { trainersClientDetailGetHandler } from "./trainers/clients/trainersClientDetailGetHandler";
 import { trainersClientNotesRoutes } from "./trainersClientNotesRoutes";
+import { trainersMeGenerateClientAiSummaryHandler } from "./trainers/clients/trainersMeGenerateClientAiSummaryHandler";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create + GET list (different methods, no path collision).
@@ -42,6 +43,10 @@ export const trainersOnBehalfRoutes = new Elysia()
   .use(trainersMeSetClientHabitConfigHandler)
   .use(trainersMeDeleteClientHabitHandler)
   .use(trainersMeListClientHabitCompletionsHandler)
+  // AI Client Summary (Phase 6, 10.g) — POST .../ai-summary generate/refresh.
+  // Static `ai-summary` segment, so it never collides with the bare
+  // `:clientId` GET; mounted before it for good measure.
+  .use(trainersMeGenerateClientAiSummaryHandler)
   // notes CRUD (Phase 12) — POST/PUT/DELETE .../notes[/:noteId], grouped into a
   // nested sub-app (one `.use()`) to stay under the Eden Treaty depth ceiling.
   // Static `notes` segment, so no collision with the bare `:clientId` GET.

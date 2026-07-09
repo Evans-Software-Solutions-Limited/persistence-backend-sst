@@ -101,11 +101,21 @@ coreAPI.route("$default", {
     // Opus 4.8 access and a cheaper/faster model id becomes preferable.
     AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
     AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // Coach AI Client Summary (Coach Mode Phase 6 — specs/10-trainer-features
+    // design.md § Module g). Same Bedrock IAM auth as above; the summary is a
+    // short synthesis over Client Detail modules a–f, so it defaults to the
+    // cheap/fast EU Haiku id (override per-stage to a stronger model if the
+    // coach summaries want more depth).
+    AI_COACH_SUMMARY_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
     // Daily per-user inference ceilings (cross-cuts § 4.3 Revised
     // 2026-07-05) — a cost backstop with a profit buffer, not a product
     // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.
     AI_PHOTO_DAILY_LIMIT: "12",
     AI_TEXT_DAILY_LIMIT: "30",
+    // Per-COACH daily ceiling for AI Client Summaries (design.md § Module g
+    // "Per-coach daily backstop"). Net worst case min(2 × opened-clients,
+    // this). Sized for a full coaching roster; a cost backstop, not a quota.
+    AI_COACH_SUMMARY_DAILY_LIMIT: "40",
   },
 });
 

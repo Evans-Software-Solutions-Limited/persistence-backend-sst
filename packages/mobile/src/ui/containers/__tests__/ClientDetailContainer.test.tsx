@@ -68,6 +68,13 @@ function props(): ClientDetailProps {
   return mockCaptured.props;
 }
 
+const NULL_SUMMARY: ClientDetail["aiSummary"] = {
+  summary: null,
+  coversDate: null,
+  generatedAt: null,
+  canManualRefresh: false,
+};
+
 const ACTIVE: ActiveProgramme = {
   assignmentId: "pa1",
   programId: "p1",
@@ -109,10 +116,13 @@ function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
       pct: 0.4,
     },
     habits: null,
+    // Default to an already-cached summary so unrelated tests don't trip the
+    // lazy auto-fire (which would race an async refresh). Summary-specific
+    // tests override `aiSummary` with NULL_SUMMARY to exercise the auto-fire.
     aiSummary: {
-      summary: null,
-      coversDate: null,
-      generatedAt: null,
+      summary: "Cached summary.",
+      coversDate: "2026-07-07",
+      generatedAt: "2026-07-08T06:00:00.000Z",
       canManualRefresh: false,
     },
     thisWeek: {
@@ -128,7 +138,10 @@ function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
   };
 }
 
-function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
+function makeAdapters(connected = true): {
+  adapters: Adapters;
+  api: InMemoryApiAdapter;
+} {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
   auth.currentSession = {
@@ -145,7 +158,7 @@ function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
     payments: new MockPaymentsAdapter(),
-    netInfo: new InMemoryNetInfoAdapter(),
+    netInfo: new InMemoryNetInfoAdapter(connected),
   };
   return { adapters, api };
 }
@@ -401,6 +414,91 @@ describe("ClientDetailContainer — populated", () => {
     props().onAssignWorkout();
     expect(useAssignProgramSheet.getState().clientId).toBe("client-1");
     expect(useAssignWorkoutSheet.getState().clientId).toBe("client-1");
+  });
+});
+
+describe("ClientDetailContainer — AI summary (Phase 6)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockParams.id = "client-1";
+    mockParams.name = "Jordan";
+  });
+
+  it("lazy-fires generate (manual:false) ONCE on open when the concluded day has no cached summary + online", async () => {
+    const { adapters, api } = makeAdapters(true);
+    api.clientDetails["client-1"] = fullDetail({ aiSummary: NULL_SUMMARY });
+    renderWith(adapters);
+
+    await waitFor(() =>
+      expect(api.generateClientAiSummaryCalls.length).toBe(1),
+    );
+    expect(api.generateClientAiSummaryCalls[0]).toEqual({
+      clientId: "client-1",
+      manual: false,
+    });
+    // It refreshes the aggregate afterwards so the card can fill from cache.
+    await waitFor(() =>
+      expect(api.getClientDetailCalls.length).toBeGreaterThan(1),
+    );
+  });
+
+  it("does NOT lazy-fire when a summary is already cached for the day", async () => {
+    const { adapters, api } = makeAdapters(true);
+    api.clientDetails["client-1"] = fullDetail({
+      aiSummary: {
+        summary: "Already generated.",
+        coversDate: "2026-07-07",
+        generatedAt: "2026-07-08T06:00:00.000Z",
+        canManualRefresh: true,
+      },
+    });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    // Give any stray effect a tick.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.generateClientAiSummaryCalls).toHaveLength(0);
+  });
+
+  it("does NOT lazy-fire when offline (generation is online-only)", async () => {
+    const { adapters, api } = makeAdapters(false);
+    api.clientDetails["client-1"] = fullDetail({ aiSummary: NULL_SUMMARY });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.generateClientAiSummaryCalls).toHaveLength(0);
+    expect(props().online).toBe(false);
+  });
+
+  it("onRegenerateSummary posts manual:true then refreshes the aggregate", async () => {
+    const { adapters, api } = makeAdapters(true);
+    api.clientDetails["client-1"] = fullDetail({
+      aiSummary: {
+        summary: "Existing summary.",
+        coversDate: "2026-07-07",
+        generatedAt: "2026-07-08T06:00:00.000Z",
+        canManualRefresh: true,
+      },
+    });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    const before = api.getClientDetailCalls.length;
+
+    await act(async () => {
+      props().onRegenerateSummary();
+    });
+
+    await waitFor(() =>
+      expect(
+        api.generateClientAiSummaryCalls.some((c) => c.manual === true),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(api.getClientDetailCalls.length).toBeGreaterThan(before),
+    );
   });
 });
 
