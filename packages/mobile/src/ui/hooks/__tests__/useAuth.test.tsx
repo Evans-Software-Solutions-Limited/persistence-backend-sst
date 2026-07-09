@@ -131,7 +131,7 @@ describe("useAuth", () => {
     expect(s.isTrainerEligible).toBe(false);
     expect(s.isEligibilityKnown).toBe(false);
     // Same for the Train segment + the one-shot pendingCreate flag.
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
     expect(useTrainSegment.getState().pendingCreate).toBe(false);
   });
 
@@ -591,7 +591,7 @@ describe("useAuth", () => {
     expect(result.current.session).toBeNull();
     expect(result.current.error).toBeNull();
     expect(useUserMode.getState().mode).toBe("athlete");
-    expect(useTrainSegment.getState().segment).toBe("Workouts");
+    expect(useTrainSegment.getState().segment).toBe("Training");
     expect(storage.getLastSyncedAt("workout")).toBeNull();
   });
 

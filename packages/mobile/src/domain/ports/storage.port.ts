@@ -35,6 +35,7 @@ import type {
 } from "@/domain/models/progress";
 import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
+import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { CoachOverview } from "@/domain/models/coachOverview";
@@ -434,6 +435,13 @@ export interface StoragePort {
   getHomeAge(userId: string): string | null;
   cacheHome(userId: string, payload: HomePayload): void;
   invalidateHome(userId: string): void;
+
+  // -- Goals cache (M16 — Athlete Training page) --
+  /** Cached athlete goals list (cache-first render for the Train overview). */
+  getCachedGoals(userId: string): Goal[] | null;
+  getGoalsAge(userId: string): string | null;
+  cacheGoals(userId: string, goals: Goal[]): void;
+  invalidateGoals(userId: string): void;
 
   /** Cached streak rows (StreakHero + the deriveStreak server reconciliation). */
   getCachedStreaks(userId: string): Streak[];

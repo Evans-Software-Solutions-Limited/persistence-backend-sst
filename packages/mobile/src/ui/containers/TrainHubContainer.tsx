@@ -8,6 +8,7 @@ import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
 import { IconPlus, IconSearch } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
+import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
 
 /**
  * <TrainHubContainer> — the Train tab hub.
@@ -90,7 +91,7 @@ export function TrainHubContainer() {
             letterSpacing={-0.96}
             color="$text"
           >
-            {segment === "Workouts" ? "Workouts" : "Exercises"}
+            {segment}
           </Text>
         </View>
         {segment === "Exercises" ? (
@@ -103,24 +104,28 @@ export function TrainHubContainer() {
           >
             Create
           </Btn>
-        ) : (
+        ) : segment === "Workouts" ? (
           <IconBtn
             icon={<IconSearch size={18} />}
             tone="ghost"
             onPress={openSearch}
             accessibilityLabel="Search workouts"
           />
-        )}
+        ) : null}
       </View>
 
       <View paddingHorizontal={16} paddingBottom={12}>
         <Segmented
-          options={["Workouts", "Exercises"]}
+          options={["Training", "Workouts", "Exercises"]}
           value={segment}
           onChange={(next) => {
             // Narrow rather than cast — if the option set ever drifts, an
             // unrecognised value is ignored instead of silently coercing.
-            if (next === "Workouts" || next === "Exercises") {
+            if (
+              next === "Training" ||
+              next === "Workouts" ||
+              next === "Exercises"
+            ) {
               setSegment(next);
             }
           }}
@@ -128,7 +133,9 @@ export function TrainHubContainer() {
         />
       </View>
       <View flex={1}>
-        {segment === "Workouts" ? (
+        {segment === "Training" ? (
+          <TrainOverviewContainer />
+        ) : segment === "Workouts" ? (
           <WorkoutsListContainer />
         ) : (
           <ExerciseListContainer />

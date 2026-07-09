@@ -6,6 +6,7 @@ import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
 import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
 import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
 import { EditNutritionTargetsSheet } from "../../src/ui/presenters/coach/EditNutritionTargetsSheet";
+import { GoalSheet } from "../../src/ui/presenters/GoalSheet";
 import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerContainer";
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
@@ -264,6 +265,13 @@ export default function AppLayout() {
         useCoachNoteSheet().open. Opened from Client Detail's Notes card.
       */}
       <CoachNoteSheet />
+      {/*
+        GoalSheet — the athlete's own add/edit-goal sheet (M16 — Athlete
+        Training page). Root-mounted sibling (feedback_sheets_mount_at_root);
+        reads useGoalSheet().open. Opened from the Train overview's Goals
+        section (self-set goals only; coach-assigned goals are view-only).
+      */}
+      <GoalSheet />
       {/*
         M9 Fuel sheets — root-mounted siblings (feedback_sheets_mount_at_root).
         All three read useFuelSheets().sheet to drive their <BottomSheet>

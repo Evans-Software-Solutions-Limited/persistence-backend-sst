@@ -28,3 +28,7 @@ export { ProgrammeCard } from "./ProgrammeCard";
 export type { ProgrammeCardProps } from "./ProgrammeCard";
 export { CoachAttribution } from "./CoachAttribution";
 export type { CoachAttributionProps } from "./CoachAttribution";
+export { TodaysTrainingSection } from "./TodaysTrainingSection";
+export type { TodaysTrainingSectionProps } from "./TodaysTrainingSection";
+export { GoalCard } from "./GoalCard";
+export type { GoalCardProps } from "./GoalCard";
