@@ -1,5 +1,6 @@
 import {
   HOME_ROUTE,
+  TRAIN_ROUTE,
   resolveNotificationRoute,
 } from "@/application/notifications/deep-link";
 
@@ -49,6 +50,13 @@ describe("resolveNotificationRoute", () => {
     expect(resolveNotificationRoute("persistencemobile://profile")).toBe(
       "/(app)/(tabs)/you",
     );
+  });
+
+  it("maps the M17 train host to the Train hub route", () => {
+    expect(resolveNotificationRoute("persistencemobile://train")).toBe(
+      TRAIN_ROUTE,
+    );
+    expect(TRAIN_ROUTE).toBe("/(app)/(tabs)/train");
   });
 
   it("falls back to Home for an unknown custom-scheme host", () => {

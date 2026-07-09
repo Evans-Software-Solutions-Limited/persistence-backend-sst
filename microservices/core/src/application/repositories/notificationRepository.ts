@@ -1,6 +1,7 @@
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { notifications } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DbOrTx } from "./personalRecordsRepository";
 
 /**
  * Notification type union — mirrors the `notification_type` Postgres
@@ -36,7 +37,11 @@ export type NotificationType =
   | "goal_assigned_by_trainer"
   | "workout_logged_on_behalf"
   | "measurement_logged_on_behalf"
-  | "nutrition_target_set_by_trainer";
+  | "nutrition_target_set_by_trainer"
+  // M17 (Send brief) — coach → client free-text brief. DB enum extended in
+  // 20260709120000_coach_brief_notification_type.sql. Default opt-in "on"
+  // per cross-cuts § 5.
+  | "coach_brief";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -55,6 +60,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_logged_on_behalf",
   "measurement_logged_on_behalf",
   "nutrition_target_set_by_trainer",
+  "coach_brief",
 ] as const;
 
 /**
@@ -230,8 +236,14 @@ export class NotificationRepository {
   async create(
     userId: string,
     input: CreateNotificationInput,
+    // Optional transaction handle — the coach Send-brief write threads its
+    // `db.transaction` handle through here so the notification insert (the
+    // deliverable) and the `trainer_actions_audit` insert land in ONE
+    // transaction (cross-cuts § 1.4.2). Same optional-`tx` pattern as
+    // `GoalRepository.create` / `MeasurementRepository.create`.
+    tx?: DbOrTx,
   ): Promise<AppNotification> {
-    const db = getDb();
+    const db = tx ?? getDb();
     const rows = await db
       .insert(notifications)
       .values({

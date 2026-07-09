@@ -7,7 +7,7 @@ import {
   refreshNotifications,
 } from "@/application/notifications/queries/list-notifications.query";
 import { groupNotificationsByDate } from "@/application/notifications/grouping";
-import { resolveNotificationRoute } from "@/application/notifications/deep-link";
+import { resolveAndPrimeNotificationRoute } from "@/ui/navigation/notificationRoute";
 import { markNotificationReadCommand } from "@/application/notifications/commands/mark-read.command";
 import { markAllNotificationsReadCommand } from "@/application/notifications/commands/mark-all-read.command";
 import {
@@ -222,8 +222,11 @@ export function NotificationsListContainer() {
         setUnreadCount((c) => Math.max(0, c - 1));
       }
       // Resolve the deep link (legacy remap + Home fallback for
-      // unknown/absent links) via the shared 09.6 resolver.
-      router.push(resolveNotificationRoute(notification.deepLink) as never);
+      // unknown/absent links) via the shared 09.6 resolver; a train-bound
+      // link also primes the Training-segment one-shot (M17 Send-brief).
+      router.push(
+        resolveAndPrimeNotificationRoute(notification.deepLink) as never,
+      );
     },
     [storage, router],
   );

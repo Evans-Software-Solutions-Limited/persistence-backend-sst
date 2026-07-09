@@ -43,7 +43,10 @@ export type NotificationType =
   | "goal_assigned_by_trainer"
   | "workout_logged_on_behalf"
   | "measurement_logged_on_behalf"
-  | "nutrition_target_set_by_trainer";
+  | "nutrition_target_set_by_trainer"
+  // M17 Send brief — coach → client free-text brief; deep-links to the
+  // athlete Training page (DB enum migration 20260709120000).
+  | "coach_brief";
 
 /**
  * The 9 known types as a runtime array. Drives the preferences screen's
@@ -64,6 +67,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_logged_on_behalf",
   "measurement_logged_on_behalf",
   "nutrition_target_set_by_trainer",
+  "coach_brief",
 ] as const;
 
 /**
@@ -101,6 +105,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   workout_logged_on_behalf: "Workouts logged by coach",
   measurement_logged_on_behalf: "Measurements logged by coach",
   nutrition_target_set_by_trainer: "Nutrition targets set by coach",
+  coach_brief: "Briefs from your coach",
 };
 
 /**

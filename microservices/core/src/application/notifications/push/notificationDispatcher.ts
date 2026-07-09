@@ -71,19 +71,28 @@ export class NotificationDispatcher {
     input: CreateNotificationInput,
   ): Promise<AppNotification> {
     const row = await this.notifications.create(userId, input);
+    await this.dispatchExisting(userId, row);
+    return row;
+  }
 
+  /**
+   * Best-effort push for an ALREADY-PERSISTED notification row. Split out of
+   * `createAndDispatch` for producers that must create the row inside their
+   * own transaction (e.g. the coach Send-brief write, which commits the
+   * notification + its `trainer_actions_audit` row atomically) and can only
+   * attempt delivery post-commit. Never throws: a push failure (network,
+   * Expo 5xx, pref/device lookup error) is logged and swallowed — the
+   * committed row must never be failed retroactively.
+   */
+  async dispatchExisting(userId: string, row: AppNotification): Promise<void> {
     try {
       await this.dispatchPush(userId, row);
     } catch (err) {
-      // Best-effort: the in-app row is already committed. A push failure
-      // (network, Expo 5xx, pref/device lookup error) must never escape.
       console.warn(
         `[push] dispatch failed for notification ${row.id} (${row.type}):`,
         err,
       );
     }
-
-    return row;
   }
 
   /**

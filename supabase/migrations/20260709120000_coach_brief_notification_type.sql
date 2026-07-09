@@ -1,0 +1,23 @@
+-- M17 (Send brief) — extend notification_type enum for the coach → client
+-- "Send brief" nudge (10-trainer-features, reshaped roadmap 2026-07-09).
+--
+--   coach_brief — a coach sent the client a free-text brief; the notification
+--                 row IS the deliverable (no companion table). Tapping it
+--                 deep-links to the athlete Training page (Train tab →
+--                 Training segment) via data.deepLink.
+--
+-- Per specs/_shared/cross-cuts.md § 5 the notification_type enum is *owned*
+-- by 09-notifications-social; each producing slice sequences its own ADD
+-- VALUE before it emits. Without this migration the first
+-- `INSERT INTO notifications` with type 'coach_brief' fails at runtime with
+-- `invalid input value for enum notification_type`.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping the ADD VALUE statement in its
+-- own migration (no usage here) sidesteps that entirely — mirrors the M8
+-- precedent (20260705150000_coach_notification_type_on_behalf_values.sql).
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'coach_brief';

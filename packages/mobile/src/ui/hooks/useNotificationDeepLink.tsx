@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "expo-router";
 
 import type { NotificationResponseInfo } from "@/domain/ports/notifications.port";
-import { resolveNotificationRoute } from "@/application/notifications/deep-link";
+import { resolveAndPrimeNotificationRoute } from "@/ui/navigation/notificationRoute";
 import { useAdapters } from "./useAdapters";
 
 export function useNotificationDeepLink(enabled = true): void {
@@ -37,7 +37,7 @@ export function useNotificationDeepLink(enabled = true): void {
     (response: NotificationResponseInfo) => {
       if (handledIdsRef.current.has(response.id)) return;
       handledIdsRef.current.add(response.id);
-      router.push(resolveNotificationRoute(response.deepLink) as never);
+      router.push(resolveAndPrimeNotificationRoute(response.deepLink) as never);
     },
     [router],
   );

@@ -98,6 +98,8 @@ export type ClientDetailProps = {
   onEditTargets: () => void;
   /** QuickActionsRow — Goals → AssignGoalSheet (create). */
   onAssignGoal: () => void;
+  /** QuickActionsRow — Brief → SendBriefSheet (M17 Send brief). */
+  onSendBrief: () => void;
   /** GoalCard pencil → AssignGoalSheet (edit) — only offered when assignedByCoach. */
   onEditGoal: () => void;
   /** Tap the ProgrammeCard → open the programme editor. */
@@ -132,6 +134,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onAssignWorkout,
     onEditTargets,
     onAssignGoal,
+    onSendBrief,
     onEditGoal,
     onOpenProgramme,
     onAssignProgramme,
@@ -188,6 +191,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
             onAssignWorkout={onAssignWorkout}
             onEditTargets={onEditTargets}
             onAssignGoal={onAssignGoal}
+            onSendBrief={onSendBrief}
           />
 
           <AISummaryCard
@@ -466,13 +470,16 @@ function QuickActionsRow({
   onAssignWorkout,
   onEditTargets,
   onAssignGoal,
+  onSendBrief,
 }: {
   onAssignWorkout: () => void;
   onEditTargets: () => void;
   onAssignGoal: () => void;
+  onSendBrief: () => void;
 }) {
   // Prototype has Assign / Macros / Goals / Schedule; Schedule is HIDDEN
-  // (scheduling domain parked, design.md ~765).
+  // (scheduling domain parked, design.md ~765) — Brief (M17) takes the
+  // fourth slot.
   const actions: {
     key: string;
     label: string;
@@ -500,6 +507,13 @@ function QuickActionsRow({
       tone: "trainer",
       onPress: onAssignGoal,
       testID: "quick-action-goals",
+    },
+    {
+      key: "brief",
+      label: "Brief",
+      tone: "ember",
+      onPress: onSendBrief,
+      testID: "quick-action-brief",
     },
   ];
 

@@ -29,6 +29,7 @@ describe("notificationVisual", () => {
     ["workout_reminder", IconClock, "gold"],
     ["goal_milestone", IconTarget, "success"],
     ["trainer_feedback", IconMessage, "trainer"],
+    ["coach_brief", IconMessage, "trainer"],
   ] as const)("maps %s to its icon + tone", (type, Icon, tone) => {
     const v = notificationVisual(type);
     expect(v.Icon).toBe(Icon);

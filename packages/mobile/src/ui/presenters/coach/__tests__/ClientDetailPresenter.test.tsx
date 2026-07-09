@@ -136,6 +136,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onAssignWorkout: jest.fn(),
     onEditTargets: jest.fn(),
     onAssignGoal: jest.fn(),
+    onSendBrief: jest.fn(),
     onEditGoal: jest.fn(),
     onOpenProgramme: jest.fn(),
     onAssignProgramme: jest.fn(),
@@ -222,14 +223,16 @@ describe("ClientDetailPresenter — LiveSessionCTA (display-only)", () => {
 });
 
 describe("ClientDetailPresenter — QuickActionsRow", () => {
-  it("wires Assign / Macros / Goals (Schedule hidden)", () => {
+  it("wires Assign / Macros / Goals / Brief (Schedule hidden)", () => {
     const { getByTestId, queryByTestId, props } = render();
     fireEvent.press(getByTestId("quick-action-assign"));
     fireEvent.press(getByTestId("quick-action-macros"));
     fireEvent.press(getByTestId("quick-action-goals"));
+    fireEvent.press(getByTestId("quick-action-brief"));
     expect(props.onAssignWorkout).toHaveBeenCalled();
     expect(props.onEditTargets).toHaveBeenCalled();
     expect(props.onAssignGoal).toHaveBeenCalled();
+    expect(props.onSendBrief).toHaveBeenCalled();
     expect(queryByTestId("quick-action-schedule")).toBeNull();
   });
 });

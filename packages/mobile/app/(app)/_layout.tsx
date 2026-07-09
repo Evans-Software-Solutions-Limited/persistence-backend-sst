@@ -3,6 +3,7 @@ import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverl
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
 import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
+import { SendBriefSheet } from "../../src/ui/presenters/coach/SendBriefSheet";
 import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
 import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
 import { EditNutritionTargetsSheet } from "../../src/ui/presenters/coach/EditNutritionTargetsSheet";
@@ -265,6 +266,12 @@ export default function AppLayout() {
         useCoachNoteSheet().open. Opened from Client Detail's Notes card.
       */}
       <CoachNoteSheet />
+      {/*
+        SendBriefSheet — the M17 coach "Send brief" composer. Root-mounted
+        sibling (feedback_sheets_mount_at_root); reads useSendBriefSheet().open.
+        Opened from Client Detail's Quick Actions (Brief).
+      */}
+      <SendBriefSheet />
       {/*
         GoalSheet — the athlete's own add/edit-goal sheet (M16 — Athlete
         Training page). Root-mounted sibling (feedback_sheets_mount_at_root);

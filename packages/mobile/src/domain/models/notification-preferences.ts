@@ -63,6 +63,8 @@ export const CATEGORIES: readonly NotificationCategory[] = [
       "workout_logged_on_behalf",
       "measurement_logged_on_behalf",
       "nutrition_target_set_by_trainer",
+      // M17 Send brief — coach → client free-text brief.
+      "coach_brief",
     ],
   },
   { title: "Social", types: ["friend_request"] },

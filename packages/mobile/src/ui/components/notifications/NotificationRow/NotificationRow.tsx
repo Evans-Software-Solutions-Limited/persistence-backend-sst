@@ -97,6 +97,10 @@ export function notificationVisual(type: WireNotificationType): Visual {
       return { Icon: IconChart, tone: "trainer" };
     case "nutrition_target_set_by_trainer":
       return { Icon: IconApple, tone: "trainer" };
+    // M17 Send brief — a coach message, so the message icon + trainer tone
+    // (matches trainer_feedback).
+    case "coach_brief":
+      return { Icon: IconMessage, tone: "trainer" };
     default:
       return { Icon: IconBell, tone: "neutral" };
   }
