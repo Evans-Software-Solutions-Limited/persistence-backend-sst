@@ -34,6 +34,27 @@ export type AssignProgramResult =
 
 export type UnassignResult = "unassigned" | "not_found";
 
+/**
+ * Wire shape for the coach-side client-assignments surface (M18). One OPEN,
+ * plan-visible assignment resolved to its concrete workout — what the coach can
+ * swap or start-live for this client.
+ */
+export interface CoachClientAssignment {
+  /** workout_assignments row id (stable list key; the swap/start target). */
+  assignmentId: string;
+  workoutId: string;
+  name: string | null;
+  estimatedDurationMinutes: number | null;
+  dueDate: string | null;
+  status: "assigned" | "started" | "completed" | "skipped";
+  /** True = a materialised programme occurrence (vs a standalone ad-hoc row). */
+  isProgrammeOccurrence: boolean;
+  /** 0-based occurrence number within its programme; null for ad-hoc. */
+  occurrenceIndex: number | null;
+  /** True = a coach has swapped this occurrence off its programmed workout. */
+  isSwapped: boolean;
+}
+
 /** Wire shape for the athlete Home "Your programme" card (STORY-005). */
 export interface ActiveProgrammeSummary {
   assignmentId: string;
@@ -556,5 +577,164 @@ export class ProgramAssignmentRepository {
       )
       .limit(1);
     return { result: exists[0] ? "not_deletable" : "not_found" };
+  }
+
+  /**
+   * The coach's OPEN, plan-visible assignments for one client, resolved to
+   * concrete workouts, due-date ascending (nulls last). This is the coach-side
+   * "today's session / upcoming" surface (M18) — the mirror of the athlete's
+   * `HomeReadRepository.getTodaysTraining`, scoped to `(trainerId, clientId)`
+   * so the coach sees exactly the rows they can act on (swap / start-live). The
+   * handler gates with `assertTrainerCanActForClient` first.
+   */
+  async listOpenAssignmentsForClient(
+    trainerId: string,
+    clientId: string,
+    limit = 20,
+    tx?: DbOrTx,
+  ): Promise<CoachClientAssignment[]> {
+    const db = tx ?? getDb();
+    const rows = await db
+      .select({
+        assignmentId: workoutAssignments.id,
+        workoutId: workouts.id,
+        name: workouts.name,
+        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+        dueDate: workoutAssignments.dueDate,
+        status: workoutAssignments.status,
+        programAssignmentId: workoutAssignments.programAssignmentId,
+        occurrenceIndex: workoutAssignments.occurrenceIndex,
+        swappedFromWorkoutId: workoutAssignments.swappedFromWorkoutId,
+      })
+      .from(workoutAssignments)
+      .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
+      .where(
+        and(
+          eq(workoutAssignments.trainerId, trainerId),
+          eq(workoutAssignments.clientId, clientId),
+          eq(workoutAssignments.status, "assigned"),
+          eq(workoutAssignments.showInPlan, true),
+        ),
+      )
+      .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
+      .limit(limit);
+
+    return rows.map((r) => ({
+      assignmentId: r.assignmentId,
+      workoutId: r.workoutId,
+      name: r.name,
+      estimatedDurationMinutes: r.estimatedDurationMinutes,
+      dueDate: r.dueDate ?? null,
+      status: r.status ?? "assigned",
+      isProgrammeOccurrence: r.programAssignmentId !== null,
+      occurrenceIndex: r.occurrenceIndex ?? null,
+      isSwapped: r.swappedFromWorkoutId !== null,
+    }));
+  }
+
+  /**
+   * Swap the workout on an OPEN assignment in place (M18). Works on BOTH ad-hoc
+   * rows and programme occurrences — unlike delete, which 409s on occurrences.
+   * A swapped occurrence KEEPS its `programAssignmentId` (adherence intact) and
+   * records the ORIGINAL workout in `swapped_from_workout_id` (preserved across
+   * re-swaps: only set on the first swap).
+   *
+   * Ownership + eligibility are folded into the query (`trainerId` = caller,
+   * `status = 'assigned'`), mirroring `deleteAdHoc`. Optional `tx` so the update
+   * + `trainer_actions_audit` (action `workout_swapped`) land in ONE
+   * transaction (cross-cuts § 1.4.2). Returns `fromWorkoutId` (the pre-swap
+   * workout) so the caller can build the audit payload without a re-read.
+   */
+  async swapAssignment(
+    trainerId: string,
+    clientId: string,
+    assignmentId: string,
+    newWorkoutId: string,
+    tx?: DbOrTx,
+  ): Promise<
+    | {
+        result: "swapped";
+        assignment: WorkoutAssignment;
+        fromWorkoutId: string;
+      }
+    | {
+        result:
+          | "not_found"
+          | "not_swappable"
+          | "invalid_workout"
+          | "same_workout";
+      }
+  > {
+    const db = tx ?? getDb();
+
+    // The replacement must be the coach's own workout or a public one — same
+    // readability rule as `createAdHoc`.
+    const readable = await db
+      .select({ id: workouts.id })
+      .from(workouts)
+      .where(
+        and(
+          eq(workouts.id, newWorkoutId),
+          or(
+            eq(workouts.createdBy, trainerId),
+            eq(workouts.visibility, "public"),
+          ),
+        ),
+      )
+      .limit(1);
+    if (!readable[0]) return { result: "invalid_workout" as const };
+
+    // Fetch the target row (ownership + existence + current state). Gives the
+    // pre-swap workoutId (audit `from`) and the existing original (if any).
+    const existing = await db
+      .select({
+        id: workoutAssignments.id,
+        workoutId: workoutAssignments.workoutId,
+        status: workoutAssignments.status,
+        swappedFromWorkoutId: workoutAssignments.swappedFromWorkoutId,
+      })
+      .from(workoutAssignments)
+      .where(
+        and(
+          eq(workoutAssignments.id, assignmentId),
+          eq(workoutAssignments.trainerId, trainerId),
+          eq(workoutAssignments.clientId, clientId),
+        ),
+      )
+      .limit(1);
+    if (!existing[0]) return { result: "not_found" as const };
+    if (existing[0].status !== "assigned") {
+      return { result: "not_swappable" as const };
+    }
+    const fromWorkoutId = existing[0].workoutId;
+    if (fromWorkoutId === newWorkoutId)
+      return { result: "same_workout" as const };
+
+    const updated = await db
+      .update(workoutAssignments)
+      .set({
+        workoutId: newWorkoutId,
+        // Preserve the TRUE original: only stamp on the first swap.
+        swappedFromWorkoutId: existing[0].swappedFromWorkoutId ?? fromWorkoutId,
+      })
+      .where(
+        and(
+          eq(workoutAssignments.id, assignmentId),
+          eq(workoutAssignments.trainerId, trainerId),
+          eq(workoutAssignments.clientId, clientId),
+          eq(workoutAssignments.status, "assigned"),
+        ),
+      )
+      .returning();
+
+    // Lost-race guard (mirrors `linkCompletedSession`): the SELECT above and
+    // this guarded UPDATE are two statements in a READ COMMITTED tx. If a
+    // concurrent complete/start commits in between, the SELECT sees
+    // `assigned` but the UPDATE's `status='assigned'` predicate matches zero
+    // rows. Treat that as the race-loss case (409 not_swappable) rather than
+    // returning a `swapped` result with an undefined assignment.
+    if (updated.length === 0) return { result: "not_swappable" as const };
+
+    return { result: "swapped", assignment: updated[0], fromWorkoutId };
   }
 }

@@ -1015,7 +1015,51 @@ export interface ApiPort {
     clientId: string,
     assignmentId: string,
   ): Promise<Result<{ deleted: true }, ProgramApiError>>;
+
+  /**
+   * The coach's OPEN assignments for one client, resolved to concrete workouts
+   * (`GET /trainers/me/clients/:clientId/workout-assignments`, M18). Feeds the
+   * Client Detail "Upcoming sessions" surface that Swap (+ later Start-live)
+   * act on. Gated read.
+   */
+  getClientWorkoutAssignments(
+    clientId: string,
+  ): Promise<Result<CoachClientAssignment[], ApiError>>;
+
+  /**
+   * Swap the workout on an OPEN assignment in place
+   * (`PATCH /trainers/me/clients/:clientId/workout-assignments/:id`, M18).
+   * Works on ad-hoc rows AND programme occurrences. 403 `not_your_client`;
+   * 404 `not_found`; 409 `not_swappable`; 422 `invalid_workout`/`same_workout`.
+   * Online-direct (never the sync queue), like the other coach writes.
+   */
+  swapClientWorkoutAssignment(
+    clientId: string,
+    assignmentId: string,
+    input: SwapWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>>;
 }
+
+/** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */
+export type SwapWorkoutInput = {
+  workoutId: string;
+};
+
+/**
+ * One OPEN assignment resolved to its concrete workout — the coach-side
+ * "Upcoming sessions" row (M18). Mirrors the backend `CoachClientAssignment`.
+ */
+export type CoachClientAssignment = {
+  assignmentId: string;
+  workoutId: string;
+  name: string | null;
+  estimatedDurationMinutes: number | null;
+  dueDate: string | null;
+  status: "assigned" | "started" | "completed" | "skipped";
+  isProgrammeOccurrence: boolean;
+  occurrenceIndex: number | null;
+  isSwapped: boolean;
+};
 
 /**
  * `ApiError` extended with the structured programs-domain `code` the
@@ -1032,7 +1076,10 @@ export type ProgramApiError = ApiError & {
     | "already_assigned"
     | "PROGRAM_EMPTY"
     | "invalid_workout"
-    | "not_deletable";
+    | "not_deletable"
+    // M18 Swap
+    | "not_swappable"
+    | "same_workout";
 };
 
 /**

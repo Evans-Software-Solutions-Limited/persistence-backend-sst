@@ -75,6 +75,8 @@ import type {
   InviteApiError,
   ProgramApiError,
   WorkoutAssignmentRow,
+  CoachClientAssignment,
+  SwapWorkoutInput,
   GoalApiError,
   GoalType,
   AssignClientGoalInput,
@@ -2033,7 +2035,9 @@ export class InMemoryApiAdapter implements ApiPort {
       | "already_assigned"
       | "PROGRAM_EMPTY"
       | "invalid_workout"
-      | "not_deletable";
+      | "not_deletable"
+      | "not_swappable"
+      | "same_workout";
     message: string;
   } | null = null;
 
@@ -2044,6 +2048,7 @@ export class InMemoryApiAdapter implements ApiPort {
       case "invalid_workouts":
       case "invalid_workout":
       case "PROGRAM_EMPTY":
+      case "same_workout":
         return 422;
       case "not_found":
         return 404;
@@ -2052,6 +2057,7 @@ export class InMemoryApiAdapter implements ApiPort {
       case "already_assigned":
       case "PROGRAM_HAS_LIVE_ASSIGNMENTS":
       case "not_deletable":
+      case "not_swappable":
         return 409;
     }
   }
@@ -2241,5 +2247,48 @@ export class InMemoryApiAdapter implements ApiPort {
     const failure = this.failProgram<{ deleted: true }>();
     if (failure) return failure;
     return ok({ deleted: true });
+  }
+
+  /** Fixtures + captures for the M18 coach client-assignments surface. */
+  public clientWorkoutAssignments: Record<string, CoachClientAssignment[]> = {};
+  public swapClientWorkoutAssignmentCalls: {
+    clientId: string;
+    assignmentId: string;
+    input: SwapWorkoutInput;
+  }[] = [];
+
+  async getClientWorkoutAssignments(
+    clientId: string,
+  ): Promise<Result<CoachClientAssignment[], ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    return ok(this.clientWorkoutAssignments[clientId] ?? []);
+  }
+
+  async swapClientWorkoutAssignment(
+    clientId: string,
+    assignmentId: string,
+    input: SwapWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>> {
+    this.swapClientWorkoutAssignmentCalls.push({
+      clientId,
+      assignmentId,
+      input,
+    });
+    const failure = this.failProgram<WorkoutAssignmentRow>();
+    if (failure) return failure;
+    const now = new Date().toISOString();
+    return ok<WorkoutAssignmentRow>({
+      id: assignmentId,
+      clientId,
+      workoutId: input.workoutId,
+      assignedBy: "trainer-test",
+      dueDate: null,
+      showInPlan: true,
+      showInLibrary: true,
+      trainerNotes: null,
+      status: "assigned",
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 }

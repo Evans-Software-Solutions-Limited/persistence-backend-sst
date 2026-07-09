@@ -4,6 +4,7 @@ import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetC
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
 import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
 import { SendBriefSheet } from "../../src/ui/presenters/coach/SendBriefSheet";
+import { SwapWorkoutSheet } from "../../src/ui/presenters/coach/SwapWorkoutSheet";
 import { AssignProgramSheet } from "../../src/ui/presenters/coach/AssignProgramSheet";
 import { AssignWorkoutSheet } from "../../src/ui/presenters/coach/AssignWorkoutSheet";
 import { EditNutritionTargetsSheet } from "../../src/ui/presenters/coach/EditNutritionTargetsSheet";
@@ -272,6 +273,12 @@ export default function AppLayout() {
         Opened from Client Detail's Quick Actions (Brief).
       */}
       <SendBriefSheet />
+      {/*
+        SwapWorkoutSheet — the M18 coach "swap this workout" picker. Root-mounted
+        sibling (feedback_sheets_mount_at_root); reads useSwapWorkoutSheet().open.
+        Opened from a Client Detail Upcoming-sessions row.
+      */}
+      <SwapWorkoutSheet />
       {/*
         GoalSheet — the athlete's own add/edit-goal sheet (M16 — Athlete
         Training page). Root-mounted sibling (feedback_sheets_mount_at_root);

@@ -94,6 +94,8 @@ import { trainersProgramsUnassignHandler } from "./application/trainers/programs
 import { trainersClientActiveProgrammeGetHandler } from "./application/trainers/programs/trainersClientActiveProgrammeGetHandler";
 import { trainersClientWorkoutAssignmentsCreateHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsCreateHandler";
 import { trainersClientWorkoutAssignmentsDeleteHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsDeleteHandler";
+import { trainersClientWorkoutAssignmentsListHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsListHandler";
+import { trainersClientWorkoutAssignmentsSwapHandler } from "./application/trainers/clients/trainersClientWorkoutAssignmentsSwapHandler";
 // M8 Coach Mode Phase 3 (10.3) + Phase 5 (10.5) — trainer on-behalf endpoints
 // AND the Client Detail read aggregate, grouped into one sub-app to keep the
 // root `.use()` chain under TS's type-depth ceiling (TS2589).
@@ -203,6 +205,11 @@ const app = new Elysia()
   .use(trainersClientActiveProgrammeGetHandler)
   .use(trainersClientWorkoutAssignmentsCreateHandler)
   .use(trainersClientWorkoutAssignmentsDeleteHandler)
+  // M18 (Live-session) — coach-side client-assignments surface: GET the
+  // client's open assignments (Swap + Start-live act on this) + PATCH :id to
+  // swap an assignment's workout in place (ad-hoc OR programme occurrence).
+  .use(trainersClientWorkoutAssignmentsListHandler)
+  .use(trainersClientWorkoutAssignmentsSwapHandler)
   // Coach Mode Phase 3 (10.3) — trainer on-behalf writes + parity GETs
   // (sessions, measurements-GET, goals, nutrition target), grouped into one
   // sub-app. Each write: assertTrainerCanActForClient + auditTrainerAction

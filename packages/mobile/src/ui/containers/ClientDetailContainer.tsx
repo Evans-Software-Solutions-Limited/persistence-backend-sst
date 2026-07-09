@@ -9,11 +9,13 @@ import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useCoachNoteSheet } from "@/state/coach-note-sheet";
 import { useSendBriefSheet } from "@/state/send-brief-sheet";
+import { useSwapWorkoutSheet } from "@/state/swap-workout-sheet";
 import {
   initialFromCalorieHit,
   useEditNutritionTargetsSheet,
 } from "@/state/edit-nutrition-targets-sheet";
 import type { ClientDetail } from "@/domain/models/clientDetail";
+import type { CoachClientAssignment } from "@/domain/ports/api.port";
 import { ClientDetailPresenter } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
@@ -75,6 +77,7 @@ export function ClientDetailContainer() {
   const openNoteCreate = useCoachNoteSheet((s) => s.openForCreate);
   const openNoteEdit = useCoachNoteSheet((s) => s.openForEdit);
   const openSendBrief = useSendBriefSheet((s) => s.openSheet);
+  const openSwap = useSwapWorkoutSheet((s) => s.openSheet);
 
   // The client's live programme for the ProgrammeCard + LiveSessionCTA
   // (specs/19-programs AC 4.5). Fetched directly (no cached-resource hook — a
@@ -91,6 +94,19 @@ export function ClientDetailContainer() {
     void loadProgramme();
   }, [loadProgramme]);
 
+  // The client's OPEN assignments for the M18 Upcoming-sessions surface. Same
+  // direct-read-per-visit posture as the programme above; refreshed on focus +
+  // after a swap.
+  const [assignments, setAssignments] = useState<CoachClientAssignment[]>([]);
+  const loadAssignments = useCallback(async () => {
+    if (!id) return;
+    const result = await api.getClientWorkoutAssignments(id);
+    if (result.ok) setAssignments(result.value);
+  }, [api, id]);
+  useEffect(() => {
+    void loadAssignments();
+  }, [loadAssignments]);
+
   // Refresh on re-focus (returning from Log weight / Manage habits) — skip the
   // initial focus, which coincides with the hooks' own mount fetches.
   const firstFocus = useRef(true);
@@ -105,14 +121,16 @@ export function ClientDetailContainer() {
       void refreshDetail();
       void refreshTrend();
       void loadProgramme();
-    }, [refreshDetail, refreshTrend, loadProgramme]),
+      void loadAssignments();
+    }, [refreshDetail, refreshTrend, loadProgramme, loadAssignments]),
   );
 
   const refreshAll = useCallback(() => {
     void refreshDetail();
     void refreshTrend();
     void loadProgramme();
-  }, [refreshDetail, refreshTrend, loadProgramme]);
+    void loadAssignments();
+  }, [refreshDetail, refreshTrend, loadProgramme, loadAssignments]);
 
   const bodyTrend = useMemo(
     () => buildClientBodyTrend(trend.data ?? []),
@@ -240,6 +258,14 @@ export function ClientDetailContainer() {
     openSendBrief(id, name);
   }, [id, openSendBrief, name]);
 
+  const onSwapWorkout = useCallback(
+    (assignment: CoachClientAssignment) => {
+      if (!id) return;
+      openSwap(id, assignment.assignmentId, assignment.name, refreshAll);
+    },
+    [id, openSwap, refreshAll],
+  );
+
   const onAddNote = useCallback(() => {
     if (!id) return;
     openNoteCreate(id, refreshAll);
@@ -259,6 +285,7 @@ export function ClientDetailContainer() {
       clientName={name ?? null}
       bodyTrend={bodyTrend}
       activeProgramme={activeProgramme}
+      assignments={assignments}
       isLoading={
         detail.data === null && (detail.isRefreshing || trend.isLoading)
       }
@@ -272,6 +299,7 @@ export function ClientDetailContainer() {
       onEditTargets={onEditTargets}
       onAssignGoal={onAssignGoal}
       onSendBrief={onSendBrief}
+      onSwapWorkout={onSwapWorkout}
       onEditGoal={onEditGoal}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}

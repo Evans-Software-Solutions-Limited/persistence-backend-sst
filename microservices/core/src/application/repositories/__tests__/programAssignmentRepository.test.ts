@@ -652,4 +652,238 @@ describe("ProgramAssignmentRepository", () => {
       expect(txDb.delete).toHaveBeenCalled();
     });
   });
+
+  describe("listOpenAssignmentsForClient", () => {
+    it("maps rows to concrete assignments (ad-hoc vs occurrence, swapped flag)", async () => {
+      const db = makeDb({
+        selects: [
+          [
+            {
+              assignmentId: "wa-1",
+              workoutId: "w-1",
+              name: "Push",
+              estimatedDurationMinutes: 45,
+              dueDate: "2026-07-10",
+              status: "assigned",
+              programAssignmentId: null,
+              occurrenceIndex: null,
+              swappedFromWorkoutId: null,
+            },
+            {
+              assignmentId: "wa-2",
+              workoutId: "w-2",
+              name: "Pull",
+              estimatedDurationMinutes: null,
+              dueDate: "2026-07-11",
+              status: "assigned",
+              programAssignmentId: "pa-1",
+              occurrenceIndex: 3,
+              swappedFromWorkoutId: "w-orig",
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.listOpenAssignmentsForClient(TRAINER, CLIENT);
+      expect(out).toEqual([
+        {
+          assignmentId: "wa-1",
+          workoutId: "w-1",
+          name: "Push",
+          estimatedDurationMinutes: 45,
+          dueDate: "2026-07-10",
+          status: "assigned",
+          isProgrammeOccurrence: false,
+          occurrenceIndex: null,
+          isSwapped: false,
+        },
+        {
+          assignmentId: "wa-2",
+          workoutId: "w-2",
+          name: "Pull",
+          estimatedDurationMinutes: null,
+          dueDate: "2026-07-11",
+          status: "assigned",
+          isProgrammeOccurrence: true,
+          occurrenceIndex: 3,
+          isSwapped: true,
+        },
+      ]);
+    });
+
+    it("returns [] when the client has no open assignments", async () => {
+      const db = makeDb({ selects: [[]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.listOpenAssignmentsForClient(TRAINER, CLIENT)).toEqual(
+        [],
+      );
+    });
+  });
+
+  describe("swapAssignment", () => {
+    it("invalid_workout when the replacement isn't the trainer's own or public", async () => {
+      const db = makeDb({ selects: [[]] }); // readability check misses
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-new"),
+      ).toEqual({ result: "invalid_workout" });
+    });
+
+    it("not_found when the assignment doesn't exist for this trainer+client", async () => {
+      const db = makeDb({ selects: [[{ id: "w-new" }], []] });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.swapAssignment(TRAINER, CLIENT, "wa-x", "w-new"),
+      ).toEqual({ result: "not_found" });
+    });
+
+    it("not_swappable when the row exists but isn't status=assigned", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "w-new" }],
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-old",
+              status: "completed",
+              swappedFromWorkoutId: null,
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-new"),
+      ).toEqual({ result: "not_swappable" });
+    });
+
+    it("same_workout when the replacement equals the current workout", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "w-old" }],
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-old",
+              status: "assigned",
+              swappedFromWorkoutId: null,
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-old"),
+      ).toEqual({ result: "same_workout" });
+    });
+
+    it("swaps: stamps swapped_from with the ORIGINAL on the first swap + returns fromWorkoutId", async () => {
+      const db = makeDb({
+        selects: [
+          [{ id: "w-new" }],
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-old",
+              status: "assigned",
+              swappedFromWorkoutId: null,
+            },
+          ],
+        ],
+        updateResults: [
+          [{ id: "wa-1", workoutId: "w-new", swappedFromWorkoutId: "w-old" }],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-new");
+      expect(out).toEqual({
+        result: "swapped",
+        assignment: {
+          id: "wa-1",
+          workoutId: "w-new",
+          swappedFromWorkoutId: "w-old",
+        },
+        fromWorkoutId: "w-old",
+      });
+      // On the SET: preserve the true original (null → the pre-swap workout).
+      expect(db.update).toHaveBeenCalled();
+    });
+
+    it("not_swappable when the guarded UPDATE matches zero rows (lost race after SELECT)", async () => {
+      // SELECT sees status=assigned, but a concurrent complete/start slips in
+      // → the guarded UPDATE returns []. Must NOT return a swapped result with
+      // an undefined assignment (that would 500 downstream).
+      const db = makeDb({
+        selects: [
+          [{ id: "w-new" }],
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-old",
+              status: "assigned",
+              swappedFromWorkoutId: null,
+            },
+          ],
+        ],
+        updateResults: [[]],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-new"),
+      ).toEqual({ result: "not_swappable" });
+    });
+
+    it("re-swap PRESERVES the existing original in swapped_from (not the intermediate)", async () => {
+      const setArg = vi.fn();
+      const db: any = makeDb({
+        selects: [
+          [{ id: "w-third" }],
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-second",
+              status: "assigned",
+              swappedFromWorkoutId: "w-first",
+            },
+          ],
+        ],
+        updateResults: [
+          [
+            {
+              id: "wa-1",
+              workoutId: "w-third",
+              swappedFromWorkoutId: "w-first",
+            },
+          ],
+        ],
+      });
+      // Capture what .set() receives to prove the original is preserved.
+      db.update = vi.fn(() => ({
+        set: (vals: any) => {
+          setArg(vals);
+          return {
+            where: () => ({
+              returning: vi.fn().mockResolvedValue([
+                {
+                  id: "wa-1",
+                  workoutId: "w-third",
+                  swappedFromWorkoutId: "w-first",
+                },
+              ]),
+            }),
+          };
+        },
+      }));
+      vi.mocked(getDb).mockReturnValue(db);
+      const out = await repo.swapAssignment(TRAINER, CLIENT, "wa-1", "w-third");
+      expect((out as any).result).toBe("swapped");
+      expect((out as any).fromWorkoutId).toBe("w-second");
+      expect(setArg).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workoutId: "w-third",
+          swappedFromWorkoutId: "w-first", // preserved, NOT "w-second"
+        }),
+      );
+    });
+  });
 });
