@@ -207,6 +207,97 @@ describe("GoalRepository", () => {
     });
   });
 
+  describe("listTypes", () => {
+    it("should return the catalog mapped to the wire shape, sorted by the DB order", async () => {
+      // orderBy resolves directly to the rows (no limit/offset chaining),
+      // sort order itself is asserted on the query builder call below.
+      const rows = [
+        {
+          id: "gt-1",
+          name: "Bench press 1RM",
+          description: "Increase one-rep max on bench press",
+          category: "strength",
+          iconName: "barbell",
+        },
+        {
+          id: "gt-2",
+          name: "Body weight",
+          description: null,
+          category: null,
+          iconName: null,
+        },
+      ];
+
+      const orderBy = vi.fn().mockResolvedValue(rows);
+      const from = vi.fn().mockReturnValue({ orderBy });
+      const select = vi.fn().mockReturnValue({ from });
+      (getDb as any).mockReturnValue({ select });
+
+      const { GoalRepository } = await import("../goalRepository");
+      const repo = new GoalRepository();
+      const result = await repo.listTypes();
+
+      expect(result).toEqual(rows);
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(orderBy).toHaveBeenCalledTimes(1);
+    });
+
+    it("should map missing description/category/iconName to null", async () => {
+      const rows = [
+        {
+          id: "gt-3",
+          name: "Habit streak",
+          description: undefined,
+          category: undefined,
+          iconName: undefined,
+        },
+      ];
+
+      const orderBy = vi.fn().mockResolvedValue(rows);
+      const from = vi.fn().mockReturnValue({ orderBy });
+      const select = vi.fn().mockReturnValue({ from });
+      (getDb as any).mockReturnValue({ select });
+
+      const { GoalRepository } = await import("../goalRepository");
+      const repo = new GoalRepository();
+      const result = await repo.listTypes();
+
+      expect(result).toEqual([
+        {
+          id: "gt-3",
+          name: "Habit streak",
+          description: null,
+          category: null,
+          iconName: null,
+        },
+      ]);
+    });
+
+    it("should order by category ASC NULLS LAST, then name ASC", async () => {
+      const orderBy = vi.fn().mockResolvedValue([]);
+      const from = vi.fn().mockReturnValue({ orderBy });
+      const select = vi.fn().mockReturnValue({ from });
+      (getDb as any).mockReturnValue({ select });
+
+      const { GoalRepository } = await import("../goalRepository");
+      const repo = new GoalRepository();
+      await repo.listTypes();
+
+      expect(orderBy).toHaveBeenCalledTimes(1);
+      const [categoryOrdering, nameOrdering] = orderBy.mock.calls[0];
+      // The category ordering is a raw `sql` fragment (drizzle's SQL object
+      // graph is cyclic — pull the literal string chunks out rather than
+      // JSON.stringify-ing the whole thing) carrying "NULLS LAST".
+      const stringChunks = (categoryOrdering as any).queryChunks
+        .filter((chunk: any) => chunk && "value" in chunk)
+        .flatMap((chunk: any) => chunk.value)
+        .join("");
+      expect(stringChunks).toContain("NULLS LAST");
+      // The name ordering is a plain `asc()` column expression.
+      expect(nameOrdering).toBeDefined();
+    });
+  });
+
   describe("delete", () => {
     it("should delete a goal", async () => {
       const mockGoal = {

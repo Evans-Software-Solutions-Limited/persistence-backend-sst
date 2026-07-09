@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { TextInput } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  TextInput,
+} from "react-native";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet } from "@/ui/components/foundation/BottomSheet";
 import { Btn } from "@/ui/components/foundation/Btn";
+import { toneHex } from "@/ui/components/foundation/tones";
 import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useAdapters } from "@/ui/hooks/useAdapters";
-import type { GoalApiError } from "@/domain/ports/api.port";
+import type { GoalApiError, GoalType } from "@/domain/ports/api.port";
 
 /**
  * <AssignGoalSheet> — the coach assigns a new goal to a client or edits one it
@@ -19,10 +25,10 @@ import type { GoalApiError } from "@/domain/ports/api.port";
  *    sheet only offers edit when `assignedByCoach`, and surfaces the 403
  *    gracefully if the server disagrees.
  *
- * Fidelity note: the prototype's GoalCard has an edit pencil but no goal-edit
- * sheet body — and there is NO goal-types list endpoint anywhere in the stack
- * (backend or mobile), so create mode takes the goal-type id as a field rather
- * than a picker. Flagged in the PR body as a spec-vs-reality gap.
+ * Create mode fetches the shared `goal_types` catalog (`GET /goal-types`) on
+ * open and renders it as a selectable list — the coach picks a goal type rather
+ * than typing a UUID. Edit mode shows the existing goal title (goal type is
+ * immutable once assigned) and only edits the target date.
  */
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -58,6 +64,9 @@ export function AssignGoalSheet() {
   const [targetDate, setTargetDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [goalTypes, setGoalTypes] = useState<GoalType[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [typesError, setTypesError] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -72,6 +81,25 @@ export function AssignGoalSheet() {
     setError(null);
     setSubmitting(false);
   }, [open, editGoal]);
+
+  // Load the goal-type catalog once per open, create mode only (edit mode keeps
+  // the existing goal type). Kept in the sheet — it's a small static catalog, no
+  // cache-first hook needed; a failure surfaces a retry, never a blank picker.
+  const loadGoalTypes = useCallback(async () => {
+    setLoadingTypes(true);
+    setTypesError(false);
+    const result = await api.getGoalTypes();
+    if (result.ok) {
+      setGoalTypes(result.value);
+    } else {
+      setTypesError(true);
+    }
+    setLoadingTypes(false);
+  }, [api]);
+
+  useEffect(() => {
+    if (open && !isEdit) void loadGoalTypes();
+  }, [open, isEdit, loadGoalTypes]);
 
   const dateValid = targetDate === "" || ISO_DATE.test(targetDate);
   const createReady = isEdit || goalTypeId.trim() !== "";
@@ -166,25 +194,93 @@ export function AssignGoalSheet() {
             >
               Goal type
             </Text>
-            <TextInput
-              value={goalTypeId}
-              onChangeText={setGoalTypeId}
-              placeholder="Goal type id"
-              placeholderTextColor="#8A8A98"
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="assign-goal-type"
-              style={{
-                height: 44,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#232735",
-                backgroundColor: "#1A1D29",
-                paddingHorizontal: 14,
-                color: "#F4F4F8",
-                fontSize: 14,
-              }}
-            />
+            {loadingTypes ? (
+              <View
+                paddingVertical={20}
+                alignItems="center"
+                testID="assign-goal-types-loading"
+              >
+                <ActivityIndicator
+                  size="small"
+                  color={toneHex("trainer").base}
+                />
+              </View>
+            ) : typesError ? (
+              <View gap={8} testID="assign-goal-types-error">
+                <Text fontFamily="$body" fontSize={13} color="$text3">
+                  Couldn’t load goal types.
+                </Text>
+                <Btn
+                  variant="soft"
+                  tone="trainer"
+                  size="sm"
+                  onPress={() => void loadGoalTypes()}
+                  testID="assign-goal-types-retry"
+                >
+                  Retry
+                </Btn>
+              </View>
+            ) : goalTypes.length === 0 ? (
+              <Text
+                fontFamily="$body"
+                fontSize={13}
+                color="$text3"
+                testID="assign-goal-types-empty"
+              >
+                No goal types available.
+              </Text>
+            ) : (
+              <ScrollView
+                style={{ maxHeight: 260 }}
+                keyboardShouldPersistTaps="handled"
+                testID="assign-goal-types-list"
+              >
+                <View gap={8}>
+                  {goalTypes.map((gt) => {
+                    const selected = gt.id === goalTypeId;
+                    return (
+                      <Pressable
+                        key={gt.id}
+                        onPress={() => setGoalTypeId(gt.id)}
+                        testID={`assign-goal-type-${gt.id}`}
+                        accessibilityState={{ selected }}
+                        style={{
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: selected
+                            ? toneHex("trainer").base
+                            : "#232735",
+                          backgroundColor: selected
+                            ? toneHex("trainer").dim
+                            : "#1A1D29",
+                          paddingHorizontal: 14,
+                          paddingVertical: 12,
+                        }}
+                      >
+                        <Text
+                          fontFamily="$display"
+                          fontWeight="600"
+                          fontSize={14}
+                          color={selected ? "$accentTrainer" : "$text"}
+                        >
+                          {gt.name}
+                        </Text>
+                        {gt.description ? (
+                          <Text
+                            fontFamily="$body"
+                            fontSize={12}
+                            color="$text3"
+                            marginTop={2}
+                          >
+                            {gt.description}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
           </View>
         )}
 

@@ -76,6 +76,7 @@ import type {
   ProgramApiError,
   WorkoutAssignmentRow,
   GoalApiError,
+  GoalType,
   AssignClientGoalInput,
   UpdateClientGoalInput,
 } from "@/domain/ports/api.port";
@@ -1291,6 +1292,30 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return null;
+  }
+
+  /** Fixture for `getGoalTypes` (default a small catalog). */
+  public goalTypes: GoalType[] = [
+    {
+      id: "gt-strength",
+      name: "Build strength",
+      description: null,
+      category: "Performance",
+      iconName: null,
+    },
+    {
+      id: "gt-lose-weight",
+      name: "Lose weight",
+      description: null,
+      category: "Body composition",
+      iconName: null,
+    },
+  ];
+  public getGoalTypesCalls = 0;
+
+  async getGoalTypes(): Promise<Result<GoalType[], ApiError>> {
+    this.getGoalTypesCalls += 1;
+    return this.mayFail<GoalType[]>(this.goalTypes);
   }
 
   async assignClientGoal(

@@ -1,10 +1,46 @@
-import { and, eq, desc } from "drizzle-orm";
-import { userGoals, type UserGoal, type NewUserGoal } from "@persistence/db";
+import { and, eq, desc, asc, sql } from "drizzle-orm";
+import {
+  userGoals,
+  goalTypes,
+  type UserGoal,
+  type NewUserGoal,
+} from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import type { DbOrTx } from "./personalRecordsRepository";
 
+export interface GoalTypeRow {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  iconName: string | null;
+}
+
 export class GoalRepository {
   static readonly key = "GoalRepository";
+
+  async listTypes(): Promise<GoalTypeRow[]> {
+    const db = getDb();
+
+    const rows = await db
+      .select({
+        id: goalTypes.id,
+        name: goalTypes.name,
+        description: goalTypes.description,
+        category: goalTypes.category,
+        iconName: goalTypes.iconName,
+      })
+      .from(goalTypes)
+      .orderBy(sql`${goalTypes.category} ASC NULLS LAST`, asc(goalTypes.name));
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? null,
+      category: row.category ?? null,
+      iconName: row.iconName ?? null,
+    }));
+  }
 
   async list(userId: string, limit = 20, offset = 0): Promise<UserGoal[]> {
     const db = getDb();

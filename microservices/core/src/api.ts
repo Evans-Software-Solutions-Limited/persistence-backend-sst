@@ -44,11 +44,7 @@ import { createHabitCompletionHandler } from "./application/habits/createHabitCo
 import { listHabitCompletionsHandler } from "./application/habits/listHabitCompletionsHandler";
 import { deleteHabitCompletionHandler } from "./application/habits/deleteHabitCompletionHandler";
 import { habitsSelfRoutes } from "./application/habitsSelfRoutes";
-import { goalsCreateHandler } from "./application/goals/create/goalsCreateHandler";
-import { goalsListHandler } from "./application/goals/list/goalsListHandler";
-import { goalsGetHandler } from "./application/goals/get/goalsGetHandler";
-import { goalsUpdateHandler } from "./application/goals/update/goalsUpdateHandler";
-import { goalsDeleteHandler } from "./application/goals/delete/goalsDeleteHandler";
+import { goalsRoutes } from "./application/goalsRoutes";
 // M9 — nutrition (Fuel) Tier A (grouped sub-app)
 import { nutritionRoutes } from "./application/nutritionRoutes";
 import { dashboardHandler } from "./application/dashboard/dashboardHandler";
@@ -151,11 +147,7 @@ const app = new Elysia()
   .use(listHabitCompletionsHandler)
   .use(deleteHabitCompletionHandler)
   .use(habitsSelfRoutes)
-  .use(goalsCreateHandler)
-  .use(goalsListHandler)
-  .use(goalsGetHandler)
-  .use(goalsUpdateHandler)
-  .use(goalsDeleteHandler)
+  .use(goalsRoutes)
   .use(dashboardHandler)
   .use(progressStatsHandler)
   .use(progressRecordsHandler)

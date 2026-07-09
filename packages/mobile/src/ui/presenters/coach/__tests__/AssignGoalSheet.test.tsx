@@ -107,7 +107,7 @@ describe("AssignGoalSheet — create mode", () => {
     expect(screen.queryByTestId("assign-goal-sheet")).toBeNull();
   });
 
-  it("POSTs a new goal + closes + calls onSaved", async () => {
+  it("loads the goal-type catalog on open and POSTs the SELECTED type", async () => {
     const { adapters, api } = makeAdapters();
     const onSaved = jest.fn();
     render(
@@ -118,10 +118,14 @@ describe("AssignGoalSheet — create mode", () => {
     act(() => {
       useAssignGoalSheet.getState().openForCreate("client-9", onSaved);
     });
+    // The catalog loads and renders as a picker (no raw UUID field).
     await waitFor(() =>
-      expect(screen.getByTestId("assign-goal-type")).toBeTruthy(),
+      expect(screen.getByTestId("assign-goal-types-list")).toBeTruthy(),
     );
-    fireEvent.changeText(screen.getByTestId("assign-goal-type"), "goal-type-7");
+    expect(api.getGoalTypesCalls).toBe(1);
+    expect(screen.queryByTestId("assign-goal-type")).toBeNull();
+    // Pick a type from the list.
+    fireEvent.press(screen.getByTestId("assign-goal-type-gt-lose-weight"));
     fireEvent.changeText(
       screen.getByTestId("assign-goal-target-date"),
       "2026-09-01",
@@ -132,12 +136,38 @@ describe("AssignGoalSheet — create mode", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(api.assignClientGoalCalls[0]).toEqual({
       clientId: "client-9",
-      input: { goalTypeId: "goal-type-7", targetDate: "2026-09-01" },
+      input: { goalTypeId: "gt-lose-weight", targetDate: "2026-09-01" },
     });
     expect(useAssignGoalSheet.getState().open).toBe(false);
   });
 
   it("surfaces a generic error on a failed create + keeps the sheet open", async () => {
+    const { adapters, api } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <AssignGoalSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useAssignGoalSheet.getState().openForCreate("client-9");
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("assign-goal-types-list")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("assign-goal-type-gt-strength"));
+    // The catalog loaded fine; now make the WRITE fail.
+    api.shouldFail = true;
+    api.failError = { kind: "api", code: "server", message: "boom" };
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("assign-goal-submit"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("assign-goal-error")).toBeTruthy(),
+    );
+    expect(useAssignGoalSheet.getState().open).toBe(true);
+  });
+
+  it("shows a retry when the goal-type catalog fails to load, then recovers", async () => {
     const { adapters, api } = makeAdapters();
     api.shouldFail = true;
     api.failError = { kind: "api", code: "server", message: "boom" };
@@ -150,19 +180,23 @@ describe("AssignGoalSheet — create mode", () => {
       useAssignGoalSheet.getState().openForCreate("client-9");
     });
     await waitFor(() =>
-      expect(screen.getByTestId("assign-goal-type")).toBeTruthy(),
+      expect(screen.getByTestId("assign-goal-types-error")).toBeTruthy(),
     );
-    fireEvent.changeText(screen.getByTestId("assign-goal-type"), "gt-1");
+    // Can't submit without a selection.
+    expect(
+      screen.getByTestId("assign-goal-submit").props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    // Recover + retry.
+    api.shouldFail = false;
     await act(async () => {
-      fireEvent.press(screen.getByTestId("assign-goal-submit"));
+      fireEvent.press(screen.getByTestId("assign-goal-types-retry"));
     });
     await waitFor(() =>
-      expect(screen.getByTestId("assign-goal-error")).toBeTruthy(),
+      expect(screen.getByTestId("assign-goal-types-list")).toBeTruthy(),
     );
-    expect(useAssignGoalSheet.getState().open).toBe(true);
   });
 
-  it("disables submit until a goal type is entered", async () => {
+  it("disables submit until a goal type is selected", async () => {
     const { adapters } = makeAdapters();
     render(
       <Wrapper adapters={adapters}>
@@ -173,11 +207,17 @@ describe("AssignGoalSheet — create mode", () => {
       useAssignGoalSheet.getState().openForCreate("client-9");
     });
     await waitFor(() =>
-      expect(screen.getByTestId("assign-goal-submit")).toBeTruthy(),
+      expect(screen.getByTestId("assign-goal-types-list")).toBeTruthy(),
     );
     expect(
       screen.getByTestId("assign-goal-submit").props.accessibilityState,
     ).toMatchObject({ disabled: true });
+    fireEvent.press(screen.getByTestId("assign-goal-type-gt-strength"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("assign-goal-submit").props.accessibilityState,
+      ).toMatchObject({ disabled: false }),
+    );
   });
 
   it("disables submit on an invalid target date (never fires the write)", async () => {
@@ -191,9 +231,9 @@ describe("AssignGoalSheet — create mode", () => {
       useAssignGoalSheet.getState().openForCreate("client-9");
     });
     await waitFor(() =>
-      expect(screen.getByTestId("assign-goal-type")).toBeTruthy(),
+      expect(screen.getByTestId("assign-goal-types-list")).toBeTruthy(),
     );
-    fireEvent.changeText(screen.getByTestId("assign-goal-type"), "gt-1");
+    fireEvent.press(screen.getByTestId("assign-goal-type-gt-strength"));
     fireEvent.changeText(
       screen.getByTestId("assign-goal-target-date"),
       "not-a-date",
