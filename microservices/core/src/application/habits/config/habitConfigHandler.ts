@@ -33,6 +33,8 @@ interface CategoryEntry {
   enabled: boolean;
   goalId: string | null;
   assignedByCoach: boolean;
+  /** Assigning coach's display name for the attribution badge (Phase 11). */
+  assignedByName: string | null;
   locked: boolean;
   targetValue: number;
   unit: string;
@@ -50,6 +52,7 @@ function defaultEntry(category: HabitCategory): CategoryEntry {
     enabled: false,
     goalId: null,
     assignedByCoach: false,
+    assignedByName: null,
     locked: false,
     targetValue: meta.target.default,
     unit: meta.unit,
@@ -89,6 +92,7 @@ export const habitConfigHandler = new Elysia()
         enabled: cfg.enabled,
         goalId: cfg.goalId,
         assignedByCoach,
+        assignedByName: cfg.assignedByName,
         locked,
         targetValue: cfg.targetValue,
         unit: cfg.unit,

@@ -104,6 +104,7 @@ export function configureHabitCommand(
         enabled: true,
         goalId,
         assignedByCoach: existing?.assignedByCoach ?? false,
+        assignedByName: existing?.assignedByName ?? null,
         locked: existing?.locked ?? false,
         targetValue: input.targetValue,
         unit: existing?.unit ?? meta.unit,

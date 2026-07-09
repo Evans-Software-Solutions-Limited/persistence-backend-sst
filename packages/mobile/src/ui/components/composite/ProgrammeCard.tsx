@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation";
 import { toneTokens, type Tone } from "@/ui/components/foundation/tones";
 import { IconChevronR } from "@/ui/components/icons";
+import { CoachAttribution } from "./CoachAttribution";
 
 /**
  * <ProgrammeCard> — the "ACTIVE PROGRAMME" block shared by the athlete Home
@@ -26,6 +27,11 @@ export type ProgrammeCardProps = {
   totalWeeks: number | null;
   /** Left-border + fill accent. Athlete card = "primary"; coach cycles. */
   accent?: Tone;
+  /**
+   * The assigning coach's name — when set, renders a <CoachAttribution> line
+   * ("Assigned by Coach X", Phase 11). Omit for self-owned / coach-side cards.
+   */
+  coachName?: string | null;
   onPress?: () => void;
   testID?: string;
 };
@@ -35,6 +41,7 @@ export function ProgrammeCard({
   week,
   totalWeeks,
   accent = "primary",
+  coachName,
   onPress,
   testID,
 }: ProgrammeCardProps) {
@@ -119,6 +126,16 @@ export function ProgrammeCard({
               />
             );
           })}
+        </View>
+      ) : null}
+
+      {/* Coach attribution — "Assigned by Coach X" (Phase 11). */}
+      {coachName ? (
+        <View
+          marginTop={isIndefinite ? 10 : 12}
+          testID={testID ? `${testID}-coach` : undefined}
+        >
+          <CoachAttribution name={coachName} label="Assigned by Coach" />
         </View>
       ) : null}
     </Card>

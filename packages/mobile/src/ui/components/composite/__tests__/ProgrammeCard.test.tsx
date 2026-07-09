@@ -62,4 +62,29 @@ describe("ProgrammeCard", () => {
     fireEvent.press(getByTestId("pc-pressable"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it("renders coach attribution when coachName is set, omits it otherwise", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <ProgrammeCard
+        programName="Strength Foundations"
+        week={4}
+        totalWeeks={12}
+        coachName="Bradley Evans"
+        testID="pc"
+      />,
+    );
+    expect(getByTestId("pc-coach")).toBeTruthy();
+    expect(getByText("Bradley Evans")).toBeTruthy();
+    expect(getByText(/Assigned by Coach/)).toBeTruthy();
+
+    const { queryByTestId } = renderWithTheme(
+      <ProgrammeCard
+        programName="Strength Foundations"
+        week={4}
+        totalWeeks={12}
+        testID="pc2"
+      />,
+    );
+    expect(queryByTestId("pc2-coach")).toBeNull();
+  });
 });

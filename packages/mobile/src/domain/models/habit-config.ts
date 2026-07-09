@@ -57,6 +57,11 @@ export type HabitConfig = {
   goalId: string | null;
   /** A coach assigned this habit (attribution kept even after transfer). */
   assignedByCoach: boolean;
+  /**
+   * The assigning coach's display name for the attribution badge (Phase 11).
+   * Null for self-set habits or when the coach profile has no name.
+   */
+  assignedByName: string | null;
   /** Assigned + relationship still active → controls disabled (design.md § 5). */
   locked: boolean;
   targetValue: number;
@@ -248,6 +253,7 @@ export function habitConfigFromEntry(
     enabled: entry.enabled,
     goalId: entry.goalId,
     assignedByCoach: entry.assignedByCoach,
+    assignedByName: entry.assignedByName ?? null,
     locked: entry.locked,
     targetValue: entry.targetValue,
     unit: entry.unit || meta.unit,
@@ -287,6 +293,7 @@ export function defaultHabitConfig(category: HabitCategory): HabitConfig {
     enabled: false,
     goalId: null,
     assignedByCoach: false,
+    assignedByName: null,
     locked: false,
     targetValue: meta.target.default,
     unit:

@@ -78,6 +78,11 @@ export type ActiveProgramme = {
   totalWeeks: number | null;
   endDate: string | null;
   startDate: string;
+  /**
+   * The assigning coach's display name for the attribution badge (Phase 11).
+   * Null when the trainer profile has no name; absent on older cached payloads.
+   */
+  assignedByName?: string | null;
 };
 
 /**
@@ -94,6 +99,12 @@ export type TodaysTrainingItem = {
   estimatedDurationMinutes: number | null;
   dueDate: string | null;
   assignedByType: "personal_trainer" | "physiotherapist" | null;
+  /**
+   * The assigning trainer's display name for the attribution badge (Phase 11).
+   * Null when self-assigned or the trainer profile has no name; absent on older
+   * cached payloads.
+   */
+  assignedByName?: string | null;
 };
 
 /** Aggregate cold-start payload for Home (GET /users/me/home). */

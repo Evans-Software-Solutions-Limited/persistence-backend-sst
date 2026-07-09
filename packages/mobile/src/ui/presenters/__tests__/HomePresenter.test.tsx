@@ -203,6 +203,23 @@ describe("HomePresenter (V2)", () => {
     expect(getByText("Week 4 / 12")).toBeTruthy();
   });
 
+  it("shows coach attribution on the programme card when assignedByName is set", () => {
+    const { getByTestId, getByText } = render({
+      activeProgramme: {
+        assignmentId: "pa1",
+        programId: "p1",
+        name: "Strength Foundations",
+        week: 4,
+        totalWeeks: 12,
+        endDate: "2026-08-01",
+        startDate: "2026-05-01",
+        assignedByName: "Bradley Evans",
+      },
+    });
+    expect(getByTestId("home-programme-card-coach")).toBeTruthy();
+    expect(getByText("Bradley Evans")).toBeTruthy();
+  });
+
   it("renders 'Today's training' rows with attribution badge + due label, and opens the workout", () => {
     const onOpenWorkout = jest.fn();
     const { getByTestId, getByText } = render({
@@ -242,6 +259,50 @@ describe("HomePresenter (V2)", () => {
       ],
     });
     expect(getByText("Overdue")).toBeTruthy();
+    expect(queryByText("Set by coach")).toBeNull();
+  });
+
+  it("names the coach on a today's-training row when assignedByName is resolved", () => {
+    const { getByTestId, getByText, queryByText } = render({
+      todayISO: "2026-06-10",
+      todaysTraining: [
+        {
+          assignmentId: "wa3",
+          workoutId: "w3",
+          name: "Upper Body",
+          estimatedDurationMinutes: 45,
+          dueDate: "2026-06-10",
+          assignedByType: "personal_trainer",
+          assignedByName: "Bradley Evans",
+        },
+      ],
+    });
+    expect(getByTestId("todays-training-w3-coach")).toBeTruthy();
+    expect(getByText("Bradley Evans")).toBeTruthy();
+    // The generic role pill is replaced by the named line.
+    expect(queryByText("Set by coach")).toBeNull();
+  });
+
+  it("suppresses attribution when the assigner is no longer classified as a coach", () => {
+    // Role reverted to `user` (the 403-trap edge): a name may still resolve
+    // server-side, but assignedByType is null → neither the named line nor the
+    // pill renders (both paths gate on assignedByType).
+    const { queryByTestId, queryByText } = render({
+      todayISO: "2026-06-10",
+      todaysTraining: [
+        {
+          assignmentId: "wa4",
+          workoutId: "w4",
+          name: "Upper Body",
+          estimatedDurationMinutes: 45,
+          dueDate: "2026-06-10",
+          assignedByType: null,
+          assignedByName: "Bradley Evans",
+        },
+      ],
+    });
+    expect(queryByTestId("todays-training-w4-coach")).toBeNull();
+    expect(queryByText("Bradley Evans")).toBeNull();
     expect(queryByText("Set by coach")).toBeNull();
   });
 });

@@ -141,7 +141,7 @@ describe("HomeReadRepository", () => {
     expect(series[0].date).toBe("2026-06-02");
   });
 
-  it("getTodaysTraining maps occurrences + derives assignedByType from role", async () => {
+  it("getTodaysTraining maps occurrences + derives assignedByType/name from the trainer profile", async () => {
     (getDb as any).mockReturnValue({
       select: () =>
         chain([
@@ -152,6 +152,7 @@ describe("HomeReadRepository", () => {
             estimatedDurationMinutes: 45,
             dueDate: "2026-06-10",
             trainerRole: "personal_trainer",
+            trainerName: "Bradley Evans",
           },
           {
             assignmentId: "wa2",
@@ -160,6 +161,7 @@ describe("HomeReadRepository", () => {
             estimatedDurationMinutes: null,
             dueDate: null,
             trainerRole: "physiotherapist",
+            trainerName: "Jane Physio",
           },
           {
             assignmentId: "wa3",
@@ -169,6 +171,7 @@ describe("HomeReadRepository", () => {
             dueDate: "2026-06-11",
             // No trainer profile joined (self/ad-hoc) → null attribution.
             trainerRole: null,
+            trainerName: null,
           },
         ]),
     });
@@ -181,6 +184,7 @@ describe("HomeReadRepository", () => {
         estimatedDurationMinutes: 45,
         dueDate: "2026-06-10",
         assignedByType: "personal_trainer",
+        assignedByName: "Bradley Evans",
       },
       {
         assignmentId: "wa2",
@@ -189,6 +193,7 @@ describe("HomeReadRepository", () => {
         estimatedDurationMinutes: null,
         dueDate: null,
         assignedByType: "physiotherapist",
+        assignedByName: "Jane Physio",
       },
       {
         assignmentId: "wa3",
@@ -197,6 +202,7 @@ describe("HomeReadRepository", () => {
         estimatedDurationMinutes: 30,
         dueDate: "2026-06-11",
         assignedByType: null,
+        assignedByName: null,
       },
     ]);
   });
@@ -211,6 +217,7 @@ describe("HomeReadRepository", () => {
       totalWeeks: 12,
       endDate: "2026-08-01",
       startDate: "2026-05-01",
+      assignedByName: "Bradley Evans",
     };
     const ensureMaterializedForClient = vi.fn().mockResolvedValue(undefined);
     const getActiveProgrammeForClient = vi.fn().mockResolvedValue(summary);

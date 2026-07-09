@@ -1134,6 +1134,11 @@ export type HabitConfigEntry = {
   enabled: boolean;
   goalId: string | null;
   assignedByCoach: boolean;
+  /**
+   * The assigning coach's display name for the attribution badge (Phase 11).
+   * Null for self-set habits / a nameless coach profile.
+   */
+  assignedByName?: string | null;
   /** Only on the trainer GET — the coach that assigned the habit (or null). */
   assignedByUserId?: string | null;
   locked: boolean;

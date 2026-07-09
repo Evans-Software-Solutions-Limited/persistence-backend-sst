@@ -9,7 +9,11 @@ import {
   IconBtn,
   Pill,
 } from "@/ui/components/foundation";
-import { ProgrammeCard, Section } from "@/ui/components/composite";
+import {
+  CoachAttribution,
+  ProgrammeCard,
+  Section,
+} from "@/ui/components/composite";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { IconBell, IconChevronR } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
@@ -102,8 +106,10 @@ export type HomePresenterProps = {
 };
 
 /**
- * Trainer attribution for a "Today's training" row — mirrors the assigned-
- * workout badge copy used elsewhere (specs/19-programs 5.2 / cross-cuts § 1.5).
+ * Generic (nameless) attribution for a "Today's training" row — the fallback
+ * when the trainer's name isn't resolved (older cached payload / nameless
+ * profile). The named path uses <CoachAttribution> (Phase 11 / cross-cuts
+ * § 1.5).
  */
 function attributionLabel(
   assignedByType: TodaysTrainingItem["assignedByType"],
@@ -111,6 +117,17 @@ function attributionLabel(
   if (assignedByType === "personal_trainer") return "Set by coach";
   if (assignedByType === "physiotherapist") return "From physio";
   return null;
+}
+
+/**
+ * Leading copy for the NAMED attribution line. A physio keeps a role-neutral
+ * "Set by" (so "Set by Jane Doe"); a PT / unknown assigner reads "Set by
+ * Coach". Same trainer accent either way.
+ */
+function attributionPrefix(
+  assignedByType: TodaysTrainingItem["assignedByType"],
+): string {
+  return assignedByType === "physiotherapist" ? "Set by" : "Set by Coach";
 }
 
 /** Short due label: Today / Overdue / the ISO date. Null due → no label. */
@@ -229,6 +246,7 @@ export function HomePresenter(props: HomePresenterProps) {
               programName={activeProgramme.name}
               week={activeProgramme.week}
               totalWeeks={activeProgramme.totalWeeks}
+              coachName={activeProgramme.assignedByName ?? null}
               accent="primary"
               testID="home-programme-card"
             />
@@ -242,7 +260,17 @@ export function HomePresenter(props: HomePresenterProps) {
             <Section eyebrow="TODAY" title="Today's training">
               <View gap={8}>
                 {todaysTraining.map((item) => {
-                  const badge = attributionLabel(item.assignedByType);
+                  // Only attribute when the assigner is currently classified as
+                  // a coach/physio (assignedByType set), so both the named line
+                  // and the fallback pill gate identically — a former coach
+                  // whose role reverted to `user` attributes on neither path.
+                  const coachName = item.assignedByType
+                    ? (item.assignedByName ?? null)
+                    : null;
+                  // Generic role pill only when we couldn't resolve a name.
+                  const fallbackBadge = coachName
+                    ? null
+                    : attributionLabel(item.assignedByType);
                   const due = dueLabel(item.dueDate, todayISO);
                   const meta = [
                     item.estimatedDurationMinutes != null
@@ -267,7 +295,7 @@ export function HomePresenter(props: HomePresenterProps) {
                             flexDirection="row"
                             alignItems="center"
                             gap={6}
-                            marginBottom={meta ? 2 : 0}
+                            marginBottom={coachName || meta ? 2 : 0}
                           >
                             <Text
                               fontFamily="$display"
@@ -278,12 +306,21 @@ export function HomePresenter(props: HomePresenterProps) {
                             >
                               {item.name ?? "Workout"}
                             </Text>
-                            {badge ? (
+                            {fallbackBadge ? (
                               <Pill tone="trainer" size="xs">
-                                {badge}
+                                {fallbackBadge}
                               </Pill>
                             ) : null}
                           </View>
+                          {coachName ? (
+                            <View marginBottom={meta ? 2 : 0}>
+                              <CoachAttribution
+                                name={coachName}
+                                label={attributionPrefix(item.assignedByType)}
+                                testID={`todays-training-${item.workoutId}-coach`}
+                              />
+                            </View>
+                          ) : null}
                           {meta ? (
                             <Text
                               fontFamily="$body"

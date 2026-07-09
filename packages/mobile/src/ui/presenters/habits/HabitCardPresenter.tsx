@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { Pressable } from "react-native";
 
 import { Card, Pill } from "@/ui/components/foundation";
+import { CoachAttribution } from "@/ui/components/composite";
 import { toneHex, toneTokens } from "@/ui/components/foundation/tones";
 import {
   IconChevronR,
@@ -30,7 +31,9 @@ import { Row, Stepper, Switch, WeekFreq } from "./HabitControls";
  * Stepper (Calories). Disabled collapses to the header.
  *
  * States beyond the prototype (all spec-required, design.md § 9):
- *  - coach-locked → controls disabled + "Set by Coach" attribution;
+ *  - coach-assigned → a <CoachAttribution> badge with the coach's name (Phase
+ *    11); while the relationship is active the habit is also locked (controls
+ *    disabled). Attribution persists as history after the relationship ends;
  *  - pending → a "Starts Monday" tag on the changed control's row.
  */
 
@@ -154,16 +157,19 @@ export function HabitCardPresenter({
           <Text fontFamily="$body" fontSize={11.5} color="$text3" marginTop={1}>
             {meta.sub}
           </Text>
-          {locked ? (
-            <Text
-              fontFamily="$body"
-              fontSize={11}
-              color="$accentTrainer"
+          {config.assignedByCoach ? (
+            <View
               marginTop={2}
-              testID={testID ? `${testID}-locked` : undefined}
+              testID={testID ? `${testID}-attribution` : undefined}
             >
-              Set by your coach
-            </Text>
+              {config.assignedByName ? (
+                <CoachAttribution name={config.assignedByName} />
+              ) : (
+                <Text fontFamily="$body" fontSize={11} color="$accentTrainer">
+                  Set by your coach
+                </Text>
+              )}
+            </View>
           ) : null}
         </View>
         <Switch

@@ -1,5 +1,6 @@
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import {
+  profiles,
   programAssignments,
   programWorkouts,
   workoutAssignments,
@@ -44,6 +45,12 @@ export interface ActiveProgrammeSummary {
   totalWeeks: number | null;
   endDate: string | null;
   startDate: string;
+  /**
+   * The assigning trainer's display name (`profiles.full_name`) for the coach
+   * attribution badge on the athlete's "Your programme" card (Phase 11 /
+   * cross-cuts § 1.5). Null when the trainer profile has no name.
+   */
+  assignedByName: string | null;
 }
 
 /**
@@ -310,12 +317,14 @@ export class ProgramAssignmentRepository {
         durationWeeks: workoutPrograms.durationWeeks,
         startDate: programAssignments.startDate,
         endDate: programAssignments.endDate,
+        assignedByName: profiles.fullName,
       })
       .from(programAssignments)
       .innerJoin(
         workoutPrograms,
         eq(workoutPrograms.id, programAssignments.programId),
       )
+      .leftJoin(profiles, eq(profiles.id, programAssignments.assignedBy))
       .where(
         and(
           eq(programAssignments.clientId, clientId),
@@ -336,6 +345,7 @@ export class ProgramAssignmentRepository {
       totalWeeks: row.durationWeeks,
       endDate: row.endDate,
       startDate: row.startDate,
+      assignedByName: row.assignedByName ?? null,
     };
   }
 

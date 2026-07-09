@@ -37,6 +37,9 @@ describe("habit-config model", () => {
       expect(gym.daysPerWeek).toBeNull();
       const cals = defaultHabitConfig("calories");
       expect(cals.tolerancePct).toBe(10);
+      // No coach attribution on a default (self) entry.
+      expect(water.assignedByCoach).toBe(false);
+      expect(water.assignedByName).toBeNull();
     });
   });
 
@@ -62,6 +65,17 @@ describe("habit-config model", () => {
       expect(cfg!.category).toBe("water");
       expect(cfg!.targetValue).toBe(2.5);
       expect(cfg!.pending).toBeNull();
+      expect(cfg!.assignedByName).toBeNull();
+    });
+
+    it("carries the coach attribution name through (Phase 11)", () => {
+      const cfg = habitConfigFromEntry({
+        ...base,
+        assignedByCoach: true,
+        assignedByName: "Bradley Evans",
+      });
+      expect(cfg!.assignedByCoach).toBe(true);
+      expect(cfg!.assignedByName).toBe("Bradley Evans");
     });
 
     it("flattens the { from, config } pending envelope", () => {
