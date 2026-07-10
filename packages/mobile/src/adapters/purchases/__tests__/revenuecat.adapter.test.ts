@@ -195,6 +195,14 @@ describe("classifyPurchasesError", () => {
       classifyPurchasesError({ message: "Purchases are not allowed" }).kind,
     ).toBe("purchase_not_allowed");
   });
+  it("maps a deferred (Ask to Buy) purchase to pending, ahead of the payment→store match", () => {
+    expect(
+      classifyPurchasesError({
+        code: "PAYMENT_PENDING_ERROR",
+        message: "The payment is pending.",
+      }).kind,
+    ).toBe("pending");
+  });
   it("maps a store/payment message", () => {
     expect(classifyPurchasesError({ message: "payment declined" }).kind).toBe(
       "store_problem",

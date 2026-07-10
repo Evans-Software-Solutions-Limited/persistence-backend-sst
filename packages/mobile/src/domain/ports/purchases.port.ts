@@ -40,6 +40,10 @@ import type {
  * - `store_problem` — App Store returned an error (product not available,
  *   payment declined, etc.). Surfaced to the user.
  * - `purchase_not_allowed` — device disallows purchases (parental controls).
+ * - `pending` — the purchase is deferred, awaiting external approval (Ask to
+ *   Buy / SCA). NOT a failure: no entitlement yet, but the store will finish
+ *   the transaction once approved. The flow surfaces an informational message
+ *   and does NOT route to the success screen.
  * - `unknown` — anything else.
  */
 export type PurchasesErrorKind =
@@ -48,6 +52,7 @@ export type PurchasesErrorKind =
   | "network"
   | "store_problem"
   | "purchase_not_allowed"
+  | "pending"
   | "unknown";
 
 export interface PurchasesError {

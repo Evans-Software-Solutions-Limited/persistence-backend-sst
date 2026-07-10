@@ -243,6 +243,10 @@ function kindFromCode(
   ) {
     return "purchase_not_allowed";
   }
+  // Deferred purchase (Ask to Buy / SCA). RevenueCat surfaces this as
+  // `PAYMENT_PENDING_ERROR`; it is NOT a failure, so match it BEFORE the
+  // broad `payment` → store_problem catch below.
+  if (haystack.includes("pending")) return "pending";
   if (
     haystack.includes("store") ||
     haystack.includes("product") ||
