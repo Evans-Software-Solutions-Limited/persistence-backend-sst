@@ -105,6 +105,9 @@ export type ClientDetailProps = {
   onSendBrief: () => void;
   /** Upcoming-sessions row Swap → SwapWorkoutSheet (M18). */
   onSwapWorkout: (assignment: CoachClientAssignment) => void;
+  /** Upcoming-sessions row Start → open the athlete active-session on the
+   *  coach's device in `withClient` mode (M18 Start-live). */
+  onStartSession: (assignment: CoachClientAssignment) => void;
   /** GoalCard pencil → AssignGoalSheet (edit) — only offered when assignedByCoach. */
   onEditGoal: () => void;
   /** Tap the ProgrammeCard → open the programme editor. */
@@ -142,6 +145,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onAssignGoal,
     onSendBrief,
     onSwapWorkout,
+    onStartSession,
     onEditGoal,
     onOpenProgramme,
     onAssignProgramme,
@@ -241,6 +245,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
           <UpcomingSessionsCard
             assignments={assignments}
             onSwap={onSwapWorkout}
+            onStart={onStartSession}
           />
 
           <CoachNotesCard
@@ -481,9 +486,11 @@ function LiveSessionCTA({
 function UpcomingSessionsCard({
   assignments,
   onSwap,
+  onStart,
 }: {
   assignments: CoachClientAssignment[];
   onSwap: (assignment: CoachClientAssignment) => void;
+  onStart: (assignment: CoachClientAssignment) => void;
 }) {
   if (assignments.length === 0) return null;
 
@@ -539,14 +546,26 @@ function UpcomingSessionsCard({
                 {a.isProgrammeOccurrence ? " · Programme" : ""}
               </Text>
             </View>
-            <Btn
-              variant="soft"
-              tone="trainer"
-              onPress={() => onSwap(a)}
-              testID={`upcoming-swap-${a.assignmentId}`}
-            >
-              Swap
-            </Btn>
+            <View flexDirection="row" gap={8}>
+              <Btn
+                variant="filled"
+                tone="trainer"
+                size="sm"
+                onPress={() => onStart(a)}
+                testID={`upcoming-start-${a.assignmentId}`}
+              >
+                Start
+              </Btn>
+              <Btn
+                variant="soft"
+                tone="trainer"
+                size="sm"
+                onPress={() => onSwap(a)}
+                testID={`upcoming-swap-${a.assignmentId}`}
+              >
+                Swap
+              </Btn>
+            </View>
           </View>
         ))}
       </View>
@@ -1463,7 +1482,7 @@ function CoachNotesCard({
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-function initialsOf(name: string): string {
+export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();

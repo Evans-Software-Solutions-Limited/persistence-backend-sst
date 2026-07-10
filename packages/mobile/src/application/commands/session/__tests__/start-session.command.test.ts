@@ -53,6 +53,37 @@ describe("startSessionCommand", () => {
     expect(storage.getActiveSession("user-1")?.id).toBe(result.value.id);
   });
 
+  it("stamps the coach on-behalf client onto the session so it persists in SQLite (M18 Start-live)", () => {
+    const result = startSessionCommand(
+      { storage, generateId, userId: "coach-1", now },
+      {
+        workout: buildWorkout(),
+        withClient: { id: "client-9", name: "Jordan", initials: "JB" },
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.withClient).toEqual({
+      id: "client-9",
+      name: "Jordan",
+      initials: "JB",
+    });
+    // Round-trips through the cache (the existence authority).
+    expect(storage.getActiveSession("coach-1")?.withClient?.id).toBe(
+      "client-9",
+    );
+  });
+
+  it("leaves withClient null for a normal athlete session", () => {
+    const result = startSessionCommand(
+      { storage, generateId, userId: "user-1", now },
+      { workout: buildWorkout() },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.withClient).toBeNull();
+  });
+
   it("creates a Quick Start (empty) session when no workout supplied", () => {
     const result = startSessionCommand({
       storage,

@@ -227,6 +227,77 @@ describe("ActiveSessionContainer", () => {
     expect(cached?.exercises).toHaveLength(2);
   });
 
+  it("coach Start-live: promotes the client ref onto the withClient pointer and shows the trainer banner", async () => {
+    const api = new InMemoryApiAdapter();
+    const workout = buildWorkout();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", workout);
+    mockUseLocalSearchParams.mockReturnValue({
+      workoutId: "w-1",
+      clientId: "client-9",
+      clientName: "Jordan",
+      clientInitials: "JB",
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // The trainer banner renders once the pointer carries withClient.
+    expect(await findByTestId("trainer-banner")).toBeTruthy();
+    await waitFor(() => {
+      expect(useActiveWorkout.getState().active?.withClient).toEqual({
+        id: "client-9",
+        name: "Jordan",
+        initials: "JB",
+      });
+    });
+    // Not retroactive → the banner renders LIVE (undefined and false both do).
+    expect(useActiveWorkout.getState().active?.retroactive).toBeFalsy();
+  });
+
+  it("coach Start-live discard: End routes the cancellation flush to the on-behalf endpoint", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: "wk-1",
+      name: "Push Day",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+    useActiveWorkout.setState({
+      active: {
+        sessionId: "local-1",
+        workoutId: "wk-1",
+        name: "Push Day",
+        startedAt: "2026-05-05T10:00:00.000Z",
+        withClient: { id: "client-9", name: "Jordan", initials: "JB" },
+        retroactive: false,
+      },
+      expanded: true,
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-end"));
+    fireEvent.press(await findByTestId("end-confirm-dialog-end"));
+
+    const queue = storage.getPendingMutations();
+    expect(queue).toHaveLength(1);
+    expect(queue[0].endpoint).toBe(
+      "/trainers/me/clients/client-9/sessions/record",
+    );
+    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
+  });
+
   it("renders the resumed session when one already exists in cache (no workoutId)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

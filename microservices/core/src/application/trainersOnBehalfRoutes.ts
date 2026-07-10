@@ -10,6 +10,7 @@ import Elysia from "elysia";
 // through assertTrainerCanActForClient + auditTrainerAction (same tx) and emits
 // a best-effort client notification post-commit (cross-cuts § 1.2/§ 1.4/§ 5).
 import { trainersMeLogClientSessionHandler } from "./trainers/sessions/trainersMeLogClientSessionHandler";
+import { trainersMeRecordClientSessionHandler } from "./trainers/sessions/trainersMeRecordClientSessionHandler";
 import { trainersMeListClientSessionsHandler } from "./trainers/sessions/trainersMeListClientSessionsHandler";
 import { trainersMeListClientMeasurementsHandler } from "./trainers/measurements/trainersMeListClientMeasurementsHandler";
 import { trainersMeAssignClientGoalHandler } from "./trainers/goals/trainersMeAssignClientGoalHandler";
@@ -26,8 +27,12 @@ import { trainersMeGenerateClientAiSummaryHandler } from "./trainers/clients/tra
 import { trainersMeSendClientBriefHandler } from "./trainers/briefs/trainersMeSendClientBriefHandler";
 
 export const trainersOnBehalfRoutes = new Elysia()
-  // sessions — POST create + GET list (different methods, no path collision).
+  // sessions — POST create (header-only), POST .../sessions/record (full
+  // bulk-record, M18 Start-live), GET list. The static `sessions/record`
+  // segment never collides with the bare `POST .../sessions` or the terminal
+  // `:clientId`. Different methods/paths throughout — no collision.
   .use(trainersMeLogClientSessionHandler)
+  .use(trainersMeRecordClientSessionHandler)
   .use(trainersMeListClientSessionsHandler)
   // measurements — POST shipped in Phase 2; this is the parity GET only.
   .use(trainersMeListClientMeasurementsHandler)

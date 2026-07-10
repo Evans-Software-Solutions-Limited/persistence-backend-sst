@@ -44,6 +44,14 @@ export type CompleteSessionInput = {
    * session was cancelled.
    */
   rating?: number | null;
+  /**
+   * M18 coach Start-live. When set, this session is recorded ON BEHALF of the
+   * given client: the bulk-record flush routes to
+   * `POST /trainers/me/clients/:id/sessions/record` (the server stamps
+   * `logged_by_user_id`) instead of the self `POST /sessions/record`.
+   * Null/undefined = the athlete's own session.
+   */
+  onBehalfClientId?: string | null;
 };
 
 export type CompletedSessionResult = {
@@ -61,6 +69,7 @@ export function completeSessionCommand(
     "completed",
     input.notes ?? null,
     input.rating ?? null,
+    input.onBehalfClientId ?? null,
   );
 }
 
@@ -78,6 +87,11 @@ export function finalizeSessionCommand(
   status: "completed" | "cancelled",
   notes: string | null,
   rating: number | null = null,
+  /**
+   * M18 coach Start-live — when set, the flush is enqueued against the
+   * on-behalf record endpoint for this client instead of the self endpoint.
+   */
+  onBehalfClientId: string | null = null,
 ): Result<CompletedSessionResult, SessionNotFoundError> {
   const session = deps.storage.getActiveSession(deps.userId);
   if (!session) {
@@ -172,7 +186,11 @@ export function finalizeSessionCommand(
   // flips it. Filtering by it would empty the cache on every session.
   // Both fields filled is the meaningful "user logged something
   // intentional" signal that matches legacy `previousSets[]`.
-  if (status === "completed") {
+  // Coach Start-live: a coach-run session must NEVER write the client's lifts
+  // into the COACH's own `recent_sets` — `deps.userId` is the coach here, so
+  // the client's numbers would surface as the coach's "Previous" chips. The
+  // client's recent-sets live on the client's own device. (Inspector Brad, M18.)
+  if (status === "completed" && !onBehalfClientId) {
     const recentSets: RecentSetEntry[] = [];
     for (const ex of finalized.exercises) {
       // Substituted rows are excluded — their sets belong to an
@@ -195,12 +213,21 @@ export function finalizeSessionCommand(
     }
   }
 
+  // Coach Start-live routes the flush to the on-behalf record endpoint; the
+  // sync worker POSTs `entry.endpoint` generically, and its athlete-summary
+  // capture is gated on the self `/sessions/record` string so it NATURALLY
+  // skips the coach case (that cache is keyed by the coach's own userId and
+  // must not be polluted with the client's PRs).
+  const endpoint = onBehalfClientId
+    ? `/trainers/me/clients/${onBehalfClientId}/sessions/record`
+    : "/sessions/record";
+
   deps.storage.enqueueMutation({
     entityType: "session",
     entityId: finalized.id,
     operation: "create",
     payload,
-    endpoint: "/sessions/record",
+    endpoint,
     method: "POST",
   });
 

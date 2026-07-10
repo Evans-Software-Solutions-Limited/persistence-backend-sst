@@ -23,11 +23,24 @@ export type CancelSessionCommandDeps = CompleteSessionCommandDeps;
 
 export type CancelSessionInput = {
   notes?: string | null;
+  /**
+   * M18 coach Start-live — when set, a discarded coach-run session is recorded
+   * (cancelled) ON BEHALF of this client via the on-behalf record endpoint, so
+   * the write is scoped to the client and audited server-side. Null/undefined =
+   * the athlete's own session.
+   */
+  onBehalfClientId?: string | null;
 };
 
 export function cancelSessionCommand(
   deps: CancelSessionCommandDeps,
   input: CancelSessionInput = {},
 ): Result<CompletedSessionResult, SessionNotFoundError> {
-  return finalizeSessionCommand(deps, "cancelled", input.notes ?? null);
+  return finalizeSessionCommand(
+    deps,
+    "cancelled",
+    input.notes ?? null,
+    null,
+    input.onBehalfClientId ?? null,
+  );
 }

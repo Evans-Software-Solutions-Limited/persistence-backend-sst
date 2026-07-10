@@ -9,12 +9,23 @@ import {
   type NewSessionExercise,
   type ExerciseSet,
   type NewExerciseSet,
+  type Db,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import type {
   DbOrTx,
   DetectedPersonalRecord,
 } from "./personalRecordsRepository";
+
+/**
+ * The transaction handle Drizzle hands to a `db.transaction(async (tx) => …)`
+ * callback — same idiom as `auditTrainerAction`'s `DbTransaction`. The coach
+ * on-behalf `afterRecord` hook types its tx param with this (rather than the
+ * looser `DbOrTx`) so the caller can pass the handle straight to
+ * `auditTrainerAction` — which requires the tx handle, not the `Db` singleton —
+ * with no cast.
+ */
+type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface SessionWithExercises extends WorkoutSession {
   exercises: SessionExercise[];
@@ -58,6 +69,36 @@ export interface RecordSessionInput {
       completedAt?: string | null;
     }>;
   }>;
+}
+
+/**
+ * Optional extras for {@link SessionRepository.recordSession}. The self
+ * `/sessions/record` path omits this entirely (unchanged behaviour); the coach
+ * on-behalf record path (`recordClientSessionOnBehalf`, M18 Start-live) supplies
+ * both fields.
+ */
+export interface RecordSessionOptions {
+  /**
+   * Stamp `logged_by_user_id` on the `workout_sessions` row — the acting coach
+   * when a session is recorded ON BEHALF of a client. Omitted for self records
+   * (column stays null). Mirrors the `logged_by_user_id` stamp on the header-only
+   * `SessionRepository.create` on-behalf path.
+   */
+  loggedByUserId?: string;
+  /**
+   * In-transaction hook run for EVERY recorded session — completed AND
+   * cancelled — after the session root + all exercises/sets are inserted. The
+   * coach on-behalf path writes its `trainer_actions_audit` row here so the
+   * cross-cuts § 1.4.2 invariant ("no `logged_by_user_id` row without a matching
+   * audit entry") holds regardless of session status. Distinct from
+   * `afterCompletedRecord`, which is completed-only (adherence isn't recorded
+   * for a discarded workout). If this throws, the whole record rolls back.
+   */
+  afterRecord?: (
+    userId: string,
+    sessionId: string,
+    tx: DbTransaction,
+  ) => Promise<void>;
 }
 
 export interface RecordedSession extends WorkoutSession {
@@ -241,6 +282,10 @@ export class SessionRepository {
       sessionId: string,
       tx: DbOrTx,
     ) => Promise<void>,
+    // Optional extras — the coach on-behalf record path (M18 Start-live) stamps
+    // `logged_by_user_id` and threads an unconditional in-tx audit hook through
+    // here. The self path omits this argument (behaviour unchanged).
+    options?: RecordSessionOptions,
   ): Promise<RecordedSession> {
     const db = getDb();
 
@@ -275,6 +320,9 @@ export class SessionRepository {
         .insert(workoutSessions)
         .values({
           userId,
+          // Coach on-behalf records stamp the acting trainer here (M18); self
+          // records leave it null.
+          loggedByUserId: options?.loggedByUserId ?? null,
           workoutId: payload.workoutId ?? null,
           name: payload.name ?? null,
           status: payload.status,
@@ -357,6 +405,15 @@ export class SessionRepository {
         if (afterCompletedRecord) {
           await afterCompletedRecord(userId, session.id, tx);
         }
+      }
+
+      // 3c. Unconditional in-tx hook (completed AND cancelled). The coach
+      //     on-behalf record path writes its trainer_actions_audit row here so
+      //     a discarded (cancelled) on-behalf session is audited too — the
+      //     § 1.4.2 invariant applies to any `logged_by_user_id` write, not
+      //     just completed ones. The self path leaves this undefined.
+      if (options?.afterRecord) {
+        await options.afterRecord(userId, session.id, tx);
       }
 
       // 4. Re-fetch the full nested session inside the same tx so the

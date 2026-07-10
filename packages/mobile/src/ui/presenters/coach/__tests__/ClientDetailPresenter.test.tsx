@@ -139,6 +139,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onAssignGoal: jest.fn(),
     onSendBrief: jest.fn(),
     onSwapWorkout: jest.fn(),
+    onStartSession: jest.fn(),
     onEditGoal: jest.fn(),
     onOpenProgramme: jest.fn(),
     onAssignProgramme: jest.fn(),
@@ -266,6 +267,12 @@ describe("ClientDetailPresenter — UpcomingSessionsCard (M18)", () => {
     expect(getByTestId("upcoming-swapped-wa-1")).toBeTruthy();
     fireEvent.press(getByTestId("upcoming-swap-wa-1"));
     expect(props.onSwapWorkout).toHaveBeenCalledWith(ASSIGNMENTS[0]);
+  });
+
+  it("wires the per-row Start action (M18 Start-live)", () => {
+    const { getByTestId, props } = render({ assignments: ASSIGNMENTS });
+    fireEvent.press(getByTestId("upcoming-start-wa-1"));
+    expect(props.onStartSession).toHaveBeenCalledWith(ASSIGNMENTS[0]);
   });
 });
 

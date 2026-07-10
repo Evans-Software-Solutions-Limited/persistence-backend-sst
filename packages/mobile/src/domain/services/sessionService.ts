@@ -14,6 +14,7 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ExerciseSet,
+  SessionClientRef,
   SessionExercise,
   SessionSummary,
   WorkoutSession,
@@ -27,6 +28,11 @@ export type SessionContext = {
   userId: string;
   /** ISO timestamp; defaults to `new Date().toISOString()` if omitted in tests. */
   now: string;
+  /**
+   * M18 coach Start-live — stamps the on-behalf client onto the session so it
+   * persists in SQLite (the existence authority) and survives a rehydrate.
+   */
+  withClient?: SessionClientRef | null;
 };
 
 /**
@@ -86,6 +92,7 @@ export function createSessionFromWorkout(
     completedAt: null,
     exercises,
     notes: null,
+    withClient: ctx.withClient ?? null,
   };
 }
 
@@ -107,6 +114,7 @@ export function createEmptySession(
     completedAt: null,
     exercises: [],
     notes: null,
+    withClient: ctx.withClient ?? null,
   };
 }
 

@@ -46,6 +46,16 @@ vi.mock("../repositories/clientDetailRepository", () => ({
   })),
 }));
 
+// M18 Start-live — the on-behalf record core is stubbed with a marker so the
+// POST .../sessions/record route can be asserted reachable without the full
+// SessionRepository/DB stack.
+vi.mock("../trainers/sessions/recordClientSession", () => ({
+  recordClientSessionOnBehalf: vi.fn(async () => ({
+    ok: true,
+    session: { id: "MARKER-RECORD" },
+  })),
+}));
+
 import { trainersOnBehalfRoutes } from "../trainersOnBehalfRoutes";
 
 const auth = { authorization: "Bearer token" };
@@ -79,6 +89,32 @@ describe("trainersOnBehalfRoutes — route ordering", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.client.id).toBe("MARKER-DETAIL");
+  });
+
+  it("POST /trainers/me/clients/:id/sessions/record resolves to the record handler (static segment not shadowed by :clientId or POST .../sessions)", async () => {
+    const res = await trainersOnBehalfRoutes.handle(
+      new Request(
+        "http://localhost/trainers/me/clients/client-1/sessions/record",
+        {
+          method: "POST",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startedAt: "2026-05-04T10:00:00.000Z",
+            status: "completed",
+            exercises: [
+              {
+                exerciseId: "ex-1",
+                sortOrder: 1,
+                sets: [{ setNumber: 1, reps: 5, weightKg: 100 }],
+              },
+            ],
+          }),
+        },
+      ),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as any;
+    expect(body.data.id).toBe("MARKER-RECORD");
   });
 
   it("GET /trainers/me/clients/:id/habits/config still resolves to the habit-config handler (not shadowed)", async () => {

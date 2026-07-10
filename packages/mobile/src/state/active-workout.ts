@@ -133,6 +133,13 @@ export function pointerFromSession(
     workoutId: string | null;
     name: string;
     startedAt: string;
+    /**
+     * Coach on-behalf client persisted on the SQLite session (M18). Recovered
+     * here so a pointer reconstructed from SQLite on rehydrate carries the
+     * coach context — without this, a force-quit → rehydrate would drop it and
+     * the client's workout would be misattributed to the coach (Inspector Brad).
+     */
+    withClient?: ActiveWorkoutClientRef | null;
   },
   trainer?: { withClient?: ActiveWorkoutClientRef; retroactive?: boolean },
 ): ActiveWorkoutPointer {
@@ -141,7 +148,9 @@ export function pointerFromSession(
     workoutId: session.workoutId,
     name: session.name,
     startedAt: session.startedAt,
-    withClient: trainer?.withClient,
+    // Explicit trainer arg (coach-start) wins; otherwise recover from the
+    // session row (rehydrate/adopt path).
+    withClient: trainer?.withClient ?? session.withClient ?? undefined,
     retroactive: trainer?.retroactive,
   };
 }

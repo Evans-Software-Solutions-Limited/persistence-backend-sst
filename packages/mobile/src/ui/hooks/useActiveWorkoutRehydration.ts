@@ -120,7 +120,12 @@ export function useActiveWorkoutRehydration(
             // Already restored minimised — nothing further to do.
           },
           onDiscard: () => {
-            cancelSessionCommand({ storage, userId });
+            // Coach Start-live: a discarded on-behalf session records
+            // (cancelled) for the client (scoped + audited). The pointer was
+            // just restored from AsyncStorage, so withClient survives here.
+            const onBehalfClientId =
+              useActiveWorkout.getState().active?.withClient?.id ?? null;
+            cancelSessionCommand({ storage, userId }, { onBehalfClientId });
             void useActiveWorkout.getState().end();
           },
         });

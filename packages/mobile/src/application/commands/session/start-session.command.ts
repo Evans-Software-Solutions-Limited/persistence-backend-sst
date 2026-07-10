@@ -18,7 +18,7 @@ import {
   createSessionFromWorkout,
   type IdFactory,
 } from "@/domain/services/sessionService";
-import type { WorkoutSession } from "@/domain/models/session";
+import type { SessionClientRef, WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -34,6 +34,12 @@ export type StartSessionCommandDeps = {
 export type StartSessionInput = {
   /** When set, seeds the session from this template; otherwise Quick Start. */
   workout?: Workout;
+  /**
+   * M18 coach Start-live — stamps the on-behalf client onto the session so it
+   * persists in SQLite and survives a rehydrate (the coach context must NOT
+   * live only on the AsyncStorage pointer).
+   */
+  withClient?: SessionClientRef | null;
 };
 
 export type ActiveSessionExistsError = {
@@ -60,6 +66,7 @@ export function startSessionCommand(
   const ctx = {
     userId: deps.userId,
     now: (deps.now?.() ?? new Date()).toISOString(),
+    withClient: input.withClient ?? null,
   };
 
   const session = input.workout

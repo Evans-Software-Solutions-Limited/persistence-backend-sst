@@ -39,21 +39,43 @@ export function WorkoutRatingContainer() {
     (rating: number, notes: string) => {
       if (!userId || isSubmitting) return;
       setIsSubmitting(true);
+      // Capture the coach on-behalf context BEFORE end() clears the pointer.
+      // Present only for a coach-run Start-live session (M18).
+      const withClient = useActiveWorkout.getState().active?.withClient ?? null;
       const result = completeSessionCommand(
         { storage, userId },
-        { rating, notes: notes.trim() || null },
+        {
+          rating,
+          notes: notes.trim() || null,
+          onBehalfClientId: withClient?.id ?? null,
+        },
       );
       // STORY-009 AC 9.4 — the session is finalized (or already was), so
       // clear the useActiveWorkout UI-state slice. Idempotent + safe in both
       // branches (under Hybrid Option A the slice is usually already empty;
-      // this also drops any M8 withClient/retroactive trainer context).
+      // this also drops the M8/M18 withClient/retroactive trainer context).
       void useActiveWorkout.getState().end();
 
+      // Coach Start-live returns to Client Detail (NOT the athlete PR-summary
+      // screen — that cache is keyed by the coach's own userId and the
+      // on-behalf flush is deliberately gated out of it). Clear the local
+      // session so no ghost bar lingers, then dismiss the session modals back
+      // to Client Detail, whose focus effect refreshes the now-completed
+      // occurrence.
+      const goCoachHome = () => {
+        storage.clearActiveSession(userId);
+        router.dismissAll();
+      };
+
       if (!result.ok) {
-        // No active session → already finalized. Bounce to summary
-        // so the user can see their stats anyway.
+        // No active session → already finalized. Route the user somewhere
+        // sensible anyway (Client Detail for the coach, summary otherwise).
         setIsSubmitting(false);
-        router.replace("/(app)/session/summary" as never);
+        if (withClient) {
+          goCoachHome();
+        } else {
+          router.replace("/(app)/session/summary" as never);
+        }
         return;
       }
       // Kick off an inline sync drain BEFORE routing — the user just
@@ -74,6 +96,11 @@ export function WorkoutRatingContainer() {
       void processSyncQueue(storage, auth, getApiBaseUrl()).catch((err) => {
         console.warn("[WorkoutRatingContainer] post-submit drain failed:", err);
       });
+
+      if (withClient) {
+        goCoachHome();
+        return;
+      }
       // Replace (not push) so the back stack doesn't accumulate
       // /rate → /summary indefinitely if the user re-finishes.
       router.replace("/(app)/session/summary" as never);

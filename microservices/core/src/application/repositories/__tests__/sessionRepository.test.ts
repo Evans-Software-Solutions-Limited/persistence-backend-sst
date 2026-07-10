@@ -1318,5 +1318,240 @@ describe("SessionRepository", () => {
 
       expect(capturedValues?.completedAt).toBeNull();
     });
+
+    // ── On-behalf options (M18 Start-live) ──────────────────────────────────
+    // `recordSession` gained an optional 5th arg: `{ loggedByUserId, afterRecord }`.
+    // The coach record path supplies both; the self path omits them.
+
+    it("stamps logged_by_user_id on the session insert when options.loggedByUserId is set", async () => {
+      const refreshed = {
+        session: {
+          id: "s-ob",
+          userId: "client-1",
+          loggedByUserId: "trainer-1",
+          workoutId: "w1",
+          name: "Push Day",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-ob",
+            sessionId: "s-ob",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession("client-1", payload, runPRDetection, undefined, {
+        loggedByUserId: "trainer-1",
+      });
+
+      expect(capturedValues?.userId).toBe("client-1");
+      expect(capturedValues?.loggedByUserId).toBe("trainer-1");
+    });
+
+    it("leaves logged_by_user_id null when no options are supplied (self path unchanged)", async () => {
+      const refreshed = {
+        session: {
+          id: "s-self",
+          userId: "u1",
+          workoutId: "w1",
+          name: "Push Day",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-self",
+            sessionId: "s-self",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let capturedValues: any = null;
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
+      const insertCallValues: Array<Record<string, unknown>> = [];
+      tx.insert = vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          insertCallValues.push(v);
+          if (insertCallValues.length === 1) capturedValues = v;
+          return {
+            returning: vi.fn().mockImplementation((selection?: any) => {
+              if (selection && "id" in selection) {
+                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+              }
+              return Promise.resolve([refreshed.session]);
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }));
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession("u1", payload, runPRDetection);
+
+      expect(capturedValues?.loggedByUserId).toBeNull();
+    });
+
+    it("runs options.afterRecord inside the tx for a COMPLETED session", async () => {
+      const refreshed = {
+        session: {
+          id: "s-ar",
+          userId: "client-1",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-ar",
+            sessionId: "s-ar",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const afterRecord = vi.fn().mockResolvedValue(undefined);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession("client-1", payload, runPRDetection, undefined, {
+        afterRecord,
+      });
+
+      expect(afterRecord).toHaveBeenCalledWith("client-1", "s-ar", tx);
+    });
+
+    it("runs options.afterRecord even for a CANCELLED session (audit invariant), but NOT afterCompletedRecord", async () => {
+      const refreshed = {
+        session: {
+          id: "s-cx",
+          userId: "client-1",
+          status: "cancelled",
+          startedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-cx",
+            sessionId: "s-cx",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+      const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 0 });
+      const mockDb = {
+        transaction: vi
+          .fn()
+          .mockImplementation((cb: (t: any) => any) => cb(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const runPRDetection = vi.fn().mockResolvedValue([]);
+      const afterCompletedRecord = vi.fn().mockResolvedValue(undefined);
+      const afterRecord = vi.fn().mockResolvedValue(undefined);
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+
+      await repo.recordSession(
+        "client-1",
+        { ...payload, status: "cancelled", completedAt: null },
+        runPRDetection,
+        afterCompletedRecord,
+        { afterRecord },
+      );
+
+      // PR detection + completed-only hook are skipped for a cancelled session…
+      expect(runPRDetection).not.toHaveBeenCalled();
+      expect(afterCompletedRecord).not.toHaveBeenCalled();
+      // …but the unconditional audit hook still fires.
+      expect(afterRecord).toHaveBeenCalledWith("client-1", "s-cx", tx);
+    });
   });
 });

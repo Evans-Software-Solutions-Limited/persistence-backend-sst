@@ -120,7 +120,14 @@ export function ActiveWorkoutOverlay() {
     // end() clears the UI-state slice. `session.userId` is always present (the
     // session came from SQLite keyed on it), so no auth-userId guard is needed.
     setEndConfirmVisible(false);
-    cancelSessionCommand({ storage, userId: session.userId });
+    // Coach Start-live: a discarded client session records (cancelled) on the
+    // client's behalf so the write stays scoped to the client + audited.
+    const onBehalfClientId =
+      useActiveWorkout.getState().active?.withClient?.id ?? null;
+    cancelSessionCommand(
+      { storage, userId: session.userId },
+      { onBehalfClientId },
+    );
     void useActiveWorkout.getState().end();
     // The bar's own end path triggers no navigation, so the cacheVersion-keyed
     // memo wouldn't otherwise refresh — re-read so the (now-cancelled) session
