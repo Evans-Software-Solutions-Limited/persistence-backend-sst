@@ -63,16 +63,26 @@ function isTrainerTierName(tier: SubscriptionTierName): boolean {
   );
 }
 
+/**
+ * Every tier name, keyed so adding/removing a `SubscriptionTierName` union
+ * member is a compile error here — a new purchasable tier can't silently fail
+ * to parse and fall back to the (racy) query.
+ */
+const KNOWN_TIER_NAMES: Record<SubscriptionTierName, true> = {
+  free: true,
+  premium: true,
+  individual_trainer: true,
+  small_business: true,
+  medium_enterprise: true,
+};
+
 /** Narrow a raw route param to a known tier name (or null). */
 function parseTierParam(raw: string | undefined): SubscriptionTierName | null {
-  const known: SubscriptionTierName[] = [
-    "free",
-    "premium",
-    "individual_trainer",
-    "small_business",
-    "medium_enterprise",
-  ];
-  return known.find((t) => t === raw) ?? null;
+  if (raw === undefined) return null;
+  // Own-property check only — `in` would match inherited keys like "toString".
+  return Object.prototype.hasOwnProperty.call(KNOWN_TIER_NAMES, raw)
+    ? (raw as SubscriptionTierName)
+    : null;
 }
 
 /** Tier-specific success-alert message, ported from legacy `getSuccessMessage`. */

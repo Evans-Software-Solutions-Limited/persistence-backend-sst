@@ -191,21 +191,26 @@ describe("SubscriptionSuccessContainer", () => {
     expect(screen.getByTestId("success-manage-clients")).toBeTruthy();
   });
 
-  it("ignores an unrecognised tier param and falls back to the query", async () => {
-    mockSearchParams = { tier: "not-a-real-tier" };
-    const { adapters } = makeAdapters(SUB_PREMIUM);
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSuccessContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByText(/premium subscription is now active/),
-      ).toBeTruthy(),
-    );
-    expect(screen.queryByTestId("success-manage-clients")).toBeNull();
-  });
+  it.each(["not-a-real-tier", "toString", "constructor"])(
+    "ignores an unrecognised tier param (%s) and falls back to the query",
+    async (badTier) => {
+      // "toString"/"constructor" guard the own-property check — a naive
+      // `raw in KNOWN_TIER_NAMES` would match inherited Object.prototype keys.
+      mockSearchParams = { tier: badTier };
+      const { adapters } = makeAdapters(SUB_PREMIUM);
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <SubscriptionSuccessContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByText(/premium subscription is now active/),
+        ).toBeTruthy(),
+      );
+      expect(screen.queryByTestId("success-manage-clients")).toBeNull();
+    },
+  );
 
   it("falls back to generic messaging when no subscription is loaded yet", async () => {
     // Post tier-simplification: defensive fallback is 'free' (basic
