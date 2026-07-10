@@ -116,7 +116,10 @@ export function Privacy() {
       <h2 style={headingStyle}>Contact</h2>
       <p>
         If you have any questions about this policy or your data, contact us at{" "}
-        <a href="mailto:hello@persistence.app">hello@persistence.app</a>.
+        <a href="mailto:admin@evans-software-solutions.com">
+          admin@evans-software-solutions.com
+        </a>
+        .
       </p>
     </main>
   );
