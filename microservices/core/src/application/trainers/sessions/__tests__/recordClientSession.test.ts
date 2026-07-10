@@ -66,7 +66,10 @@ const ARGS = {
 };
 
 /** The recorded-session stub recordSession resolves with. */
-function recordedStub(status: "completed" | "cancelled" = "completed") {
+function recordedStub(
+  status: "completed" | "cancelled" = "completed",
+  wasReplay = false,
+) {
   return {
     id: "s-1",
     userId: "client-1",
@@ -75,6 +78,7 @@ function recordedStub(status: "completed" | "cancelled" = "completed") {
     personalRecords: [],
     workoutsThisMonth: 1,
     exercises: [],
+    wasReplay,
   };
 }
 
@@ -185,6 +189,21 @@ describe("recordClientSessionOnBehalf", () => {
         relatedEntityId: "s-1",
       }),
     );
+  });
+
+  it("does NOT re-notify/streak/volume on an idempotent REPLAY (M13 — same completed session returned)", async () => {
+    // A retried on-behalf record (lost ack) short-circuits to the already-
+    // committed session: status "completed" but wasReplay true. Without the
+    // guard the sync queue's retries would re-fire the client push on every
+    // attempt.
+    recordSession.mockResolvedValue(recordedStub("completed", true));
+
+    const result = await recordClientSessionOnBehalf(ARGS);
+
+    expect(result.ok).toBe(true);
+    expect(safeEvaluateStreaks).not.toHaveBeenCalled();
+    expect(safeRecomputeVolume).not.toHaveBeenCalled();
+    expect(emitTrainerOnBehalfNotification).not.toHaveBeenCalled();
   });
 
   it("does NOT advance streaks/volume/notify for a cancelled (discarded) session", async () => {

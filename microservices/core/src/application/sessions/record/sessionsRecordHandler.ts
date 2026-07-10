@@ -134,7 +134,10 @@ export const sessionsRecordHandler = new Elysia()
       // Advance the workout streak for a completed session (STORY-006).
       // Cancelled sessions don't count. Fire-and-forget + error-tolerant:
       // the session + PRs already committed in the transaction above.
-      if (payload.status === "completed") {
+      // `!recorded.wasReplay` (M13): a retried record short-circuits to the
+      // already-committed session; streaks/volume are idempotent, but a replay
+      // has nothing new to freshen, so skip the redundant work.
+      if (payload.status === "completed" && !recorded.wasReplay) {
         // completedAt clamped to now (never future) so it can't skip the
         // streak past genuinely-missed periods (Inspector finding, PR #116).
         await safeEvaluateStreaks(
@@ -152,6 +155,9 @@ export const sessionsRecordHandler = new Elysia()
     },
     {
       body: t.Object({
+        // M13 sync-hardening: client-generated stable id for retry-dedup. See
+        // RecordSessionInput.clientSessionId. Optional — legacy clients omit it.
+        clientSessionId: t.Optional(t.Union([t.String(), t.Null()])),
         workoutId: t.Optional(t.Union([t.String(), t.Null()])),
         name: t.Optional(t.Union([t.String(), t.Null()])),
         startedAt: t.String(),

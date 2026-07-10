@@ -55,6 +55,9 @@ export const trainersMeRecordClientSessionHandler = new Elysia()
       // Reuses the self POST /sessions/record validator verbatim (cross-cuts
       // § 1.2 — same body shape as the self route).
       body: t.Object({
+        // M13 sync-hardening: retry-dedup id, scoped to the client's id (the
+        // on-behalf path passes clientId as user_id into recordSession).
+        clientSessionId: t.Optional(t.Union([t.String(), t.Null()])),
         workoutId: t.Optional(t.Union([t.String(), t.Null()])),
         name: t.Optional(t.Union([t.String(), t.Null()])),
         startedAt: t.String(),

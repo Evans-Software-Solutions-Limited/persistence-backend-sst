@@ -40,6 +40,15 @@ export interface SessionWithExercises extends WorkoutSession {
  * `specs/milestones/M3-active-session/BACKEND_BRIEF.md` § 7.
  */
 export interface RecordSessionInput {
+  /**
+   * M13 sync-hardening: a client-generated stable id (the mobile
+   * `active_sessions` local row id) used to make `POST /sessions/record`
+   * retry-safe. When supplied, a second record with the same
+   * `(userId, clientSessionId)` returns the first session instead of inserting
+   * a duplicate. Omitted by legacy clients / direct-API callers — those keep
+   * the pre-M13 non-deduped behaviour (each call inserts a fresh session).
+   */
+  clientSessionId?: string | null;
   workoutId?: string | null;
   name?: string | null;
   startedAt: string;
@@ -133,6 +142,17 @@ export interface RecordedSession extends WorkoutSession {
    * for established users.
    */
   workoutsThisMonth: number;
+  /**
+   * M13 sync-hardening: `true` when this response is an idempotent REPLAY of an
+   * already-recorded session (the client re-sent a `/sessions/record` with a
+   * `clientSessionId` that was already committed), `false` for a fresh record.
+   * Callers use this to skip NON-idempotent post-commit side effects on a
+   * replay — notably the coach on-behalf client notification/push, which would
+   * otherwise fire again on every retry. The in-tx effects (PR detection, the
+   * completed-only hook, the audit hook) are already skipped on the replay path
+   * because the transaction body itself is skipped.
+   */
+  wasReplay: boolean;
 }
 
 export class SessionRepository {
@@ -257,12 +277,21 @@ export class SessionRepository {
    * the entire session lands or none of it does. There's no
    * "session created but sets failed" intermediate state.
    *
-   * Idempotency: NOT replay-safe. Calling this twice for the same
-   * mobile-side session would create two DB sessions. The mobile sync
-   * worker is responsible for not retrying past success. (Distinct
-   * from `recordPRsForSession`, which IS idempotent on its own.)
+   * Idempotency (M13 sync-hardening): replay-safe WHEN the payload carries a
+   * `clientSessionId`. The mobile sync queue retries an ambiguously-failed
+   * flush (server committed but the ack was lost), so a retry with the same
+   * `(userId, clientSessionId)` returns the already-recorded session instead of
+   * inserting a duplicate — proven by the `workout_sessions_user_client_session_idx`
+   * unique index (a first-line SELECT for the common sequential retry, plus an
+   * `onConflictDoNothing` backstop for a concurrent double-submit). A replay is
+   * a no-op beyond returning the existing row: PR detection, the completed-only
+   * hook and the audit hook do NOT re-run (they already committed on the first
+   * write, and re-running them would double-count). Callers that omit
+   * `clientSessionId` (legacy clients / direct-API) keep the pre-M13 behaviour:
+   * every call inserts a fresh session.
    *
-   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § 7.
+   * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § 7,
+   * specs/milestones/M13-sync-hardening/BACKEND_BRIEF.md.
    */
   async recordSession(
     userId: string,
@@ -290,6 +319,44 @@ export class SessionRepository {
     const db = getDb();
 
     return db.transaction(async (tx) => {
+      // M13 dedup: find an already-recorded session for this stable client id.
+      // Returns undefined when no clientSessionId was supplied (legacy caller)
+      // or none exists yet. Reused by the sequential short-circuit (step 0) and
+      // the concurrent-race backstop below, so both share one query + the
+      // null-narrowing.
+      const clientSessionId = payload.clientSessionId ?? null;
+      const findExistingSessionId = async (): Promise<string | undefined> => {
+        if (!clientSessionId) return undefined;
+        const [row] = await tx
+          .select({ id: workoutSessions.id })
+          .from(workoutSessions)
+          .where(
+            and(
+              eq(workoutSessions.userId, userId),
+              eq(workoutSessions.clientSessionId, clientSessionId),
+            ),
+          )
+          .limit(1);
+        return row?.id;
+      };
+
+      // 0. Idempotency short-circuit (M13). If a session for
+      //    (userId, clientSessionId) already exists, this is a retry of an
+      //    already-committed record — return that session unchanged rather than
+      //    inserting a duplicate. Handles the common sequential retry (the sync
+      //    queue re-POSTs after an ambiguous failure). The concurrent
+      //    double-submit is caught by the onConflictDoNothing backstop below.
+      const existingSessionId = await findExistingSessionId();
+      if (existingSessionId) {
+        return this.buildRecordedSession(
+          tx,
+          userId,
+          existingSessionId,
+          [],
+          true,
+        );
+      }
+
       // 1. Insert the session root.
       //
       // `completedAt` is coalesced to "now" when status === 'completed'
@@ -316,13 +383,16 @@ export class SessionRepository {
           ? (completedAtFromPayload ?? new Date())
           : completedAtFromPayload;
 
-      const [session] = await tx
+      const insertedSessions = await tx
         .insert(workoutSessions)
         .values({
           userId,
           // Coach on-behalf records stamp the acting trainer here (M18); self
           // records leave it null.
           loggedByUserId: options?.loggedByUserId ?? null,
+          // M13: stable client id for retry-dedup (null for legacy callers —
+          // NULLs are distinct in the unique index so they never conflict).
+          clientSessionId,
           workoutId: payload.workoutId ?? null,
           name: payload.name ?? null,
           status: payload.status,
@@ -335,7 +405,33 @@ export class SessionRepository {
           difficultyRanking: payload.difficultyRanking ?? null,
           updatedAt: new Date(),
         } as NewWorkoutSession)
+        // M13 concurrent-submit backstop: two racing retries can both pass the
+        // step-0 SELECT before either inserts. The unique
+        // (user_id, client_session_id) index makes the loser's insert a no-op
+        // (returns []) instead of a duplicate; we then return the winner's row.
+        // A null clientSessionId never conflicts (NULLs are distinct), so legacy
+        // callers always get their fresh row back here.
+        .onConflictDoNothing({
+          target: [workoutSessions.userId, workoutSessions.clientSessionId],
+        })
         .returning();
+
+      if (insertedSessions.length === 0) {
+        // Lost the concurrent race — a racing retry with the same
+        // clientSessionId committed between our step-0 SELECT and this insert,
+        // and the unique (user_id, client_session_id) index made ours a no-op.
+        // Only reachable with a non-null clientSessionId (a null id never
+        // conflicts), so findExistingSessionId must resolve.
+        const winnerId = await findExistingSessionId();
+        if (!winnerId) {
+          throw new Error(
+            "recordSession: insert returned no row but no existing session found",
+          );
+        }
+        return this.buildRecordedSession(tx, userId, winnerId, [], true);
+      }
+
+      const session = insertedSessions[0];
 
       // 2. Insert each exercise + its sets in payload order. Sequential
       //    inserts within the tx — N round-trips inside one DB tx,
@@ -416,108 +512,117 @@ export class SessionRepository {
         await options.afterRecord(userId, session.id, tx);
       }
 
-      // 4. Re-fetch the full nested session inside the same tx so the
-      //    response reflects the post-PR-detection state — in
-      //    particular the `is_personal_record` flags step 3 just
-      //    flipped on canonical PR sets. The bare `.returning()`
-      //    snapshots from step 2 are pre-detection and would lie on
-      //    the wire (mobile relies on these flags for the Summary
-      //    screen's PR badge). Querying inside the tx guarantees we
-      //    see our own writes. Spec: BACKEND_BRIEF § 7 step 5.
-      const [refreshedSession] = await tx
-        .select()
-        .from(workoutSessions)
-        .where(eq(workoutSessions.id, session.id))
-        .limit(1);
-
-      const refreshedExercises = await tx
-        .select()
-        .from(sessionExercises)
-        .where(eq(sessionExercises.sessionId, session.id))
-        .orderBy(sessionExercises.sortOrder);
-
-      const exerciseIds = refreshedExercises.map((e) => e.id);
-      const refreshedSets =
-        exerciseIds.length === 0
-          ? []
-          : await tx
-              .select()
-              .from(exerciseSets)
-              .where(inArray(exerciseSets.sessionExerciseId, exerciseIds))
-              .orderBy(exerciseSets.setNumber);
-
-      const setsByExerciseId = new Map<string, ExerciseSet[]>();
-      for (const s of refreshedSets) {
-        const arr = setsByExerciseId.get(s.sessionExerciseId);
-        if (arr) arr.push(s);
-        else setsByExerciseId.set(s.sessionExerciseId, [s]);
-      }
-
-      // 5. Current-calendar-month completed-workout count for this
-      //    user, computed inside the same transaction so the COUNT(*)
-      //    sees the row we just inserted (when `status='completed'`).
-      //    Drives the legacy Summary screen's "Workouts this month"
-      //    stat + the subtitle "You've completed N workouts this
-      //    month. Keep the momentum going!"
-      //
-      //    Scoping rationale (Brad's call after the Phase 3b device
-      //    review): cumulative all-time count drifts upward
-      //    indefinitely and stops surfacing meaningful momentum after
-      //    the first few months. Scoping to the current month gives
-      //    established users a number that actually resets and grows
-      //    each session.
-      //
-      //    Filter:
-      //      * `status = 'completed'`              — same as before;
-      //                                              cancelled sessions
-      //                                              count themselves
-      //                                              out.
-      //      * `COALESCE(completed_at, created_at) >=
-      //        date_trunc('month', now())`         — month-start in the
-      //                                              database's
-      //                                              timezone. `COALESCE`
-      //                                              with `created_at`
-      //                                              catches any legacy
-      //                                              rows whose
-      //                                              `completed_at` is
-      //                                              NULL (those existed
-      //                                              under the pre-PR-3
-      //                                              all-time count
-      //                                              filter and would
-      //                                              otherwise silently
-      //                                              fall out of scope
-      //                                              now). Fresh writes
-      //                                              from this repo
-      //                                              always carry a non-
-      //                                              null completed_at
-      //                                              when status =
-      //                                              'completed' (see
-      //                                              insert above).
-      //                                              Matches dashboardRepository's
-      //                                              `workoutsThisMonth`
-      //                                              bucketing.
-      const [totalsRow] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(workoutSessions)
-        .where(
-          and(
-            eq(workoutSessions.userId, userId),
-            eq(workoutSessions.status, "completed"),
-            sql`COALESCE(${workoutSessions.completedAt}, ${workoutSessions.createdAt}) >= date_trunc('month', now())`,
-          ),
-        );
-      const workoutsThisMonth = totalsRow?.count ?? 0;
-
-      return {
-        ...refreshedSession,
-        exercises: refreshedExercises.map((e) => ({
-          ...e,
-          sets: setsByExerciseId.get(e.id) ?? [],
-        })),
-        personalRecords: personalRecordsForResponse,
-        workoutsThisMonth,
-      };
+      // 4-5. Re-fetch the full nested session + current-month count and shape
+      //      the response. Extracted into buildRecordedSession so the M13
+      //      idempotency short-circuit (step 0) and the concurrent-race
+      //      backstop return the identical shape for an already-recorded
+      //      session without duplicating the query logic.
+      return this.buildRecordedSession(
+        tx,
+        userId,
+        session.id,
+        personalRecordsForResponse,
+        false,
+      );
     });
+  }
+
+  /**
+   * Re-fetch a recorded session's canonical nested shape (post-PR-detection
+   * `is_personal_record` flags included) plus the user's current-calendar-month
+   * completed count, and assemble the {@link RecordedSession} response. Runs
+   * inside the caller's transaction so it sees the caller's own writes.
+   *
+   * Shared by three paths in {@link recordSession}: the normal insert, the M13
+   * idempotency short-circuit (a sequential retry), and the M13 concurrent-race
+   * backstop. `personalRecords` is passed through from the caller — the normal
+   * path supplies the freshly-detected PRs; the two replay paths pass `[]`
+   * because a replay must not re-surface PRs the first response already carried.
+   */
+  private async buildRecordedSession(
+    tx: DbTransaction,
+    userId: string,
+    sessionId: string,
+    personalRecords: DetectedPersonalRecord[],
+    wasReplay: boolean,
+  ): Promise<RecordedSession> {
+    // Re-fetch the full nested session inside the same tx so the response
+    // reflects the post-PR-detection state — in particular the
+    // `is_personal_record` flags PR detection flips on canonical PR sets. The
+    // bare `.returning()` snapshots from the insert are pre-detection and would
+    // lie on the wire (mobile relies on these flags for the Summary screen's PR
+    // badge). Querying inside the tx guarantees we see our own writes.
+    const [refreshedSession] = await tx
+      .select()
+      .from(workoutSessions)
+      .where(eq(workoutSessions.id, sessionId))
+      .limit(1);
+
+    const refreshedExercises = await tx
+      .select()
+      .from(sessionExercises)
+      .where(eq(sessionExercises.sessionId, sessionId))
+      .orderBy(sessionExercises.sortOrder);
+
+    const exerciseIds = refreshedExercises.map((e) => e.id);
+    const refreshedSets =
+      exerciseIds.length === 0
+        ? []
+        : await tx
+            .select()
+            .from(exerciseSets)
+            .where(inArray(exerciseSets.sessionExerciseId, exerciseIds))
+            .orderBy(exerciseSets.setNumber);
+
+    const setsByExerciseId = new Map<string, ExerciseSet[]>();
+    for (const s of refreshedSets) {
+      const arr = setsByExerciseId.get(s.sessionExerciseId);
+      if (arr) arr.push(s);
+      else setsByExerciseId.set(s.sessionExerciseId, [s]);
+    }
+
+    // Current-calendar-month completed-workout count for this user, computed
+    // inside the same transaction so the COUNT(*) sees the row we just inserted
+    // (when `status='completed'`). Drives the legacy Summary screen's "Workouts
+    // this month" stat + the subtitle "You've completed N workouts this month.
+    // Keep the momentum going!"
+    //
+    // Scoping rationale (Brad's call after the Phase 3b device review):
+    // cumulative all-time count drifts upward indefinitely and stops surfacing
+    // meaningful momentum after the first few months. Scoping to the current
+    // month gives established users a number that actually resets and grows each
+    // session.
+    //
+    // Filter:
+    //   * `status = 'completed'`  — cancelled sessions count themselves out.
+    //   * `COALESCE(completed_at, created_at) >= date_trunc('month', now())` —
+    //     month-start in the DB timezone. COALESCE with created_at catches any
+    //     legacy rows whose completed_at is NULL (they existed under the pre-PR-3
+    //     all-time filter and would otherwise fall out of scope now). Fresh
+    //     writes always carry a non-null completed_at when status = 'completed'.
+    //     Matches dashboardRepository's `workoutsThisMonth` bucketing.
+    const [totalsRow] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(workoutSessions)
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.status, "completed"),
+          sql`COALESCE(${workoutSessions.completedAt}, ${workoutSessions.createdAt}) >= date_trunc('month', now())`,
+        ),
+      );
+    const workoutsThisMonth = totalsRow?.count ?? 0;
+
+    return {
+      ...refreshedSession,
+      exercises: refreshedExercises.map((e) => ({
+        ...e,
+        sets: setsByExerciseId.get(e.id) ?? [],
+      })),
+      personalRecords,
+      workoutsThisMonth,
+      wasReplay,
+    };
   }
 
   async update(
