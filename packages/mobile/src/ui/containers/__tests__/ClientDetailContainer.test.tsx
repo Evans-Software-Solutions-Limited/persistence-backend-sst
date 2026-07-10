@@ -47,6 +47,8 @@ jest.mock("@/ui/presenters/coach/ClientDetailPresenter", () => ({
     mockCaptured.props = props;
     return null;
   },
+  // The container imports initialsOf for the Start-live client ref fallback.
+  initialsOf: (name: string) => name.slice(0, 2).toUpperCase(),
 }));
 
 // These imports resolve the mocked modules above, so they must follow the
@@ -446,6 +448,40 @@ describe("ClientDetailContainer — populated", () => {
     expect(s.clientId).toBe("client-1");
     expect(s.assignmentId).toBe("wa-1");
     expect(s.currentName).toBe("Push Day");
+  });
+
+  it("onStartSession navigates to the active-session screen with the client ref (M18 Start-live)", async () => {
+    mockPush.mockClear();
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientWorkoutAssignments["client-1"] = [
+      {
+        assignmentId: "wa-1",
+        workoutId: "w-1",
+        name: "Push Day",
+        estimatedDurationMinutes: 45,
+        dueDate: "2026-07-12",
+        status: "assigned",
+        isProgrammeOccurrence: false,
+        occurrenceIndex: null,
+        isSwapped: false,
+      },
+    ];
+    renderWith(adapters);
+    await waitFor(() => expect(props().assignments).toHaveLength(1));
+
+    props().onStartSession(props().assignments[0]);
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/session",
+      params: {
+        workoutId: "w-1",
+        clientId: "client-1",
+        clientName: "Jordan",
+        // fullDetail's client.initials is preferred over the derived fallback.
+        clientInitials: expect.any(String),
+      },
+    });
   });
 
   it("onAssignProgramme + onAssignWorkout open their sheets", async () => {

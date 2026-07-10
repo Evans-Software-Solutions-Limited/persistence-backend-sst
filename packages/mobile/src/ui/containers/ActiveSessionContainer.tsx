@@ -41,6 +41,7 @@ import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
 import {
   activeWorkoutElapsedSeconds,
+  pointerFromSession,
   useActiveWorkout,
 } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
@@ -70,6 +71,12 @@ export function ActiveSessionContainer() {
   const params = useLocalSearchParams<{
     workoutId?: string;
     sessionId?: string;
+    // M18 coach Start-live — present only when a coach opens a client's session
+    // from the Client Detail "Upcoming sessions" card. Seeds the trainer banner
+    // + on-behalf record routing (carried on the useActiveWorkout pointer).
+    clientId?: string;
+    clientName?: string;
+    clientInitials?: string;
   }>();
   const requestedWorkoutId = params.workoutId ?? null;
 
@@ -130,11 +137,29 @@ export function ActiveSessionContainer() {
         { storage, generateId, userId },
         { workout: detail.workout },
       );
-      // ACTIVE_SESSION_EXISTS is handled by the resume prompt (commit
-      // 9). For a direct route, we silently fall through — the existing
-      // session is already in cache and the next rereadCache picks it
-      // up.
-      void result;
+      // Coach Start-live (M18): seed the on-behalf client context onto the
+      // useActiveWorkout pointer so the trainer banner renders and the finalize
+      // path routes the flush to the on-behalf record endpoint. `start()`
+      // persists the pointer (incl. withClient) to AsyncStorage, so the coach
+      // context survives a force-quit → rehydrate. The `result.ok` guard is
+      // both type-narrowing (for `result.value`) and defensive — the outer
+      // `if (session) return` above already subsumes the existing-session case,
+      // so a NEW session is created here in practice.
+      if (params.clientId && result.ok) {
+        useActiveWorkout.getState().start(
+          pointerFromSession(result.value, {
+            withClient: {
+              id: params.clientId,
+              name: params.clientName ?? "",
+              initials: params.clientInitials ?? "",
+            },
+            retroactive: false,
+          }),
+        );
+      }
+      // ACTIVE_SESSION_EXISTS is otherwise handled by the resume prompt
+      // (commit 9). For a direct route, we silently fall through — the existing
+      // session is already in cache and the next rereadCache picks it up.
       rereadCache();
       return;
     }
@@ -151,6 +176,9 @@ export function ActiveSessionContainer() {
     storage,
     generateId,
     rereadCache,
+    params.clientId,
+    params.clientName,
+    params.clientInitials,
   ]);
 
   // Rest timer is owned at the container level so the screen surface
@@ -545,7 +573,11 @@ export function ActiveSessionContainer() {
   const onConfirmEnd = useCallback(() => {
     setEndConfirmVisible(false);
     if (!userId) return;
-    cancelSessionCommand({ storage, userId });
+    // Coach Start-live: a discarded client session records (cancelled) on the
+    // client's behalf so the write stays scoped to the client + audited.
+    const onBehalfClientId =
+      useActiveWorkout.getState().active?.withClient?.id ?? null;
+    cancelSessionCommand({ storage, userId }, { onBehalfClientId });
     // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
     // overlay's end path. Without this, slice.active + the AsyncStorage pointer
     // dangle until the next launch's orphan reconciliation; and a stale

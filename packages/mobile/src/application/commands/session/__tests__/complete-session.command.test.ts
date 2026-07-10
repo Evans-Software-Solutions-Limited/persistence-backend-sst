@@ -241,6 +241,29 @@ describe("completeSessionCommand", () => {
     const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
     expect(recent["ex-bench"]).toBeUndefined();
   });
+
+  // ── M18 coach Start-live — on-behalf endpoint routing ─────────────────────
+  it("routes the flush to the self /sessions/record endpoint by default", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    completeSessionCommand({ storage, userId: "user-1", now });
+    expect(storage.getPendingMutations()[0].endpoint).toBe("/sessions/record");
+  });
+
+  it("routes the flush to the on-behalf endpoint when onBehalfClientId is set", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    completeSessionCommand(
+      { storage, userId: "user-1", now },
+      { onBehalfClientId: "client-9" },
+    );
+    const queue = storage.getPendingMutations();
+    expect(queue[0].endpoint).toBe(
+      "/trainers/me/clients/client-9/sessions/record",
+    );
+    // Same payload shape — the endpoint is the only thing that changes.
+    const payload = JSON.parse(queue[0].payload);
+    expect(payload.status).toBe("completed");
+    expect(payload.exercises).toHaveLength(1);
+  });
 });
 
 describe("cancelSessionCommand", () => {
@@ -277,6 +300,19 @@ describe("cancelSessionCommand", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("SESSION_NOT_FOUND");
+  });
+
+  it("routes a discarded coach session to the on-behalf endpoint (cancelled)", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    cancelSessionCommand(
+      { storage, userId: "user-1", now },
+      { onBehalfClientId: "client-9" },
+    );
+    const queue = storage.getPendingMutations();
+    expect(queue[0].endpoint).toBe(
+      "/trainers/me/clients/client-9/sessions/record",
+    );
+    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
   });
 });
 

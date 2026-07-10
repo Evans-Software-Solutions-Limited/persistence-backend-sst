@@ -7,6 +7,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { WorkoutRatingContainer } from "@/ui/containers/WorkoutRatingContainer";
+import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 jest.setTimeout(15_000);
@@ -50,11 +51,13 @@ function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
 
 const mockRouterBack = jest.fn();
 const mockRouterReplace = jest.fn();
+const mockRouterDismissAll = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: {
     back: (...args: unknown[]) => mockRouterBack(...args),
     replace: (...args: unknown[]) => mockRouterReplace(...args),
+    dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
   },
 }));
 
@@ -273,6 +276,48 @@ describe("WorkoutRatingContainer", () => {
         .getPendingMutations()
         .some((e) => e.endpoint === "/sessions/record"),
     ).toBe(true);
+  });
+
+  it("coach Start-live: routes the flush on-behalf, clears the session, and returns to Client Detail (no summary)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seed(storage);
+    // Seed the coach on-behalf context onto the pointer (as ActiveSessionContainer
+    // does on a coach start).
+    useActiveWorkout.getState().start({
+      sessionId: "local-1",
+      workoutId: "wk-1",
+      name: "Push Day",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      withClient: { id: "client-9", name: "Jordan", initials: "JB" },
+      retroactive: false,
+    });
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage)}>
+        <WorkoutRatingContainer />
+      </AdapterProvider>,
+    );
+
+    fireEvent.press(await findByTestId("workout-rating-8"));
+    fireEvent.press(await findByTestId("workout-rating-submit"));
+
+    // The flush POSTs to the on-behalf record endpoint, not the self one.
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/trainers/me/clients/client-9/sessions/record",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    // Coach returns to Client Detail via dismissAll — NOT the athlete summary.
+    await waitFor(() => expect(mockRouterDismissAll).toHaveBeenCalled());
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+    // Local session cleared so no ghost bar lingers.
+    expect(storage.getActiveSession("user-1")).toBeNull();
+
+    // Cleanup the shared store so other tests start clean.
+    await useActiveWorkout.getState().end();
   });
 
   it("Back button calls router.back", async () => {

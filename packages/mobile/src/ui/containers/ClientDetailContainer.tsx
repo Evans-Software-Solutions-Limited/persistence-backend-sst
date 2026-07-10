@@ -16,7 +16,10 @@ import {
 } from "@/state/edit-nutrition-targets-sheet";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { CoachClientAssignment } from "@/domain/ports/api.port";
-import { ClientDetailPresenter } from "@/ui/presenters/coach/ClientDetailPresenter";
+import {
+  ClientDetailPresenter,
+  initialsOf,
+} from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
 
@@ -266,6 +269,28 @@ export function ClientDetailContainer() {
     [id, openSwap, refreshAll],
   );
 
+  // M18 Start-live: open the athlete active-session UI on the COACH's device in
+  // withClient mode, seeded from the assignment's workout. The client ref is
+  // carried as route params → ActiveSessionContainer promotes it onto the
+  // useActiveWorkout pointer on start (banner + on-behalf record routing).
+  const onStartSession = useCallback(
+    (assignment: CoachClientAssignment) => {
+      if (!id) return;
+      const clientInitials =
+        detail.data?.client.initials ?? (name ? initialsOf(name) : "?");
+      router.push({
+        pathname: "/(app)/session",
+        params: {
+          workoutId: assignment.workoutId,
+          clientId: id,
+          clientName: name ?? "",
+          clientInitials,
+        },
+      } as never);
+    },
+    [id, name, detail.data, router],
+  );
+
   const onAddNote = useCallback(() => {
     if (!id) return;
     openNoteCreate(id, refreshAll);
@@ -300,6 +325,7 @@ export function ClientDetailContainer() {
       onAssignGoal={onAssignGoal}
       onSendBrief={onSendBrief}
       onSwapWorkout={onSwapWorkout}
+      onStartSession={onStartSession}
       onEditGoal={onEditGoal}
       onOpenProgramme={onOpenProgramme}
       onAssignProgramme={onAssignProgramme}
