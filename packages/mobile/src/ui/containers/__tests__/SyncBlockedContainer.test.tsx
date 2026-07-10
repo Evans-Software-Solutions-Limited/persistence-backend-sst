@@ -286,7 +286,7 @@ describe("SyncBlockedContainer", () => {
     fireEvent.press(screen.getByTestId("sync-blocked-contact-no-upgrade"));
     expect(alertSpy).toHaveBeenCalledWith(
       "Contact support",
-      expect.stringContaining("support@persistence.app"),
+      expect.stringContaining("admin@evans-software-solutions.com"),
     );
     alertSpy.mockRestore();
   });

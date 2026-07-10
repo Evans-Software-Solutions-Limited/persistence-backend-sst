@@ -80,7 +80,10 @@ export function Terms() {
       <h2 style={headingStyle}>Contact</h2>
       <p>
         Questions about these terms can be sent to{" "}
-        <a href="mailto:hello@persistence.app">hello@persistence.app</a>.
+        <a href="mailto:admin@evans-software-solutions.com">
+          admin@evans-software-solutions.com
+        </a>
+        .
       </p>
     </main>
   );

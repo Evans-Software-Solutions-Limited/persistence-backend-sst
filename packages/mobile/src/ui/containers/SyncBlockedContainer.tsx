@@ -116,7 +116,7 @@ export function SyncBlockedContainer() {
   const onContactSupport = useCallback(() => {
     Alert.alert(
       "Contact support",
-      "You're already on our top tier. Email support@persistence.app and we'll help you sort this out.",
+      "You're already on our top tier. Email admin@evans-software-solutions.com and we'll help you sort this out.",
     );
   }, []);
 
