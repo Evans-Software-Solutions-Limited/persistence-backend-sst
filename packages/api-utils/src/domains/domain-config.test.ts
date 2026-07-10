@@ -43,6 +43,21 @@ describe("domain-config", () => {
       expect(getDomainConfig("feature-active-session").apiHost).toBeNull();
     });
 
+    it("returns the apex {BASE_DOMAIN} as the web host for production", () => {
+      expect(getDomainConfig("production").webHost).toBe(BASE_DOMAIN);
+    });
+
+    it("returns staging.{BASE_DOMAIN} as the web host for staging", () => {
+      expect(getDomainConfig("staging").webHost).toBe(`staging.${BASE_DOMAIN}`);
+    });
+
+    it("returns null webHost for dev / personal / unknown stages", () => {
+      expect(getDomainConfig("dev").webHost).toBeNull();
+      expect(getDomainConfig("brad").webHost).toBeNull();
+      expect(getDomainConfig("pr-42").webHost).toBeNull();
+      expect(getDomainConfig("feature-active-session").webHost).toBeNull();
+    });
+
     it("returns the production zone ID for production", () => {
       // Parent zone evans-software-solutions.com in the ESS production
       // AWS account.
