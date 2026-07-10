@@ -144,20 +144,34 @@ export function IOSPurchaseFlowContainer() {
       try {
         const result = await purchaseMutation.mutateAsync(pkg.packageId);
         // result is the active-entitlement snapshot; server truth lands via
-        // the RC webhook and useMySubscription reconciles. Navigate to the
-        // shared success screen exactly as the Stripe path does.
+        // the RC webhook and useMySubscription reconciles. Pass the purchased
+        // tier to the success screen so it renders the correct plan (and the
+        // trainer "Manage Clients" CTA) immediately — the async webhook often
+        // hasn't upserted `user_subscriptions` by the time the success screen
+        // refetches `/subscriptions/me`, so relying on that read alone shows
+        // the stale (free) tier. Unlike the Stripe path (synchronous server
+        // write), the IAP path must bridge the on-device truth forward.
         void result;
-        router.push("/(auth)/success" as Href);
+        router.push(`/(auth)/success?tier=${tier}` as Href);
       } catch (err) {
         const error = err as { kind?: string; message?: string };
         // User dismissed the native sheet — silent (no alert), matching the
         // Stripe cancel parity.
-        if (error.kind !== "cancelled") {
+        if (error.kind === "cancelled") return;
+        // Deferred purchase (Ask to Buy / SCA): not a failure. Reassure the
+        // user rather than showing a "Purchase Error", and don't navigate —
+        // the entitlement isn't active until the purchase is approved.
+        if (error.kind === "pending") {
           Alert.alert(
-            "Purchase Error",
-            error.message ?? "Something went wrong. Please try again.",
+            "Purchase Pending",
+            "Your purchase is awaiting approval. It'll activate automatically once approved.",
           );
+          return;
         }
+        Alert.alert(
+          "Purchase Error",
+          error.message ?? "Something went wrong. Please try again.",
+        );
       } finally {
         setIsProcessing(false);
       }

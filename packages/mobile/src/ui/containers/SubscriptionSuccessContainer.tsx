@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
 import { useUserMode } from "@/state/user-mode";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
@@ -32,11 +32,7 @@ export function getSubscriptionBenefits(
     },
   ];
 
-  if (
-    tier.includes("trainer") ||
-    tier.includes("business") ||
-    tier.includes("enterprise")
-  ) {
+  if (isTrainerTierName(tier)) {
     benefits.push({
       icon: "people",
       title: "Client Management",
@@ -46,11 +42,7 @@ export function getSubscriptionBenefits(
 
   // Post tier-simplification: all surviving trainer tiers carry the
   // former Pro entitlements (AI Buddy etc.). Was `_pro` suffix-checked.
-  if (
-    tier.includes("trainer") ||
-    tier.includes("business") ||
-    tier.includes("enterprise")
-  ) {
+  if (isTrainerTierName(tier)) {
     benefits.push({
       icon: "sparkles",
       title: "AI Analytics & Gym Buddy",
@@ -62,13 +54,30 @@ export function getSubscriptionBenefits(
   return benefits;
 }
 
-/** Tier-specific success-alert message, ported from legacy `getSuccessMessage`. */
-export function getSuccessMessage(tier: SubscriptionTierName): string {
-  if (
+/** The tier names that unlock coach mode + the trainer CTA. */
+function isTrainerTierName(tier: SubscriptionTierName): boolean {
+  return (
     tier.includes("trainer") ||
     tier.includes("business") ||
     tier.includes("enterprise")
-  ) {
+  );
+}
+
+/** Narrow a raw route param to a known tier name (or null). */
+function parseTierParam(raw: string | undefined): SubscriptionTierName | null {
+  const known: SubscriptionTierName[] = [
+    "free",
+    "premium",
+    "individual_trainer",
+    "small_business",
+    "medium_enterprise",
+  ];
+  return known.find((t) => t === raw) ?? null;
+}
+
+/** Tier-specific success-alert message, ported from legacy `getSuccessMessage`. */
+export function getSuccessMessage(tier: SubscriptionTierName): string {
+  if (isTrainerTierName(tier)) {
     return "Your trainer subscription is now active! You can start managing clients and building your fitness business.";
   }
   if (tier === "premium") {
@@ -79,14 +88,24 @@ export function getSuccessMessage(tier: SubscriptionTierName): string {
 
 export function SubscriptionSuccessContainer() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tier?: string }>();
   const subQuery = useMySubscription();
   const setEligibility = useUserMode((s) => s.setEligibility);
   const switchTo = useUserMode((s) => s.switchTo);
-  // Post tier-simplification: 'free' is the safe defensive fallback
-  // (basic no longer exists). The success screen only mounts after a
-  // successful checkout so subscription data should always be present.
-  const tierName: SubscriptionTierName = subQuery.data?.tierName ?? "free";
-  const isTrainerTier = subQuery.data?.isTrainerTier ?? false;
+  // The iOS IAP path passes the just-purchased tier as a route param because
+  // its entitlement lands server-side via an ASYNC RevenueCat webhook — the
+  // `/subscriptions/me` refetch here usually wins the race against the webhook
+  // and would otherwise show the stale (free) tier + hide the trainer CTA.
+  // Prefer the param when present; fall back to the query for the Stripe path
+  // (which writes the subscription row synchronously, so its read is fresh).
+  // Post tier-simplification: 'free' is the safe defensive fallback.
+  const purchasedTier = parseTierParam(params.tier);
+  const tierName: SubscriptionTierName =
+    purchasedTier ?? subQuery.data?.tierName ?? "free";
+  const isTrainerTier =
+    purchasedTier !== null
+      ? isTrainerTierName(purchasedTier)
+      : (subQuery.data?.isTrainerTier ?? false);
 
   const successMessage = useMemo(() => getSuccessMessage(tierName), [tierName]);
   const benefits = useMemo(() => getSubscriptionBenefits(tierName), [tierName]);

@@ -29,8 +29,10 @@ import {
 } from "@/ui/containers/SubscriptionSuccessContainer";
 
 const mockReplace = jest.fn();
+let mockSearchParams: Record<string, string | undefined> = {};
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn(), back: jest.fn() }),
+  useLocalSearchParams: () => mockSearchParams,
 }));
 
 function makeAdapters(sub: MySubscription | null): {
@@ -111,6 +113,7 @@ const SUB_PREMIUM: MySubscription = {
 
 beforeEach(() => {
   mockReplace.mockReset();
+  mockSearchParams = {};
   useUserMode.setState({
     mode: "athlete",
     isTrainerEligible: false,
@@ -164,6 +167,44 @@ describe("SubscriptionSuccessContainer", () => {
     );
     expect(useUserMode.getState().isTrainerEligible).toBe(true);
     expect(useUserMode.getState().mode).toBe("coach");
+  });
+
+  it("prefers the purchased-tier route param over a stale subscription query (iOS webhook race)", async () => {
+    // Simulate the IAP race: the RC webhook hasn't upserted user_subscriptions
+    // yet, so /subscriptions/me still reports free. The success screen must
+    // still render the purchased trainer tier (from the route param) and show
+    // the Manage Clients CTA — not the stale free content.
+    mockSearchParams = { tier: "individual_trainer" };
+    const freeSub: MySubscription = {
+      ...SUB_PREMIUM,
+      tierName: "free",
+      isTrainerTier: false,
+      role: "user",
+    };
+    const { adapters } = makeAdapters(freeSub);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSuccessContainer />
+      </Wrapper>,
+    );
+    expect(screen.getByText(/trainer subscription is now active/)).toBeTruthy();
+    expect(screen.getByTestId("success-manage-clients")).toBeTruthy();
+  });
+
+  it("ignores an unrecognised tier param and falls back to the query", async () => {
+    mockSearchParams = { tier: "not-a-real-tier" };
+    const { adapters } = makeAdapters(SUB_PREMIUM);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSuccessContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/premium subscription is now active/),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("success-manage-clients")).toBeNull();
   });
 
   it("falls back to generic messaging when no subscription is loaded yet", async () => {

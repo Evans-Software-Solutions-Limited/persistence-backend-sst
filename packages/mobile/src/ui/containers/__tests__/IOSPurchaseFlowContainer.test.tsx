@@ -189,7 +189,36 @@ describe("IOSPurchaseFlowContainer", () => {
     await waitFor(() =>
       expect(purchases.purchaseCalls).toEqual(["$rc_monthly"]),
     );
-    expect(mockPush).toHaveBeenCalledWith("/(auth)/success");
+    // The purchased tier is threaded to the success screen so it renders the
+    // correct plan immediately (the RC webhook lags the /subscriptions/me read).
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
+  });
+
+  it("deferred (Ask to Buy) purchase shows a pending notice, not an error, and does not navigate", async () => {
+    const { adapters, purchases } = makeAdapters();
+    purchases.nextPurchaseResponse = {
+      ok: false,
+      error: {
+        kind: "pending",
+        code: "PAYMENT_PENDING_ERROR",
+        message: "The payment is pending.",
+      },
+    };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
+    });
+    await waitFor(() => expect(purchases.purchaseCalls).toHaveLength(1));
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Purchase Pending",
+      expect.stringContaining("awaiting approval"),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("alerts (no crash) when a tier has no Apple product for the cycle", async () => {
