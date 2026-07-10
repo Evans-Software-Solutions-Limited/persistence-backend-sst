@@ -597,30 +597,48 @@ export const workoutExercises = pgTable("workout_exercises", {
 
 // ─── Workout Sessions ──────────────────────────────────────────────────────────
 
-export const workoutSessions = pgTable("workout_sessions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "cascade" }),
-  workoutId: uuid("workout_id").references(() => workouts.id, {
-    onDelete: "set null",
-  }),
-  // M4 / cross-cuts § 1.1: NULL = self-logged; non-NULL = trainer logged on
-  // behalf of user_id. M8 populates. Migration in m4_progress_schema.sql.
-  loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
-  name: text("name"),
-  status: sessionStatusEnum("status").default("in_progress"),
-  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  totalDurationSeconds: integer("total_duration_seconds"),
-  userNotes: text("user_notes"),
-  trainerFeedback: text("trainer_feedback"),
-  sessionRating: integer("session_rating"),
-  overallRpe: integer("overall_rpe"),
-  difficultyRanking: integer("difficulty_ranking"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+export const workoutSessions = pgTable(
+  "workout_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    workoutId: uuid("workout_id").references(() => workouts.id, {
+      onDelete: "set null",
+    }),
+    // M4 / cross-cuts § 1.1: NULL = self-logged; non-NULL = trainer logged on
+    // behalf of user_id. M8 populates. Migration in m4_progress_schema.sql.
+    loggedByUserId: uuid("logged_by_user_id").references(() => profiles.id),
+    // M13 sync-hardening: client-generated stable id (the mobile
+    // `active_sessions` local row id) for `POST /sessions/record` retry-dedup.
+    // NULL for legacy / direct-API writes that don't supply one — NULLs are
+    // distinct in a Postgres unique index, so existing rows never collide.
+    clientSessionId: text("client_session_id"),
+    name: text("name"),
+    status: sessionStatusEnum("status").default("in_progress"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    totalDurationSeconds: integer("total_duration_seconds"),
+    userNotes: text("user_notes"),
+    trainerFeedback: text("trainer_feedback"),
+    sessionRating: integer("session_rating"),
+    overallRpe: integer("overall_rpe"),
+    difficultyRanking: integer("difficulty_ranking"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    // M13 sync-hardening: dedup a retried `/sessions/record` submit. Scoped to
+    // the session owner (the on-behalf path passes the client's id as user_id),
+    // so a coach recording for two clients never collides. NULLs are distinct →
+    // no backfill needed for the historical rows.
+    uniqueIndex("workout_sessions_user_client_session_idx").on(
+      t.userId,
+      t.clientSessionId,
+    ),
+  ],
+);
 
 export const sessionExercises = pgTable("session_exercises", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -113,7 +113,16 @@ export async function recordClientSessionOnBehalf({
 
   // Post-commit, completed only: mirror the self handler's streak + volume
   // freshening (scoped to the CLIENT), then a best-effort client notification.
-  if (recorded.status === "completed") {
+  //
+  // `!recorded.wasReplay` guard (M13): a retried on-behalf record (same
+  // clientSessionId, lost ack) short-circuits to the already-committed session
+  // — its status is still "completed", so without this guard the sync queue's
+  // retries would re-fire the client notification/push ("your coach logged a
+  // workout") on EVERY attempt. `emitTrainerOnBehalfNotification` is not
+  // idempotent (it inserts a fresh notification row + dispatches a new push),
+  // so it must run only for a genuinely-new record. Streaks/volume are
+  // idempotent, but skip them too — a replay changes nothing to re-freshen.
+  if (recorded.status === "completed" && !recorded.wasReplay) {
     await safeEvaluateStreaks(
       clientId,
       "workout_logged",

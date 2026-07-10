@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getTableConfig } from "drizzle-orm/pg-core";
+import { workoutSessions } from "@persistence/db";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -734,17 +736,24 @@ describe("SessionRepository", () => {
         insert: vi.fn().mockImplementation(() => {
           const chain: any = {
             values: vi.fn().mockImplementation(() => {
-              // Two insert shapes inside recordSession:
-              //   - workoutSessions  (returning() → [session])
+              // Three insert shapes inside recordSession:
+              //   - workoutSessions  (M13: .onConflictDoNothing().returning() → [session])
               //   - sessionExercises (returning({ id }) → [{ id }])
               //   - exerciseSets     (no returning() — just resolves)
-              return {
-                returning: vi.fn().mockImplementation((selection?: any) => {
+              const returning = vi
+                .fn()
+                .mockImplementation((selection?: any) => {
                   if (selection && "id" in selection) {
                     return Promise.resolve([{ id: refreshed.exercises[0].id }]);
                   }
                   return Promise.resolve([refreshed.session]);
-                }),
+                });
+              return {
+                returning,
+                // M13 idempotency: the workout_sessions insert chains
+                // .onConflictDoNothing() before .returning(). It resolves to the
+                // inserted row here (no conflict in the happy path).
+                onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
                 // exerciseSets insert call has no .returning() chain;
                 // tx.insert(...).values(...) is awaited directly.
                 then: (resolve: (v: unknown) => unknown) =>
@@ -1204,13 +1213,16 @@ describe("SessionRepository", () => {
         values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
           insertCallValues.push(v);
           if (insertCallValues.length === 1) capturedValues = v;
+          const returning = vi.fn().mockImplementation((selection?: any) => {
+            if (selection && "id" in selection) {
+              return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+            }
+            return Promise.resolve([refreshed.session]);
+          });
           return {
-            returning: vi.fn().mockImplementation((selection?: any) => {
-              if (selection && "id" in selection) {
-                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
-              }
-              return Promise.resolve([refreshed.session]);
-            }),
+            returning,
+            // M13: the workout_sessions insert chains .onConflictDoNothing().
+            onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
             then: (resolve: (v: unknown) => unknown) =>
               Promise.resolve(undefined).then(resolve),
           };
@@ -1287,13 +1299,16 @@ describe("SessionRepository", () => {
         values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
           insertCallValues.push(v);
           if (insertCallValues.length === 1) capturedValues = v;
+          const returning = vi.fn().mockImplementation((selection?: any) => {
+            if (selection && "id" in selection) {
+              return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+            }
+            return Promise.resolve([refreshed.session]);
+          });
           return {
-            returning: vi.fn().mockImplementation((selection?: any) => {
-              if (selection && "id" in selection) {
-                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
-              }
-              return Promise.resolve([refreshed.session]);
-            }),
+            returning,
+            // M13: the workout_sessions insert chains .onConflictDoNothing().
+            onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
             then: (resolve: (v: unknown) => unknown) =>
               Promise.resolve(undefined).then(resolve),
           };
@@ -1360,13 +1375,16 @@ describe("SessionRepository", () => {
         values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
           insertCallValues.push(v);
           if (insertCallValues.length === 1) capturedValues = v;
+          const returning = vi.fn().mockImplementation((selection?: any) => {
+            if (selection && "id" in selection) {
+              return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+            }
+            return Promise.resolve([refreshed.session]);
+          });
           return {
-            returning: vi.fn().mockImplementation((selection?: any) => {
-              if (selection && "id" in selection) {
-                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
-              }
-              return Promise.resolve([refreshed.session]);
-            }),
+            returning,
+            // M13: the workout_sessions insert chains .onConflictDoNothing().
+            onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
             then: (resolve: (v: unknown) => unknown) =>
               Promise.resolve(undefined).then(resolve),
           };
@@ -1427,13 +1445,16 @@ describe("SessionRepository", () => {
         values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
           insertCallValues.push(v);
           if (insertCallValues.length === 1) capturedValues = v;
+          const returning = vi.fn().mockImplementation((selection?: any) => {
+            if (selection && "id" in selection) {
+              return Promise.resolve([{ id: refreshed.exercises[0].id }]);
+            }
+            return Promise.resolve([refreshed.session]);
+          });
           return {
-            returning: vi.fn().mockImplementation((selection?: any) => {
-              if (selection && "id" in selection) {
-                return Promise.resolve([{ id: refreshed.exercises[0].id }]);
-              }
-              return Promise.resolve([refreshed.session]);
-            }),
+            returning,
+            // M13: the workout_sessions insert chains .onConflictDoNothing().
+            onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
             then: (resolve: (v: unknown) => unknown) =>
               Promise.resolve(undefined).then(resolve),
           };
@@ -1552,6 +1573,293 @@ describe("SessionRepository", () => {
       expect(afterCompletedRecord).not.toHaveBeenCalled();
       // …but the unconditional audit hook still fires.
       expect(afterRecord).toHaveBeenCalledWith("client-1", "s-cx", tx);
+    });
+
+    describe("idempotency (M13 sync-hardening)", () => {
+      // Non-empty exercises/sets so buildRecordedSession always issues the same
+      // four reads (session, exercises, sets, count) — the sets read is skipped
+      // only when there are zero exercises.
+      const idemRefreshed = {
+        session: {
+          id: "s-existing",
+          userId: "u1",
+          workoutId: "w1",
+          name: "Push Day",
+          status: "completed",
+          clientSessionId: "local-abc",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se-x",
+            sessionId: "s-existing",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [
+          {
+            id: "set-x",
+            sessionExerciseId: "se-x",
+            setNumber: 1,
+            reps: 5,
+            weightKg: "100.00",
+            isPersonalRecord: false,
+            isCompleted: true,
+            completedAt: new Date(),
+            createdAt: new Date(),
+          },
+        ],
+      };
+
+      const idemPayload = {
+        clientSessionId: "local-abc",
+        workoutId: "w1",
+        name: "Push Day",
+        startedAt: "2026-05-04T10:00:00.000Z",
+        completedAt: "2026-05-04T11:00:00.000Z",
+        status: "completed" as const,
+        totalDurationSeconds: 3600,
+        exercises: [
+          {
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            sets: [{ setNumber: 1, reps: 5, weightKg: 100 }],
+          },
+        ],
+      };
+
+      // A tx whose select() calls resolve, in order, off `selectQueue`, and
+      // whose insert() records the values it was called with. Each select
+      // supports the .from().where().{limit|orderBy}() shapes plus the awaited
+      // .from().where() COUNT shape used inside recordSession.
+      function makeIdempotencyTx(
+        selectQueue: any[],
+        sessionInsertReturns: any[],
+      ) {
+        let i = 0;
+        const insertValues: any[] = [];
+        const tx: any = {
+          select: vi.fn().mockImplementation(() => {
+            const value = selectQueue[i++];
+            const whereResult: any = {
+              limit: vi.fn().mockResolvedValue(value),
+              orderBy: vi.fn().mockResolvedValue(value),
+              then: (resolve: (v: unknown) => unknown) =>
+                Promise.resolve(value).then(resolve),
+            };
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue(whereResult),
+              }),
+            };
+          }),
+          insert: vi.fn().mockImplementation(() => ({
+            values: vi.fn().mockImplementation((v: any) => {
+              insertValues.push(v);
+              const returning = vi
+                .fn()
+                .mockImplementation((selection?: any) => {
+                  if (selection && "id" in selection) {
+                    return Promise.resolve([{ id: "se-x" }]);
+                  }
+                  return Promise.resolve(sessionInsertReturns);
+                });
+              return {
+                returning,
+                onConflictDoNothing: vi.fn().mockReturnValue({ returning }),
+                then: (resolve: (v: unknown) => unknown) =>
+                  Promise.resolve(undefined).then(resolve),
+              };
+            }),
+          })),
+        };
+        return { tx, insertValues };
+      }
+
+      it("schema defines the dedup unique index on (user_id, client_session_id)", () => {
+        // The idempotency guard is only as good as the DB constraint the repo's
+        // ON CONFLICT DO NOTHING targets. The onConflict columns are typed refs
+        // (compile-checked), but the unique index itself lives in the schema +
+        // migration — this guards that side against drift. The index name must
+        // match the migration's named CREATE UNIQUE INDEX exactly.
+        const { indexes } = getTableConfig(workoutSessions);
+        const idx = indexes.find(
+          (i) => i.config.name === "workout_sessions_user_client_session_idx",
+        );
+        expect(idx).toBeDefined();
+        expect(idx!.config.unique).toBe(true);
+        const columnNames = idx!.config.columns.map((c: any) => c.name);
+        expect(columnNames).toEqual(["user_id", "client_session_id"]);
+      });
+
+      it("returns the existing session WITHOUT inserting when the same clientSessionId was already recorded (sequential retry)", async () => {
+        const { tx, insertValues } = makeIdempotencyTx(
+          [
+            [{ id: "s-existing" }], // step-0 findExistingSessionId → found
+            [idemRefreshed.session], // buildRecordedSession: session
+            idemRefreshed.exercises, // exercises
+            idemRefreshed.sets, // sets
+            [{ count: 3 }], // workoutsThisMonth
+          ],
+          [],
+        );
+        const mockDb = {
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
+
+        const runPRDetection = vi.fn().mockResolvedValue([]);
+        const { SessionRepository } = await import("../sessionRepository");
+        const repo = new SessionRepository();
+
+        const result = await repo.recordSession(
+          "u1",
+          idemPayload,
+          runPRDetection,
+        );
+
+        // Nothing inserted, no PR detection re-run — pure replay.
+        expect(tx.insert).not.toHaveBeenCalled();
+        expect(insertValues).toHaveLength(0);
+        expect(runPRDetection).not.toHaveBeenCalled();
+        expect(result.id).toBe("s-existing");
+        expect(result.personalRecords).toEqual([]);
+        expect(result.workoutsThisMonth).toBe(3);
+        // Signals a replay so callers skip non-idempotent post-commit effects.
+        expect(result.wasReplay).toBe(true);
+      });
+
+      it("inserts a genuinely new session (with clientSessionId stamped) when the id has not been recorded before", async () => {
+        const newSession = {
+          ...idemRefreshed.session,
+          id: "s-new",
+          clientSessionId: "local-new",
+        };
+        const { tx, insertValues } = makeIdempotencyTx(
+          [
+            [], // step-0: none exists
+            [newSession], // session
+            idemRefreshed.exercises,
+            idemRefreshed.sets,
+            [{ count: 1 }],
+          ],
+          [newSession], // insert returns the fresh row (no conflict)
+        );
+        const mockDb = {
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
+
+        const runPRDetection = vi.fn().mockResolvedValue([]);
+        const { SessionRepository } = await import("../sessionRepository");
+        const repo = new SessionRepository();
+
+        const result = await repo.recordSession(
+          "u1",
+          { ...idemPayload, clientSessionId: "local-new" },
+          runPRDetection,
+        );
+
+        // The session root insert carried the clientSessionId for dedup.
+        expect(insertValues[0]).toMatchObject({
+          userId: "u1",
+          clientSessionId: "local-new",
+        });
+        expect(result.id).toBe("s-new");
+        expect(result.wasReplay).toBe(false);
+        expect(runPRDetection).toHaveBeenCalled();
+      });
+
+      it("returns the winner via the onConflict backstop when a concurrent submit races (insert no-ops)", async () => {
+        const winner = { ...idemRefreshed.session, id: "s-winner" };
+        const { tx, insertValues } = makeIdempotencyTx(
+          [
+            [], // step-0: none yet (racing tx hasn't committed for us)
+            [{ id: "s-winner" }], // backstop findExistingSessionId → winner
+            [winner], // session
+            idemRefreshed.exercises,
+            idemRefreshed.sets,
+            [{ count: 2 }],
+          ],
+          [], // insert returns [] → unique-index conflict
+        );
+        const mockDb = {
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
+
+        const runPRDetection = vi.fn().mockResolvedValue([]);
+        const { SessionRepository } = await import("../sessionRepository");
+        const repo = new SessionRepository();
+
+        const result = await repo.recordSession(
+          "u1",
+          idemPayload,
+          runPRDetection,
+        );
+
+        // Only the (no-op) session insert was attempted; the exercise loop and
+        // PR detection never ran — we bailed to the backstop first.
+        expect(insertValues).toHaveLength(1);
+        expect(runPRDetection).not.toHaveBeenCalled();
+        expect(result.id).toBe("s-winner");
+        expect(result.wasReplay).toBe(true);
+      });
+
+      it("does NOT dedup when clientSessionId is omitted (legacy client keeps pre-M13 behaviour)", async () => {
+        const legacySession = {
+          ...idemRefreshed.session,
+          id: "s-legacy",
+          clientSessionId: null,
+        };
+        // No step-0 lookup fires (findExistingSessionId short-circuits without a
+        // query), so the four build reads are the only selects.
+        const { tx, insertValues } = makeIdempotencyTx(
+          [
+            [legacySession],
+            idemRefreshed.exercises,
+            idemRefreshed.sets,
+            [{ count: 1 }],
+          ],
+          [legacySession],
+        );
+        const mockDb = {
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
+
+        const runPRDetection = vi.fn().mockResolvedValue([]);
+        const { SessionRepository } = await import("../sessionRepository");
+        const repo = new SessionRepository();
+
+        const result = await repo.recordSession(
+          "u1",
+          { ...idemPayload, clientSessionId: undefined },
+          runPRDetection,
+        );
+
+        expect(tx.insert).toHaveBeenCalled();
+        // A null clientSessionId is stamped (NULLs are distinct → never dedup).
+        expect(insertValues[0]).toMatchObject({ clientSessionId: null });
+        expect(result.id).toBe("s-legacy");
+        expect(result.wasReplay).toBe(false);
+      });
     });
   });
 });
