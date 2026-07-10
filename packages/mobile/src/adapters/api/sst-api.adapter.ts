@@ -67,6 +67,8 @@ import type {
   UpdateClientNoteInput,
   SendClientBriefInput,
   SentClientBrief,
+  CoachClientAssignment,
+  SwapWorkoutInput,
 } from "@/domain/ports/api.port";
 import type {
   AssignProgramInput,
@@ -1752,6 +1754,28 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestProgramWrite<{ deleted: true }>(
       `/trainers/me/clients/${clientId}/workout-assignments/${assignmentId}`,
       { method: "DELETE" },
+    );
+  }
+
+  async getClientWorkoutAssignments(
+    clientId: string,
+  ): Promise<Result<CoachClientAssignment[], ApiError>> {
+    // The endpoint wraps the list under `{ data: { assignments } }`.
+    const result = await this.requestEnvelope<{
+      assignments: CoachClientAssignment[];
+    }>(`/trainers/me/clients/${clientId}/workout-assignments`);
+    if (!result.ok) return result;
+    return ok(result.value.assignments);
+  }
+
+  async swapClientWorkoutAssignment(
+    clientId: string,
+    assignmentId: string,
+    input: SwapWorkoutInput,
+  ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>> {
+    return this.requestProgramWrite<WorkoutAssignmentRow>(
+      `/trainers/me/clients/${clientId}/workout-assignments/${assignmentId}`,
+      { method: "PATCH", body: input },
     );
   }
 

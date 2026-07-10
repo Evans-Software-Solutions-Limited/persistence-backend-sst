@@ -62,6 +62,7 @@ import { useAssignGoalSheet } from "@/state/assign-goal-sheet";
 import { useEditNutritionTargetsSheet } from "@/state/edit-nutrition-targets-sheet";
 import { useCoachNoteSheet } from "@/state/coach-note-sheet";
 import { useSendBriefSheet } from "@/state/send-brief-sheet";
+import { useSwapWorkoutSheet } from "@/state/swap-workout-sheet";
 /* eslint-enable import/first */
 
 function props(): ClientDetailProps {
@@ -411,6 +412,40 @@ describe("ClientDetailContainer — populated", () => {
     expect(s.open).toBe(true);
     expect(s.clientId).toBe("client-1");
     expect(s.clientName).toBe("Jordan");
+  });
+
+  it("loads the client's open assignments and opens the swap sheet on onSwapWorkout", async () => {
+    useSwapWorkoutSheet.setState({
+      open: false,
+      clientId: null,
+      assignmentId: null,
+      currentName: null,
+      onSwapped: null,
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    api.clientWorkoutAssignments["client-1"] = [
+      {
+        assignmentId: "wa-1",
+        workoutId: "w-1",
+        name: "Push Day",
+        estimatedDurationMinutes: 45,
+        dueDate: "2026-07-12",
+        status: "assigned",
+        isProgrammeOccurrence: false,
+        occurrenceIndex: null,
+        isSwapped: false,
+      },
+    ];
+    renderWith(adapters);
+    await waitFor(() => expect(props().assignments).toHaveLength(1));
+
+    props().onSwapWorkout(props().assignments[0]);
+    const s = useSwapWorkoutSheet.getState();
+    expect(s.open).toBe(true);
+    expect(s.clientId).toBe("client-1");
+    expect(s.assignmentId).toBe("wa-1");
+    expect(s.currentName).toBe("Push Day");
   });
 
   it("onAssignProgramme + onAssignWorkout open their sheets", async () => {

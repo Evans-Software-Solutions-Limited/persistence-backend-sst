@@ -233,6 +233,10 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // § 1.4.2). Companion enum migration:
   // 20260709120100_coach_brief_sent_audit_value.sql.
   "brief_sent",
+  // M18 (Live-session / Swap) — PATCH .../workout-assignments/:id replaces the
+  // assignment's workout in place. Companion enum migration:
+  // 20260709130000_workout_swapped_audit_value.sql.
+  "workout_swapped",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
@@ -874,6 +878,15 @@ export const workoutAssignments = pgTable(
     workoutId: uuid("workout_id")
       .notNull()
       .references(() => workouts.id, { onDelete: "cascade" }),
+    // M18 Swap — when a coach swaps this assignment's workout, the ORIGINAL
+    // workout id is preserved here (COALESCE-first: survives re-swaps). NULL =
+    // never swapped. For a programme occurrence this flags "override of the
+    // programmed workout" while the programAssignmentId link stays intact.
+    // Migration: 20260709130100_workout_assignments_swapped_from.sql.
+    swappedFromWorkoutId: uuid("swapped_from_workout_id").references(
+      () => workouts.id,
+      { onDelete: "set null" },
+    ),
     assignedDate: text("assigned_date").notNull(),
     dueDate: text("due_date"),
     status: assignmentStatusEnum("status").default("assigned"),

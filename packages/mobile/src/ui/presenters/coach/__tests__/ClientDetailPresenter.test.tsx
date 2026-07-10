@@ -126,6 +126,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
       bodyFat: { current: 20.4, delta: -0.6, series: [21, 20.4] },
     },
     activeProgramme: PROGRAMME,
+    assignments: [],
     isLoading: false,
     isRefreshing: false,
     error: null,
@@ -137,6 +138,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onEditTargets: jest.fn(),
     onAssignGoal: jest.fn(),
     onSendBrief: jest.fn(),
+    onSwapWorkout: jest.fn(),
     onEditGoal: jest.fn(),
     onOpenProgramme: jest.fn(),
     onAssignProgramme: jest.fn(),
@@ -234,6 +236,36 @@ describe("ClientDetailPresenter — QuickActionsRow", () => {
     expect(props.onAssignGoal).toHaveBeenCalled();
     expect(props.onSendBrief).toHaveBeenCalled();
     expect(queryByTestId("quick-action-schedule")).toBeNull();
+  });
+});
+
+describe("ClientDetailPresenter — UpcomingSessionsCard (M18)", () => {
+  const ASSIGNMENTS = [
+    {
+      assignmentId: "wa-1",
+      workoutId: "w-1",
+      name: "Push Day",
+      estimatedDurationMinutes: 45,
+      dueDate: "2026-07-12",
+      status: "assigned" as const,
+      isProgrammeOccurrence: true,
+      occurrenceIndex: 2,
+      isSwapped: true,
+    },
+  ];
+
+  it("is absent when there are no open assignments", () => {
+    const { queryByTestId } = render({ assignments: [] });
+    expect(queryByTestId("client-detail-upcoming-sessions")).toBeNull();
+  });
+
+  it("renders a row per assignment with a swapped pill + wires Swap", () => {
+    const { getByTestId, props } = render({ assignments: ASSIGNMENTS });
+    expect(getByTestId("client-detail-upcoming-sessions")).toBeTruthy();
+    expect(getByTestId("upcoming-session-wa-1")).toBeTruthy();
+    expect(getByTestId("upcoming-swapped-wa-1")).toBeTruthy();
+    fireEvent.press(getByTestId("upcoming-swap-wa-1"));
+    expect(props.onSwapWorkout).toHaveBeenCalledWith(ASSIGNMENTS[0]);
   });
 });
 

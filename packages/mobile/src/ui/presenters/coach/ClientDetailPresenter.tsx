@@ -42,6 +42,7 @@ import type {
   VolumeModule,
 } from "@/domain/models/clientDetail";
 import type { ActiveProgramme } from "@/domain/models/progress";
+import type { CoachClientAssignment } from "@/domain/ports/api.port";
 import { relativeTime } from "@/ui/presenters/coach/RecentActivityFeedPresenter";
 
 /**
@@ -84,6 +85,8 @@ export type ClientDetailProps = {
   bodyTrend: { weight: TrendData & { unit: "kg" | "lb" }; bodyFat: TrendData };
   /** The client's live programme, or null (specs/19-programs AC 4.5). */
   activeProgramme: ActiveProgramme | null;
+  /** The client's OPEN assignments — the M18 Upcoming-sessions surface. */
+  assignments: CoachClientAssignment[];
   /** True until the first aggregate/trend fetch resolves. */
   isLoading: boolean;
   isRefreshing: boolean;
@@ -100,6 +103,8 @@ export type ClientDetailProps = {
   onAssignGoal: () => void;
   /** QuickActionsRow — Brief → SendBriefSheet (M17 Send brief). */
   onSendBrief: () => void;
+  /** Upcoming-sessions row Swap → SwapWorkoutSheet (M18). */
+  onSwapWorkout: (assignment: CoachClientAssignment) => void;
   /** GoalCard pencil → AssignGoalSheet (edit) — only offered when assignedByCoach. */
   onEditGoal: () => void;
   /** Tap the ProgrammeCard → open the programme editor. */
@@ -124,6 +129,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     clientName,
     bodyTrend,
     activeProgramme,
+    assignments,
     isLoading,
     isRefreshing,
     error,
@@ -135,6 +141,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onEditTargets,
     onAssignGoal,
     onSendBrief,
+    onSwapWorkout,
     onEditGoal,
     onOpenProgramme,
     onAssignProgramme,
@@ -229,6 +236,11 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
             onAssignProgramme={onAssignProgramme}
             onAssignWorkout={onAssignWorkout}
             onManageHabits={onManageHabits}
+          />
+
+          <UpcomingSessionsCard
+            assignments={assignments}
+            onSwap={onSwapWorkout}
           />
 
           <CoachNotesCard
@@ -460,6 +472,83 @@ function LiveSessionCTA({
             {weekLabel}
           </Text>
         </View>
+      </View>
+    </Card>
+  );
+}
+
+// ── UpcomingSessionsCard (M18 Live-session) ──────────────────────────────────
+function UpcomingSessionsCard({
+  assignments,
+  onSwap,
+}: {
+  assignments: CoachClientAssignment[];
+  onSwap: (assignment: CoachClientAssignment) => void;
+}) {
+  if (assignments.length === 0) return null;
+
+  return (
+    <Card pad={16} radius={16} testID="client-detail-upcoming-sessions">
+      <Text
+        fontFamily="$display"
+        fontSize={10.5}
+        fontWeight="600"
+        letterSpacing={1.7}
+        textTransform="uppercase"
+        color="$text3"
+        marginBottom={12}
+      >
+        Upcoming sessions
+      </Text>
+      <View gap={10}>
+        {assignments.map((a) => (
+          <View
+            key={a.assignmentId}
+            flexDirection="row"
+            alignItems="center"
+            gap={12}
+            testID={`upcoming-session-${a.assignmentId}`}
+          >
+            <View flex={1}>
+              <View flexDirection="row" alignItems="center" gap={6}>
+                <Text
+                  fontFamily="$display"
+                  fontWeight="600"
+                  fontSize={14}
+                  color="$text"
+                  numberOfLines={1}
+                >
+                  {a.name ?? "Workout"}
+                </Text>
+                {a.isSwapped ? (
+                  <Pill
+                    tone="trainer"
+                    testID={`upcoming-swapped-${a.assignmentId}`}
+                  >
+                    Swapped
+                  </Pill>
+                ) : null}
+              </View>
+              <Text
+                fontFamily="$body"
+                fontSize={11.5}
+                color="$text3"
+                marginTop={2}
+              >
+                {a.dueDate ? `Due ${a.dueDate}` : "No due date"}
+                {a.isProgrammeOccurrence ? " · Programme" : ""}
+              </Text>
+            </View>
+            <Btn
+              variant="soft"
+              tone="trainer"
+              onPress={() => onSwap(a)}
+              testID={`upcoming-swap-${a.assignmentId}`}
+            >
+              Swap
+            </Btn>
+          </View>
+        ))}
       </View>
     </Card>
   );
