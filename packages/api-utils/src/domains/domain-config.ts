@@ -76,6 +76,17 @@ export interface DomainConfig {
   /** API custom domain for SST. `null` for dev — no custom domain. */
   apiHost: string | null;
   /**
+   * Web (static site) custom domain for SST. The public marketing/legal site
+   * — hosts `/privacy` + `/terms` (the App Store Connect metadata URLs) today,
+   * and grows into the full site later. Sits alongside the `api.` host:
+   *   - production → persistence.evans-software-solutions.com
+   *     (a subdomain record in the parent evans-software-solutions.com zone)
+   *   - staging    → staging.persistence.evans-software-solutions.com
+   *     (the apex of the delegated staging zone)
+   * `null` for dev — the web client uses the auto-generated CloudFront URL.
+   */
+  webHost: string | null;
+  /**
    * Route 53 hosted zone ID for the env's parent zone. `undefined` for
    * dev (no DNS-managed deploy). Passed to SST as `sst.aws.dns({ zone })`.
    */
@@ -111,12 +122,14 @@ export function getDomainConfig(stage: string): DomainConfig {
     case "production":
       return {
         apiHost: `api.${BASE_DOMAIN}`,
+        webHost: BASE_DOMAIN,
         zoneId: ZONE_IDS.production,
         supabaseUrl: SUPABASE_URLS.production,
       };
     case "staging":
       return {
         apiHost: `api.staging.${BASE_DOMAIN}`,
+        webHost: `staging.${BASE_DOMAIN}`,
         zoneId: ZONE_IDS.staging,
         supabaseUrl: SUPABASE_URLS.staging,
       };
@@ -125,6 +138,7 @@ export function getDomainConfig(stage: string): DomainConfig {
       // `bun run dev` against a developer's own .env keeps working.
       return {
         apiHost: null,
+        webHost: null,
         zoneId: undefined,
         supabaseUrl: process.env.SUPABASE_URL ?? "",
       };

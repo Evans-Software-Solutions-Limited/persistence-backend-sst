@@ -32,6 +32,15 @@ const domainConfig = getDomainConfig($app.stage);
 export const coreApiDomain = domainConfig.apiHost;
 
 /**
+ * Web static-site custom domain for SST (the public marketing/legal site —
+ * hosts the ASC-facing `/privacy` + `/terms`). `null` for dev, where the
+ * StaticSite falls back to its auto-generated CloudFront URL.
+ * - production: persistence.evans-software-solutions.com
+ * - staging:    staging.persistence.evans-software-solutions.com
+ */
+export const webDomain = domainConfig.webHost;
+
+/**
  * Route 53 hosted zone ID for the env's parent zone. `undefined` for
  * dev. Passed to SST as `sst.aws.dns({ zone: hostedZoneId })` so the
  * deploy doesn't have to walk parent zones via `route53:ListHostedZones`
