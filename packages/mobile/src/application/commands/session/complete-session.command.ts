@@ -186,7 +186,11 @@ export function finalizeSessionCommand(
   // flips it. Filtering by it would empty the cache on every session.
   // Both fields filled is the meaningful "user logged something
   // intentional" signal that matches legacy `previousSets[]`.
-  if (status === "completed") {
+  // Coach Start-live: a coach-run session must NEVER write the client's lifts
+  // into the COACH's own `recent_sets` — `deps.userId` is the coach here, so
+  // the client's numbers would surface as the coach's "Previous" chips. The
+  // client's recent-sets live on the client's own device. (Inspector Brad, M18.)
+  if (status === "completed" && !onBehalfClientId) {
     const recentSets: RecentSetEntry[] = [];
     for (const ex of finalized.exercises) {
       // Substituted rows are excluded — their sets belong to an

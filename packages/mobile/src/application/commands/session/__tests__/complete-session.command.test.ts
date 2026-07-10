@@ -264,6 +264,18 @@ describe("completeSessionCommand", () => {
     expect(payload.status).toBe("completed");
     expect(payload.exercises).toHaveLength(1);
   });
+
+  it("does NOT write recent-sets for a coach on-behalf session (Inspector Brad M18 — no coach-history pollution)", () => {
+    storage.cacheActiveSession("user-1", buildSession());
+    completeSessionCommand(
+      { storage, userId: "user-1", now },
+      { onBehalfClientId: "client-9" },
+    );
+    // deps.userId is the COACH here — the client's lifts must not land in the
+    // coach's own recent-sets cache.
+    const recent = storage.getRecentSetsByExercise("user-1", ["ex-bench"]);
+    expect(recent["ex-bench"]).toBeUndefined();
+  });
 });
 
 describe("cancelSessionCommand", () => {

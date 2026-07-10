@@ -253,7 +253,8 @@ describe("ActiveSessionContainer", () => {
         initials: "JB",
       });
     });
-    expect(useActiveWorkout.getState().active?.retroactive).toBe(false);
+    // Not retroactive → the banner renders LIVE (undefined and false both do).
+    expect(useActiveWorkout.getState().active?.retroactive).toBeFalsy();
   });
 
   it("coach Start-live discard: End routes the cancellation flush to the on-behalf endpoint", async () => {

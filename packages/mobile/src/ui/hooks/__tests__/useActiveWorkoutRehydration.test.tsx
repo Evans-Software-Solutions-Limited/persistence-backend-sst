@@ -210,6 +210,31 @@ it("SQLite has a live session the slice missed → adopted minimised", async () 
   expect(confirm).not.toHaveBeenCalled();
 });
 
+it("coach Start-live: adopting a live session from SQLite preserves withClient (no misattribution after force-quit)", async () => {
+  // Inspector Brad M18 regression: the coach's on-behalf context is persisted
+  // on the SQLite session, so a rehydrate that reconstructs the pointer from
+  // SQLite (AsyncStorage pointer lost to a force-quit) must recover withClient —
+  // otherwise the client's session would flush to the coach's own history.
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  const session = makeSession({
+    withClient: { id: "client-9", name: "Jordan", initials: "JB" },
+  });
+  storage.cacheActiveSession(USER, session);
+  // AsyncStorage empty (default null) — the pointer was lost.
+
+  render(adapters, { confirm: jest.fn() });
+
+  await waitFor(() => {
+    expect(useActiveWorkout.getState().active?.sessionId).toBe(session.id);
+  });
+  expect(useActiveWorkout.getState().active?.withClient).toEqual({
+    id: "client-9",
+    name: "Jordan",
+    initials: "JB",
+  });
+});
+
 it("fresh live session matching the stored pointer → kept, no prompt", async () => {
   const { adapters, storage, auth } = makeAdapters();
   signIn(auth);

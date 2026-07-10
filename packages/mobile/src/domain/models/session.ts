@@ -14,6 +14,20 @@ import type { PersonalRecord } from "./record";
 
 export type SessionStatus = "in_progress" | "completed" | "cancelled";
 
+/**
+ * Coach on-behalf context for a Start-live session (M18). Present only when a
+ * COACH is running this session for a client on their own device. Persisted in
+ * SQLite (the existence authority) alongside the session so it survives a
+ * force-quit → rehydrate: the coach context CANNOT live only on the zustand /
+ * AsyncStorage pointer, or a reconstruct-from-SQLite loses it and the client's
+ * workout is misattributed to the coach (Inspector Brad, M18).
+ */
+export type SessionClientRef = {
+  id: string;
+  name: string;
+  initials: string;
+};
+
 export type WorkoutSession = {
   /** `local-…`-prefixed UUID until the bulk-record flush returns canonical IDs. */
   id: string;
@@ -26,6 +40,13 @@ export type WorkoutSession = {
   completedAt: string | null;
   exercises: SessionExercise[];
   notes: string | null;
+  /**
+   * Coach on-behalf client (M18 Start-live). null/undefined for a normal
+   * athlete session. When set, the finalize flush routes to the on-behalf
+   * record endpoint and local history caches are NOT written for this
+   * (coach) user.
+   */
+  withClient?: SessionClientRef | null;
 };
 
 export type SessionExercise = {

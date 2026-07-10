@@ -133,29 +133,28 @@ export function ActiveSessionContainer() {
       // exercise list to seed the session.
       if (!detail.workout) return;
       startAttemptedRef.current = true;
+      // Coach Start-live (M18): the on-behalf client context (from the route
+      // params) is stamped onto the SESSION so it persists in SQLite — the
+      // existence authority — and survives a force-quit → rehydrate. It must
+      // NOT live only on the AsyncStorage pointer (Inspector Brad).
+      const clientRef = params.clientId
+        ? {
+            id: params.clientId,
+            name: params.clientName ?? "",
+            initials: params.clientInitials ?? "",
+          }
+        : null;
       const result = startSessionCommand(
         { storage, generateId, userId },
-        { workout: detail.workout },
+        { workout: detail.workout, withClient: clientRef },
       );
-      // Coach Start-live (M18): seed the on-behalf client context onto the
-      // useActiveWorkout pointer so the trainer banner renders and the finalize
-      // path routes the flush to the on-behalf record endpoint. `start()`
-      // persists the pointer (incl. withClient) to AsyncStorage, so the coach
-      // context survives a force-quit → rehydrate. The `result.ok` guard is
-      // both type-narrowing (for `result.value`) and defensive — the outer
-      // `if (session) return` above already subsumes the existing-session case,
-      // so a NEW session is created here in practice.
-      if (params.clientId && result.ok) {
-        useActiveWorkout.getState().start(
-          pointerFromSession(result.value, {
-            withClient: {
-              id: params.clientId,
-              name: params.clientName ?? "",
-              initials: params.clientInitials ?? "",
-            },
-            retroactive: false,
-          }),
-        );
+      // Seed the UI pointer for an immediate trainer banner + on-behalf finalize
+      // routing. pointerFromSession recovers withClient from the (just-created)
+      // session, so this stays in lockstep with what's persisted. The
+      // `result.ok` guard is type-narrowing + defensive — the outer
+      // `if (session) return` already subsumes the existing-session case.
+      if (clientRef && result.ok) {
+        useActiveWorkout.getState().start(pointerFromSession(result.value));
       }
       // ACTIVE_SESSION_EXISTS is otherwise handled by the resume prompt
       // (commit 9). For a direct route, we silently fall through — the existing

@@ -198,7 +198,13 @@ export class SQLiteStorageAdapter implements StoragePort {
         rest_timer_started_at TEXT,
         rest_timer_total_seconds INTEGER,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        -- M18 Start-live: coach on-behalf client, persisted here (the existence
+        -- authority) so a force-quit → rehydrate recovers it. NULL for a normal
+        -- athlete session. Idempotent ALTER below backfills existing installs.
+        client_id TEXT,
+        client_name TEXT,
+        client_initials TEXT
       );
       CREATE INDEX IF NOT EXISTS active_sessions_user_status
         ON active_sessions(user_id, status);
@@ -493,6 +499,21 @@ export class SQLiteStorageAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_cached_exercises_synced_at ON cached_exercises(synced_at);
       CREATE INDEX IF NOT EXISTS idx_cached_notifications_created ON cached_notifications(created_at DESC);
     `);
+
+    // M18 Start-live migration: backfill the coach on-behalf columns on
+    // `active_sessions` for installs created before this milestone. The
+    // CREATE TABLE IF NOT EXISTS above is a no-op on an existing table, so
+    // additive columns need an explicit ALTER. Idempotent — only adds a
+    // column when PRAGMA table_info shows it missing.
+    const activeSessionColumns = db.getAllSync(
+      `PRAGMA table_info(active_sessions)`,
+    ) as { name: string }[];
+    const existingNames = new Set(activeSessionColumns.map((c) => c.name));
+    for (const col of ["client_id", "client_name", "client_initials"]) {
+      if (!existingNames.has(col)) {
+        db.execSync(`ALTER TABLE active_sessions ADD COLUMN ${col} TEXT`);
+      }
+    }
 
     // M10.6 migration for installs that predate this milestone.
     //
@@ -1746,7 +1767,8 @@ export class SQLiteStorageAdapter implements StoragePort {
       ? `WHERE user_id = ? AND status = 'in_progress'`
       : `WHERE user_id = ?`;
     const sessionRows = db.getAllSync(
-      `SELECT id, user_id, workout_id, name, status, started_at, completed_at, notes
+      `SELECT id, user_id, workout_id, name, status, started_at, completed_at, notes,
+              client_id, client_name, client_initials
        FROM active_sessions
        ${where}
        ORDER BY updated_at DESC
@@ -1807,6 +1829,14 @@ export class SQLiteStorageAdapter implements StoragePort {
       completedAt: sessionRow.completed_at,
       notes: sessionRow.notes,
       exercises,
+      // M18 coach Start-live context (null for a normal athlete session).
+      withClient: sessionRow.client_id
+        ? {
+            id: sessionRow.client_id,
+            name: sessionRow.client_name ?? "",
+            initials: sessionRow.client_initials ?? "",
+          }
+        : null,
     };
   }
 
@@ -1842,8 +1872,8 @@ export class SQLiteStorageAdapter implements StoragePort {
       db.runSync(
         `INSERT INTO active_sessions
            (id, user_id, workout_id, name, status, started_at, completed_at,
-            notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            notes, client_id, client_name, client_initials, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            user_id = excluded.user_id,
            workout_id = excluded.workout_id,
@@ -1852,6 +1882,9 @@ export class SQLiteStorageAdapter implements StoragePort {
            started_at = excluded.started_at,
            completed_at = excluded.completed_at,
            notes = excluded.notes,
+           client_id = excluded.client_id,
+           client_name = excluded.client_name,
+           client_initials = excluded.client_initials,
            updated_at = excluded.updated_at`,
         [
           session.id,
@@ -1862,6 +1895,9 @@ export class SQLiteStorageAdapter implements StoragePort {
           session.startedAt,
           session.completedAt,
           session.notes,
+          session.withClient?.id ?? null,
+          session.withClient?.name ?? null,
+          session.withClient?.initials ?? null,
           now,
           now,
         ],
@@ -2389,6 +2425,9 @@ type ActiveSessionRow = {
   started_at: string;
   completed_at: string | null;
   notes: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  client_initials: string | null;
 };
 
 type SessionExerciseRow = {
