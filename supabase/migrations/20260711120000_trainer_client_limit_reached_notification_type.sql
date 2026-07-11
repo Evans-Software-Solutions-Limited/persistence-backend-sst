@@ -1,0 +1,26 @@
+-- Trainer-client-caps (revenue-leak fix) — extend notification_type enum for
+-- the trainer-facing "a client couldn't join, your plan is full" nudge.
+--
+--   trainer_client_limit_reached — a client's join (invite-code redeem or
+--       pending-request accept) was rejected because the trainer is already at
+--       their subscription tier's `trainer_client_limit`. The notification is
+--       sent to the TRAINER (best-effort, post-commit) with the upgrade
+--       pointer; tapping it deep-links to the coach Clients roster
+--       (persistencemobile://clients) where the "no seats" warning + upgrade
+--       CTA live.
+--
+-- Per specs/_shared/cross-cuts.md § 5 the notification_type enum is *owned*
+-- by 09-notifications-social; each producing slice sequences its own ADD
+-- VALUE before it emits. Without this migration the first
+-- `INSERT INTO notifications` with type 'trainer_client_limit_reached' fails
+-- at runtime with `invalid input value for enum notification_type`.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping the ADD VALUE statement in its
+-- own migration (no usage here) sidesteps that entirely — mirrors the
+-- coach_brief precedent (20260709120000_coach_brief_notification_type.sql).
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'trainer_client_limit_reached';

@@ -27,6 +27,18 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "client-id" }),
 }));
 
+// Seat gates are unit-tested against the DB mock in trainerSeats.test.ts; here
+// they're mocked so the accept-handler tests focus on wiring: allow → activate,
+// deny → 409 + trainer notification.
+const evaluateActiveSeat = vi.fn(async () => ({ allowed: true }) as any);
+const notifyLimitReached = vi.fn(async () => {});
+vi.mock("../../seats/trainerSeats", () => ({
+  evaluateTrainerClientsActiveSeat: (...args: unknown[]) =>
+    evaluateActiveSeat(...(args as [])),
+  notifyTrainerClientLimitReached: (...args: unknown[]) =>
+    notifyLimitReached(...(args as [])),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -52,6 +64,7 @@ function executor(queue: unknown[]) {
     "update",
     "set",
     "returning",
+    "for", // SELECT ... FOR UPDATE row lock
   ]) {
     builder[m] = vi.fn(passthrough);
   }
@@ -64,6 +77,18 @@ function executor(queue: unknown[]) {
     return resolve(next as unknown[]);
   };
   return builder;
+}
+
+/**
+ * A db mock whose `.transaction(fn)` runs `fn` against the SAME queued
+ * executor (so the accept path's tx reads pop from one queue), while still
+ * exposing the direct builder methods the decline path uses. One queue entry
+ * == one awaited query, in execution order.
+ */
+function txDb(queue: unknown[]) {
+  const ex = executor(queue);
+  (ex as any).transaction = vi.fn(async (fn: any) => fn(ex));
+  return ex;
 }
 
 describe("trainersRespondToRequestHandler", () => {
@@ -89,9 +114,14 @@ describe("trainersRespondToRequestHandler", () => {
     expect(res.status).toBe(401);
   });
 
-  it("accepts a pending request → status active", async () => {
+  it("accepts a pending request → status active (under cap)", async () => {
+    evaluateActiveSeat.mockResolvedValueOnce({ allowed: true } as any);
     (getDb as any).mockReturnValue(
-      executor([[{ id: "rel-1", trainerId: "trainer-1", status: "active" }]]),
+      txDb([
+        [{ id: "rel-1", trainerId: "trainer-1" }], // select pending rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
+        [{ id: "rel-1", trainerId: "trainer-1", status: "active" }], // update
+      ]),
     );
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
@@ -103,13 +133,43 @@ describe("trainersRespondToRequestHandler", () => {
     expect(body.data.success).toBe(true);
     expect(body.data.status).toBe("active");
     expect(body.data.trainerId).toBe("trainer-1");
+    expect(notifyLimitReached).not.toHaveBeenCalled();
   });
 
-  it("declines a pending request → status terminated", async () => {
+  it("409 when the trainer is at their client-slot cap (client actor → NOT a 402 upsell) + notifies the trainer", async () => {
+    const denyVerdict = {
+      allowed: false,
+      reason: "limit",
+      currentTier: "individual_trainer",
+      upgradeTo: "small_business",
+      upgradePriceMonthly: 49.99,
+    };
+    evaluateActiveSeat.mockResolvedValueOnce(denyVerdict as any);
     (getDb as any).mockReturnValue(
-      executor([
-        [{ id: "rel-1", trainerId: "trainer-1", status: "terminated" }],
+      txDb([
+        [{ id: "rel-1", trainerId: "trainer-1" }], // select pending rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
+        // NO update row consumed — cap rejected before the activate UPDATE.
       ]),
+    );
+    const { trainersRespondToRequestHandler } =
+      await import("../trainersRespondToRequestHandler");
+    const res = await trainersRespondToRequestHandler.handle(
+      post("rel-1", { action: "accept" }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("coach_client_limit_reached");
+    // The response must NOT leak the internal trainer/verdict fields.
+    expect(body.trainerId).toBeUndefined();
+    expect(body.verdict).toBeUndefined();
+    // Trainer is notified post-commit with the verdict's upgrade pointer.
+    expect(notifyLimitReached).toHaveBeenCalledWith("trainer-1", denyVerdict);
+  });
+
+  it("declines a pending request → status terminated (no cap check)", async () => {
+    (getDb as any).mockReturnValue(
+      txDb([[{ id: "rel-1", trainerId: "trainer-1", status: "terminated" }]]),
     );
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
@@ -119,10 +179,12 @@ describe("trainersRespondToRequestHandler", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.status).toBe("terminated");
+    expect(evaluateActiveSeat).not.toHaveBeenCalled();
+    expect(notifyLimitReached).not.toHaveBeenCalled();
   });
 
-  it("404 when no pending row matches (not owned / already moved)", async () => {
-    (getDb as any).mockReturnValue(executor([[]])); // update returns 0 rows
+  it("404 on accept when no pending row matches (not owned / already moved)", async () => {
+    (getDb as any).mockReturnValue(txDb([[]])); // select pending returns 0 rows
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
     const res = await trainersRespondToRequestHandler.handle(
@@ -131,10 +193,23 @@ describe("trainersRespondToRequestHandler", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as any;
     expect(body.code).toBe("not_found");
+    expect(evaluateActiveSeat).not.toHaveBeenCalled();
+  });
+
+  it("404 on decline when no pending row matches", async () => {
+    (getDb as any).mockReturnValue(txDb([[]])); // update returns 0 rows
+    const { trainersRespondToRequestHandler } =
+      await import("../trainersRespondToRequestHandler");
+    const res = await trainersRespondToRequestHandler.handle(
+      post("rel-1", { action: "decline" }),
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("not_found");
   });
 
   it("422 for an invalid action", async () => {
-    (getDb as any).mockReturnValue(executor([[]]));
+    (getDb as any).mockReturnValue(txDb([[]]));
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
     const res = await trainersRespondToRequestHandler.handle(

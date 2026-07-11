@@ -854,6 +854,8 @@ describe("defaultNotificationPreferences", () => {
       nutrition_target_set_by_trainer: true,
       // M17 Send brief — default opt-in "on".
       coach_brief: true,
+      // Trainer-client-caps — default opt-in "on".
+      trainer_client_limit_reached: true,
     });
   });
 
@@ -980,6 +982,8 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       nutrition_target_set_by_trainer: true,
       // M17 Send brief — default opt-in "on".
       coach_brief: true,
+      // Trainer-client-caps — default opt-in "on".
+      trainer_client_limit_reached: true,
     });
   });
 

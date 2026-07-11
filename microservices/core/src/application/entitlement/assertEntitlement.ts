@@ -1,6 +1,7 @@
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   profiles,
+  ptClientRelationships,
   subscriptionLimits,
   subscriptionTiers,
   userSubscriptions,
@@ -57,12 +58,16 @@ import { getDb } from "@persistence/db/client";
  *     Gates on `subscription_tiers.ai_access` — a binary flag, not a
  *     usage counter, so denies only ever carry reason `'tier'` /
  *     `'cancelled'` / `'expired'`, never `'limit'`.
+ *   - `trainer_clients`: ENFORCED (revenue-leak fix) — denies when a
+ *     trainer is at their tier's `trainer_client_limit` in ACTIVE human
+ *     clients. See `evaluateTrainerClientsActiveSeat`; the invite-creation
+ *     gate in `trainers/seats/trainerSeats.ts` additionally counts
+ *     outstanding invitations.
  *   - everything else (`ai_workout`, `gym_buddy`,
- *     `unlimited_exercise_library`, `trainer_clients`): STUB — returns
- *     `{ allowed: true }` today, wired into the read path so the helper
- *     signature stabilises before the consuming feature ships. Switching
- *     a stub on is a one-line change once the M8 / gym-buddy endpoints
- *     land.
+ *     `unlimited_exercise_library`): STUB — returns `{ allowed: true }`
+ *     today, wired into the read path so the helper signature stabilises
+ *     before the consuming feature ships. Switching a stub on is a
+ *     one-line change once the gym-buddy endpoint lands.
  */
 export type EntitlementFeature =
   | "create_workout"
@@ -222,24 +227,31 @@ export class EntitlementError extends Error {
  *     row" lookup is needed unless the catalog ever ships a paid tier
  *     without AI (it doesn't today).
  *
- * Stub features (`ai_workout`, `gym_buddy`, `unlimited_exercise_library`,
- * `trainer_clients`) always return `{ allowed: true }` today. The read
- * path is wired but the verdict short-circuits — see AC 9.5.
+ * `trainer_clients` routes to `assertTrainerClients` (real cap check). The
+ * remaining stub features (`ai_workout`, `gym_buddy`,
+ * `unlimited_exercise_library`) always return `{ allowed: true }` today —
+ * the read path is wired but the verdict short-circuits (see AC 9.5).
  */
 export async function assertEntitlement(
   userId: string,
   feature: EntitlementFeature,
 ): Promise<EntitlementVerdict> {
-  // Stub features are accept-all today (AC 9.5). The contract is in
-  // place so consumers can call `assertEntitlement(uid, 'ai_workout')`
-  // already; flipping the stub off when the AI endpoint ships is a
-  // one-line change inside this branch.
-  if (feature !== "create_workout" && feature !== "ai_access") {
-    return { allowed: true };
-  }
-
   if (feature === "ai_access") {
     return assertAiAccess(userId);
+  }
+
+  // Trainer client-slot cap (revenue-leak fix). Real count-vs-limit check —
+  // see `assertTrainerClients`.
+  if (feature === "trainer_clients") {
+    return assertTrainerClients(userId);
+  }
+
+  // Remaining stub features (`ai_workout`, `gym_buddy`,
+  // `unlimited_exercise_library`) are accept-all today (AC 9.5). The contract
+  // is in place so consumers can call `assertEntitlement(uid, 'ai_workout')`
+  // already; flipping a stub off when its endpoint ships is a one-line change.
+  if (feature !== "create_workout") {
+    return { allowed: true };
   }
 
   const db = getDb();
@@ -650,6 +662,8 @@ interface TierMeta {
   workoutLimit: number | null;
   aiAccess: boolean;
   priceMonthly: number | null;
+  trainerClientLimit: number | null;
+  isTrainerTier: boolean;
 }
 
 /**
@@ -657,13 +671,18 @@ interface TierMeta {
  * — caller treats that as "fall back to free" or throws if free itself
  * is missing.
  */
-async function loadTier(db: Db, tierName: string): Promise<TierMeta | null> {
+async function loadTier(
+  db: Pick<Db, "select">,
+  tierName: string,
+): Promise<TierMeta | null> {
   const rows = await db
     .select({
       tierName: subscriptionTiers.tierName,
       workoutLimit: subscriptionTiers.workoutLimit,
       aiAccess: subscriptionTiers.aiAccess,
       priceMonthly: subscriptionTiers.priceMonthly,
+      trainerClientLimit: subscriptionTiers.trainerClientLimit,
+      isTrainerTier: subscriptionTiers.isTrainerTier,
     })
     .from(subscriptionTiers)
     .where(eq(subscriptionTiers.tierName, tierName))
@@ -676,6 +695,8 @@ async function loadTier(db: Db, tierName: string): Promise<TierMeta | null> {
     workoutLimit: row.workoutLimit ?? null,
     aiAccess: row.aiAccess ?? false,
     priceMonthly: parsePriceDecimal(row.priceMonthly),
+    trainerClientLimit: row.trainerClientLimit ?? null,
+    isTrainerTier: row.isTrainerTier ?? false,
   };
 }
 
@@ -739,4 +760,252 @@ async function buildDenyVerdict(input: {
     upgradeTo: upgradeTierName,
     upgradePriceMonthly: tier?.priceMonthly ?? null,
   };
+}
+
+// ─── Trainer client-slot cap (revenue-leak fix) ───────────────────────
+
+/**
+ * Resolved tier context for the `trainer_clients` cap, shared by the
+ * entitlement verdict (`assertTrainerClients`) and the seat-availability
+ * gates in `trainers/seats/trainerSeats.ts`. Resolution mirrors
+ * `create_workout` / `ai_access`: latest subscription joined to its tier,
+ * with cancelled/expired subs reverting to free-tier rules (per AC 9.3 /
+ * AC 9.6). `currentTier` stays the user's ACTUAL tier for the verdict, but
+ * `limit` / `isTrainerTier` reflect the effective (post-revert) tier.
+ *
+ * Unlike `create_workout`, the discriminator is `isTrainerTier`, NOT the
+ * limit being null: `trainer_client_limit` is NULL on non-trainer tiers
+ * (free/premium) — that means "no client slots", not "unlimited". A trainer
+ * tier with a NULL limit (none ship today, but the shape allows it) is the
+ * only genuine "unlimited" case.
+ */
+export interface TrainerClientsTierContext {
+  /** The user's ACTUAL tier — used as the verdict's `currentTier`. */
+  currentTier: SubscriptionTierName;
+  /** Effective `trainer_client_limit` after any cancelled/expired revert. */
+  limit: number | null;
+  /** Whether the effective (post-revert) tier grants client slots. */
+  isTrainerTier: boolean;
+  /**
+   * Deny reason to use when the tier itself grants no slots: `'tier'` for a
+   * live non-trainer tier, `'cancelled'` / `'expired'` for a reverted sub.
+   * Ignored when `isTrainerTier` is true (the count decides then).
+   */
+  baseDenyReason: EntitlementDenyReason;
+}
+
+/**
+ * Resolve the trainer's effective client-slot tier context. Read-only.
+ * Pass a `tx` executor when called inside a transaction (e.g. under the
+ * per-trainer accept lock) so the read is consistent with the count.
+ */
+export async function resolveTrainerClientsEntitlement(
+  userId: string,
+  executor: Pick<Db, "select"> = getDb(),
+): Promise<TrainerClientsTierContext> {
+  const subRows = await executor
+    .select({
+      tierName: userSubscriptions.tierName,
+      paymentStatus: userSubscriptions.paymentStatus,
+      expiresAt: userSubscriptions.expiresAt,
+      trainerClientLimit: subscriptionTiers.trainerClientLimit,
+      isTrainerTier: subscriptionTiers.isTrainerTier,
+    })
+    .from(userSubscriptions)
+    .leftJoin(
+      subscriptionTiers,
+      eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+    )
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+
+  const subRow = subRows[0] ?? null;
+
+  let currentTier: SubscriptionTierName;
+  let limit: number | null;
+  let isTrainerTier: boolean;
+
+  if (subRow === null) {
+    const freeTier = await loadTier(executor, "free");
+    if (!freeTier) {
+      throw new Error(
+        "resolveTrainerClientsEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+      );
+    }
+    currentTier = "free";
+    limit = freeTier.trainerClientLimit;
+    isTrainerTier = freeTier.isTrainerTier;
+  } else {
+    currentTier = coerceTierName(subRow.tierName);
+    limit = subRow.trainerClientLimit ?? null;
+    isTrainerTier = subRow.isTrainerTier ?? false;
+  }
+
+  // Cancelled / expired → revert to free-tier rules (mirrors create_workout /
+  // ai_access). A trainer whose sub lapsed loses their slots.
+  let baseDenyReason: EntitlementDenyReason = "tier";
+  if (subRow !== null) {
+    const statusDeny = classifySubscriptionStatus(
+      subRow.paymentStatus,
+      subRow.expiresAt,
+    );
+    if (statusDeny !== null) {
+      const freeTier = await loadTier(executor, "free");
+      if (!freeTier) {
+        throw new Error(
+          "resolveTrainerClientsEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+        );
+      }
+      limit = freeTier.trainerClientLimit;
+      isTrainerTier = freeTier.isTrainerTier;
+      baseDenyReason = statusDeny;
+    }
+  }
+
+  return { currentTier, limit, isTrainerTier, baseDenyReason };
+}
+
+/**
+ * Count a trainer's ACTIVE, human (non-AI) client relationships — the
+ * canonical "occupied seats" count used everywhere the cap is enforced
+ * (this verdict, the accept-time backstop). Pass a `tx` executor inside a
+ * transaction so the count is consistent with the surrounding lock.
+ */
+export async function countActiveTrainerClients(
+  executor: Pick<Db, "select">,
+  trainerId: string,
+): Promise<number> {
+  const rows = await executor
+    .select({ total: sql<number>`count(*)::int` })
+    .from(ptClientRelationships)
+    .where(
+      and(
+        eq(ptClientRelationships.trainerId, trainerId),
+        eq(ptClientRelationships.status, "active"),
+        eq(ptClientRelationships.isAiTrainer, false),
+      ),
+    );
+  return rows[0]?.total ?? 0;
+}
+
+/**
+ * The upgrade target one step up the trainer-tier ladder. Used for the
+ * `trainer_clients` `'limit'` upsell (a trainer at cap should be pointed at
+ * the next-larger tier, NOT the role-based cheapest paid tier that
+ * `pickUpgradeTier` resolves). A non-trainer tier maps to the cheapest
+ * trainer tier; `medium_enterprise` (the top trainer tier) has no higher
+ * cap to upsell → `null`.
+ */
+export function nextTrainerTierUp(
+  tier: SubscriptionTierName,
+): SubscriptionTierName | null {
+  switch (tier) {
+    case "individual_trainer":
+      return "small_business";
+    case "small_business":
+      return "medium_enterprise";
+    case "medium_enterprise":
+      return null;
+    case "free":
+    case "premium":
+      return "individual_trainer";
+  }
+}
+
+/**
+ * Build a `trainer_clients` deny verdict, resolving the upgrade tier's live
+ * price. `'cancelled'` / `'expired'` carry no upgrade CTA (reinstate / fix
+ * payment); `'tier'` and `'limit'` step up the trainer-tier ladder via
+ * `nextTrainerTierUp`.
+ */
+export async function buildTrainerClientsDenyVerdict(input: {
+  reason: EntitlementDenyReason;
+  currentTier: SubscriptionTierName;
+  executor?: Pick<Db, "select">;
+}): Promise<Extract<EntitlementVerdict, { allowed: false }>> {
+  const { reason, currentTier } = input;
+  const executor = input.executor ?? getDb();
+
+  if (reason === "cancelled" || reason === "expired") {
+    return {
+      allowed: false,
+      reason,
+      currentTier,
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    };
+  }
+
+  const upgradeTo = nextTrainerTierUp(currentTier);
+  if (upgradeTo === null) {
+    return {
+      allowed: false,
+      reason,
+      currentTier,
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    };
+  }
+
+  const tier = await loadTier(executor, upgradeTo);
+  return {
+    allowed: false,
+    reason,
+    currentTier,
+    upgradeTo,
+    upgradePriceMonthly: tier?.priceMonthly ?? null,
+  };
+}
+
+/**
+ * Shared `trainer_clients` "hard cap" core: is the trainer under their tier's
+ * `trainer_client_limit` in ACTIVE human clients? Returns `{ allowed: true }`
+ * or the deny verdict (which the caller either throws as an `EntitlementError`
+ * or reads for a notification's upgrade pointer). Non-trainer / reverted subs
+ * deny with `'tier'` / `'cancelled'` / `'expired'`; a trainer tier with a NULL
+ * limit is unlimited.
+ *
+ * Pass a `tx` executor when calling under the per-trainer accept lock so the
+ * tier read + active count are consistent with the surrounding transaction.
+ * The invite-CREATION gate additionally counts outstanding invitations against
+ * the cap — see `evaluateTrainerJoinSeat` / `assertTrainerCanInvite` in
+ * `trainers/seats/trainerSeats.ts`.
+ */
+export async function evaluateTrainerClientsActiveSeat(
+  userId: string,
+  executor: Pick<Db, "select"> = getDb(),
+): Promise<EntitlementVerdict> {
+  const ctx = await resolveTrainerClientsEntitlement(userId, executor);
+
+  if (!ctx.isTrainerTier) {
+    return buildTrainerClientsDenyVerdict({
+      reason: ctx.baseDenyReason,
+      currentTier: ctx.currentTier,
+      executor,
+    });
+  }
+
+  // Trainer tier with an unlimited (NULL) cap → allowed.
+  if (ctx.limit === null) {
+    return { allowed: true };
+  }
+
+  const activeClients = await countActiveTrainerClients(executor, userId);
+  if (activeClients >= ctx.limit) {
+    return buildTrainerClientsDenyVerdict({
+      reason: "limit",
+      currentTier: ctx.currentTier,
+      executor,
+    });
+  }
+
+  return { allowed: true };
+}
+
+/** `trainer_clients` entitlement verdict for `assertEntitlement`. */
+async function assertTrainerClients(
+  userId: string,
+): Promise<EntitlementVerdict> {
+  return evaluateTrainerClientsActiveSeat(userId, getDb());
 }
