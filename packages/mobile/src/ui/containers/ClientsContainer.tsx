@@ -1,8 +1,12 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
-import { useFeatureGate } from "@/ui/hooks/useFeatureGate";
+import {
+  useFeatureGate,
+  computeClientSeatVerdict,
+  nextTrainerTierUp,
+} from "@/ui/hooks/useFeatureGate";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
@@ -49,6 +53,14 @@ export function ClientsContainer() {
     [clients],
   );
 
+  // Client-slot cap (mirrors the backend trainer_clients gate). Drives the
+  // "N of M slots used" line, the disabled invite, and the no-seats warning.
+  const subscription = subQuery.data ?? null;
+  const seat = useMemo(
+    () => computeClientSeatVerdict(subscription, activeCount),
+    [subscription, activeCount],
+  );
+
   const refreshRoster = roster.refresh;
   const onInvite = useCallback(() => {
     // Register the roster refresh so a successful invite re-pulls the list.
@@ -56,6 +68,17 @@ export function ClientsContainer() {
       void refreshRoster();
     });
   }, [openSheet, refreshRoster]);
+
+  // "Change subscription" from the at-cap warning → subscription selection,
+  // pre-selecting the next trainer tier up when there is one.
+  const onUpgrade = useCallback(() => {
+    const cycle = subscription?.billingCycle ?? "monthly";
+    const target = subscription
+      ? nextTrainerTierUp(subscription.tierName)
+      : null;
+    const query = target ? `?tier=${target}&cycle=${cycle}` : `?cycle=${cycle}`;
+    router.push(`/(auth)/subscription-selection${query}` as Href);
+  }, [subscription]);
 
   const onOpenClient = useCallback((id: string) => {
     router.push(`/(app)/clients/${id}`);
@@ -102,6 +125,10 @@ export function ClientsContainer() {
       onInvite={onInvite}
       onOpenClient={onOpenClient}
       onSwitchToAthlete={onSwitchToAthlete}
+      clientLimit={seat.limit}
+      slotsUsed={seat.used}
+      atCap={seat.atCap}
+      onUpgrade={onUpgrade}
     />
   );
 }

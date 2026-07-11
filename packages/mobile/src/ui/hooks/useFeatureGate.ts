@@ -224,6 +224,104 @@ export function computeFeatureGateVerdict(
 }
 
 /**
+ * Client-slot seat verdict for the coach Clients surface. Mirrors the backend
+ * `trainer_clients` cap (`assertEntitlement` / `trainerSeats`): active-client
+ * count vs `MySubscription.trainerClientLimit`, with cancelled/expired trainers
+ * reverting to free rules (no slots) and a NULL limit meaning unlimited.
+ *
+ * This is DELIBERATELY separate from `useFeatureGate('trainer_clients')`, which
+ * stays a boolean `isTrainerTier` gate: that verdict gates the WHOLE Clients
+ * screen, so making it count-based would lock an at-cap trainer OUT of their
+ * roster. The seat verdict instead drives the in-roster "N of M slots used"
+ * line + the disabled invite + the "no seats" warning, leaving the screen
+ * reachable.
+ */
+export interface ClientSeatVerdict {
+  /** Active (human) clients currently occupying seats. */
+  used: number;
+  /** Tier cap; `null` = unlimited (or unknown before the sub cache loads). */
+  limit: number | null;
+  /** At/over the cap — disable the invite affordance + show the warning. */
+  atCap: boolean;
+  /** Whether a seat is available for a new invite. */
+  hasSeats: boolean;
+}
+
+const TRAINER_TIER_LADDER: Record<
+  SubscriptionTierName,
+  SubscriptionTierName | null
+> = {
+  free: "individual_trainer",
+  premium: "individual_trainer",
+  individual_trainer: "small_business",
+  small_business: "medium_enterprise",
+  medium_enterprise: null,
+};
+
+/**
+ * The next trainer tier up (for the at-cap "change subscription" CTA). Mirrors
+ * the backend `nextTrainerTierUp`: non-trainer → cheapest trainer tier;
+ * `medium_enterprise` (top) → no higher cap to upsell.
+ */
+export function nextTrainerTierUp(
+  tier: SubscriptionTierName,
+): SubscriptionTierName | null {
+  return TRAINER_TIER_LADDER[tier] ?? null;
+}
+
+/**
+ * Compute the client-seat verdict from the cached subscription + the trainer's
+ * active-client count. Pure — exported for unit testing. Returns a
+ * seats-available verdict while the sub cache is unresolved (`null`) so the
+ * warning never flashes before the real cap is known.
+ */
+export function computeClientSeatVerdict(
+  subscription: MySubscription | null,
+  activeClientCount: number,
+): ClientSeatVerdict {
+  if (subscription === null) {
+    return {
+      used: activeClientCount,
+      limit: null,
+      atCap: false,
+      hasSeats: true,
+    };
+  }
+
+  // Mirror the server: cancelled-but-still-paid-through stays entitled; any
+  // other non-active status reverts to free rules → no client slots.
+  const isEntitled =
+    ACTIVE_STATUSES.has(subscription.paymentStatus) ||
+    (subscription.paymentStatus === "cancelled" &&
+      isExpiresAtInFuture(subscription.expiresAt));
+  if (!isEntitled) {
+    // Lapsed sub reverts to free rules → no slots. Report `limit: null` so the
+    // surface shows ONLY the no-seats warning, not a contradictory
+    // "0 of 3 slots used" line reflecting the now-defunct tier.
+    return {
+      used: activeClientCount,
+      limit: null,
+      atCap: true,
+      hasSeats: false,
+    };
+  }
+
+  const limit = subscription.trainerClientLimit;
+  if (limit === null) {
+    // Unlimited trainer tier.
+    return {
+      used: activeClientCount,
+      limit: null,
+      atCap: false,
+      hasSeats: true,
+    };
+  }
+
+  const atCap = activeClientCount >= limit;
+  return { used: activeClientCount, limit, atCap, hasSeats: !atCap };
+}
+
+/**
  * React hook surface: feature-gate verdict + ready-to-render prompt
  * props for the current signed-in user.
  *

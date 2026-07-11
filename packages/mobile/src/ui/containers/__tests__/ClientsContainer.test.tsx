@@ -137,13 +137,19 @@ function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
   };
 }
 
-function makeTrainerSub(): MySubscription {
+function makeTrainerSub(
+  overrides: Partial<MySubscription> = {},
+): MySubscription {
   return makeSub({
-    tierName: "individual_trainer",
+    tierName: "small_business",
     isTrainerTier: true,
     role: "personal_trainer",
     workoutLimit: null,
-    trainerClientLimit: 5,
+    // 30-seat tier vs the 5-client roster → under cap by default, so the
+    // invite affordance stays enabled for the roster/sheet tests. At-cap
+    // behaviour is exercised explicitly below.
+    trainerClientLimit: 30,
+    ...overrides,
   });
 }
 
@@ -250,6 +256,32 @@ describe("ClientsContainer", () => {
     });
     await waitFor(() =>
       expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+    );
+  });
+
+  it("at the client-slot cap: warns, shows the slots line, and disables invite", async () => {
+    // 30→5 override puts the 5-client roster exactly at cap.
+    const { adapters, api } = makeAdapters(
+      makeTrainerSub({ trainerClientLimit: 5 }),
+    );
+    api.trainerClients = makeTrainerClients();
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <ClientsContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("clients-no-seats-warning")).toBeTruthy(),
+    );
+    expect(screen.getByText("5 of 5 client slots used")).toBeTruthy();
+    // Invite affordance is disabled → pressing it does not open the sheet.
+    fireEvent.press(screen.getByTestId("clients-invite-btn"));
+    expect(useAddClientSheet.getState().open).toBe(false);
+    // "Change subscription" routes to selection, pre-selecting the next tier
+    // up (small_business → medium_enterprise).
+    fireEvent.press(screen.getByTestId("clients-no-seats-upgrade"));
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(auth)/subscription-selection?tier=medium_enterprise&cycle=monthly",
     );
   });
 

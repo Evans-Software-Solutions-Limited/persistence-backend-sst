@@ -182,6 +182,67 @@ describe("ClientsListPresenter", () => {
     expect(onInvite).toHaveBeenCalledTimes(1);
   });
 
+  describe("client-slot cap", () => {
+    it("shows the 'N of M slots used' line for a finite cap", () => {
+      const { getByText } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({ clientLimit: 2, slotsUsed: 1 })}
+        />,
+      );
+      expect(getByText("1 of 2 client slots used")).toBeTruthy();
+    });
+
+    it("hides the slots line when the cap is unknown/unlimited (null limit)", () => {
+      const { queryByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({ clientLimit: null, slotsUsed: 3 })}
+        />,
+      );
+      expect(queryByTestId("clients-slots-used")).toBeNull();
+      expect(queryByTestId("clients-no-seats-warning")).toBeNull();
+    });
+
+    it("at cap: shows the no-seats warning, disables invite, and routes the upgrade CTA", () => {
+      const onInvite = jest.fn();
+      const onUpgrade = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({
+            clientLimit: 2,
+            slotsUsed: 2,
+            atCap: true,
+            onInvite,
+            onUpgrade,
+          })}
+        />,
+      );
+      expect(getByTestId("clients-no-seats-warning")).toBeTruthy();
+      // Invite affordance is disabled — pressing it does nothing.
+      fireEvent.press(getByTestId("clients-invite-btn"));
+      expect(onInvite).not.toHaveBeenCalled();
+      // The "change subscription" CTA routes to selection.
+      fireEvent.press(getByTestId("clients-no-seats-upgrade"));
+      expect(onUpgrade).toHaveBeenCalledTimes(1);
+    });
+
+    it("under cap: no warning, invite stays enabled", () => {
+      const onInvite = jest.fn();
+      const { queryByTestId, getByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({
+            clientLimit: 30,
+            slotsUsed: 4,
+            atCap: false,
+            onInvite,
+          })}
+        />,
+      );
+      expect(queryByTestId("clients-no-seats-warning")).toBeNull();
+      fireEvent.press(getByTestId("clients-invite-btn"));
+      expect(onInvite).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("fires onOpenClient with the row id", () => {
     const onOpenClient = jest.fn();
     const { getByTestId } = renderWithTheme(

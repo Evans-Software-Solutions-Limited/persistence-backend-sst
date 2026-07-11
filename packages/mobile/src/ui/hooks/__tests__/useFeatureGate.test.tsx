@@ -34,6 +34,8 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 // eslint-disable-next-line import/first
 import {
   computeFeatureGateVerdict,
+  computeClientSeatVerdict,
+  nextTrainerTierUp,
   useFeatureGate,
 } from "@/ui/hooks/useFeatureGate";
 
@@ -140,6 +142,111 @@ function makeSub(overrides: Partial<MySubscription> = {}): MySubscription {
 
 beforeEach(() => {
   mockPush.mockReset();
+});
+
+describe("nextTrainerTierUp", () => {
+  it("steps the trainer-tier ladder; non-trainer → cheapest trainer tier; top → null", () => {
+    expect(nextTrainerTierUp("free")).toBe("individual_trainer");
+    expect(nextTrainerTierUp("premium")).toBe("individual_trainer");
+    expect(nextTrainerTierUp("individual_trainer")).toBe("small_business");
+    expect(nextTrainerTierUp("small_business")).toBe("medium_enterprise");
+    expect(nextTrainerTierUp("medium_enterprise")).toBeNull();
+  });
+});
+
+describe("computeClientSeatVerdict (pure — mirrors the backend cap)", () => {
+  it("returns seats-available while the sub cache is unresolved (null)", () => {
+    expect(computeClientSeatVerdict(null, 5)).toEqual({
+      used: 5,
+      limit: null,
+      atCap: false,
+      hasSeats: true,
+    });
+  });
+
+  it("under the cap → seats available, not at cap", () => {
+    const sub = makeSub({
+      tierName: "individual_trainer",
+      isTrainerTier: true,
+      trainerClientLimit: 2,
+      paymentStatus: "active",
+    });
+    expect(computeClientSeatVerdict(sub, 1)).toEqual({
+      used: 1,
+      limit: 2,
+      atCap: false,
+      hasSeats: true,
+    });
+  });
+
+  it("at the cap → atCap, no seats", () => {
+    const sub = makeSub({
+      tierName: "individual_trainer",
+      isTrainerTier: true,
+      trainerClientLimit: 2,
+      paymentStatus: "active",
+    });
+    expect(computeClientSeatVerdict(sub, 2)).toEqual({
+      used: 2,
+      limit: 2,
+      atCap: true,
+      hasSeats: false,
+    });
+  });
+
+  it("NULL trainer limit → unlimited", () => {
+    const sub = makeSub({
+      tierName: "individual_trainer",
+      isTrainerTier: true,
+      trainerClientLimit: null,
+      paymentStatus: "active",
+    });
+    expect(computeClientSeatVerdict(sub, 99)).toEqual({
+      used: 99,
+      limit: null,
+      atCap: false,
+      hasSeats: true,
+    });
+  });
+
+  it("cancelled + expired trainer reverts to free rules → no seats, limit suppressed", () => {
+    const sub = makeSub({
+      tierName: "individual_trainer",
+      isTrainerTier: true,
+      trainerClientLimit: 30,
+      paymentStatus: "cancelled",
+      expiresAt: "2020-01-01T00:00:00.000Z", // past
+    });
+    const v = computeClientSeatVerdict(sub, 0);
+    expect(v.atCap).toBe(true);
+    expect(v.hasSeats).toBe(false);
+    // limit null → no contradictory "0 of 30 used" line alongside the warning.
+    expect(v.limit).toBeNull();
+  });
+
+  it("past_due trainer is treated as not entitled → no seats (mirrors backend)", () => {
+    const sub = makeSub({
+      tierName: "small_business",
+      isTrainerTier: true,
+      trainerClientLimit: 30,
+      paymentStatus: "past_due",
+    });
+    const v = computeClientSeatVerdict(sub, 2);
+    expect(v).toEqual({ used: 2, limit: null, atCap: true, hasSeats: false });
+  });
+
+  it("cancelled but still paid-through → stays entitled (under cap)", () => {
+    const sub = makeSub({
+      tierName: "individual_trainer",
+      isTrainerTier: true,
+      trainerClientLimit: 30,
+      paymentStatus: "cancelled",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(), // +1 day
+    });
+    const v = computeClientSeatVerdict(sub, 1);
+    expect(v.atCap).toBe(false);
+    expect(v.hasSeats).toBe(true);
+  });
 });
 
 describe("computeFeatureGateVerdict (pure)", () => {

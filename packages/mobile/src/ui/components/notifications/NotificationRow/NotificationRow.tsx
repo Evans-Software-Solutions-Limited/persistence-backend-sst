@@ -101,6 +101,10 @@ export function notificationVisual(type: WireNotificationType): Visual {
     // (matches trainer_feedback).
     case "coach_brief":
       return { Icon: IconMessage, tone: "trainer" };
+    // Trainer-client-caps — trainer-facing "a client couldn't join, your plan
+    // is full" nudge; client-roster icon + coach tone.
+    case "trainer_client_limit_reached":
+      return { Icon: IconUsers, tone: "trainer" };
     default:
       return { Icon: IconBell, tone: "neutral" };
   }

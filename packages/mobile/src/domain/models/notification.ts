@@ -46,10 +46,14 @@ export type NotificationType =
   | "nutrition_target_set_by_trainer"
   // M17 Send brief — coach → client free-text brief; deep-links to the
   // athlete Training page (DB enum migration 20260709120000).
-  | "coach_brief";
+  | "coach_brief"
+  // Trainer-client-caps — a client's join was rejected because the trainer is
+  // at their plan's client-slot limit; notifies the TRAINER (DB enum migration
+  // 20260711120000). Deep-links to the coach Clients roster.
+  | "trainer_client_limit_reached";
 
 /**
- * The 9 known types as a runtime array. Drives the preferences screen's
+ * The known types as a runtime array. Drives the preferences screen's
  * first-open `DEFAULT_OPT_IN` write + the data-driven category list.
  * Order is the canonical enum order from the backend.
  */
@@ -68,6 +72,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "measurement_logged_on_behalf",
   "nutrition_target_set_by_trainer",
   "coach_brief",
+  "trainer_client_limit_reached",
 ] as const;
 
 /**
@@ -106,6 +111,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   measurement_logged_on_behalf: "Measurements logged by coach",
   nutrition_target_set_by_trainer: "Nutrition targets set by coach",
   coach_brief: "Briefs from your coach",
+  trainer_client_limit_reached: "Client limit reached",
 };
 
 /**

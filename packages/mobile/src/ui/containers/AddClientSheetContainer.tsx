@@ -96,6 +96,18 @@ export function AddClientSheetContainer() {
       return;
     }
 
+    // Client-slot cap backstop: the backend now returns 402 EntitlementError
+    // when the trainer is at their committed-seat cap (the Clients screen
+    // pre-empts this by disabling the invite, but the sheet is also reachable
+    // from Coach You, and the cap can be hit between mount and send).
+    if (result.error.code === "entitlement_denied") {
+      Alert.alert(
+        "No client seats available",
+        "Remove a client or change your subscription to invite more.",
+      );
+      return;
+    }
+
     // Domain failure — map the backend invite code to the legacy copy.
     switch (result.error.inviteCode) {
       case "exists":
