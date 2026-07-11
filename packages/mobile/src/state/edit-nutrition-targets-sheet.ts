@@ -19,6 +19,12 @@ export type EditNutritionTargetsInitial = {
   carbsG: number | null;
   fatG: number | null;
   waterCups: number | null;
+  /** Client body stats for the optional TDEE calculator (from the Client
+   *  Detail header). Prefill the calculator's age/height so the coach only
+   *  needs to add the client's sex + weight — sex/weight aren't on the client
+   *  header. Absent/null → the calculator starts those fields blank. */
+  ageYears?: number | null;
+  heightCm?: number | null;
 };
 
 export interface EditNutritionTargetsSheetState {
@@ -34,17 +40,29 @@ export interface EditNutritionTargetsSheetState {
   closeSheet: () => void;
 }
 
-/** Convenience adapter — build the initial from a CalorieHitModule (module d). */
+/**
+ * Convenience adapter — build the initial from a CalorieHitModule (module d).
+ * Optionally carries the client's body stats (age/height from the Client
+ * Detail header) so the coach's optional TDEE calculator opens pre-filled.
+ * Returns an initial when either the calorie target or the body stats are
+ * present, so the sheet can prefill the calculator even before a target exists.
+ */
 export function initialFromCalorieHit(
   calorieHit: CalorieHitModule | null,
+  clientStats?: { ageYears: number | null; heightCm: number | null } | null,
 ): EditNutritionTargetsInitial | null {
-  if (!calorieHit) return null;
+  if (!calorieHit && !clientStats) return null;
   return {
-    dailyKcal: calorieHit.targetKcal,
+    dailyKcal: calorieHit?.targetKcal ?? null,
     proteinG: null,
     carbsG: null,
     fatG: null,
     waterCups: null,
+    // Only carry the body stats when the caller supplies them, so the
+    // calorie-only call keeps its original shape.
+    ...(clientStats
+      ? { ageYears: clientStats.ageYears, heightCm: clientStats.heightCm }
+      : {}),
   };
 }
 

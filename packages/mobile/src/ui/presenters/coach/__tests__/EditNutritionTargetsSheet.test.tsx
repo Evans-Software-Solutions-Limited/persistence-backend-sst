@@ -22,8 +22,10 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useEditNutritionTargetsSheet } from "@/state/edit-nutrition-targets-sheet";
 import {
   EditNutritionTargetsSheet,
+  parseBodyStat,
   parseTargetField,
 } from "@/ui/presenters/coach/EditNutritionTargetsSheet";
+import { computeFuelTargetsPreview } from "@/domain/services/nutrition.service";
 
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -96,6 +98,17 @@ describe("parseTargetField", () => {
     expect(parseTargetField("-5")).toBeNull();
     expect(parseTargetField("18.5")).toBeNull();
     expect(parseTargetField("abc")).toBeNull();
+  });
+});
+
+describe("parseBodyStat", () => {
+  it("accepts positive decimals, rejects blank/zero/negative/junk", () => {
+    expect(parseBodyStat("80")).toBe(80);
+    expect(parseBodyStat("72.5")).toBe(72.5);
+    expect(parseBodyStat("")).toBeNull();
+    expect(parseBodyStat("0")).toBeNull();
+    expect(parseBodyStat("-5")).toBeNull();
+    expect(parseBodyStat("abc")).toBeNull();
   });
 });
 
@@ -207,5 +220,78 @@ describe("EditNutritionTargetsSheet", () => {
       expect(screen.getByTestId("edit-nutrition-targets-error")).toBeTruthy(),
     );
     expect(useEditNutritionTargetsSheet.getState().open).toBe(true);
+  });
+
+  it("calculator mode derives targets from the client's stats and saves them", async () => {
+    const { adapters, api } = makeAdapters();
+    const onSaved = jest.fn();
+    render(
+      <Wrapper adapters={adapters}>
+        <EditNutritionTargetsSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useEditNutritionTargetsSheet.getState().openSheet(
+        "client-9",
+        {
+          dailyKcal: null,
+          proteinG: null,
+          carbsG: null,
+          fatG: null,
+          waterCups: null,
+          ageYears: 30,
+          heightCm: 180,
+        },
+        onSaved,
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-nutrition-mode-calculator")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("edit-nutrition-mode-calculator"));
+
+    // Age + height prefill from the client header; the coach adds sex + weight.
+    expect(screen.getByTestId("edit-calc-age").props.value).toBe("30");
+    expect(screen.getByTestId("edit-calc-height").props.value).toBe("180");
+    // Save is disabled until the profile + water are complete.
+    expect(
+      screen.getByTestId("edit-nutrition-targets-submit").props
+        .accessibilityState,
+    ).toMatchObject({ disabled: true });
+
+    fireEvent.press(screen.getByTestId("edit-calc-sex-male"));
+    fireEvent.changeText(screen.getByTestId("edit-calc-weight"), "80");
+    fireEvent.changeText(screen.getByTestId("edit-calc-water"), "8");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-calc-preview")).toBeTruthy(),
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("edit-nutrition-targets-submit"));
+    });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    // The saved numbers are exactly what the shared TDEE engine computes for
+    // the defaults (moderate activity, maintain goal, recommended split).
+    const expected = computeFuelTargetsPreview(
+      { sex: "male", age: 30, heightCm: 180, weightKg: 80 },
+      "moderate",
+      0,
+      "recommended",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    expect(api.setClientNutritionTargetCalls[0]).toEqual({
+      clientId: "client-9",
+      input: {
+        dailyKcal: expected.kcal,
+        proteinG: expected.macroGrams?.proteinG,
+        carbsG: expected.macroGrams?.carbsG,
+        fatG: expected.macroGrams?.fatG,
+        waterCups: 8,
+        preset: "recommended",
+      },
+    });
+    expect(useEditNutritionTargetsSheet.getState().open).toBe(false);
   });
 });

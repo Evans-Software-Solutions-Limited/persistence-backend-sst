@@ -14,10 +14,10 @@ import { HabitSetupContainer } from "@/ui/containers/HabitSetupContainer";
  */
 export default function ClientHabitsScreen() {
   const mode = useUserMode((s) => s.mode);
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
 
   if (mode !== "coach" || !id) {
     return <Redirect href="/(app)/(tabs)" />;
   }
-  return <HabitSetupContainer clientId={id} />;
+  return <HabitSetupContainer clientId={id} clientName={name} />;
 }

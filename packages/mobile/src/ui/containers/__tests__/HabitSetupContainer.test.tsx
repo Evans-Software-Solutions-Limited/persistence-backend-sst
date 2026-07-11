@@ -76,6 +76,7 @@ function makeAdapters(
 function renderContainer(
   clientId?: string,
   seed?: (api: InMemoryApiAdapter, storage: InMemoryStorageAdapter) => void,
+  clientName?: string,
 ) {
   const api = new InMemoryApiAdapter();
   const storage = new InMemoryStorageAdapter();
@@ -85,9 +86,10 @@ function renderContainer(
       {children}
     </AdapterProvider>
   );
-  const result = render(<HabitSetupContainer clientId={clientId} />, {
-    wrapper,
-  });
+  const result = render(
+    <HabitSetupContainer clientId={clientId} clientName={clientName} />,
+    { wrapper },
+  );
   return { api, storage, ...result };
 }
 
@@ -441,6 +443,26 @@ describe("HabitSetupContainer (coach)", () => {
     expect(props().isCoach).toBe(true);
     // Coach view never surfaces at-risk (no local streak mirror for a client).
     expect(props().atRisk).toBe(false);
+  });
+
+  it("titles the header with the client's name when supplied", async () => {
+    renderContainer(
+      "client-9",
+      (api) => {
+        api.clientHabitConfigs = { "client-9": [waterEnabled()] };
+      },
+      "Alex",
+    );
+    await waitFor(() => expect(props().isCoach).toBe(true));
+    expect(props().title).toBe("Alex's habits");
+  });
+
+  it("falls back to a generic client title when no name is supplied", async () => {
+    renderContainer("client-9", (api) => {
+      api.clientHabitConfigs = { "client-9": [waterEnabled()] };
+    });
+    await waitFor(() => expect(props().isCoach).toBe(true));
+    expect(props().title).toBe("Client's habits");
   });
 
   it("coach edit updates the draft, then Save routes to the trainer endpoint + refreshes", async () => {
