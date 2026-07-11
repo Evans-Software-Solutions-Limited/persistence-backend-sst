@@ -44,6 +44,9 @@ export type HabitSetupPresenterProps = {
   /** A saved edit/disable is deferred to next Monday → show the "starts
    *  Monday" banner so the deferral (esp. turning a habit off) isn't invisible. */
   deferredChangesPending?: boolean;
+  /** Header title. Defaults to "Your habits"; coach view passes the client's
+   *  name (e.g. "Alex's habits") so it's clear whose habits are being edited. */
+  title?: string;
   /** Optional intro override (coach view swaps the copy). */
   intro?: string;
   /** Optional coach-attribution eyebrow shown under the title (coach view). */
@@ -73,6 +76,7 @@ export function HabitSetupPresenter({
   canSave,
   saving,
   deferredChangesPending = false,
+  title = "Your habits",
   intro,
   coachSubtitle,
   onBack,
@@ -92,7 +96,7 @@ export function HabitSetupPresenter({
       <HeaderBar
         large
         eyebrow="HABIT SETUP"
-        title="Your habits"
+        title={title}
         sub={intro ?? DEFAULT_INTRO}
         leading={
           <IconBtn

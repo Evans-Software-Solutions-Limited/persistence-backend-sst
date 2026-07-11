@@ -230,9 +230,15 @@ export function ClientDetailContainer() {
 
   const onEditTargets = useCallback(() => {
     if (!id) return;
+    const client = detail.data?.client;
     openEditTargets(
       id,
-      initialFromCalorieHit(detail.data?.calorieHit ?? null),
+      initialFromCalorieHit(
+        detail.data?.calorieHit ?? null,
+        client
+          ? { ageYears: client.ageYears, heightCm: client.heightCm }
+          : null,
+      ),
       refreshAll,
     );
   }, [id, openEditTargets, detail.data, refreshAll]);

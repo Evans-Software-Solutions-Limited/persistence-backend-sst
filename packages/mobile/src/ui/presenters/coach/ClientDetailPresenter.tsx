@@ -737,7 +737,7 @@ function AISummaryCard({
           fontFamily="$body"
           fontSize={14}
           lineHeight={20}
-          color="$text1"
+          color="$text"
           testID="client-detail-ai-summary-text"
         >
           {summary}

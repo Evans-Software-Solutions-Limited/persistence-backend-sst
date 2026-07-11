@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  TextInput,
-} from "react-native";
+import { ActivityIndicator, Pressable, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet } from "@/ui/components/foundation/BottomSheet";
 import { Btn } from "@/ui/components/foundation/Btn";
@@ -230,56 +225,57 @@ export function AssignGoalSheet() {
                 No goal types available.
               </Text>
             ) : (
-              <ScrollView
-                style={{ maxHeight: 260 }}
-                keyboardShouldPersistTaps="handled"
-                testID="assign-goal-types-list"
-              >
-                <View gap={8}>
-                  {goalTypes.map((gt) => {
-                    const selected = gt.id === goalTypeId;
-                    return (
-                      <Pressable
-                        key={gt.id}
-                        onPress={() => setGoalTypeId(gt.id)}
-                        testID={`assign-goal-type-${gt.id}`}
-                        accessibilityState={{ selected }}
-                        style={{
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: selected
-                            ? toneHex("trainer").base
-                            : "#232735",
-                          backgroundColor: selected
-                            ? toneHex("trainer").dim
-                            : "#1A1D29",
-                          paddingHorizontal: 14,
-                          paddingVertical: 12,
-                        }}
+              // Render the goal-type list as a plain (non-scrolling) column.
+              // The enclosing <BottomSheet> already wraps its children in
+              // gorhom's gesture-aware BottomSheetScrollView, so the whole
+              // sheet scrolls. A nested raw RN ScrollView here fought the
+              // sheet's pan-down-to-close gesture — dragging to scroll the
+              // picker flicked the drawer. Letting the sheet own the single
+              // scroll axis removes the conflict.
+              <View gap={8} testID="assign-goal-types-list">
+                {goalTypes.map((gt) => {
+                  const selected = gt.id === goalTypeId;
+                  return (
+                    <Pressable
+                      key={gt.id}
+                      onPress={() => setGoalTypeId(gt.id)}
+                      testID={`assign-goal-type-${gt.id}`}
+                      accessibilityState={{ selected }}
+                      style={{
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: selected
+                          ? toneHex("trainer").base
+                          : "#232735",
+                        backgroundColor: selected
+                          ? toneHex("trainer").dim
+                          : "#1A1D29",
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                      }}
+                    >
+                      <Text
+                        fontFamily="$display"
+                        fontWeight="600"
+                        fontSize={14}
+                        color={selected ? "$accentTrainer" : "$text"}
                       >
+                        {gt.name}
+                      </Text>
+                      {gt.description ? (
                         <Text
-                          fontFamily="$display"
-                          fontWeight="600"
-                          fontSize={14}
-                          color={selected ? "$accentTrainer" : "$text"}
+                          fontFamily="$body"
+                          fontSize={12}
+                          color="$text3"
+                          marginTop={2}
                         >
-                          {gt.name}
+                          {gt.description}
                         </Text>
-                        {gt.description ? (
-                          <Text
-                            fontFamily="$body"
-                            fontSize={12}
-                            color="$text3"
-                            marginTop={2}
-                          >
-                            {gt.description}
-                          </Text>
-                        ) : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
             )}
           </View>
         )}

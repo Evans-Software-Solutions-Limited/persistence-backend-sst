@@ -46,7 +46,10 @@ import { deriveCollectionStreak } from "@/domain/services";
  * At-risk is derived from the offline mirror (this week not yet safe + no
  * freeze queued) so the banner shows without a round-trip.
  */
-export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
+export function HabitSetupContainer({
+  clientId,
+  clientName,
+}: { clientId?: string; clientName?: string } = {}) {
   const router = useRouter();
   const { storage } = useAdapters();
   const { session } = useAuth();
@@ -341,6 +344,13 @@ export function HabitSetupContainer({ clientId }: { clientId?: string } = {}) {
       canSave={canSave}
       saving={saving}
       deferredChangesPending={hasDeferredChanges}
+      title={
+        isCoachView
+          ? clientName
+            ? `${clientName}'s habits`
+            : "Client's habits"
+          : undefined
+      }
       intro={
         isCoachView
           ? "Set each target and how often they'll hit it. Changes start next Monday."

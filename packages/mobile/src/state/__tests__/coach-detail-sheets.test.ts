@@ -26,6 +26,43 @@ describe("initialFromCalorieHit", () => {
       waterCups: null,
     });
   });
+
+  it("carries client body stats for the calculator when supplied", () => {
+    expect(
+      initialFromCalorieHit(
+        {
+          targetKcal: 2400,
+          daysHit: 5,
+          daysLogged: 7,
+          todayKcal: 1800,
+          todayRemainingKcal: 600,
+        },
+        { ageYears: 30, heightCm: 180 },
+      ),
+    ).toEqual({
+      dailyKcal: 2400,
+      proteinG: null,
+      carbsG: null,
+      fatG: null,
+      waterCups: null,
+      ageYears: 30,
+      heightCm: 180,
+    });
+  });
+
+  it("still builds an initial (kcal null) when only body stats are known", () => {
+    expect(
+      initialFromCalorieHit(null, { ageYears: 25, heightCm: 165 }),
+    ).toEqual({
+      dailyKcal: null,
+      proteinG: null,
+      carbsG: null,
+      fatG: null,
+      waterCups: null,
+      ageYears: 25,
+      heightCm: 165,
+    });
+  });
 });
 
 describe("useEditNutritionTargetsSheet store", () => {
