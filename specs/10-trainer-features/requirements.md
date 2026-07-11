@@ -231,13 +231,15 @@ Authoritative references:
 
 ### STORY-015: As a coach I want to share an invite code (with QR); as an athlete I want to redeem one — no email required
 
-> **Backend already shipped (#136), no mobile callers yet.** `POST /trainers/me/invite-codes`
+> **#136 shipped the mint + redeem endpoints; Phase 8 (#198 backend + #202 mobile)
+> added the coach-accept half + the mobile UI.** `POST /trainers/me/invite-codes`
 > mints a short code for the coach (24 h expiry, reuses the trainer's still-valid code);
 > `POST /trainers/accept-invite-code` lets an athlete redeem it, which creates a **pending**
 > `pt_client_relationships` row and sends the trainer a `pt_request` / `physio_request`
-> notification ("… joined via your invite code"). **Redeeming does not auto-connect** — it
-> sends a training request the trainer must still accept (same handshake as #136). This
-> story is FRONTEND on both sides.
+> notification ("… joined via your invite code"). **Redeeming does not auto-connect, and the
+> athlete does NOT self-accept — the COACH accepts** (decision #2). #136 shipped no
+> coach-accept endpoint, so Phase 8 added one plus a direction column so the two
+> pending-creation paths don't collide (see the reconciliation note below AC 15.11).
 
 **Acceptance Criteria — coach share:**
 
@@ -251,7 +253,15 @@ Authoritative references:
 - 15.5 [ ] A "Have a coach's code?" entry point lives in the **Requests / trainer section on the You screen** (the natural home the PT-request handshake from #136 already occupies).
 - 15.6 [ ] Entering a code fires `POST /trainers/accept-invite-code`; on success the endpoint returns `{ data: { success, relationshipId, trainerName, message: "Training request sent to <trainer>" } }`. The athlete's "Your trainer" section reflects a **pending request awaiting the trainer's acceptance** (NOT an active relationship) — refresh `GET /clients/me/relationships` to render the pending state. The trainer receives the `pt_request` / `physio_request` notification.
 - 15.7 [ ] Opening a `persistencemobile://accept-invite?code=...` deep link routes to this redeem entry with the code pre-filled (the coach's QR scanned by any generic camera / QR reader resolves here). **The `accept-invite` deep-link route must be registered in the mobile router as part of this story** — it does not exist yet.
-- 15.8 [ ] Invalid / expired / already-redeemed codes surface the endpoint's error message inline; no relationship row is created.
+- 15.8 [ ] Invalid / expired / already-redeemed codes surface the endpoint's error message inline; no relationship row is created. `coach_client_limit_reached` (the coach is at their client-slot cap) is shown as inline copy ("This coach's client list is full."), **not** a paywall — the athlete is not the party who can act on it.
+
+**Acceptance Criteria — coach accepts (the missing half, added in Phase 8):**
+
+- 15.9 [ ] A NEW trainer-scoped endpoint `POST /trainers/me/relationships/:relationshipId/respond` `{ action: "accept" | "decline" }` lets the coach act on a client-initiated (invite-code) pending. `accept` → `pending` → `active` under a per-trainer seat lock; the **coach is the actor**, so an at-cap accept returns **402** (upsell, consistent with the invite-CREATION gate — NOT the redeem's client-facing 409). `decline` → `terminated`. Both write a `trainer_actions_audit` row (`client_request_accepted` / `client_request_declined`) in the same transaction; on accept the ATHLETE is notified (`coach_request_accepted`, push). Trainer-role-gated + ownership-scoped (`trainer_id = caller`, `status = 'pending'`, `initiated_by = 'client'`).
+- 15.10 [ ] The coach roster surfaces client-initiated pendings with an Accept / Decline affordance (reuses the client-side Requests accept/decline shape — in-flight set, optimistic removal, roster refresh on success). The roster payload carries `relationshipId` + `initiatedBy` so the row knows which pendings are the coach's to accept. The redeem-notification deep link (`persistencemobile://clients?clientId=…`) lands the coach here with that client visible.
+- 15.11 [ ] The athlete's own client-initiated pending shows on the You screen as "awaiting acceptance" (not as an acceptable request); the client-side respond endpoint rejects client-initiated pendings so the athlete cannot self-accept.
+
+> **Reconciliation (Phase 8):** email invites are trainer-initiated → the CLIENT accepts (existing M10 flow); invite-code redeems are client-initiated → the COACH accepts. A `pt_client_relationships.initiated_by` column ('trainer' default) distinguishes them so the shared `create_pt_relationship_notifications` trigger notifies the correct party (it stays silent for the client-initiated cases, which app code emits with a push) and each respond endpoint is gated to its own pending type.
 
 ---
 
