@@ -47,7 +47,12 @@ export type NotificationType =
   // upgrade pointer. DB enum extended in
   // 20260711120000_trainer_client_limit_reached_notification_type.sql.
   // Default opt-in "on" per cross-cuts § 5.
-  | "trainer_client_limit_reached";
+  | "trainer_client_limit_reached"
+  // Coach Mode Phase 8 — a coach accepted a client-initiated (invite-code)
+  // pending relationship; sent to the ATHLETE. DB enum extended in
+  // 20260711140100_coach_request_accepted_notification_type.sql. Default
+  // opt-in "on" per cross-cuts § 5.
+  | "coach_request_accepted";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -68,6 +73,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "nutrition_target_set_by_trainer",
   "coach_brief",
   "trainer_client_limit_reached",
+  "coach_request_accepted",
 ] as const;
 
 /**

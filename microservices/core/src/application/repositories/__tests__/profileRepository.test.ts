@@ -856,6 +856,8 @@ describe("defaultNotificationPreferences", () => {
       coach_brief: true,
       // Trainer-client-caps — default opt-in "on".
       trainer_client_limit_reached: true,
+      // Coach Mode Phase 8 — default opt-in "on".
+      coach_request_accepted: true,
     });
   });
 
@@ -984,6 +986,8 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       coach_brief: true,
       // Trainer-client-caps — default opt-in "on".
       trainer_client_limit_reached: true,
+      // Coach Mode Phase 8 — default opt-in "on".
+      coach_request_accepted: true,
     });
   });
 

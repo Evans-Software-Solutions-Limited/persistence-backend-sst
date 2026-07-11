@@ -216,19 +216,24 @@ describe("TrainerRepository", () => {
               clientName: "A B",
               avatarUrl: "http://img/1",
               status: "active",
+              initiatedBy: "trainer",
             },
             {
               clientId: "c2",
               clientName: null,
               avatarUrl: null,
               status: "pending",
+              // invite-code redeem awaiting THIS coach's accept.
+              initiatedBy: "client",
             },
             // null status (shouldn't happen given the WHERE) → defaults pending.
+            // null initiated_by → defaults 'trainer'.
             {
               clientId: "c3",
               clientName: "C D",
               avatarUrl: null,
               status: null,
+              initiatedBy: null,
             },
           ],
         ]),
@@ -240,18 +245,21 @@ describe("TrainerRepository", () => {
           clientName: "A B",
           avatarUrl: "http://img/1",
           status: "active",
+          initiatedBy: "trainer",
         },
         {
           clientId: "c2",
           clientName: "",
           avatarUrl: null,
           status: "pending",
+          initiatedBy: "client",
         },
         {
           clientId: "c3",
           clientName: "C D",
           avatarUrl: null,
           status: "pending",
+          initiatedBy: "trainer",
         },
       ]);
     });
@@ -789,6 +797,7 @@ describe("TrainerRepository", () => {
           clientName: string;
           avatarUrl: string | null;
           status: "active" | "pending";
+          initiatedBy?: "trainer" | "client";
         }[];
         adherence: { clientId: string; completed: number; total: number }[];
         lastSeen: Map<string, string | null>;
@@ -796,7 +805,9 @@ describe("TrainerRepository", () => {
         prs: Set<string>;
       },
     ) {
-      vi.spyOn(repo, "getRosterClients").mockResolvedValue(over.roster);
+      vi.spyOn(repo, "getRosterClients").mockResolvedValue(
+        over.roster.map((r) => ({ initiatedBy: "trainer" as const, ...r })),
+      );
       vi.spyOn(repo, "getAdherenceRows").mockResolvedValue(over.adherence);
       vi.spyOn(repo, "getLastSeenByClient").mockResolvedValue(over.lastSeen);
       vi.spyOn(repo, "getMissedCountsByClient").mockResolvedValue(over.missed);
@@ -1016,6 +1027,7 @@ describe("TrainerRepository", () => {
           clientName: "Al Pha",
           avatarUrl: null,
           status: "active",
+          initiatedBy: "trainer",
         },
       ]);
       // Adherence query is also trainer-scoped at its own SQL level; here we
@@ -1234,6 +1246,39 @@ describe("TrainerRepository", () => {
       await expect(
         repo.inviteClientByEmail("t1", "client@x.io", null),
       ).rejects.toMatchObject({ status: 409, code: "exists" });
+    });
+
+    it("revives a terminated relationship and re-stamps initiated_by='trainer' (email invite → client accepts)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      });
+      let si = 0;
+      const selects = [
+        [{ email: "trainer@x.io" }],
+        [{ total: 1 }],
+        [{ id: "c1", fullName: "Client" }],
+        // dormant row from a PRIOR invite-code redeem (initiated_by would be
+        // 'client'); the revive must flip it back to 'trainer'.
+        [{ id: "rel-existing", status: "terminated" }],
+      ];
+      const tx = {
+        select: vi.fn(() => selectResult(() => selects[si++] ?? [])),
+        update: vi.fn(() => ({ set: setSpy })),
+      };
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn(async (fn: any) => fn(tx)),
+      });
+      const result = await repo.inviteClientByEmail("t1", "client@x.io", null);
+      expect(result).toMatchObject({
+        action: "relationship_created",
+        relationshipId: "rel-existing",
+      });
+      expect(setSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "pending", initiatedBy: "trainer" }),
+      );
     });
 
     it("creates an invitation when no profile exists", async () => {

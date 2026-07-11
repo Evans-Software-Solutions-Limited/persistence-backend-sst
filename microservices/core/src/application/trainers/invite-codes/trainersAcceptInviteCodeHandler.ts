@@ -209,23 +209,31 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           // Create or revive the relationship
           let relationshipId: string;
           if (existingRel) {
-            // Revive dormant relationship
+            // Revive dormant relationship. Re-stamp initiated_by='client' — a
+            // previously-terminated row might carry the other direction; the
+            // coach must accept this invite-code pending (Phase 8 decision #2).
             await tx
               .update(ptClientRelationships)
               .set({
                 status: "pending",
+                initiatedBy: "client",
                 endDate: null,
                 updatedAt: new Date(),
               })
               .where(eq(ptClientRelationships.id, existingRel.id));
             relationshipId = existingRel.id;
           } else {
+            // initiated_by='client' → the COACH accepts (not the athlete). The
+            // notification trigger's pending-INSERT branch is scoped to
+            // trainer-initiated rows, so it stays silent here; the trainer
+            // notification below is the coach's accept prompt.
             const inserted = await tx
               .insert(ptClientRelationships)
               .values({
                 trainerId,
                 clientId: userId,
                 status: "pending",
+                initiatedBy: "client",
                 relationshipReason: "Joined via invite code",
               } as NewPtClientRelationship)
               .returning({ id: ptClientRelationships.id });

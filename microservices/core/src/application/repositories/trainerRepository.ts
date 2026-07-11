@@ -94,6 +94,13 @@ export interface TrainerClient {
   /** pt_client_relationships.status — only active | pending reach the roster. */
   status: ClientStatus;
   /**
+   * Which party created the relationship. 'client' pendings (invite-code
+   * redeems) await THIS coach's accept → the roster shows accept/decline on
+   * them; 'trainer' pendings (email invites) await the client. Active rows are
+   * 'trainer' by default and the field is unused once active. (Phase 8.)
+   */
+  initiatedBy: "trainer" | "client";
+  /**
    * "{programme name} · Wk N / M" (finite) or "{programme name} · Wk N"
    * (indefinite) from the client's live `program_assignments` row, trainer-
    * scoped. Null when this trainer has no live programme assignment for the
@@ -398,6 +405,7 @@ export class TrainerRepository {
       clientName: string;
       avatarUrl: string | null;
       status: ClientStatus;
+      initiatedBy: "trainer" | "client";
     }[]
   > {
     const db = getDb();
@@ -407,6 +415,7 @@ export class TrainerRepository {
         clientName: profiles.fullName,
         avatarUrl: profiles.avatarUrl,
         status: ptClientRelationships.status,
+        initiatedBy: ptClientRelationships.initiatedBy,
       })
       .from(ptClientRelationships)
       .leftJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
@@ -425,6 +434,9 @@ export class TrainerRepository {
       // WHERE constrains it to active|pending, so the coalesce is just a
       // type-narrowing safety net.
       status: (r.status as ClientStatus | null) ?? "pending",
+      // 'client' = invite-code redeem awaiting THIS coach's accept; drives the
+      // accept/decline affordance on the roster's pending rows (Phase 8).
+      initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
     }));
   }
 
@@ -1144,6 +1156,7 @@ export class TrainerRepository {
         initials: initialsFromName(c.clientName),
         avatarUrl: c.avatarUrl,
         status: c.status,
+        initiatedBy: c.initiatedBy,
         programLabel: programInfo
           ? formatProgramLabel(programInfo, todayIso)
           : null,
@@ -1289,11 +1302,17 @@ export class TrainerRepository {
         let relationshipId: string;
         if (existingRel) {
           // Revive the dormant (inactive/terminated) relationship in place —
-          // the unique index forbids a second row for this pair.
+          // the unique index forbids a second row for this pair. Re-stamp
+          // initiated_by='trainer': a terminated row might carry 'client' from
+          // a prior invite-code redeem, and this is now a trainer-initiated
+          // (email) invite the CLIENT accepts (Phase 8). Without this the row
+          // would be stranded (client-accept 404s on it) yet coach-acceptable —
+          // a consent-direction flip. Mirrors the invite-code revive.
           await tx
             .update(ptClientRelationships)
             .set({
               status: "pending",
+              initiatedBy: "trainer",
               relationshipReason,
               endDate: null,
               updatedAt: new Date(),
