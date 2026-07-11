@@ -72,6 +72,15 @@ export type ClientsListPresenterProps = {
   slotsUsed?: number;
   atCap?: boolean;
   onUpgrade?: () => void;
+  /**
+   * Accept/decline a client-initiated pending row (Coach Mode Phase 8 —
+   * invite/QR). Omit both to render the roster with no accept/decline
+   * affordance regardless of any row's status/initiatedBy.
+   */
+  onAcceptClient?: (relationshipId: string) => void;
+  onDeclineClient?: (relationshipId: string) => void;
+  /** relationshipIds with an in-flight accept/decline call (per-row busy UI). */
+  pendingActionIds?: ReadonlySet<string>;
   /** Injected clock for deterministic relative-time tests. */
   now?: number;
   testID?: string;
@@ -174,6 +183,9 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
     slotsUsed,
     atCap = false,
     onUpgrade,
+    onAcceptClient,
+    onDeclineClient,
+    pendingActionIds,
     now = Date.now(),
     testID,
   } = props;
@@ -424,6 +436,12 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
                   onPress={onOpenClient}
                   now={now}
                   testID={`client-row-${client.id}`}
+                  onAccept={onAcceptClient}
+                  onDecline={onDeclineClient}
+                  busy={
+                    client.relationshipId != null &&
+                    (pendingActionIds?.has(client.relationshipId) ?? false)
+                  }
                 />
               ))}
             </Card>

@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { router, type Href } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { router, useLocalSearchParams, type Href } from "expo-router";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
 import {
   useFeatureGate,
@@ -9,6 +9,7 @@ import {
 } from "@/ui/hooks/useFeatureGate";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
+import { useRespondToClientRequest } from "@/ui/hooks/useTrainerInviteCodes";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useAddClientSheet } from "@/state/add-client-sheet";
 import { Colors } from "@/ui/theme/subscriptionLegacyTheme";
@@ -34,8 +35,19 @@ import {
  * roster via the registered `onInvited` callback. Row press pushes the (stub)
  * per-client detail route — Client Detail proper is the next slice (10.9.3).
  *
+ * Coach Mode Phase 8 (invite/QR): a `clientId` search param (from the
+ * redeem-notification deep link `persistencemobile://clients?clientId=…`)
+ * defaults the segment to "All" so the just-joined (client-initiated
+ * pending) client is visible rather than hidden by the default "Active"
+ * filter — no scroll-to, just don't hide it. Accept/decline for those rows
+ * is wired to `useRespondToClientRequest`; a successful accept/decline
+ * refreshes the roster (mirrors `onInvite`'s refresh-on-success pattern). A
+ * 402 at coach-accept (client-seat cap) reuses the SAME no-seats alert copy
+ * as the invite-sheet's 402 branch.
+ *
  * Spec: specs/10-trainer-features/requirements.md STORY-002;
- *       specs/milestones/M8-coach/CLIENTS_LIST_BRIEF.md (Frontend slice).
+ *       specs/milestones/M8-coach/CLIENTS_LIST_BRIEF.md (Frontend slice);
+ *       specs/milestones/M8-coach/PHASE_8_INVITE_QR_BRIEF.md (Phase 8).
  */
 export function ClientsContainer() {
   const subQuery = useMySubscription();
@@ -43,9 +55,26 @@ export function ClientsContainer() {
   const roster = useGetTrainerClients();
   const openSheet = useAddClientSheet((s) => s.openSheet);
   const { switchMode } = useModeSwitch();
+  const respondToClient = useRespondToClientRequest();
 
+  const { clientId } = useLocalSearchParams<{ clientId?: string }>();
   const [searchQuery, setSearchQuery] = useState("");
-  const [segment, setSegment] = useState<ClientSegment>("Active");
+  const [segment, setSegment] = useState<ClientSegment>(
+    clientId ? "All" : "Active",
+  );
+  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // A deep-linked clientId (from the redeem-notification tap) must surface the
+  // just-joined PENDING client — which only shows under the "All" segment. The
+  // useState initializer above only fires on first mount; the Clients tab stays
+  // mounted, so a tap while already on it updates `clientId` reactively but not
+  // the segment. Sync it here so the affordance appears on the common
+  // already-mounted path too (Phase 8 — Inspector Brad).
+  useEffect(() => {
+    if (clientId) setSegment("All");
+  }, [clientId]);
 
   const clients = useMemo(() => roster.data ?? [], [roster.data]);
   const activeCount = useMemo(
@@ -88,6 +117,52 @@ export function ClientsContainer() {
     void switchMode("athlete", "clients");
   }, [switchMode]);
 
+  const respondMutate = respondToClient.mutate;
+  const handleRespond = useCallback(
+    async (relationshipId: string, action: "accept" | "decline") => {
+      setPendingActionIds((prev) => new Set(prev).add(relationshipId));
+      const result = await respondMutate(relationshipId, action);
+      setPendingActionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(relationshipId);
+        return next;
+      });
+      if (result.ok) {
+        void refreshRoster();
+        return;
+      }
+      // Same client-slot cap backstop + copy as the invite-sheet's 402
+      // branch — one underlying cap, one user-facing message. The coach is
+      // the actor here (accepting a client-initiated pending), so a 402
+      // entitlement denial is the expected shape (mirrors #195/#196).
+      if (result.error.code === "entitlement_denied") {
+        Alert.alert(
+          "No client seats available",
+          "Remove a client or change your subscription to invite more.",
+        );
+        return;
+      }
+      Alert.alert(
+        "Error",
+        result.error.message ||
+          "Failed to update the request. Please try again.",
+      );
+    },
+    [respondMutate, refreshRoster],
+  );
+  const onAcceptClient = useCallback(
+    (relationshipId: string) => {
+      void handleRespond(relationshipId, "accept");
+    },
+    [handleRespond],
+  );
+  const onDeclineClient = useCallback(
+    (relationshipId: string) => {
+      void handleRespond(relationshipId, "decline");
+    },
+    [handleRespond],
+  );
+
   // Subscription cache not resolved yet — defensive spinner. Once the query
   // lands the gate's `reason: 'unknown'` falls through to a real verdict on
   // the next render.
@@ -129,6 +204,9 @@ export function ClientsContainer() {
       slotsUsed={seat.used}
       atCap={seat.atCap}
       onUpgrade={onUpgrade}
+      onAcceptClient={onAcceptClient}
+      onDeclineClient={onDeclineClient}
+      pendingActionIds={pendingActionIds}
     />
   );
 }

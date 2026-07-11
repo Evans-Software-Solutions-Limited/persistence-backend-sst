@@ -19,6 +19,7 @@ function rel(
     status: "pending",
     relationshipReason: null,
     since: "2026-06-01T00:00:00.000Z",
+    initiatedBy: "trainer",
     ...over,
   };
 }

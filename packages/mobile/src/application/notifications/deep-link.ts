@@ -51,6 +51,10 @@ const SCHEME_HOSTS: Record<string, string> = {
   // M17 Send-brief — the coach_brief notification lands on the athlete
   // Training page (Train tab; the dispatch sites prime the Training segment).
   train: TRAIN_ROUTE,
+  // Coach Mode Phase 8 (invite/QR) — a scanned/shared invite-code link
+  // (`persistencemobile://accept-invite?code=X`) lands on the athlete
+  // redeem screen, which reads `code` off the preserved query string.
+  "accept-invite": "/(app)/accept-invite",
 };
 
 function resolveSchemeLink(rest: string): string {

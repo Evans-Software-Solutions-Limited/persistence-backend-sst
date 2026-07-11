@@ -1,7 +1,9 @@
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
-import { Alert } from "react-native";
+import { Alert, Share } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
@@ -12,6 +14,10 @@ import {
   AddClientSheetContainer,
   validateInviteEmail,
 } from "../AddClientSheetContainer";
+
+jest.mock("expo-clipboard", () => ({
+  setStringAsync: jest.fn(async () => true),
+}));
 
 describe("validateInviteEmail", () => {
   it("requires an email", () => {
@@ -30,8 +36,13 @@ describe("validateInviteEmail", () => {
 
 const USER = "trainer-1";
 
-function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
+function makeAdapters(): {
+  adapters: Adapters;
+  api: InMemoryApiAdapter;
+  netInfo: InMemoryNetInfoAdapter;
+} {
   const api = new InMemoryApiAdapter();
+  const netInfo = new InMemoryNetInfoAdapter();
   const session: AuthSession = {
     accessToken: "t",
     refreshToken: "r",
@@ -49,6 +60,7 @@ function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
   } as unknown as Adapters["auth"];
   return {
     api,
+    netInfo,
     adapters: {
       api,
       auth,
@@ -56,7 +68,7 @@ function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
       health: {} as Adapters["health"],
       notifications: {} as Adapters["notifications"],
       payments: {} as Adapters["payments"],
-      netInfo: {} as Adapters["netInfo"],
+      netInfo,
     },
   };
 }
@@ -300,5 +312,157 @@ describe("AddClientSheetContainer", () => {
     const { getByTestId } = renderSheet(api, adapters);
     fireEvent.press(getByTestId("add-client-cancel"));
     expect(useAddClientSheet.getState().open).toBe(false);
+  });
+
+  describe("Share code (Coach Mode Phase 8 — invite/QR)", () => {
+    it("toggling to Share code renders the Generate button, not the email form", () => {
+      const { adapters, api } = makeAdapters();
+      const { getByTestId, queryByTestId } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      expect(getByTestId("add-client-generate-code")).toBeTruthy();
+      expect(queryByTestId("add-client-email-input")).toBeNull();
+    });
+
+    it("generating a code shows the code + QR value = the accept-invite deep link", async () => {
+      const { adapters, api } = makeAdapters();
+      api.nextInviteCode = {
+        id: "invite-1",
+        code: "AB23CD",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        isExisting: false,
+      };
+      const { getByTestId, getByText } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-generate-code"));
+      });
+      expect(api.createInviteCodeCalls).toBe(1);
+      expect(getByText("AB23CD")).toBeTruthy();
+      expect(getByTestId("add-client-code-qr").props.children.props.value).toBe(
+        "persistencemobile://accept-invite?code=AB23CD",
+      );
+    });
+
+    it("Share invokes RN core Share.share with the code + deep link", async () => {
+      const shareSpy = jest.spyOn(Share, "share").mockResolvedValue({
+        action: Share.sharedAction,
+      });
+      const { adapters, api } = makeAdapters();
+      api.nextInviteCode = {
+        id: "invite-1",
+        code: "AB23CD",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        isExisting: false,
+      };
+      const { getByTestId } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-generate-code"));
+      });
+      fireEvent.press(getByTestId("add-client-share-code"));
+      expect(shareSpy).toHaveBeenCalledWith({
+        message:
+          "Join me on Persistence — use code AB23CD or tap: persistencemobile://accept-invite?code=AB23CD",
+      });
+      shareSpy.mockRestore();
+    });
+
+    it("Copy calls Clipboard.setStringAsync with the code and shows transient 'Copied' feedback", async () => {
+      jest.useFakeTimers();
+      const { adapters, api } = makeAdapters();
+      api.nextInviteCode = {
+        id: "invite-1",
+        code: "AB23CD",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        isExisting: false,
+      };
+      const { getByTestId, queryByTestId } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-generate-code"));
+      });
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-copy-code"));
+      });
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("AB23CD");
+      expect(getByTestId("add-client-copied")).toBeTruthy();
+
+      // The "Copied" feedback resets after the transient window.
+      act(() => {
+        jest.advanceTimersByTime(1800);
+      });
+      expect(queryByTestId("add-client-copied")).toBeNull();
+      jest.useRealTimers();
+    });
+
+    it("offline disables Generate + shows the offline note", async () => {
+      const { adapters, api, netInfo } = makeAdapters();
+      netInfo.setConnected(false);
+      const { getByTestId } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await waitFor(() =>
+        expect(getByTestId("add-client-code-offline")).toBeTruthy(),
+      );
+      expect(
+        getByTestId("add-client-generate-code").props.accessibilityState
+          ?.disabled,
+      ).toBe(true);
+    });
+
+    it("402 (at cap) on generate → the same no-seats alert as the email path", async () => {
+      const { adapters, api } = makeAdapters();
+      api.nextCreateInviteCodeError = {
+        kind: "api",
+        code: "entitlement_denied",
+        message: "Subscription does not include this feature",
+      };
+      const { getByTestId } = renderSheet(api, adapters);
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-generate-code"));
+      });
+      expect(alertSpy).toHaveBeenCalledWith(
+        "No client seats available",
+        "Remove a client or change your subscription to invite more.",
+      );
+    });
+
+    it("resets the mode + generated code when the sheet closes and reopens", async () => {
+      const { adapters, api } = makeAdapters();
+      api.nextInviteCode = {
+        id: "invite-1",
+        code: "AB23CD",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        isExisting: false,
+      };
+      const { getByTestId, queryByTestId, rerender } = renderSheet(
+        api,
+        adapters,
+      );
+      fireEvent.press(getByTestId("add-client-mode-toggle-option-code"));
+      await act(async () => {
+        fireEvent.press(getByTestId("add-client-generate-code"));
+      });
+      expect(getByTestId("add-client-code-value")).toBeTruthy();
+
+      act(() => {
+        useAddClientSheet.setState({ open: false, onInvited: null });
+      });
+      rerender(
+        <AdapterProvider adapters={adapters}>
+          <AddClientSheetContainer />
+        </AdapterProvider>,
+      );
+      act(() => {
+        useAddClientSheet.setState({ open: true, onInvited: null });
+      });
+      rerender(
+        <AdapterProvider adapters={adapters}>
+          <AddClientSheetContainer />
+        </AdapterProvider>,
+      );
+      expect(queryByTestId("add-client-code-value")).toBeNull();
+      expect(getByTestId("add-client-email-input")).toBeTruthy();
+    });
   });
 });

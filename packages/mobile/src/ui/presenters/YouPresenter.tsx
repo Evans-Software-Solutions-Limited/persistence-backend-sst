@@ -19,6 +19,7 @@ import { VolumeStatsPresenter } from "./VolumeStatsPresenter";
 import { PRHistoryPresenter } from "./PRHistoryPresenter";
 import {
   TrainerProgressPresenter,
+  type MyPendingCoachRequest,
   type TrainerProgressData,
 } from "./TrainerProgressPresenter";
 
@@ -46,8 +47,13 @@ export type YouPresenterProps = {
 
   /** Active coach relationship for the "Your trainer" block, or null. */
   trainer: TrainerProgressData | null;
-  /** Count of pending incoming coach requests. */
+  /** Count of pending TRAINER-initiated requests the athlete can review. */
   pendingRequestCount: number;
+  /**
+   * The athlete's own client-initiated pendings (Coach Mode Phase 8 —
+   * invite/QR), awaiting the coach's accept.
+   */
+  myPendingCoachRequests: MyPendingCoachRequest[];
 
   isLoading: boolean;
   isRefreshing: boolean;
@@ -60,6 +66,8 @@ export type YouPresenterProps = {
   onUseToken: () => void;
   /** Navigate to the Requests screen. */
   onOpenRequests: () => void;
+  /** Navigate to the invite-code redeem screen (Phase 8). */
+  onOpenAcceptInvite: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
 };
@@ -76,6 +84,7 @@ export function YouPresenter(props: YouPresenterProps) {
     prHistory,
     trainer,
     pendingRequestCount,
+    myPendingCoachRequests,
     isLoading,
     isRefreshing,
     error,
@@ -85,6 +94,7 @@ export function YouPresenter(props: YouPresenterProps) {
     onOpenCalendar,
     onUseToken,
     onOpenRequests,
+    onOpenAcceptInvite,
     scrollRef,
   } = props;
 
@@ -154,19 +164,22 @@ export function YouPresenter(props: YouPresenterProps) {
             </View>
           )}
 
-          {(trainer !== null || pendingRequestCount > 0) && (
-            <Section
-              eyebrow="COACHING"
-              title="Your trainer"
-              testID="you-trainer-section"
-            >
-              <TrainerProgressPresenter
-                trainer={trainer}
-                pendingRequestCount={pendingRequestCount}
-                onOpenRequests={onOpenRequests}
-              />
-            </Section>
-          )}
+          {/* Always rendered (Coach Mode Phase 8 — invite/QR): the "Have a
+              coach's code?" entry point must be reachable even with no
+              active trainer and no pending requests. */}
+          <Section
+            eyebrow="COACHING"
+            title="Your trainer"
+            testID="you-trainer-section"
+          >
+            <TrainerProgressPresenter
+              trainer={trainer}
+              pendingRequestCount={pendingRequestCount}
+              myPendingCoachRequests={myPendingCoachRequests}
+              onOpenRequests={onOpenRequests}
+              onOpenAcceptInvite={onOpenAcceptInvite}
+            />
+          </Section>
 
           <Section
             eyebrow="MILESTONES"

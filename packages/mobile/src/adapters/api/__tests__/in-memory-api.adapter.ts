@@ -132,6 +132,7 @@ import type {
   ClientTrainerRelationship,
   RelationshipResponseAction,
   RelationshipResponseResult,
+  RespondToClientRequestResult,
 } from "@/domain/models/clientRelationship";
 import type {
   InviteClientRequest,
@@ -139,6 +140,12 @@ import type {
   InviteErrorCode,
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
+import type {
+  AcceptInviteCodeApiError,
+  AcceptInviteCodeErrorCode,
+  AcceptInviteCodeResult,
+  TrainerInviteCode,
+} from "@/domain/models/trainerInviteCode";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -1566,6 +1573,132 @@ export class InMemoryApiAdapter implements ApiPort {
       this.invitations = this.invitations.filter((inv) => inv.id !== id);
     }
     return result;
+  }
+
+  // -- Trainer invite-code / QR (Coach Mode Phase 8 — 10-trainer-features) --
+
+  /** Count of `createTrainerInviteCode` calls (no request body to capture). */
+  public createInviteCodeCalls = 0;
+  /** Next success value returned by `createTrainerInviteCode`. */
+  public nextInviteCode: TrainerInviteCode = {
+    id: "invite-code-1",
+    code: "AB23CD",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    isExisting: false,
+  };
+  /**
+   * When set, `createTrainerInviteCode` returns this `ApiError` instead of
+   * `nextInviteCode` — consumed once. Set an `entitlement_denied` /
+   * `status: 402` error to simulate the client-seat-cap denial, or a plain
+   * `server` / `status: 403` error for the non-trainer path.
+   */
+  public nextCreateInviteCodeError: ApiError | null = null;
+
+  async createTrainerInviteCode(): Promise<
+    Result<TrainerInviteCode, ApiError>
+  > {
+    this.createInviteCodeCalls += 1;
+    if (this.shouldFail) {
+      return fail<ApiError>(this.failError);
+    }
+    if (this.nextCreateInviteCodeError !== null) {
+      const error = this.nextCreateInviteCodeError;
+      this.nextCreateInviteCodeError = null;
+      return fail<ApiError>(error);
+    }
+    return ok(this.nextInviteCode);
+  }
+
+  /** Captures every `acceptTrainerInviteCode` request for assertions. */
+  public acceptInviteCodeCalls: string[] = [];
+  /** Next success value returned by `acceptTrainerInviteCode`. */
+  public nextAcceptInviteCodeResult: AcceptInviteCodeResult = {
+    success: true,
+    relationshipId: "rel-1",
+    trainerName: "Test Trainer",
+    message: "You are now connected with Test Trainer",
+  };
+  /**
+   * When set, `acceptTrainerInviteCode` returns this domain error instead
+   * of `nextAcceptInviteCodeResult` — consumed once. Mirrors
+   * `nextInviteError`.
+   */
+  public nextAcceptInviteCodeError: {
+    code: AcceptInviteCodeErrorCode;
+    message: string;
+  } | null = null;
+
+  async acceptTrainerInviteCode(
+    code: string,
+  ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>> {
+    this.acceptInviteCodeCalls.push(code);
+    if (this.shouldFail) {
+      return fail<AcceptInviteCodeApiError>(
+        this.failError as AcceptInviteCodeApiError,
+      );
+    }
+    if (this.nextAcceptInviteCodeError !== null) {
+      const { code: errorCode, message } = this.nextAcceptInviteCodeError;
+      this.nextAcceptInviteCodeError = null;
+      const status =
+        errorCode === "invalid_code"
+          ? 404
+          : errorCode === "self_invite"
+            ? 400
+            : 409; // exists | code_already_used | coach_client_limit_reached
+      return fail<AcceptInviteCodeApiError>({
+        kind: "api",
+        code: "server",
+        message,
+        status,
+        acceptCode: errorCode,
+      });
+    }
+    return ok(this.nextAcceptInviteCodeResult);
+  }
+
+  /**
+   * Next success value returned by `respondToClientRelationship`. Callers
+   * that need per-call variation (e.g. echoing `relationshipId`/`action`)
+   * can override this before invoking.
+   */
+  public nextRespondToClientResult: RespondToClientRequestResult = {
+    success: true,
+    relationshipId: "rel-1",
+    clientId: "client-1",
+    status: "active",
+  };
+  /**
+   * When set, `respondToClientRelationship` returns this `ApiError` instead
+   * of `nextRespondToClientResult` — consumed once. Set an
+   * `entitlement_denied` / `status: 402` error to simulate the accept-at-cap
+   * denial.
+   */
+  public nextRespondToClientError: ApiError | null = null;
+  /** Captures every `respondToClientRelationship` call for assertions. */
+  public respondToClientRelationshipCalls: {
+    relationshipId: string;
+    action: RelationshipResponseAction;
+  }[] = [];
+
+  async respondToClientRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RespondToClientRequestResult, ApiError>> {
+    this.respondToClientRelationshipCalls.push({ relationshipId, action });
+    if (this.shouldFail) {
+      return fail<ApiError>(this.failError);
+    }
+    if (this.nextRespondToClientError !== null) {
+      const error = this.nextRespondToClientError;
+      this.nextRespondToClientError = null;
+      return fail<ApiError>(error);
+    }
+    return ok({
+      ...this.nextRespondToClientResult,
+      relationshipId,
+      status: action === "accept" ? "active" : "declined",
+    });
   }
 
   // -- Nutrition / Fuel (M9) --

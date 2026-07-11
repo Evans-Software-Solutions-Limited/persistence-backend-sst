@@ -68,6 +68,9 @@ export const CATEGORIES: readonly NotificationCategory[] = [
       // Trainer-client-caps — trainer-facing "a client couldn't join, your
       // plan is full" nudge.
       "trainer_client_limit_reached",
+      // Coach Mode Phase 8 (invite/QR) — athlete-facing "your coach accepted
+      // your request" confirmation.
+      "coach_request_accepted",
     ],
   },
   { title: "Social", types: ["friend_request"] },

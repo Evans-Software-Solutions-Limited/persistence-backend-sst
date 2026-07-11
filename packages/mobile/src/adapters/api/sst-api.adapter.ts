@@ -103,6 +103,7 @@ import type {
   ClientTrainerRelationship,
   RelationshipResponseAction,
   RelationshipResponseResult,
+  RespondToClientRequestResult,
 } from "@/domain/models/clientRelationship";
 import type {
   InviteClientRequest,
@@ -110,6 +111,12 @@ import type {
   InviteErrorCode,
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
+import type {
+  AcceptInviteCodeApiError,
+  AcceptInviteCodeErrorCode,
+  AcceptInviteCodeResult,
+  TrainerInviteCode,
+} from "@/domain/models/trainerInviteCode";
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionResult,
@@ -1492,6 +1499,64 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<{ success: true }>(
       `/trainers/me/invitations/${id}`,
       { method: "DELETE" },
+    );
+  }
+
+  // -- Trainer invite-code / QR (Coach Mode Phase 8 — 10-trainer-features) --
+
+  async createTrainerInviteCode(): Promise<
+    Result<TrainerInviteCode, ApiError>
+  > {
+    // Plain `{ data }` envelope — no domain-coded error body beyond the
+    // generic 403 (non-trainer) / 402 (client-seat cap) paths, both of
+    // which `requestEnvelope` → `mapHttpErrorToApiError` already handle
+    // (402 → `entitlement_denied` with the `entitlement` payload attached).
+    return this.requestEnvelope<TrainerInviteCode>(
+      "/trainers/me/invite-codes",
+      { method: "POST" },
+    );
+  }
+
+  async acceptTrainerInviteCode(
+    code: string,
+  ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>> {
+    // Mirrors `inviteClient`'s `requestRaw` special-case: success is
+    // `{ data: AcceptInviteCodeResult }`; a domain failure is a flat
+    // `{ code, message }` body the adapter stamps onto `acceptCode`.
+    const result = await this.requestRaw<
+      { data: AcceptInviteCodeResult } | { code: string; message: string }
+    >("/trainers/accept-invite-code", { method: "POST", body: { code } });
+    if (!result.ok) {
+      return fail<AcceptInviteCodeApiError>(result.error);
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+    const domainCode =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as AcceptInviteCodeErrorCode)
+        : undefined;
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : "Failed to accept invite code";
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<AcceptInviteCodeApiError>(
+      domainCode !== undefined ? { ...base, acceptCode: domainCode } : base,
+    );
+  }
+
+  async respondToClientRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RespondToClientRequestResult, ApiError>> {
+    // Plain `{ data }` envelope — 403 (non-trainer) / 404 (not found) / 402
+    // (accept-at-cap) are all generic `ApiError` paths, no domain code to
+    // stamp (unlike `acceptTrainerInviteCode`).
+    return this.requestEnvelope<RespondToClientRequestResult>(
+      `/trainers/me/relationships/${relationshipId}/respond`,
+      { method: "POST", body: { action } },
     );
   }
 

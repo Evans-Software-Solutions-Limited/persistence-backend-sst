@@ -136,12 +136,37 @@ export function YouContainer() {
         }
       : null;
   }, [relationships.data]);
+  // Coach Mode Phase 8 (invite/QR): a `pending` row is either TRAINER-
+  // initiated (an email invite / unredeemed code — the ATHLETE accepts via
+  // the Requests screen) or CLIENT-initiated (the athlete redeemed a coach's
+  // code — the COACH accepts; the athlete just waits). Only the former
+  // counts toward the reviewable prompt; the latter surfaces separately as
+  // an "awaiting acceptance" line.
   const pendingRequestCount = useMemo(
-    () => relationships.data.filter((r) => r.status === "pending").length,
+    () =>
+      relationships.data.filter(
+        // `!== "client"` (not `=== "trainer"`) so a payload missing initiatedBy
+        // still counts as a reviewable request — matches RequestsContainer's
+        // deploy-ordering-safe default (Inspector Brad).
+        (r) => r.status === "pending" && r.initiatedBy !== "client",
+      ).length,
+    [relationships.data],
+  );
+  const myPendingCoachRequests = useMemo(
+    () =>
+      relationships.data
+        .filter((r) => r.status === "pending" && r.initiatedBy === "client")
+        .map((r) => ({
+          relationshipId: r.relationshipId,
+          trainerName: r.trainerName,
+        })),
     [relationships.data],
   );
   const onOpenRequests = useCallback(() => {
     router.push("/(app)/requests" as never);
+  }, [router]);
+  const onOpenAcceptInvite = useCallback(() => {
+    router.push("/(app)/accept-invite" as never);
   }, [router]);
 
   const primary = useMemo(
@@ -276,10 +301,16 @@ export function YouContainer() {
   // synchronously — instant + offline-safe — so the new measurement shows the
   // moment You regains focus. Mirrors ProfileContainer's focus refresh, but a
   // sync cache read rather than a network GET (the optimistic write is local).
+  // Also re-pull trainer relationships on focus: the "Have a coach's code?"
+  // entry lives on this tab, so returning from the redeem screen lands back
+  // here — without a refresh the "awaiting acceptance" card (Phase 8) would be
+  // computed from pre-redeem data and stay empty until a manual pull-to-refresh
+  // (Inspector Brad). Network GET, unlike the body cache re-read above.
   useFocusEffect(
     useCallback(() => {
       reloadBody();
-    }, [reloadBody]),
+      void refreshRelationships();
+    }, [reloadBody, refreshRelationships]),
   );
 
   const onUseToken = useCallback(async () => {
@@ -303,6 +334,7 @@ export function YouContainer() {
       prHistory={prs.data ?? []}
       trainer={trainer}
       pendingRequestCount={pendingRequestCount}
+      myPendingCoachRequests={myPendingCoachRequests}
       isLoading={
         (streaks.isRefreshing || (streaks.isStale && streaks.error === null)) &&
         streaks.data === null
@@ -315,6 +347,7 @@ export function YouContainer() {
       onOpenCalendar={noop}
       onUseToken={onUseToken}
       onOpenRequests={onOpenRequests}
+      onOpenAcceptInvite={onOpenAcceptInvite}
     />
   );
 }

@@ -105,6 +105,10 @@ export function notificationVisual(type: WireNotificationType): Visual {
     // is full" nudge; client-roster icon + coach tone.
     case "trainer_client_limit_reached":
       return { Icon: IconUsers, tone: "trainer" };
+    // Coach Mode Phase 8 (invite/QR) — athlete-facing "your coach accepted
+    // your request" confirmation. Matches `pt_accepted`'s check icon + tone.
+    case "coach_request_accepted":
+      return { Icon: IconCheck, tone: "trainer" };
     default:
       return { Icon: IconBell, tone: "neutral" };
   }

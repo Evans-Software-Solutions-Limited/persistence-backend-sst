@@ -64,4 +64,13 @@ describe("resolveNotificationRoute", () => {
       HOME_ROUTE,
     );
   });
+
+  it("maps the Phase 8 accept-invite host to the athlete redeem route, preserving the query string", () => {
+    expect(
+      resolveNotificationRoute("persistencemobile://accept-invite?code=AB23CD"),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+    expect(resolveNotificationRoute("persistencemobile://accept-invite")).toBe(
+      "/(app)/accept-invite",
+    );
+  });
 });

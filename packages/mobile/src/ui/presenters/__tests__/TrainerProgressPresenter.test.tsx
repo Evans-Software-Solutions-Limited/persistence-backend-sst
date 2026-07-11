@@ -9,7 +9,9 @@ function render(over: Partial<TrainerProgressProps> = {}) {
   const props: TrainerProgressProps = {
     trainer: null,
     pendingRequestCount: 0,
+    myPendingCoachRequests: [],
     onOpenRequests: jest.fn(),
+    onOpenAcceptInvite: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<TrainerProgressPresenter {...props} />) };
@@ -58,5 +60,39 @@ describe("TrainerProgressPresenter", () => {
     });
     expect(getByTestId("you-trainer-pending")).toBeTruthy();
     expect(getByTestId("you-trainer-active")).toBeTruthy();
+  });
+
+  it("always renders the 'Have a coach's code?' entry, even with no trainer and no pending", () => {
+    const { getByTestId, getByText } = render();
+    expect(getByTestId("you-accept-invite-entry")).toBeTruthy();
+    expect(getByText("Have a coach's code?")).toBeTruthy();
+  });
+
+  it("fires onOpenAcceptInvite from the entry button", () => {
+    const { props, getByTestId } = render();
+    fireEvent.press(getByTestId("you-accept-invite-button"));
+    expect(props.onOpenAcceptInvite).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an awaiting-acceptance line per client-initiated pending", () => {
+    const { getByTestId, getByText } = render({
+      myPendingCoachRequests: [
+        { relationshipId: "rel-1", trainerName: "Coach Carter" },
+        { relationshipId: "rel-2", trainerName: "Dr. Lee" },
+      ],
+    });
+    expect(getByTestId("you-pending-coach-request-rel-1")).toBeTruthy();
+    expect(
+      getByText("Request sent to Coach Carter — awaiting acceptance"),
+    ).toBeTruthy();
+    expect(getByTestId("you-pending-coach-request-rel-2")).toBeTruthy();
+    expect(
+      getByText("Request sent to Dr. Lee — awaiting acceptance"),
+    ).toBeTruthy();
+  });
+
+  it("omits the awaiting-acceptance lines when there are none", () => {
+    const { queryByTestId } = render({ myPendingCoachRequests: [] });
+    expect(queryByTestId(/you-pending-coach-request-/)).toBeNull();
   });
 });

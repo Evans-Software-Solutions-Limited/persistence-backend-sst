@@ -33,6 +33,7 @@
     "expo-apple-authentication": "~55.0.13",
     "expo-build-properties": "~55.0.13",
     "expo-camera": "~55.0.20",
+    "expo-clipboard": "~55.0.13",
     "expo-constants": "~55.0.14",
     "expo-device": "^55.0.15",
     "expo-font": "~55.0.8",
@@ -53,6 +54,7 @@
     "react-native": "0.83.4",
     "react-native-gesture-handler": "2.31.1",
     "react-native-purchases": "10.4.0",
+    "react-native-qrcode-svg": "^6.3.15",
     "react-native-reanimated": "4.2.1",
     "react-native-reanimated-carousel": "^4.0.3",
     "react-native-safe-area-context": "~5.6.2",
@@ -87,7 +89,7 @@
       "<rootDir>/__tests__/setup.ts"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|tamagui|@tamagui|react-native-reanimated|react-native-worklets)/)"
+      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"

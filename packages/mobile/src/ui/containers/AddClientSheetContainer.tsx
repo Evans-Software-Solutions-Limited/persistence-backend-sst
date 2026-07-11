@@ -1,22 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Share } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useAddClientSheet } from "@/state/add-client-sheet";
 import {
   useInviteClient,
   useGetInvitations,
 } from "@/ui/hooks/useTrainerInvitations";
-import { AddClientSheetPresenter } from "@/ui/presenters/AddClientSheetPresenter";
+import { useCreateInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
+import type { TrainerInviteCode } from "@/domain/models/trainerInviteCode";
+import {
+  AddClientSheetPresenter,
+  buildAcceptInviteDeepLink,
+  type AddClientSheetMode,
+} from "@/ui/presenters/AddClientSheetPresenter";
 
 /**
- * <AddClientSheetContainer> — invite-client flow controller (10-trainer-
- * features). Ports the legacy `InviteClientModal` container behaviour 1:1
- * (validation regex + copy + error mapping). Root-mounted in
- * app/(app)/_layout.tsx; driven by `useAddClientSheet().open`.
+ * <AddClientSheetContainer> — coach "Add client" flow controller
+ * (10-trainer-features + Coach Mode Phase 8 — invite/QR). Ports the legacy
+ * `InviteClientModal` container behaviour 1:1 for the email path (validation
+ * regex + copy + error mapping). Root-mounted in app/(app)/_layout.tsx;
+ * driven by `useAddClientSheet().open`.
  *
- * On success it refetches the pending-invitation list AND invokes the opener's
- * registered `onInvited` (CoachYouContainer refreshes the overview), then
- * closes the sheet. Domain failures are mapped from the backend's invite
- * `code` (self_invite | no_slots | exists) to the legacy copy.
+ * By-email: on success it refetches the pending-invitation list AND invokes
+ * the opener's registered `onInvited` (CoachYouContainer refreshes the
+ * overview), then closes the sheet. Domain failures are mapped from the
+ * backend's invite `code` (self_invite | no_slots | exists) to the legacy
+ * copy.
+ *
+ * Share-code (Phase 8, net-new): mints a reusable invite code via
+ * `useCreateInviteCode`, disabled while offline (`useOnlineStatus`). The 402
+ * client-seat-cap denial reuses the EXACT alert copy as the email path's 402
+ * branch below — same underlying cap, same user-facing message. Copy-to-
+ * clipboard uses `expo-clipboard` (a native module — device verify needs a
+ * fresh EAS dev build); Share goes through the RN core `Share` module.
  */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,19 +58,39 @@ export function AddClientSheetContainer() {
 
   const invite = useInviteClient();
   const invitations = useGetInvitations();
+  const createCode = useCreateInviteCode();
+  const isOnline = useOnlineStatus();
 
   const [email, setEmail] = useState("");
   const [reason, setReason] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [mode, setMode] = useState<AddClientSheetMode>("email");
+  const [inviteCode, setInviteCode] = useState<TrainerInviteCode | null>(null);
+  const [justCopied, setJustCopied] = useState(false);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset the form whenever the sheet closes (mirrors the legacy effect).
+  // Reset the form whenever the sheet closes (mirrors the legacy effect) —
+  // Phase 8 extends this to also reset the mode toggle + generated code so
+  // re-opening the sheet always starts fresh on "By email".
   useEffect(() => {
     if (!open) {
       setEmail("");
       setReason("");
       setEmailError("");
+      setMode("email");
+      setInviteCode(null);
+      setJustCopied(false);
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
     }
   }, [open]);
+
+  // Clear the "Copied" reset timer on unmount so it never fires against an
+  // unmounted component.
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    };
+  }, []);
 
   const refreshInvitations = invitations.refresh;
   const handleInvite = useCallback(async () => {
@@ -131,9 +168,54 @@ export function AddClientSheetContainer() {
     }
   }, [email, reason, invite, refreshInvitations, onInvited, closeSheet]);
 
+  const handleGenerateCode = useCallback(async () => {
+    const result = await createCode.mutate();
+    if (result.ok) {
+      setInviteCode(result.value);
+      return;
+    }
+    // Same client-slot cap backstop as the email path — one underlying cap,
+    // one user-facing message.
+    if (result.error.code === "entitlement_denied") {
+      Alert.alert(
+        "No client seats available",
+        "Remove a client or change your subscription to invite more.",
+      );
+      return;
+    }
+    Alert.alert(
+      "Error",
+      result.error.message ||
+        "Failed to generate an invite code. Please try again.",
+    );
+  }, [createCode]);
+
+  const handleShareCode = useCallback(() => {
+    if (!inviteCode) return;
+    const link = buildAcceptInviteDeepLink(inviteCode.code);
+    // Share.share rejects on a real share error (user-cancel resolves) — swallow
+    // it so it never surfaces as an unhandled promise rejection.
+    Share.share({
+      message: `Join me on Persistence — use code ${inviteCode.code} or tap: ${link}`,
+    }).catch(() => {});
+  }, [inviteCode]);
+
+  const handleCopyCode = useCallback(async () => {
+    if (!inviteCode) return;
+    await Clipboard.setStringAsync(inviteCode.code);
+    setJustCopied(true);
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    // Brief "Copied" feedback, then reset — lightweight transient state
+    // rather than a toast component (mirrors the design system's preference
+    // for inline copy over a new primitive for a one-shot confirmation).
+    copiedTimeoutRef.current = setTimeout(() => setJustCopied(false), 1800);
+  }, [inviteCode]);
+
   return (
     <AddClientSheetPresenter
       visible={open}
+      mode={mode}
+      onModeChange={setMode}
       email={email}
       reason={reason}
       emailError={emailError}
@@ -141,6 +223,13 @@ export function AddClientSheetContainer() {
       onEmailChange={setEmail}
       onReasonChange={setReason}
       onInvite={handleInvite}
+      inviteCode={inviteCode}
+      isGeneratingCode={createCode.isPending}
+      isOnline={isOnline}
+      onGenerateCode={handleGenerateCode}
+      onShareCode={handleShareCode}
+      onCopyCode={handleCopyCode}
+      justCopied={justCopied}
       onClose={closeSheet}
     />
   );
