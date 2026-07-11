@@ -100,4 +100,108 @@ describe("ClientRow", () => {
     fireEvent.press(getByTestId("row"));
     expect(onPress).toHaveBeenCalledWith("c-priya");
   });
+
+  describe("Coach Mode Phase 8 (invite/QR) — client-initiated pending accept/decline", () => {
+    function pendingClientInitiated(): TrainerClient {
+      return {
+        ...byId("c-noah"),
+        relationshipId: "rel-noah",
+        initiatedBy: "client",
+      };
+    }
+
+    it("shows the Awaiting-your-OK pill + Accept/Decline for a client-initiated pending row", () => {
+      const { getByText, getByTestId } = renderWithTheme(
+        <ClientRow
+          client={pendingClientInitiated()}
+          onPress={jest.fn()}
+          onAccept={jest.fn()}
+          onDecline={jest.fn()}
+          testID="row"
+        />,
+      );
+      expect(getByText("Awaiting your OK")).toBeTruthy();
+      expect(getByTestId("row-accept")).toBeTruthy();
+      expect(getByTestId("row-decline")).toBeTruthy();
+    });
+
+    it("omits the affordance for a TRAINER-initiated pending row (email invite / unredeemed code)", () => {
+      const { queryByText, queryByTestId } = renderWithTheme(
+        <ClientRow
+          client={{ ...byId("c-noah"), initiatedBy: "trainer" }}
+          onPress={jest.fn()}
+          onAccept={jest.fn()}
+          onDecline={jest.fn()}
+          testID="row"
+        />,
+      );
+      expect(queryByText("Awaiting your OK")).toBeNull();
+      expect(queryByTestId("row-accept")).toBeNull();
+    });
+
+    it("omits the affordance when onAccept/onDecline aren't wired, even for a client-initiated pending row", () => {
+      const { queryByTestId } = renderWithTheme(
+        <ClientRow
+          client={pendingClientInitiated()}
+          onPress={jest.fn()}
+          testID="row"
+        />,
+      );
+      expect(queryByTestId("row-accept")).toBeNull();
+    });
+
+    it("omits the affordance when relationshipId is missing (backend hasn't attached it yet)", () => {
+      const { queryByTestId } = renderWithTheme(
+        <ClientRow
+          client={{
+            ...byId("c-noah"),
+            initiatedBy: "client",
+            relationshipId: null,
+          }}
+          onPress={jest.fn()}
+          onAccept={jest.fn()}
+          onDecline={jest.fn()}
+          testID="row"
+        />,
+      );
+      expect(queryByTestId("row-accept")).toBeNull();
+    });
+
+    it("fires onAccept/onDecline with the relationshipId, not the client id", () => {
+      const onAccept = jest.fn();
+      const onDecline = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <ClientRow
+          client={pendingClientInitiated()}
+          onPress={jest.fn()}
+          onAccept={onAccept}
+          onDecline={onDecline}
+          testID="row"
+        />,
+      );
+      fireEvent.press(getByTestId("row-accept"));
+      expect(onAccept).toHaveBeenCalledWith("rel-noah");
+      fireEvent.press(getByTestId("row-decline"));
+      expect(onDecline).toHaveBeenCalledWith("rel-noah");
+    });
+
+    it("disables both buttons while busy", () => {
+      const { getByTestId } = renderWithTheme(
+        <ClientRow
+          client={pendingClientInitiated()}
+          onPress={jest.fn()}
+          onAccept={jest.fn()}
+          onDecline={jest.fn()}
+          busy
+          testID="row"
+        />,
+      );
+      expect(getByTestId("row-accept").props.accessibilityState?.disabled).toBe(
+        true,
+      );
+      expect(
+        getByTestId("row-decline").props.accessibilityState?.disabled,
+      ).toBe(true);
+    });
+  });
 });

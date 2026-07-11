@@ -408,6 +408,7 @@ describe("YouContainer", () => {
         status: "active",
         relationshipReason: null,
         since: "2026-03-01T00:00:00.000Z",
+        initiatedBy: "trainer",
       },
       {
         relationshipId: "rel-pending",
@@ -418,6 +419,7 @@ describe("YouContainer", () => {
         status: "pending",
         relationshipReason: null,
         since: null,
+        initiatedBy: "trainer",
       },
     ];
     render(
@@ -431,6 +433,47 @@ describe("YouContainer", () => {
     // Exercise the requests-navigation callback.
     act(() => {
       mockProbe.last?.onOpenRequests();
+    });
+  });
+
+  it("Phase 8: separates client-initiated pendings (awaiting coach accept) from the reviewable trainer-initiated prompt", async () => {
+    const { api, adapters } = makeAdapters();
+    api.clientRelationships = [
+      {
+        relationshipId: "rel-trainer-initiated",
+        trainerId: "trainer-1",
+        trainerName: "Coach Carter",
+        trainerRole: "personal_trainer",
+        trainerAvatarUrl: null,
+        status: "pending",
+        relationshipReason: null,
+        since: null,
+        initiatedBy: "trainer",
+      },
+      {
+        relationshipId: "rel-client-initiated",
+        trainerId: "trainer-2",
+        trainerName: "Dr. Lee",
+        trainerRole: "physiotherapist",
+        trainerAvatarUrl: null,
+        status: "pending",
+        relationshipReason: null,
+        since: null,
+        initiatedBy: "client",
+      },
+    ];
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.pendingRequestCount).toBe(1));
+    expect(mockProbe.last?.myPendingCoachRequests).toEqual([
+      { relationshipId: "rel-client-initiated", trainerName: "Dr. Lee" },
+    ]);
+    // Exercise the accept-invite navigation callback.
+    act(() => {
+      mockProbe.last?.onOpenAcceptInvite();
     });
   });
 

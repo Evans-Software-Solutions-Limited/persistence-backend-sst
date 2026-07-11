@@ -265,4 +265,68 @@ describe("ClientsListPresenter", () => {
     fireEvent.press(getByTestId("clients-segmented-option-All"));
     expect(onSegmentChange).toHaveBeenCalledWith("All");
   });
+
+  describe("Coach Mode Phase 8 (invite/QR) — threading accept/decline to ClientRow", () => {
+    const clientsWithPendingCoachRequest = ROSTER.map((c) =>
+      c.id === "c-noah"
+        ? { ...c, relationshipId: "rel-noah", initiatedBy: "client" as const }
+        : c,
+    );
+
+    it("wires onAcceptClient/onDeclineClient + pendingActionIds through to the row", () => {
+      const onAcceptClient = jest.fn();
+      const onDeclineClient = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({
+            clients: clientsWithPendingCoachRequest,
+            segment: "All",
+            onAcceptClient,
+            onDeclineClient,
+            pendingActionIds: new Set(["rel-noah"]),
+          })}
+        />,
+      );
+      // Busy (relationshipId is in pendingActionIds) → both disabled.
+      expect(
+        getByTestId("client-row-c-noah-accept").props.accessibilityState
+          ?.disabled,
+      ).toBe(true);
+      expect(
+        getByTestId("client-row-c-noah-decline").props.accessibilityState
+          ?.disabled,
+      ).toBe(true);
+    });
+
+    it("fires onAcceptClient/onDeclineClient with the relationshipId when not busy", () => {
+      const onAcceptClient = jest.fn();
+      const onDeclineClient = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({
+            clients: clientsWithPendingCoachRequest,
+            segment: "All",
+            onAcceptClient,
+            onDeclineClient,
+          })}
+        />,
+      );
+      fireEvent.press(getByTestId("client-row-c-noah-accept"));
+      expect(onAcceptClient).toHaveBeenCalledWith("rel-noah");
+      fireEvent.press(getByTestId("client-row-c-noah-decline"));
+      expect(onDeclineClient).toHaveBeenCalledWith("rel-noah");
+    });
+
+    it("omits the affordance entirely when onAcceptClient/onDeclineClient are omitted", () => {
+      const { queryByTestId } = renderWithTheme(
+        <ClientsListPresenter
+          {...baseProps({
+            clients: clientsWithPendingCoachRequest,
+            segment: "All",
+          })}
+        />,
+      );
+      expect(queryByTestId("client-row-c-noah-accept")).toBeNull();
+    });
+  });
 });

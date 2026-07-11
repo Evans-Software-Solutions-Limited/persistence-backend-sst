@@ -1668,3 +1668,235 @@ describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", ()
     expect(result.error.programCode).toBe("not_deletable");
   });
 });
+
+describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
+  describe("createTrainerInviteCode", () => {
+    it("unwraps the { data: TrainerInviteCode } envelope + POSTs with no body", async () => {
+      const fetchMock = installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: "invite-1",
+              code: "AB23CD",
+              expiresAt: "2026-08-01T00:00:00.000Z",
+              isExisting: false,
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.createTrainerInviteCode();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.code).toBe("AB23CD");
+      expect(result.value.isExisting).toBe(false);
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/trainers/me/invite-codes",
+      );
+      expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+    });
+
+    it("surfaces 403 for a non-trainer caller", async () => {
+      installFetchMock(async () => {
+        return new Response(JSON.stringify({ error: "Not a trainer" }), {
+          status: 403,
+        });
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.createTrainerInviteCode();
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("server");
+      expect(result.error.status).toBe(403);
+    });
+
+    it("surfaces a 402 entitlement denial when minting would exceed the client-seat cap", async () => {
+      installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            code: "ENTITLEMENT_DENIED",
+            error: "Client seat cap reached",
+            feature: "trainer_clients",
+            current_tier: "individual_trainer",
+            upgrade_to: "premium_trainer",
+            upgrade_price_monthly: 29.99,
+          }),
+          { status: 402 },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.createTrainerInviteCode();
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("entitlement_denied");
+      expect(result.error.entitlement?.feature).toBe("trainer_clients");
+    });
+  });
+
+  describe("acceptTrainerInviteCode", () => {
+    it("unwraps the { data: AcceptInviteCodeResult } envelope on 201 + POSTs the code", async () => {
+      const fetchMock = installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              success: true,
+              relationshipId: "rel-1",
+              trainerName: "Coach Carter",
+              message: "You are now connected with Coach Carter",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.acceptTrainerInviteCode("AB23CD");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.relationshipId).toBe("rel-1");
+      expect(result.value.trainerName).toBe("Coach Carter");
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/trainers/accept-invite-code",
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+      expect(body).toEqual({ code: "AB23CD" });
+    });
+
+    it.each([
+      ["invalid_code", 404],
+      ["self_invite", 400],
+      ["exists", 409],
+      ["code_already_used", 409],
+      ["coach_client_limit_reached", 409],
+    ] as const)(
+      "stamps %s (status %d) onto AcceptInviteCodeApiError.acceptCode",
+      async (code, status) => {
+        installFetchMock(async () => {
+          return new Response(
+            JSON.stringify({ code, message: `domain failure: ${code}` }),
+            { status },
+          );
+        });
+
+        const adapter = new SSTApiAdapter();
+        const result = await adapter.acceptTrainerInviteCode("BAD000");
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.acceptCode).toBe(code);
+        expect(result.error.status).toBe(status);
+        expect(result.error.message).toBe(`domain failure: ${code}`);
+      },
+    );
+
+    it("surfaces a network error without a domain code", async () => {
+      installFetchMock(async () => {
+        throw new Error("DNS lookup failed");
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.acceptTrainerInviteCode("AB23CD");
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("network");
+      expect(result.error.acceptCode).toBeUndefined();
+    });
+  });
+
+  describe("respondToClientRelationship", () => {
+    it("unwraps the { data } envelope + POSTs the action to the coach respond path", async () => {
+      const fetchMock = installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              success: true,
+              relationshipId: "rel-1",
+              clientId: "client-1",
+              status: "active",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToClientRelationship(
+        "rel-1",
+        "accept",
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.clientId).toBe("client-1");
+      expect(result.value.status).toBe("active");
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/trainers/me/relationships/rel-1/respond",
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+      expect(body).toEqual({ action: "accept" });
+    });
+
+    it("surfaces 404 when the relationship isn't found / owned", async () => {
+      installFetchMock(async () => {
+        return new Response(JSON.stringify({ error: "Not found" }), {
+          status: 404,
+        });
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToClientRelationship(
+        "rel-missing",
+        "decline",
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("not_found");
+    });
+
+    it("surfaces 403 for a non-trainer caller", async () => {
+      installFetchMock(async () => {
+        return new Response(JSON.stringify({ error: "Not a trainer" }), {
+          status: 403,
+        });
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToClientRelationship(
+        "rel-1",
+        "accept",
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("server");
+      expect(result.error.status).toBe(403);
+    });
+
+    it("surfaces a 402 entitlement denial when accepting would exceed the client-seat cap", async () => {
+      installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            code: "ENTITLEMENT_DENIED",
+            error: "Client seat cap reached",
+            feature: "trainer_clients",
+            current_tier: "individual_trainer",
+            upgrade_to: "premium_trainer",
+            upgrade_price_monthly: 29.99,
+          }),
+          { status: 402 },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToClientRelationship(
+        "rel-1",
+        "accept",
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("entitlement_denied");
+      expect(result.error.entitlement?.feature).toBe("trainer_clients");
+    });
+  });
+});

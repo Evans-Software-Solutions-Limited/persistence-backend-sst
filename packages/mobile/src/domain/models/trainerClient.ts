@@ -59,6 +59,24 @@ export type TrainerClient = {
   lastSeenAt: string | null;
   /** Already-computed pills, server-side. */
   flags: ClientFlag[];
+  /**
+   * The underlying `pt_client_relationships.id` (Coach Mode Phase 8 — invite/
+   * QR, 10-trainer-features). Needed to call `respondToClientRelationship`
+   * for a `pending` row. Optional + nullable: absent on cached payloads
+   * written before Phase 8, so consumers must tolerate `undefined` (treat
+   * the same as `null` — no relationshipId means no accept/decline action).
+   */
+  relationshipId?: string | null;
+  /**
+   * Which side kicked off a `pending` row (Phase 8): "trainer" = this
+   * trainer emailed an invite / minted a code the CLIENT hasn't redeemed yet
+   * — nothing for the coach to do but wait. "client" = the client redeemed
+   * this trainer's invite code and is awaiting the COACH's accept/decline —
+   * this is the row that gets the accept/decline affordance. Optional +
+   * nullable for the same cached-payload-compat reason as `relationshipId`;
+   * `undefined`/`null` never render the affordance (defensive default).
+   */
+  initiatedBy?: "trainer" | "client" | null;
 };
 
 /**

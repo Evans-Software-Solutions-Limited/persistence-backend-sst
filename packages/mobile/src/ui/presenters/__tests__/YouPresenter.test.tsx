@@ -58,11 +58,13 @@ function render(overrides: Partial<YouPresenterProps> = {}) {
     isRefreshing: false,
     trainer: null,
     pendingRequestCount: 0,
+    myPendingCoachRequests: [],
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
     onOpenCalendar: jest.fn(),
     onUseToken,
     onOpenRequests: jest.fn(),
+    onOpenAcceptInvite: jest.fn(),
     ...overrides,
   };
   return { ...renderWithTheme(<YouPresenter {...props} />), onUseToken };
@@ -109,5 +111,33 @@ describe("YouPresenter", () => {
     const { queryByTestId } = render({ volumeStats: null, prHistory: [] });
     expect(queryByTestId("you-volume")).toBeNull();
     expect(queryByTestId("you-prs")).toBeNull();
+  });
+
+  it("always renders the COACHING section, even with no trainer and no pending (Phase 8)", () => {
+    const { getByTestId } = render({
+      trainer: null,
+      pendingRequestCount: 0,
+      myPendingCoachRequests: [],
+    });
+    expect(getByTestId("you-trainer-section")).toBeTruthy();
+    expect(getByTestId("you-accept-invite-entry")).toBeTruthy();
+  });
+
+  it("fires onOpenAcceptInvite from the entry button", () => {
+    const props: Partial<YouPresenterProps> = {
+      onOpenAcceptInvite: jest.fn(),
+    };
+    const { getByTestId } = render(props);
+    fireEvent.press(getByTestId("you-accept-invite-button"));
+    expect(props.onOpenAcceptInvite).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards myPendingCoachRequests to the TrainerProgress block", () => {
+    const { getByTestId } = render({
+      myPendingCoachRequests: [
+        { relationshipId: "rel-1", trainerName: "Coach Carter" },
+      ],
+    });
+    expect(getByTestId("you-pending-coach-request-rel-1")).toBeTruthy();
   });
 });

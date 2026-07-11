@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react-native";
+import { Alert } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TamaguiProvider } from "@tamagui/core";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -33,6 +34,7 @@ const mockFetch = jest.fn(async () => ({
 (globalThis as Record<string, unknown>).fetch = mockFetch;
 
 const mockPush = jest.fn();
+const mockSearchParams: { clientId?: string } = {};
 jest.mock("expo-router", () => ({
   __esModule: true,
   useRouter: () => ({
@@ -40,6 +42,7 @@ jest.mock("expo-router", () => ({
     replace: jest.fn(),
     back: jest.fn(),
   }),
+  useLocalSearchParams: () => mockSearchParams,
   router: {
     push: (...args: unknown[]) => mockPush(...args),
     replace: jest.fn(),
@@ -156,6 +159,7 @@ function makeTrainerSub(
 beforeEach(() => {
   mockPush.mockReset();
   mockFetch.mockClear();
+  delete mockSearchParams.clientId;
   useAddClientSheet.setState({ open: false, onInvited: null });
 });
 
@@ -317,5 +321,158 @@ describe("ClientsContainer", () => {
     fireEvent.press(screen.getByTestId("feature-gate-upgrade"));
     expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush.mock.calls[0][0]).toMatch(/subscription-selection/);
+  });
+
+  describe("Coach accept UI (Coach Mode Phase 8 — invite/QR)", () => {
+    /** The fixture roster with c-noah (the only `pending` row) reassigned as
+     * a CLIENT-initiated pending awaiting this coach's accept/decline. */
+    function rosterWithPendingCoachRequest() {
+      return makeTrainerClients().map((c) =>
+        c.id === "c-noah"
+          ? { ...c, relationshipId: "rel-noah", initiatedBy: "client" as const }
+          : c,
+      );
+    }
+
+    /** Build adapters + render, pre-loaded with the pending-coach-request
+     * roster, then switch to the "All" segment so the pending row shows. */
+    async function renderOnAllSegment(): Promise<InMemoryApiAdapter> {
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.trainerClients = rosterWithPendingCoachRequest();
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      // Wait for the (default "Active") roster to land, then switch to "All"
+      // so the pending row is visible.
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByTestId("clients-segmented-option-All"));
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-noah-accept")).toBeTruthy(),
+      );
+      return api;
+    }
+
+    it("a clientId search param defaults the segment to All (so the just-joined pending isn't hidden)", async () => {
+      mockSearchParams.clientId = "c-noah";
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.trainerClients = rosterWithPendingCoachRequest();
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-noah")).toBeTruthy(),
+      );
+      expect(
+        screen.getByTestId("clients-segmented-option-All").props
+          .accessibilityState.selected,
+      ).toBe(true);
+    });
+
+    it("only a client-initiated pending row gets the accept/decline affordance", async () => {
+      await renderOnAllSegment();
+      // The other (active) rows never render the affordance.
+      expect(screen.queryByTestId("client-row-c-priya-accept")).toBeNull();
+    });
+
+    it("accept calls respond(accept) then refreshes the roster", async () => {
+      const api = await renderOnAllSegment();
+      const before = api.getTrainerClientsCalls;
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("client-row-c-noah-accept"));
+      });
+      expect(api.respondToClientRelationshipCalls).toEqual([
+        { relationshipId: "rel-noah", action: "accept" },
+      ]);
+      await waitFor(() =>
+        expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+      );
+    });
+
+    it("decline calls respond(decline)", async () => {
+      const api = await renderOnAllSegment();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("client-row-c-noah-decline"));
+      });
+      expect(api.respondToClientRelationshipCalls).toEqual([
+        { relationshipId: "rel-noah", action: "decline" },
+      ]);
+    });
+
+    it("disables both buttons while the accept/decline call is in flight (optimistic busy state)", async () => {
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.trainerClients = rosterWithPendingCoachRequest();
+      // Never resolves within this test — lets us observe the busy state.
+      let resolveRespond: (() => void) | null = null;
+      const original = api.respondToClientRelationship.bind(api);
+      jest.spyOn(api, "respondToClientRelationship").mockImplementation(
+        (relationshipId, action) =>
+          new Promise((resolve) => {
+            resolveRespond = () => resolve(original(relationshipId, action));
+          }),
+      );
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByTestId("clients-segmented-option-All"));
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-noah-accept")).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByTestId("client-row-c-noah-accept"));
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("client-row-c-noah-accept").props
+            .accessibilityState.disabled,
+        ).toBe(true),
+      );
+      expect(
+        screen.getByTestId("client-row-c-noah-decline").props.accessibilityState
+          .disabled,
+      ).toBe(true);
+      await act(async () => {
+        resolveRespond?.();
+      });
+    });
+
+    it("402 (coach at cap) on accept surfaces the same no-seats alert copy", async () => {
+      const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.trainerClients = rosterWithPendingCoachRequest();
+      api.nextRespondToClientError = {
+        kind: "api",
+        code: "entitlement_denied",
+        message: "Subscription does not include this feature",
+      };
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByTestId("clients-segmented-option-All"));
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-noah-accept")).toBeTruthy(),
+      );
+      await act(async () => {
+        fireEvent.press(screen.getByTestId("client-row-c-noah-accept"));
+      });
+      expect(alertSpy).toHaveBeenCalledWith(
+        "No client seats available",
+        "Remove a client or change your subscription to invite more.",
+      );
+      alertSpy.mockRestore();
+    });
   });
 });

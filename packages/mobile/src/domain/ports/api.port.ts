@@ -55,6 +55,7 @@ import type {
   ClientTrainerRelationship,
   RelationshipResponseAction,
   RelationshipResponseResult,
+  RespondToClientRequestResult,
 } from "@/domain/models/clientRelationship";
 import type {
   InviteClientRequest,
@@ -62,6 +63,11 @@ import type {
   InviteErrorCode,
   TrainerInvitation,
 } from "@/domain/models/trainerInvitation";
+import type {
+  AcceptInviteCodeApiError,
+  AcceptInviteCodeResult,
+  TrainerInviteCode,
+} from "@/domain/models/trainerInviteCode";
 import type {
   AssignProgramInput,
   AssignWorkoutInput,
@@ -781,6 +787,53 @@ export interface ApiPort {
    * ownership-scoped. 404 when not found / not pending / not owned.
    */
   cancelInvitation(id: string): Promise<Result<{ success: true }, ApiError>>;
+
+  // -- Trainer invite-code / QR (Coach Mode Phase 8 — 10-trainer-features) --
+  //
+  // Mint/redeem/respond for the reusable-code flow (distinct from the
+  // per-email `inviteClient` invitation above). `{ data }` envelopes on
+  // success; the 402 client-seat-cap denial (mint, and accept-at-cap on
+  // `respondToClientRelationship`) surfaces through the generic
+  // `ApiError.code === "entitlement_denied"` path (same as `inviteClient`'s
+  // 402), NOT a bespoke domain code — containers reuse the existing
+  // entitlement handling (`useFeatureGate` / `AddClientSheetContainer`'s
+  // 402 branch).
+
+  /**
+   * Mint (or re-fetch a still-live) invite code for the current trainer
+   * (`POST /trainers/me/invite-codes`). 403 when the caller isn't a
+   * trainer. 402 `ENTITLEMENT_DENIED` when minting a FRESH code would
+   * exceed the trainer's client-seat cap (re-fetching an existing live
+   * code never hits the cap check).
+   */
+  createTrainerInviteCode(): Promise<Result<TrainerInviteCode, ApiError>>;
+
+  /**
+   * Redeem a trainer's invite code as the current (client) user
+   * (`POST /trainers/accept-invite-code`). Creates a client-initiated
+   * pending relationship the trainer then accepts/declines via
+   * `respondToClientRelationship`. Domain failures arrive as a flat
+   * `{ code, message }` body — the adapter surfaces `code` on
+   * `AcceptInviteCodeApiError.acceptCode` (mirrors `InviteApiError`):
+   * invalid_code (404) | self_invite (400) | exists (409) |
+   * code_already_used (409) | coach_client_limit_reached (409).
+   */
+  acceptTrainerInviteCode(
+    code: string,
+  ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>>;
+
+  /**
+   * The TRAINER's side of the Phase 8 handshake — accept or decline a
+   * client who joined via invite code
+   * (`POST /trainers/me/relationships/:relationshipId/respond`). 403 when
+   * the caller isn't a trainer, 404 when no pending row matches (not
+   * owned / already actioned). Accepting can 402 `ENTITLEMENT_DENIED`
+   * when the trainer is at their client-seat cap.
+   */
+  respondToClientRelationship(
+    relationshipId: string,
+    action: RelationshipResponseAction,
+  ): Promise<Result<RespondToClientRequestResult, ApiError>>;
 
   // -- Nutrition / Fuel (M9 — 13-nutrition-tracking) --
   //

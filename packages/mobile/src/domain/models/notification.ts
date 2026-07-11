@@ -50,7 +50,11 @@ export type NotificationType =
   // Trainer-client-caps — a client's join was rejected because the trainer is
   // at their plan's client-slot limit; notifies the TRAINER (DB enum migration
   // 20260711120000). Deep-links to the coach Clients roster.
-  | "trainer_client_limit_reached";
+  | "trainer_client_limit_reached"
+  // Coach Mode Phase 8 (invite/QR) — the coach accepted a client's invite-
+  // code-initiated request; notifies the CLIENT (athlete-facing). Deep-links
+  // to the You-page "Your trainer" section.
+  | "coach_request_accepted";
 
 /**
  * The known types as a runtime array. Drives the preferences screen's
@@ -73,6 +77,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "nutrition_target_set_by_trainer",
   "coach_brief",
   "trainer_client_limit_reached",
+  "coach_request_accepted",
 ] as const;
 
 /**
@@ -112,6 +117,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   nutrition_target_set_by_trainer: "Nutrition targets set by coach",
   coach_brief: "Briefs from your coach",
   trainer_client_limit_reached: "Client limit reached",
+  coach_request_accepted: "Coach accepted your request",
 };
 
 /**

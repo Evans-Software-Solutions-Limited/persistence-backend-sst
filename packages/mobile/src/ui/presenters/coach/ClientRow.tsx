@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
 import { Avatar } from "@/ui/components/foundation/Avatar";
 import { Bar } from "@/ui/components/foundation/Bar";
+import { Btn } from "@/ui/components/foundation/Btn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconChevronR, iconDefaults } from "@/ui/components/icons";
@@ -18,6 +19,16 @@ import { BAND_DISPLAY } from "./clientBand";
  * v1 fidelity: `programLabel` is always null (Programs slice not built), so the
  * subtitle renders just "{lastSeen} ago". When `adherence` is null (client has
  * no in-window assignments) the bar + caption are omitted entirely.
+ *
+ * Coach Mode Phase 8 (invite/QR) — net-new: a `pending` row can be CLIENT-
+ * initiated (the athlete redeemed THIS coach's invite code and is awaiting
+ * the coach's accept/decline). Core render is UNCHANGED for every other row;
+ * a client-initiated pending row additionally gets an "Awaiting your OK"
+ * pill + an Accept/Decline button pair (reuses `RequestsPresenter`'s
+ * accept/decline shape). Both buttons nest inside this row's outer
+ * `Pressable` — standard RN touch-responder negotiation means pressing a
+ * button fires ONLY its own `onPress`, never bubbling to the row's
+ * navigate-to-detail handler.
  */
 
 const TABULAR: ["tabular-nums"] = ["tabular-nums"];
@@ -29,6 +40,16 @@ export type ClientRowProps = {
   /** Injected clock for deterministic relative-time tests. Defaults to now. */
   now?: number;
   testID?: string;
+  /**
+   * Accept a client-initiated pending row (Phase 8). Omit to render the row
+   * with no accept/decline affordance regardless of status (e.g. the client
+   * side of the app never wires these).
+   */
+  onAccept?: (relationshipId: string) => void;
+  /** Decline a client-initiated pending row (Phase 8). */
+  onDecline?: (relationshipId: string) => void;
+  /** True while THIS row's accept/decline call is in flight — disables both buttons. */
+  busy?: boolean;
 };
 
 /** "{programLabel · }{lastSeen} ago" — omits the programLabel segment when null. */
@@ -49,9 +70,18 @@ export function ClientRow({
   onPress,
   now = Date.now(),
   testID,
+  onAccept,
+  onDecline,
+  busy = false,
 }: ClientRowProps) {
   const display = client.band ? BAND_DISPLAY[client.band] : null;
   const subtitle = buildClientSubtitle(client, now);
+  const needsCoachAccept =
+    client.status === "pending" &&
+    client.initiatedBy === "client" &&
+    client.relationshipId != null &&
+    onAccept != null &&
+    onDecline != null;
 
   return (
     <Pressable
@@ -95,6 +125,11 @@ export function ClientRow({
                 {flag.label}
               </Pill>
             ))}
+            {needsCoachAccept ? (
+              <Pill tone="trainer" size="xs">
+                Awaiting your OK
+              </Pill>
+            ) : null}
           </View>
 
           <Text
@@ -105,6 +140,37 @@ export function ClientRow({
           >
             {subtitle}
           </Text>
+
+          {needsCoachAccept ? (
+            <View flexDirection="row" gap={8} marginTop={8}>
+              <View flex={1}>
+                <Btn
+                  variant="filled"
+                  tone="trainer"
+                  size="sm"
+                  full
+                  disabled={busy}
+                  onPress={() => onAccept!(client.relationshipId!)}
+                  testID={testID ? `${testID}-accept` : undefined}
+                >
+                  Accept
+                </Btn>
+              </View>
+              <View flex={1}>
+                <Btn
+                  variant="ghost"
+                  tone="error"
+                  size="sm"
+                  full
+                  disabled={busy}
+                  onPress={() => onDecline!(client.relationshipId!)}
+                  testID={testID ? `${testID}-decline` : undefined}
+                >
+                  Decline
+                </Btn>
+              </View>
+            </View>
+          ) : null}
 
           {client.adherence !== null && display !== null ? (
             <View flexDirection="row" alignItems="center" gap={8} marginTop={8}>
