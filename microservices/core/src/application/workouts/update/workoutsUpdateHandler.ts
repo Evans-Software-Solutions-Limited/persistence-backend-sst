@@ -27,6 +27,7 @@ export const workoutsUpdateHandler = new Elysia()
         description,
         visibility,
         estimatedDurationMinutes,
+        showInOwnerLibrary,
         exercises,
       } = ctx.body;
 
@@ -51,6 +52,8 @@ export const workoutsUpdateHandler = new Elysia()
       if (visibility !== undefined) updateData.visibility = visibility;
       if (estimatedDurationMinutes !== undefined)
         updateData.estimatedDurationMinutes = estimatedDurationMinutes;
+      if (showInOwnerLibrary !== undefined)
+        updateData.showInOwnerLibrary = showInOwnerLibrary;
       if (exercises !== undefined) updateData.exercises = exercises;
 
       const workout = await ctx.WorkoutRepository.update(
@@ -81,6 +84,7 @@ export const workoutsUpdateHandler = new Elysia()
           ]),
         ),
         estimatedDurationMinutes: t.Optional(t.Number()),
+        showInOwnerLibrary: t.Optional(t.Boolean()),
         exercises: t.Optional(t.Array(workoutExerciseInputSchema)),
       }),
     },

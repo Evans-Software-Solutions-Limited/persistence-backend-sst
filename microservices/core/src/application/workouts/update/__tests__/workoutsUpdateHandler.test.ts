@@ -183,6 +183,45 @@ describe("WorkoutsUpdateHandler", () => {
         }),
       );
     });
+
+    it("passes show_in_owner_library through when a coach toggles it", async () => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ showInOwnerLibrary: true }),
+        }),
+      );
+
+      expect(workoutRepositoryMocks.update).toHaveBeenCalledWith(
+        "workout-1",
+        "test-user-id",
+        expect.objectContaining({ showInOwnerLibrary: true }),
+      );
+    });
+
+    it("omits show_in_owner_library from the update when not provided", async () => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Renamed" }),
+        }),
+      );
+
+      const updateArg = workoutRepositoryMocks.update.mock.calls[0][2];
+      expect("showInOwnerLibrary" in updateArg).toBe(false);
+    });
   });
 
   describe("nested-exercise updates", () => {

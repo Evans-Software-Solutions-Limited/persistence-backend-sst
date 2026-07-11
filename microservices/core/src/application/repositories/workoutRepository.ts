@@ -1,4 +1,14 @@
-import { and, eq, ne, or, desc, inArray, count, isNull } from "drizzle-orm";
+import {
+  and,
+  eq,
+  ne,
+  or,
+  desc,
+  inArray,
+  count,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import {
   workouts,
   workoutExercises,
@@ -7,6 +17,9 @@ import {
   workoutAssignments,
   userSubscriptions,
   subscriptionTiers,
+  workoutSessions,
+  sessionExercises,
+  exerciseSets,
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
@@ -17,6 +30,11 @@ export interface ListWorkoutsFilters {
   type?: WorkoutListType;
   limit?: number;
   offset?: number;
+  // When true (only meaningful with type="mine"), restrict to workouts the
+  // author has flagged as owner-visible (show_in_owner_library = true). Sent by
+  // the client only for trainers so a coach's personal My Workouts isn't
+  // crowded by workouts authored for clients. Absent => unchanged behaviour.
+  ownerLibraryOnly?: boolean;
 }
 
 export interface WorkoutExerciseRow {
@@ -72,6 +90,9 @@ export interface CreateWorkoutInput {
   description?: string | null;
   visibility?: "private" | "friends" | "public";
   estimatedDurationMinutes?: number;
+  // Owner-visibility (see schema.ts workouts.show_in_owner_library). Absent =>
+  // defaults true (personal). The coach-authoring flow sends false.
+  showInOwnerLibrary?: boolean;
   exercises?: CreateWorkoutExerciseInput[];
 }
 
@@ -80,7 +101,23 @@ export interface UpdateWorkoutInput {
   description?: string | null;
   visibility?: "private" | "friends" | "public";
   estimatedDurationMinutes?: number;
+  showInOwnerLibrary?: boolean;
   exercises?: CreateWorkoutExerciseInput[];
+}
+
+export interface WorkoutHistory {
+  // Number of times the calling user has COMPLETED this workout. 0 = never done.
+  completedCount: number;
+  // ISO timestamp of the most recent completed session, or null when never done.
+  lastCompletedAt: string | null;
+  // Mean session length across completed sessions, in seconds, or null.
+  avgDurationSeconds: number | null;
+  // The most recent completed session's headline stats, or null when never done.
+  lastSession: {
+    completedAt: string;
+    totalVolumeKg: number;
+    durationSeconds: number | null;
+  } | null;
 }
 
 // Drizzle's transaction callback receives a typed PgTransaction; the public
@@ -103,7 +140,12 @@ export class WorkoutRepository {
     const offset = filters.offset ?? 0;
     const type = filters.type ?? "mine";
 
-    const whereClause = this.buildListWhereClause(type, userId, db);
+    const whereClause = this.buildListWhereClause(
+      type,
+      userId,
+      db,
+      filters.ownerLibraryOnly ?? false,
+    );
 
     const [rows, totalRows] = await Promise.all([
       db
@@ -190,6 +232,113 @@ export class WorkoutRepository {
     };
   }
 
+  /**
+   * Per-workout completed-session history for the CALLING user, feeding the
+   * detail hero's market-standard stats block. Access is gated by `canRead`
+   * (same as the detail GET); a null return maps to 404 at the handler. Every
+   * aggregate is scoped to `user_id = me` — a client viewing an assigned
+   * coach workout sees only their OWN completed sessions of it, never anyone
+   * else's. Returns the empty state (count 0, null aggregates) when never done.
+   */
+  async getHistory(id: string, userId: string): Promise<WorkoutHistory | null> {
+    const db = getDb();
+
+    const [workout] = await db
+      .select()
+      .from(workouts)
+      .where(eq(workouts.id, id))
+      .limit(1);
+
+    if (!workout) return null;
+    if (!(await this.canRead(db, workout, userId))) return null;
+
+    const completedFilter = and(
+      eq(workoutSessions.userId, userId),
+      eq(workoutSessions.workoutId, id),
+      eq(workoutSessions.status, "completed"),
+    );
+
+    const [aggRows, lastRows] = await Promise.all([
+      db
+        .select({
+          completedCount: sql<number>`count(*)::int`,
+          avgDurationSeconds: sql<
+            number | null
+          >`avg(${workoutSessions.totalDurationSeconds})`,
+        })
+        .from(workoutSessions)
+        .where(completedFilter),
+      db
+        .select({
+          id: workoutSessions.id,
+          completedAt: workoutSessions.completedAt,
+          createdAt: workoutSessions.createdAt,
+          totalDurationSeconds: workoutSessions.totalDurationSeconds,
+        })
+        .from(workoutSessions)
+        .where(completedFilter)
+        // COALESCE(completedAt, createdAt) mirrors sessionRepository so a
+        // completed row with a null completedAt still orders sanely. `id` is a
+        // deterministic secondary key so two sessions sharing a timestamp
+        // resolve the same way every call (IB 🔵).
+        .orderBy(
+          desc(
+            sql`COALESCE(${workoutSessions.completedAt}, ${workoutSessions.createdAt})`,
+          ),
+          desc(workoutSessions.id),
+        )
+        .limit(1),
+    ]);
+
+    const completedCount = Number(aggRows[0]?.completedCount ?? 0);
+    const avgDurationSecondsRaw = aggRows[0]?.avgDurationSeconds;
+    const avgDurationSeconds =
+      avgDurationSecondsRaw == null ? null : Number(avgDurationSecondsRaw);
+
+    const last = lastRows[0];
+    if (!last) {
+      return {
+        completedCount,
+        lastCompletedAt: null,
+        avgDurationSeconds,
+        lastSession: null,
+      };
+    }
+
+    const [volumeRow] = await db
+      .select({
+        volume: sql<number>`COALESCE(SUM(${exerciseSets.weightKg} * ${exerciseSets.reps}), 0)::float`,
+      })
+      .from(exerciseSets)
+      .innerJoin(
+        sessionExercises,
+        eq(exerciseSets.sessionExerciseId, sessionExercises.id),
+      )
+      .where(
+        and(
+          eq(sessionExercises.sessionId, last.id),
+          eq(exerciseSets.isCompleted, true),
+        ),
+      );
+
+    const lastCompletedAt = (last.completedAt ?? last.createdAt) as Date | null;
+    const lastCompletedISO = lastCompletedAt
+      ? lastCompletedAt.toISOString()
+      : null;
+
+    return {
+      completedCount,
+      lastCompletedAt: lastCompletedISO,
+      avgDurationSeconds,
+      lastSession: {
+        // A completed session always resolves a date via the COALESCE above.
+        completedAt: lastCompletedISO ?? new Date(0).toISOString(),
+        totalVolumeKg: Number(volumeRow?.volume ?? 0),
+        durationSeconds: last.totalDurationSeconds ?? null,
+      },
+    };
+  }
+
   // ─── Write ───────────────────────────────────────────────────────────
 
   async createWithExercises(
@@ -206,6 +355,8 @@ export class WorkoutRepository {
           description: input.description ?? null,
           visibility: input.visibility ?? "private",
           estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+          // Absent => true (personal). Coach-authoring flow sends false.
+          showInOwnerLibrary: input.showInOwnerLibrary ?? true,
           createdBy: userId,
         })
         .returning();
@@ -239,6 +390,9 @@ export class WorkoutRepository {
       if (data.visibility !== undefined) metadata.visibility = data.visibility;
       if (data.estimatedDurationMinutes !== undefined)
         metadata.estimatedDurationMinutes = data.estimatedDurationMinutes;
+      // Present-only: a partial PATCH that omits the flag leaves it untouched.
+      if (data.showInOwnerLibrary !== undefined)
+        metadata.showInOwnerLibrary = data.showInOwnerLibrary;
 
       // Ownership check folded into the UPDATE WHERE — no separate SELECT,
       // no TOCTOU window. Empty `returning()` means either the row doesn't
@@ -288,9 +442,24 @@ export class WorkoutRepository {
 
   // ─── Internal helpers ────────────────────────────────────────────────
 
-  private buildListWhereClause(type: WorkoutListType, userId: string, db: Db) {
+  private buildListWhereClause(
+    type: WorkoutListType,
+    userId: string,
+    db: Db,
+    ownerLibraryOnly: boolean,
+  ) {
     if (type === "mine") {
-      return eq(workouts.createdBy, userId);
+      // `ownerLibraryOnly` de-crowds a trainer's personal My Workouts: only
+      // workouts they authored AND flagged owner-visible. The client sends it
+      // for trainers only; regular athletes never set it, so `mine` stays
+      // "everything I created" for them (unchanged). Only meaningful for
+      // type="mine" — assigned/default ignore it.
+      return ownerLibraryOnly
+        ? and(
+            eq(workouts.createdBy, userId),
+            eq(workouts.showInOwnerLibrary, true),
+          )
+        : eq(workouts.createdBy, userId);
     }
     if (type === "assigned") {
       // `show_in_library` is the coach's per-assignment "clutter the

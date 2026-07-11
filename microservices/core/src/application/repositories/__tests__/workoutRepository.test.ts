@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { WorkoutRepository } from "../workoutRepository";
 
 vi.mock("@persistence/db/client", () => ({
@@ -774,6 +775,370 @@ describe("WorkoutRepository", () => {
       const repo = new WorkoutRepository();
       expect(await repo.delete("nonexistent", "user-1")).toBe(false);
       expect(await repo.delete("wo-1", "different-user")).toBe(false);
+    });
+  });
+
+  describe("list — ownerLibraryOnly (trainer de-crowding filter)", () => {
+    // Capture the mine-branch WHERE so we can render it with PgDialect and
+    // prove the show_in_owner_library predicate is (only) added when asked.
+    // The mocked-DB chains can't introspect SQL otherwise — the blind spot
+    // reference_drizzle_groupby_param_bug.md warns about.
+    function makeRecordingListChain(rows: any, capture: { where?: unknown }) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn((w: unknown) => {
+        capture.where = w;
+        return chain;
+      });
+      chain.orderBy = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockReturnValue(chain);
+      chain.offset = vi.fn().mockResolvedValue(rows);
+      return chain;
+    }
+
+    it("adds show_in_owner_library = true to the mine filter when ownerLibraryOnly", async () => {
+      const capture: { where?: unknown } = {};
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeRecordingListChain([baseWorkout], capture))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.list("user-1", { type: "mine", ownerLibraryOnly: true });
+
+      const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(rendered).toContain('"created_by"');
+      expect(rendered).toContain('"show_in_owner_library"');
+    });
+
+    it("keeps the mine filter as created_by only when ownerLibraryOnly is false/absent", async () => {
+      const capture: { where?: unknown } = {};
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeRecordingListChain([baseWorkout], capture))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.list("user-1", { type: "mine" });
+
+      const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(rendered).toContain('"created_by"');
+      expect(rendered).not.toContain("show_in_owner_library");
+    });
+
+    it("still counts ALL created workouts for quota regardless of the filter", async () => {
+      // Quota (used) must not be de-crowded — a trainer at 40 authored
+      // workouts still reads used=40 even when the list is filtered to the
+      // handful they flagged owner-visible.
+      const capture: { where?: unknown } = {};
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeRecordingListChain([baseWorkout], capture))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          .mockReturnValueOnce(makeQuotaUsedChain(40))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.list("user-1", {
+        type: "mine",
+        ownerLibraryOnly: true,
+      });
+
+      expect(result.quota).toEqual({ used: 40, limit: null });
+    });
+  });
+
+  describe("createWithExercises / update — show_in_owner_library", () => {
+    it("defaults show_in_owner_library to true when omitted (athlete path)", async () => {
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([baseWorkout]),
+      });
+      const tx = {
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.createWithExercises("user-1", { name: "Personal" });
+
+      expect(valuesSpy.mock.calls[0][0].showInOwnerLibrary).toBe(true);
+    });
+
+    it("persists show_in_owner_library=false when the coach path sends it", async () => {
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([baseWorkout]),
+      });
+      const tx = {
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.createWithExercises("user-1", {
+        name: "For client",
+        showInOwnerLibrary: false,
+      });
+
+      expect(valuesSpy.mock.calls[0][0].showInOwnerLibrary).toBe(false);
+    });
+
+    it("sets show_in_owner_library on update only when provided (no clobber)", async () => {
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([baseWorkout]),
+        }),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        delete: vi.fn(),
+        insert: vi.fn(),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", { showInOwnerLibrary: true });
+      expect(setSpy.mock.calls[0][0].showInOwnerLibrary).toBe(true);
+
+      setSpy.mockClear();
+      await repo.update("wo-1", "user-1", { name: "Renamed" });
+      expect("showInOwnerLibrary" in setSpy.mock.calls[0][0]).toBe(false);
+    });
+  });
+
+  describe("getHistory", () => {
+    const completedWorkout = { ...baseWorkout, createdBy: "user-1" };
+
+    function makeAggChain(row: any, capture?: { where?: unknown }) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn((w: unknown) => {
+        if (capture) capture.where = w;
+        return Promise.resolve([row]);
+      });
+      return chain;
+    }
+    function makeLastSessionChain(rows: any) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn().mockReturnValue(chain);
+      chain.orderBy = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockResolvedValue(rows);
+      return chain;
+    }
+    function makeVolumeChain(volume: number, capture?: { where?: unknown }) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.innerJoin = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn((w: unknown) => {
+        if (capture) capture.where = w;
+        return Promise.resolve([{ volume }]);
+      });
+      return chain;
+    }
+
+    it("aggregates completed sessions for the owner + last-session volume", async () => {
+      const completedAt = new Date("2026-03-21T10:00:00.000Z");
+      const mockDb = {
+        select: vi
+          .fn()
+          // 1: workout lookup
+          .mockReturnValueOnce(makeSelectChain([completedWorkout]))
+          // 2: aggregate (count + avg)
+          .mockReturnValueOnce(
+            makeAggChain({ completedCount: 12, avgDurationSeconds: 2640 }),
+          )
+          // 3: last completed session
+          .mockReturnValueOnce(
+            makeLastSessionChain([
+              {
+                id: "sess-9",
+                completedAt,
+                createdAt: completedAt,
+                totalDurationSeconds: 2820,
+              },
+            ]),
+          )
+          // 4: last-session volume
+          .mockReturnValueOnce(makeVolumeChain(6240)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const history = await repo.getHistory("wo-1", "user-1");
+
+      expect(history).toEqual({
+        completedCount: 12,
+        lastCompletedAt: completedAt.toISOString(),
+        avgDurationSeconds: 2640,
+        lastSession: {
+          completedAt: completedAt.toISOString(),
+          totalVolumeKg: 6240,
+          durationSeconds: 2820,
+        },
+      });
+    });
+
+    it("returns the empty state (count 0, null aggregates) when never completed", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([completedWorkout]))
+          .mockReturnValueOnce(
+            makeAggChain({ completedCount: 0, avgDurationSeconds: null }),
+          )
+          .mockReturnValueOnce(makeLastSessionChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const history = await repo.getHistory("wo-1", "user-1");
+
+      expect(history).toEqual({
+        completedCount: 0,
+        lastCompletedAt: null,
+        avgDurationSeconds: null,
+        lastSession: null,
+      });
+      // No volume query when there's no last session.
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+    });
+
+    it("returns null when the workout does not exist", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValueOnce(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.getHistory("nope", "user-1")).toBeNull();
+      expect(mockDb.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns null when the caller cannot read the workout (no leak)", async () => {
+      const privateOther = {
+        ...baseWorkout,
+        createdBy: "someone-else",
+        visibility: "private" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([privateOther]))
+          // canRead → assignment grant lookup → none
+          .mockReturnValueOnce(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.getHistory("wo-1", "stranger")).toBeNull();
+    });
+
+    it("scopes the aggregate + volume SQL to this user, workout and completed status", async () => {
+      const aggCapture: { where?: unknown } = {};
+      const volCapture: { where?: unknown } = {};
+      const completedAt = new Date("2026-03-21T10:00:00.000Z");
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([completedWorkout]))
+          .mockReturnValueOnce(
+            makeAggChain(
+              { completedCount: 1, avgDurationSeconds: 1000 },
+              aggCapture,
+            ),
+          )
+          .mockReturnValueOnce(
+            makeLastSessionChain([
+              {
+                id: "sess-1",
+                completedAt,
+                createdAt: completedAt,
+                totalDurationSeconds: 1000,
+              },
+            ]),
+          )
+          .mockReturnValueOnce(makeVolumeChain(500, volCapture)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.getHistory("wo-1", "user-1");
+
+      const dialect = new PgDialect();
+      const aggWhere = dialect.sqlToQuery(aggCapture.where as never).sql;
+      expect(aggWhere).toContain('"user_id"');
+      expect(aggWhere).toContain('"workout_id"');
+      expect(aggWhere).toContain('"status"');
+
+      const volWhere = dialect.sqlToQuery(volCapture.where as never).sql;
+      // Volume is scoped to the last session's exercises + completed sets.
+      expect(volWhere).toContain('"session_id"');
+      expect(volWhere).toContain('"is_completed"');
+    });
+
+    it("falls back to created_at when a completed session has a null completed_at", async () => {
+      const createdAt = new Date("2026-02-01T08:00:00.000Z");
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([completedWorkout]))
+          .mockReturnValueOnce(
+            makeAggChain({ completedCount: 1, avgDurationSeconds: 900 }),
+          )
+          .mockReturnValueOnce(
+            makeLastSessionChain([
+              {
+                id: "sess-x",
+                completedAt: null,
+                createdAt,
+                totalDurationSeconds: null,
+              },
+            ]),
+          )
+          .mockReturnValueOnce(makeVolumeChain(100)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const history = await repo.getHistory("wo-1", "user-1");
+
+      expect(history?.lastCompletedAt).toBe(createdAt.toISOString());
+      expect(history?.lastSession?.completedAt).toBe(createdAt.toISOString());
+      expect(history?.lastSession?.durationSeconds).toBeNull();
     });
   });
 

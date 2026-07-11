@@ -15,6 +15,7 @@ import { equipmentHandler } from "./application/exercises/equipment/equipmentHan
 import { categoriesHandler } from "./application/exercises/categories/categoriesHandler";
 import { workoutsListHandler } from "./application/workouts/list/workoutsListHandler";
 import { workoutsGetHandler } from "./application/workouts/get/workoutsGetHandler";
+import { workoutsHistoryHandler } from "./application/workouts/history/workoutsHistoryHandler";
 import { workoutsCreateHandler } from "./application/workouts/create/workoutsCreateHandler";
 import { workoutsUpdateHandler } from "./application/workouts/update/workoutsUpdateHandler";
 import { workoutsDeleteHandler } from "./application/workouts/delete/workoutsDeleteHandler";
@@ -119,6 +120,7 @@ const app = new Elysia()
   .use(categoriesHandler)
   .use(workoutsListHandler)
   .use(workoutsGetHandler)
+  .use(workoutsHistoryHandler)
   .use(workoutsCreateHandler)
   .use(workoutsUpdateHandler)
   .use(workoutsDeleteHandler)

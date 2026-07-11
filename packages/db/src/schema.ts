@@ -587,6 +587,12 @@ export const workouts = pgTable("workouts", {
   estimatedDurationMinutes: integer("estimated_duration_minutes")
     .notNull()
     .default(30),
+  // Owner-visibility: does this workout appear in its author's personal
+  // "My Workouts"? Distinct from workout_assignments.show_in_library (assigned
+  // occurrence in the CLIENT's library) and the visibility enum (social
+  // sharing). Default true — pre-existing + athlete-authored workouts are
+  // personal; coach-authored workouts are created with false by the app.
+  showInOwnerLibrary: boolean("show_in_owner_library").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
