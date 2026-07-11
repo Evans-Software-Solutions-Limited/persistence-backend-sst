@@ -81,6 +81,7 @@ import { trainersInviteCodeCreateHandler } from "./application/trainers/invite-c
 import { trainersAcceptInviteCodeHandler } from "./application/trainers/invite-codes/trainersAcceptInviteCodeHandler";
 import { trainersClientRelationshipsListHandler } from "./application/trainers/relationships/trainersClientRelationshipsListHandler";
 import { trainersRespondToRequestHandler } from "./application/trainers/relationships/trainersRespondToRequestHandler";
+import { trainersRespondToClientRequestHandler } from "./application/trainers/relationships/trainersRespondToClientRequestHandler";
 import { trainersLogClientMeasurementHandler } from "./application/trainers/measurements/trainersLogClientMeasurementHandler";
 import { trainersMeLogClientMeasurementHandler } from "./application/trainers/measurements/trainersMeLogClientMeasurementHandler";
 import { trainersClientBodyTrendHandler } from "./application/trainers/measurements/trainersClientBodyTrendHandler";
@@ -190,6 +191,9 @@ const app = new Elysia()
   // trainer relationships + accept/decline a pending request.
   .use(trainersClientRelationshipsListHandler)
   .use(trainersRespondToRequestHandler)
+  // Coach Mode Phase 8 — the trainer side of the invite-code handshake: the
+  // coach accepts/declines a client-initiated (invite-code) pending request.
+  .use(trainersRespondToClientRequestHandler)
   .use(trainersLogClientMeasurementHandler)
   .use(trainersMeLogClientMeasurementHandler)
   .use(trainersClientBodyTrendHandler)

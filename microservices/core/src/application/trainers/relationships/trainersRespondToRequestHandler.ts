@@ -81,6 +81,9 @@ export const trainersRespondToRequestHandler = new Elysia()
               eq(ptClientRelationships.id, relationshipId),
               eq(ptClientRelationships.clientId, userId),
               eq(ptClientRelationships.status, "pending"),
+              // Client-initiated (invite-code) pendings are coach-accepted
+              // (Phase 8) — the client can only act on trainer-initiated ones.
+              eq(ptClientRelationships.initiatedBy, "trainer"),
             ),
           )
           .returning({
@@ -125,6 +128,8 @@ export const trainersRespondToRequestHandler = new Elysia()
                 eq(ptClientRelationships.id, relationshipId),
                 eq(ptClientRelationships.clientId, userId),
                 eq(ptClientRelationships.status, "pending"),
+                // Only trainer-initiated pendings are client-accepted (Phase 8).
+                eq(ptClientRelationships.initiatedBy, "trainer"),
               ),
             )
             .limit(1);

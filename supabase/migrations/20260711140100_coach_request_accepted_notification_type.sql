@@ -1,0 +1,26 @@
+-- Coach Mode Phase 8 — extend notification_type for the athlete-facing
+-- "your coach accepted your request" nudge.
+--
+--   coach_request_accepted — a coach accepted a client-initiated pending
+--       (invite-code) relationship (POST /trainers/me/relationships/:id/respond
+--       with action=accept). Sent to the ATHLETE (best-effort, post-commit)
+--       with a push; deep-links to the athlete's You screen where the now-
+--       active trainer shows. The trigger's pending→active branch notifies the
+--       athlete's counterpart (the TRAINER) only for trainer-initiated
+--       pendings, so this client-initiated direction is emitted from app code.
+--
+-- Per specs/_shared/cross-cuts.md § 5 the notification_type enum is *owned*
+-- by 09-notifications-social; each producing slice sequences its own ADD
+-- VALUE before it emits. Without this migration the first
+-- `INSERT INTO notifications` with type 'coach_request_accepted' fails at
+-- runtime with `invalid input value for enum notification_type`.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping the ADD VALUE statement in its
+-- own migration (no usage here) sidesteps that entirely — mirrors the
+-- coach_brief precedent (20260709120000_coach_brief_notification_type.sql).
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'coach_request_accepted';

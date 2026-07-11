@@ -50,6 +50,7 @@ export const trainersClientRelationshipsListHandler = new Elysia()
           relationshipId: ptClientRelationships.id,
           trainerId: ptClientRelationships.trainerId,
           status: ptClientRelationships.status,
+          initiatedBy: ptClientRelationships.initiatedBy,
           relationshipReason: ptClientRelationships.relationshipReason,
           createdAt: ptClientRelationships.createdAt,
           trainerName: profiles.fullName,
@@ -74,6 +75,9 @@ export const trainersClientRelationshipsListHandler = new Elysia()
           trainerRole: r.trainerRole ?? null,
           trainerAvatarUrl: r.trainerAvatarUrl ?? null,
           status: r.status,
+          // 'trainer' = the client accepts this pending (email invite);
+          // 'client' = the client redeemed a code, awaiting the coach's accept.
+          initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
           relationshipReason: r.relationshipReason ?? null,
           since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
         })),

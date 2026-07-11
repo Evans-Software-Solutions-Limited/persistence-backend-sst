@@ -180,6 +180,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // post-commit) with the upgrade pointer. Companion enum migration:
   // 20260711120000_trainer_client_limit_reached_notification_type.sql.
   "trainer_client_limit_reached",
+  // Coach Mode Phase 8 — a coach accepted a client-initiated (invite-code)
+  // pending relationship; sent to the ATHLETE. Companion enum migration:
+  // 20260711140100_coach_request_accepted_notification_type.sql.
+  "coach_request_accepted",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -242,6 +246,12 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // assignment's workout in place. Companion enum migration:
   // 20260709130000_workout_swapped_audit_value.sql.
   "workout_swapped",
+  // Coach Mode Phase 8 — the coach accept/decline of a client-initiated
+  // (invite-code) pending relationship
+  // (POST /trainers/me/relationships/:id/respond). Companion enum migration:
+  // 20260711140200_client_request_response_audit_values.sql.
+  "client_request_accepted",
+  "client_request_declined",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
@@ -801,6 +811,14 @@ export const ptClientRelationships = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     status: ptRelationshipStatusEnum("status").default("pending"),
     isAiTrainer: boolean("is_ai_trainer").default(false),
+    // Which party created the pending relationship — drives who accepts it and
+    // who the notification trigger targets (Coach Mode Phase 8). 'trainer' =
+    // email-invite (client accepts); 'client' = invite-code redeem (coach
+    // accepts). Defaults 'trainer' so every historical row + email invite keeps
+    // the M10 client-accept behaviour. Migration:
+    // 20260711140000_pt_relationship_initiated_by.sql (text + CHECK, not an
+    // enum, to keep the migration a single idempotent ADD COLUMN).
+    initiatedBy: text("initiated_by").notNull().default("trainer"),
     relationshipReason: text("relationship_reason"),
     startDate: text("start_date"),
     endDate: text("end_date"),

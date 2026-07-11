@@ -458,6 +458,33 @@ describe("trainersAcceptInviteCodeHandler", () => {
     );
   });
 
+  it("marks the new pending relationship initiated_by='client' (coach accepts, Phase 8)", async () => {
+    const ex = executor([
+      [{ id: "code-1", trainerId: "trainer-1" }], // code
+      [], // no existing rel
+      [{ id: "trainer-1" }], // FOR UPDATE lock
+      [{ fullName: "Coach Carter", role: "personal_trainer" }], // trainer
+      [{ id: "code-1" }], // claim succeeds
+      [{ id: "rel-new" }], // relationship insert returning
+      [{ fullName: "Jordan" }], // client name
+    ]);
+    (getDb as any).mockReturnValue({
+      transaction: vi.fn(async (fn: any) => fn(ex)),
+    });
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+
+    expect(ex.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "user-id",
+        status: "pending",
+        initiatedBy: "client",
+      }),
+    );
+  });
+
   it("emits a physio_request when the trainer is a physiotherapist", async () => {
     (getDb as any).mockReturnValue(
       txDb([

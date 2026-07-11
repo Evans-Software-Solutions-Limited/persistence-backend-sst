@@ -245,6 +245,7 @@ describe("trainersClientRelationshipsListHandler", () => {
             relationshipId: "rel-1",
             trainerId: "trainer-1",
             status: "pending",
+            initiatedBy: "client",
             relationshipReason: "Joined via invite code",
             createdAt: new Date("2026-06-01T00:00:00.000Z"),
             trainerName: "Coach Carter",
@@ -273,6 +274,7 @@ describe("trainersClientRelationshipsListHandler", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0].relationshipId).toBe("rel-1");
     expect(body.data[0].trainerName).toBe("Coach Carter");
+    expect(body.data[0].initiatedBy).toBe("client");
     expect(body.data[0].since).toBe("2026-06-01T00:00:00.000Z");
   });
 
