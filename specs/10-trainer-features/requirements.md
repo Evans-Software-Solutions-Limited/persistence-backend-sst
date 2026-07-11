@@ -45,17 +45,27 @@ Authoritative references:
 
 ## User stories
 
-### STORY-001: As a trainer in coach mode, I want a Coach Home dashboard showing my business + clients + own training + programs
+### STORY-001: As a trainer in coach mode, I want a Coach Home triage screen showing who needs me today, which programmes are ending, and a shortcut to train myself
+
+> **Reconciliation (2026-07-05, shipped 2026-07-11):** the original ACs
+> described a business dashboard (2×2 stats, adherence donut, recent-activity
+> feed) referencing `coach.jsx:12–48` — but that is `CoachYouScreen`, the
+> coach's OWN dashboard, shipped separately as `<CoachYouPresenter>` (STORY-012).
+> Coach Home is the daily **triage** screen (`design-source/screens/coach-home.jsx`),
+> not the business dashboard. See design.md § "Coach Home layout reconciliation".
+> The schedule hero is **deferred from v1** (Brad decision #1 — no appointments
+> backend); its props + `<ScheduleHeroPresenter>`/`<ScheduleRow>` stubs are
+> retained, gated off, ready to re-enable when the appointments spec lands.
 
 **Acceptance Criteria:**
 
-- 1.1 [ ] Route `(app)/(tabs)/index.tsx` branches on `useUserMode().mode === 'coach'` → renders `<CoachHomeContainer>`. Athlete `<HomeContainer>` from `06-progress-goals` is unchanged.
-- 1.2 [ ] Coach Home layout per `coach.jsx:12–48`: header (eyebrow COACH + title "Your practice" + avatar with COACH badge) → mode-switch card → business stats grid → client overview donut → "your training" peek → program stats → recent activity feed.
-- 1.3 [ ] Business stats per `coach.jsx:86–133`: 2×2 grid of `<Card>`s — Active Clients (with month-over-month delta), Avg Adherence (with delta), Client PRs (this month), Retention (90d %). All in `$mono` numerics.
-- 1.4 [ ] Client overview per `coach.jsx:135–191`: donut chart (`<DonutMini>` — spec-local SVG composite) with segments by adherence band (Strong / Wobbling / At Risk); legend with counts.
-- 1.5 [ ] "Your training" peek: small card showing trainer's own current streak + last workout summary — reads from athlete-mode hooks (`useGetUserStreak`, `useGetLastSession`). Lets the trainer flip back to athlete mode while staying in context.
-- 1.6 [ ] Program stats: 1-2 row summary of active programs + clients assigned.
-- 1.7 [ ] Recent activity: feed of last 5–10 client events (PR achieved, session logged, missed day, etc.). Data: `GET /trainers/me/recent-activity`.
+- 1.1 [x] Route `(app)/(tabs)/index.tsx` branches on `useUserMode().mode === 'coach'` → renders `<CoachHomeContainer>`. Athlete `<HomeContainer>` from `06-progress-goals` is unchanged.
+- 1.2 [x] Coach Home layout per `design-source/screens/coach-home.jsx`: header (date eyebrow + "Good morning, Coach" + `IconBell` → notifications + avatar with COACH badge → drawer) → **[deferred] Today's Schedule hero** → "Needs you today" flagged clients → programme alerts → "Train yourself" card. Container/presenter split mirrors athlete Home; top safe-area inset owned by the tab route, not the presenter.
+- 1.3 [x] "Needs you today": section eyebrow + "N flagged" + "All clients →" (→ Clients tab), over a `<Card>` of client rows (tone-tinted subtitle, tap → Client Detail). Flagged list derived client-side from the `GET /trainers/me/clients` roster (band `atRisk`/`crisis` OR any `flags` entry), worst-first, capped. Empty (0 flagged) → a calm "All clients on track" card. No new backend.
+- 1.4 [x] Programme alerts: `<Card>` of rows (tone-tinted `IconLayers` tile + client name + "‹programme› ends in N weeks", tap → Client Detail), derived from the SAME roster (`programEndDate` within 14 days; ember tone within a week, else trainer). Section hidden entirely when there are none.
+- 1.5 [x] "Train yourself": primary-accented `<Card>` button with a `SWITCHES MODE` pill + peek subtitle ("Switch to athlete view · N-day streak · ‹workout› queued"), reading the athlete-mode streak (`useGetStreaks`) + today's/queued workout (`useGetHome`). Tap → `useModeSwitch().switchMode('athlete', 'index')`.
+- 1.6 [x] New-coach empty state: with 0 clients, the triage sections are replaced by a gentle "Invite your first client" nudge → opens the AddClient sheet.
+- 1.7 [x] All data is derived client-side from existing endpoints — Coach Home has NO dedicated backend (`GET /trainers/me/overview` powers Coach You, not this).
 
 ### STORY-002: As a trainer, I want a Clients list tab showing all my clients with status + adherence
 
