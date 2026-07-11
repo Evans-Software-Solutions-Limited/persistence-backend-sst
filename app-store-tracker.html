@@ -1,0 +1,1420 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Persistence — App Store Tracker</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0d0f16;
+        --surface: #131620;
+        --surface2: #1a1e2e;
+        --border: #242840;
+        --subtle: #333858;
+        --text: #e4e8f5;
+        --muted: #636a8a;
+        --faint: #3d4468;
+
+        --done-c: #22c55e;
+        --done-bg: rgba(34, 197, 94, 0.08);
+        --done-bd: rgba(34, 197, 94, 0.22);
+        --part-c: #f59e0b;
+        --part-bg: rgba(245, 158, 11, 0.08);
+        --part-bd: rgba(245, 158, 11, 0.22);
+        --prog-c: #3b82f6;
+        --prog-bg: rgba(59, 130, 246, 0.08);
+        --prog-bd: rgba(59, 130, 246, 0.22);
+        --todo-c: #ef4444;
+        --todo-bg: rgba(239, 68, 68, 0.08);
+        --todo-bd: rgba(239, 68, 68, 0.22);
+        --def-c: #8b5cf6;
+        --def-bg: rgba(139, 92, 246, 0.08);
+        --def-bd: rgba(139, 92, 246, 0.22);
+
+        --accent: #6366f1;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        min-height: 100vh;
+      }
+
+      .app {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px 20px 64px;
+      }
+
+      /* ── HEADER ── */
+      .header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .header h1 {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.4px;
+        background: linear-gradient(125deg, #818cf8, #a78bfa, #c084fc);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .header-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 3px;
+        flex-wrap: wrap;
+      }
+      .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--muted);
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        padding: 2px 8px;
+        border-radius: 20px;
+      }
+      .meta-pill code {
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 10px;
+        color: var(--faint);
+      }
+      .btn-ghost {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        padding: 6px 12px;
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 500;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .btn-ghost:hover {
+        background: var(--border);
+        color: var(--text);
+      }
+
+      /* ── SUMMARY ROW ── */
+      .summary-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      @media (max-width: 680px) {
+        .summary-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px 20px;
+      }
+      .card-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.9px;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+
+      /* Progress card */
+      .readiness-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .readiness-pct {
+        font-size: 42px;
+        font-weight: 800;
+        letter-spacing: -2px;
+        line-height: 1;
+        color: var(--text);
+      }
+      .readiness-sub {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .bar-track {
+        height: 7px;
+        background: var(--surface2);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+      }
+      .bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #6366f1, #22c55e);
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 3px 8px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid;
+      }
+      .chip-done {
+        color: var(--done-c);
+        background: var(--done-bg);
+        border-color: var(--done-bd);
+      }
+      .chip-partial {
+        color: var(--part-c);
+        background: var(--part-bg);
+        border-color: var(--part-bd);
+      }
+      .chip-prog {
+        color: var(--prog-c);
+        background: var(--prog-bg);
+        border-color: var(--prog-bd);
+      }
+      .chip-todo {
+        color: var(--todo-c);
+        background: var(--todo-bg);
+        border-color: var(--todo-bd);
+      }
+      .chip-deferred {
+        color: var(--def-c);
+        background: var(--def-bg);
+        border-color: var(--def-bd);
+      }
+
+      /* Blockers card */
+      .blockers-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .blocker-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 7px 10px;
+        background: var(--todo-bg);
+        border: 1px solid var(--todo-bd);
+        border-radius: 6px;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .blocker-row.is-prog {
+        background: var(--prog-bg);
+        border-color: var(--prog-bd);
+      }
+      .blocker-row.is-done {
+        background: var(--done-bg);
+        border-color: var(--done-bd);
+        color: var(--done-c);
+      }
+      .bdot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 5px;
+      }
+      .bdot-todo {
+        background: var(--todo-c);
+      }
+      .bdot-prog {
+        background: var(--prog-c);
+      }
+      .bdot-done {
+        background: var(--done-c);
+      }
+      .btag {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .btag-prog {
+        color: var(--prog-c);
+        background: var(--prog-bg);
+        border: 1px solid var(--prog-bd);
+      }
+
+      /* ── FILTERS ── */
+      .filters {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .f-group {
+        display: flex;
+        gap: 3px;
+        flex-wrap: wrap;
+      }
+      .f-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 500;
+        transition: all 0.12s;
+        white-space: nowrap;
+      }
+      .f-btn:hover {
+        color: var(--text);
+        border-color: var(--subtle);
+      }
+      .f-btn.active {
+        background: var(--surface2);
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .f-btn.active[data-s="done"] {
+        border-color: var(--done-c);
+        color: var(--done-c);
+      }
+      .f-btn.active[data-s="partial"] {
+        border-color: var(--part-c);
+        color: var(--part-c);
+      }
+      .f-btn.active[data-s="inprogress"] {
+        border-color: var(--prog-c);
+        color: var(--prog-c);
+      }
+      .f-btn.active[data-s="todo"] {
+        border-color: var(--todo-c);
+        color: var(--todo-c);
+      }
+      .f-btn.active[data-s="deferred"] {
+        border-color: var(--def-c);
+        color: var(--def-c);
+      }
+      .f-count {
+        background: var(--surface2);
+        color: var(--faint);
+        border-radius: 8px;
+        padding: 0 5px;
+        font-size: 10px;
+        min-width: 18px;
+        text-align: center;
+      }
+      .f-btn.active .f-count {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .vdiv {
+        width: 1px;
+        height: 20px;
+        background: var(--border);
+        flex-shrink: 0;
+        align-self: center;
+      }
+      .area-sel {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        cursor: pointer;
+        outline: none;
+      }
+      .area-sel:focus {
+        border-color: var(--accent);
+      }
+      .area-sel option {
+        background: var(--surface2);
+      }
+      .search-box {
+        flex: 1;
+        min-width: 160px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        outline: none;
+      }
+      .search-box::placeholder {
+        color: var(--muted);
+      }
+      .search-box:focus {
+        border-color: var(--accent);
+      }
+
+      /* ── AREA SECTIONS ── */
+      .area-section {
+        margin-bottom: 20px;
+      }
+      .area-hdr {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid var(--border);
+      }
+      .area-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .area-chip {
+        font-size: 10px;
+        color: var(--muted);
+        background: var(--surface2);
+        padding: 1px 7px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      .area-chip.has-blockers {
+        color: var(--todo-c);
+        background: var(--todo-bg);
+        border-color: var(--todo-bd);
+      }
+      .items-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      /* ── ITEM CARD ── */
+      .item-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 13px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          border-color 0.12s,
+          opacity 0.15s;
+        user-select: none;
+      }
+      .item-card:hover {
+        border-color: var(--subtle);
+      }
+      .item-card.ticked {
+        opacity: 0.38;
+      }
+      .item-card.ticked .item-title {
+        text-decoration: line-through;
+        color: var(--muted);
+      }
+
+      .tick-box {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid var(--border);
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.12s;
+        margin-top: 2px;
+      }
+      .item-card.ticked .tick-box {
+        background: var(--done-c);
+        border-color: var(--done-c);
+      }
+      .tick-box svg {
+        display: none;
+      }
+      .item-card.ticked .tick-box svg {
+        display: block;
+      }
+
+      .status-badge {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        border: 1px solid;
+        margin-top: 1px;
+        white-space: nowrap;
+      }
+      .sb-done {
+        color: var(--done-c);
+        background: var(--done-bg);
+        border-color: var(--done-bd);
+      }
+      .sb-partial {
+        color: var(--part-c);
+        background: var(--part-bg);
+        border-color: var(--part-bd);
+      }
+      .sb-prog {
+        color: var(--prog-c);
+        background: var(--prog-bg);
+        border-color: var(--prog-bd);
+      }
+      .sb-todo {
+        color: var(--todo-c);
+        background: var(--todo-bg);
+        border-color: var(--todo-bd);
+      }
+      .sb-deferred {
+        color: var(--def-c);
+        background: var(--def-bg);
+        border-color: var(--def-bd);
+      }
+
+      .item-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .item-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 2px;
+      }
+      .item-note {
+        font-size: 11.5px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      /* ── DEFERRED SECTION ── */
+      .deferred-wrapper {
+        border-top: 2px dashed var(--border);
+        padding-top: 18px;
+        margin-top: 4px;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+      }
+      .deferred-wrapper:hover {
+        opacity: 1;
+      }
+
+      /* ── EMPTY STATE ── */
+      .empty {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--muted);
+      }
+      .empty-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+      }
+
+      /* ── FOOTER ── */
+      .footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .footer p {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .footer a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .footer a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- HEADER -->
+      <div class="header">
+        <div>
+          <h1>Persistence — App Store Tracker</h1>
+          <div class="header-meta">
+            <span class="meta-pill">📱 v1.1.1</span>
+            <span class="meta-pill">🔀 <code>44cdaa4</code></span>
+            <span class="meta-pill">📅 Synced 29 Jun 2026</span>
+            <span class="meta-pill">🍎 iOS + Google Play</span>
+          </div>
+        </div>
+        <button class="btn-ghost" onclick="resetTicks()">↺ Reset ticks</button>
+      </div>
+
+      <!-- SUMMARY -->
+      <div class="summary-row">
+        <div class="card">
+          <div class="card-label">Submission Readiness</div>
+          <div class="readiness-row">
+            <span class="readiness-pct" id="pct-num">—</span>
+            <span class="readiness-sub" id="pct-label"
+              >of non-deferred items done</span
+            >
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" id="bar-fill" style="width: 0%"></div>
+          </div>
+          <div class="chip-row" id="chip-row"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">🚨 Apple Hard-Reject Blockers</div>
+          <ul class="blockers-list" id="blockers-list"></ul>
+        </div>
+      </div>
+
+      <!-- FILTERS -->
+      <div class="filters">
+        <div class="f-group" id="status-filter">
+          <button class="f-btn active" data-s="all">
+            All <span class="f-count" id="fc-all">—</span>
+          </button>
+          <button class="f-btn" data-s="done">
+            ✅ Done <span class="f-count" id="fc-done">—</span>
+          </button>
+          <button class="f-btn" data-s="partial">
+            🟡 Partial <span class="f-count" id="fc-partial">—</span>
+          </button>
+          <button class="f-btn" data-s="inprogress">
+            🔧 In Progress <span class="f-count" id="fc-inprogress">—</span>
+          </button>
+          <button class="f-btn" data-s="todo">
+            🔴 To Do <span class="f-count" id="fc-todo">—</span>
+          </button>
+          <button class="f-btn" data-s="deferred">
+            🔒 Deferred <span class="f-count" id="fc-deferred">—</span>
+          </button>
+        </div>
+        <div class="vdiv"></div>
+        <select class="area-sel" id="area-sel">
+          <option value="all">All areas</option>
+        </select>
+        <input
+          type="text"
+          class="search-box"
+          id="search-box"
+          placeholder="🔍  Search…"
+        />
+      </div>
+
+      <!-- MAIN -->
+      <div id="main"></div>
+
+      <!-- FOOTER -->
+      <div class="footer">
+        <p>
+          Click any item to tick it off — ticks persist in localStorage. Ask
+          Claude to regenerate this file to refresh against the repo.
+        </p>
+        <p>
+          Bundle ID:
+          <code
+            style="
+              color: var(--faint);
+              font-family: &quot;SF Mono&quot;, monospace;
+              font-size: 11px;
+            "
+            >com.bradleyevans96.persistence</code
+          >
+          · EAS
+          <code
+            style="
+              color: var(--faint);
+              font-family: &quot;SF Mono&quot;, monospace;
+              font-size: 11px;
+            "
+            >255d542d</code
+          >
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // ─────────────────────────────────────────────────────────────────────────────
+      // DATA  (verified against repo on 2026-06-28, commit 96e43e3)
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      const AREAS = [
+        {
+          id: "compliance",
+          name: "Compliance / App Store Blockers",
+          icon: "🚨",
+        },
+        { id: "ready", name: "Production Ready", icon: "✅" },
+        { id: "athlete", name: "Athlete App", icon: "🏋️" },
+        { id: "coach", name: "Coach Mode", icon: "🧑‍💼" },
+        { id: "phase12", name: "Production Readiness (Phase 12)", icon: "⚙️" },
+        { id: "deferred", name: "Deferred — Post-Launch", icon: "🔒" },
+      ];
+
+      const ITEMS = [
+        // ── COMPLIANCE / APP STORE BLOCKERS ──────────────────────────────────────
+        {
+          id: "c1",
+          area: "compliance",
+          status: "todo",
+          title: "In-app account deletion",
+          note: "Absent end-to-end. Apple §5.1.1(v) hard reject. Privacy screen currently falsely promises this feature. Needs DELETE /account endpoint + UI + data purge.",
+        },
+
+        {
+          id: "c2",
+          area: "compliance",
+          status: "todo",
+          title: "NSPhotoLibraryUsageDescription",
+          note: "expo-image-picker plugin is configured with photosPermission — verify the explicit NSPhotoLibraryUsageDescription key is emitted in the production build (app.json infoPlist). Photo picker is actively used (avatar, meal photos).",
+        },
+
+        {
+          id: "c3",
+          area: "compliance",
+          status: "todo",
+          title: "Push notification delivery — no send path",
+          note: "Device registration (M7 ✅) and notification feed list (M7 ✅) both exist. Nothing actually sends a push to a device. Need FCM/APNs send call from backend event handlers.",
+        },
+
+        {
+          id: "c4",
+          area: "compliance",
+          status: "done",
+          title: "OFF foods seed (146k UK foods)",
+          note: "PR #139 merged (commit 44cdaa4) — reproducible Open Food Facts seed (146k UK foods) landed. Still needs to be run against production database before launch.",
+        },
+
+        {
+          id: "c5",
+          area: "compliance",
+          status: "todo",
+          title: "Sentry / crash reporting — not installed",
+          note: "@sentry/react-native and @sentry/aws-serverless not installed anywhere. Zero crash visibility on day 1 of prod. Required before any real-user launch.",
+        },
+
+        {
+          id: "c6",
+          area: "compliance",
+          status: "todo",
+          title: "Privacy policy — no hosted URL + manifest review",
+          note: "App Store Connect requires a publicly accessible privacy policy URL. Currently only rendered inside the app at /profile/terms. PrivacyInfo.xcprivacy manifest also needs review.",
+        },
+
+        // ── PRODUCTION READY ──────────────────────────────────────────────────────
+        {
+          id: "r1",
+          area: "ready",
+          status: "done",
+          title: "IAP purchasing (RevenueCat)",
+          note: "react-native-purchases 10.4.0 installed. Offerings, purchase, restore, manage all wired. Backend RevenueCat webhook → entitlement sync live. Still needed: App Store Connect product ID registration + RC dashboard configuration.",
+        },
+
+        {
+          id: "r2",
+          area: "ready",
+          status: "done",
+          title: "Authentication",
+          note: "Native Apple Sign-In, email/password, OAuth, password reset, and sign-out all fully implemented and tested.",
+        },
+
+        {
+          id: "r3",
+          area: "ready",
+          status: "done",
+          title: "Infrastructure / secrets",
+          note: "No credential leaks. Production stage gated. SST v3 deployed on AWS Lambda. Neon serverless Postgres live.",
+        },
+
+        {
+          id: "r4",
+          area: "ready",
+          status: "done",
+          title: "Backend API — 100+ endpoints",
+          note: "M0–M10.6, M7 (notifications), M8 (trainer), M9 (nutrition/meals/recipes), M12 (compliance) all merged. No stub endpoints remaining in production surface.",
+        },
+
+        // ── ATHLETE APP ───────────────────────────────────────────────────────────
+        {
+          id: "a1",
+          area: "athlete",
+          status: "done",
+          title: "Home screen",
+          note: "Activity rings (incl. live Fuel ring), habits grid, quick-log actions, weekly volume chart, recent PRs — all live and offline-first.",
+        },
+
+        {
+          id: "a2",
+          area: "athlete",
+          status: "partial",
+          title: 'Home — "Mood/Sleep" quick-log button',
+          note: "Mood tile renamed to Sleep in follow-up 5.1 spec (2026-06-26). Still not implemented — needs POST /health/sleep backend + HealthKit write + Home UI rename. Other quick-log actions (water, weight, workout) are all wired.",
+        },
+
+        {
+          id: "a3",
+          area: "athlete",
+          status: "done",
+          title: "Train: Workouts",
+          note: "Workouts list, offline search, workout detail, creator and editor — fully functional.",
+        },
+
+        {
+          id: "a4",
+          area: "athlete",
+          status: "done",
+          title: "Train: Exercises",
+          note: "Exercise library, offline search, exercise detail, creator and editor — fully functional.",
+        },
+
+        {
+          id: "a5",
+          area: "athlete",
+          status: "done",
+          title: "Active session",
+          note: "Set logger, rest timer, supersets, exercise swap, two-phase summary screen, PR detection — all shipped.",
+        },
+
+        {
+          id: "a6",
+          area: "athlete",
+          status: "done",
+          title: '"Create Exercise" CTA in Add/Swap popovers',
+          note: "Shipped in PR #135 — CreateExercise absorbed into spec 04-workout-management as a bottom-sheet within the workout screen. No longer routes to /coming-soon.",
+        },
+
+        {
+          id: "a7",
+          area: "athlete",
+          status: "done",
+          title: "Fuel core",
+          note: "Macro ring, barcode scanner, quick-add, water logging. Offline-first with SQLite cache.",
+        },
+
+        {
+          id: "a8",
+          area: "athlete",
+          status: "todo",
+          title: "Fuel → Targets (TDEE editor)",
+          note: "Stub screen (M9 PR3 — backend stub left in place). Blocks the Home Fuel ring from showing useful data for any new user who hasn't set targets.",
+        },
+
+        {
+          id: "a9",
+          area: "athlete",
+          status: "todo",
+          title: "Fuel → Recipes",
+          note: "Stub screen (M9 PR3). Backend recipes endpoints are fully implemented and functional — just needs the mobile screen.",
+        },
+
+        {
+          id: "a10",
+          area: "athlete",
+          status: "done",
+          title: "You / Progress",
+          note: "Volume stats, streaks (with freeze tokens), achievements, weigh-in logging, body composition trend — all shipped.",
+        },
+
+        {
+          id: "a11",
+          area: "athlete",
+          status: "done",
+          title: "Profile / Settings",
+          note: "Edit profile, avatar, notification prefs, privacy settings, subscription management, compliance/legal/help all present.",
+        },
+
+        {
+          id: "a12",
+          area: "athlete",
+          status: "done",
+          title: "Notifications",
+          note: "Notification list (offline-first), push registration, deep links, accept/decline for friend and trainer requests.",
+        },
+
+        {
+          id: "a13",
+          area: "athlete",
+          status: "partial",
+          title: "Onboarding / FTUE",
+          note: "No dedicated onboarding flow. Post-signup routes directly to subscription selection with no FTUE guidance. Acceptable for v1 but creates a cold-start UX gap.",
+        },
+
+        // ── COACH MODE ────────────────────────────────────────────────────────────
+        {
+          id: "co1",
+          area: "coach",
+          status: "done",
+          title: 'Coach "You" dashboard',
+          note: "Business stats, client donut chart, training peek, activity feed — all live.",
+        },
+
+        {
+          id: "co2",
+          area: "coach",
+          status: "done",
+          title: "Clients list",
+          note: "Full roster with search and client segments. Backend M8 trainer endpoints merged.",
+        },
+
+        {
+          id: "co3",
+          area: "coach",
+          status: "done",
+          title: "Invite client + log client weight",
+          note: "Invite code generation and acceptance flow + on-behalf body-weight logging both working.",
+        },
+
+        {
+          id: "co4",
+          area: "coach",
+          status: "todo",
+          title: "Coach Home tab",
+          note: "Renders ComingSoon stub. Spec 10 (trainer features) is written and ready — needs implementation.",
+        },
+
+        {
+          id: "co5",
+          area: "coach",
+          status: "todo",
+          title: "Programs tab",
+          note: "Renders ComingSoon stub. Program template model exists in DB schema. Assignment layer is entirely missing.",
+        },
+
+        {
+          id: "co6",
+          area: "coach",
+          status: "todo",
+          title: "Client Detail screen",
+          note: "Stub — only the log-weight action is wired. Full client overview, workout history, progress graphs all absent.",
+        },
+
+        {
+          id: "co7",
+          area: "coach",
+          status: "todo",
+          title: "Program / workout assignment",
+          note: "Needs: program_assignments table + 2 visibility flags (show_in_plan / show_in_library) + program CRUD/assign endpoints + individual workout assignment write path + assignment UI. Open decision: per-assignment vs per-template visibility flags.",
+        },
+
+        // ── PRODUCTION READINESS — PHASE 12 ──────────────────────────────────────
+        {
+          id: "p1",
+          area: "phase12",
+          status: "todo",
+          title: "12.1 — LegacyTheme file deletion",
+          note: "Delete 4 files: homeLegacyTheme, workoutsLegacyTheme, subscriptionLegacyTheme, profileLegacyTheme. Codemod adoption sweep is already done — deletion is safe.",
+        },
+
+        {
+          id: "p2",
+          area: "phase12",
+          status: "todo",
+          title: "12.2 — Reduced-motion contract",
+          note: "All animations must respect useReducedMotion(). Key surfaces: Ring, Bar, BottomSheet, ActiveWorkoutBar. Required for App Store accessibility compliance.",
+        },
+
+        {
+          id: "p3",
+          area: "phase12",
+          status: "todo",
+          title: "12.3 — Sentry mobile init",
+          note: "@sentry/react-native install, init in app/_layout.tsx with PII scrubbing, ErrorBoundary class component, wrap all screen containers.",
+        },
+
+        {
+          id: "p4",
+          area: "phase12",
+          status: "todo",
+          title: "12.4 — Sentry Lambda (SST backend)",
+          note: "@sentry/aws-serverless v8 install, sentry.ts infra module, wrapHandler codemod on all Lambda handlers. Source maps uploaded via EAS config plugin.",
+        },
+
+        {
+          id: "p5",
+          area: "phase12",
+          status: "todo",
+          title: "12.5 — FlashList migration (6 surfaces)",
+          note: "Migrate: Exercises, Notifications, Clients, Programs, Recipes/Meals, PR History. Rule: ≥20 rows → FlashList.",
+        },
+
+        {
+          id: "p6",
+          area: "phase12",
+          status: "todo",
+          title: "12.6 — expo-image adoption",
+          note: "Replace RN Image with expo-image for all user photos: avatars, exercise photos, recipe/meal images. Improves memory and decode perf.",
+        },
+
+        {
+          id: "p7",
+          area: "phase12",
+          status: "todo",
+          title: "12.7 — Accessibility audit",
+          note: "Manual VoiceOver + TalkBack walkthrough, accessibility labels audit, focus order check, 44pt minimum touch targets on all interactive elements.",
+        },
+
+        {
+          id: "p8",
+          area: "phase12",
+          status: "done",
+          title: "12.8 — EAS build profiles configured",
+          note: "eas.json confirmed present with staging + production profiles. ascAppId (6755091280) and appleTeamId (U9S9BFTM4V) set. Still needed: CI gate (typecheck + lint + build + test on PR merge).",
+        },
+
+        {
+          id: "p9",
+          area: "phase12",
+          status: "done",
+          title: "12.9 — Apple IAP (RevenueCat)",
+          note: "react-native-purchases 10.4.0 installed. Backend RevenueCat webhook + entitlement sync live. Pending: App Store Connect product ID registration + RC dashboard setup.",
+        },
+
+        {
+          id: "p10",
+          area: "phase12",
+          status: "todo",
+          title: "12.10 — App Store / Play Store assets",
+          note: 'Screenshots needed: iPhone 6.7", 6.5", 5.5" and iPad 12.9". Plus: app icon (all sizes), marketing copy, age rating questionnaire, demo account credentials for reviewer.',
+        },
+
+        {
+          id: "p11",
+          area: "phase12",
+          status: "todo",
+          title: "12.11 — Pre-launch verification",
+          note: "Full checklist pass: all CI checks green, demo account E2E test on device, 2FA configured on App Store Connect account, reviewer notes prepared.",
+        },
+
+        {
+          id: "p12",
+          area: "phase12",
+          status: "todo",
+          title: "12.12 — Submission",
+          note: "eas submit for iOS App Store + Google Play submission pipeline. Coordinate both platform reviews.",
+        },
+
+        {
+          id: "p13",
+          area: "phase12",
+          status: "todo",
+          title: "12.13 — IAP DB uniqueness index (migration)",
+          note: "Unique partial index on user_subscriptions.external_subscription_id (NULL-safe). Must land before full Apple IAP testing to prevent duplicate subscription grants.",
+        },
+
+        // ── DEFERRED — POST-LAUNCH ────────────────────────────────────────────────
+        {
+          id: "d1",
+          area: "deferred",
+          status: "deferred",
+          title: "AI nutrition (M9.5)",
+          note: "Snap-photo + free-text NLP meal logging. Backend gating exists; mobile UI is post-launch.",
+        },
+
+        {
+          id: "d2",
+          area: "deferred",
+          status: "deferred",
+          title: "Habits setup screen",
+          note: 'Backend chunk 1 merged. "Get started by setting your habits" CTA is a dead placeholder in You tab — acceptable gap for v1.',
+        },
+
+        {
+          id: "d3",
+          area: "deferred",
+          status: "deferred",
+          title: "Photo / PDF program import",
+          note: "e.g. physio plan upload/import. Not scoped for v1.",
+        },
+
+        {
+          id: "d4",
+          area: "deferred",
+          status: "deferred",
+          title: "Food search relevance",
+          note: "Currently Postgres ILIKE. Consider FTS/trigram (cf. exercise search pattern) or Algolia post-launch for better recall.",
+        },
+
+        {
+          id: "d5",
+          area: "deferred",
+          status: "deferred",
+          title: "Light theme",
+          note: "Dark-only for v1. Explicitly excluded from production-readiness spec by decision.",
+        },
+      ];
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // STORAGE
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      const TICKS_KEY = "persistence_tracker_ticks_v1";
+
+      function getTicks() {
+        try {
+          return new Set(JSON.parse(localStorage.getItem(TICKS_KEY) || "[]"));
+        } catch {
+          return new Set();
+        }
+      }
+      function saveTicks(t) {
+        localStorage.setItem(TICKS_KEY, JSON.stringify([...t]));
+      }
+
+      let ticks = getTicks();
+
+      function toggleTick(id) {
+        ticks.has(id) ? ticks.delete(id) : ticks.add(id);
+        saveTicks(ticks);
+        render();
+      }
+
+      function resetTicks() {
+        if (!confirm("Reset all local ticks?")) return;
+        ticks = new Set();
+        saveTicks(ticks);
+        render();
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // FILTER STATE
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      let fStatus = "all";
+      let fArea = "all";
+      let fSearch = "";
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // HELPERS
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      function eff(item) {
+        return ticks.has(item.id) ? "done" : item.status;
+      }
+
+      const STATUS = {
+        done: { label: "Done", emoji: "✅", sb: "sb-done", chip: "chip-done" },
+        partial: {
+          label: "Partial",
+          emoji: "🟡",
+          sb: "sb-partial",
+          chip: "chip-partial",
+        },
+        inprogress: {
+          label: "In Progress",
+          emoji: "🔧",
+          sb: "sb-prog",
+          chip: "chip-prog",
+        },
+        todo: { label: "To Do", emoji: "🔴", sb: "sb-todo", chip: "chip-todo" },
+        deferred: {
+          label: "Deferred",
+          emoji: "🔒",
+          sb: "sb-deferred",
+          chip: "chip-deferred",
+        },
+      };
+
+      function badge(status) {
+        const m = STATUS[status] || STATUS.todo;
+        return `<span class="status-badge ${m.sb}">${m.emoji} ${m.label}</span>`;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // STATS
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      function stats() {
+        const nonDef = ITEMS.filter((i) => i.area !== "deferred");
+        const counts = {};
+        ITEMS.forEach((i) => {
+          const s = eff(i);
+          counts[s] = (counts[s] || 0) + 1;
+        });
+        ["done", "partial", "inprogress", "todo", "deferred"].forEach(
+          (s) => (counts[s] = counts[s] || 0),
+        );
+        const doneCount = nonDef.filter((i) => eff(i) === "done").length;
+        const pct = Math.round((doneCount / nonDef.length) * 100);
+        const compBlockers = ITEMS.filter(
+          (i) => i.area === "compliance" && eff(i) !== "done",
+        );
+        return { counts, doneCount, total: nonDef.length, pct, compBlockers };
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // RENDER
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      function filtered() {
+        return ITEMS.filter((item) => {
+          if (fStatus !== "all" && eff(item) !== fStatus) return false;
+          if (fArea !== "all" && item.area !== fArea) return false;
+          if (fSearch) {
+            const q = fSearch.toLowerCase();
+            if (
+              !item.title.toLowerCase().includes(q) &&
+              !item.note.toLowerCase().includes(q)
+            )
+              return false;
+          }
+          return true;
+        });
+      }
+
+      function render() {
+        const s = stats();
+
+        // Progress card
+        document.getElementById("pct-num").textContent = s.pct + "%";
+        document.getElementById("pct-label").textContent =
+          `${s.doneCount} of ${s.total} non-deferred items done` +
+          (ticks.size > 0 ? ` (${ticks.size} manually ticked)` : "");
+        document.getElementById("bar-fill").style.width = s.pct + "%";
+
+        document.getElementById("chip-row").innerHTML = [
+          ["done", "chip-done"],
+          ["partial", "chip-partial"],
+          ["inprogress", "chip-prog"],
+          ["todo", "chip-todo"],
+          ["deferred", "chip-deferred"],
+        ]
+          .map(([st, cls]) => {
+            const m = STATUS[st];
+            return `<span class="chip ${cls}">${m.emoji} ${s.counts[st]} ${m.label}</span>`;
+          })
+          .join("");
+
+        // Blockers list
+        document.getElementById("blockers-list").innerHTML = s.compBlockers
+          .length
+          ? s.compBlockers
+              .map((i) => {
+                const isProg = eff(i) === "inprogress";
+                return `
+          <li class="blocker-row${isProg ? " is-prog" : ""}">
+            <div class="bdot ${isProg ? "bdot-prog" : "bdot-todo"}"></div>
+            <div>
+              <strong>${i.title}</strong>
+              ${isProg ? '<span class="btag btag-prog">In Progress</span>' : ""}
+            </div>
+          </li>`;
+              })
+              .join("")
+          : `<li class="blocker-row is-done">
+        <div class="bdot bdot-done"></div>
+        <strong>🎉 All compliance blockers resolved!</strong>
+       </li>`;
+
+        // Filter count badges
+        const allEffCounts = {};
+        ITEMS.forEach((i) => {
+          const s = eff(i);
+          allEffCounts[s] = (allEffCounts[s] || 0) + 1;
+        });
+        document.getElementById("fc-all").textContent = ITEMS.length;
+        document.getElementById("fc-done").textContent = allEffCounts.done || 0;
+        document.getElementById("fc-partial").textContent =
+          allEffCounts.partial || 0;
+        document.getElementById("fc-inprogress").textContent =
+          allEffCounts.inprogress || 0;
+        document.getElementById("fc-todo").textContent = allEffCounts.todo || 0;
+        document.getElementById("fc-deferred").textContent =
+          allEffCounts.deferred || 0;
+
+        // Main content
+        const vis = filtered();
+        const grouped = {};
+        vis.forEach((item) =>
+          (grouped[item.area] = grouped[item.area] || []).push(item),
+        );
+
+        const mainAreas = AREAS.filter((a) => a.id !== "deferred");
+        const defArea = AREAS.find((a) => a.id === "deferred");
+
+        let html = "";
+        let anyContent = false;
+
+        mainAreas.forEach((area) => {
+          const items = grouped[area.id];
+          if (!items?.length) return;
+          anyContent = true;
+
+          const doneN = items.filter((i) => eff(i) === "done").length;
+          const blockerN = items.filter((i) => eff(i) === "todo").length;
+          const chipTxt =
+            blockerN > 0 && area.id !== "ready"
+              ? `${doneN}/${items.length} done · ${blockerN} open`
+              : `${doneN}/${items.length} done`;
+
+          html += `
+      <div class="area-section">
+        <div class="area-hdr">
+          <span class="area-name">${area.icon} ${area.name}</span>
+          <span class="area-chip${blockerN > 0 && area.id !== "ready" ? " has-blockers" : ""}">${chipTxt}</span>
+        </div>
+        <div class="items-stack">
+          ${items
+            .map((item) => {
+              const e = eff(item);
+              const isTicked = ticks.has(item.id);
+              return `
+              <div class="item-card${isTicked ? " ticked" : ""}" onclick="toggleTick('${item.id}')">
+                <div class="tick-box">
+                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                ${badge(e)}
+                <div class="item-body">
+                  <div class="item-title">${item.title}</div>
+                  <div class="item-note">${item.note}</div>
+                </div>
+              </div>`;
+            })
+            .join("")}
+        </div>
+      </div>`;
+        });
+
+        // Deferred section
+        const defItems = grouped["deferred"];
+        if (defItems?.length) {
+          anyContent = true;
+          html += `
+      <div class="deferred-wrapper">
+        <div class="area-section">
+          <div class="area-hdr">
+            <span class="area-name">${defArea.icon} ${defArea.name}</span>
+            <span class="area-chip">${defItems.length} items</span>
+          </div>
+          <div class="items-stack">
+            ${defItems
+              .map((item) => {
+                const isTicked = ticks.has(item.id);
+                return `
+                <div class="item-card${isTicked ? " ticked" : ""}" onclick="toggleTick('${item.id}')">
+                  <div class="tick-box">
+                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                      <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                  ${badge("deferred")}
+                  <div class="item-body">
+                    <div class="item-title">${item.title}</div>
+                    <div class="item-note">${item.note}</div>
+                  </div>
+                </div>`;
+              })
+              .join("")}
+          </div>
+        </div>
+      </div>`;
+        }
+
+        if (!anyContent) {
+          html = `<div class="empty"><div class="empty-icon">🔍</div><p>No items match your filters.</p></div>`;
+        }
+
+        document.getElementById("main").innerHTML = html;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // INIT
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      function init() {
+        // Populate area select
+        const sel = document.getElementById("area-sel");
+        AREAS.forEach((a) => {
+          const o = document.createElement("option");
+          o.value = a.id;
+          o.textContent = `${a.icon}  ${a.name}`;
+          sel.appendChild(o);
+        });
+
+        // Status filter
+        document
+          .getElementById("status-filter")
+          .addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-s]");
+            if (!btn) return;
+            fStatus = btn.dataset.s;
+            document
+              .querySelectorAll("#status-filter .f-btn")
+              .forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            render();
+          });
+
+        // Area select
+        document.getElementById("area-sel").addEventListener("change", (e) => {
+          fArea = e.target.value;
+          render();
+        });
+
+        // Search
+        let searchTimer;
+        document.getElementById("search-box").addEventListener("input", (e) => {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => {
+            fSearch = e.target.value.trim();
+            render();
+          }, 120);
+        });
+
+        render();
+      }
+
+      init();
+    </script>
+  </body>
+</html>
