@@ -38,11 +38,19 @@ export type TrainerClient = {
   avatarUrl: string | null;
   status: ClientStatus;
   /**
-   * v1: ALWAYS null. The prototype's "Strength · Wk 4 / 12" needs a
-   * `program_assignments` table, which doesn't exist until the Programs slice
-   * (10.4). The presenter hides the segment when null — do NOT fabricate it.
+   * The client's live-programme label (e.g. "Strength · Wk 4 / 12"), derived
+   * server-side from the Programs slice (19-programs). Null when the client has
+   * no live programme assignment — the presenter hides the segment; do NOT
+   * fabricate it.
    */
   programLabel: string | null;
+  /**
+   * The client's live-programme end date as an ISO string, or null when there
+   * is no live programme / no end date. Powers the Coach Home "Programme
+   * alerts" windowing. Absent on cached payloads written before 19-programs, so
+   * consumers must tolerate `undefined` at runtime.
+   */
+  programEndDate: string | null;
   /** v1 28-day adherence %, or null when the client has no in-window assignments. */
   adherence: number | null;
   /** null when adherence is null (no band without a number). */
