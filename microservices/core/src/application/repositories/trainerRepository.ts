@@ -88,6 +88,12 @@ export function formatProgramLabel(
 export interface TrainerClient {
   /** clientId (profiles.id). */
   id: string;
+  /**
+   * The underlying `pt_client_relationships.id` — needed by the coach accept
+   * flow to call `POST /trainers/me/relationships/:id/respond` on a
+   * client-initiated pending row (Coach Mode Phase 8).
+   */
+  relationshipId: string;
   name: string;
   initials: string;
   avatarUrl: string | null;
@@ -401,6 +407,7 @@ export class TrainerRepository {
    */
   async getRosterClients(trainerId: string): Promise<
     {
+      relationshipId: string;
       clientId: string;
       clientName: string;
       avatarUrl: string | null;
@@ -411,6 +418,7 @@ export class TrainerRepository {
     const db = getDb();
     const rows = await db
       .select({
+        relationshipId: ptClientRelationships.id,
         clientId: ptClientRelationships.clientId,
         clientName: profiles.fullName,
         avatarUrl: profiles.avatarUrl,
@@ -427,6 +435,7 @@ export class TrainerRepository {
         ),
       );
     return rows.map((r) => ({
+      relationshipId: r.relationshipId,
       clientId: r.clientId,
       clientName: r.clientName ?? "",
       avatarUrl: r.avatarUrl ?? null,
@@ -1152,6 +1161,7 @@ export class TrainerRepository {
 
       return {
         id: c.clientId,
+        relationshipId: c.relationshipId,
         name: c.clientName,
         initials: initialsFromName(c.clientName),
         avatarUrl: c.avatarUrl,

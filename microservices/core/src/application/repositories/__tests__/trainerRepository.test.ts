@@ -212,6 +212,7 @@ describe("TrainerRepository", () => {
         dbWithSelects([
           [
             {
+              relationshipId: "rel-1",
               clientId: "c1",
               clientName: "A B",
               avatarUrl: "http://img/1",
@@ -219,6 +220,7 @@ describe("TrainerRepository", () => {
               initiatedBy: "trainer",
             },
             {
+              relationshipId: "rel-2",
               clientId: "c2",
               clientName: null,
               avatarUrl: null,
@@ -229,6 +231,7 @@ describe("TrainerRepository", () => {
             // null status (shouldn't happen given the WHERE) → defaults pending.
             // null initiated_by → defaults 'trainer'.
             {
+              relationshipId: "rel-3",
               clientId: "c3",
               clientName: "C D",
               avatarUrl: null,
@@ -241,6 +244,7 @@ describe("TrainerRepository", () => {
       const result = await repo.getRosterClients("t1");
       expect(result).toEqual([
         {
+          relationshipId: "rel-1",
           clientId: "c1",
           clientName: "A B",
           avatarUrl: "http://img/1",
@@ -248,6 +252,7 @@ describe("TrainerRepository", () => {
           initiatedBy: "trainer",
         },
         {
+          relationshipId: "rel-2",
           clientId: "c2",
           clientName: "",
           avatarUrl: null,
@@ -255,6 +260,7 @@ describe("TrainerRepository", () => {
           initiatedBy: "client",
         },
         {
+          relationshipId: "rel-3",
           clientId: "c3",
           clientName: "C D",
           avatarUrl: null,
@@ -798,6 +804,7 @@ describe("TrainerRepository", () => {
           avatarUrl: string | null;
           status: "active" | "pending";
           initiatedBy?: "trainer" | "client";
+          relationshipId?: string;
         }[];
         adherence: { clientId: string; completed: number; total: number }[];
         lastSeen: Map<string, string | null>;
@@ -806,7 +813,11 @@ describe("TrainerRepository", () => {
       },
     ) {
       vi.spyOn(repo, "getRosterClients").mockResolvedValue(
-        over.roster.map((r) => ({ initiatedBy: "trainer" as const, ...r })),
+        over.roster.map((r) => ({
+          initiatedBy: "trainer" as const,
+          relationshipId: `rel-${r.clientId}`,
+          ...r,
+        })),
       );
       vi.spyOn(repo, "getAdherenceRows").mockResolvedValue(over.adherence);
       vi.spyOn(repo, "getLastSeenByClient").mockResolvedValue(over.lastSeen);
@@ -1023,6 +1034,7 @@ describe("TrainerRepository", () => {
         .mockResolvedValue(new Map());
       vi.spyOn(repo, "getRosterClients").mockResolvedValue([
         {
+          relationshipId: "rel-c1",
           clientId: "c1",
           clientName: "Al Pha",
           avatarUrl: null,
