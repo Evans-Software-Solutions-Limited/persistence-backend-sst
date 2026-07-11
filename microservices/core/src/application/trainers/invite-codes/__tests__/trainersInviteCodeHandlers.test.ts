@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import Elysia from "elysia";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -38,6 +39,22 @@ vi.mock("../../../notifications/push/notificationDispatcher", () => ({
   })),
 }));
 
+// Seat gates are unit-tested against the DB mock in trainerSeats.test.ts; here
+// they're mocked so the handler tests focus on wiring. `assertTrainerCanInvite`
+// gates code CREATION (throws EntitlementError at cap); `evaluateTrainerJoinSeat`
+// is the committed-seat check inside the accept transaction.
+const assertCanInvite = vi.fn(async () => {});
+const evaluateJoinSeat = vi.fn(async () => ({ allowed: true }) as any);
+const notifyLimitReached = vi.fn(async () => {});
+vi.mock("../../seats/trainerSeats", () => ({
+  assertTrainerCanInvite: (...args: unknown[]) =>
+    assertCanInvite(...(args as [])),
+  evaluateTrainerJoinSeat: (...args: unknown[]) =>
+    evaluateJoinSeat(...(args as [])),
+  notifyTrainerClientLimitReached: (...args: unknown[]) =>
+    notifyLimitReached(...(args as [])),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -70,6 +87,7 @@ function executor(queue: unknown[]) {
     "values",
     "onConflictDoUpdate",
     "returning",
+    "for", // SELECT ... FOR UPDATE row lock
   ]) {
     builder[m] = vi.fn(passthrough);
   }
@@ -138,6 +156,67 @@ describe("trainersInviteCodeCreateHandler", () => {
     const body = (await res.json()) as any;
     expect(body.data.code).toBe("ABC123");
     expect(body.data.isExisting).toBe(true);
+  });
+
+  it("returns an already-issued code without hitting the cap gate (only NEW codes are gated)", async () => {
+    const expiresAt = new Date("2030-01-01T00:00:00.000Z");
+    (getDb as any).mockReturnValue(
+      executor([
+        [{ role: "personal_trainer" }], // role check
+        [], // expire-stale update
+        [{ id: "code-1", code: "ABC123", expiresAt }], // existing active code
+      ]),
+    );
+    const { trainersInviteCodeCreateHandler } =
+      await import("../trainersInviteCodeCreateHandler");
+    const res = await trainersInviteCodeCreateHandler.handle(post());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.code).toBe("ABC123");
+    expect(body.data.isExisting).toBe(true);
+    expect(assertCanInvite).not.toHaveBeenCalled();
+  });
+
+  it("402 with the upgrade verdict when the trainer is at their client cap (gate before any code work)", async () => {
+    const { EntitlementError } =
+      await import("../../../entitlement/assertEntitlement");
+    const { coreErrorHandler } =
+      await import("../../../../shared/errorHandler");
+    assertCanInvite.mockRejectedValueOnce(
+      new EntitlementError(
+        {
+          allowed: false,
+          reason: "limit",
+          currentTier: "individual_trainer",
+          upgradeTo: "small_business",
+          upgradePriceMonthly: 49.99,
+        },
+        "trainer_clients",
+      ),
+    );
+    // Role check + expire-stale + existing-code lookup run first; only NEW
+    // code generation is gated, so the gate throws after those and no code is
+    // created.
+    (getDb as any).mockReturnValue(
+      executor([
+        [{ role: "personal_trainer" }], // role check
+        [], // expire-stale update
+        [], // no existing active code → proceed to the gate
+      ]),
+    );
+    const { trainersInviteCodeCreateHandler } =
+      await import("../trainersInviteCodeCreateHandler");
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(trainersInviteCodeCreateHandler);
+    const res = await app.handle(post());
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("ENTITLEMENT_DENIED");
+    expect(body.feature).toBe("trainer_clients");
+    expect(body.reason).toBe("limit");
+    expect(body.upgrade_to).toBe("small_business");
+    expect(assertCanInvite).toHaveBeenCalledWith("user-id", expect.anything());
   });
 
   it("creates a new code when none is active (201)", async () => {
@@ -313,6 +392,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [], // no existing rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Coach" }], // trainer name
         [], // claim update returns 0 rows → lost the race
       ]),
@@ -332,6 +412,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [], // no existing rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Coach Carter" }], // trainer name + role
         [{ id: "code-1" }], // claim succeeds (1 row)
         [{ id: "rel-new" }], // relationship insert returning
@@ -355,6 +436,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [], // no existing rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Coach Carter", role: "personal_trainer" }], // trainer
         [{ id: "code-1" }], // claim succeeds
         [{ id: "rel-new" }], // relationship insert returning
@@ -381,6 +463,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }],
         [],
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Dr. Lee", role: "physiotherapist" }],
         [{ id: "code-1" }],
         [{ id: "rel-new" }],
@@ -403,6 +486,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }],
         [],
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Coach Carter" }],
         [{ id: "code-1" }],
         [{ id: "rel-new" }],
@@ -422,6 +506,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
       txDb([
         [{ id: "code-1", trainerId: "trainer-1" }], // code
         [{ id: "rel-old", status: "terminated" }], // dormant rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
         [{ fullName: "Coach" }], // trainer name + role
         [{ id: "code-1" }], // claim succeeds
         // revive uses update (awaited at .where → next queue entry)
@@ -437,5 +522,41 @@ describe("trainersAcceptInviteCodeHandler", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data.relationshipId).toBe("rel-old");
+  });
+
+  it("409 coach_client_limit_reached when the trainer is at cap — code NOT claimed, trainer notified (client actor → NOT a 402)", async () => {
+    const denyVerdict = {
+      allowed: false,
+      reason: "limit",
+      currentTier: "individual_trainer",
+      upgradeTo: "small_business",
+      upgradePriceMonthly: 49.99,
+    };
+    evaluateJoinSeat.mockResolvedValueOnce(denyVerdict as any);
+    (getDb as any).mockReturnValue(
+      txDb([
+        [{ id: "code-1", trainerId: "trainer-1" }], // code
+        [], // no existing rel
+        [{ id: "trainer-1" }], // FOR UPDATE lock
+        // cap rejected here — the code-claim UPDATE and rel INSERT never run,
+        // so the code is NOT consumed.
+      ]),
+    );
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    const res = await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123" }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("coach_client_limit_reached");
+    // No 402 upsell (wrong actor) and no internal fields leaked.
+    expect(body.upgrade_to).toBeUndefined();
+    expect(body.trainerId).toBeUndefined();
+    expect(body.verdict).toBeUndefined();
+    // The trainer is notified post-commit with the verdict's upgrade pointer.
+    expect(notifyLimitReached).toHaveBeenCalledWith("trainer-1", denyVerdict);
+    // The success-path trainer request notification is NOT emitted.
+    expect(notificationCreate).not.toHaveBeenCalled();
   });
 });

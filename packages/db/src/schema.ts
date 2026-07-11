@@ -175,6 +175,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // is the deliverable and deep-links to the athlete Training page. Companion
   // enum migration: 20260709120000_coach_brief_notification_type.sql.
   "coach_brief",
+  // Trainer-client-caps — a client's join was rejected because the trainer is
+  // at their plan's client-slot limit. Notifies the TRAINER (best-effort,
+  // post-commit) with the upgrade pointer. Companion enum migration:
+  // 20260711120000_trainer_client_limit_reached_notification_type.sql.
+  "trainer_client_limit_reached",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.

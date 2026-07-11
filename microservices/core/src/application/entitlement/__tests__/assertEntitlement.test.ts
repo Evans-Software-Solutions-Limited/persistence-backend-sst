@@ -131,17 +131,17 @@ describe("assertEntitlement — stub features", () => {
     vi.clearAllMocks();
   });
 
-  it.each([
-    "ai_workout",
-    "gym_buddy",
-    "unlimited_exercise_library",
-    "trainer_clients",
-  ] as const)("returns allowed for stub feature %s", async (feature) => {
-    // Stubs short-circuit before any DB read — no getDb stub needed.
-    const verdict = await assertEntitlement("user-1", feature);
-    expect(verdict).toEqual({ allowed: true });
-    expect(getDb).not.toHaveBeenCalled();
-  });
+  // `trainer_clients` is no longer a stub (enforced — see trainerSeats.test.ts
+  // for its verdict matrix). The remaining accept-all stubs:
+  it.each(["ai_workout", "gym_buddy", "unlimited_exercise_library"] as const)(
+    "returns allowed for stub feature %s",
+    async (feature) => {
+      // Stubs short-circuit before any DB read — no getDb stub needed.
+      const verdict = await assertEntitlement("user-1", feature);
+      expect(verdict).toEqual({ allowed: true });
+      expect(getDb).not.toHaveBeenCalled();
+    },
+  );
 });
 
 const FREE_TIER_NO_AI = [

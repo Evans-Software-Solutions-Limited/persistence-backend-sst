@@ -13,6 +13,11 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
+import type { EntitlementVerdict } from "../../entitlement/assertEntitlement";
+import {
+  evaluateTrainerJoinSeat,
+  notifyTrainerClientLimitReached,
+} from "../seats/trainerSeats";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
@@ -45,6 +50,16 @@ type AcceptInviteCodeTxResult =
       trainerName: string;
       trainerRole: string | null;
       clientName: string;
+    }
+  | {
+      // Client-slot cap rejection — carries the trainer + verdict so the
+      // handler can notify the trainer post-commit; `code`/`message` are the
+      // client-facing 409 body.
+      capReject: true;
+      trainerId: string;
+      verdict: Extract<EntitlementVerdict, { allowed: false }>;
+      code: string;
+      message: string;
     }
   | { code: string; message: string };
 
@@ -125,6 +140,30 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             return {
               code: "exists",
               message: "You already have a relationship with this trainer",
+            };
+          }
+
+          // Client-slot cap backstop. Take a short-lived per-trainer row lock
+          // (serialises concurrent redeems/accepts for this trainer), THEN
+          // count committed seats. Runs BEFORE the code is claimed, so an
+          // at-cap rejection rolls back with the code UN-consumed. The client
+          // is the actor here → surface a 409 conflict (NOT a 402 upsell,
+          // which would target the wrong user) and notify the trainer.
+          await tx
+            .select({ id: profiles.id })
+            .from(profiles)
+            .where(eq(profiles.id, trainerId))
+            .for("update");
+
+          const seat = await evaluateTrainerJoinSeat(trainerId, tx);
+          if (!seat.allowed) {
+            ctx.set.status = 409;
+            return {
+              capReject: true as const,
+              trainerId,
+              verdict: seat,
+              code: "coach_client_limit_reached",
+              message: "This coach's client list is full.",
             };
           }
 
@@ -254,6 +293,14 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             message: `Training request sent to ${result.trainerName}`,
           },
         };
+      }
+
+      // Cap-rejection: notify the trainer AFTER the transaction (best-effort;
+      // the tx wrote nothing — the code was NOT consumed). Return only the
+      // client-facing 409 body (strip the trainer/verdict fields).
+      if ("capReject" in result) {
+        await notifyTrainerClientLimitReached(result.trainerId, result.verdict);
+        return { code: result.code, message: result.message };
       }
 
       // Error result: ctx.set.status was already set inside the transaction.

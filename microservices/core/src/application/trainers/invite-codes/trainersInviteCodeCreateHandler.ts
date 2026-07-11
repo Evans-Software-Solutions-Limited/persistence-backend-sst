@@ -7,6 +7,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { assertTrainerCanInvite } from "../seats/trainerSeats";
 
 /**
  * POST /trainers/me/invite-codes — generate a short invite code for a client
@@ -78,7 +79,11 @@ export const trainersInviteCodeCreateHandler = new Elysia()
       .limit(1);
 
     if (existing[0]) {
-      // Return the existing active code rather than creating a new one
+      // Return the existing active code rather than creating a new one.
+      // Deliberately BEFORE the client-slot cap gate: re-fetching an
+      // already-issued code isn't a new invite (the redeem-time backstop
+      // still enforces the cap), so an at-cap trainer must not be paywalled
+      // out of displaying a code they already hold.
       return {
         data: {
           id: existing[0].id,
@@ -88,6 +93,12 @@ export const trainersInviteCodeCreateHandler = new Elysia()
         },
       };
     }
+
+    // Client-slot cap: only NEW code generation is gated. A trainer at (or
+    // over) their committed-seat cap cannot mint a fresh invite. The trainer
+    // is the actor → EntitlementError maps to 402 with the upgrade verdict
+    // (handled globally by coreErrorHandler).
+    await assertTrainerCanInvite(userId, db);
 
     // Generate a new code (retry on collision with the unique index)
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);

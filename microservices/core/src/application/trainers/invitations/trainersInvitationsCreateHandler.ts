@@ -6,6 +6,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { assertTrainerCanInvite } from "../seats/trainerSeats";
 
 /**
  * POST /trainers/me/invitations — invite a client by email. Trainer-role-gated.
@@ -32,6 +33,14 @@ export const trainersInvitationsCreateHandler = new Elysia()
         ctx.set.status = 403;
         return { message: "Forbidden" };
       }
+
+      // Client-slot cap: block the invite when the trainer is at (or over)
+      // their committed-seat cap. The trainer is the actor → EntitlementError
+      // maps to 402 with the upgrade verdict (coreErrorHandler, thrown before
+      // the InviteError try/catch below so it propagates cleanly). This
+      // supersedes the repository's legacy active-only `no_slots` check, which
+      // remains an in-transaction backstop.
+      await assertTrainerCanInvite(userId);
 
       const body = ctx.body as {
         clientEmail: string;

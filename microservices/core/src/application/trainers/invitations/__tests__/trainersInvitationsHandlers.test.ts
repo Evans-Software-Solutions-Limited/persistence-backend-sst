@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import Elysia from "elysia";
 
 const mocks = {
   isTrainer: vi.fn(),
@@ -7,6 +8,14 @@ const mocks = {
   inviteClientByEmail: vi.fn(),
   cancelInvitation: vi.fn(),
 };
+
+// The client-slot invite gate is unit-tested in trainerSeats.test.ts; here it's
+// mocked so the send-handler tests focus on wiring. Default: allow (no throw).
+const assertCanInvite = vi.fn(async () => {});
+vi.mock("../../seats/trainerSeats", () => ({
+  assertTrainerCanInvite: (...args: unknown[]) =>
+    assertCanInvite(...(args as [])),
+}));
 
 // Real InviteError so `instanceof` checks in the create handler fire.
 class InviteError extends Error {
@@ -197,6 +206,38 @@ describe("trainersInvitationsCreateHandler", () => {
       post({ clientEmail: "a@b.io" }),
     );
     expect(res.status).toBe(500);
+  });
+
+  it("402 with the upgrade verdict when the trainer is at their client cap (invite NOT sent)", async () => {
+    const { EntitlementError } =
+      await import("../../../entitlement/assertEntitlement");
+    const { coreErrorHandler } =
+      await import("../../../../shared/errorHandler");
+    assertCanInvite.mockRejectedValueOnce(
+      new EntitlementError(
+        {
+          allowed: false,
+          reason: "limit",
+          currentTier: "small_business",
+          upgradeTo: "medium_enterprise",
+          upgradePriceMonthly: 199.99,
+        },
+        "trainer_clients",
+      ),
+    );
+    const { trainersInvitationsCreateHandler } =
+      await import("../trainersInvitationsCreateHandler");
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(trainersInvitationsCreateHandler);
+    const res = await app.handle(post({ clientEmail: "a@b.io" }));
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("ENTITLEMENT_DENIED");
+    expect(body.feature).toBe("trainer_clients");
+    expect(body.upgrade_to).toBe("medium_enterprise");
+    // The gate ran before the repository → no invite was created.
+    expect(mocks.inviteClientByEmail).not.toHaveBeenCalled();
   });
 });
 

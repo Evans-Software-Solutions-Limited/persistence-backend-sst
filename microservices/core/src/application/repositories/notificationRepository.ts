@@ -41,7 +41,13 @@ export type NotificationType =
   // M17 (Send brief) — coach → client free-text brief. DB enum extended in
   // 20260709120000_coach_brief_notification_type.sql. Default opt-in "on"
   // per cross-cuts § 5.
-  | "coach_brief";
+  | "coach_brief"
+  // Trainer-client-caps — a client's join was rejected because the trainer is
+  // at their plan's client-slot limit; the TRAINER is notified with the
+  // upgrade pointer. DB enum extended in
+  // 20260711120000_trainer_client_limit_reached_notification_type.sql.
+  // Default opt-in "on" per cross-cuts § 5.
+  | "trainer_client_limit_reached";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -61,6 +67,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "measurement_logged_on_behalf",
   "nutrition_target_set_by_trainer",
   "coach_brief",
+  "trainer_client_limit_reached",
 ] as const;
 
 /**
