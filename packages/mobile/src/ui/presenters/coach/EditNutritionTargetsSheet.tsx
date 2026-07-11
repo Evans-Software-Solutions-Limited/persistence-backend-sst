@@ -479,8 +479,8 @@ export function EditNutritionTargetsSheet() {
                 padding={14}
                 borderRadius={14}
                 borderWidth={1}
-                borderColor="#232735"
-                backgroundColor="#1A1D29"
+                borderColor="$surface3"
+                backgroundColor="$surface2"
                 testID="edit-calc-preview"
               >
                 <Text
