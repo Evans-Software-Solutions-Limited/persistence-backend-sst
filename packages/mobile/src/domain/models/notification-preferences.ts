@@ -65,6 +65,9 @@ export const CATEGORIES: readonly NotificationCategory[] = [
       "nutrition_target_set_by_trainer",
       // M17 Send brief — coach → client free-text brief.
       "coach_brief",
+      // Trainer-client-caps — trainer-facing "a client couldn't join, your
+      // plan is full" nudge.
+      "trainer_client_limit_reached",
     ],
   },
   { title: "Social", types: ["friend_request"] },

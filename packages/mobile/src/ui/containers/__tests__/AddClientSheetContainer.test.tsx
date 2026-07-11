@@ -231,6 +231,25 @@ describe("AddClientSheetContainer", () => {
     );
   });
 
+  it("entitlement 402 (at cap) → no-seats alert, not the generic error", async () => {
+    const { adapters, api } = makeAdapters();
+    api.shouldFail = true;
+    api.failError = {
+      kind: "api",
+      code: "entitlement_denied",
+      message: "Subscription does not include this feature",
+    };
+    const { getByTestId } = renderSheet(api, adapters);
+    fireEvent.changeText(getByTestId("add-client-email-input"), "x@y.com");
+    await act(async () => {
+      fireEvent.press(getByTestId("add-client-send"));
+    });
+    expect(alertSpy).toHaveBeenCalledWith(
+      "No client seats available",
+      "Remove a client or change your subscription to invite more.",
+    );
+  });
+
   it("self_invite error → inline email error", async () => {
     const { adapters, api } = makeAdapters();
     api.nextInviteError = { code: "self_invite", message: "self" };

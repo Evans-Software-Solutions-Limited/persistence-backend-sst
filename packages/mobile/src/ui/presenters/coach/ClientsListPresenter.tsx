@@ -62,6 +62,16 @@ export type ClientsListPresenterProps = {
    * dead end (Retry just re-403s) — this offers the way out.
    */
   onSwitchToAthlete: () => void;
+  /**
+   * Client-slot cap context (mirrors the backend `trainer_clients` gate).
+   * `clientLimit` null = unlimited/unknown (no "N of M" line). When `atCap`,
+   * the invite affordance is disabled and the no-seats warning renders;
+   * `onUpgrade` routes to subscription selection.
+   */
+  clientLimit?: number | null;
+  slotsUsed?: number;
+  atCap?: boolean;
+  onUpgrade?: () => void;
   /** Injected clock for deterministic relative-time tests. */
   now?: number;
   testID?: string;
@@ -160,9 +170,17 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
     onInvite,
     onOpenClient,
     onSwitchToAthlete,
+    clientLimit,
+    slotsUsed,
+    atCap = false,
+    onUpgrade,
     now = Date.now(),
     testID,
   } = props;
+
+  // "N of M slots used" only renders for a finite cap (a numeric limit).
+  const showSlots =
+    typeof clientLimit === "number" && typeof slotsUsed === "number";
 
   const insets = useSafeAreaInsets();
   const [showLegend, setShowLegend] = useState(false);
@@ -223,6 +241,7 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
               icon={<IconPlus size={18} strokeWidth={2.2} />}
               tone="trainer"
               onPress={onInvite}
+              disabled={atCap}
               accessibilityLabel="Invite client"
               testID="clients-invite-btn"
             />
@@ -230,6 +249,65 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
         />
 
         <View paddingHorizontal={16} gap={14}>
+          {/* Client-slot usage + no-seats warning. */}
+          {showSlots ? (
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              color="$text3"
+              testID="clients-slots-used"
+            >
+              {`${slotsUsed} of ${clientLimit} client slots used`}
+            </Text>
+          ) : null}
+
+          {atCap ? (
+            <Card
+              pad={16}
+              radius={14}
+              testID="clients-no-seats-warning"
+              style={{ gap: 6 }}
+            >
+              <Text
+                fontFamily="$display"
+                fontWeight="700"
+                fontSize={14}
+                color="$text"
+              >
+                No client seats available
+              </Text>
+              <Text
+                fontFamily="$body"
+                fontSize={13}
+                color="$text3"
+                lineHeight={18}
+              >
+                Remove a client or change your subscription to invite more.
+              </Text>
+              {onUpgrade ? (
+                <Pressable
+                  onPress={onUpgrade}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change subscription"
+                  testID="clients-no-seats-upgrade"
+                  style={({ pressed }) => ({
+                    opacity: pressed ? 0.7 : 1,
+                    marginTop: 4,
+                  })}
+                >
+                  <Text
+                    fontFamily="$display"
+                    fontWeight="600"
+                    fontSize={13}
+                    color="#A78BFA"
+                  >
+                    Change subscription
+                  </Text>
+                </Pressable>
+              ) : null}
+            </Card>
+          ) : null}
+
           {/* Summary chips. */}
           <View flexDirection="row" gap={8}>
             <SummaryChip
