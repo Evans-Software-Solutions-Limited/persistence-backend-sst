@@ -391,6 +391,49 @@ describe("WorkoutsCreateHandler", () => {
         expect.objectContaining({ exercises: [] }),
       );
     });
+
+    it("defaults show_in_owner_library to true when omitted (athlete path)", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Personal" }),
+        }),
+      );
+
+      expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ showInOwnerLibrary: true }),
+      );
+    });
+
+    it("forwards show_in_owner_library=false from the coach-authoring flow", async () => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "For client",
+            showInOwnerLibrary: false,
+          }),
+        }),
+      );
+
+      expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ showInOwnerLibrary: false }),
+      );
+    });
   });
 
   // ─── Entitlement gate (M10.5) ─────────────────────────────────────

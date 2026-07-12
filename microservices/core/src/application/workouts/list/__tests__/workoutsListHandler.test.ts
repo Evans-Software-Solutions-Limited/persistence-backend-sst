@@ -117,7 +117,41 @@ describe("WorkoutsListHandler", () => {
         type: "assigned",
         limit: 5,
         offset: 10,
+        ownerLibraryOnly: false,
       });
+    });
+
+    it("passes ownerLibraryOnly through to the repository when set", async () => {
+      const { workoutsListHandler } = await import("../workoutsListHandler");
+      await workoutsListHandler.handle(
+        new Request(
+          "http://localhost/workouts?type=mine&ownerLibraryOnly=true",
+          {
+            method: "GET",
+            headers: { authorization: "Bearer test-token" },
+          },
+        ),
+      );
+
+      expect(workoutRepositoryMocks.list).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ type: "mine", ownerLibraryOnly: true }),
+      );
+    });
+
+    it("defaults ownerLibraryOnly to false when the param is absent", async () => {
+      const { workoutsListHandler } = await import("../workoutsListHandler");
+      await workoutsListHandler.handle(
+        new Request("http://localhost/workouts?type=mine", {
+          method: "GET",
+          headers: { authorization: "Bearer test-token" },
+        }),
+      );
+
+      expect(workoutRepositoryMocks.list).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ ownerLibraryOnly: false }),
+      );
     });
 
     it("should default to type=mine when type is omitted", async () => {

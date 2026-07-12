@@ -29,6 +29,7 @@ export const workoutsCreateHandler = new Elysia()
         description,
         visibility,
         estimatedDurationMinutes,
+        showInOwnerLibrary,
         exercises,
       } = ctx.body;
 
@@ -71,6 +72,9 @@ export const workoutsCreateHandler = new Elysia()
         description: description ?? null,
         visibility: visibility ?? "private",
         estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
+        // Absent => true (personal). The coach-authoring flow sends false so
+        // client-authored workouts don't crowd the coach's own My Workouts.
+        showInOwnerLibrary: showInOwnerLibrary ?? true,
         exercises: exercises ?? [],
       });
 
@@ -89,6 +93,7 @@ export const workoutsCreateHandler = new Elysia()
           ]),
         ),
         estimatedDurationMinutes: t.Optional(t.Number()),
+        showInOwnerLibrary: t.Optional(t.Boolean()),
         exercises: t.Optional(t.Array(workoutExerciseInputSchema)),
       }),
     },

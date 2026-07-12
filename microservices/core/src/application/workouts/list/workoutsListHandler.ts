@@ -16,7 +16,7 @@ export const workoutsListHandler = new Elysia()
     "/workouts",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const { type, limit, offset } = ctx.query;
+      const { type, limit, offset, ownerLibraryOnly } = ctx.query;
 
       const effectiveLimit = limit ?? 20;
       const effectiveOffset = offset ?? 0;
@@ -25,6 +25,9 @@ export const workoutsListHandler = new Elysia()
         type: type ?? "mine",
         limit: effectiveLimit,
         offset: effectiveOffset,
+        // Trainers send this to de-crowd their personal My Workouts; only
+        // meaningful with type="mine". Absent => unchanged behaviour.
+        ownerLibraryOnly: ownerLibraryOnly ?? false,
       });
 
       const meta: {
@@ -55,6 +58,7 @@ export const workoutsListHandler = new Elysia()
         ),
         limit: t.Optional(t.Numeric()),
         offset: t.Optional(t.Numeric()),
+        ownerLibraryOnly: t.Optional(t.BooleanString()),
       }),
     },
   );
