@@ -412,6 +412,15 @@ export class SQLiteStorageAdapter implements StoragePort {
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
       );
+      -- Workout Authoring v2 (S3): coach Workout-library list (all authored,
+      -- UNFILTERED) — a dedicated slot separate from the owner-visible-filtered
+      -- cached_workouts mine slice. New table, CREATE IF NOT EXISTS is safe
+      -- for fresh + existing installs.
+      CREATE TABLE IF NOT EXISTS cached_coach_workout_library (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS cached_streaks (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
@@ -1516,6 +1525,14 @@ export class SQLiteStorageAdapter implements StoragePort {
     ]);
   }
 
+  // -- Coach Workout library cache (Workout Authoring v2, S3) --
+  getCachedCoachWorkoutLibrary(userId: string): Workout[] | null {
+    return this.readBlob<Workout[]>("cached_coach_workout_library", userId);
+  }
+  cacheCoachWorkoutLibrary(userId: string, workouts: Workout[]): void {
+    this.writeBlob("cached_coach_workout_library", userId, workouts);
+  }
+
   getCachedStreaks(userId: string): Streak[] {
     return this.readBlob<Streak[]>("cached_streaks", userId) ?? [];
   }
@@ -2415,6 +2432,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM cached_workouts;
       DELETE FROM cached_workout_detail;
       DELETE FROM cached_workout_history;
+      DELETE FROM cached_coach_workout_library;
       DELETE FROM cached_exercises;
       DELETE FROM active_sessions;
       DELETE FROM session_exercises;
