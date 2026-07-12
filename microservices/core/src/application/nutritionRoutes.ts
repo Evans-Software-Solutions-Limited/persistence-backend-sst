@@ -15,6 +15,8 @@ import { nutritionWaterPatchHandler } from "./nutrition/water/patch/nutritionWat
 import { nutritionBarcodeResolveHandler } from "./nutrition/barcode/nutritionBarcodeResolveHandler";
 import { nutritionAiEstimateHandler } from "./nutrition/ai/estimate/nutritionAiEstimateHandler";
 import { nutritionAiEstimateTextHandler } from "./nutrition/ai/estimateText/nutritionAiEstimateTextHandler";
+import { nutritionAiExtractRecipeHandler } from "./nutrition/ai/extractRecipe/nutritionAiExtractRecipeHandler";
+import { nutritionAiResolveIngredientHandler } from "./nutrition/ai/resolveIngredient/nutritionAiResolveIngredientHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -45,6 +47,10 @@ export const nutritionRoutes = new Elysia()
   // AI Tier B (M9.5) — both gate on `ai_access` inside the handler.
   .use(nutritionAiEstimateHandler)
   .use(nutritionAiEstimateTextHandler)
+  // Recipes AI (recipe-photo extraction + AI ingredient resolution) — same
+  // `ai_access` gate, reuses the M9.5 Bedrock harness.
+  .use(nutritionAiExtractRecipeHandler)
+  .use(nutritionAiResolveIngredientHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import

@@ -30,6 +30,8 @@ import type {
   EditEntryInput,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  ExtractedRecipe,
+  ExtractRecipePhotoInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -38,6 +40,7 @@ import type {
   NutritionEntry,
   NutritionTarget,
   Recipe,
+  ResolveIngredientInput,
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
@@ -2116,6 +2119,64 @@ export class InMemoryApiAdapter implements ApiPort {
       return fail<ApiError>({ kind: "api", code: "server", message, status });
     }
     return this.mayFail<AiEstimate>(this.aiEstimate);
+  }
+
+  // -- Recipes AI (PR3): snap-photo extraction + AI ingredient resolve --
+
+  /** Canned extraction `extractRecipeFromPhoto` returns by default. */
+  public extractedRecipe: ExtractedRecipe = {
+    title: "Chicken & rice bowl",
+    servings: 2,
+    timeMinutes: 25,
+    ingredients: [
+      { name: "Chicken breast", quantity: 300, unit: "g" },
+      { name: "Jasmine rice", quantity: 200, unit: "g" },
+    ],
+    steps: ["Marinate the chicken.", "Cook the rice.", "Assemble."],
+    confidence: 0.96,
+    notes: null,
+  };
+  /** When set, both `extractRecipeFromPhoto` and `resolveIngredient` return
+   * this error instead. */
+  public nextRecipeAiError: { status: number; message: string } | null = null;
+  public extractRecipeFromPhotoCalls: ExtractRecipePhotoInput[] = [];
+  public resolveIngredientCalls: ResolveIngredientInput[] = [];
+
+  async extractRecipeFromPhoto(
+    input: ExtractRecipePhotoInput,
+  ): Promise<Result<ExtractedRecipe, ApiError>> {
+    this.extractRecipeFromPhotoCalls.push(input);
+    if (this.nextRecipeAiError) {
+      const { status, message } = this.nextRecipeAiError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<ExtractedRecipe>(this.extractedRecipe);
+  }
+
+  async resolveIngredient(
+    input: ResolveIngredientInput,
+  ): Promise<Result<Food, ApiError>> {
+    this.resolveIngredientCalls.push(input);
+    if (this.nextRecipeAiError) {
+      const { status, message } = this.nextRecipeAiError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    const food: Food = {
+      id: this.id("ai-food"),
+      name: input.name,
+      brand: null,
+      barcode: null,
+      kcal: 150,
+      proteinG: 10,
+      carbsG: 15,
+      fatG: 5,
+      servingSize: 100,
+      servingUnit: "g",
+      source: "ai_recognized",
+      createdBy: null,
+    };
+    this.foods.push(food);
+    return this.mayFail<Food>(food);
   }
 
   /** Client-side relationships fixture (Requests screen + You section). */

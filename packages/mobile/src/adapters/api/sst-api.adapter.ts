@@ -138,6 +138,8 @@ import type {
   EditEntryInput,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  ExtractedRecipe,
+  ExtractRecipePhotoInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -146,6 +148,7 @@ import type {
   NutritionEntry,
   NutritionTarget,
   Recipe,
+  ResolveIngredientInput,
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
@@ -1723,6 +1726,32 @@ export class SSTApiAdapter implements ApiPort {
     input: EstimateFromTextInput,
   ): Promise<Result<AiEstimate, ApiError>> {
     return this.requestEnvelope<AiEstimate>("/nutrition/ai/estimate-text", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  // -- Recipes AI (PR3): snap-photo extraction + AI ingredient resolve --
+  //
+  // Single `{ data }` envelopes, camelCase == domain shape (passthrough).
+  // Online-only — never routed through the sync-queue worker. 402/422/429/503
+  // surface through the normal `requestEnvelope` → `mapHttpErrorToApiError`
+  // path (402 → `entitlement_denied`; the rest → `server` code, distinguished
+  // by `status`, matching `estimateFromPhoto`'s established pattern).
+
+  async extractRecipeFromPhoto(
+    input: ExtractRecipePhotoInput,
+  ): Promise<Result<ExtractedRecipe, ApiError>> {
+    return this.requestEnvelope<ExtractedRecipe>(
+      "/nutrition/ai/extract-recipe",
+      { method: "POST", body: input },
+    );
+  }
+
+  async resolveIngredient(
+    input: ResolveIngredientInput,
+  ): Promise<Result<Food, ApiError>> {
+    return this.requestEnvelope<Food>("/nutrition/ai/resolve-ingredient", {
       method: "POST",
       body: input,
     });

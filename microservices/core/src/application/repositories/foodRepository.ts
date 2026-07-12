@@ -1,4 +1,4 @@
-import { and, eq, ne, ilike, or, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, ilike, or, desc, inArray, sql } from "drizzle-orm";
 import { foods, type Food } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import type { OffFoodRow } from "../nutrition/services/offMapper";
@@ -56,11 +56,14 @@ export class FoodRepository {
   static readonly key = "FoodRepository";
 
   /**
-   * Fetch one food, scoped like `search()`/`getByIds`: a shareable (OFF /
-   * curated) row OR the caller's own custom food. Unscoped, the macro
-   * re-derivation in the entries create/update handlers would echo another
-   * user's private `source='user'` food macros for a guessed id. Review fix
-   * (PR #124).
+   * Fetch one food, scoped like `search()`/`getByIds`: a shareable curated
+   * row (`source='openfoodfacts'`) OR the caller's own custom food. Every
+   * createdBy-owned custom is private to its creator — that includes both
+   * `source='user'` and AI-fabricated `source='ai_recognized'` rows (the
+   * latter created by `resolveIngredientFood`); only the curated catalogue
+   * is cross-user readable. Unscoped, the macro re-derivation in the entries
+   * create/update handlers would echo another user's private food macros for
+   * a guessed id. Review fix (PR #124) + Recipes-AI hardening.
    */
   async getById(id: string, userId: string): Promise<FoodDTO | null> {
     const db = getDb();
@@ -70,7 +73,7 @@ export class FoodRepository {
       .where(
         and(
           eq(foods.id, id),
-          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+          or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
         ),
       )
       .limit(1);
@@ -92,7 +95,7 @@ export class FoodRepository {
       .where(
         and(
           inArray(foods.id, ids),
-          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+          or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
         ),
       );
     return rows.map(toFoodDTO);
@@ -113,7 +116,7 @@ export class FoodRepository {
       .where(
         and(
           eq(foods.barcode, barcode),
-          or(eq(foods.createdBy, userId), ne(foods.source, "user")),
+          or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
         ),
       )
       // Prefer the caller's own custom row over the shared catalogue entry.

@@ -1,9 +1,9 @@
 import Elysia, { t } from "elysia";
 import {
-  estimateFromPhoto,
+  extractRecipeFromPhoto,
   AiUnreadableError,
   AiUnavailableError,
-} from "../../services/aiEstimation";
+} from "../../services/recipeExtraction";
 import {
   assertEntitlement,
   EntitlementError,
@@ -21,48 +21,43 @@ import {
   MAX_IMAGE_BASE64_LENGTH,
 } from "../imageValidation";
 
-const ENDPOINT = "/nutrition/ai/estimate";
+const ENDPOINT = "extract-recipe";
 
-// Daily per-user inference ceiling (cross-cuts § 4.3 Revised 2026-07-05).
-// A cost backstop with a deliberate profit buffer, NOT a product quota:
-// 12 photo estimates/day ≈ 2× the heaviest legitimate use (every meal +
-// retries), and a worst-case abuser costs ~£5.50/mo against a £12.99
-// premium sub. Counted against ACTUAL inferences only (see the
-// reached-model gate on the usage-log write below).
-// Fail-safe parse: a mis-set env var (garbage → NaN, "" → 0) must not
-// silently disable the cost guard — anything non-finite/non-positive
+// Daily per-user inference ceiling (Recipes AI, mirrors the M9.5 photo-
+// estimate ceiling — cross-cuts § 4.3). A cost backstop, not a product
+// quota. Fail-safe parse: a mis-set env var (garbage → NaN, "" → 0) must
+// not silently disable the cost guard — anything non-finite/non-positive
 // falls back to the default.
-const parsedPhotoLimit = Number(process.env.AI_PHOTO_DAILY_LIMIT);
-const AI_PHOTO_DAILY_LIMIT =
-  Number.isFinite(parsedPhotoLimit) && parsedPhotoLimit > 0
-    ? parsedPhotoLimit
+const parsedRecipeLimit = Number(process.env.AI_RECIPE_DAILY_LIMIT);
+const AI_RECIPE_DAILY_LIMIT =
+  Number.isFinite(parsedRecipeLimit) && parsedRecipeLimit > 0
+    ? parsedRecipeLimit
     : 12;
 
 /**
- * POST /nutrition/ai/estimate — base64 JSON photo → `AiEstimate` (Tier B,
- * M9.5). See specs/13-nutrition-tracking/design.md § Revised 2026-07-03.
- *
- * Order: auth → entitlement (`ai_access`) → size cap → magic-byte check
- * → adapter call → response. `ai_usage_log` is written in a `finally` on
- * every path (success or failure) per cross-cuts § 4.2 — a usage-log
- * write failure never fails the user-facing response.
+ * POST /nutrition/ai/extract-recipe — base64 JSON photo of a recipe
+ * DOCUMENT (cookbook page / card / screenshot / handwritten) →
+ * `ExtractedRecipe` (Recipes AI). Mirrors
+ * `nutrition/ai/estimate/nutritionAiEstimateHandler.ts` exactly for
+ * gating/validation/usage-log order: auth → entitlement (`ai_access`) →
+ * daily ceiling → size cap → magic-byte check → adapter call → response.
+ * `ai_usage_log` is written in a `finally` on every path that reached the
+ * model (success or failure) — pre-model rejections never consume the
+ * daily ceiling.
  */
-export const nutritionAiEstimateHandler = new Elysia()
+export const nutritionAiExtractRecipeHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
   .use(AiUsageLogService)
   .post(
-    "/nutrition/ai/estimate",
+    "/nutrition/ai/extract-recipe",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const startedAt = Date.now();
       const requestSizeBytes = Buffer.byteLength(JSON.stringify(ctx.body));
       let responseSizeBytes: number | null = null;
-      // The usage log records ACTUAL inferences (success, 422, 503) — not
-      // pre-model rejections (402/400/413/429), which cost nothing and
-      // must not consume the daily ceiling.
       let reachedModel = false;
 
       try {
@@ -71,24 +66,19 @@ export const nutritionAiEstimateHandler = new Elysia()
           throw new EntitlementError(verdict, "ai_access");
         }
 
-        // Daily ceiling. Best-effort under concurrency (the counted rows
-        // are committed post-inference), which is fine for a backstop.
         const usedToday = await ctx.AiUsageLogRepository.countForUserToday(
           userId,
           ENDPOINT,
         );
-        if (usedToday >= AI_PHOTO_DAILY_LIMIT) {
+        if (usedToday >= AI_RECIPE_DAILY_LIMIT) {
           ctx.set.status = 429;
           return { error: "ai_daily_limit" };
         }
 
-        const { imageBase64, mediaType, mealType } = ctx.body;
+        const { imageBase64, mediaType } = ctx.body;
 
         const decoded = decodeBase64(imageBase64);
         if (decoded === null) {
-          // Malformed / empty base64 — distinct from "too large", so it
-          // gets the same 400 the magic-byte mismatch below uses rather
-          // than a misleading 413.
           ctx.set.status = 400;
           const body = { error: "invalid_image_data" };
           responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
@@ -115,13 +105,9 @@ export const nutritionAiEstimateHandler = new Elysia()
         }
 
         reachedModel = true;
-        const estimate = await estimateFromPhoto({
-          imageBase64,
-          mediaType,
-          mealType,
-        });
+        const recipe = await extractRecipeFromPhoto({ imageBase64, mediaType });
 
-        const body = { data: estimate };
+        const body = { data: recipe };
         responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
         return body;
       } catch (error) {
@@ -137,9 +123,6 @@ export const nutritionAiEstimateHandler = new Elysia()
           responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
           return body;
         }
-        // EntitlementError and anything unexpected re-throw for
-        // coreErrorHandler to map (402 / 500 respectively). The usage-log
-        // write still fires below via `finally`.
         throw error;
       } finally {
         try {
@@ -153,8 +136,6 @@ export const nutritionAiEstimateHandler = new Elysia()
             });
           }
         } catch (logError) {
-          // Best-effort telemetry (cross-cuts § 4.2) — never fail the
-          // user-facing response because the usage-log insert failed.
           console.error(
             `[ai-usage-log] failed to record ${ENDPOINT}: ${
               logError instanceof Error ? logError.message : String(logError)
@@ -170,7 +151,6 @@ export const nutritionAiEstimateHandler = new Elysia()
           maxLength: MAX_IMAGE_BASE64_LENGTH,
         }),
         mediaType: t.Union([t.Literal("image/jpeg"), t.Literal("image/png")]),
-        mealType: t.Optional(t.String()),
       }),
     },
   );

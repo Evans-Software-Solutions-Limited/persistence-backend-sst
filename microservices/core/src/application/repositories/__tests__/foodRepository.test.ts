@@ -5,6 +5,7 @@ vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
 }));
 
+import { PgDialect } from "drizzle-orm/pg-core";
 import { getDb } from "@persistence/db/client";
 import { FoodRepository } from "../foodRepository";
 
@@ -63,6 +64,32 @@ describe("FoodRepository", () => {
         select: vi.fn().mockReturnValue(selectLimitChain([])),
       });
       expect(await new FoodRepository().getById("nope", "u1")).toBeNull();
+    });
+
+    // Data-isolation guard (Recipes AI). getDb is mocked, so the WHERE never
+    // executes — render the captured predicate to SQL and assert the privacy
+    // boundary is "own row OR the curated openfoodfacts catalogue", NOT the
+    // over-broad "anything except source='user'" (which would leak another
+    // user's private ai_recognized food by id). Same predicate backs
+    // getByIds/getByBarcode.
+    it("scopes visibility to own foods + the curated catalogue only (excludes others' ai_recognized)", async () => {
+      let capturedWhere: unknown;
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation((w: unknown) => {
+              capturedWhere = w;
+              return { limit: vi.fn().mockResolvedValue([]) };
+            }),
+          }),
+        }),
+      });
+      await new FoodRepository().getById("f1", "u1");
+      const rendered = new PgDialect().sqlToQuery(capturedWhere as any);
+      expect(rendered.params).toContain("openfoodfacts");
+      expect(rendered.params).toContain("u1");
+      // The old, leaky predicate bound the string 'user' (source <> 'user').
+      expect(rendered.params).not.toContain("user");
     });
   });
 

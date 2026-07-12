@@ -84,4 +84,6 @@ export {
   rescaleAiFoodItem,
   sumKeptAiItemsKcal,
   defaultMealSlot,
+  type RecipeDraftIngredientRow,
+  computeRecipeDraftMacros,
 } from "./nutrition.service";

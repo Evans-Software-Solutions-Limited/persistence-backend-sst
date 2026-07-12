@@ -60,6 +60,11 @@ export {
   useImportRecipeUrl,
   type ImportRecipeResult,
 } from "./useImportRecipeUrl";
+export {
+  useExtractRecipePhoto,
+  type ExtractRecipeResult,
+} from "./useExtractRecipePhoto";
+export { useResolveIngredient } from "./useResolveIngredient";
 // NOTE: useNutritionAiGate is intentionally NOT re-exported here — it pulls in
 // useFeatureGate → expo-router, which would break every barrel consumer that
 // runs without the expo-router test mock (same reason useFeatureGate isn't in
