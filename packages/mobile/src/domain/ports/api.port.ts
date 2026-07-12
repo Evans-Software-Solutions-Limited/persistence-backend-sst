@@ -26,6 +26,7 @@ import type {
   CreateWorkoutInput as CreateWorkoutDomainInput,
   UpdateWorkoutInput as UpdateWorkoutDomainInput,
   Workout,
+  WorkoutHistory,
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
@@ -162,6 +163,12 @@ export interface ApiPort {
     params?: GetWorkoutsParams,
   ): Promise<Result<GetWorkoutsResult, ApiError>>;
   getWorkout(id: string): Promise<Result<Workout, ApiError>>;
+  /**
+   * Per-workout completed-session history for the calling user, feeding the
+   * detail hero's history block. `GET /workouts/:id/history` (canRead-gated,
+   * user-scoped). Online-direct; the detail container caches the result.
+   */
+  getWorkoutHistory(id: string): Promise<Result<WorkoutHistory, ApiError>>;
   createWorkout(
     data: CreateWorkoutDomainInput,
   ): Promise<Result<Workout, ApiError>>;
@@ -1372,6 +1379,12 @@ export type GetWorkoutsParams = {
   type?: WorkoutListType;
   limit?: number;
   offset?: number;
+  /**
+   * Trainer-only de-crowding: when true (with type="mine"), the backend
+   * restricts to workouts the caller authored AND flagged owner-visible.
+   * Sent only for trainers; absent => unchanged behaviour.
+   */
+  ownerLibraryOnly?: boolean;
 };
 
 /**

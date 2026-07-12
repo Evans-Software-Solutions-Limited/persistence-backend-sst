@@ -84,6 +84,7 @@ export function sanitizeCreateWorkoutInput(
     description,
     visibility: input.visibility,
     estimatedDurationMinutes: input.estimatedDurationMinutes,
+    showInOwnerLibrary: input.showInOwnerLibrary,
     exercises: input.exercises.map(sanitizeExerciseInput),
   };
 }

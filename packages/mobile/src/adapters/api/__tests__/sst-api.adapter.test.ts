@@ -188,6 +188,77 @@ describe("SSTApiAdapter.getWorkouts envelope (M2)", () => {
     expect(url).toContain("limit=5");
     expect(url).toContain("offset=10");
   });
+
+  it("sends ownerLibraryOnly=true only when the flag is set (opt-in)", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          meta: { pagination: { limit: 20, offset: 0, total: 0 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    await adapter.getWorkouts({ type: "mine", ownerLibraryOnly: true });
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "ownerLibraryOnly=true",
+    );
+
+    fetchMock.mockClear();
+    await adapter.getWorkouts({ type: "mine" });
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain(
+      "ownerLibraryOnly",
+    );
+
+    fetchMock.mockClear();
+    await adapter.getWorkouts({ type: "mine", ownerLibraryOnly: false });
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain(
+      "ownerLibraryOnly",
+    );
+  });
+});
+
+describe("SSTApiAdapter.getWorkoutHistory", () => {
+  it("GETs /workouts/:id/history and unwraps the envelope", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            completedCount: 4,
+            lastCompletedAt: "2026-07-01T00:00:00Z",
+            avgDurationSeconds: 2400,
+            lastSession: {
+              completedAt: "2026-07-01T00:00:00Z",
+              totalVolumeKg: 5000,
+              durationSeconds: 2500,
+            },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getWorkoutHistory("wo-1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/workouts/wo-1/history",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.completedCount).toBe(4);
+    expect(result.value.lastSession?.totalVolumeKg).toBe(5000);
+  });
+
+  it("propagates a 404 as api not_found", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "nope" }), { status: 404 });
+    });
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getWorkoutHistory("missing");
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("SSTApiAdapter.searchExercises", () => {

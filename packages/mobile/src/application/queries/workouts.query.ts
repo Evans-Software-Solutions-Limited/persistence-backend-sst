@@ -79,10 +79,15 @@ export async function refreshWorkouts(
   storage: StoragePort,
   userId: string,
   type: WorkoutListType,
+  ownerLibraryOnly = false,
 ): Promise<
   Result<{ workouts: Workout[]; quota: WorkoutQuota | null }, ApiError>
 > {
-  const result = await api.getWorkouts({ type });
+  // ownerLibraryOnly only affects the `mine` section (trainer de-crowding).
+  const result = await api.getWorkouts({
+    type,
+    ownerLibraryOnly: type === "mine" ? ownerLibraryOnly : undefined,
+  });
   if (!result.ok) return result;
   storage.cacheWorkoutsList(
     userId,
@@ -109,6 +114,9 @@ export async function refreshAllWorkouts(
   api: ApiPort,
   storage: StoragePort,
   userId: string,
+  // Trainer-only: filters the `mine` section to owner-visible workouts so a
+  // coach's personal My Workouts isn't crowded by client-authored ones.
+  ownerLibraryOnly = false,
 ): Promise<{
   mine: Result<{ workouts: Workout[]; quota: WorkoutQuota | null }, ApiError>;
   assigned: Result<
@@ -121,7 +129,7 @@ export async function refreshAllWorkouts(
   >;
 }> {
   const [mine, assigned, defaultSection] = await Promise.all([
-    refreshWorkouts(api, storage, userId, "mine"),
+    refreshWorkouts(api, storage, userId, "mine", ownerLibraryOnly),
     refreshWorkouts(api, storage, userId, "assigned"),
     refreshWorkouts(api, storage, userId, "default"),
   ]);

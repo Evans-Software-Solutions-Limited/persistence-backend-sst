@@ -6,6 +6,7 @@ import {
 } from "@/ui/theme/workoutsLegacyTheme";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
+import { buildSupersetLetterMap } from "@/ui/presenters/supersetLetters";
 import type {
   WorkoutFormExercise,
   WorkoutFormState,
@@ -17,6 +18,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -24,14 +26,31 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+const VISIBILITY_OPTIONS: readonly {
+  value: WorkoutFormState["visibility"];
+  label: string;
+}[] = [
+  { value: "private", label: "Private" },
+  { value: "friends", label: "Friends" },
+  { value: "public", label: "Public" },
+];
+
 interface WorkoutCreatorPresenterProps {
   readonly formState: WorkoutFormState;
   readonly isSubmitting: boolean;
   readonly hasAttemptedSubmit: boolean;
   readonly submitError: string | null;
   readonly pickerVisible: boolean;
+  /**
+   * Coach authoring context (route `?ctx=coach`). Drives the owner-visibility
+   * toggle: shown only for coaches; athletes never see it (workout stays
+   * personal / `showInOwnerLibrary` true).
+   */
+  readonly isCoachContext: boolean;
   readonly onSetName: (value: string) => void;
   readonly onSetDescription: (value: string) => void;
+  readonly onSetVisibility: (value: WorkoutFormState["visibility"]) => void;
+  readonly onSetShowInOwnerLibrary: (value: boolean) => void;
   readonly onAddExerciseTap: () => void;
   readonly onClosePicker: () => void;
 
@@ -54,8 +73,11 @@ export function WorkoutCreatorPresenter({
   hasAttemptedSubmit,
   submitError,
   pickerVisible,
+  isCoachContext,
   onSetName,
   onSetDescription,
+  onSetVisibility,
+  onSetShowInOwnerLibrary,
   onAddExerciseTap,
   onClosePicker,
   onAddExercises,
@@ -66,6 +88,9 @@ export function WorkoutCreatorPresenter({
   onCancel,
 }: WorkoutCreatorPresenterProps) {
   const exercises = formState.exercises;
+  const supersetLetters = buildSupersetLetterMap(
+    exercises.map((ex) => ex.superset_group),
+  );
   const nameError =
     hasAttemptedSubmit && formState.name.trim().length === 0
       ? "Workout name is required"
@@ -144,6 +169,58 @@ export function WorkoutCreatorPresenter({
                     testID="workout-description-input"
                   />
                 </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Visibility</Text>
+                  <View style={styles.visibilityRow}>
+                    {VISIBILITY_OPTIONS.map((opt) => {
+                      const selected = formState.visibility === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[
+                            styles.visibilityOption,
+                            selected && styles.visibilityOptionSelected,
+                          ]}
+                          onPress={() => onSetVisibility(opt.value)}
+                          testID={`visibility-${opt.value}`}
+                        >
+                          <Text
+                            style={[
+                              styles.visibilityOptionText,
+                              selected && styles.visibilityOptionTextSelected,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {isCoachContext && (
+                  <View style={styles.ownerToggleRow}>
+                    <View style={styles.ownerToggleCopy}>
+                      <Text style={styles.ownerToggleTitle}>
+                        Show in my workouts
+                      </Text>
+                      <Text style={styles.ownerToggleSub}>
+                        Keep this workout in your own library. Off by default —
+                        it stays assignable to clients either way.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={formState.showInOwnerLibrary}
+                      onValueChange={onSetShowInOwnerLibrary}
+                      trackColor={{
+                        false: Colors.surface.tertiary,
+                        true: Colors.primary.DEFAULT,
+                      }}
+                      testID="show-in-owner-library-toggle"
+                    />
+                  </View>
+                )}
               </View>
 
               {/* Exercises */}
@@ -225,6 +302,11 @@ export function WorkoutCreatorPresenter({
                             isSupersetEnd={isSupersetEnd}
                             supersetGroupNumber={
                               exercise.superset_group ?? undefined
+                            }
+                            supersetLetter={
+                              exercise.superset_group !== null
+                                ? supersetLetters.get(exercise.superset_group)
+                                : undefined
                             }
                             supersetLeadExercise={supersetExercises[0]}
                           />
@@ -355,6 +437,57 @@ const styles = StyleSheet.create({
   textArea: {
     height: 80,
     textAlignVertical: "top",
+  },
+  visibilityRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  visibilityOption: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
+    alignItems: "center",
+    backgroundColor: Colors.surface.primary,
+  },
+  visibilityOptionSelected: {
+    backgroundColor: Colors.primary.DEFAULT + "20",
+    borderColor: Colors.primary.DEFAULT,
+  },
+  visibilityOptionText: {
+    ...Typography.body2,
+    color: Colors.text.secondary,
+    fontWeight: "600",
+  },
+  visibilityOptionTextSelected: {
+    color: Colors.primary.DEFAULT,
+  },
+  ownerToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
+    backgroundColor: Colors.surface.primary,
+  },
+  ownerToggleCopy: {
+    flex: 1,
+  },
+  ownerToggleTitle: {
+    ...Typography.body1,
+    fontWeight: "600",
+    color: Colors.text.primary,
+  },
+  ownerToggleSub: {
+    ...Typography.caption,
+    color: Colors.text.secondary,
+    marginTop: 2,
   },
   addExerciseButton: {
     flexDirection: "row",

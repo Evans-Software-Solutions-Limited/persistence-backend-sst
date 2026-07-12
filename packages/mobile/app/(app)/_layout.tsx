@@ -153,6 +153,10 @@ export default function AppLayout() {
           }}
         />
         <Stack.Screen
+          name="workouts/library"
+          options={{ title: "Workout library", headerShown: false }}
+        />
+        <Stack.Screen
           name="session/index"
           options={{
             title: "Active session",

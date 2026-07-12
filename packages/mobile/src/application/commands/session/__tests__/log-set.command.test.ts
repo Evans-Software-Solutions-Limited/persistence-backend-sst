@@ -10,6 +10,7 @@ const buildWorkout = (): Workout => ({
   createdBy: "user-1",
   visibility: "private",
   estimatedDurationMinutes: 45,
+  showInOwnerLibrary: true,
   exercises: [
     {
       id: "we-1",

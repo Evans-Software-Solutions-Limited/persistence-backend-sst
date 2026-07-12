@@ -242,6 +242,17 @@ describe("ClientDetailContainer — populated", () => {
     });
   });
 
+  it("routes Create-and-assign to the creator in coach context with the client id/name", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onCreateAssignWorkout();
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/workouts/create?ctx=coach&assignClientId=client-1&assignClientName=Jordan",
+    );
+  });
+
   it("navigates back", async () => {
     const { adapters, api } = makeAdapters();
     api.clientDetails["client-1"] = fullDetail();

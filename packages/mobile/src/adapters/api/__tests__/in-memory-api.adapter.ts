@@ -123,6 +123,7 @@ import type {
   CreateWorkoutInput,
   UpdateWorkoutInput,
   Workout,
+  WorkoutHistory,
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type { CoachOverview } from "@/domain/models/coachOverview";
@@ -157,6 +158,8 @@ export class InMemoryApiAdapter implements ApiPort {
   public profiles: ApiProfile[] = [];
   public workouts: Workout[] = [];
   public workoutQuota: WorkoutQuota | null = null;
+  /** Optional per-workout history presets keyed by workoutId (tests set these). */
+  public workoutHistory: Map<string, WorkoutHistory> = new Map();
   public sessions: ApiSession[] = [];
   public exercises: Exercise[] = [];
   public sets: ApiExerciseSet[] = [];
@@ -215,7 +218,12 @@ export class InMemoryApiAdapter implements ApiPort {
   ): Promise<Result<GetWorkoutsResult, ApiError>> {
     const type = params?.type ?? "mine";
     const filtered = this.workouts.filter((w) => {
-      if (type === "mine") return w.createdBy === "test-user";
+      if (type === "mine")
+        return (
+          w.createdBy === "test-user" &&
+          // Trainer de-crowd: opt-in filter to owner-visible only.
+          (!params?.ownerLibraryOnly || w.showInOwnerLibrary !== false)
+        );
       if (type === "default")
         return w.visibility === "public" && w.createdBy !== "test-user";
       return true; // assigned: in-memory fake doesn't track assignments
@@ -238,6 +246,20 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(w);
   }
 
+  async getWorkoutHistory(
+    id: string,
+  ): Promise<Result<WorkoutHistory, ApiError>> {
+    const preset = this.workoutHistory.get(id);
+    return this.mayFail<WorkoutHistory>(
+      preset ?? {
+        completedCount: 0,
+        lastCompletedAt: null,
+        avgDurationSeconds: null,
+        lastSession: null,
+      },
+    );
+  }
+
   async createWorkout(
     data: CreateWorkoutInput,
   ): Promise<Result<Workout, ApiError>> {
@@ -250,6 +272,7 @@ export class InMemoryApiAdapter implements ApiPort {
       createdBy: "test-user",
       visibility: data.visibility ?? "private",
       estimatedDurationMinutes: data.estimatedDurationMinutes ?? 30,
+      showInOwnerLibrary: data.showInOwnerLibrary ?? true,
       exercises: data.exercises.map((ex, idx) => ({
         id: `we-${id}-${idx}`,
         exerciseId: ex.exerciseId,
@@ -291,6 +314,9 @@ export class InMemoryApiAdapter implements ApiPort {
       ...(data.visibility !== undefined && { visibility: data.visibility }),
       ...(data.estimatedDurationMinutes !== undefined && {
         estimatedDurationMinutes: data.estimatedDurationMinutes,
+      }),
+      ...(data.showInOwnerLibrary !== undefined && {
+        showInOwnerLibrary: data.showInOwnerLibrary,
       }),
       ...(data.exercises !== undefined && {
         exercises: data.exercises.map((ex, exIdx) => ({

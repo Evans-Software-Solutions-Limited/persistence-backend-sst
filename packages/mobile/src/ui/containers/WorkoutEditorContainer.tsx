@@ -32,8 +32,12 @@ import { WorkoutEditorPresenter } from "@/ui/presenters/WorkoutEditorPresenter";
  *       4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7; STORY-006 AC 6.5
  */
 export function WorkoutEditorContainer() {
-  const { id: workoutIdParam } = useLocalSearchParams<{ id: string }>();
+  const { id: workoutIdParam, ctx } = useLocalSearchParams<{
+    id: string;
+    ctx?: string;
+  }>();
   const workoutId = workoutIdParam ?? null;
+  const isCoachContext = ctx === "coach";
 
   const { storage } = useAdapters();
   const { session } = useAuth();
@@ -106,7 +110,7 @@ export function WorkoutEditorContainer() {
 
     setIsSubmitting(true);
     try {
-      const input = toUpdateWorkoutInput(form.state);
+      const input = toUpdateWorkoutInput(form.state, isCoachContext);
       const result = updateWorkoutCommand(
         { storage, userId, generateId },
         workoutId,
@@ -122,7 +126,7 @@ export function WorkoutEditorContainer() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [storage, userId, workoutId, generateId, form.state]);
+  }, [storage, userId, workoutId, generateId, isCoachContext, form.state]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {
@@ -158,9 +162,11 @@ export function WorkoutEditorContainer() {
       // airplane mode) should fall through to the form so the user
       // can keep editing offline. STORY-008 AC 8.4.
       loadError={detail.workout === null ? detail.error : null}
+      isCoachContext={isCoachContext}
       onSetName={form.setName}
       onSetDescription={form.setDescription}
       onSetVisibility={form.setVisibility}
+      onSetShowInOwnerLibrary={form.setShowInOwnerLibrary}
       onAddExerciseTap={onAddExerciseTap}
       onClosePicker={onClosePicker}
       onAddExercises={onAddExercises}
@@ -180,6 +186,7 @@ function toFormState(workout: Workout): WorkoutFormState {
     description: workout.description ?? "",
     estimatedDurationMinutes: workout.estimatedDurationMinutes,
     visibility: workout.visibility,
+    showInOwnerLibrary: workout.showInOwnerLibrary,
     exercises: workout.exercises.map(toFormExercise),
   };
 }
@@ -198,13 +205,19 @@ function toFormExercise(ex: WorkoutExercise): WorkoutFormExercise {
   };
 }
 
-function toUpdateWorkoutInput(state: WorkoutFormState): UpdateWorkoutInput {
+function toUpdateWorkoutInput(
+  state: WorkoutFormState,
+  isCoachContext: boolean,
+): UpdateWorkoutInput {
   return {
     name: state.name.trim(),
     description:
       state.description.trim().length === 0 ? null : state.description.trim(),
     visibility: state.visibility,
     estimatedDurationMinutes: state.estimatedDurationMinutes,
+    // Only coaches can flip owner-visibility; athlete edits leave it untouched
+    // (undefined => backend PATCH doesn't clobber the flag).
+    ...(isCoachContext ? { showInOwnerLibrary: state.showInOwnerLibrary } : {}),
     exercises: state.exercises.map((ex) => ({
       exerciseId: ex.exercise_id,
       sortOrder: ex.sort_order,

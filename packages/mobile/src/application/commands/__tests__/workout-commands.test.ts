@@ -119,6 +119,7 @@ describe("createWorkoutCommand", () => {
       createdBy: "user-1",
       visibility: "private",
       estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
       exercises: [],
       createdAt: "2026-04-27T00:00:00Z",
       updatedAt: "2026-04-27T00:00:00Z",
@@ -132,6 +133,51 @@ describe("createWorkoutCommand", () => {
     expect(result.ok).toBe(true);
     const mine = storage.getCachedWorkoutsList("user-1", "mine");
     expect(mine?.workouts.map((w) => w.name)).toEqual(["New", "Old"]);
+  });
+});
+
+describe("createWorkoutCommand — showInOwnerLibrary", () => {
+  let storage: InMemoryStorageAdapter;
+  const generateId = () => "fixed-id";
+
+  beforeEach(() => {
+    storage = new InMemoryStorageAdapter();
+  });
+
+  it("defaults showInOwnerLibrary true and adds the workout to the mine cache", () => {
+    const result = createWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      { name: "Push", exercises: [{ exerciseId: "ex-1", sortOrder: 0 }] },
+    );
+    expect(result.ok && result.value.showInOwnerLibrary).toBe(true);
+    expect(
+      storage.getCachedWorkoutsList("user-1", "mine")?.workouts,
+    ).toHaveLength(1);
+  });
+
+  it("persists false and SKIPS the mine splatter (coach-authored client workout)", () => {
+    const result = createWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      {
+        name: "Client Push",
+        showInOwnerLibrary: false,
+        exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.showInOwnerLibrary).toBe(false);
+    // Detail cache written + POST enqueued, but NOT added to the mine list.
+    expect(
+      storage.getCachedWorkoutDetail("user-1", result.value.id),
+    ).not.toBeNull();
+    expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
+    const pending = storage.getPendingMutations();
+    expect(pending).toHaveLength(1);
+    const payload = JSON.parse(pending[0].payload as string) as {
+      showInOwnerLibrary?: boolean;
+    };
+    expect(payload.showInOwnerLibrary).toBe(false);
   });
 });
 
@@ -150,6 +196,7 @@ describe("updateWorkoutCommand", () => {
       createdBy: "user-1",
       visibility: "private",
       estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
       exercises: [],
       createdAt: "2026-04-27T00:00:00Z",
       updatedAt: "2026-04-27T00:00:00Z",
@@ -249,6 +296,34 @@ describe("updateWorkoutCommand", () => {
     expect(pending[0].endpoint).toBe("/workouts/w-1");
   });
 
+  it("persists a flipped showInOwnerLibrary into the cache + PATCH payload", () => {
+    const result = updateWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      "w-1",
+      { showInOwnerLibrary: false },
+    );
+    expect(result.ok && result.value.showInOwnerLibrary).toBe(false);
+    expect(
+      storage.getCachedWorkoutDetail("user-1", "w-1")?.workout
+        .showInOwnerLibrary,
+    ).toBe(false);
+    const pending = storage.getPendingMutations();
+    const payload = JSON.parse(pending[0].payload as string) as {
+      showInOwnerLibrary?: boolean;
+    };
+    expect(payload.showInOwnerLibrary).toBe(false);
+  });
+
+  it("leaves showInOwnerLibrary unchanged when not supplied", () => {
+    const result = updateWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      "w-1",
+      { name: "Renamed" },
+    );
+    // Seeded existing workout is true; a name-only PATCH must not flip it.
+    expect(result.ok && result.value.showInOwnerLibrary).toBe(true);
+  });
+
   it("full-replaces exercises when provided", () => {
     const result = updateWorkoutCommand(
       { storage, generateId, userId: "user-1" },
@@ -294,6 +369,7 @@ describe("deleteWorkoutCommand", () => {
       createdBy: "user-1",
       visibility: "private",
       estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
       exercises: [],
       createdAt: "2026-04-27T00:00:00Z",
       updatedAt: "2026-04-27T00:00:00Z",
@@ -353,6 +429,7 @@ describe("workout commands invalidate the dashboard cache", () => {
       createdBy: "user-1",
       visibility: "private",
       estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
       exercises: [],
       createdAt: "2026-04-27T00:00:00Z",
       updatedAt: "2026-04-27T00:00:00Z",
@@ -381,6 +458,7 @@ describe("workout commands invalidate the dashboard cache", () => {
       createdBy: "user-1",
       visibility: "private",
       estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
       exercises: [],
       createdAt: "2026-04-27T00:00:00Z",
       updatedAt: "2026-04-27T00:00:00Z",

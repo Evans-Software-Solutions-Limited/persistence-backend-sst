@@ -58,6 +58,71 @@ describe("InMemoryApiAdapter", () => {
         expect(listAfter.value.workouts).toHaveLength(0);
       }
     });
+
+    it("filters mine to owner-visible only when ownerLibraryOnly is set", async () => {
+      await api.createWorkout({
+        name: "Personal",
+        showInOwnerLibrary: true,
+        exercises: [],
+      });
+      await api.createWorkout({
+        name: "Client-only",
+        showInOwnerLibrary: false,
+        exercises: [],
+      });
+
+      const unfiltered = await api.getWorkouts({ type: "mine" });
+      expect(unfiltered.ok && unfiltered.value.workouts).toHaveLength(2);
+
+      const filtered = await api.getWorkouts({
+        type: "mine",
+        ownerLibraryOnly: true,
+      });
+      if (!filtered.ok) throw new Error("expected ok");
+      expect(filtered.value.workouts).toHaveLength(1);
+      expect(filtered.value.workouts[0].name).toBe("Personal");
+    });
+
+    it("persists showInOwnerLibrary on create (default true)", async () => {
+      const a = await api.createWorkout({ name: "A", exercises: [] });
+      const b = await api.createWorkout({
+        name: "B",
+        showInOwnerLibrary: false,
+        exercises: [],
+      });
+      expect(a.ok && a.value.showInOwnerLibrary).toBe(true);
+      expect(b.ok && b.value.showInOwnerLibrary).toBe(false);
+    });
+  });
+
+  describe("getWorkoutHistory", () => {
+    it("returns the preset history for a workout when set", async () => {
+      api.workoutHistory.set("wo-1", {
+        completedCount: 3,
+        lastCompletedAt: "2026-07-01T00:00:00Z",
+        avgDurationSeconds: 1800,
+        lastSession: {
+          completedAt: "2026-07-01T00:00:00Z",
+          totalVolumeKg: 4000,
+          durationSeconds: 1900,
+        },
+      });
+      const result = await api.getWorkoutHistory("wo-1");
+      expect(result.ok && result.value.completedCount).toBe(3);
+    });
+
+    it("returns an empty-state history when none is preset", async () => {
+      const result = await api.getWorkoutHistory("unknown");
+      if (!result.ok) throw new Error("expected ok");
+      expect(result.value.completedCount).toBe(0);
+      expect(result.value.lastSession).toBeNull();
+    });
+
+    it("propagates the failure flag", async () => {
+      api.shouldFail = true;
+      const result = await api.getWorkoutHistory("wo-1");
+      expect(result.ok).toBe(false);
+    });
   });
 
   describe("profile", () => {

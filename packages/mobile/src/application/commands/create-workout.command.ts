@@ -92,6 +92,8 @@ export function createWorkoutCommand(
     createdBy: deps.userId,
     visibility: sanitized.visibility ?? "private",
     estimatedDurationMinutes: sanitized.estimatedDurationMinutes ?? 30,
+    // Absent => true (personal). The coach-authoring flow passes false.
+    showInOwnerLibrary: sanitized.showInOwnerLibrary ?? true,
     exercises,
     createdAt: nowDate,
     updatedAt: nowDate,
@@ -102,13 +104,23 @@ export function createWorkoutCommand(
   // mine. Anyone consuming those slices will see the new row when their
   // next refresh fires.
   deps.storage.cacheWorkoutDetail(deps.userId, workout);
-  const existingMine = deps.storage.getCachedWorkoutsList(deps.userId, "mine");
-  deps.storage.cacheWorkoutsList(
-    deps.userId,
-    "mine",
-    [workout, ...(existingMine?.workouts ?? [])],
-    existingMine?.quota ?? null,
-  );
+  // Skip the `mine` splatter for a workout the author flagged NOT
+  // owner-visible (coach authoring for a client): a trainer's personal My
+  // Workouts is fetched with ownerLibraryOnly=true, so adding it here would
+  // briefly show a client-authored workout in the coach's personal list
+  // until the next refresh re-filters it out.
+  if (workout.showInOwnerLibrary !== false) {
+    const existingMine = deps.storage.getCachedWorkoutsList(
+      deps.userId,
+      "mine",
+    );
+    deps.storage.cacheWorkoutsList(
+      deps.userId,
+      "mine",
+      [workout, ...(existingMine?.workouts ?? [])],
+      existingMine?.quota ?? null,
+    );
+  }
 
   deps.storage.enqueueMutation({
     entityType: "workout",

@@ -32,6 +32,12 @@ export type WorkoutFormState = {
   description: string;
   estimatedDurationMinutes: number;
   visibility: "private" | "friends" | "public";
+  /**
+   * Does this workout show in its AUTHOR's personal "My Workouts"? Athlete
+   * authoring keeps this true; coach authoring for a client defaults it false
+   * (a coach-only toggle overrides). Backend column `show_in_owner_library`.
+   */
+  showInOwnerLibrary: boolean;
   exercises: WorkoutFormExercise[];
 };
 
@@ -40,6 +46,7 @@ export const EMPTY_FORM_STATE: WorkoutFormState = {
   description: "",
   estimatedDurationMinutes: 30,
   visibility: "private",
+  showInOwnerLibrary: true,
   exercises: [],
 };
 
@@ -48,6 +55,7 @@ type Action =
   | { type: "setDescription"; value: string }
   | { type: "setEstimatedDuration"; value: number }
   | { type: "setVisibility"; value: WorkoutFormState["visibility"] }
+  | { type: "setShowInOwnerLibrary"; value: boolean }
   | {
       type: "addExercises";
 
@@ -74,6 +82,8 @@ function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
       return { ...state, estimatedDurationMinutes: action.value };
     case "setVisibility":
       return { ...state, visibility: action.value };
+    case "setShowInOwnerLibrary":
+      return { ...state, showInOwnerLibrary: action.value };
     case "addExercises": {
       const nextSortOrder =
         Math.max(0, ...state.exercises.map((ex) => ex.sort_order)) + 1;
@@ -149,6 +159,7 @@ export type WorkoutFormHandle = {
   setDescription: (value: string) => void;
   setEstimatedDuration: (value: number) => void;
   setVisibility: (value: WorkoutFormState["visibility"]) => void;
+  setShowInOwnerLibrary: (value: boolean) => void;
 
   addExercises: (exercises: any[]) => void;
 
@@ -187,6 +198,10 @@ export function useWorkoutForm(
   const setVisibility = useCallback(
     (value: WorkoutFormState["visibility"]) =>
       dispatch({ type: "setVisibility", value }),
+    [],
+  );
+  const setShowInOwnerLibrary = useCallback(
+    (value: boolean) => dispatch({ type: "setShowInOwnerLibrary", value }),
     [],
   );
   const addExercises = useCallback(
@@ -230,6 +245,7 @@ export function useWorkoutForm(
     setDescription,
     setEstimatedDuration,
     setVisibility,
+    setShowInOwnerLibrary,
     addExercises,
     addSuperset,
     removeExercise,
@@ -244,6 +260,7 @@ function shallowEqualForm(a: WorkoutFormState, b: WorkoutFormState): boolean {
   if (a.description !== b.description) return false;
   if (a.estimatedDurationMinutes !== b.estimatedDurationMinutes) return false;
   if (a.visibility !== b.visibility) return false;
+  if (a.showInOwnerLibrary !== b.showInOwnerLibrary) return false;
   if (a.exercises.length !== b.exercises.length) return false;
   for (let i = 0; i < a.exercises.length; i++) {
     const ax = a.exercises[i];

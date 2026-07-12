@@ -117,7 +117,22 @@ describe("ExerciseConfigCard", () => {
         supersetGroupNumber={2}
       />,
     );
-    expect(getByText("Superset 2")).toBeTruthy();
+    expect(getByText("SUPERSET 2")).toBeTruthy();
+  });
+
+  it("renders the superset letter pill when a letter is supplied", () => {
+    const { getByText } = renderWithTheme(
+      <ExerciseConfigCard
+        exercise={{ ...baseExercise, superset_group: 5 }}
+        index={0}
+        onRemove={jest.fn()}
+        onConfigChange={jest.fn()}
+        isSupersetStart
+        supersetGroupNumber={5}
+        supersetLetter="B"
+      />,
+    );
+    expect(getByText("SUPERSET B")).toBeTruthy();
   });
 
   it("renders the superset badge correctly when group number is 0", () => {
@@ -135,7 +150,7 @@ describe("ExerciseConfigCard", () => {
         supersetGroupNumber={0}
       />,
     );
-    expect(getByText("Superset 0")).toBeTruthy();
+    expect(getByText("SUPERSET 0")).toBeTruthy();
     // No bare "0" text node leaking from a falsy-conditional.
     expect(queryByText("0", { exact: true })).toBeNull();
   });

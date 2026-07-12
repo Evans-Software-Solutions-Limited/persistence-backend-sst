@@ -7,6 +7,7 @@ import {
   type WorkoutsQueryResult,
 } from "@/application/queries/workouts.query";
 import type { ApiError } from "@/shared/errors";
+import { useUserMode } from "@/state/user-mode";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -45,6 +46,11 @@ export function useWorkouts(): WorkoutsState {
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
+  // Trainers get a de-crowded personal list: the `mine` section is fetched
+  // with ownerLibraryOnly so workouts they authored FOR CLIENTS (flagged
+  // not owner-visible) don't clutter their own Home carousel / My Workouts.
+  // Regular athletes are unaffected (isTrainerEligible false → no filter).
+  const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
 
   const [cacheVersion, setCacheVersion] = useState(0);
 
@@ -98,7 +104,12 @@ export function useWorkouts(): WorkoutsState {
           console.error("[useWorkouts] queue flush failed:", err);
         }
         if (latestUserIdRef.current !== userId) return;
-        const results = await refreshAllWorkouts(api, storage, userId);
+        const results = await refreshAllWorkouts(
+          api,
+          storage,
+          userId,
+          isTrainerEligible,
+        );
         if (latestUserIdRef.current !== userId) return;
         // Surface the first error we see; cache writes for successful
         // sections already happened inside refreshWorkouts.
@@ -118,7 +129,7 @@ export function useWorkouts(): WorkoutsState {
     })();
     inFlightRef.current = { userId, promise: work };
     return work;
-  }, [api, auth, storage, userId]);
+  }, [api, auth, storage, userId, isTrainerEligible]);
 
   // One-shot auto-refresh when any section is stale (or no cache).
   const autoRefreshedForUserRef = useRef<string | null>(null);

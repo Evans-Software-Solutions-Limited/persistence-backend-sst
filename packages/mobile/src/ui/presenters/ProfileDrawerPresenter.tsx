@@ -9,6 +9,7 @@ import { DrawerSection } from "@/ui/components/profile/DrawerSection";
 import {
   IconBell,
   IconChevronR,
+  IconDumbbell,
   IconHealth,
   IconLogout,
   IconMedal,
@@ -110,6 +111,8 @@ export type ProfileDrawerPresenterProps = {
   onOpenSubscription: () => void;
   onOpenNotifications: () => void;
   onOpenSettings: () => void;
+  /** Coach-only: open the coach's full workout library (placement adjustable). */
+  onOpenWorkoutLibrary: () => void;
   onSignOut: () => void | Promise<void>;
 };
 
@@ -143,6 +146,7 @@ export function ProfileDrawerPresenter({
   onOpenSubscription,
   onOpenNotifications,
   onOpenSettings,
+  onOpenWorkoutLibrary,
   onSignOut,
 }: ProfileDrawerPresenterProps) {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -276,6 +280,20 @@ export function ProfileDrawerPresenter({
           testID="row-health"
         />
       </DrawerSection>
+
+      {/* Coaching section — coach-only. Placement is adjustable (flagged to
+          Brad); the coach You/dashboard is an alternative home for this. */}
+      {mode === "coach" && (
+        <DrawerSection title="Coaching">
+          <DrawerRow
+            icon={<IconDumbbell {...iconDefaults({ size: 16 })} />}
+            title="Workout library"
+            sub="Create & manage your workouts"
+            onPress={onOpenWorkoutLibrary}
+            testID="row-workout-library"
+          />
+        </DrawerSection>
+      )}
 
       {/* Subscription section — Card style with chevron aligned to match
           DrawerRow positioning (paddingHorizontal 12, same as the rows above). */}

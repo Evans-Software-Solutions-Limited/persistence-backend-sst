@@ -14,6 +14,7 @@ const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   createdBy: overrides.createdBy ?? "test-user",
   visibility: overrides.visibility ?? "private",
   estimatedDurationMinutes: 45,
+  showInOwnerLibrary: overrides.showInOwnerLibrary ?? true,
   exercises: overrides.exercises ?? [],
   createdAt: "2026-04-28T00:00:00Z",
   updatedAt: "2026-04-28T00:00:00Z",
@@ -110,6 +111,25 @@ describe("refreshWorkouts", () => {
     expect(result.ok).toBe(false);
     expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
   });
+
+  it("threads ownerLibraryOnly to the mine fetch, filtering the cache", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.workouts.push(
+      buildWorkout({ id: "w-personal", showInOwnerLibrary: true }),
+      buildWorkout({ id: "w-client", showInOwnerLibrary: false }),
+    );
+
+    const result = await refreshWorkouts(api, storage, "user-1", "mine", true);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workouts.map((w) => w.id)).toEqual(["w-personal"]);
+    expect(
+      storage
+        .getCachedWorkoutsList("user-1", "mine")
+        ?.workouts.map((w) => w.id),
+    ).toEqual(["w-personal"]);
+  });
 });
 
 describe("refreshAllWorkouts", () => {
@@ -132,5 +152,32 @@ describe("refreshAllWorkouts", () => {
     expect(result.mine.ok).toBe(false);
     expect(result.assigned.ok).toBe(false);
     expect(result.default.ok).toBe(false);
+  });
+
+  it("applies ownerLibraryOnly to mine only, leaving default/assigned unfiltered", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.workouts.push(
+      buildWorkout({ id: "w-personal", showInOwnerLibrary: true }),
+      buildWorkout({ id: "w-client", showInOwnerLibrary: false }),
+      // A public workout by another author → surfaces in `default`, must be
+      // unaffected by the trainer filter.
+      buildWorkout({
+        id: "w-public",
+        createdBy: "someone-else",
+        visibility: "public",
+        showInOwnerLibrary: false,
+      }),
+    );
+
+    const result = await refreshAllWorkouts(api, storage, "user-1", true);
+    expect(
+      result.mine.ok && result.mine.value.workouts.map((w) => w.id),
+    ).toEqual(["w-personal"]);
+    // default still sees the public (owner-visible-false) workout.
+    expect(
+      result.default.ok &&
+        result.default.value.workouts.some((w) => w.id === "w-public"),
+    ).toBe(true);
   });
 });

@@ -42,6 +42,7 @@ const baseProps: ProfileDrawerPresenterProps = {
   onOpenSubscription: jest.fn(),
   onOpenNotifications: jest.fn(),
   onOpenSettings: jest.fn(),
+  onOpenWorkoutLibrary: jest.fn(),
   onSignOut: jest.fn(),
 };
 
@@ -74,6 +75,22 @@ describe("ProfileDrawerPresenter", () => {
     expect(getByText("brad@example.com")).toBeTruthy();
     // profile-details sub joins name · age · weight.
     expect(getByText("Bradley Evans · 28 · 79.8kg")).toBeTruthy();
+  });
+
+  it("shows the coach-only Workout library row + fires onOpenWorkoutLibrary", () => {
+    const onOpenWorkoutLibrary = jest.fn();
+    const { getByTestId } = renderDrawer({
+      mode: "coach",
+      isTrainerEligible: true,
+      onOpenWorkoutLibrary,
+    });
+    fireEvent.press(getByTestId("row-workout-library"));
+    expect(onOpenWorkoutLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the Workout library row for athletes", () => {
+    const { queryByTestId } = renderDrawer({ mode: "athlete" });
+    expect(queryByTestId("row-workout-library")).toBeNull();
   });
 
   it("renders the PREMIUM + trial pills from subscription", () => {

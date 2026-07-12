@@ -127,6 +127,7 @@ import type {
   CreateWorkoutInput,
   UpdateWorkoutInput,
   Workout,
+  WorkoutHistory,
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type {
@@ -485,6 +486,9 @@ export class SSTApiAdapter implements ApiPort {
     if (params?.type) queryParams.type = params.type;
     if (params?.limit !== undefined) queryParams.limit = params.limit;
     if (params?.offset !== undefined) queryParams.offset = params.offset;
+    // Opt-in only — sent (as a BooleanString) solely when true, so athlete /
+    // non-trainer requests stay byte-identical to today.
+    if (params?.ownerLibraryOnly) queryParams.ownerLibraryOnly = "true";
 
     // Backend list endpoint is double-envelope `{ data, meta }`. We
     // request the raw envelope (skipping `requestEnvelope`'s single-
@@ -506,6 +510,12 @@ export class SSTApiAdapter implements ApiPort {
 
   async getWorkout(id: string): Promise<Result<Workout, ApiError>> {
     return this.requestEnvelope<Workout>(`/workouts/${id}`);
+  }
+
+  async getWorkoutHistory(
+    id: string,
+  ): Promise<Result<WorkoutHistory, ApiError>> {
+    return this.requestEnvelope<WorkoutHistory>(`/workouts/${id}/history`);
   }
 
   async createWorkout(
