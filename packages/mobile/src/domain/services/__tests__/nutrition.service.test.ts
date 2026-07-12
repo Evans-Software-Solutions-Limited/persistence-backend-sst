@@ -14,6 +14,7 @@ import {
   computeFuelTargetsPreview,
   computeManualFuelTargetsPreview,
   computeRemaining,
+  defaultMealSlot,
   detectDailyGoalHit,
   flattenFuelEntries,
   goalAdjustedKcal,
@@ -764,5 +765,40 @@ describe("sumKeptAiItemsKcal", () => {
 
   it("returns 0 for an empty list", () => {
     expect(sumKeptAiItemsKcal([])).toBe(0);
+  });
+});
+
+describe("defaultMealSlot", () => {
+  const atHour = (hour: number) => {
+    const d = new Date(2026, 5, 21, hour, 0, 0);
+    return defaultMealSlot(d);
+  };
+
+  it("returns breakfast before 11:00", () => {
+    expect(atHour(10)).toBe("breakfast");
+  });
+
+  it("returns lunch at 11:00 (the breakfast/lunch boundary)", () => {
+    expect(atHour(11)).toBe("lunch");
+  });
+
+  it("returns lunch at 14:00 (still under the lunch/snack boundary)", () => {
+    expect(atHour(14)).toBe("lunch");
+  });
+
+  it("returns snack at 15:00 (the lunch/snack boundary)", () => {
+    expect(atHour(15)).toBe("snack");
+  });
+
+  it("returns snack at 16:00 (still under the snack/dinner boundary)", () => {
+    expect(atHour(16)).toBe("snack");
+  });
+
+  it("returns dinner at 17:00 (the snack/dinner boundary)", () => {
+    expect(atHour(17)).toBe("dinner");
+  });
+
+  it("returns dinner at 18:00 (well past the boundary)", () => {
+    expect(atHour(18)).toBe("dinner");
   });
 });
