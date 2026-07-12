@@ -18,8 +18,10 @@ import type {
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
+  CachedWorkoutHistory,
   CachedWorkoutsList,
   Workout,
+  WorkoutHistory,
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
@@ -254,7 +256,23 @@ export interface StoragePort {
   cacheWorkoutDetail(userId: string, workout: Workout): void;
 
   /**
-   * Remove a workout from list + detail caches after a successful
+   * Read the cached per-workout history slice (detail hero's history block).
+   * Cache-first so the block survives offline; null when never fetched.
+   */
+  getCachedWorkoutHistory(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutHistory | null;
+
+  /** Write-through the per-workout history. Stamps `syncedAt = now()`. */
+  cacheWorkoutHistory(
+    userId: string,
+    workoutId: string,
+    history: WorkoutHistory,
+  ): void;
+
+  /**
+   * Remove a workout from list + detail (+ history) caches after a successful
    * delete. No-op when the rows aren't cached.
    */
   removeCachedWorkout(userId: string, workoutId: string): void;

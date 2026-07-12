@@ -834,6 +834,42 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getCachedWorkoutDetail("user-1", "missing")).toBeNull();
     });
 
+    it("caches + reads per-workout history scoped by (userId, workoutId)", () => {
+      const history = {
+        completedCount: 3,
+        lastCompletedAt: "2026-07-01T00:00:00Z",
+        avgDurationSeconds: 1800,
+        lastSession: {
+          completedAt: "2026-07-01T00:00:00Z",
+          totalVolumeKg: 4000,
+          durationSeconds: 1900,
+        },
+      };
+      expect(storage.getCachedWorkoutHistory("user-1", "w-1")).toBeNull();
+      storage.cacheWorkoutHistory("user-1", "w-1", history);
+
+      const cached = storage.getCachedWorkoutHistory("user-1", "w-1");
+      expect(cached?.history).toEqual(history);
+      expect(cached?.userId).toBe("user-1");
+      expect(cached?.workoutId).toBe("w-1");
+      expect(cached?.syncedAt).toBeDefined();
+      // Not shared with another workout / user.
+      expect(storage.getCachedWorkoutHistory("user-1", "w-2")).toBeNull();
+      expect(storage.getCachedWorkoutHistory("user-2", "w-1")).toBeNull();
+    });
+
+    it("removeCachedWorkout also drops the cached history", () => {
+      const history = {
+        completedCount: 1,
+        lastCompletedAt: "2026-07-01T00:00:00Z",
+        avgDurationSeconds: null,
+        lastSession: null,
+      };
+      storage.cacheWorkoutHistory("user-1", "w-drop", history);
+      storage.removeCachedWorkout("user-1", "w-drop");
+      expect(storage.getCachedWorkoutHistory("user-1", "w-drop")).toBeNull();
+    });
+
     it("removeCachedWorkout drops detail and prunes from list slices", () => {
       const wKeep = buildWorkout({ id: "w-keep" });
       const wDrop = buildWorkout({ id: "w-drop" });
