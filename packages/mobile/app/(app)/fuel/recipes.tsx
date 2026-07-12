@@ -1,19 +1,11 @@
-import { ComingSoon } from "@/ui/components/ComingSoon";
+import { RecipesLibraryContainer } from "@/ui/containers/RecipesLibraryContainer";
 
 /**
- * Fuel → Recipes library + create flows. Stub route so the Fuel screen's
- * Recipes affordance navigates coherently; the real <RecipesLibrary> (recipes.jsx)
- * lands in M9 PR3.
+ * Fuel → Recipes library (PR1 — no AI). Replaces the M9-era <ComingSoon>
+ * stub now that the real library has landed.
  *
- * Spec: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § Recipes library + flows (PR 3)
+ * Spec: specs/milestones (Fuel → Recipes PR1 brief) § Recipes library
  */
 export default function RecipesScreen() {
-  return (
-    <ComingSoon
-      icon="book-outline"
-      title="Recipes"
-      description="Your recipe + meal library arrives next in M9."
-      testID="fuel-recipes-stub"
-    />
-  );
+  return <RecipesLibraryContainer />;
 }

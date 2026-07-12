@@ -83,4 +83,5 @@ export {
   detectDailyGoalHit,
   rescaleAiFoodItem,
   sumKeptAiItemsKcal,
+  defaultMealSlot,
 } from "./nutrition.service";

@@ -198,14 +198,17 @@ export default function AppLayout() {
           options={{ title: "Coming soon", headerShown: true }}
         />
         {/*
-          fuel/recipes is still the M9-era stub — bare <ComingSoon> (no
-          HeaderBar), so it opts into the native header for a back affordance
-          until its real screen lands.
+          fuel/recipes (Fuel → Recipes PR1) now owns its own <HeaderBar>
+          (back-to-Fuel / Library / +) — native header off, matching every
+          other custom-chrome screen.
         */}
+        <Stack.Screen name="fuel/recipes" options={{ headerShown: false }} />
         <Stack.Screen
-          name="fuel/recipes"
-          options={{ title: "Recipes", headerShown: true }}
+          name="fuel/recipe/[id]"
+          options={{ headerShown: false }}
         />
+        <Stack.Screen name="fuel/meal/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="fuel/save-meal" options={{ headerShown: false }} />
         {/*
           fuel/targets (M9 PR3) owns its own <HeaderBar> (Cancel/Save) —
           native header off, matching every other custom-chrome screen.

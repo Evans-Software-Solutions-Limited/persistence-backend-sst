@@ -619,3 +619,20 @@ export function sumKeptAiItemsKcal(
 ): number {
   return items.filter((i) => i.on).reduce((sum, i) => sum + i.kcal, 0);
 }
+
+// ── Recipes & Meals library (M9 PR1 — no-AI slice) ──────────────────────────
+
+/**
+ * The meal slot a fresh "Log to today" action should default to, keyed off
+ * the local wall-clock hour (prototype parity — recipes.jsx has no slot
+ * picker on the detail screen's Log button, so it needs a sensible implicit
+ * default). Boundaries: breakfast < 11:00, lunch < 15:00, snack < 17:00,
+ * else dinner.
+ */
+export function defaultMealSlot(date: Date): MealSlot {
+  const hour = date.getHours();
+  if (hour < 11) return "breakfast";
+  if (hour < 15) return "lunch";
+  if (hour < 17) return "snack";
+  return "dinner";
+}
