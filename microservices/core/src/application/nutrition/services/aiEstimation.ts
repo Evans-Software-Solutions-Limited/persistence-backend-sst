@@ -1,37 +1,36 @@
-import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
-
 /**
  * Claude-on-Bedrock adapter for Tier B AI nutrition estimation (M9.5).
  * See specs/13-nutrition-tracking/design.md § Revised 2026-07-03 and
  * specs/_shared/cross-cuts.md § 4.
  *
- * Auth is IAM SigV4 from the Lambda execution role (no API-key secret —
- * see `infra/api.ts`'s `bedrock:InvokeModel` permissions on the route).
- * Structured output uses FORCED TOOL USE (`tool_choice: { type: 'tool',
- * name: 'report_estimate' }`) rather than `output_config.format` —
- * structured-outputs support is fragmented across Bedrock
- * endpoints/models while tool-forcing works on every Claude model on
- * every rail.
- *
- * The client is injectable (`deps.client`) — the exact same seam as
- * `nutrition/barcode/services/openFoodFacts.ts`'s `deps.fetcher` — so
- * unit tests inject a fake `{ messages: { create } }` object and never
- * make a live network call. CI needs no AWS credentials.
+ * The task-agnostic Bedrock client seam (injectable client, retry policy,
+ * tool-use lookup) lives in `./aiBedrockClient` and is shared with
+ * `recipeExtraction.ts` (Recipes AI). This module keeps only the
+ * nutrition-estimate-specific prompts, schema, and shape validation.
  */
+import {
+  getDefaultClient,
+  createWithRetry,
+  findToolUse,
+  clamp01,
+  clampNonNegative,
+  AiUnreadableError,
+  AiUnavailableError,
+  type MinimalBedrockClient,
+  type ContentBlockParam,
+  type MessagesCreateResponse,
+} from "./aiBedrockClient";
+
+// Re-exported so existing importers (the estimate + estimate-text
+// handlers) keep working unchanged after the extraction.
+export { AiUnreadableError, AiUnavailableError };
+export type { MinimalBedrockClient } from "./aiBedrockClient";
 
 const PHOTO_MODEL_ID =
   process.env.AI_PHOTO_MODEL_ID ?? "eu.anthropic.claude-opus-4-6-v1";
 const TEXT_MODEL_ID =
   process.env.AI_TEXT_MODEL_ID ?? "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-// Per-attempt Bedrock timeout. These handlers serve the coreAPI
-// ApiGatewayV2 (HTTP API) route, whose integration ceiling is a hard
-// 30s — NOT the 120s the cron Lambdas get. Two attempts must fit under
-// that ceiling with headroom for auth/validation/usage-log overhead:
-// 2 × 12s + overhead < 30s. Eval (2026-07-03) measured opus-4-6 median
-// 6.1s / worst ~9s on 640px photos, so 12s clears the real p99 while
-// keeping the retry affordable.
-const CLIENT_TIMEOUT_MS = 12_000;
 const MAX_TOKENS = 1500;
 const TOOL_NAME = "report_estimate";
 
@@ -52,103 +51,6 @@ export type AiEstimate = {
   overallConfidence: number; // 0..1
   notes: string;
 };
-
-/**
- * Model refused, returned no `tool_use` block, or returned a
- * `report_estimate` input that doesn't match the expected shape. Maps to
- * HTTP 422 `ai_unreadable` at the handler.
- */
-export class AiUnreadableError extends Error {
-  // Plain field declaration, not a constructor parameter property — the
-  // web package's tsconfig has `erasableSyntaxOnly: true`, which forbids
-  // parameter properties. Mirrors `EntitlementError` in
-  // `application/entitlement/assertEntitlement.ts`.
-  constructor(message: string) {
-    super(message);
-    this.name = "AiUnreadableError";
-    Object.setPrototypeOf(this, AiUnreadableError.prototype);
-  }
-}
-
-/**
- * Provider unreachable / timed out after the one retry. Maps to HTTP 503
- * `ai_unavailable` at the handler.
- */
-export class AiUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AiUnavailableError";
-    Object.setPrototypeOf(this, AiUnavailableError.prototype);
-  }
-}
-
-// ─── Minimal client seam ────────────────────────────────────────────────
-//
-// We depend on only the slice of the Anthropic Messages API surface we
-// actually call, rather than the full `AnthropicBedrock` type — this
-// keeps the injectable-fake shape trivial in tests (no need to construct
-// a real SDK instance) while still type-checking against the real
-// client, which structurally satisfies this interface.
-
-type ContentBlockParam =
-  | { type: "text"; text: string }
-  | {
-      type: "image";
-      source: {
-        type: "base64";
-        media_type: "image/jpeg" | "image/png";
-        data: string;
-      };
-    };
-
-type ToolUseResponseBlock = {
-  type: "tool_use";
-  name: string;
-  input: unknown;
-};
-
-type TextResponseBlock = { type: "text"; text: string };
-
-type ResponseContentBlock = ToolUseResponseBlock | TextResponseBlock;
-
-type MessagesCreateParams = {
-  model: string;
-  max_tokens: number;
-  messages: Array<{ role: "user"; content: ContentBlockParam[] }>;
-  tools: Array<{ name: string; input_schema: Record<string, unknown> }>;
-  tool_choice: { type: "tool"; name: string };
-};
-
-type MessagesCreateResponse = {
-  content: ResponseContentBlock[];
-  stop_reason: string | null;
-};
-
-export type MinimalBedrockClient = {
-  messages: {
-    create: (
-      params: MessagesCreateParams,
-      options?: { timeout?: number },
-    ) => Promise<MessagesCreateResponse>;
-  };
-};
-
-let cachedClient: MinimalBedrockClient | null = null;
-
-/**
- * Lazily construct the real `AnthropicBedrock` client. Cached across
- * calls within a warm Lambda so we don't rebuild the credential-provider
- * chain on every invocation. Never constructed in tests — they always
- * pass `deps.client`.
- */
-function getDefaultClient(): MinimalBedrockClient {
-  if (!cachedClient) {
-    cachedClient = new AnthropicBedrock({
-      timeout: CLIENT_TIMEOUT_MS,
-    }) as unknown as MinimalBedrockClient;
-  }
-  return cachedClient;
-}
 
 // ─── JSON schema for the forced tool ────────────────────────────────────
 
@@ -287,87 +189,14 @@ export async function estimateFromText(
 // ─── Internal ────────────────────────────────────────────────────────────
 
 /**
- * One retry on a 5xx / timeout-shaped failure. A second failure of the
- * same shape (or any non-retryable error) surfaces as
- * `AiUnavailableError` — we do not retry into a slow provider outage
- * indefinitely, and both attempts must fit under the API Gateway HTTP
- * API 30s integration ceiling (2 × 12s client timeout + overhead — see
- * CLIENT_TIMEOUT_MS).
- */
-async function createWithRetry(
-  client: MinimalBedrockClient,
-  params: MessagesCreateParams,
-): Promise<MessagesCreateResponse> {
-  try {
-    return await client.messages.create(params, {
-      timeout: CLIENT_TIMEOUT_MS,
-    });
-  } catch (firstError) {
-    if (!isRetryable(firstError)) {
-      throw new AiUnavailableError(
-        `ai_estimation_failed: ${describeError(firstError)}`,
-      );
-    }
-    try {
-      return await client.messages.create(params, {
-        timeout: CLIENT_TIMEOUT_MS,
-      });
-    } catch (secondError) {
-      throw new AiUnavailableError(
-        `ai_estimation_failed_after_retry: ${describeError(secondError)}`,
-      );
-    }
-  }
-}
-
-/**
- * Retryable = 5xx status from the provider, or a timeout/network-shaped
- * error. Anthropic SDK errors carry a numeric `.status` on 4xx/5xx;
- * AbortError / network errors don't carry `.status` at all, and we treat
- * the absence of a definitive 4xx client error as retryable too — a
- * malformed-request 4xx wouldn't normally reach here since we control
- * the request shape.
- */
-function isRetryable(error: unknown): boolean {
-  const status = extractStatus(error);
-  if (status === undefined) return true; // network/timeout/unknown
-  return status >= 500;
-}
-
-function extractStatus(error: unknown): number | undefined {
-  if (typeof error === "object" && error !== null && "status" in error) {
-    const status = (error as { status?: unknown }).status;
-    return typeof status === "number" ? status : undefined;
-  }
-  return undefined;
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
  * Find the `report_estimate` tool_use block, validate its `.input`
  * roughly matches `AiEstimate`, and return it. Missing block, a refusal
  * stop_reason, or a shape mismatch all raise `AiUnreadableError`.
  */
 function parseEstimateResponse(response: MessagesCreateResponse): AiEstimate {
-  if (response.stop_reason === "refusal") {
-    throw new AiUnreadableError("ai_refused_to_answer");
-  }
+  const rawInput = findToolUse(response, TOOL_NAME);
 
-  const toolUseBlock = response.content.find(
-    (block): block is ToolUseResponseBlock =>
-      block.type === "tool_use" && block.name === TOOL_NAME,
-  );
-
-  if (!toolUseBlock) {
-    throw new AiUnreadableError(
-      "ai_response_missing_tool_use: model did not call report_estimate",
-    );
-  }
-
-  const estimate = validateEstimateShape(toolUseBlock.input);
+  const estimate = validateEstimateShape(rawInput);
   if (!estimate) {
     throw new AiUnreadableError(
       "ai_response_shape_invalid: report_estimate input did not match AiEstimate",
@@ -397,23 +226,6 @@ function validateEstimateShape(input: unknown): AiEstimate | null {
     overallConfidence: clamp01(obj.overallConfidence as number),
     notes: obj.notes,
   };
-}
-
-/**
- * Bedrock does NOT hard-validate the returned `tool_use.input` against
- * the declared `input_schema` — the schema's `minimum`/`maximum` bounds
- * are advisory to the model. So range enforcement happens here:
- * non-finite numbers (NaN/±Infinity) reject the whole estimate as
- * unreadable, while merely out-of-range values are clamped rather than
- * rejected — one `-0.1 g fat` shouldn't discard an otherwise-usable
- * estimate the user is about to review and edit anyway.
- */
-function clamp01(n: number): number {
-  return Math.min(1, Math.max(0, n));
-}
-
-function clampNonNegative(n: number): number {
-  return Math.max(0, n);
 }
 
 function validateFoodItemShape(input: unknown): AiFoodItem | null {

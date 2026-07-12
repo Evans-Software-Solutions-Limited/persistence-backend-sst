@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
+import { AddRecipeMenuContainer } from "../../src/ui/containers/AddRecipeMenuContainer";
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
 import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
 import { SendBriefSheet } from "../../src/ui/presenters/coach/SendBriefSheet";
@@ -214,6 +215,22 @@ export default function AppLayout() {
           native header off, matching every other custom-chrome screen.
         */}
         <Stack.Screen name="fuel/targets" options={{ headerShown: false }} />
+        {/*
+          Recipes AI (PR3) — create/import/snap all own their own <HeaderBar>,
+          native header off, matching every other custom-chrome screen.
+        */}
+        <Stack.Screen
+          name="fuel/recipe-create"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="fuel/recipe-import"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="fuel/recipe-snap"
+          options={{ headerShown: false }}
+        />
       </Stack>
       {/*
         ProfileDrawerContainer is ALWAYS mounted (sibling of the Stack) — its
@@ -306,6 +323,12 @@ export default function AppLayout() {
       <QuickAddSheetContainer />
       <ScanBarcodeSheetContainer />
       <SnapAISheetContainer />
+      {/*
+        AddRecipeMenuContainer — the Recipes library "+" bottom sheet
+        (Recipes AI PR3). Root-mounted sibling (feedback_sheets_mount_at_root);
+        reads useAddRecipeMenu().open. Opened from <RecipesLibraryContainer>.
+      */}
+      <AddRecipeMenuContainer />
     </ExerciseFiltersProvider>
   );
 }

@@ -636,3 +636,55 @@ export function defaultMealSlot(date: Date): MealSlot {
   if (hour < 17) return "snack";
   return "dinner";
 }
+
+// ── Recipes AI (PR3) — create-form live macro total ─────────────────────────
+
+/** A create-recipe form ingredient row, as far as the macro total cares. */
+export type RecipeDraftIngredientRow = {
+  foodId: string | null;
+  /** Absolute amount in the row's own unit (grams, ml, …); null = unset. */
+  quantity: number | null;
+};
+
+/**
+ * Client-side live macro total for the create-recipe form (`recipe-create`
+ * route): sum of each LINKED row's food macros × quantity/servingSize.
+ * Unlinked rows (no `foodId`) and rows with a null/non-positive quantity
+ * contribute 0 — the presenter renders a "no macros — link a food" hint for
+ * those rather than silently omitting them from the total.
+ *
+ * This REPLACES the prototype's fictional "auto-estimate macros" AI toggle:
+ * there's no such backend capability — a recipe's macros are always derived
+ * from its linked foods, exactly like `createRecipeCommand`'s optimistic
+ * totals and the server's own materialisation on `POST /recipes`. Pure; no
+ * rounding until the final sum (avoids compounding per-row rounding error).
+ */
+export function computeRecipeDraftMacros(
+  rows: readonly RecipeDraftIngredientRow[],
+  getFood: (foodId: string) => Food | null | undefined,
+): MacroSum {
+  const raw = rows.reduce<MacroSum>(
+    (acc, row) => {
+      if (!row.foodId || row.quantity === null || row.quantity <= 0) {
+        return acc;
+      }
+      const food = getFood(row.foodId);
+      if (!food) return acc;
+      const size = food.servingSize > 0 ? food.servingSize : 100;
+      const factor = row.quantity / size;
+      return {
+        kcal: acc.kcal + food.kcal * factor,
+        proteinG: acc.proteinG + food.proteinG * factor,
+        carbsG: acc.carbsG + food.carbsG * factor,
+        fatG: acc.fatG + food.fatG * factor,
+      };
+    },
+    { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+  return {
+    kcal: Math.round(raw.kcal),
+    proteinG: Math.round(raw.proteinG),
+    carbsG: Math.round(raw.carbsG),
+    fatG: Math.round(raw.fatG),
+  };
+}

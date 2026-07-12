@@ -86,6 +86,8 @@ import type {
   EditEntryInput,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  ExtractedRecipe,
+  ExtractRecipePhotoInput,
   Food,
   FuelToday,
   ImportedRecipe,
@@ -94,6 +96,7 @@ import type {
   NutritionEntry,
   NutritionTarget,
   Recipe,
+  ResolveIngredientInput,
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
@@ -958,6 +961,31 @@ export interface ApiPort {
   estimateFromText(
     input: EstimateFromTextInput,
   ): Promise<Result<AiEstimate, ApiError>>;
+
+  /**
+   * Recipes AI (PR3) — AI photo extraction of a full recipe (cookbook page,
+   * screenshot, handwritten card) into a manual-create pre-fill
+   * (`POST /nutrition/ai/extract-recipe`). ONLINE-ONLY, never queued — same
+   * posture as `estimateFromPhoto`. Gated server-side by `ai_access` (402
+   * `entitlement_denied`); daily AI ceiling (429); `422 ai_unreadable`
+   * (unparseable photo); `503 ai_unavailable` (provider outage); `413`
+   * (image too large). Callers distinguish by `err.status`, mirroring
+   * `estimateFromPhoto`'s established pattern.
+   */
+  extractRecipeFromPhoto(
+    input: ExtractRecipePhotoInput,
+  ): Promise<Result<ExtractedRecipe, ApiError>>;
+
+  /**
+   * Recipes AI (PR3) — resolve a free-text ingredient name to a Food via AI
+   * when a manual food search comes up empty
+   * (`POST /nutrition/ai/resolve-ingredient`). Creates (and returns) an
+   * `ai_recognized` per-100g food. ONLINE-ONLY, never queued. Same gating /
+   * error-mapping contract as `extractRecipeFromPhoto`.
+   */
+  resolveIngredient(
+    input: ResolveIngredientInput,
+  ): Promise<Result<Food, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

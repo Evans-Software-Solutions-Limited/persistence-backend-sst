@@ -13,6 +13,7 @@ import {
   computeConsumed,
   computeFuelTargetsPreview,
   computeManualFuelTargetsPreview,
+  computeRecipeDraftMacros,
   computeRemaining,
   defaultMealSlot,
   detectDailyGoalHit,
@@ -800,5 +801,93 @@ describe("defaultMealSlot", () => {
 
   it("returns dinner at 18:00 (well past the boundary)", () => {
     expect(atHour(18)).toBe("dinner");
+  });
+});
+
+describe("computeRecipeDraftMacros", () => {
+  const foods: Record<string, Food> = {
+    f1: food({
+      id: "f1",
+      kcal: 150,
+      proteinG: 5,
+      carbsG: 27,
+      fatG: 3,
+      servingSize: 100,
+    }),
+  };
+  const getFood = (id: string): Food | null => foods[id] ?? null;
+
+  it("sums a single linked row scaled by quantity/servingSize", () => {
+    // 200g of a food whose macros are per-100g → doubled.
+    expect(
+      computeRecipeDraftMacros([{ foodId: "f1", quantity: 200 }], getFood),
+    ).toEqual({ kcal: 300, proteinG: 10, carbsG: 54, fatG: 6 });
+  });
+
+  it("sums multiple linked rows", () => {
+    expect(
+      computeRecipeDraftMacros(
+        [
+          { foodId: "f1", quantity: 100 },
+          { foodId: "f1", quantity: 50 },
+        ],
+        getFood,
+      ),
+    ).toEqual({ kcal: 225, proteinG: 8, carbsG: 41, fatG: 5 });
+  });
+
+  it("contributes 0 for an unlinked row (no foodId)", () => {
+    expect(
+      computeRecipeDraftMacros([{ foodId: null, quantity: 100 }], getFood),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  });
+
+  it("contributes 0 for a null quantity", () => {
+    expect(
+      computeRecipeDraftMacros([{ foodId: "f1", quantity: null }], getFood),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  });
+
+  it("contributes 0 for a zero/negative quantity", () => {
+    expect(
+      computeRecipeDraftMacros([{ foodId: "f1", quantity: 0 }], getFood),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+    expect(
+      computeRecipeDraftMacros([{ foodId: "f1", quantity: -5 }], getFood),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  });
+
+  it("contributes 0 when the linked foodId isn't resolvable (cache miss)", () => {
+    expect(
+      computeRecipeDraftMacros([{ foodId: "missing", quantity: 100 }], getFood),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  });
+
+  it("falls back to a 100g basis when servingSize is 0", () => {
+    const zeroSizeFoods: Record<string, Food> = {
+      f2: food({
+        id: "f2",
+        kcal: 200,
+        proteinG: 20,
+        carbsG: 0,
+        fatG: 0,
+        servingSize: 0,
+      }),
+    };
+    expect(
+      computeRecipeDraftMacros(
+        [{ foodId: "f2", quantity: 50 }],
+        (id) => zeroSizeFoods[id] ?? null,
+      ),
+    ).toEqual({ kcal: 100, proteinG: 10, carbsG: 0, fatG: 0 });
+  });
+
+  it("returns all-zero for an empty row list", () => {
+    expect(computeRecipeDraftMacros([], getFood)).toEqual({
+      kcal: 0,
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0,
+    });
   });
 });

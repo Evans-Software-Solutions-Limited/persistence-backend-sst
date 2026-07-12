@@ -4,6 +4,7 @@ import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapt
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Food, Meal, Recipe } from "@/domain/models/nutrition";
+import { useAddRecipeMenu } from "@/state/add-recipe-menu";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -138,6 +139,7 @@ describe("RecipesLibraryContainer", () => {
     mockProbe.last = null;
     mockRouterBack.mockClear();
     mockRouterPush.mockClear();
+    useAddRecipeMenu.getState().closeMenu();
   });
 
   it("defaults to the Meals tab and renders cached meal rows", async () => {
@@ -422,7 +424,7 @@ describe("RecipesLibraryContainer", () => {
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
 
     mockProbe.last!.onAdd();
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/fuel/save-meal");
+    expect(useAddRecipeMenu.getState().open).toBe(true);
 
     mockProbe.last!.onSelectMeal("m1");
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/fuel/meal/m1");

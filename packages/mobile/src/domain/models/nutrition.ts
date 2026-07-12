@@ -289,3 +289,38 @@ export type EstimateFromPhotoInput = {
 export type EstimateFromTextInput = {
   description: string;
 };
+
+// -- Recipes AI (PR3): snap-photo recipe extraction + AI ingredient resolve --
+//
+// Mirrors the backend `ExtractedRecipe` shape EXACTLY (camelCase). Online-only
+// — never queued (same posture as `estimateFromPhoto`/`estimateFromText`).
+
+/** A single ingredient line the AI extracted from a recipe photo. */
+export type ExtractedIngredient = {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+};
+
+/** `POST /nutrition/ai/extract-recipe` response. */
+export type ExtractedRecipe = {
+  title: string;
+  servings: number | null;
+  timeMinutes: number | null;
+  ingredients: ExtractedIngredient[];
+  steps: string[];
+  /** 0..1 overall extraction confidence. */
+  confidence: number;
+  notes: string | null;
+};
+
+/** `POST /nutrition/ai/extract-recipe` request body. */
+export type ExtractRecipePhotoInput = {
+  imageBase64: string;
+  mediaType: "image/jpeg" | "image/png";
+};
+
+/** `POST /nutrition/ai/resolve-ingredient` request body. */
+export type ResolveIngredientInput = {
+  name: string;
+};

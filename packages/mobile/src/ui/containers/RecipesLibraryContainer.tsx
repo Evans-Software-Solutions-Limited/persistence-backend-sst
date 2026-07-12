@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { router } from "expo-router";
+import { useAddRecipeMenu } from "@/state/add-recipe-menu";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
@@ -13,8 +14,10 @@ import {
 
 /**
  * <RecipesLibraryContainer> — Fuel → Recipes library (recipes.jsx
- * `RecipesScreen`, no-AI PR1 slice). Wires the cache-first recipe/meal reads
- * + local tab/search state into the pure presenter.
+ * `RecipesScreen`). Wires the cache-first recipe/meal reads + local
+ * tab/search state into the pure presenter. The "+" opens the 4-path
+ * <AddRecipeMenuContainer> sheet (Recipes AI PR3) — replacing PR1's direct
+ * push to Save-a-meal.
  *
  * `GET /meals` (and the cached list it seeds) omits item detail — see
  * `mealsListHandler.ts`'s "cards; items omitted" contract — so a meal row's
@@ -125,10 +128,12 @@ export function RecipesLibraryContainer() {
     void (tab === "Meals" ? meals.refresh() : recipes.refresh());
   }, [tab, meals, recipes]);
 
+  const openAddRecipeMenu = useAddRecipeMenu((s) => s.openMenu);
+
   const onBack = useCallback(() => router.back(), []);
   const onAdd = useCallback(() => {
-    router.push("/(app)/fuel/save-meal" as never);
-  }, []);
+    openAddRecipeMenu();
+  }, [openAddRecipeMenu]);
   const onSelectMeal = useCallback((id: string) => {
     router.push(`/(app)/fuel/meal/${id}` as never);
   }, []);

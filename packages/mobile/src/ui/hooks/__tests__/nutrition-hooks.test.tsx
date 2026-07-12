@@ -13,6 +13,8 @@ import {
   useCreateRecipe,
   useDeleteEntry,
   useEditEntry,
+  useExtractRecipePhoto,
+  type ExtractRecipeResult,
   useGetFuelToday,
   useGetMeals,
   useGetNutritionEntries,
@@ -24,6 +26,7 @@ import {
   type ImportRecipeResult,
   useLogEntry,
   useResolveBarcode,
+  useResolveIngredient,
   useSearchFoods,
   useSetTargets,
   useSetWater,
@@ -532,6 +535,94 @@ describe("useImportRecipeUrl", () => {
       res = await result.current.mutate("https://x.test/x");
     });
     expect(res?.status).toBe("error");
+  });
+});
+
+describe("useExtractRecipePhoto", () => {
+  it("returns the extracted recipe on success", async () => {
+    const { api, wrapper } = setup();
+    api.extractedRecipe = {
+      title: "Shakshuka",
+      servings: 4,
+      timeMinutes: 30,
+      ingredients: [{ name: "Eggs", quantity: 4, unit: null }],
+      steps: ["Cook it"],
+      confidence: 0.9,
+      notes: null,
+    };
+    const { result } = renderHook(() => useExtractRecipePhoto(), { wrapper });
+    let res: ExtractRecipeResult | undefined;
+    await act(async () => {
+      res = await result.current.mutate("base64==", "image/jpeg");
+    });
+    expect(res).toEqual({
+      status: "ok",
+      recipe: expect.objectContaining({ title: "Shakshuka" }),
+    });
+    expect(api.extractRecipeFromPhotoCalls).toEqual([
+      { imageBase64: "base64==", mediaType: "image/jpeg" },
+    ]);
+    expect(result.current.isExtracting).toBe(false);
+  });
+
+  it("maps 422 → unreadable", async () => {
+    const { api, wrapper } = setup();
+    api.nextRecipeAiError = { status: 422, message: "ai_unreadable" };
+    const { result } = renderHook(() => useExtractRecipePhoto(), { wrapper });
+    let res: ExtractRecipeResult | undefined;
+    await act(async () => {
+      res = await result.current.mutate("b", "image/jpeg");
+    });
+    expect(res).toEqual({ status: "unreadable" });
+  });
+
+  it("maps 429 → limit", async () => {
+    const { api, wrapper } = setup();
+    api.nextRecipeAiError = { status: 429, message: "ai_daily_limit" };
+    const { result } = renderHook(() => useExtractRecipePhoto(), { wrapper });
+    let res: ExtractRecipeResult | undefined;
+    await act(async () => {
+      res = await result.current.mutate("b", "image/jpeg");
+    });
+    expect(res).toEqual({ status: "limit" });
+  });
+
+  it("surfaces other errors (e.g. 402/503)", async () => {
+    const { api, wrapper } = setup();
+    api.nextRecipeAiError = { status: 503, message: "ai_unavailable" };
+    const { result } = renderHook(() => useExtractRecipePhoto(), { wrapper });
+    let res: ExtractRecipeResult | undefined;
+    await act(async () => {
+      res = await result.current.mutate("b", "image/jpeg");
+    });
+    expect(res?.status).toBe("error");
+  });
+});
+
+describe("useResolveIngredient", () => {
+  it("returns the resolved food on success", async () => {
+    const { api, wrapper } = setup();
+    const { result } = renderHook(() => useResolveIngredient(), { wrapper });
+    let res: Food | null | undefined;
+    await act(async () => {
+      res = await result.current.mutate("Chicken breast");
+    });
+    expect(res?.name).toBe("Chicken breast");
+    expect(api.resolveIngredientCalls).toEqual([{ name: "Chicken breast" }]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isResolving).toBe(false);
+  });
+
+  it("returns null and surfaces the error on failure", async () => {
+    const { api, wrapper } = setup();
+    api.nextRecipeAiError = { status: 429, message: "ai_daily_limit" };
+    const { result } = renderHook(() => useResolveIngredient(), { wrapper });
+    let res: Food | null | undefined;
+    await act(async () => {
+      res = await result.current.mutate("Chicken breast");
+    });
+    expect(res).toBeNull();
+    expect(result.current.error?.status).toBe(429);
   });
 });
 

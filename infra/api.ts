@@ -101,6 +101,10 @@ coreAPI.route("$default", {
     // Opus 4.8 access and a cheaper/faster model id becomes preferable.
     AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
     AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // Recipes AI (recipe-photo extraction). Same IAM permissions cover it —
+    // the `inference-profile/eu.anthropic.*` + `foundation-model/anthropic.*`
+    // wildcards above already authorize this model id, no IAM change needed.
+    AI_RECIPE_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
     // Coach AI Client Summary (Coach Mode Phase 6 — specs/10-trainer-features
     // design.md § Module g). Same Bedrock IAM auth as above; the summary is a
     // short synthesis over Client Detail modules a–f, so it defaults to the
@@ -112,6 +116,9 @@ coreAPI.route("$default", {
     // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.
     AI_PHOTO_DAILY_LIMIT: "12",
     AI_TEXT_DAILY_LIMIT: "30",
+    // Recipes AI daily ceilings (same cost-backstop rationale as above).
+    AI_RECIPE_DAILY_LIMIT: "12",
+    AI_RESOLVE_DAILY_LIMIT: "60",
     // Per-COACH daily ceiling for AI Client Summaries (design.md § Module g
     // "Per-coach daily backstop"). Net worst case min(2 × opened-clients,
     // this). Sized for a full coaching roster; a cost backstop, not a quota.
