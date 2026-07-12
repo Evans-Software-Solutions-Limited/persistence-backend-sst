@@ -272,6 +272,17 @@ export interface StoragePort {
   ): void;
 
   /**
+   * Read the coach's cached Workout-library list (all workouts they authored,
+   * UNFILTERED). A DEDICATED slot — distinct from the shared `mine` list cache,
+   * which for a trainer holds the owner-visible-filtered set — so the coach
+   * library works offline without colliding. Null when never fetched.
+   */
+  getCachedCoachWorkoutLibrary(userId: string): Workout[] | null;
+
+  /** Write-through the coach's Workout-library list. Stamps `syncedAt = now()`. */
+  cacheCoachWorkoutLibrary(userId: string, workouts: Workout[]): void;
+
+  /**
    * Remove a workout from list + detail (+ history) caches after a successful
    * delete. No-op when the rows aren't cached.
    */

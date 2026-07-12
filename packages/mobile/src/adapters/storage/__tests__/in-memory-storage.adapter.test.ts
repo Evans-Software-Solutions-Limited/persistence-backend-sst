@@ -858,6 +858,19 @@ describe("InMemoryStorageAdapter", () => {
       expect(storage.getCachedWorkoutHistory("user-2", "w-1")).toBeNull();
     });
 
+    it("caches the coach workout library in a slot separate from mine", () => {
+      expect(storage.getCachedCoachWorkoutLibrary("user-1")).toBeNull();
+      const lib = [buildWorkout({ id: "w-1" }), buildWorkout({ id: "w-2" })];
+      storage.cacheCoachWorkoutLibrary("user-1", lib);
+
+      expect(
+        storage.getCachedCoachWorkoutLibrary("user-1")?.map((w) => w.id),
+      ).toEqual(["w-1", "w-2"]);
+      // Distinct from the shared mine list cache + isolated per user.
+      expect(storage.getCachedWorkoutsList("user-1", "mine")).toBeNull();
+      expect(storage.getCachedCoachWorkoutLibrary("user-2")).toBeNull();
+    });
+
     it("removeCachedWorkout also drops the cached history", () => {
       const history = {
         completedCount: 1,
