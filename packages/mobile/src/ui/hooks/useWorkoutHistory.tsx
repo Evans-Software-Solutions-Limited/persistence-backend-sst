@@ -28,7 +28,13 @@ export function useWorkoutHistory(
 ): WorkoutHistoryState {
   const { api } = useAdapters();
   const [history, setHistory] = useState<WorkoutHistory | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  // Seed loading TRUE for a fetchable id so the first frame (before the fetch
+  // effect runs) doesn't briefly render the "Not done yet" empty state for a
+  // workout that actually has history. Null / optimistic `local-` ids never
+  // fetch, so they start false.
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !!workoutId && !workoutId.startsWith("local-"),
+  );
   const [error, setError] = useState<ApiError | null>(null);
 
   // Track the workoutId a response belongs to so a slow fetch for a

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { createWorkoutCommand } from "@/application/commands/create-workout.command";
 import type { CreateWorkoutInput } from "@/domain/models/workout";
@@ -61,6 +61,10 @@ export function WorkoutCreatorContainer() {
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
+  // Synchronous re-entry guard for the async create-and-assign path: the Save
+  // button's `disabled` only applies after a re-render, so a sub-frame double
+  // tap could otherwise fire two create+assign round-trips.
+  const submitInFlightRef = useRef(false);
 
   const onAddExercise = useCallback(() => setPickerVisible(true), []);
   const onClosePicker = useCallback(() => setPickerVisible(false), []);
@@ -97,6 +101,8 @@ export function WorkoutCreatorContainer() {
 
     // Coach create-and-assign — direct online so we get the server workout id.
     if (assignClientId) {
+      if (submitInFlightRef.current) return;
+      submitInFlightRef.current = true;
       setIsSubmitting(true);
       void (async () => {
         try {
@@ -120,6 +126,7 @@ export function WorkoutCreatorContainer() {
           }
           router.back();
         } finally {
+          submitInFlightRef.current = false;
           setIsSubmitting(false);
         }
       })();
