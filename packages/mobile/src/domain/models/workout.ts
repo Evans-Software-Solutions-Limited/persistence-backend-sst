@@ -157,6 +157,19 @@ export type CachedWorkoutDetail = {
 };
 
 /**
+ * Locally-cached per-workout history slice. One row per `(userId, workoutId)`
+ * in the `cached_workout_history` SQLite table, feeding the detail hero's
+ * history block offline (cache-first, mirroring `CachedWorkoutDetail`).
+ */
+export type CachedWorkoutHistory = {
+  userId: string;
+  workoutId: string;
+  history: WorkoutHistory;
+  /** ISO timestamp when the payload was last refreshed from the backend. */
+  syncedAt: string;
+};
+
+/**
  * 5-minute TTL — same as dashboard. Workouts list shifts when a session
  * completes or a PT assigns a new template; tighter than the 24h
  * reference-list cache. Exported so both query layer and "last synced"
@@ -186,6 +199,18 @@ export function isWorkoutsListStale(
  */
 export function isWorkoutDetailStale(
   cached: CachedWorkoutDetail | null,
+  now: number = Date.now(),
+  staleAfterMs: number = WORKOUTS_LIST_STALE_AFTER_MS,
+): boolean {
+  if (!cached) return true;
+  const syncedAt = Date.parse(cached.syncedAt);
+  if (Number.isNaN(syncedAt)) return true;
+  return now - syncedAt >= staleAfterMs;
+}
+
+/** Same TTL semantics for the per-workout history cache slice. */
+export function isWorkoutHistoryStale(
+  cached: CachedWorkoutHistory | null,
   now: number = Date.now(),
   staleAfterMs: number = WORKOUTS_LIST_STALE_AFTER_MS,
 ): boolean {

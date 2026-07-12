@@ -50,8 +50,10 @@ import type {
 } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
+  CachedWorkoutHistory,
   CachedWorkoutsList,
   Workout,
+  WorkoutHistory,
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
@@ -164,6 +166,17 @@ export class SQLiteStorageAdapter implements StoragePort {
       );
 
       CREATE TABLE IF NOT EXISTS cached_workout_detail (
+        user_id TEXT NOT NULL,
+        workout_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, workout_id)
+      );
+
+      -- Workout Authoring v2 (S2): per-workout completed-session history for
+      -- the detail hero. New table → CREATE IF NOT EXISTS in initialize() is
+      -- safe for both fresh + existing installs (no ALTER, no migration).
+      CREATE TABLE IF NOT EXISTS cached_workout_history (
         user_id TEXT NOT NULL,
         workout_id TEXT NOT NULL,
         payload TEXT NOT NULL,
@@ -1095,11 +1108,57 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  getCachedWorkoutHistory(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutHistory | null {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, workout_id, payload, synced_at FROM cached_workout_history
+       WHERE user_id = ? AND workout_id = ?`,
+      [userId, workoutId],
+    ) as {
+      user_id: string;
+      workout_id: string;
+      payload: string;
+      synced_at: string;
+    }[];
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      workoutId: row.workout_id,
+      history: JSON.parse(row.payload) as WorkoutHistory,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  cacheWorkoutHistory(
+    userId: string,
+    workoutId: string,
+    history: WorkoutHistory,
+  ): void {
+    const db = this.getDb();
+    const syncedAt = new Date().toISOString();
+    db.runSync(
+      `INSERT INTO cached_workout_history (user_id, workout_id, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, workout_id) DO UPDATE SET
+         payload = excluded.payload,
+         synced_at = excluded.synced_at`,
+      [userId, workoutId, JSON.stringify(history), syncedAt],
+    );
+  }
+
   removeCachedWorkout(userId: string, workoutId: string): void {
     const db = this.getDb();
     db.withTransactionSync(() => {
       db.runSync(
         `DELETE FROM cached_workout_detail WHERE user_id = ? AND workout_id = ?`,
+        [userId, workoutId],
+      );
+      db.runSync(
+        `DELETE FROM cached_workout_history WHERE user_id = ? AND workout_id = ?`,
         [userId, workoutId],
       );
       // List slices store full payloads; rewrite the slice without the row.
@@ -2355,6 +2414,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       DELETE FROM sync_queue;
       DELETE FROM cached_workouts;
       DELETE FROM cached_workout_detail;
+      DELETE FROM cached_workout_history;
       DELETE FROM cached_exercises;
       DELETE FROM active_sessions;
       DELETE FROM session_exercises;

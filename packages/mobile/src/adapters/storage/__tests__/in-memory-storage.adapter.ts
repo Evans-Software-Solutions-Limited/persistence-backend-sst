@@ -26,8 +26,10 @@ import type {
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import type {
   CachedWorkoutDetail,
+  CachedWorkoutHistory,
   CachedWorkoutsList,
   Workout,
+  WorkoutHistory,
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
@@ -90,6 +92,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private profilePageCache: Map<string, CachedProfilePage> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
+  private workoutHistoryCache: Map<string, CachedWorkoutHistory> = new Map();
   private activeSessions: Map<string, WorkoutSession> = new Map();
   private recordResponses: Map<string, RecordResponseSummary> = new Map();
   private personalRecords: Map<string, PersonalRecord[]> = new Map();
@@ -569,8 +572,32 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  getCachedWorkoutHistory(
+    userId: string,
+    workoutId: string,
+  ): CachedWorkoutHistory | null {
+    return (
+      this.workoutHistoryCache.get(this.workoutDetailKey(userId, workoutId)) ??
+      null
+    );
+  }
+
+  cacheWorkoutHistory(
+    userId: string,
+    workoutId: string,
+    history: WorkoutHistory,
+  ): void {
+    this.workoutHistoryCache.set(this.workoutDetailKey(userId, workoutId), {
+      userId,
+      workoutId,
+      history,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
   removeCachedWorkout(userId: string, workoutId: string): void {
     this.workoutDetailCache.delete(this.workoutDetailKey(userId, workoutId));
+    this.workoutHistoryCache.delete(this.workoutDetailKey(userId, workoutId));
     for (const [key, slice] of this.workoutsListCache.entries()) {
       if (slice.userId !== userId) continue;
       const filtered = slice.workouts.filter((w) => w.id !== workoutId);
@@ -872,6 +899,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.profilePageCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
+    this.workoutHistoryCache.clear();
     this.activeSessions.clear();
     this.personalRecords.clear();
     this.recentSets.clear();
