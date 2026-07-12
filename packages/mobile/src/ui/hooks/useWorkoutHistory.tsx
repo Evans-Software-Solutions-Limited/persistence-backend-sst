@@ -12,13 +12,18 @@ import { useAuth } from "./useAuth";
  * Per-workout completed-session history for the detail hero's market-standard
  * stats block (LAST DONE / COMPLETED × / AVG TIME + last-session recap).
  *
- * Cache-first (mirrors `useWorkout`): a synchronous read from
- * `cached_workout_history` renders immediately, then a one-shot background
- * refresh against `GET /workouts/:id/history` fires when the cached row is
- * stale or missing. Offline / errored the last-known history stays on screen
- * (the block is a non-critical stat panel); a `null` history + a
- * `completedCount === 0` history both read as "no history yet" in the
- * presenter. Optimistic `local-` ids never fetch (no server row yet).
+ * Cache-first (mirrors `useWorkout`): a read from `cached_workout_history`
+ * renders as soon as the session resolves, then a one-shot background refresh
+ * against `GET /workouts/:id/history` fires when the cached row is stale or
+ * missing. Offline / errored the last-known history stays on screen (the block
+ * is a non-critical stat panel); a `null` history + a `completedCount === 0`
+ * history both read as "no history yet" in the presenter. Optimistic `local-`
+ * ids never fetch (no server row yet).
+ *
+ * `isLoading` is DERIVED each render (not a separate state) so it can't stick
+ * true after a same-mount workoutId swap and doesn't flash "Not done yet"
+ * before an imminent first fetch — it's true only when we have nothing to show
+ * (no cache) and the fetch for THIS identity hasn't resolved yet.
  *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/requirements.md STORY-005 AC 5.2
  *       (S2 offline-cache upgrade of the original online-direct hook)
@@ -42,11 +47,14 @@ export function useWorkoutHistory(
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
+  const fetchable = isFetchable(userId, workoutId);
+  const key = fetchable ? `${userId}::${workoutId}` : null;
+
   const [cacheVersion, setCacheVersion] = useState(0);
 
   const initial = useMemo(() => {
     void cacheVersion;
-    if (!isFetchable(userId, workoutId)) {
+    if (!fetchable) {
       return { cached: null as CachedWorkoutHistory | null, isStale: true };
     }
     const cached = storage.getCachedWorkoutHistory(
@@ -54,17 +62,15 @@ export function useWorkoutHistory(
       workoutId as string,
     );
     return { cached, isStale: isWorkoutHistoryStale(cached) };
-  }, [storage, userId, workoutId, cacheVersion]);
+  }, [storage, userId, workoutId, fetchable, cacheVersion]);
 
   const [history, setHistory] = useState<WorkoutHistory | null>(
     initial.cached?.history ?? null,
   );
-  // Seed loading TRUE when we'll fetch and have no cache to show yet, so the
-  // presenter doesn't flash "Not done yet" before the first result lands.
-  const [isLoading, setIsLoading] = useState<boolean>(
-    () => isFetchable(userId, workoutId) && initial.cached === null,
-  );
   const [error, setError] = useState<ApiError | null>(null);
+  // The identity whose fetch has settled (resolved or errored). Lets the
+  // derived `isLoading` fall to false after an error that left no cache.
+  const [resolvedKey, setResolvedKey] = useState<string | null>(null);
 
   useEffect(() => {
     setHistory(initial.cached?.history ?? null);
@@ -72,26 +78,21 @@ export function useWorkoutHistory(
 
   // Mirror the live (userId, workoutId) to a ref so a slow refresh can't write
   // state for a workout the user has since navigated away from.
-  const latestKeyRef = useRef<string | null>(
-    isFetchable(userId, workoutId) ? `${userId}::${workoutId}` : null,
-  );
+  const latestKeyRef = useRef<string | null>(key);
   useEffect(() => {
-    latestKeyRef.current = isFetchable(userId, workoutId)
-      ? `${userId}::${workoutId}`
-      : null;
-  }, [userId, workoutId]);
+    latestKeyRef.current = key;
+  }, [key]);
 
   // Single-shot per identity (the one-shot auto-refresh effect is the only
   // caller — no pull-to-refresh here), so no in-flight dedupe is needed; the
   // `latestKeyRef` guard still prevents a mid-flight identity swap writing
   // stale state.
   const refresh = useCallback(async () => {
-    const key = `${userId}::${workoutId}`;
-    setIsLoading(true);
+    const fetchKey = `${userId}::${workoutId}`;
     setError(null);
     try {
       const result = await api.getWorkoutHistory(workoutId as string);
-      if (latestKeyRef.current !== key) return;
+      if (latestKeyRef.current !== fetchKey) return;
       if (!result.ok) {
         // Non-fatal: keep whatever cached history is already on screen.
         setError(result.error);
@@ -105,32 +106,30 @@ export function useWorkoutHistory(
       setHistory(result.value);
       setCacheVersion((v) => v + 1);
     } finally {
-      if (latestKeyRef.current === key) setIsLoading(false);
+      // Mark this identity settled so the empty state can show after an
+      // errored first fetch (only when the identity is still current).
+      if (latestKeyRef.current === fetchKey) setResolvedKey(fetchKey);
     }
   }, [api, storage, userId, workoutId]);
-
-  // Non-fetchable (null / local- id): clear state, no round-trip.
-  useEffect(() => {
-    if (isFetchable(userId, workoutId)) return;
-    setHistory(null);
-    setError(null);
-    setIsLoading(false);
-  }, [userId, workoutId]);
 
   // One-shot auto-refresh per identity when the cache is stale/missing.
   const autoRefreshedForKeyRef = useRef<string | null>(null);
   const initialIsStale = initial.isStale;
   useEffect(() => {
-    if (!isFetchable(userId, workoutId)) {
+    if (!fetchable) {
       autoRefreshedForKeyRef.current = null;
       return;
     }
-    const key = `${userId}::${workoutId}`;
     if (autoRefreshedForKeyRef.current === key) return;
     if (!initialIsStale) return;
     autoRefreshedForKeyRef.current = key;
     void refresh();
-  }, [userId, workoutId, initialIsStale, refresh]);
+  }, [fetchable, key, initialIsStale, refresh]);
+
+  // Loading only when we have nothing to show yet and this identity's fetch
+  // hasn't settled. A present (even stale) cache → not loading (show it).
+  const isLoading =
+    key !== null && history === null && initial.isStale && resolvedKey !== key;
 
   return { history, isLoading, error };
 }
