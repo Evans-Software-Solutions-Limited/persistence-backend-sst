@@ -586,8 +586,8 @@
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
             <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>44cdaa4</code></span>
-            <span class="meta-pill">📅 Synced 29 Jun 2026</span>
+            <span class="meta-pill">🔀 <code>9464675</code></span>
+            <span class="meta-pill">📅 Synced 12 Jul 2026 (late eve)</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-06-28, commit 96e43e3)
+      // DATA  (verified against repo on 2026-07-12, main HEAD 9464675)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -705,25 +705,25 @@
         {
           id: "c1",
           area: "compliance",
-          status: "todo",
+          status: "done",
           title: "In-app account deletion",
-          note: "Absent end-to-end. Apple §5.1.1(v) hard reject. Privacy screen currently falsely promises this feature. Needs DELETE /account endpoint + UI + data purge.",
+          note: "SHIPPED (PR #140). DELETE /account (accountDeleteHandler.ts) with atomic purgeUserData + Stripe cancel + Supabase admin delete; mobile UI via PrivacySettingsContainer + useAuth.deleteAccount. Apple §5.1.1(v) satisfied.",
         },
 
         {
           id: "c2",
           area: "compliance",
-          status: "todo",
-          title: "NSPhotoLibraryUsageDescription",
-          note: "expo-image-picker plugin is configured with photosPermission — verify the explicit NSPhotoLibraryUsageDescription key is emitted in the production build (app.json infoPlist). Photo picker is actively used (avatar, meal photos).",
+          status: "done",
+          title: "iOS usage-description keys (photo + camera)",
+          note: "SHIPPED (PR #190). app.json infoPlist now emits both NSPhotoLibraryUsageDescription and NSCameraUsageDescription explicitly. Photo picker + camera actively used (avatar, meal photos, equipment scan).",
         },
 
         {
           id: "c3",
           area: "compliance",
-          status: "todo",
-          title: "Push notification delivery — no send path",
-          note: "Device registration (M7 ✅) and notification feed list (M7 ✅) both exist. Nothing actually sends a push to a device. Need FCM/APNs send call from backend event handlers.",
+          status: "done",
+          title: "Push notification delivery",
+          note: "SHIPPED (PR #142). notificationDispatcher.ts + expoPushClient.ts POST to Expo push; fired from trainer on-behalf, seats, invite-accept, client-request response, sendClientBrief, and the streak notifier. Device-token registration + feed already existed (M7).",
         },
 
         {
@@ -745,9 +745,9 @@
         {
           id: "c6",
           area: "compliance",
-          status: "todo",
-          title: "Privacy policy — no hosted URL + manifest review",
-          note: "App Store Connect requires a publicly accessible privacy policy URL. Currently only rendered inside the app at /profile/terms. PrivacyInfo.xcprivacy manifest also needs review.",
+          status: "partial",
+          title: "Privacy policy URL + PrivacyInfo manifest",
+          note: "Public /privacy + /terms pages shipped (packages/web) on custom domain persistence.evans-software-solutions.com (PRs #190/#193). REMAINING: no PrivacyInfo.xcprivacy manifest file in the repo yet, and the privacy URL still needs registering in App Store Connect.",
         },
 
         // ── PRODUCTION READY ──────────────────────────────────────────────────────
@@ -843,17 +843,17 @@
         {
           id: "a8",
           area: "athlete",
-          status: "todo",
+          status: "done",
           title: "Fuel → Targets (TDEE editor)",
-          note: "Stub screen (M9 PR3 — backend stub left in place). Blocks the Home Fuel ring from showing useful data for any new user who hasn't set targets.",
+          note: "SHIPPED (PRs #144/#147). Full TDEE calculator + macro editor (app/(app)/fuel/targets.tsx, FuelTargetsContainer/Presenter, useSetTargets) + manual calorie-goal path. Home Fuel ring now has real targets.",
         },
 
         {
           id: "a9",
           area: "athlete",
-          status: "todo",
+          status: "done",
           title: "Fuel → Recipes",
-          note: "Stub screen (M9 PR3). Backend recipes endpoints are fully implemented and functional — just needs the mobile screen.",
+          note: "SHIPPED — PR1 #209 (library + recipe/meal detail + Log-to-today + Save-a-meal) + PR2/PR3 #210 (AI recipe-photo extraction + food-linked create form with DB→AI ingredient resolution + URL import + snap-photo + 4-path Add menu). No migration. Not device-verified (needs EAS build); recipe-photo accuracy wants a live staging sanity-check.",
         },
 
         {
@@ -909,40 +909,48 @@
           id: "co3",
           area: "coach",
           status: "done",
-          title: "Invite client + log client weight",
-          note: "Invite code generation and acceptance flow + on-behalf body-weight logging both working.",
+          title: "Invite client (email) + log client weight",
+          note: "Email-invite flow + on-behalf body-weight logging working. The invite-CODE + QR + coach-accept flow is co8 (Phase 8).",
         },
 
         {
           id: "co4",
           area: "coach",
-          status: "todo",
+          status: "done",
           title: "Coach Home tab",
-          note: "Renders ComingSoon stub. Spec 10 (trainer features) is written and ready — needs implementation.",
+          note: "Coach Home v1 shipped (PR #197, Coach Mode Phase 10): daily triage screen — header, 'Needs you today' flagged clients, programme alerts, 'Train yourself' mode-switch. All data derived client-side from the existing roster; no new backend. Schedule hero deferred (no appointments domain). Device verify outstanding.",
         },
 
         {
           id: "co5",
           area: "coach",
-          status: "todo",
+          status: "done",
           title: "Programs tab",
-          note: "Renders ComingSoon stub. Program template model exists in DB schema. Assignment layer is entirely missing.",
+          note: "Shipped via spec-19 (PRs #148/#149/#152 backend + #166 mobile): coach Programmes tab, editor, and assign sheets all live.",
         },
 
         {
           id: "co6",
           area: "coach",
-          status: "todo",
+          status: "done",
           title: "Client Detail screen",
-          note: "Stub — only the log-weight action is wired. Full client overview, workout history, progress graphs all absent.",
+          note: "Full Client Detail shipped: overview, sessions, body-fat/weight trend, notes, goals, active-programme surface, upcoming-sessions with swap + start-live, send-brief. On-behalf logging wired.",
         },
 
         {
           id: "co7",
           area: "coach",
-          status: "todo",
+          status: "done",
           title: "Program / workout assignment",
-          note: "Needs: program_assignments table + 2 visibility flags (show_in_plan / show_in_library) + program CRUD/assign endpoints + individual workout assignment write path + assignment UI. Open decision: per-assignment vs per-template visibility flags.",
+          note: "Shipped via spec-19 unified programs model + M18 live-session: program_assignments + show_in_plan/show_in_library flags, program CRUD/assign endpoints, workout assignment + swap (PR #187). Visibility-flag decision resolved (per-template).",
+        },
+
+        {
+          id: "co8",
+          area: "coach",
+          status: "done",
+          title: "Invite code + QR + coach-accept (Phase 8)",
+          note: "Coach Mode Phase 8 shipped (PR #198 backend + #202 mobile) — this COMPLETES Coach Mode. Coach shares a short code + QR (encodes persistencemobile://accept-invite?code=…) with tap-to-copy + native Share; athlete redeems (typed or via deep link) → a pending request the COACH accepts (decision #2, not the athlete). New POST /trainers/me/relationships/:id/respond (at-cap accept = 402 upsell); an initiated_by direction column reconciles email-invite (client accepts) vs invite-code (coach accepts) so the shared notification trigger targets the right party. ⚠ 4 migrations auto-applied to staging on merge, PROD apply still MANUAL. Device verify needs a fresh EAS dev build (QR + expo-clipboard are native).",
         },
 
         // ── PRODUCTION READINESS — PHASE 12 ──────────────────────────────────────
@@ -957,9 +965,9 @@
         {
           id: "p2",
           area: "phase12",
-          status: "todo",
+          status: "partial",
           title: "12.2 — Reduced-motion contract",
-          note: "All animations must respect useReducedMotion(). Key surfaces: Ring, Bar, BottomSheet, ActiveWorkoutBar. Required for App Store accessibility compliance.",
+          note: "useReducedMotion() adopted in Ring, Bar, TabBar, ActiveWorkoutBarPresenter. REMAINING: BottomSheet not yet confirmed. Required for App Store accessibility compliance.",
         },
 
         {
@@ -981,9 +989,9 @@
         {
           id: "p5",
           area: "phase12",
-          status: "todo",
+          status: "partial",
           title: "12.5 — FlashList migration (6 surfaces)",
-          note: "Migrate: Exercises, Notifications, Clients, Programs, Recipes/Meals, PR History. Rule: ≥20 rows → FlashList.",
+          note: "Adopted in Notifications, Clients (ClientsListPresenter), QuickAdd. REMAINING: Exercises, Programs, Recipes/Meals, PR History. Rule: ≥20 rows → FlashList.",
         },
 
         {
@@ -1053,18 +1061,18 @@
         // ── DEFERRED — POST-LAUNCH ────────────────────────────────────────────────
         {
           id: "d1",
-          area: "deferred",
-          status: "deferred",
-          title: "AI nutrition (M9.5)",
-          note: "Snap-photo + free-text NLP meal logging. Backend gating exists; mobile UI is post-launch.",
+          area: "athlete",
+          status: "done",
+          title: "AI nutrition (M9.5 Snap AI)",
+          note: "SHIPPED — no longer post-launch. Snap-photo + free-text NLP meal logging live end-to-end: backend Bedrock estimation + daily ceilings (#151/#155/#156) and the mobile SnapAISheet flow (#154). Gated by subscription ai_access (premium + trainer tiers). Device verify needs an EAS build.",
         },
 
         {
           id: "d2",
-          area: "deferred",
-          status: "deferred",
+          area: "athlete",
+          status: "done",
           title: "Habits setup screen",
-          note: 'Backend chunk 1 merged. "Get started by setting your habits" CTA is a dead placeholder in You tab — acceptable gap for v1.',
+          note: "SHIPPED — no longer deferred. Habits-setup screen live (app/(app)/habits-setup.tsx, HabitSetupContainer/Presenter, PR #170 habits-phase7) with the You-tab CTA wired, plus follow-up fixes for disable-visibility, water bridge, and draft/save (#175–#178).",
         },
 
         {
@@ -1089,6 +1097,64 @@
           status: "deferred",
           title: "Light theme",
           note: "Dark-only for v1. Explicitly excluded from production-readiness spec by decision.",
+        },
+
+        // ── ADDED 2026-07-12 (merged since the 06-28 sweep) ──────────────────────
+        {
+          id: "a14",
+          area: "athlete",
+          status: "done",
+          title: "Athlete Training page",
+          note: "SHIPPED (PR #185). Train-tab overview (active programme → today's training → goals) + full goals self-service (view/create/edit/delete own; coach-assigned view-only with attribution).",
+        },
+        {
+          id: "r5",
+          area: "ready",
+          status: "done",
+          title: "Session-record idempotency (M13)",
+          note: "SHIPPED (PR #191). POST /sessions/record is replay-safe — a client-generated stable id de-dupes retries (unique index + short-circuit), so an offline flush can't double-write a session.",
+        },
+        {
+          id: "r6",
+          area: "ready",
+          status: "done",
+          title: "iOS IAP purchase-flow hardening",
+          note: "SHIPPED (PR #189). Fixed the success-tier race (async RC webhook vs immediate refetch) + deferred/Ask-to-Buy pending-purchase handling in IOSPurchaseFlowContainer.",
+        },
+        {
+          id: "r7",
+          area: "ready",
+          status: "done",
+          title: "User-facing support email",
+          note: "SHIPPED (PR #192). admin@evans-software-solutions.com wired across app + web (replaces the placeholder).",
+        },
+        {
+          id: "co9",
+          area: "coach",
+          status: "done",
+          title: "Coach on-behalf actions (Send brief / Swap / Start-live)",
+          note: "SHIPPED (M17/M18). Push+deep-link brief to the athlete Training page (#186), in-place assigned-workout swap (#187), and full in-person session recording on a client's behalf (#188, logged_by_user_id = coach).",
+        },
+        {
+          id: "co10",
+          area: "coach",
+          status: "done",
+          title: "Workout Authoring v2",
+          note: "SHIPPED (PRs #203/#204/#206/#208). Owner-visibility flag (coach workouts off the coach's personal list but still assignable), workout history block on detail, coach Workout library, create-and-assign, + offline caches for history & library.",
+        },
+        {
+          id: "co11",
+          area: "coach",
+          status: "done",
+          title: "Trainer client-caps enforcement",
+          note: "SHIPPED (PRs #195/#196). trainer_client_limit enforced on client join + invite (in-tx gate) and surfaced on the coach Clients screen (N-of-M slots + disabled invite at cap).",
+        },
+        {
+          id: "co12",
+          area: "coach",
+          status: "done",
+          title: "Coach Mode Phases 6/11/12 (AI summary, attribution, goals, notes)",
+          note: "SHIPPED. AI Client Summary card (#180), \"Set by Coach X\" attribution across athlete surfaces (#183/#184), goal-type picker + client notes CRUD (#181/#182).",
         },
       ];
 
