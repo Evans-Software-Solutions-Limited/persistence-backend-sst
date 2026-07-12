@@ -30,3 +30,11 @@ supabase/config.toml
 # Seed: committed binary dataset (ODbL) — never reflow
 packages/seed/data/off-uk.jsonl.gz
 **/*.gz
+
+# Hand-maintained ledgers — the canonical state file, the go-live tracker, and
+# the marketing scratch dir. Appended by hand every session; reflowing them
+# would just re-break the whole-tree `prettier --check .` (the staging deploy
+# runs it over the full checkout) on the next manual edit. Not code.
+STATE.md
+app-store-tracker.html
+marketing/
