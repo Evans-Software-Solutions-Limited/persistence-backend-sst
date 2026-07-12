@@ -49,9 +49,36 @@ export type Workout = {
   createdBy: string;
   visibility: WorkoutVisibility;
   estimatedDurationMinutes: number;
+  /**
+   * Owner-visibility: does this workout appear in its author's own personal
+   * "My Workouts"? Backend column `show_in_owner_library` (NOT NULL, default
+   * true). Coaches author client workouts with this false so they don't crowd
+   * the coach's personal library; a coach-only toggle in the creator overrides.
+   */
+  showInOwnerLibrary: boolean;
   exercises: WorkoutExercise[];
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * Per-workout completed-session history for the CALLING user, feeding the
+ * detail hero's market-standard stats block. From `GET /workouts/:id/history`.
+ * All aggregates are the caller's own completed sessions of this workout.
+ */
+export type WorkoutHistory = {
+  /** Times the user has completed this workout. 0 = never done. */
+  completedCount: number;
+  /** ISO timestamp of the most recent completed session, or null. */
+  lastCompletedAt: string | null;
+  /** Mean session length across completed sessions, in seconds, or null. */
+  avgDurationSeconds: number | null;
+  /** Most recent completed session's headline stats, or null when never done. */
+  lastSession: {
+    completedAt: string;
+    totalVolumeKg: number;
+    durationSeconds: number | null;
+  } | null;
 };
 
 /**
@@ -88,6 +115,8 @@ export type CreateWorkoutInput = {
   description?: string | null;
   visibility?: WorkoutVisibility;
   estimatedDurationMinutes?: number;
+  /** Absent => backend defaults true (personal). Coach flow sends false. */
+  showInOwnerLibrary?: boolean;
   exercises: WorkoutExerciseInput[];
 };
 
@@ -96,6 +125,7 @@ export type UpdateWorkoutInput = {
   description?: string | null;
   visibility?: WorkoutVisibility;
   estimatedDurationMinutes?: number;
+  showInOwnerLibrary?: boolean;
   exercises?: WorkoutExerciseInput[];
 };
 

@@ -41,6 +41,7 @@ const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   ],
   createdAt: "2026-04-28T00:00:00Z",
   updatedAt: "2026-04-28T00:00:00Z",
+  showInOwnerLibrary: overrides.showInOwnerLibrary ?? true,
   ...overrides,
 });
 

@@ -25,6 +25,7 @@ const buildWorkoutWith = (overrides: Partial<Workout> = {}): Workout => ({
   createdBy: "user-1",
   visibility: "private",
   estimatedDurationMinutes: 60,
+  showInOwnerLibrary: overrides.showInOwnerLibrary ?? true,
   exercises: [],
   createdAt: "2026-05-01T00:00:00.000Z",
   updatedAt: "2026-05-01T00:00:00.000Z",

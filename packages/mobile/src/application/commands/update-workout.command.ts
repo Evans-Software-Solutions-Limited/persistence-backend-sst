@@ -107,6 +107,8 @@ export function updateWorkoutCommand(
     visibility: input.visibility ?? cached.workout.visibility,
     estimatedDurationMinutes:
       input.estimatedDurationMinutes ?? cached.workout.estimatedDurationMinutes,
+    showInOwnerLibrary:
+      input.showInOwnerLibrary ?? cached.workout.showInOwnerLibrary,
     exercises,
     updatedAt: nowDate,
   };
@@ -136,6 +138,7 @@ export function updateWorkoutCommand(
       description: input.description,
       visibility: input.visibility,
       estimatedDurationMinutes: input.estimatedDurationMinutes,
+      showInOwnerLibrary: input.showInOwnerLibrary,
       exercises: input.exercises,
     },
     endpoint: `/workouts/${workoutId}`,
