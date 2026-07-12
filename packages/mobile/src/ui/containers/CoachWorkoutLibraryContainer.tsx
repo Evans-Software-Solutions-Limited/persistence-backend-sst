@@ -1,30 +1,49 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkoutLibraryPresenter";
 
 /**
  * Coach Workout library container. Coach-gated (a non-coach who deep-links
  * here is bounced to the tabs index, mirroring `ProgramEditorContainer`).
  *
- * Fetches the coach's authored workouts ONLINE-DIRECT and UNFILTERED
- * (`type="mine"`, no `ownerLibraryOnly`) into local state — deliberately NOT
- * the shared `useWorkouts` cache, which for a trainer holds the
- * owner-visible-filtered set. Re-reads on focus so a workout created/edited in
- * the modal stack reappears. Offline-cache upgrade is a tracked follow-up (S3).
+ * Cache-first (S3): a synchronous read from the DEDICATED
+ * `cached_coach_workout_library` slot renders immediately (so the library
+ * works offline), then every focus refreshes ONLINE + UNFILTERED
+ * (`type="mine"`, no `ownerLibraryOnly`) and writes through. The dedicated
+ * slot deliberately avoids the shared `useWorkouts`/`cached_workouts` mine
+ * cache, which for a trainer holds the owner-visible-filtered set.
  *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 11
  */
 export function CoachWorkoutLibraryContainer() {
-  const { api } = useAdapters();
+  const { api, storage } = useAdapters();
+  const { session } = useAuth();
+  const userId = session?.userId ?? null;
   const mode = useUserMode((s) => s.mode);
 
-  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  // Cache-first: read the dedicated coach-library slot as soon as the session
+  // (userId) resolves. `useAuth` seeds userId via an effect, so this lands on
+  // the render after mount — matching the `useWorkout` cache pattern.
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const cached = useMemo(() => {
+    void cacheVersion;
+    return userId ? storage.getCachedCoachWorkoutLibrary(userId) : null;
+  }, [storage, userId, cacheVersion]);
+
+  const [workouts, setWorkouts] = useState<Workout[]>(cached ?? []);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Surface the cached list as soon as it resolves (userId populates / a
+  // write-through bumps cacheVersion).
+  useEffect(() => {
+    if (cached) setWorkouts(cached);
+  }, [cached]);
 
   // Coach-only surface.
   useEffect(() => {
@@ -36,15 +55,18 @@ export function CoachWorkoutLibraryContainer() {
   const inFlightRef = useRef(false);
   const load = useCallback(
     async (isRefresh: boolean) => {
-      if (inFlightRef.current) return;
+      if (!userId || inFlightRef.current) return;
       inFlightRef.current = true;
       if (isRefresh) setIsRefreshing(true);
       try {
         const result = await api.getWorkouts({ type: "mine" });
         if (result.ok) {
+          storage.cacheCoachWorkoutLibrary(userId, result.value.workouts);
           setWorkouts(result.value.workouts);
+          setCacheVersion((v) => v + 1);
           setError(null);
         } else {
+          // Non-fatal: keep whatever cached list is already on screen.
           setError(result.error.message || "Something went wrong");
         }
       } finally {
@@ -53,11 +75,11 @@ export function CoachWorkoutLibraryContainer() {
         setIsRefreshing(false);
       }
     },
-    [api],
+    [api, storage, userId],
   );
 
-  // Initial load + re-read whenever the screen regains focus (returning from
-  // the create/edit modal).
+  // Cache-first refresh: re-read on every focus (also picks up a workout
+  // created/edited in the modal stack).
   useFocusEffect(
     useCallback(() => {
       void load(false);

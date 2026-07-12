@@ -900,6 +900,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
     this.workoutHistoryCache.clear();
+    this.coachWorkoutLibraryCache.clear();
     this.activeSessions.clear();
     this.personalRecords.clear();
     this.recentSets.clear();
@@ -953,6 +954,21 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
   invalidateGoals(userId: string): void {
     this.goalsCache.delete(userId);
+  }
+
+  // -- Coach Workout library cache (Workout Authoring v2, S3) --
+  private coachWorkoutLibraryCache: Map<
+    string,
+    { workouts: Workout[]; syncedAt: string }
+  > = new Map();
+  getCachedCoachWorkoutLibrary(userId: string): Workout[] | null {
+    return this.coachWorkoutLibraryCache.get(userId)?.workouts ?? null;
+  }
+  cacheCoachWorkoutLibrary(userId: string, workouts: Workout[]): void {
+    this.coachWorkoutLibraryCache.set(userId, {
+      workouts,
+      syncedAt: new Date().toISOString(),
+    });
   }
 
   getCachedStreaks(userId: string): Streak[] {
