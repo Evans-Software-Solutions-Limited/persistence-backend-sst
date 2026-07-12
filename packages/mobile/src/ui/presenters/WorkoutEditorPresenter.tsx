@@ -6,6 +6,7 @@ import {
 } from "@/ui/theme/workoutsLegacyTheme";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
+import { buildSupersetLetterMap } from "@/ui/presenters/supersetLetters";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import type { ApiError } from "@/shared/errors";
 import type {
@@ -19,6 +20,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -34,9 +36,12 @@ interface WorkoutEditorPresenterProps {
   readonly pickerVisible: boolean;
   readonly isLoading: boolean;
   readonly loadError: ApiError | null;
+  /** Coach editing context (`?ctx=coach`) → show the owner-visibility toggle. */
+  readonly isCoachContext: boolean;
   readonly onSetName: (value: string) => void;
   readonly onSetDescription: (value: string) => void;
   readonly onSetVisibility: (value: WorkoutFormState["visibility"]) => void;
+  readonly onSetShowInOwnerLibrary: (value: boolean) => void;
   readonly onAddExerciseTap: () => void;
   readonly onClosePicker: () => void;
 
@@ -71,9 +76,11 @@ export function WorkoutEditorPresenter({
   pickerVisible,
   isLoading,
   loadError,
+  isCoachContext,
   onSetName,
   onSetDescription,
   onSetVisibility,
+  onSetShowInOwnerLibrary,
   onAddExerciseTap,
   onClosePicker,
   onAddExercises,
@@ -119,6 +126,9 @@ export function WorkoutEditorPresenter({
   }
 
   const exercises = formState.exercises;
+  const supersetLetters = buildSupersetLetterMap(
+    exercises.map((ex) => ex.superset_group),
+  );
   const nameError =
     hasAttemptedSubmit && formState.name.trim().length === 0
       ? "Workout name is required"
@@ -221,6 +231,29 @@ export function WorkoutEditorPresenter({
                     })}
                   </View>
                 </View>
+
+                {isCoachContext && (
+                  <View style={styles.ownerToggleRow}>
+                    <View style={styles.ownerToggleCopy}>
+                      <Text style={styles.ownerToggleTitle}>
+                        Show in my workouts
+                      </Text>
+                      <Text style={styles.ownerToggleSub}>
+                        Keep this workout in your own library. It stays
+                        assignable to clients either way.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={formState.showInOwnerLibrary}
+                      onValueChange={onSetShowInOwnerLibrary}
+                      trackColor={{
+                        false: Colors.surface.tertiary,
+                        true: Colors.primary.DEFAULT,
+                      }}
+                      testID="show-in-owner-library-toggle"
+                    />
+                  </View>
+                )}
               </View>
 
               {/* Exercises */}
@@ -302,6 +335,11 @@ export function WorkoutEditorPresenter({
                             isSupersetEnd={isSupersetEnd}
                             supersetGroupNumber={
                               exercise.superset_group ?? undefined
+                            }
+                            supersetLetter={
+                              exercise.superset_group !== null
+                                ? supersetLetters.get(exercise.superset_group)
+                                : undefined
                             }
                             supersetLeadExercise={supersetExercises[0]}
                           />
@@ -496,6 +534,31 @@ const styles = StyleSheet.create({
   },
   visibilityOptionTextSelected: {
     color: Colors.primary.DEFAULT,
+  },
+  ownerToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.surface.border,
+    backgroundColor: Colors.surface.primary,
+  },
+  ownerToggleCopy: {
+    flex: 1,
+  },
+  ownerToggleTitle: {
+    ...Typography.body1,
+    fontWeight: "600",
+    color: Colors.text.primary,
+  },
+  ownerToggleSub: {
+    ...Typography.caption,
+    color: Colors.text.secondary,
+    marginTop: 2,
   },
   addExerciseButton: {
     flexDirection: "row",

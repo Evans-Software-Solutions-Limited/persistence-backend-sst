@@ -119,10 +119,11 @@ describe("WorkoutDetailContainer", () => {
     const storage = new InMemoryStorageAdapter();
     storage.cacheWorkoutDetail("user-1", buildWorkout());
 
-    const { findByText } = renderWithTheme(
+    const { findByText, findAllByText } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
     );
-    expect(await findByText("Push Day")).toBeTruthy();
+    // v3 renders the name in both the header AND the hero (prototype-faithful).
+    expect((await findAllByText("Push Day")).length).toBeGreaterThanOrEqual(1);
     expect(await findByText("Bench Press")).toBeTruthy();
     expect(await findByText("Heavy chest session")).toBeTruthy();
   });
@@ -136,7 +137,7 @@ describe("WorkoutDetailContainer", () => {
     const { getByTestId, findByText } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
     );
-    await findByText("Push Day");
+    await findByText("Bench Press");
     fireEvent.press(getByTestId("workout-detail-back"));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
@@ -164,7 +165,7 @@ describe("WorkoutDetailContainer", () => {
     const { getByTestId, findByText } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
     );
-    await findByText("Push Day");
+    await findByText("Bench Press");
     fireEvent.press(getByTestId("workout-detail-start"));
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
   });

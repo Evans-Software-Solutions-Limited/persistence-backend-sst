@@ -148,6 +148,7 @@ describe("useWorkoutForm", () => {
         description: "",
         estimatedDurationMinutes: 30,
         visibility: "private",
+        showInOwnerLibrary: true,
         exercises: [],
       }),
     );

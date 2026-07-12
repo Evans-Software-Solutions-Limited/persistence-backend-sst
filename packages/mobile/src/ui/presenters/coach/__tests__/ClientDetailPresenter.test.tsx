@@ -135,6 +135,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     onLogWeight: jest.fn(),
     onManageHabits: jest.fn(),
     onAssignWorkout: jest.fn(),
+    onCreateAssignWorkout: jest.fn(),
     onEditTargets: jest.fn(),
     onAssignGoal: jest.fn(),
     onSendBrief: jest.fn(),
@@ -237,6 +238,12 @@ describe("ClientDetailPresenter — QuickActionsRow", () => {
     expect(props.onAssignGoal).toHaveBeenCalled();
     expect(props.onSendBrief).toHaveBeenCalled();
     expect(queryByTestId("quick-action-schedule")).toBeNull();
+  });
+
+  it("wires the Create (create-and-assign) quick action", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("quick-action-create-assign"));
+    expect(props.onCreateAssignWorkout).toHaveBeenCalledTimes(1);
   });
 });
 

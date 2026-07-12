@@ -22,6 +22,12 @@ interface ExerciseConfigCardProps {
   readonly isSupersetStart?: boolean;
   readonly isSupersetEnd?: boolean;
   readonly supersetGroupNumber?: number;
+  /**
+   * Display letter (A/B/C…) for the superset group, assigned by the parent in
+   * appearance order so the badge matches the detail screen's centred pill.
+   * Falls back to the raw group number if absent.
+   */
+  readonly supersetLetter?: string;
 
   readonly supersetLeadExercise?: any;
 }
@@ -34,6 +40,7 @@ export default function ExerciseConfigCard({
   isSupersetStart = false,
   isSupersetEnd = false,
   supersetGroupNumber,
+  supersetLetter,
   supersetLeadExercise,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
@@ -76,18 +83,22 @@ export default function ExerciseConfigCard({
 
   return (
     <View style={styles.exerciseWrapper}>
-      {/* Superset indicator line above */}
+      {/* Superset indicator — centred letter pill on a connector line
+          (matches the detail screen). */}
       {isInSuperset && isSupersetStart && (
         <View style={styles.supersetConnector}>
-          <View style={styles.supersetLineStart} />
-          {supersetGroupNumber != null && (
-            <View style={styles.supersetBadge}>
-              <Text style={styles.supersetBadgeText}>
-                Superset {supersetGroupNumber}
-              </Text>
-            </View>
-          )}
-          <View style={styles.supersetLineContinue} />
+          <View style={styles.supersetLine} />
+          <View style={styles.supersetBadge}>
+            <Ionicons
+              name="layers-outline"
+              size={10}
+              color={Colors.text.inverse}
+            />
+            <Text style={styles.supersetBadgeText}>
+              SUPERSET {supersetLetter ?? supersetGroupNumber}
+            </Text>
+          </View>
+          <View style={styles.supersetLine} />
         </View>
       )}
 
@@ -325,40 +336,36 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     marginTop: Spacing.xs,
   },
-  // Superset styling
+  // Superset styling — centred letter pill on a connector line.
   supersetConnector: {
     flexDirection: "row",
     alignItems: "center",
+    gap: Spacing.sm,
     marginBottom: Spacing.xs,
     marginHorizontal: Spacing.md,
   },
   supersetLine: {
     height: 2,
     flex: 1,
+    borderRadius: 2,
     backgroundColor: Colors.primary.DEFAULT,
-  },
-  supersetLineStart: {
-    height: 2,
-    flex: 0,
-    width: 0,
-  },
-  supersetLineContinue: {
-    height: 2,
-    flex: 1,
-    backgroundColor: Colors.primary.DEFAULT,
+    opacity: 0.5,
   },
   supersetBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: Colors.primary.DEFAULT,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
-    borderRadius: 4,
-    marginHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.full,
   },
   supersetBadgeText: {
     ...Typography.caption,
-    color: Colors.text.primary,
-    fontWeight: "600",
+    color: Colors.text.inverse,
+    fontWeight: "700",
     fontSize: 10,
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   supersetConnectorBottom: {

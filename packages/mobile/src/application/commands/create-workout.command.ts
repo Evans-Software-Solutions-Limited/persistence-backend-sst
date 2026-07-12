@@ -110,7 +110,10 @@ export function createWorkoutCommand(
   // briefly show a client-authored workout in the coach's personal list
   // until the next refresh re-filters it out.
   if (workout.showInOwnerLibrary !== false) {
-    const existingMine = deps.storage.getCachedWorkoutsList(deps.userId, "mine");
+    const existingMine = deps.storage.getCachedWorkoutsList(
+      deps.userId,
+      "mine",
+    );
     deps.storage.cacheWorkoutsList(
       deps.userId,
       "mine",

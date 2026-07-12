@@ -5,7 +5,7 @@ import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapt
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Exercise } from "@/domain/models/exercise";
-import { ok } from "@/shared/errors";
+import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { WorkoutCreatorContainer } from "@/ui/containers/WorkoutCreatorContainer";
@@ -77,6 +77,7 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 
 const mockRouterBack = jest.fn();
 const mockRouterPush = jest.fn();
+const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: {
@@ -87,11 +88,15 @@ jest.mock("expo-router", () => ({
     back: (...args: unknown[]) => mockRouterBack(...args),
     push: (...args: unknown[]) => mockRouterPush(...args),
   }),
+  useLocalSearchParams: () => mockUseLocalSearchParams(),
 }));
 
 describe("WorkoutCreatorContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks preserves mockReturnValue implementations — reset the
+    // route params to the athlete default so a coach-context test can't leak.
+    mockUseLocalSearchParams.mockReturnValue({});
   });
 
   afterEach(() => {
@@ -259,5 +264,114 @@ describe("WorkoutCreatorContainer", () => {
     // Lead row's input is editable; peer's is not.
     expect(setsInputs[0].props.editable).toBe(true);
     expect(setsInputs[1].props.editable).toBe(false);
+  }, 30_000);
+
+  it("renders the Visibility tri-state but NO owner toggle in athlete context", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const { findByText, getByTestId, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    expect(getByTestId("visibility-private")).toBeTruthy();
+    expect(getByTestId("visibility-friends")).toBeTruthy();
+    expect(getByTestId("visibility-public")).toBeTruthy();
+    // Athlete context → no coach-only owner-visibility toggle.
+    expect(queryByTestId("show-in-owner-library-toggle")).toBeNull();
+  });
+
+  it("renders the owner-visibility toggle in coach context (?ctx=coach)", async () => {
+    mockUseLocalSearchParams.mockReturnValue({ ctx: "coach" });
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    const toggle = getByTestId("show-in-owner-library-toggle");
+    expect(toggle).toBeTruthy();
+    // Coach default = OFF (workout hidden from the coach's own library).
+    expect(toggle.props.value).toBe(false);
+
+    // Flipping the toggle + a visibility option updates form state.
+    fireEvent(toggle, "valueChange", true);
+    await waitFor(() =>
+      expect(getByTestId("show-in-owner-library-toggle").props.value).toBe(
+        true,
+      ),
+    );
+    fireEvent.press(getByTestId("visibility-public"));
+  });
+
+  it("create-and-assign: creates online then assigns to the client", async () => {
+    mockUseLocalSearchParams.mockReturnValue({
+      ctx: "coach",
+      assignClientId: "client-1",
+    });
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+    const createSpy = jest.spyOn(api, "createWorkout");
+    const assignSpy = jest
+      .spyOn(api, "assignWorkout")
+      .mockResolvedValue(ok({ id: "asg-1" } as never));
+
+    const { findByText, getByTestId, getByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    fireEvent.changeText(getByTestId("workout-name-input"), "Client Push");
+    fireEvent.press(getByTestId("add-exercise-button"));
+    fireEvent.press(await findByText("Bench"));
+    fireEvent.press(getByTestId("add-exercises-button"));
+    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
+
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    await waitFor(() => expect(assignSpy).toHaveBeenCalledTimes(1));
+    // Created online (coach authoring, owner-visibility off) then assigned.
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(createSpy.mock.calls[0][0].showInOwnerLibrary).toBe(false);
+    const assignedClient = assignSpy.mock.calls[0][0];
+    expect(assignedClient).toBe("client-1");
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalled());
+  }, 30_000);
+
+  it("create-and-assign: keeps the created workout when assign fails", async () => {
+    mockUseLocalSearchParams.mockReturnValue({
+      ctx: "coach",
+      assignClientId: "client-1",
+    });
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+    const createSpy = jest.spyOn(api, "createWorkout");
+    jest.spyOn(api, "assignWorkout").mockResolvedValue(
+      fail({
+        kind: "api",
+        code: "server",
+        message: "already assigned",
+        programCode: "already_assigned",
+      }),
+    );
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+    const { findByText, getByTestId, getByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    fireEvent.changeText(getByTestId("workout-name-input"), "Client Push");
+    fireEvent.press(getByTestId("add-exercise-button"));
+    fireEvent.press(await findByText("Bench"));
+    fireEvent.press(getByTestId("add-exercises-button"));
+    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
+
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    // Workout still created; a warning alert fires; we still navigate back.
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy.mock.calls[0][0]).toBe("Workout created, not assigned");
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalled());
   }, 30_000);
 });

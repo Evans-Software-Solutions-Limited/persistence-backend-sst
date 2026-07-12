@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import { useCallback, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { createWorkoutCommand } from "@/application/commands/create-workout.command";
 import type { CreateWorkoutInput } from "@/domain/models/workout";
@@ -14,33 +14,48 @@ import { WorkoutCreatorPresenter } from "@/ui/presenters/WorkoutCreatorPresenter
 
 /**
  * Creator container — owns form state via `useWorkoutForm`, opens the
- * picker, and submits via `createWorkoutCommand`. The submit boundary
- * maps the legacy snake_case form state onto the V2 camelCase
- * `CreateWorkoutInput`. On success the optimistic cache write inside
- * the command surfaces the new workout to the list immediately, then
- * the sync queue eventually swaps the temp id for the server one.
+ * picker, and submits. Two submit paths:
  *
- * Spec: specs/04-workout-management/requirements.md STORY-002 ACs
- *       2.1, 2.2, 2.7, 2.9, 2.10, 2.11, 2.12; STORY-003 ACs 3.1, 3.3
+ *   - Default (athlete + coach-library create): optimistic offline
+ *     `createWorkoutCommand` (cache write + sync-queue POST).
+ *   - Create-and-assign (coach, `?assignClientId=`): DIRECT online
+ *     `api.createWorkout` → `api.assignWorkout` so the ad-hoc assignment can
+ *     reference the SERVER workout id (the optimistic command only yields a
+ *     local id). On partial failure the created workout is kept and the
+ *     assign error surfaced (retry via AssignWorkoutSheet).
+ *
+ * Coach context (`?ctx=coach`, or any assign flow) renders the Visibility
+ * tri-state + the owner-visibility toggle (default OFF → `showInOwnerLibrary`
+ * false). Athlete create renders Visibility only (a parity fix — create was
+ * previously always private) and sends `showInOwnerLibrary` true.
+ *
+ * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 8, § 11;
+ *       specs/04-workout-management/requirements.md STORY-002/003
  */
 export function WorkoutCreatorContainer() {
-  const { storage } = useAdapters();
+  const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
-  // Stable identity — without `useCallback`, every render produces a
-  // new generator reference, which cascades through `useWorkoutForm`'s
-  // internal `useCallback`s and rebuilds the form handle each render.
-  // That in turn invalidates downstream container callbacks and causes
-  // the AddExercisePopover to re-render on every keystroke. Empty
-  // dep list is correct: this is a pure id factory with no captured
-  // state.
+  const params = useLocalSearchParams<{
+    ctx?: string;
+    assignClientId?: string;
+    assignClientName?: string;
+  }>();
+  const assignClientId = params.assignClientId ?? null;
+  const isCoachContext = params.ctx === "coach" || assignClientId !== null;
+
   const generateId = useCallback(
     () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     [],
   );
 
-  const form = useWorkoutForm(EMPTY_FORM_STATE, generateId);
+  // Coach authoring defaults the workout OUT of the coach's personal library.
+  const initialFormState = useMemo<WorkoutFormState>(
+    () => ({ ...EMPTY_FORM_STATE, showInOwnerLibrary: !isCoachContext }),
+    [isCoachContext],
+  );
+  const form = useWorkoutForm(initialFormState, generateId);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -55,9 +70,6 @@ export function WorkoutCreatorContainer() {
       form.addExercises(exercises);
       setPickerVisible(false);
     },
-    // Depend on the specific method, not the whole form handle —
-    // `form` rebuilds every render, but `form.addExercises` is stable
-    // across renders once `generateId` is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addExercises],
   );
@@ -66,7 +78,6 @@ export function WorkoutCreatorContainer() {
       form.addSuperset(exercises);
       setPickerVisible(false);
     },
-    // Same pattern as onAddExercises — method ref is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [form.addSuperset],
   );
@@ -75,9 +86,6 @@ export function WorkoutCreatorContainer() {
     setHasAttemptedSubmit(true);
     setSubmitError(null);
 
-    // Inline-presenter feedback covers the empty-name + empty-exercises
-    // cases (driven by `hasAttemptedSubmit`); short-circuit here without
-    // setting a duplicate `submitError`.
     if (form.state.name.trim().length === 0) return;
     if (form.state.exercises.length === 0) return;
     if (!userId) {
@@ -85,9 +93,42 @@ export function WorkoutCreatorContainer() {
       return;
     }
 
+    const input = toCreateWorkoutInput(form.state);
+
+    // Coach create-and-assign — direct online so we get the server workout id.
+    if (assignClientId) {
+      setIsSubmitting(true);
+      void (async () => {
+        try {
+          const created = await api.createWorkout(input);
+          if (!created.ok) {
+            setSubmitError(created.error.message ?? "Failed to create workout");
+            return;
+          }
+          const assigned = await api.assignWorkout(assignClientId, {
+            workoutId: created.value.id,
+          });
+          if (!assigned.ok) {
+            // Workout was created — keep it; surface the assign failure so the
+            // coach can retry from the assign sheet rather than losing work.
+            Alert.alert(
+              "Workout created, not assigned",
+              "Your workout was saved but couldn't be assigned to this client. You can assign it from their profile.",
+            );
+            router.back();
+            return;
+          }
+          router.back();
+        } finally {
+          setIsSubmitting(false);
+        }
+      })();
+      return;
+    }
+
+    // Default optimistic offline create.
     setIsSubmitting(true);
     try {
-      const input = toCreateWorkoutInput(form.state);
       const result = createWorkoutCommand(
         { storage, userId, generateId },
         input,
@@ -102,7 +143,7 @@ export function WorkoutCreatorContainer() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [storage, userId, generateId, form.state]);
+  }, [api, storage, userId, generateId, assignClientId, form.state]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {
@@ -130,8 +171,11 @@ export function WorkoutCreatorContainer() {
       hasAttemptedSubmit={hasAttemptedSubmit}
       submitError={submitError}
       pickerVisible={pickerVisible}
+      isCoachContext={isCoachContext}
       onSetName={form.setName}
       onSetDescription={form.setDescription}
+      onSetVisibility={form.setVisibility}
+      onSetShowInOwnerLibrary={form.setShowInOwnerLibrary}
       onAddExerciseTap={onAddExercise}
       onClosePicker={onClosePicker}
       onAddExercises={onAddExercises}
@@ -151,6 +195,7 @@ function toCreateWorkoutInput(state: WorkoutFormState): CreateWorkoutInput {
       state.description.trim().length === 0 ? null : state.description.trim(),
     visibility: state.visibility,
     estimatedDurationMinutes: state.estimatedDurationMinutes,
+    showInOwnerLibrary: state.showInOwnerLibrary,
     exercises: state.exercises.map((ex) => ({
       exerciseId: ex.exercise_id,
       sortOrder: ex.sort_order,

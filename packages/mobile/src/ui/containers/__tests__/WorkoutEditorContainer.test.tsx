@@ -250,6 +250,32 @@ describe("WorkoutEditorContainer", () => {
     expect(pending[0].endpoint).toBe("/workouts/w-1");
   });
 
+  it("in coach context: shows the owner-visibility toggle and PATCHes the flipped value", async () => {
+    mockUseLocalSearchParams.mockReturnValue({ id: "w-1", ctx: "coach" });
+    const api = new InMemoryApiAdapter();
+    const cached = buildWorkout({ name: "Push Day", showInOwnerLibrary: true });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", cached);
+
+    const { getByTestId, findByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    const toggle = getByTestId("show-in-owner-library-toggle");
+    await waitFor(() => expect(toggle.props.value).toBe(true));
+
+    fireEvent(toggle, "valueChange", false);
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+    const pending = storage.getPendingMutations();
+    const payload = JSON.parse(pending[0].payload as string) as {
+      showInOwnerLibrary?: boolean;
+    };
+    expect(payload.showInOwnerLibrary).toBe(false);
+  });
+
   it("dirty cancel triggers Alert.alert; clean cancel goes back", async () => {
     const api = new InMemoryApiAdapter();
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
