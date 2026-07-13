@@ -1,4 +1,5 @@
 import { ActivityIndicator, TextInput } from "react-native";
+import * as Linking from "expo-linking";
 import { Text, View } from "@tamagui/core";
 import QRCode from "react-native-qrcode-svg";
 import {
@@ -20,7 +21,7 @@ import type { TrainerInviteCode } from "@/domain/models/trainerInviteCode";
  *    the legacy `InviteClientModal` 1:1 (title, subtitle, email + reason
  *    fields, Send Invitation / Cancel).
  *  - "Share code" — Phase 8 net-new: mint a reusable 6-char code + QR
- *    (`persistencemobile://accept-invite?code=<code>`). Tap-to-copy via
+ *    (a `Linking.createURL("/accept-invite", {code})` deep link). Tap-to-copy via
  *    `expo-clipboard` (`Clipboard.setStringAsync`, called by the container's
  *    `onCopyCode`) AND native `Share` (the container's `onShareCode`) are
  *    both offered — the code also renders large + `selectable` so it can
@@ -73,10 +74,13 @@ const ERROR_HEX = toneHex("error").base;
 const qrBackgroundColor = "#FFFFFF";
 const qrForegroundColor = "#0B0B12";
 
-/** Scheme deep link a redeeming athlete's scan/tap resolves — mirrors
+/** Scheme deep link a redeeming athlete's scan/tap resolves. Built via
+ * `Linking.createURL` so the prefix is correct across environments (custom
+ * scheme in standalone/dev-client, `exp://…/--/` under Expo Go); the OS
+ * linking pipeline routes it via `app/+native-intent.ts`, which reuses
  * `SCHEME_HOSTS["accept-invite"]` in `application/notifications/deep-link.ts`. */
 export function buildAcceptInviteDeepLink(code: string): string {
-  return `persistencemobile://accept-invite?code=${code}`;
+  return Linking.createURL("/accept-invite", { queryParams: { code } });
 }
 
 /**

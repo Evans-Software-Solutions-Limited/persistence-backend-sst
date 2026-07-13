@@ -1,6 +1,7 @@
 import {
   HOME_ROUTE,
   TRAIN_ROUTE,
+  redirectSystemPathForDeepLink,
   resolveNotificationRoute,
 } from "@/application/notifications/deep-link";
 
@@ -72,5 +73,62 @@ describe("resolveNotificationRoute", () => {
     expect(resolveNotificationRoute("persistencemobile://accept-invite")).toBe(
       "/(app)/accept-invite",
     );
+  });
+});
+
+describe("redirectSystemPathForDeepLink", () => {
+  it("rewrites a full custom-scheme host-form URL, preserving the query", () => {
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile://accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+  });
+
+  it("rewrites the Linking.createURL canonical (leading-slash) form", () => {
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile:///accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+  });
+
+  it("rewrites the bare host-form path Expo Router hands the redirect", () => {
+    expect(redirectSystemPathForDeepLink("accept-invite?code=AB23CD")).toBe(
+      "/(app)/accept-invite?code=AB23CD",
+    );
+  });
+
+  it("rewrites the bare leading-slash path form", () => {
+    expect(redirectSystemPathForDeepLink("/accept-invite?code=AB23CD")).toBe(
+      "/(app)/accept-invite?code=AB23CD",
+    );
+  });
+
+  it("maps a known host with no query string", () => {
+    expect(redirectSystemPathForDeepLink("accept-invite")).toBe(
+      "/(app)/accept-invite",
+    );
+    expect(redirectSystemPathForDeepLink("requests?relationshipId=rel-1")).toBe(
+      "/(app)/requests?relationshipId=rel-1",
+    );
+  });
+
+  it("returns an unrecognised path UNCHANGED so Expo Router can match it", () => {
+    expect(redirectSystemPathForDeepLink("/(app)/(tabs)/you")).toBe(
+      "/(app)/(tabs)/you",
+    );
+    expect(redirectSystemPathForDeepLink("/some/unknown/route")).toBe(
+      "/some/unknown/route",
+    );
+    expect(redirectSystemPathForDeepLink("wat?x=1")).toBe("wat?x=1");
+    // A normal cold launch hands the redirect the root path — pass it through.
+    expect(redirectSystemPathForDeepLink("/")).toBe("/");
+  });
+
+  it("falls back to Home for null / undefined / empty", () => {
+    expect(redirectSystemPathForDeepLink(null)).toBe(HOME_ROUTE);
+    expect(redirectSystemPathForDeepLink(undefined)).toBe(HOME_ROUTE);
+    expect(redirectSystemPathForDeepLink("")).toBe(HOME_ROUTE);
   });
 });

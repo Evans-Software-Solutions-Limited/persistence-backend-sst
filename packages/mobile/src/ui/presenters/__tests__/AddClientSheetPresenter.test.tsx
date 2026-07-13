@@ -217,9 +217,9 @@ describe("AddClientSheetPresenter", () => {
 });
 
 describe("buildAcceptInviteDeepLink", () => {
-  it("builds the accept-invite scheme link with the code as a query param", () => {
+  it("builds the accept-invite deep link via Linking.createURL with the code as a query param", () => {
     expect(buildAcceptInviteDeepLink("AB23CD")).toBe(
-      "persistencemobile://accept-invite?code=AB23CD",
+      "persistencemobile:///accept-invite?code=AB23CD",
     );
   });
 });

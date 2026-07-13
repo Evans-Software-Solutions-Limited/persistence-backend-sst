@@ -403,9 +403,25 @@ jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),
 }));
 
-// Mock expo-linking (used by OAuth redirect URL)
+// Mock expo-linking (used by the OAuth redirect URL + invite-code deep links).
+// Mirrors the real createURL: prefixes the app scheme and appends any
+// `queryParams` as a query string (the real module env-switches the prefix;
+// tests only need the standalone custom-scheme form + faithful query handling).
 jest.mock("expo-linking", () => ({
-  createURL: jest.fn((path: string) => `persistencemobile://${path}`),
+  createURL: jest.fn(
+    (
+      path: string,
+      options?: { queryParams?: Record<string, string | undefined | null> },
+    ) => {
+      const entries = Object.entries(options?.queryParams ?? {}).filter(
+        ([, value]) => value != null,
+      );
+      const query = entries.length
+        ? "?" + entries.map(([key, value]) => `${key}=${value}`).join("&")
+        : "";
+      return `persistencemobile://${path}${query}`;
+    },
+  ),
 }));
 
 // Mock expo-notifications (M3 — native bindings unavailable in Jest).

@@ -339,7 +339,7 @@ describe("AddClientSheetContainer", () => {
       expect(api.createInviteCodeCalls).toBe(1);
       expect(getByText("AB23CD")).toBeTruthy();
       expect(getByTestId("add-client-code-qr").props.children.props.value).toBe(
-        "persistencemobile://accept-invite?code=AB23CD",
+        "persistencemobile:///accept-invite?code=AB23CD",
       );
     });
 
@@ -362,7 +362,7 @@ describe("AddClientSheetContainer", () => {
       fireEvent.press(getByTestId("add-client-share-code"));
       expect(shareSpy).toHaveBeenCalledWith({
         message:
-          "Join me on Persistence — use code AB23CD or tap: persistencemobile://accept-invite?code=AB23CD",
+          "Join me on Persistence — use code AB23CD or tap: persistencemobile:///accept-invite?code=AB23CD",
       });
       shareSpy.mockRestore();
     });

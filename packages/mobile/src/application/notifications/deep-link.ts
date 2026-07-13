@@ -57,10 +57,22 @@ const SCHEME_HOSTS: Record<string, string> = {
   "accept-invite": "/(app)/accept-invite",
 };
 
-function resolveSchemeLink(rest: string): string {
+/**
+ * Split a scheme "rest" (everything after `persistencemobile://`, or a bare
+ * OS path with any single leading slash removed) into its first segment
+ * (`host`) and the query string (including the leading `?`, or ""). Shared by
+ * the notification resolver and the OS-linking redirect so both map hosts the
+ * same way.
+ */
+function splitHostAndQuery(rest: string): { host: string; query: string } {
   const qIndex = rest.indexOf("?");
-  const host = qIndex === -1 ? rest : rest.slice(0, qIndex);
-  const query = qIndex === -1 ? "" : rest.slice(qIndex); // includes the "?"
+  return qIndex === -1
+    ? { host: rest, query: "" }
+    : { host: rest.slice(0, qIndex), query: rest.slice(qIndex) };
+}
+
+function resolveSchemeLink(rest: string): string {
+  const { host, query } = splitHostAndQuery(rest);
   const base = SCHEME_HOSTS[host];
   if (!base) return HOME_ROUTE;
   return query ? `${base}${query}` : base;
@@ -83,4 +95,37 @@ export function resolveNotificationRoute(
   // Already an absolute app path → pass through. Anything else is unknown.
   if (trimmed.startsWith("/")) return trimmed;
   return HOME_ROUTE;
+}
+
+/**
+ * Rewrite an OS-level deep-link path onto an in-app route — the body of Expo
+ * Router's `app/+native-intent.ts` `redirectSystemPath`.
+ *
+ * A QR scan or a shared invite link opens through the native `Linking`
+ * pipeline, NOT the push-notification tap resolver, so a custom-scheme host
+ * link (`persistencemobile://accept-invite?code=X`) would otherwise reach the
+ * router as a bare `accept-invite?code=X` segment and dead-end on the
+ * Unmatched route. Reusing the same `SCHEME_HOSTS` table keeps both entry
+ * points in sync.
+ *
+ * Handles all three shapes Expo can hand us: a full custom-scheme URL, the
+ * `Linking.createURL` canonical form (leading-slash path), and the legacy
+ * host-form (no leading slash). Unlike `resolveNotificationRoute`, an
+ * unrecognised path is returned UNCHANGED so Expo Router can still match it
+ * normally — we only claim the known custom-scheme hosts.
+ */
+export function redirectSystemPathForDeepLink(
+  path: string | null | undefined,
+): string {
+  if (!path) return HOME_ROUTE;
+  // Strip the custom scheme if the OS handed us a full URL, then drop a single
+  // leading slash so the first path segment lines up with the scheme-host keys.
+  const stripped = path.startsWith(APP_SCHEME)
+    ? path.slice(APP_SCHEME.length)
+    : path;
+  const candidate = stripped.startsWith("/") ? stripped.slice(1) : stripped;
+  const { host, query } = splitHostAndQuery(candidate);
+  const base = SCHEME_HOSTS[host];
+  if (!base) return path;
+  return query ? `${base}${query}` : base;
 }
