@@ -72,6 +72,57 @@ describe("ExerciseConfigCard", () => {
     fireEvent.changeText(getByTestId("sets-input"), "");
     fireEvent(getByTestId("sets-input"), "blur");
     expect(onConfigChange).toHaveBeenCalledWith("target_sets", 0);
+
+    fireEvent.changeText(getByTestId("reps-min-input"), "");
+    fireEvent(getByTestId("reps-min-input"), "blur");
+    expect(onConfigChange).toHaveBeenCalledWith("target_reps_min", 0);
+
+    fireEvent.changeText(getByTestId("reps-max-input"), "");
+    fireEvent(getByTestId("reps-max-input"), "blur");
+    expect(onConfigChange).toHaveBeenCalledWith("target_reps_max", 0);
+
+    fireEvent.changeText(getByTestId("rest-input"), "");
+    fireEvent(getByTestId("rest-input"), "blur");
+    expect(onConfigChange).toHaveBeenCalledWith("rest_seconds", 0);
+  });
+
+  it("wires the SETS/REST ± steppers to onConfigChange with a clamped step", () => {
+    const onConfigChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseConfigCard
+        exercise={baseExercise}
+        index={0}
+        onRemove={jest.fn()}
+        onConfigChange={onConfigChange}
+      />,
+    );
+
+    fireEvent.press(getByTestId("sets-input-inc"));
+    expect(onConfigChange).toHaveBeenCalledWith("target_sets", 4);
+    fireEvent.press(getByTestId("sets-input-dec"));
+    expect(onConfigChange).toHaveBeenCalledWith("target_sets", 2);
+
+    fireEvent.press(getByTestId("rest-input-inc"));
+    expect(onConfigChange).toHaveBeenCalledWith("rest_seconds", 105);
+    fireEvent.press(getByTestId("rest-input-dec"));
+    expect(onConfigChange).toHaveBeenCalledWith("rest_seconds", 75);
+  });
+
+  it("floors the SETS stepper at 1 and the REST stepper at 0", () => {
+    const onConfigChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseConfigCard
+        exercise={{ ...baseExercise, target_sets: 1, rest_seconds: 0 }}
+        index={0}
+        onRemove={jest.fn()}
+        onConfigChange={onConfigChange}
+      />,
+    );
+
+    fireEvent.press(getByTestId("sets-input-dec"));
+    expect(onConfigChange).toHaveBeenCalledWith("target_sets", 1);
+    fireEvent.press(getByTestId("rest-input-dec"));
+    expect(onConfigChange).toHaveBeenCalledWith("rest_seconds", 0);
   });
 
   it("disables shared fields on superset peer (non-lead)", () => {

@@ -36,6 +36,12 @@ export type {
   BottomSheetAccent,
   BottomSheetHeight,
 } from "./BottomSheet";
+export { Field } from "./Field";
+export type { FieldProps } from "./Field";
+export { Stepper } from "./Stepper";
+export type { StepperProps } from "./Stepper";
+export { RepRange } from "./RepRange";
+export type { RepRangeProps } from "./RepRange";
 export {
   toneTokens,
   TONE_TOKENS,

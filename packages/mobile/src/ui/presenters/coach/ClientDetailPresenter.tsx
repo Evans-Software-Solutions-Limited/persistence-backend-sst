@@ -97,8 +97,6 @@ export type ClientDetailProps = {
   onManageHabits: () => void;
   /** QuickActionsRow — Assign → AssignWorkoutSheet. */
   onAssignWorkout: () => void;
-  /** QuickActionsRow — Create → creator in coach context, then ad-hoc assign. */
-  onCreateAssignWorkout: () => void;
   /** QuickActionsRow — Macros → EditNutritionTargetsSheet. */
   onEditTargets: () => void;
   /** QuickActionsRow — Goals → AssignGoalSheet (create). */
@@ -143,7 +141,6 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     onLogWeight,
     onManageHabits,
     onAssignWorkout,
-    onCreateAssignWorkout,
     onEditTargets,
     onAssignGoal,
     onSendBrief,
@@ -203,7 +200,6 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
 
           <QuickActionsRow
             onAssignWorkout={onAssignWorkout}
-            onCreateAssignWorkout={onCreateAssignWorkout}
             onEditTargets={onEditTargets}
             onAssignGoal={onAssignGoal}
             onSendBrief={onSendBrief}
@@ -580,20 +576,21 @@ function UpcomingSessionsCard({
 // ── QuickActionsRow ──────────────────────────────────────────────────────────
 function QuickActionsRow({
   onAssignWorkout,
-  onCreateAssignWorkout,
   onEditTargets,
   onAssignGoal,
   onSendBrief,
 }: {
   onAssignWorkout: () => void;
-  onCreateAssignWorkout: () => void;
   onEditTargets: () => void;
   onAssignGoal: () => void;
   onSendBrief: () => void;
 }) {
   // Prototype has Assign / Macros / Goals / Schedule; Schedule is HIDDEN
   // (scheduling domain parked, design.md ~765) — Brief (M17) took the fourth
-  // slot; Workout Authoring v2 adds Create (build-and-assign ad hoc).
+  // slot. The one-tap Create-and-assign action (Workout Authoring v2
+  // STORY-007) was REMOVED (specs/milestones/WORKOUT-AUTHORING-V2 revision) —
+  // coaches create a workout via the coach Workout Library and assign it via
+  // the existing AssignWorkoutSheet.
   const actions: {
     key: string;
     label: string;
@@ -607,13 +604,6 @@ function QuickActionsRow({
       tone: "primary",
       onPress: onAssignWorkout,
       testID: "quick-action-assign",
-    },
-    {
-      key: "create-assign",
-      label: "Create",
-      tone: "success",
-      onPress: onCreateAssignWorkout,
-      testID: "quick-action-create-assign",
     },
     {
       key: "macros",

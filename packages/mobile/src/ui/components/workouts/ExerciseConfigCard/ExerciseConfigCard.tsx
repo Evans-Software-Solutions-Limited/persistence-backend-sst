@@ -1,18 +1,27 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
-import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Text, View } from "@tamagui/core";
+
+import { IconBtn, Pill, RepRange, Stepper } from "@/ui/components/foundation";
+import { toneHex } from "@/ui/components/foundation/tones";
+import { IconLayers, IconTrash } from "@/ui/components/icons";
+
+/**
+ * <ExerciseConfigCard> — v3 restyle onto the foundation kit + prototype
+ * (~/Downloads/handoff/design-source/screens/workout-creator.jsx
+ * `ExerciseConfigCard` + `Stepper` + `RepRange`), VISUAL LAYER ONLY:
+ * every prop, testID, and piece of business logic below is unchanged from
+ * the pre-restyle version (CLUSTER6_BRIEF #4a).
+ *
+ * Kept as-is (not a prototype feature — no data/callback exists for it in
+ * this app's model, so it's out of scope for a visual-only restyle):
+ *  - No drag handle / reorder (no reorder logic in `useWorkoutForm`).
+ *  - No per-card "ungroup" / "superset with exercise above" affordance (no
+ *    `onUnlink`/`onLinkUp`/`canLinkUp` prop exists on this component —
+ *    grouping is only set via the AddExercisePopover "add as superset" flow).
+ *  - The "Inherited from superset" hint renders TWICE (once under Sets, once
+ *    under Rest) rather than the prototype's single merged line — this
+ *    matches the existing, tested copy/structure (brief: keep this exact
+ *    string).
+ */
 
 interface ExerciseConfigCardProps {
   readonly exercise: any; // Using any to match the original
@@ -49,185 +58,217 @@ export default function ExerciseConfigCard({
     (exercise.superset_group !== undefined && exercise.superset_group !== null);
   const shouldDisableSharedFields = isInSuperset && !isSupersetStart;
 
-  // Local state to avoid showing 0 when field is empty
-  const [setsValue, setSetsValue] = useState(exercise.target_sets.toString());
-  const [repsMinValue, setRepsMinValue] = useState(
-    exercise.target_reps_min.toString(),
-  );
-  const [repsMaxValue, setRepsMaxValue] = useState(
-    exercise.target_reps_max.toString(),
-  );
-  const [restValue, setRestValue] = useState(exercise.rest_seconds.toString());
-
-  // Sync local state when exercise props change
-  useEffect(() => {
-    if (isInSuperset && !isSupersetStart && supersetLeadExercise) {
-      // Mirror the lead exercise values for read-only fields
-      setSetsValue(supersetLeadExercise.target_sets.toString());
-      setRestValue(supersetLeadExercise.rest_seconds.toString());
-    } else {
-      setSetsValue(exercise.target_sets.toString());
-      setRestValue(exercise.rest_seconds.toString());
+  // `Stepper`/`RepRange` each own their own text buffer internally (synced
+  // from the numeric value passed in), so this component no longer needs the
+  // pre-restyle local useState/useEffect pair to avoid a 0-flash while
+  // typing — see Stepper.tsx's doc comment for the full rationale. Commit
+  // (parse + the empty→0 sentinel + the shared-field guard) still happens
+  // only on blur, matching the pre-restyle behaviour exactly.
+  const commitSets = (text: string) => {
+    const num = parseInt(text, 10);
+    if (!Number.isNaN(num) && text !== "" && !shouldDisableSharedFields) {
+      onConfigChange("target_sets", num);
+    } else if (text === "" && !shouldDisableSharedFields) {
+      onConfigChange("target_sets", 0);
     }
-    setRepsMinValue(exercise.target_reps_min.toString());
-    setRepsMaxValue(exercise.target_reps_max.toString());
-  }, [
-    exercise.target_sets,
-    exercise.target_reps_min,
-    exercise.target_reps_max,
-    exercise.rest_seconds,
-    isInSuperset,
-    isSupersetStart,
-    supersetLeadExercise,
-  ]);
+  };
+  const commitRepsMin = (text: string) => {
+    const num = parseInt(text, 10);
+    if (!Number.isNaN(num) && text !== "") {
+      onConfigChange("target_reps_min", num);
+    } else if (text === "") {
+      onConfigChange("target_reps_min", 0);
+    }
+  };
+  const commitRepsMax = (text: string) => {
+    const num = parseInt(text, 10);
+    if (!Number.isNaN(num) && text !== "") {
+      onConfigChange("target_reps_max", num);
+    } else if (text === "") {
+      onConfigChange("target_reps_max", 0);
+    }
+  };
+  const commitRest = (text: string) => {
+    const num = parseInt(text, 10);
+    if (!Number.isNaN(num) && text !== "" && !shouldDisableSharedFields) {
+      onConfigChange("rest_seconds", num);
+    } else if (text === "" && !shouldDisableSharedFields) {
+      onConfigChange("rest_seconds", 0);
+    }
+  };
+
+  // Non-lead superset members display the LEAD's shared sets/rest. Guard the
+  // lead deref + fall back to the member's own values (mirrors the pre-restyle
+  // component) so a card rendered without a lead can never crash.
+  const setsVal = shouldDisableSharedFields
+    ? (supersetLeadExercise?.target_sets ?? exercise.target_sets)
+    : exercise.target_sets;
+  const restVal = shouldDisableSharedFields
+    ? (supersetLeadExercise?.rest_seconds ?? exercise.rest_seconds)
+    : exercise.rest_seconds;
+
+  // `onType` fires on every keystroke; the buffer that provides is owned
+  // internally by Stepper/RepRange, so there's nothing to do here — commit
+  // happens in `onBlur` above.
+  const noop = () => {};
 
   return (
-    <View style={styles.exerciseWrapper}>
+    <View>
       {/* Superset indicator — centred letter pill on a connector line
           (matches the detail screen). */}
       {isInSuperset && isSupersetStart && (
-        <View style={styles.supersetConnector}>
-          <View style={styles.supersetLine} />
-          <View style={styles.supersetBadge}>
-            <Ionicons
-              name="layers-outline"
+        <View
+          flexDirection="row"
+          alignItems="center"
+          gap={8}
+          paddingHorizontal={6}
+          marginBottom={7}
+        >
+          <View
+            flex={1}
+            height={2}
+            backgroundColor="$primary"
+            opacity={0.5}
+            borderRadius={2}
+          />
+          <View flexDirection="row" alignItems="center" gap={4}>
+            <IconLayers
               size={10}
-              color={Colors.text.inverse}
+              strokeWidth={2.5}
+              color={toneHex("primary").base}
             />
-            <Text style={styles.supersetBadgeText}>
-              SUPERSET {supersetLetter ?? supersetGroupNumber}
-            </Text>
+            <Pill tone="primary" size="xs" filled>
+              {`SUPERSET ${supersetLetter ?? supersetGroupNumber}`}
+            </Pill>
           </View>
-          <View style={styles.supersetLine} />
+          <View
+            flex={1}
+            height={2}
+            backgroundColor="$primary"
+            opacity={0.5}
+            borderRadius={2}
+          />
         </View>
       )}
 
       {/* Exercise Card */}
       <View
-        style={[
-          styles.exerciseConfigCard,
-          isInSuperset && styles.exerciseConfigCardSuperset,
-        ]}
+        backgroundColor="$surface"
+        borderColor="$border"
+        borderWidth={1}
+        borderLeftWidth={isInSuperset ? 3 : 1}
+        borderLeftColor={isInSuperset ? "$primary" : "$border"}
+        borderRadius={isInSuperset ? 12 : 14}
+        padding={12}
       >
-        <View style={styles.exerciseConfigHeader}>
-          <View style={styles.exerciseConfigTitle}>
-            <Text style={styles.exerciseConfigNumber}>{index + 1}</Text>
-            <Text style={styles.exerciseConfigName}>
-              {exercise.exercise_name}
+        <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
+          <View
+            minWidth={22}
+            height={22}
+            borderRadius={6}
+            paddingHorizontal={5}
+            backgroundColor={isInSuperset ? "$primary" : "$surface3"}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Text
+              fontFamily="$mono"
+              fontWeight="700"
+              fontSize={12}
+              color={isInSuperset ? "$primaryInk" : "$text2"}
+            >
+              {index + 1}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.removeExerciseButton}
-            onPress={onRemove}
-            testID="remove-button"
+          <Text
+            flex={1}
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={14.5}
+            color="$text"
+            numberOfLines={1}
           >
-            <Ionicons
-              name="trash-outline"
-              size={18}
-              color={Colors.error.DEFAULT}
-            />
-          </TouchableOpacity>
+            {exercise.exercise_name}
+          </Text>
+          <IconBtn
+            icon={<IconTrash size={16} />}
+            tone="ghost"
+            onPress={onRemove}
+            accessibilityLabel="Remove exercise"
+            testID="remove-button"
+          />
         </View>
 
-        <View style={styles.exerciseConfigFields}>
-          <View style={styles.configField}>
-            <Text style={styles.configFieldLabel}>Sets</Text>
-            <TextInput
-              style={[
-                styles.textInput,
-                shouldDisableSharedFields && styles.textInputDisabled,
-              ]}
-              value={setsValue}
-              onChangeText={setSetsValue}
-              onBlur={() => {
-                const num = parseInt(setsValue);
-                if (
-                  !Number.isNaN(num) &&
-                  setsValue !== "" &&
-                  !shouldDisableSharedFields
-                ) {
-                  onConfigChange("target_sets", num);
-                } else if (setsValue === "" && !shouldDisableSharedFields) {
-                  onConfigChange("target_sets", 0);
-                }
-              }}
-              keyboardType="numeric"
-              placeholder="3"
-              editable={!shouldDisableSharedFields}
+        <View flexDirection="row" gap={8} alignItems="flex-start">
+          <View flex={1}>
+            <Stepper
+              label="SETS"
+              value={setsVal}
+              disabled={shouldDisableSharedFields}
+              onDec={() =>
+                onConfigChange(
+                  "target_sets",
+                  Math.max(1, exercise.target_sets - 1),
+                )
+              }
+              onInc={() =>
+                onConfigChange("target_sets", exercise.target_sets + 1)
+              }
+              onType={noop}
+              onBlur={commitSets}
               testID="sets-input"
             />
             {shouldDisableSharedFields && (
-              <Text style={styles.sharedConfigHint}>
+              <Text
+                fontFamily="$body"
+                fontSize={9.5}
+                color="$text4"
+                textAlign="center"
+                marginTop={4}
+              >
                 Inherited from superset
               </Text>
             )}
           </View>
-          <View style={styles.configFieldWide}>
-            <Text style={styles.configFieldLabel}>Rep Range</Text>
-            <View style={styles.repRangeContainer}>
-              <TextInput
-                style={[styles.textInput, styles.repRangeInput]}
-                value={repsMinValue}
-                onChangeText={setRepsMinValue}
-                onBlur={() => {
-                  const num = parseInt(repsMinValue);
-                  if (!isNaN(num) && repsMinValue !== "") {
-                    onConfigChange("target_reps_min", num);
-                  } else if (repsMinValue === "") {
-                    onConfigChange("target_reps_min", 0);
-                  }
-                }}
-                keyboardType="numeric"
-                placeholder="8"
-                testID="reps-min-input"
-              />
-              <Text style={styles.repRangeSeparator}>-</Text>
-              <TextInput
-                style={[styles.textInput, styles.repRangeInput]}
-                value={repsMaxValue}
-                onChangeText={setRepsMaxValue}
-                onBlur={() => {
-                  const num = parseInt(repsMaxValue);
-                  if (!isNaN(num) && repsMaxValue !== "") {
-                    onConfigChange("target_reps_max", num);
-                  } else if (repsMaxValue === "") {
-                    onConfigChange("target_reps_max", 0);
-                  }
-                }}
-                keyboardType="numeric"
-                placeholder="12"
-                testID="reps-max-input"
-              />
-            </View>
-          </View>
-          <View style={styles.configField}>
-            <Text style={styles.configFieldLabel}>Rest (s)</Text>
-            <TextInput
-              style={[
-                styles.textInput,
-                shouldDisableSharedFields && styles.textInputDisabled,
-              ]}
-              value={restValue}
-              onChangeText={setRestValue}
-              onBlur={() => {
-                const num = parseInt(restValue);
-                if (
-                  !Number.isNaN(num) &&
-                  restValue !== "" &&
-                  !shouldDisableSharedFields
-                ) {
-                  onConfigChange("rest_seconds", num);
-                } else if (restValue === "" && !shouldDisableSharedFields) {
-                  onConfigChange("rest_seconds", 0);
-                }
-              }}
-              keyboardType="numeric"
-              placeholder="60"
-              editable={!shouldDisableSharedFields}
+
+          <RepRange
+            min={exercise.target_reps_min}
+            max={exercise.target_reps_max}
+            onMin={noop}
+            onMax={noop}
+            onMinBlur={commitRepsMin}
+            onMaxBlur={commitRepsMax}
+            minTestID="reps-min-input"
+            maxTestID="reps-max-input"
+          />
+
+          <View flex={1}>
+            <Stepper
+              label="REST"
+              unit="s"
+              value={restVal}
+              disabled={shouldDisableSharedFields}
+              onDec={() =>
+                onConfigChange(
+                  "rest_seconds",
+                  Math.max(0, exercise.rest_seconds - 15),
+                )
+              }
+              onInc={() =>
+                onConfigChange("rest_seconds", exercise.rest_seconds + 15)
+              }
+              onType={noop}
+              onBlur={commitRest}
               testID="rest-input"
             />
             {shouldDisableSharedFields && (
-              <Text style={styles.sharedConfigHint}>
+              <Text
+                fontFamily="$body"
+                fontSize={9.5}
+                color="$text4"
+                textAlign="center"
+                marginTop={4}
+              >
                 Inherited from superset
               </Text>
             )}
@@ -237,139 +278,15 @@ export default function ExerciseConfigCard({
 
       {/* Superset connector line below - only for the last item */}
       {isInSuperset && isSupersetEnd && (
-        <View style={styles.supersetConnectorBottom}>
-          <View style={styles.supersetLine} />
-        </View>
+        <View
+          height={2}
+          backgroundColor="$primary"
+          opacity={0.5}
+          borderRadius={2}
+          marginTop={8}
+          marginHorizontal={6}
+        />
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  exerciseWrapper: {
-    marginBottom: Spacing.xs,
-  },
-  exerciseConfigCard: {
-    padding: Spacing.md,
-  },
-  exerciseConfigCardSuperset: {
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary.DEFAULT,
-  },
-  exerciseConfigHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  exerciseConfigTitle: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  exerciseConfigNumber: {
-    ...Typography.h4,
-    color: Colors.primary.DEFAULT,
-    marginRight: Spacing.sm,
-    minWidth: 24,
-    fontWeight: "600",
-  },
-  exerciseConfigName: {
-    ...Typography.body1,
-    flex: 1,
-    fontWeight: "500",
-  },
-  removeExerciseButton: {
-    padding: Spacing.xs,
-    marginLeft: Spacing.xs,
-  },
-  exerciseConfigFields: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    paddingLeft: Spacing.lg,
-  },
-  configField: {
-    flex: 1,
-  },
-  configFieldWide: {
-    flex: 1.5,
-  },
-  repRangeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  repRangeSeparator: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    fontSize: 14,
-    paddingHorizontal: Spacing.xs,
-  },
-  configFieldLabel: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
-    marginBottom: Spacing.xs,
-  },
-  // Shared input styling for all text inputs
-  textInput: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.surface.border,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 8,
-    ...Typography.body2,
-    color: Colors.text.primary,
-    textAlign: "center",
-    fontSize: 14,
-  },
-  repRangeInput: {
-    flex: 1,
-  },
-  textInputDisabled: {
-    backgroundColor: Colors.surface.secondary,
-    borderColor: Colors.surface.border,
-    color: Colors.text.secondary,
-  },
-  sharedConfigHint: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
-    marginTop: Spacing.xs,
-  },
-  // Superset styling — centred letter pill on a connector line.
-  supersetConnector: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
-    marginHorizontal: Spacing.md,
-  },
-  supersetLine: {
-    height: 2,
-    flex: 1,
-    borderRadius: 2,
-    backgroundColor: Colors.primary.DEFAULT,
-    opacity: 0.5,
-  },
-  supersetBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-  },
-  supersetBadgeText: {
-    ...Typography.caption,
-    color: Colors.text.inverse,
-    fontWeight: "700",
-    fontSize: 10,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  supersetConnectorBottom: {
-    marginTop: Spacing.xs,
-    marginHorizontal: Spacing.md,
-  },
-});
