@@ -27,7 +27,9 @@ jest.mock("@/ui/hooks/useProfilePage");
 
 type AlertButton = { text?: string; onPress?: () => void | Promise<void> };
 
-const deleteAccount = jest.fn(async () => undefined);
+const deleteAccount = jest.fn(async () => ({
+  purgeAfter: "2026-08-12T00:00:00.000Z",
+}));
 
 /** Pull the button list out of the Nth Alert.alert invocation. */
 function alertButtons(callIndex: number): AlertButton[] {
@@ -41,7 +43,7 @@ describe("PrivacySettingsContainer — delete account", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProbe.props = null;
-    deleteAccount.mockResolvedValue(undefined);
+    deleteAccount.mockResolvedValue({ purgeAfter: "2026-08-12T00:00:00.000Z" });
     (useAuth as jest.Mock).mockReturnValue({
       session: { userId: "u1" },
       deleteAccount,
@@ -60,15 +62,36 @@ describe("PrivacySettingsContainer — delete account", () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
 
-    // First confirm dialog → tap the destructive action.
+    // First confirm dialog → grace-period wording (Cluster 2b soft-delete),
+    // then tap the destructive action.
     expect(Alert.alert).toHaveBeenCalledTimes(1);
+    const [, firstBody] = (Alert.alert as jest.Mock).mock.calls[0];
+    expect(firstBody).toContain("scheduled for deletion");
+    expect(firstBody).toContain("30 days");
+    expect(firstBody).toContain("restore your account by signing in again");
     pressByText(alertButtons(0), "Delete Account");
 
     // Second (last-chance) dialog → tap Delete.
     expect(Alert.alert).toHaveBeenCalledTimes(2);
+    const [, secondBody] = (Alert.alert as jest.Mock).mock.calls[1];
+    expect(secondBody).toContain("30 days");
     await pressByText(alertButtons(1), "Delete");
 
     expect(deleteAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the purge date after a successful deletion", async () => {
+    render(<PrivacySettingsContainer />);
+    mockProbe.props!.onDeleteAccount();
+    pressByText(alertButtons(0), "Delete Account");
+    await pressByText(alertButtons(1), "Delete");
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Account scheduled for deletion",
+        expect.stringContaining("12 August 2026"),
+      );
+    });
   });
 
   it("does nothing when the user cancels the first dialog", () => {

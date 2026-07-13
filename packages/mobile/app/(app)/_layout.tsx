@@ -209,6 +209,16 @@ export default function AppLayout() {
           options={{ title: "Coming soon", headerShown: true }}
         />
         {/*
+          Cluster 2b account-deletion soft-delete: the restore-account gate.
+          AuthGate (app/_layout.tsx) redirects here for a signed-in user
+          whose profile carries a non-null `deletedAt`. No back affordance
+          by design (native header off) — the user must Restore or Sign out.
+        */}
+        <Stack.Screen
+          name="restore-account"
+          options={{ headerShown: false, gestureEnabled: false }}
+        />
+        {/*
           fuel/recipes (Fuel → Recipes PR1) now owns its own <HeaderBar>
           (back-to-Fuel / Library / +) — native header off, matching every
           other custom-chrome screen.

@@ -5,78 +5,36 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { AccountRepository } from "../accountRepository";
-import {
-  getSupabaseAdminConfig,
-  deleteAuthUserWithRetry,
-} from "../supabaseAdminClient";
-import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
-import { getStripe } from "../../stripe/stripeClient";
+import { getSupabaseAdminConfig } from "../supabaseAdminClient";
+import { cancelStripeSubscriptions } from "../cancelUserStripeSubscriptions";
 
 const accountRepository = new AccountRepository();
 
 /**
- * Detect Stripe errors meaning "the subscription is already cancelled/gone."
- * Mirrors subscriptionsCancelHandler.ts — kept inline to avoid a circular dep.
- */
-function isAlreadyCanceledError(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const code =
-    (err as { code?: unknown }).code ??
-    (err as { raw?: { code?: unknown } }).raw?.code;
-  if (code === "resource_missing") return true;
-  const message = err instanceof Error ? err.message : String(err);
-  return /already\s+cancell?ed|has been cancell?ed/i.test(message);
-}
-
-/**
- * Cancel EVERY Stripe-billed subscription for the user before purging their
- * data. We cancel all rows carrying a Stripe `sub_…` id (not just the newest,
- * and regardless of local payment_status) because a user can have more than
- * one row and a locally-"cancelled" row can still be live on Stripe (the
- * RevenueCat sync flips status without calling Stripe). RevenueCat/Apple IAP
- * subs (`rc_…`) can't be cancelled server-side — the mobile confirm dialog
- * tells the user to cancel in iOS Settings.
- *
- * Throws on a non-recoverable Stripe error so the handler can abort before
- * purging (the user stays signed in and can retry).
- */
-async function cancelStripeSubscriptions(userId: string): Promise<void> {
-  const subRepo = new SubscriptionRepository();
-  const externalIds = await subRepo.findStripeSubscriptionIdsForUser(userId);
-  const stripeIds = externalIds.filter((id) => id.startsWith("sub_"));
-  if (stripeIds.length === 0) return;
-
-  const stripe = getStripe();
-  for (const stripeId of stripeIds) {
-    try {
-      await stripe.subscriptions.cancel(stripeId);
-    } catch (err) {
-      if (isAlreadyCanceledError(err)) {
-        // Already cancelled on Stripe — idempotent, treat as success.
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-/**
- * `DELETE /account` — permanently delete the caller's account (08-profile-
- * settings § Revised 2026-06-28, STORY-011; App Store Guideline 5.1.1(v)).
+ * `DELETE /account` — soft-delete the caller's account into a 30-day
+ * cooling-off window (Cluster 2a; supersedes the immediate-purge flow that
+ * shipped for 08-profile-settings § Revised 2026-06-28, STORY-011 / App Store
+ * Guideline 5.1.1(v) — the guideline requires an in-app deletion PATH, not
+ * that data vanish instantly, and a cooling-off period is standard practice
+ * elsewhere in the industry).
  *
  * Acts only on the authenticated caller's own `userId` (from the JWT — never
  * an id from the body). Flow:
- *   1. Fail fast (500) if the Supabase service-role key is unset — BEFORE any
- *      purge, so an unconfigured stage never half-deletes an account.
- *   2. Cancel any active Stripe-direct subscription (stop billing).
- *   3. Atomically purge all of the caller's owned data (one transaction).
- *   4. Delete the Supabase `auth.users` record (bounded retry; failure is
- *      logged for ops cleanup but does NOT block the 200 — the user's data
- *      is gone and they should be signed out regardless).
+ *   1. Fail fast (500) if the Supabase service-role key is unset — mirrors
+ *      the old fail-fast guard so a mis-configured stage never silently
+ *      accepts a deletion request the nightly purge worker can't later
+ *      complete (it needs the same admin key to delete the auth user).
+ *   2. Cancel any active Stripe-direct subscription (stop billing NOW, not in
+ *      30 days — the user shouldn't be billed during the cooling-off window).
+ *      Dormant no-op for RevenueCat/Apple-IAP-only users (no `sub_…` ids) —
+ *      harmless safety net, left as-is.
+ *   3. Stamp `profiles.deleted_at` / `purge_after` (30 days out). NO data
+ *      purge and NO auth-user delete here — those are the nightly purge
+ *      worker's job once the window elapses (`accountPurgeCron.ts`).
  *
- * Idempotent: a retry after a transient failure cancels an already-cancelled
- * sub (resource_missing → ok), purges zero rows, and treats an already-deleted
- * auth user (404) as success.
+ * Idempotent: re-calling before the window elapses just re-stamps both
+ * columns (extends the cooling-off window from "now"), and re-cancelling an
+ * already-cancelled Stripe sub is itself idempotent (resource_missing → ok).
  */
 export const accountDeleteHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -86,7 +44,9 @@ export const accountDeleteHandler = new Elysia()
   .delete("/account", async (ctx) => {
     const { sub: userId } = getUser(ctx);
 
-    // 1. Fail fast if unconfigured.
+    // 1. Fail fast if unconfigured — the purge worker needs this same
+    //    config later, so refuse to start the cooling-off window at all if
+    //    it's unset (an operator error, not a per-request condition).
     try {
       getSupabaseAdminConfig();
     } catch {
@@ -94,7 +54,7 @@ export const accountDeleteHandler = new Elysia()
       return { error: "Account deletion is not configured" };
     }
 
-    // 2. Cancel active Stripe subscription (stop billing BEFORE purge).
+    // 2. Cancel active Stripe subscription (stop billing during cooldown).
     try {
       await cancelStripeSubscriptions(userId);
     } catch (err) {
@@ -106,28 +66,16 @@ export const accountDeleteHandler = new Elysia()
       };
     }
 
-    // 3. Purge all user-owned data (atomic transaction).
+    // 3. Soft-delete: stamp deleted_at/purge_after. No purge, no auth-user
+    //    delete — the nightly worker completes the deletion after 30 days.
+    let purgeAfter: Date;
     try {
-      await accountRepository.purgeUserData(userId);
+      purgeAfter = await accountRepository.softDelete(userId);
     } catch (err) {
-      console.error("[account:delete] data purge failed:", err);
+      console.error("[account:delete] soft-delete stamp failed:", err);
       ctx.set.status = 500;
       return { error: "Failed to delete account" };
     }
 
-    // 4. Delete the Supabase auth user (bounded retry). After a successful
-    //    purge the user's data is already gone — we always return 200 so the
-    //    mobile signs out. A transient auth-delete failure is logged for ops
-    //    cleanup (the zombie auth.users row has no profile → can't be used
-    //    meaningfully, and Apple compliance is met: the PII/data is deleted).
-    try {
-      await deleteAuthUserWithRetry(userId);
-    } catch (err) {
-      console.error(
-        "[account:delete] auth user delete failed after retries (ops cleanup needed):",
-        err,
-      );
-    }
-
-    return { data: { deleted: true } };
+    return { data: { softDeleted: true, purgeAfter: purgeAfter.toISOString() } };
   });

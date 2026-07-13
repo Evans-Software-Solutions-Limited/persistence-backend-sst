@@ -1,6 +1,6 @@
 import Elysia, { t } from "elysia";
 import { and, eq } from "drizzle-orm";
-import { ptClientRelationships } from "@persistence/db";
+import { profiles, ptClientRelationships } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { ProgramService } from "../../repositories/programService";
 import {
@@ -21,6 +21,10 @@ import { todayIso } from "./shared";
  * (403 `not_your_client` otherwise) — identical inline guard to
  * `trainersClientBodyTrendHandler`. This is a read of a single client's
  * derived programme state, so no audit row.
+ *
+ * Cluster 2a: also denies (same 403 `not_your_client` body — never disclose
+ * the specific reason) when the client is soft-deleted, joined into the same
+ * query. Brad's "hide from coach immediately" call.
  */
 export const trainersClientActiveProgrammeGetHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -36,8 +40,12 @@ export const trainersClientActiveProgrammeGetHandler = new Elysia()
 
       const db = getDb();
       const rel = await db
-        .select({ id: ptClientRelationships.id })
+        .select({
+          id: ptClientRelationships.id,
+          clientDeletedAt: profiles.deletedAt,
+        })
         .from(ptClientRelationships)
+        .innerJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
         .where(
           and(
             eq(ptClientRelationships.trainerId, trainerId),
@@ -47,7 +55,7 @@ export const trainersClientActiveProgrammeGetHandler = new Elysia()
           ),
         )
         .limit(1);
-      if (!rel[0]) {
+      if (!rel[0] || rel[0].clientDeletedAt != null) {
         ctx.set.status = 403;
         return {
           code: "not_your_client",

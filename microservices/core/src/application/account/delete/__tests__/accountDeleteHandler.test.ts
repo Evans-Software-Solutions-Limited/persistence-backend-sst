@@ -22,33 +22,28 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 const {
-  calls,
-  purgeUserData,
+  softDelete,
   getSupabaseAdminConfig,
-  deleteAuthUserWithRetry,
   findStripeSubscriptionIdsForUser,
   stripeCancelMock,
 } = vi.hoisted(() => {
-  const calls: string[] = [];
+  const FIXED_PURGE_AFTER = new Date("2026-08-12T00:00:00.000Z");
   return {
-    calls,
-    purgeUserData: vi.fn(async () => void calls.push("purge")),
+    softDelete: vi.fn(async () => FIXED_PURGE_AFTER),
     getSupabaseAdminConfig: vi.fn(() => ({
       url: "https://x.supabase.co",
       serviceRoleKey: "svc",
     })),
-    deleteAuthUserWithRetry: vi.fn(async () => void calls.push("auth-delete")),
     findStripeSubscriptionIdsForUser: vi.fn(async (): Promise<string[]> => []),
     stripeCancelMock: vi.fn(async () => ({})),
   };
 });
 
 vi.mock("../../accountRepository", () => ({
-  AccountRepository: vi.fn(() => ({ purgeUserData })),
+  AccountRepository: vi.fn(() => ({ softDelete })),
 }));
 vi.mock("../../supabaseAdminClient", () => ({
   getSupabaseAdminConfig,
-  deleteAuthUserWithRetry,
 }));
 vi.mock("../../../repositories/subscriptionRepository", () => ({
   SubscriptionRepository: vi.fn(() => ({ findStripeSubscriptionIdsForUser })),
@@ -71,15 +66,15 @@ function del(headers: Record<string, string> = authed) {
   });
 }
 
-describe("accountDeleteHandler", () => {
+describe("accountDeleteHandler (Cluster 2a soft-delete)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    calls.length = 0;
     getSupabaseAdminConfig.mockReturnValue({
       url: "https://x.supabase.co",
       serviceRoleKey: "svc",
     });
     findStripeSubscriptionIdsForUser.mockResolvedValue([]);
+    softDelete.mockResolvedValue(new Date("2026-08-12T00:00:00.000Z"));
   });
 
   it("401s when unauthenticated", async () => {
@@ -87,18 +82,21 @@ describe("accountDeleteHandler", () => {
       del({ "Content-Type": "application/json" }),
     );
     expect(res.status).toBe(401);
-    expect(purgeUserData).not.toHaveBeenCalled();
+    expect(softDelete).not.toHaveBeenCalled();
   });
 
-  it("cancels Stripe sub, purges data, deletes auth user, returns 200", async () => {
+  it("cancels Stripe sub, soft-deletes (stamps deleted_at/purge_after), returns 200 with purgeAfter — does NOT purge data or delete the auth user", async () => {
     findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_abc"]);
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ data: { deleted: true } });
+    expect(await res.json()).toEqual({
+      data: {
+        softDeleted: true,
+        purgeAfter: "2026-08-12T00:00:00.000Z",
+      },
+    });
     expect(stripeCancelMock).toHaveBeenCalledWith("sub_abc");
-    expect(purgeUserData).toHaveBeenCalledWith("user-id");
-    expect(deleteAuthUserWithRetry).toHaveBeenCalledWith("user-id");
-    expect(calls).toEqual(["purge", "auth-delete"]);
+    expect(softDelete).toHaveBeenCalledWith("user-id");
   });
 
   it("cancels EVERY Stripe subscription the user has (not just the newest)", async () => {
@@ -124,14 +122,14 @@ describe("accountDeleteHandler", () => {
     expect(stripeCancelMock).not.toHaveBeenCalledWith("rc_user-id");
   });
 
-  it("aborts (502, no purge) when a later sub in the loop genuinely fails", async () => {
+  it("aborts (502, no soft-delete) when a later sub in the loop genuinely fails", async () => {
     findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_a", "sub_b"]);
     stripeCancelMock
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce(new Error("Stripe down"));
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(502);
-    expect(purgeUserData).not.toHaveBeenCalled();
+    expect(softDelete).not.toHaveBeenCalled();
   });
 
   it("skips Stripe cancel for RevenueCat-managed (Apple IAP) subs", async () => {
@@ -139,7 +137,7 @@ describe("accountDeleteHandler", () => {
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(200);
     expect(stripeCancelMock).not.toHaveBeenCalled();
-    expect(purgeUserData).toHaveBeenCalled();
+    expect(softDelete).toHaveBeenCalled();
   });
 
   it("treats Stripe resource_missing as already cancelled (idempotent)", async () => {
@@ -149,18 +147,18 @@ describe("accountDeleteHandler", () => {
     stripeCancelMock.mockRejectedValueOnce(err);
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(200);
-    expect(purgeUserData).toHaveBeenCalled();
+    expect(softDelete).toHaveBeenCalled();
   });
 
-  it("502s and aborts when Stripe cancel genuinely fails (no purge)", async () => {
+  it("502s and aborts when Stripe cancel genuinely fails (no soft-delete)", async () => {
     findStripeSubscriptionIdsForUser.mockResolvedValue(["sub_abc"]);
     stripeCancelMock.mockRejectedValueOnce(new Error("Stripe down"));
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(502);
-    expect(purgeUserData).not.toHaveBeenCalled();
+    expect(softDelete).not.toHaveBeenCalled();
   });
 
-  it("fails fast (500) before any purge when service-role key is unconfigured", async () => {
+  it("fails fast (500) before any Stripe/soft-delete work when service-role key is unconfigured", async () => {
     getSupabaseAdminConfig.mockImplementation(() => {
       throw new Error("Missing env");
     });
@@ -169,19 +167,20 @@ describe("accountDeleteHandler", () => {
     expect(await res.json()).toEqual({
       error: "Account deletion is not configured",
     });
-    expect(purgeUserData).not.toHaveBeenCalled();
+    expect(softDelete).not.toHaveBeenCalled();
   });
 
-  it("returns 200 even when auth-user delete fails (data already purged)", async () => {
-    deleteAuthUserWithRetry.mockRejectedValueOnce(new Error("admin 503"));
-    const res = await accountDeleteHandler.handle(del());
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ data: { deleted: true } });
-    expect(purgeUserData).toHaveBeenCalledTimes(1);
+  it("re-request re-stamps the window (idempotent) — calling again just re-invokes softDelete", async () => {
+    findStripeSubscriptionIdsForUser.mockResolvedValue([]);
+    const first = await accountDeleteHandler.handle(del());
+    const second = await accountDeleteHandler.handle(del());
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(softDelete).toHaveBeenCalledTimes(2);
   });
 
-  it("500s when the data purge fails (nothing deleted)", async () => {
-    purgeUserData.mockRejectedValueOnce(new Error("tx rolled back"));
+  it("500s when the soft-delete stamp fails", async () => {
+    softDelete.mockRejectedValueOnce(new Error("db down"));
     const res = await accountDeleteHandler.handle(del());
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "Failed to delete account" });

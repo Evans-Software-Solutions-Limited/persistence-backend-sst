@@ -9,6 +9,7 @@ import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
+import { useProfilePage } from "../src/ui/hooks/useProfilePage";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
@@ -122,8 +123,19 @@ function PurchasesIdentityBootstrap() {
 
 function AuthGate() {
   const { session, isLoading } = useAuth();
+  // Cluster 2b (account-deletion soft-delete): drives the redirect below
+  // off the cached/refreshed profile-page payload. `useProfilePage` is
+  // cache-first + self-refreshes once stale, so this naturally fires the
+  // fetch on sign-in/bootstrap without any extra wiring here — see its
+  // header comment (src/ui/hooks/useProfilePage.tsx) for the caveat that a
+  // stale/absent cache can briefly show `deletedAt: null` before the
+  // background refresh lands; the effect below re-runs and corrects course
+  // as soon as the payload updates.
+  const profilePage = useProfilePage();
   const segments = useSegments();
   const router = useRouter();
+
+  const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
 
   useEffect(() => {
     if (isLoading) return;
@@ -139,6 +151,19 @@ function AuthGate() {
     const inPostAuthSubscriptionFlow =
       inAuthGroup &&
       (segmentName === "subscription-selection" || segmentName === "success");
+    const inRestoreAccountScreen =
+      inAppGroup && segmentName === "restore-account";
+
+    // Soft-deleted (grace-period) gate: a signed-in user whose profile
+    // carries a non-null `deletedAt` must restore (or sign out) before
+    // reaching the normal tabs — checked ahead of the ordinary
+    // session redirect so this wins over "signed in -> go to tabs".
+    // Deliberately does NOT preserve the segments being left, mirroring
+    // the existing sign-in/sign-out redirects below.
+    if (session && deletedAt != null && !inRestoreAccountScreen) {
+      router.replace("/(app)/restore-account");
+      return;
+    }
 
     if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
       // Signed in but not in app and not in the post-sign-up flow —
@@ -149,7 +174,7 @@ function AuthGate() {
       // Not signed in and not on auth screen — go to sign-in
       router.replace("/(auth)/sign-in");
     }
-  }, [session, isLoading, segments, router]);
+  }, [session, isLoading, segments, router, deletedAt]);
 
   return <Slot />;
 }

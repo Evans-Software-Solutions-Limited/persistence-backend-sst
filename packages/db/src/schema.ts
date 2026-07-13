@@ -372,6 +372,13 @@ export const profiles = pgTable("profiles", {
     .default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  // 30-day soft-delete cooling-off (Cluster 2a). NULL/NULL = active account —
+  // every existing row and every newly-created one. `DELETE /account` stamps
+  // both; `POST /account/restore` clears both within the window; the nightly
+  // purge worker hard-deletes once `now() >= purgeAfter`. Migration:
+  // 20260713120000_account_soft_delete.sql.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  purgeAfter: timestamp("purge_after", { withTimezone: true }),
 });
 
 // ─── Subscriptions ────────────────────────────────────────────────────────────
@@ -1019,9 +1026,14 @@ export const programAssignments = pgTable(
     clientId: uuid("client_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    assignedBy: uuid("assigned_by")
-      .notNull()
-      .references(() => profiles.id),
+    // Nullable + ON DELETE SET NULL (Cluster 2a, migration
+    // 20260713120000_account_soft_delete.sql) — this is a coach's attribution
+    // on the CLIENT's row, so deleting the coach's account must preserve the
+    // client's assignment, not delete it. NULL = the assigning coach no
+    // longer has an account.
+    assignedBy: uuid("assigned_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
     startDate: text("start_date").notNull(),
     endDate: text("end_date"),
     status: assignmentStatusEnum("status").notNull().default("assigned"),

@@ -48,7 +48,32 @@ describe("ACCOUNT_DELETION_STEPS", () => {
       "nutrition_targets.user_id",
       "ai_usage_log.user_id",
       "subscription_status_transitions.user_id",
+      "trainer_actions_audit.trainer_id",
+      "trainer_actions_audit.client_id",
+      "client_ai_summaries.trainer_id",
+      "client_ai_summaries.client_id",
     ]);
+  });
+
+  it("deletes trainer_actions_audit + client_ai_summaries on BOTH the trainer_id and client_id side (Coach-Mode crash fix — the deleting user can be either party) BEFORE the final profiles delete", () => {
+    const tableNames = ACCOUNT_DELETION_STEPS.map((s) => s.table);
+    const profilesIdx = tableNames.lastIndexOf("profiles");
+
+    for (const table of ["trainer_actions_audit", "client_ai_summaries"]) {
+      const steps = ACCOUNT_DELETION_STEPS.filter(
+        (s) => s.kind === "delete" && s.table === table,
+      );
+      expect(steps.map((s) => (s as { column: string }).column).sort()).toEqual(
+        ["client_id", "trainer_id"],
+      );
+      const idxs = ACCOUNT_DELETION_STEPS.reduce<number[]>((acc, s, i) => {
+        if (s.kind === "delete" && s.table === table) acc.push(i);
+        return acc;
+      }, []);
+      for (const idx of idxs) {
+        expect(idx).toBeLessThan(profilesIdx);
+      }
+    }
   });
 
   it("nullifies cross-user references to owned rows (NO-ACTION FKs on other users' children)", () => {

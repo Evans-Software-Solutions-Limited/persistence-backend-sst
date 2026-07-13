@@ -6,6 +6,13 @@ vi.mock("@persistence/db/client", () => ({
 }));
 
 import { getDb } from "@persistence/db/client";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+
+const dialect = new PgDialect();
+function renderWhere(cond: unknown): string {
+  return dialect.sqlToQuery(cond as SQL).sql;
+}
 
 /**
  * A `select()` builder that is *thenable* at every chain step. Drizzle query
@@ -268,6 +275,52 @@ describe("TrainerRepository", () => {
           initiatedBy: "trainer",
         },
       ]);
+    });
+  });
+
+  // ─── Cluster 2a — soft-deleted client exclusion ─────────────────────────
+
+  describe("getActiveClients / getRosterClients — soft-delete exclusion", () => {
+    it("getActiveClients filters on profiles.deleted_at IS NULL", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      let capturedWhere: unknown;
+      const builder: any = {};
+      const passthrough = () => builder;
+      for (const m of ["from", "leftJoin", "orderBy", "limit", "offset"]) {
+        builder[m] = vi.fn(passthrough);
+      }
+      builder.where = vi.fn((cond: unknown) => {
+        capturedWhere = cond;
+        return builder;
+      });
+      builder.then = (resolve: (v: unknown[]) => unknown) => resolve([]);
+      (getDb as any).mockReturnValue({ select: vi.fn(() => builder) });
+
+      await repo.getActiveClients("t1");
+
+      expect(renderWhere(capturedWhere)).toContain('"deleted_at" is null');
+    });
+
+    it("getRosterClients filters on profiles.deleted_at IS NULL", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      let capturedWhere: unknown;
+      const builder: any = {};
+      const passthrough = () => builder;
+      for (const m of ["from", "leftJoin", "orderBy", "limit", "offset"]) {
+        builder[m] = vi.fn(passthrough);
+      }
+      builder.where = vi.fn((cond: unknown) => {
+        capturedWhere = cond;
+        return builder;
+      });
+      builder.then = (resolve: (v: unknown[]) => unknown) => resolve([]);
+      (getDb as any).mockReturnValue({ select: vi.fn(() => builder) });
+
+      await repo.getRosterClients("t1");
+
+      expect(renderWhere(capturedWhere)).toContain('"deleted_at" is null');
     });
   });
 
@@ -1239,6 +1292,56 @@ describe("TrainerRepository", () => {
         message: "Training request sent to Client Name",
       });
       expect(tx.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it("excludes a soft-deleted user's email from the profile lookup (Cluster 2a — falls through to plain email invite, not a relationship against a deleting account)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      vi.spyOn(repo, "getTrainerClientLimit").mockResolvedValue(10);
+
+      const capturedWheres: unknown[] = [];
+      let si = 0;
+      const selects = [
+        [{ email: "trainer@x.io" }],
+        [{ total: 1 }],
+        [], // profile lookup — nothing matches (soft-deleted user excluded)
+      ];
+      const tx = {
+        select: vi.fn(() => {
+          const builder: any = {};
+          const passthrough = () => builder;
+          for (const m of ["from", "limit"]) builder[m] = vi.fn(passthrough);
+          builder.where = vi.fn((cond: unknown) => {
+            capturedWheres.push(cond);
+            return builder;
+          });
+          builder.then = (resolve: (v: unknown[]) => unknown) =>
+            resolve(selects[si++] ?? []);
+          return builder;
+        }),
+        insert: vi.fn(() => ({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "inv-1" }]),
+          }),
+        })),
+      };
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn(async (fn: any) => fn(tx)),
+      });
+
+      const result = await repo.inviteClientByEmail(
+        "t1",
+        "deleted@x.io",
+        null,
+      );
+      // No existing profile matched → falls through to the plain
+      // email-invitation branch, exactly like any unregistered address.
+      expect(result).toMatchObject({ success: true });
+
+      // The 3rd select() call is the profile-by-email lookup; assert its
+      // WHERE clause excludes soft-deleted rows.
+      const profileLookupWhere = capturedWheres[2];
+      expect(renderWhere(profileLookupWhere)).toContain('"deleted_at" is null');
     });
 
     it("rejects duplicate relationship (409 exists)", async () => {

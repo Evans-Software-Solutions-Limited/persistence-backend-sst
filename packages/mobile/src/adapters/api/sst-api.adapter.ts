@@ -473,12 +473,30 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   /**
-   * App Store Guideline 5.1.1(v): permanently delete the caller's account.
-   * Backend cascade-purges all owned data + deletes the Supabase auth user.
+   * App Store Guideline 5.1.1(v): schedule the caller's account for
+   * deletion (Cluster 2b soft-delete revision). Backend returns
+   * `{ softDeleted: true, purgeAfter }` — single envelope, unwrapped via
+   * `requestEnvelope`.
    * See specs/08-profile-settings § Revised 2026-06-28 (STORY-011).
    */
-  async deleteAccount(): Promise<Result<void, ApiError>> {
-    return this.request<void>("/account", { method: "DELETE" });
+  async deleteAccount(): Promise<
+    Result<{ softDeleted: true; purgeAfter: string }, ApiError>
+  > {
+    return this.requestEnvelope<{ softDeleted: true; purgeAfter: string }>(
+      "/account",
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Cluster 2b (account-deletion soft-delete): cancel a pending deletion
+   * for the authenticated caller. Backend returns `{ restored: true }`;
+   * 409 when the account isn't currently soft-deleted.
+   */
+  async restoreAccount(): Promise<Result<{ restored: true }, ApiError>> {
+    return this.requestEnvelope<{ restored: true }>("/account/restore", {
+      method: "POST",
+    });
   }
 
   // -- Workouts (M2) --

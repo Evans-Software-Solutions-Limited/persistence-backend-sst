@@ -208,6 +208,34 @@ describe("WorkoutRepository", () => {
       expect(result.workouts[0].createdBy).toBeNull();
     });
 
+    it("Cluster 2a: type=default excludes public workouts whose author is soft-deleted (NOT EXISTS on profiles.deleted_at)", async () => {
+      let capturedWhere: unknown;
+      const listChain: any = {};
+      listChain.from = vi.fn().mockReturnValue(listChain);
+      listChain.where = vi.fn((w: unknown) => {
+        capturedWhere = w;
+        return listChain;
+      });
+      listChain.orderBy = vi.fn().mockReturnValue(listChain);
+      listChain.limit = vi.fn().mockReturnValue(listChain);
+      listChain.offset = vi.fn().mockResolvedValue([]);
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(listChain)
+          .mockReturnValueOnce(makeCountChain(0)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.list("user-1", { type: "default" });
+
+      const dialect = new PgDialect();
+      const rendered = dialect.sqlToQuery(capturedWhere as any).sql;
+      expect(rendered).toContain("not exists");
+      expect(rendered).toContain('"deleted_at" is not null');
+    });
+
     it("should query assigned workouts when type=assigned", async () => {
       const assignedWorkout = { ...baseWorkout, createdBy: "trainer-1" };
       const mockDb = {
@@ -310,6 +338,8 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
+          // Cluster 2a: isOwnerSoftDeleted check — owner not deleted.
+          .mockReturnValueOnce(makeSelectChain([{ deletedAt: null }]))
           .mockReturnValueOnce(makeSelectChain([{ id: "friendship-1" }]))
           .mockReturnValueOnce(
             makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
@@ -334,6 +364,8 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
+          // Cluster 2a: isOwnerSoftDeleted check — owner not deleted.
+          .mockReturnValueOnce(makeSelectChain([{ deletedAt: null }]))
           .mockReturnValueOnce(makeSelectChain([])) // no friendship
           .mockReturnValueOnce(makeSelectChain([])), // no assignment either
       };
@@ -343,6 +375,33 @@ describe("WorkoutRepository", () => {
       const result = await repo.getById("wo-1", "stranger-id");
 
       expect(result).toBeNull();
+      expect(mockDb.select).toHaveBeenCalledTimes(4);
+    });
+
+    it("Cluster 2a: denies access to a friends-visibility workout when the owner is soft-deleted, even for an accepted friend — but an existing assignment can still grant it", async () => {
+      const friendsWorkout = {
+        ...baseWorkout,
+        createdBy: "owner-id",
+        visibility: "friends" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
+          // owner IS soft-deleted — friendship check is skipped entirely.
+          .mockReturnValueOnce(
+            makeSelectChain([{ deletedAt: new Date("2026-07-13T00:00:00Z") }]),
+          )
+          .mockReturnValueOnce(makeSelectChain([])), // no assignment either
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "friend-id");
+
+      expect(result).toBeNull();
+      // workout fetch, isOwnerSoftDeleted, assignment lookup — the
+      // friendship query never runs because ownerDeleted short-circuits it.
       expect(mockDb.select).toHaveBeenCalledTimes(3);
     });
 
@@ -395,6 +454,8 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([friendsWorkout]))
+          // Cluster 2a: isOwnerSoftDeleted check — owner not deleted.
+          .mockReturnValueOnce(makeSelectChain([{ deletedAt: null }]))
           .mockReturnValueOnce(makeSelectChain([])) // no friendship
           .mockReturnValueOnce(makeSelectChain([{ id: "wa-1" }])) // assignment
           .mockReturnValueOnce(
@@ -419,6 +480,8 @@ describe("WorkoutRepository", () => {
         select: vi
           .fn()
           .mockReturnValueOnce(makeSelectChain([publicWorkout]))
+          // Cluster 2a: isOwnerSoftDeleted check — owner not deleted.
+          .mockReturnValueOnce(makeSelectChain([{ deletedAt: null }]))
           .mockReturnValueOnce(
             makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
           ),
@@ -430,6 +493,29 @@ describe("WorkoutRepository", () => {
 
       expect(result).not.toBeNull();
       expect(result?.exercises).toEqual(mockExercises);
+    });
+
+    it("Cluster 2a: denies access to a public workout when the author is soft-deleted, even for a stranger — but an existing assignment can still grant it", async () => {
+      const publicWorkout = {
+        ...baseWorkout,
+        createdBy: "owner-id",
+        visibility: "public" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([publicWorkout]))
+          .mockReturnValueOnce(
+            makeSelectChain([{ deletedAt: new Date("2026-07-13T00:00:00Z") }]),
+          )
+          .mockReturnValueOnce(makeSelectChain([])), // no assignment
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "stranger-id");
+
+      expect(result).toBeNull();
     });
 
     it("should return null when workout does not exist", async () => {

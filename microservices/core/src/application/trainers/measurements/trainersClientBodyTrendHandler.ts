@@ -1,6 +1,6 @@
 import Elysia, { t } from "elysia";
 import { and, eq } from "drizzle-orm";
-import { ptClientRelationships } from "@persistence/db";
+import { profiles, ptClientRelationships } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { HomeReadService } from "../../repositories/homeReadService";
 import { parseBodyTrendWindow } from "../../progress/getBodyTrendHandler";
@@ -23,6 +23,9 @@ import {
  * Authorization: identical to the coach measurement-log route — the caller
  * MUST have an ACTIVE, non-AI relationship with :clientId as the trainer.
  * 403 otherwise (`not_your_client`).
+ *
+ * Cluster 2a: also denies (same 403 body) when the client is soft-deleted,
+ * joined into the same query. Brad's "hide from coach immediately" call.
  */
 export const trainersClientBodyTrendHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -37,11 +40,17 @@ export const trainersClientBodyTrendHandler = new Elysia()
       const { clientId } = ctx.params as { clientId: string };
 
       // Active-relationship guard (trainer side of the pair) — mirrors
-      // trainersLogClientMeasurementHandler.
+      // trainersLogClientMeasurementHandler. Joined to the client's profile
+      // so a soft-deleted client (Cluster 2a) is denied in the same
+      // round-trip.
       const db = getDb();
       const rel = await db
-        .select({ id: ptClientRelationships.id })
+        .select({
+          id: ptClientRelationships.id,
+          clientDeletedAt: profiles.deletedAt,
+        })
         .from(ptClientRelationships)
+        .innerJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
         .where(
           and(
             eq(ptClientRelationships.trainerId, trainerId),
@@ -52,7 +61,7 @@ export const trainersClientBodyTrendHandler = new Elysia()
         )
         .limit(1);
 
-      if (!rel[0]) {
+      if (!rel[0] || rel[0].clientDeletedAt != null) {
         ctx.set.status = 403;
         return {
           code: "not_your_client",

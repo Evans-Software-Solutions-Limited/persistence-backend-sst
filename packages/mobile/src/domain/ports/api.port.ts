@@ -147,12 +147,32 @@ export interface ApiPort {
   deleteAvatar(): Promise<Result<{ avatarUrl: null }, ApiError>>;
 
   /**
-   * App Store Guideline 5.1.1(v): permanently delete the caller's account.
-   * The backend cascade-purges all of the user's owned data and deletes the
-   * Supabase auth user so the credential can no longer sign in. Idempotent.
-   * See specs/08-profile-settings § Revised 2026-06-28 (STORY-011).
+   * App Store Guideline 5.1.1(v): schedule the caller's account for
+   * deletion. Cluster 2b revised this from an immediate cascade-purge to a
+   * 30-day soft-delete grace period — the backend flags the account
+   * (`deletedAt` / `purgeAfter`) rather than deleting it outright, and a
+   * background job purges accounts past `purgeAfter`. The caller is still
+   * signed out locally on success (mirrors the old contract); signing back
+   * in within the grace window routes through the `restore-account` gate
+   * (see `AuthGate`, `app/_layout.tsx`) instead of the normal tabs.
+   * Idempotent. See specs/08-profile-settings § Revised 2026-06-28
+   * (STORY-011) and the Cluster 2b account-deletion soft-delete brief.
    */
-  deleteAccount(): Promise<Result<void, ApiError>>;
+  deleteAccount(): Promise<
+    Result<{ softDeleted: true; purgeAfter: string }, ApiError>
+  >;
+
+  /**
+   * Cluster 2b (account-deletion soft-delete): cancel a pending deletion
+   * for the authenticated caller (`POST /account/restore`). Only valid
+   * while the account is soft-deleted — the backend returns 409 otherwise
+   * (`err.status === 409`), which the `RestoreAccountContainer` treats as
+   * "nothing to restore" rather than a hard failure. On success, callers
+   * must refresh the cached profile page (`useProfilePage().refresh()`) so
+   * `deletedAt` clears and `AuthGate` stops redirecting to the restore
+   * screen.
+   */
+  restoreAccount(): Promise<Result<{ restored: true }, ApiError>>;
 
   // -- Workouts (M2) --
   /**
@@ -1393,6 +1413,17 @@ export type ApiProfile = {
   isProfilePublic?: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Cluster 2b (account-deletion soft-delete): non-null while the account
+   * is in its 30-day post-deletion grace period. See
+   * `ProfilePageProfile.deletedAt` (`domain/models/profilePage.ts`) for the
+   * gating consumer — that's the shape the restore-account flow actually
+   * reads; this field is carried here too for wire-type parity with
+   * `GET /profile`. Optional/back-compat, same as there.
+   */
+  deletedAt?: string | null;
+  /** Purge date when `deletedAt` is set. See `ProfilePageProfile.purgeAfter`. */
+  purgeAfter?: string | null;
 };
 
 /**

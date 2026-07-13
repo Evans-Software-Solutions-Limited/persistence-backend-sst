@@ -14,6 +14,22 @@ jest.mock("../../src/ui/hooks/useAuth", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+// Mock useProfilePage — Cluster 2b soft-delete gate. The real hook calls
+// useAdapters/useAuth and throws without an AdapterProvider in scope (same
+// rationale as the other hook mocks below). Defaults to "no cached payload"
+// so the existing session-only redirect tests are unaffected; the
+// soft-delete describe block below overrides the return value per test.
+const mockUseProfilePage = jest.fn<
+  {
+    payload: { profile: { deletedAt: string | null } } | null;
+    refresh: () => Promise<void>;
+  },
+  []
+>();
+jest.mock("../../src/ui/hooks/useProfilePage", () => ({
+  useProfilePage: () => mockUseProfilePage(),
+}));
+
 // Mock expo-router
 const mockReplace = jest.fn();
 const mockUseSegments = jest.fn<string[], []>();
@@ -92,10 +108,22 @@ import * as Notifications from "expo-notifications";
 // eslint-disable-next-line import/first
 import { Platform } from "react-native";
 
+const SIGNED_IN_SESSION = {
+  accessToken: "t",
+  refreshToken: "r",
+  userId: "u",
+  email: "e",
+  expiresAt: 0,
+};
+
 describe("AuthGate", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseSegments.mockReturnValue([]);
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      refresh: jest.fn(),
+    });
   });
 
   it("does not redirect while loading", () => {
@@ -190,6 +218,98 @@ describe("AuthGate", () => {
       isLoading: false,
     });
     mockUseSegments.mockReturnValue(["(app)"]);
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthGate — soft-delete restore gate (Cluster 2b)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseSegments.mockReturnValue([]);
+  });
+
+  it("redirects a signed-in user with a soft-deleted profile to /(app)/restore-account from the tabs", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["(app)", "(tabs)"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/restore-account");
+    });
+  });
+
+  it("redirects a signed-in user with a soft-deleted profile to /(app)/restore-account from the root", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/restore-account");
+    });
+  });
+
+  it("does not redirect a soft-deleted user already on the restore-account screen", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["(app)", "restore-account"]);
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect to restore-account when the profile is not soft-deleted", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: null } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["(app)", "(tabs)"]);
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect to restore-account while unauthenticated, even with a stale soft-deleted payload cached", () => {
+    // Defensive: deletedAt should never be non-null without a session in
+    // practice (the payload is user-scoped and cleared on sign-out), but
+    // the gate explicitly requires `session` to avoid ever redirecting a
+    // signed-out user anywhere but sign-in.
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
 
     render(<RootLayout />);
 
