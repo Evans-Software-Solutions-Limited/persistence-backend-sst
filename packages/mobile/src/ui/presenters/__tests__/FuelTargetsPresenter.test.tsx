@@ -200,6 +200,36 @@ describe("FuelTargetsPresenter", () => {
     expect(onOpenProfile).toHaveBeenCalled();
   });
 
+  it("renders the profile-strip height/weight in cm/kg by default", () => {
+    const { getByText } = renderWithTheme(
+      <FuelTargetsPresenter {...makeProps()} />,
+    );
+    expect(getByText("178")).toBeTruthy();
+    expect(getByText("cm")).toBeTruthy();
+    expect(getByText("79.8")).toBeTruthy();
+    expect(getByText("kg")).toBeTruthy();
+  });
+
+  it("converts the profile-strip weight to lb when weightUnit is lb", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <FuelTargetsPresenter {...makeProps({ weightUnit: "lb" })} />,
+    );
+    // 79.8 kg -> 175.9 lb (weightInUnit, 1dp).
+    expect(getByText("175.9")).toBeTruthy();
+    expect(getByText("lb")).toBeTruthy();
+    expect(queryByText("79.8")).toBeNull();
+  });
+
+  it("renders the profile-strip height as feet'inches with no separate unit when heightUnit is ftin", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <FuelTargetsPresenter {...makeProps({ heightUnit: "ftin" })} />,
+    );
+    // 178 cm -> 5'10" (formatHeight).
+    expect(getByText(`5'10"`)).toBeTruthy();
+    expect(queryByText("178")).toBeNull();
+    expect(queryByText("cm")).toBeNull();
+  });
+
   it("fires onActivityChange with the tapped chip's id", () => {
     const onActivityChange = jest.fn();
     const { getByTestId } = renderWithTheme(

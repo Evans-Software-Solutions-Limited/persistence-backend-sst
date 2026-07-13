@@ -19,6 +19,7 @@ import {
 } from "@/ui/components/icons";
 import { toneHex } from "@/ui/components/foundation/tones";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import { ModeSwitchCardPresenter } from "./ModeSwitchCardPresenter";
 import { SignOutConfirmDialog } from "./SignOutConfirmDialog";
 
@@ -82,6 +83,8 @@ export type ProfileDrawerProfile = {
   initials: string;
   age: number | null;
   weightKg?: number;
+  /** Display-unit preference for `weightKg`. Defaults to "kg" when absent. */
+  weightUnit?: WeightUnit;
 };
 
 export type ProfileDrawerSubscription = {
@@ -122,7 +125,11 @@ function profileDetailsSub(p: ProfileDrawerProfile): string {
   return [
     p.name,
     p.age != null ? String(p.age) : null,
-    p.weightKg != null ? `${p.weightKg}kg` : null,
+    // Preserve the exact legacy "<n>kg" format (no space, no forced decimal)
+    // for metric; `weightInUnit` converts + rounds the imperial branch.
+    p.weightKg != null
+      ? `${weightInUnit(p.weightKg, p.weightUnit ?? "kg")}${p.weightUnit ?? "kg"}`
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");

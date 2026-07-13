@@ -44,6 +44,8 @@ export type YouPresenterProps = {
   bodyTrend: { weight: TrendData & { unit: "kg" | "lb" }; bodyFat: TrendData };
   volumeStats: VolumeStats | null;
   prHistory: PersonalRecord[];
+  /** Athlete's weight-display preference. Defaults to "kg" when absent. */
+  weightUnit?: "kg" | "lb";
 
   /** Active coach relationship for the "Your trainer" block, or null. */
   trainer: TrainerProgressData | null;
@@ -82,6 +84,7 @@ export function YouPresenter(props: YouPresenterProps) {
     bodyTrend,
     volumeStats,
     prHistory,
+    weightUnit = "kg",
     trainer,
     pendingRequestCount,
     myPendingCoachRequests,
@@ -203,7 +206,10 @@ export function YouPresenter(props: YouPresenterProps) {
 
           {volumeStats && (
             <Section eyebrow="TRAINING" title="Volume" testID="you-volume">
-              <VolumeStatsPresenter stats={volumeStats} />
+              <VolumeStatsPresenter
+                stats={volumeStats}
+                weightUnit={weightUnit}
+              />
             </Section>
           )}
 
@@ -213,7 +219,7 @@ export function YouPresenter(props: YouPresenterProps) {
               title="Top lifts"
               testID="you-prs"
             >
-              <PRHistoryPresenter prs={prHistory} />
+              <PRHistoryPresenter prs={prHistory} weightUnit={weightUnit} />
             </Section>
           )}
         </View>

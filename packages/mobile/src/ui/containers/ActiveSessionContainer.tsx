@@ -46,6 +46,7 @@ import {
 } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
@@ -81,6 +82,7 @@ export function ActiveSessionContainer() {
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, rereadCache } = useActiveSession();
+  const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   // Coach on-behalf context for the trainer banner (STORY-004). Sourced from
   // the UI-state slice; undefined until M8 (`10-trainer-features`) seeds it via
@@ -623,6 +625,7 @@ export function ActiveSessionContainer() {
         startedAt={session.startedAt}
         exercises={session.exercises}
         previousSetsByExercise={previousSetsByExercise}
+        weightUnit={weightUnit}
         templateByExercise={templateByExercise}
         restTimer={{
           isActive: restTimer.isActive,

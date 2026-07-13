@@ -10,6 +10,7 @@ import {
   IconMinus,
   IconPlus,
 } from "@/ui/components/icons";
+import { KG_PER_LB } from "@/shared/utils";
 
 /**
  * <LogClientWeightPresenter> — coach logs a weight (+ optional body fat) for
@@ -20,7 +21,6 @@ import {
  * open) synced into their HealthKit.
  */
 
-const KG_PER_LB = 0.45359237;
 const MIN_KG = 1;
 const MAX_KG = 999;
 const clampKg = (kg: number) => Math.min(MAX_KG, Math.max(MIN_KG, kg));

@@ -140,4 +140,15 @@ describe("YouPresenter", () => {
     });
     expect(getByTestId("you-pending-coach-request-rel-1")).toBeTruthy();
   });
+
+  it("threads weightUnit='lb' into VolumeStats + PRHistory (device-QA #8b)", () => {
+    const { getByText, getAllByText } = render({ weightUnit: "lb" });
+    // VolumeStats headline: 62,400 kg -> 137,568 lb (formatVolumeParts).
+    expect(getByText("137,568")).toBeTruthy();
+    // VolumeStats per-muscle row: 14,460 kg -> 31,879 lb (volumeInUnit).
+    expect(getByText("31,879")).toBeTruthy();
+    // PRHistory value: 85 kg (1rm) -> 187.4 lb (weightInUnit) + "lb" unit.
+    expect(getByText("187.4")).toBeTruthy();
+    expect(getAllByText("lb").length).toBeGreaterThan(0);
+  });
 });

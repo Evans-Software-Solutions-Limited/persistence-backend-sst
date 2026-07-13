@@ -309,4 +309,20 @@ describe("SessionExerciseCard", () => {
       reps: 10,
     });
   });
+
+  it("threads weightUnit='lb' into the column header + the previous-set chip (device-QA #8b)", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <SessionExerciseCard
+        exercise={buildExercise()}
+        previousSetsBySetNumber={{ 1: { weightKg: 70, reps: 10 } }}
+        restSeconds={60}
+        weightUnit="lb"
+        {...baseHandlers}
+      />,
+    );
+    expect(getByText("LB")).toBeTruthy();
+    expect(queryByText("KG")).toBeNull();
+    // 70 kg -> 154.3 lb (weightInUnit, 1dp).
+    expect(getByText("10 reps • 154.3 lb")).toBeTruthy();
+  });
 });

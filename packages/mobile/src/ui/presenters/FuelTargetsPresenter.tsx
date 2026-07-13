@@ -56,6 +56,12 @@ import {
   type MacroSplit,
 } from "@/domain/services/nutrition.service";
 import type { ProfileGender } from "@/domain/models/profilePage";
+import {
+  formatHeight,
+  weightInUnit,
+  type HeightUnit,
+  type WeightUnit,
+} from "@/shared/utils";
 
 export type FuelTargetsPresenterProps = {
   isLoadingInitial: boolean;
@@ -72,6 +78,10 @@ export type FuelTargetsPresenterProps = {
   gender: ProfileGender | null;
   heightCm: number | null;
   weightKg: number | null;
+  /** Display-unit preference for the profile-strip weight tile. Defaults to "kg". */
+  weightUnit?: WeightUnit;
+  /** Display-unit preference for the profile-strip height tile. Defaults to "cm". */
+  heightUnit?: HeightUnit;
   onOpenProfile: () => void;
 
   /** Calculator vs direct kcal entry — manual swaps the profile/activity/
@@ -120,6 +130,8 @@ export function FuelTargetsPresenter({
   gender,
   heightCm,
   weightKg,
+  weightUnit = "kg",
+  heightUnit = "cm",
   onOpenProfile,
   calorieMode,
   onCalorieModeChange,
@@ -270,6 +282,8 @@ export function FuelTargetsPresenter({
               gender={gender}
               heightCm={heightCm}
               weightKg={weightKg}
+              weightUnit={weightUnit}
+              heightUnit={heightUnit}
               onOpenProfile={onOpenProfile}
             />
 
@@ -509,12 +523,16 @@ function ProfileStrip({
   gender,
   heightCm,
   weightKg,
+  weightUnit,
+  heightUnit,
   onOpenProfile,
 }: {
   age: number | null;
   gender: ProfileGender | null;
   heightCm: number | null;
   weightKg: number | null;
+  weightUnit: WeightUnit;
+  heightUnit: HeightUnit;
   onOpenProfile: () => void;
 }) {
   const genderLabel =
@@ -561,14 +579,24 @@ function ProfileStrip({
           <StripField label="SEX" value={genderLabel} border />
           <StripField
             label="HEIGHT"
-            value={heightCm === null ? "—" : `${Math.round(heightCm)}`}
-            unit="cm"
+            value={
+              heightCm === null
+                ? "—"
+                : heightUnit === "ftin"
+                  ? formatHeight(heightCm, "ftin")
+                  : `${Math.round(heightCm)}`
+            }
+            unit={heightUnit === "ftin" ? undefined : "cm"}
             border
           />
           <StripField
             label="WEIGHT"
-            value={weightKg === null ? "—" : weightKg.toFixed(1)}
-            unit="kg"
+            value={
+              weightKg === null
+                ? "—"
+                : weightInUnit(weightKg, weightUnit).toFixed(1)
+            }
+            unit={weightUnit}
             border
           />
         </View>

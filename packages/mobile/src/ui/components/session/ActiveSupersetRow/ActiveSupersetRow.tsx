@@ -42,6 +42,7 @@ import {
 } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { SessionExerciseTemplate } from "@/ui/presenters/ActiveSessionPresenter";
+import type { WeightUnit } from "@/shared/utils";
 
 export type ActiveSupersetRowProps = {
   supersetGroup: number;
@@ -54,6 +55,12 @@ export type ActiveSupersetRowProps = {
     string,
     Record<number, { weightKg: number; reps: number }>
   >;
+  /**
+   * Display-unit preference for the previous-set chips + the weight column
+   * header. Peer weight TextInputs are unaffected — inputs write kg
+   * regardless of display unit. Defaults to "kg".
+   */
+  weightUnit?: WeightUnit;
   templateByExercise: Record<string, SessionExerciseTemplate>;
   /** Add row N to every peer at once (paired logging). */
   onLogSupersetSet: (sessionExerciseIds: readonly string[]) => void;
@@ -85,6 +92,7 @@ export type ActiveSupersetRowProps = {
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
 export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
+  const weightUnit = props.weightUnit ?? "kg";
   const leadExercise = props.exercises[0];
   const leadTemplate =
     (leadExercise && props.templateByExercise[leadExercise.id]) ??
@@ -204,7 +212,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                   Reps
                 </Text>
                 <Text style={[styles.columnHeader, styles.columnHeaderWeight]}>
-                  Kg
+                  {weightUnit}
                 </Text>
               </View>
 
@@ -223,6 +231,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
                       setNumber={setNumber}
                       currentSet={currentSet}
                       previousSet={previousSet}
+                      weightUnit={weightUnit}
                       onUpdateSet={(patch) => {
                         if (currentSet)
                           props.onUpdateSet(peer.id, currentSet.id, patch);

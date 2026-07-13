@@ -93,6 +93,7 @@ export function ProfileDrawerContainer() {
               initials: initialsOf(profileData.fullName),
               age: computeAge(profileData.dateOfBirth),
               weightKg: profileData.weightKg ?? undefined,
+              weightUnit: profileData.weightUnit ?? "kg",
             }
           : undefined
       }

@@ -381,6 +381,23 @@ describe("ActiveSupersetRow", () => {
     expect(props.onUpdateSet).not.toHaveBeenCalled();
   });
 
+  it("threads weightUnit='lb' into the column header + previous-set chip (device-QA #8b)", () => {
+    const props = {
+      ...baseProps,
+      previousSetsByExercise: {
+        "se-A": { 1: { weightKg: 80, reps: 8 } },
+      },
+      weightUnit: "lb" as const,
+    };
+    const { getByText, queryByText } = renderWithTheme(
+      <ActiveSupersetRow {...props} />,
+    );
+    expect(getByText("lb")).toBeTruthy();
+    expect(queryByText("Kg")).toBeNull();
+    // 80 kg -> 176.4 lb (weightInUnit, 1dp).
+    expect(getByText("8 reps • 176.4 lb")).toBeTruthy();
+  });
+
   it("seeds at least one setNumber even when peers carry zero sets (paired-logging guarantee)", () => {
     const props = {
       ...baseProps,

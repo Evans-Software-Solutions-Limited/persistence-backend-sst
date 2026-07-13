@@ -51,6 +51,11 @@ import {
 import { color } from "@/ui/theme/tokens";
 import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { SummaryPersonalRecord } from "@/ui/containers/SessionSummaryContainer";
+import {
+  formatVolume as formatVolumeShared,
+  formatWeight,
+  type WeightUnit,
+} from "@/shared/utils";
 
 const RECORD_TYPE_LABEL: Record<SummaryPersonalRecord["recordType"], string> = {
   "1rm": "1 Rep Max",
@@ -90,6 +95,8 @@ export type SessionSummaryPresenterProps = {
    */
   workoutsThisMonth: number | null;
   personalRecords: SummaryPersonalRecord[];
+  /** Athlete's weight-display preference. Defaults to "kg" when absent. */
+  weightUnit?: WeightUnit;
   onSave: () => void;
   onClose: () => void;
 };
@@ -97,6 +104,7 @@ export type SessionSummaryPresenterProps = {
 const formatPRValue = (
   record: SummaryPersonalRecord,
   value: number,
+  weightUnit: WeightUnit,
 ): string => {
   // Whitelist-style switch — every RecordType handled explicitly.
   // Inspector Brad PR #62 (low severity) caught the previous
@@ -113,7 +121,7 @@ const formatPRValue = (
     case "10rm":
     case "max_weight":
     case "max_volume":
-      return `${value.toFixed(1)} kg`;
+      return formatWeight(value, weightUnit);
     case "max_reps":
       return `${value.toFixed(0)} reps`;
     case "best_time":
@@ -123,18 +131,13 @@ const formatPRValue = (
   }
 };
 
-const formatVolume = (volume: number): string => {
-  if (volume === 0) return "0 kg";
-  if (volume >= 1000) return `${(volume / 1000).toFixed(1)} t`;
-  return `${Math.round(volume)} kg`;
-};
-
 export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
   const {
     totalVolume,
     recordsHit,
     workoutsThisMonth,
     personalRecords,
+    weightUnit = "kg",
     onSave,
     onClose,
   } = props;
@@ -191,7 +194,9 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
           </View>
           <View style={styles.statCard} testID="summary-stat-total-volume">
             <IconDumbbell size={28} color={color.$info} />
-            <Text style={styles.statValue}>{formatVolume(totalVolume)}</Text>
+            <Text style={styles.statValue}>
+              {formatVolumeShared(totalVolume, weightUnit)}
+            </Text>
             <Text style={styles.statLabel}>Total Volume</Text>
           </View>
         </View>
@@ -219,16 +224,16 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
                     {pr.previousValue != null ? (
                       <>
                         <Text style={styles.prPreviousValue}>
-                          {formatPRValue(pr, pr.previousValue)}
+                          {formatPRValue(pr, pr.previousValue, weightUnit)}
                         </Text>
                         <Text style={styles.prArrow}>→</Text>
                         <Text style={styles.prNewValue}>
-                          {formatPRValue(pr, pr.newValue)}
+                          {formatPRValue(pr, pr.newValue, weightUnit)}
                         </Text>
                       </>
                     ) : (
                       <Text style={styles.prNewValue}>
-                        {formatPRValue(pr, pr.newValue)}
+                        {formatPRValue(pr, pr.newValue, weightUnit)}
                       </Text>
                     )}
                   </View>

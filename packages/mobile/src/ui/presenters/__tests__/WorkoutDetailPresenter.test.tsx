@@ -138,6 +138,26 @@ describe("WorkoutDetailPresenter", () => {
     expect(getByText(/Mar 21/)).toBeTruthy();
   });
 
+  it("converts the footer volume recap to lb when weightUnit is lb", () => {
+    const history: WorkoutHistory = {
+      completedCount: 12,
+      lastCompletedAt: null,
+      avgDurationSeconds: null,
+      lastSession: {
+        completedAt: "2026-03-21T10:00:00Z",
+        totalVolumeKg: 6240,
+        durationSeconds: null,
+      },
+    };
+    const { getByText, queryByText } = renderDetail({
+      history,
+      weightUnit: "lb",
+    });
+    // 6240 kg -> 13,757 lb (see workoutDetailFormat.test.ts for the maths).
+    expect(getByText(/13,757 lb/)).toBeTruthy();
+    expect(queryByText(/6,240 kg/)).toBeNull();
+  });
+
   it("renders history with '—' fallbacks + omits ' min' when durations are null", () => {
     const history: WorkoutHistory = {
       completedCount: 2,

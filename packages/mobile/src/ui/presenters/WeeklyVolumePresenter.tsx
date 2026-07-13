@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Card, Stat } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import type { WeeklyVolume } from "@/domain/models/progress";
+import { volumeInUnit, type WeightUnit } from "@/shared/utils";
 
 /**
  * <WeeklyVolumePresenter> — Home weekly-volume card (06-progress-goals,
@@ -11,6 +12,8 @@ import type { WeeklyVolume } from "@/domain/models/progress";
 
 export type WeeklyVolumeProps = {
   weeklyVolume: WeeklyVolume;
+  /** Display-unit preference for the volume total. Defaults to "kg". */
+  weightUnit?: WeightUnit;
   testID?: string;
 };
 
@@ -21,6 +24,7 @@ const letterFor = (iso: string) =>
 
 export function WeeklyVolumePresenter({
   weeklyVolume,
+  weightUnit = "kg",
   testID = "weekly-volume",
 }: WeeklyVolumeProps) {
   const { days, totalKg, deltaPct, workouts } = weeklyVolume;
@@ -35,7 +39,10 @@ export function WeeklyVolumePresenter({
         marginBottom={14}
       >
         <View>
-          <Stat value={Math.round(totalKg).toLocaleString("en-US")} unit="kg" />
+          <Stat
+            value={volumeInUnit(totalKg, weightUnit).toLocaleString("en-US")}
+            unit={weightUnit}
+          />
           {deltaPct != null && (
             <Text fontSize={12} color="$text3" marginTop={2}>
               <Text color={deltaPct >= 0 ? "$success" : "$error"} fontSize={12}>

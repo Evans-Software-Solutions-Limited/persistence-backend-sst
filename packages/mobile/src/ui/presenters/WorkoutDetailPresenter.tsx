@@ -12,6 +12,7 @@ import type {
   WorkoutHistory,
 } from "@/domain/models/workout";
 import type { ApiError } from "@/shared/errors";
+import type { WeightUnit } from "@/shared/utils";
 import {
   formatMinutesFromSeconds,
   formatRelativeDay,
@@ -62,6 +63,8 @@ interface WorkoutDetailPresenterProps {
   readonly isOwner: boolean;
   readonly isLoading: boolean;
   readonly error: ApiError | null;
+  /** Display-unit preference for the history volume stat. Defaults to "kg". */
+  readonly weightUnit?: WeightUnit;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onStartWorkout: (workoutId: string) => void;
@@ -141,6 +144,7 @@ export function WorkoutDetailPresenter({
   isOwner,
   isLoading,
   error,
+  weightUnit = "kg",
   onClose,
   onEdit,
   onStartWorkout,
@@ -203,7 +207,11 @@ export function WorkoutDetailPresenter({
               equipmentLabel={equipmentLabel}
             />
 
-            <HistoryBlock history={history} isLoading={isHistoryLoading} />
+            <HistoryBlock
+              history={history}
+              isLoading={isHistoryLoading}
+              weightUnit={weightUnit}
+            />
 
             <PlanSection
               exercises={workout.exercises}
@@ -333,9 +341,11 @@ function HeroCard({
 function HistoryBlock({
   history,
   isLoading,
+  weightUnit,
 }: {
   history: WorkoutHistory | null;
   isLoading: boolean;
+  weightUnit: WeightUnit;
 }) {
   // While the (online-direct) history fetch is in flight, render nothing so
   // the "Not done yet" line doesn't flash before real stats arrive.
@@ -412,7 +422,7 @@ function HistoryBlock({
             {lastDate ? ` · ${lastDate}` : ""}
             {` · `}
             <Text style={styles.historyFooterVolume}>
-              {formatVolumeKg(last.totalVolumeKg)}
+              {formatVolumeKg(last.totalVolumeKg, weightUnit)}
             </Text>
             {lastMinutes ? ` · ${lastMinutes} min` : ""}
           </Text>

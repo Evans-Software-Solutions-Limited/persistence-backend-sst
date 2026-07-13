@@ -73,8 +73,17 @@ describe("ProfileDrawerPresenter", () => {
     const { getByText } = renderDrawer();
     expect(getByText("Bradley Evans")).toBeTruthy();
     expect(getByText("brad@example.com")).toBeTruthy();
-    // profile-details sub joins name · age · weight.
+    // profile-details sub joins name · age · weight (legacy "<v>kg" format,
+    // no space / no forced decimal — byte-identical to pre-preference output).
     expect(getByText("Bradley Evans · 28 · 79.8kg")).toBeTruthy();
+  });
+
+  it("renders the profile-details sub weight in lb when weightUnit is lb", () => {
+    const { getByText } = renderDrawer({
+      profile: { ...baseProps.profile!, weightUnit: "lb" },
+    });
+    // 79.8 kg -> 175.9 lb via weightInUnit (1dp).
+    expect(getByText("Bradley Evans · 28 · 175.9lb")).toBeTruthy();
   });
 
   it("shows the coach-only Workout library row + fires onOpenWorkoutLibrary", () => {

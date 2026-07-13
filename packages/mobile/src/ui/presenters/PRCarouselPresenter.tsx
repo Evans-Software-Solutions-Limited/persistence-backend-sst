@@ -1,7 +1,12 @@
 import { ScrollView } from "react-native";
 import { View } from "@tamagui/core";
 import { PRCard } from "@/ui/components/composite";
-import { type PersonalRecord, unitForRecordType } from "@/domain/models/record";
+import {
+  isWeightRecordType,
+  type PersonalRecord,
+  unitForRecordType,
+} from "@/domain/models/record";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 /**
  * <PRCarouselPresenter> — Home recent-PRs carousel (06-progress-goals,
@@ -11,6 +16,8 @@ import { type PersonalRecord, unitForRecordType } from "@/domain/models/record";
 
 export type PRCarouselProps = {
   prs: PersonalRecord[];
+  /** Display-unit preference for weight-type PR values. Defaults to "kg". */
+  weightUnit?: WeightUnit;
   testID?: string;
 };
 
@@ -28,6 +35,7 @@ export function relativeDate(iso: string, now: number = Date.now()): string {
 
 export function PRCarouselPresenter({
   prs,
+  weightUnit = "kg",
   testID = "pr-carousel",
 }: PRCarouselProps) {
   return (
@@ -41,8 +49,12 @@ export function PRCarouselPresenter({
         <View key={pr.id}>
           <PRCard
             exerciseName={pr.exerciseName}
-            value={pr.value}
-            unit={unitForRecordType(pr.recordType)}
+            value={
+              isWeightRecordType(pr.recordType)
+                ? weightInUnit(pr.value, weightUnit)
+                : pr.value
+            }
+            unit={unitForRecordType(pr.recordType, weightUnit)}
             date={relativeDate(pr.achievedAt)}
           />
         </View>

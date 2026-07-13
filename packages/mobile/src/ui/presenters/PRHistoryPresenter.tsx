@@ -2,7 +2,12 @@ import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconMedal } from "@/ui/components/icons";
-import { type PersonalRecord, unitForRecordType } from "@/domain/models/record";
+import {
+  isWeightRecordType,
+  type PersonalRecord,
+  unitForRecordType,
+} from "@/domain/models/record";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import { relativeDate } from "./PRCarouselPresenter";
 
 /**
@@ -13,11 +18,14 @@ import { relativeDate } from "./PRCarouselPresenter";
 
 export type PRHistoryProps = {
   prs: PersonalRecord[];
+  /** Display-unit preference for weight-type PR values. Defaults to "kg". */
+  weightUnit?: WeightUnit;
   testID?: string;
 };
 
 export function PRHistoryPresenter({
   prs,
+  weightUnit = "kg",
   testID = "pr-history",
 }: PRHistoryProps) {
   return (
@@ -58,10 +66,12 @@ export function PRHistoryPresenter({
               fontWeight="600"
               color="$gold"
             >
-              {p.value}
+              {isWeightRecordType(p.recordType)
+                ? weightInUnit(p.value, weightUnit)
+                : p.value}
             </Text>
             <Text fontFamily="$mono" fontSize={11} color="$text3">
-              {unitForRecordType(p.recordType)}
+              {unitForRecordType(p.recordType, weightUnit)}
             </Text>
           </View>
         </View>

@@ -15,7 +15,7 @@ import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
 import { useDrawer } from "@/state/drawer";
 import { useFocusEffect, useRouter } from "expo-router";
-import { initialsOf } from "@/shared/utils";
+import { initialsOf, KG_PER_LB, weightInUnit } from "@/shared/utils";
 import { toneHex, type Tone } from "@/ui/components/foundation/tones";
 import {
   IconFlame,
@@ -84,6 +84,7 @@ function pickPrimaryStreak(streaks: Streak[]): Streak | null {
 export function YouContainer() {
   const { session } = useAuth();
   const profile = useProfilePage();
+  const weightUnit = profile.payload?.profile.weightUnit ?? "kg";
   const openDrawer = useDrawer((s) => s.openDrawer);
   const router = useRouter();
 
@@ -114,7 +115,7 @@ export function YouContainer() {
   const healthWeight = useMemo(() => {
     const w = health.latestBodyWeight;
     if (!w) return null;
-    const kg = w.unit === "lbs" ? w.value * 0.45359237 : w.value;
+    const kg = w.unit === "lbs" ? w.value * KG_PER_LB : w.value;
     return { kg, date: w.date };
   }, [health.latestBodyWeight]);
   // HealthKit body-fat reading ({ value, date }), same rationale as weight:
@@ -241,12 +242,15 @@ export function YouContainer() {
       fatSeriesMerged = [...fatSeries, healthBodyFat.value];
     }
 
+    const lastWeightKg = weightSeriesMerged[weightSeriesMerged.length - 1];
+
     return {
       weight: {
-        current: weightSeriesMerged[weightSeriesMerged.length - 1] ?? null,
-        delta: delta(weightSeriesMerged),
+        current:
+          lastWeightKg != null ? weightInUnit(lastWeightKg, weightUnit) : null,
+        delta: weightInUnit(delta(weightSeriesMerged), weightUnit),
         series: weightSeriesMerged,
-        unit: "kg" as const,
+        unit: weightUnit,
       },
       bodyFat: {
         current: fatSeriesMerged[fatSeriesMerged.length - 1] ?? null,
@@ -254,7 +258,7 @@ export function YouContainer() {
         series: fatSeriesMerged,
       },
     };
-  }, [body.data, healthWeight, healthBodyFat]);
+  }, [body.data, healthWeight, healthBodyFat, weightUnit]);
 
   const workoutsLabel = volume.data
     ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`
@@ -332,6 +336,7 @@ export function YouContainer() {
       bodyTrend={bodyTrend}
       volumeStats={volume.data}
       prHistory={prs.data ?? []}
+      weightUnit={weightUnit}
       trainer={trainer}
       pendingRequestCount={pendingRequestCount}
       myPendingCoachRequests={myPendingCoachRequests}

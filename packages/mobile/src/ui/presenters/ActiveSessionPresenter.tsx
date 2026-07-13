@@ -47,6 +47,7 @@ import {
   Typography,
 } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
+import type { WeightUnit } from "@/shared/utils";
 
 /**
  * Per-exercise template metadata threaded from the container's
@@ -78,6 +79,12 @@ export type ActiveSessionPresenterProps = {
     string,
     Record<number, { weightKg: number; reps: number }>
   >;
+  /**
+   * Display-unit preference for the previous-set chips + weight column
+   * headers. Weight TextInputs are unaffected — inputs write kg regardless
+   * of display unit. Defaults to "kg".
+   */
+  weightUnit?: WeightUnit;
   /**
    * Map of `sessionExerciseId → template metadata`. Container builds it
    * from `useWorkout`; missing entries fall back to a default
@@ -201,6 +208,7 @@ function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
 }
 
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
+  const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
     [props.exercises],
@@ -270,6 +278,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                       previousSetsBySetNumber={
                         props.previousSetsByExercise[ex.id] ?? {}
                       }
+                      weightUnit={weightUnit}
                       exerciseImageUrl={template.imageUrl}
                       targetSets={template.targetSets}
                       targetRepsMin={template.targetRepsMin}
@@ -294,6 +303,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     supersetGroup={item.supersetGroup}
                     exercises={item.exercises}
                     previousSetsByExercise={props.previousSetsByExercise}
+                    weightUnit={weightUnit}
                     templateByExercise={props.templateByExercise}
                     onLogSupersetSet={props.onLogSupersetSet}
                     onUpdateSet={props.onUpdateSet}

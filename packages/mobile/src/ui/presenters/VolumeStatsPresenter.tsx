@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Card, Stat, Bar } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import type { VolumeStats } from "@/domain/models/progress";
+import { kgToLb, volumeInUnit, type WeightUnit } from "@/shared/utils";
 
 /**
  * <VolumeStatsPresenter> — You/Progress training stats (06-progress-goals,
@@ -11,6 +12,8 @@ import type { VolumeStats } from "@/domain/models/progress";
 
 export type VolumeStatsProps = {
   stats: VolumeStats;
+  /** Display-unit preference for volume figures. Defaults to "kg". */
+  weightUnit?: WeightUnit;
   testID?: string;
 };
 
@@ -18,8 +21,19 @@ const cap = (s: string) => (s.length ? s[0].toUpperCase() + s.slice(1) : s);
 
 export function VolumeStatsPresenter({
   stats,
+  weightUnit = "kg",
   testID = "volume-stats",
 }: VolumeStatsProps) {
+  // The "VOLUME lifted" headline is ALWAYS tonnes for metric (byte-identical
+  // to the pre-existing `totalTonnes.toFixed(1)` "t" tile); imperial shows the
+  // total converted to pounds.
+  const totalParts =
+    weightUnit === "lb"
+      ? {
+          value: Math.round(kgToLb(stats.totalKg)).toLocaleString("en-US"),
+          unit: "lb",
+        }
+      : { value: stats.totalTonnes.toFixed(1), unit: "t" };
   return (
     <Card pad={16} radius={16} testID={testID}>
       <View
@@ -38,8 +52,8 @@ export function VolumeStatsPresenter({
         </View>
         <View flex={1}>
           <Stat
-            value={stats.totalTonnes.toFixed(1)}
-            unit="t"
+            value={totalParts.value}
+            unit={totalParts.unit}
             size="md"
             label="VOLUME"
             sub="lifted"
@@ -72,7 +86,7 @@ export function VolumeStatsPresenter({
             VOLUME BY MUSCLE
           </Text>
           <Text fontFamily="$mono" fontSize={11} color="$text3">
-            kg
+            {weightUnit}
           </Text>
         </View>
         {stats.byMuscle.map((m) => (
@@ -96,7 +110,7 @@ export function VolumeStatsPresenter({
               width={56}
               textAlign="right"
             >
-              {Math.round(m.kg).toLocaleString("en-US")}
+              {volumeInUnit(m.kg, weightUnit).toLocaleString("en-US")}
             </Text>
           </View>
         ))}
