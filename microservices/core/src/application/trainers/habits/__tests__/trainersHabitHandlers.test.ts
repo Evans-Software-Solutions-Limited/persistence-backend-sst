@@ -6,12 +6,18 @@ const configRepoMock = {
   isHabitCoachLocked: vi.fn(async () => false),
 };
 const habitRepoMock = { list: vi.fn(async () => []) };
+const nutritionTargetRepoMock = {
+  get: vi.fn(async () => null as { dailyKcal: number } | null),
+};
 const configureMock = vi.fn();
 const disableMock = vi.fn();
 const assertMock = vi.fn();
 
 vi.mock("../../../repositories/habitConfigRepository", () => ({
   HabitConfigRepository: vi.fn(() => configRepoMock),
+}));
+vi.mock("../../../repositories/nutritionTargetRepository", () => ({
+  NutritionTargetRepository: vi.fn(() => nutritionTargetRepoMock),
 }));
 vi.mock("../../../repositories/habitRepository", () => ({
   HabitRepository: vi.fn(() => habitRepoMock),
@@ -62,6 +68,7 @@ beforeEach(() => {
   configRepoMock.listForUser.mockResolvedValue([]);
   configRepoMock.isHabitCoachLocked.mockResolvedValue(false);
   habitRepoMock.list.mockResolvedValue([]);
+  nutritionTargetRepoMock.get.mockResolvedValue(null);
   assertMock.mockResolvedValue({ allowed: true });
 });
 
@@ -123,6 +130,19 @@ describe("GET /trainers/me/clients/:clientId/habits/config", () => {
     const water = body.data.find((d) => d.category === "water");
     expect(water.locked).toBe(true);
     expect(water.assignedByCoach).toBe(true);
+  });
+
+  it("resolves the client's Calories target from their Fuel target", async () => {
+    nutritionTargetRepoMock.get.mockResolvedValue({ dailyKcal: 2800 });
+    const { trainersMeGetClientHabitConfigHandler } =
+      await import("../trainersMeGetClientHabitConfigHandler");
+    const res = await trainersMeGetClientHabitConfigHandler.handle(
+      req("/trainers/me/clients/c1/habits/config", "GET"),
+    );
+    const body = (await res.json()) as { data: any[] };
+    const calories = body.data.find((d) => d.category === "calories");
+    expect(calories.targetValue).toBe(2800);
+    expect(nutritionTargetRepoMock.get).toHaveBeenCalledWith("c1");
   });
 });
 

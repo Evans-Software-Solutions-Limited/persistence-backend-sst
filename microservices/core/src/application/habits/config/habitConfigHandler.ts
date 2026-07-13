@@ -6,10 +6,12 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { HabitConfigService } from "../../repositories/habitConfigService";
 import type { HabitConfigView } from "../../repositories/habitConfigRepository";
+import { NutritionTargetService } from "../../repositories/nutritionTargetService";
 import {
   HABIT_CATEGORIES,
   HABIT_CATEGORY_ORDER,
   isHabitCategory,
+  resolveCalorieHabitTarget,
   validateHabitConfigInput,
   type HabitCategory,
 } from "../habitCategories";
@@ -70,38 +72,49 @@ export const habitConfigHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(HabitConfigService)
+  .use(NutritionTargetService)
   .get("/users/me/habits/config", async (ctx) => {
     const { sub: userId } = getUser(ctx);
     const configured = await ctx.HabitConfigRepository.listForUser(userId);
     const byCategory = new Map(configured.map((c) => [c.category, c]));
 
+    // The Calories target is owned by Nutrition Fuel-Targets — resolve it live
+    // so the card always shows the current daily_kcal (single source of truth),
+    // never the stale habit-config snapshot or the 2000 default.
+    const calorieTarget = resolveCalorieHabitTarget(
+      (await ctx.NutritionTargetRepository.get(userId))?.dailyKcal,
+    );
+
     const data: CategoryEntry[] = [];
     for (const category of HABIT_CATEGORY_ORDER) {
       const cfg = byCategory.get(category);
+      let entry: CategoryEntry;
       if (!cfg) {
-        data.push(defaultEntry(category));
-        continue;
+        entry = defaultEntry(category);
+      } else {
+        const assignedByCoach = cfg.assignedByUserId !== null;
+        // Lock only when the assigning relationship is still active.
+        const locked = assignedByCoach
+          ? await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)
+          : false;
+        entry = {
+          category,
+          enabled: cfg.enabled,
+          goalId: cfg.goalId,
+          assignedByCoach,
+          assignedByName: cfg.assignedByName,
+          locked,
+          targetValue: cfg.targetValue,
+          unit: cfg.unit,
+          period: cfg.period,
+          completionRule: cfg.completionRule,
+          daysPerWeek: cfg.daysPerWeek,
+          tolerancePct: cfg.tolerancePct,
+          pending: cfg.pending,
+        };
       }
-      const assignedByCoach = cfg.assignedByUserId !== null;
-      // Lock only when the assigning relationship is still active.
-      const locked = assignedByCoach
-        ? await ctx.HabitConfigRepository.isHabitCoachLocked(userId, category)
-        : false;
-      data.push({
-        category,
-        enabled: cfg.enabled,
-        goalId: cfg.goalId,
-        assignedByCoach,
-        assignedByName: cfg.assignedByName,
-        locked,
-        targetValue: cfg.targetValue,
-        unit: cfg.unit,
-        period: cfg.period,
-        completionRule: cfg.completionRule,
-        daysPerWeek: cfg.daysPerWeek,
-        tolerancePct: cfg.tolerancePct,
-        pending: cfg.pending,
-      });
+      if (category === "calories") entry.targetValue = calorieTarget;
+      data.push(entry);
     }
     return { data };
   })
@@ -121,11 +134,23 @@ export const habitConfigHandler = new Elysia()
         ctx.set.status = 403;
         return { error: "This habit is managed by your coach" };
       }
-      const validated = validateHabitConfigInput(category, {
-        targetValue: ctx.body.targetValue,
-        daysPerWeek: ctx.body.daysPerWeek,
-        tolerancePct: ctx.body.tolerancePct,
-      });
+      // Calories: substitute the canonical Fuel-Targets value for the client's
+      // (ignored) target so it can never drift from the nutrition target.
+      const calorieOverride =
+        category === "calories"
+          ? resolveCalorieHabitTarget(
+              (await ctx.NutritionTargetRepository.get(userId))?.dailyKcal,
+            )
+          : undefined;
+      const validated = validateHabitConfigInput(
+        category,
+        {
+          targetValue: ctx.body.targetValue,
+          daysPerWeek: ctx.body.daysPerWeek,
+          tolerancePct: ctx.body.tolerancePct,
+        },
+        calorieOverride,
+      );
       if (!validated.ok) {
         ctx.set.status = 422;
         return { error: validated.error };

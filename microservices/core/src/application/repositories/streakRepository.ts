@@ -36,6 +36,7 @@ import {
   type HabitWeekAggregate,
 } from "../streaks/collection";
 import type { HabitCompletionRule } from "../habits/habitCategories";
+import { resolveCalorieHabitTarget } from "../habits/habitCategories";
 import { HabitConfigRepository } from "./habitConfigRepository";
 
 /**
@@ -268,10 +269,25 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
         ),
       );
 
+    // Calories (within_tolerance) is scored against the user's Nutrition
+    // Fuel-Target (daily_kcal), NOT the habit-config snapshot — that's the
+    // single source of truth, so this collection streak agrees with the
+    // nutrition streak above (both band off the same daily_kcal). Fetched once,
+    // and only when a calorie habit is actually enabled.
+    const hasCalorieHabit = enabled.some(
+      (h) => h.completionRule === "within_tolerance",
+    );
+    const dailyKcal = hasCalorieHabit
+      ? await this.getUserDailyKcal(userId)
+      : null;
+
     const out: HabitWeekAggregate[] = [];
     for (const h of enabled) {
       const rule = h.completionRule as HabitCompletionRule;
-      const target = Number(h.targetValue);
+      const target =
+        rule === "within_tolerance"
+          ? resolveCalorieHabitTarget(dailyKcal)
+          : Number(h.targetValue);
       let qualifyingDays = 0;
       let sessionCount = 0;
 
@@ -348,6 +364,23 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       ) d
     `)) as unknown as Array<{ days: number }>;
     return Number(rows[0]?.days ?? 0);
+  }
+
+  /**
+   * The user's current Nutrition Fuel-Target `daily_kcal`, or null when none is
+   * set. Used to score the Calories habit against the same target as the
+   * nutrition streak (single source of truth) rather than the habit-config
+   * snapshot, which could drift after the user edits their Fuel target.
+   */
+  private async getUserDailyKcal(userId: string): Promise<number | null> {
+    const db = getDb();
+    const rows = await db
+      .select({ daily: nutritionTargets.dailyKcal })
+      .from(nutritionTargets)
+      .where(eq(nutritionTargets.userId, userId))
+      .limit(1);
+    const v = rows[0]?.daily;
+    return v == null ? null : Number(v);
   }
 
   /**

@@ -30,6 +30,7 @@ import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useGetNutritionTarget } from "@/ui/hooks/useGetNutritionTarget";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useSetTargets } from "@/ui/hooks/useSetTargets";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { computeAge, localDayISO } from "@/shared/utils";
 import {
   computeFuelTargetsPreview,
@@ -55,6 +56,7 @@ export function FuelTargetsContainer() {
   const target = useGetNutritionTarget();
   const body = useGetBodyMeasurements(30);
   const { mutate: setTargets } = useSetTargets();
+  const notifyFuelMutated = useFuelSheets((s) => s.notifyMutated);
 
   const [activityId, setActivityId] =
     useState<ActivityLevel["id"]>(DEFAULT_ACTIVITY_ID);
@@ -231,11 +233,16 @@ export function FuelTargetsContainer() {
         setErrorMessage("Couldn't save your targets. Please try again.");
         return;
       }
+      // Signal the Fuel screen (a pushed route underneath us) to re-read +
+      // reconcile so the new target shows immediately on return, not on the
+      // next cold start. Same mechanism the Scan/QuickAdd/Snap sheets and
+      // recipe/meal logging already use.
+      notifyFuelMutated();
       router.back();
     } finally {
       setIsSaving(false);
     }
-  }, [preview, waterCups, macroMode, setTargets, router]);
+  }, [preview, waterCups, macroMode, setTargets, notifyFuelMutated, router]);
 
   const isLoadingInitial =
     (profilePage.isRefreshing ||

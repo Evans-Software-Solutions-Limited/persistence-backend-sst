@@ -5,10 +5,12 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { HabitConfigService } from "../../repositories/habitConfigService";
+import { NutritionTargetService } from "../../repositories/nutritionTargetService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
 import {
   HABIT_CATEGORIES,
   HABIT_CATEGORY_ORDER,
+  resolveCalorieHabitTarget,
   type HabitCategory,
 } from "../../habits/habitCategories";
 
@@ -25,6 +27,7 @@ export const trainersMeGetClientHabitConfigHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(HabitConfigService)
+  .use(NutritionTargetService)
   .get(
     "/trainers/me/clients/:clientId/habits/config",
     async (ctx) => {
@@ -40,36 +43,45 @@ export const trainersMeGetClientHabitConfigHandler = new Elysia()
       const configured = await ctx.HabitConfigRepository.listForUser(clientId);
       const byCategory = new Map(configured.map((c) => [c.category, c]));
 
+      // Calories target is owned by the CLIENT's Nutrition Fuel-Targets — resolve
+      // live so the coach sees the same number the client's card/streak use.
+      const calorieTarget = resolveCalorieHabitTarget(
+        (await ctx.NutritionTargetRepository.get(clientId))?.dailyKcal,
+      );
+
       const data = [];
       for (const category of HABIT_CATEGORY_ORDER) {
         const cfg = byCategory.get(category);
+        let entry;
         if (!cfg) {
-          data.push(defaultEntry(category));
-          continue;
+          entry = defaultEntry(category);
+        } else {
+          const assignedByCoach = cfg.assignedByUserId !== null;
+          const locked = assignedByCoach
+            ? await ctx.HabitConfigRepository.isHabitCoachLocked(
+                clientId,
+                category,
+              )
+            : false;
+          entry = {
+            category,
+            enabled: cfg.enabled,
+            goalId: cfg.goalId,
+            assignedByCoach,
+            assignedByName: cfg.assignedByName,
+            assignedByUserId: cfg.assignedByUserId,
+            locked,
+            targetValue: cfg.targetValue,
+            unit: cfg.unit,
+            period: cfg.period,
+            completionRule: cfg.completionRule,
+            daysPerWeek: cfg.daysPerWeek,
+            tolerancePct: cfg.tolerancePct,
+            pending: cfg.pending,
+          };
         }
-        const assignedByCoach = cfg.assignedByUserId !== null;
-        const locked = assignedByCoach
-          ? await ctx.HabitConfigRepository.isHabitCoachLocked(
-              clientId,
-              category,
-            )
-          : false;
-        data.push({
-          category,
-          enabled: cfg.enabled,
-          goalId: cfg.goalId,
-          assignedByCoach,
-          assignedByName: cfg.assignedByName,
-          assignedByUserId: cfg.assignedByUserId,
-          locked,
-          targetValue: cfg.targetValue,
-          unit: cfg.unit,
-          period: cfg.period,
-          completionRule: cfg.completionRule,
-          daysPerWeek: cfg.daysPerWeek,
-          tolerancePct: cfg.tolerancePct,
-          pending: cfg.pending,
-        });
+        if (category === "calories") entry.targetValue = calorieTarget;
+        data.push(entry);
       }
       return { data };
     },
