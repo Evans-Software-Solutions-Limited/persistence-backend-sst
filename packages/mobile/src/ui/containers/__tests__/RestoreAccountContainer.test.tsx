@@ -4,6 +4,7 @@ import type { RestoreAccountPresenterProps } from "@/ui/presenters/RestoreAccoun
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestoreAccount } from "@/ui/hooks/useRestoreAccount";
+import { usePendingInvite } from "@/state/pending-invite";
 import { RestoreAccountContainer } from "../RestoreAccountContainer";
 
 // Capture the props handed to the (mocked) presenter, mirroring
@@ -73,6 +74,19 @@ describe("RestoreAccountContainer", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("redeems a stashed invite code after restore (third consume site, device-QA #2)", async () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    render(<RestoreAccountContainer />);
+    await act(async () => {
+      await mockProbe.props!.onRestore();
+    });
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/(app)/accept-invite?code=AB23CD",
+    );
+    usePendingInvite.getState().reset();
   });
 
   it("treats a 409 (account wasn't soft-deleted) the same as success", async () => {

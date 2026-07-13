@@ -15,6 +15,7 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
+import { usePendingInvite } from "@/state/pending-invite";
 import type {
   MySubscription,
   SubscriptionTierName,
@@ -140,6 +141,24 @@ describe("SubscriptionSuccessContainer", () => {
     expect(screen.getByText("Unlimited Workouts")).toBeTruthy();
     fireEvent.press(screen.getByTestId("success-go-home"));
     expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("redeems a stashed invite code on go-home (new-user carry-through-signup, device-QA #2)", async () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    const { adapters } = makeAdapters(SUB_PREMIUM);
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSuccessContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("success-go-home")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("success-go-home"));
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/(app)/accept-invite?code=AB23CD",
+    );
+    usePendingInvite.getState().reset();
   });
 
   it("shows Manage Clients CTA on trainer tiers and routes appropriately", async () => {

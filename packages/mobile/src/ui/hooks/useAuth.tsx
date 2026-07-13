@@ -3,6 +3,7 @@ import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { usePendingInvite } from "@/state/pending-invite";
 import { useAdapters } from "./useAdapters";
 
 export type AuthState = {
@@ -159,6 +160,7 @@ export function useAuth(): AuthState {
     }
     useUserMode.getState().reset();
     useTrainSegment.getState().reset();
+    usePendingInvite.getState().reset();
   }, [storage]);
 
   const signOut = useCallback(async () => {

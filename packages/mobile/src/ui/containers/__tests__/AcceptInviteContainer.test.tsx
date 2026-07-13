@@ -7,6 +7,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { usePendingInvite } from "@/state/pending-invite";
 import { AcceptInviteContainer } from "@/ui/containers/AcceptInviteContainer";
 
 const mockBack = jest.fn();
@@ -75,6 +76,19 @@ describe("AcceptInviteContainer", () => {
     );
     expect(getByTestId("accept-invite-code-input").props.value).toBe("AB23CD");
     void api;
+  });
+
+  it("clears the carry-through-signup stash on arrival (device-QA #2 follow-up)", () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    const { adapters } = makeAdapters();
+    renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <AcceptInviteContainer />
+      </AdapterProvider>,
+    );
+    // Once we've landed on the redeem screen (code is in the URL), the auth
+    // stash must be cleared so it can't resurface on a later sign-in.
+    expect(usePendingInvite.getState().pendingCode).toBeNull();
   });
 
   it("success: alerts 'Request sent to <trainer> — awaiting their acceptance', then navigates back on OK", async () => {
