@@ -1,12 +1,15 @@
+import { volumeInUnit, type WeightUnit } from "@/shared/utils";
+
 /**
  * Pure display formatters for the workout-detail history block. Kept out of
  * the presenter so they're unit-testable without rendering (the presenter
  * imports these).
  *
- * Volume follows the app-wide convention (see `SessionSummaryPresenter`
- * `formatVolume`): kilograms, no lb conversion — the app never derives a
- * lb-volume anywhere, and the history panel is a read-only stat. Copy/units
- * are tunable (flagged in the PR).
+ * `formatVolumeKg` renders the caller's `weightUnit` preference (device-QA
+ * #8b) via the shared `volumeInUnit` helper — `kg` passes through unchanged
+ * (identical output to before this was threaded), `lb` converts. Thousands
+ * are grouped with the file's own deterministic `groupThousands` (not
+ * `toLocaleString`, which varies by locale) in both units.
  *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 10 (History block)
  */
@@ -57,10 +60,17 @@ export function formatShortDate(iso: string | null): string | null {
   return `${MONTHS[parsed.getMonth()]} ${parsed.getDate()}`;
 }
 
-/** "6,240 kg" — rounded integer kilograms with thousands separators. */
-export function formatVolumeKg(kg: number): string {
-  const rounded = Math.max(0, Math.round(kg));
-  return `${groupThousands(rounded)} kg`;
+/**
+ * "6,240 kg" (or "13,768 lb") — rounded integer volume in the given display
+ * unit, with thousands separators. Defaults to "kg" — identical output to
+ * the pre-threading `formatVolumeKg(kg)`.
+ */
+export function formatVolumeKg(
+  kg: number,
+  weightUnit: WeightUnit = "kg",
+): string {
+  const rounded = Math.max(0, volumeInUnit(kg, weightUnit));
+  return `${groupThousands(rounded)} ${weightUnit}`;
 }
 
 /** "44m" — mean/session seconds rounded to whole minutes. */

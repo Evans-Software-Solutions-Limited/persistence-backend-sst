@@ -22,6 +22,7 @@ import { styles } from "./styles";
 import { IconX } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet } from "@/domain/models/session";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 export type SetLoggerProps = {
   set: ExerciseSet;
@@ -29,6 +30,12 @@ export type SetLoggerProps = {
   setNumber: number;
   /** Weight + reps from the previous set on the same exercise (for quick-fill). */
   previous: { weightKg: number; reps: number } | null;
+  /**
+   * Display-unit preference for the previous-set chip. The current-set
+   * weight TextInput below is unaffected — it's an input surface (writes
+   * kg), not a display label. Defaults to "kg".
+   */
+  weightUnit?: WeightUnit;
   onChange: (patch: Partial<Pick<ExerciseSet, "weightKg" | "reps">>) => void;
   onRemove: () => void;
   onFillPrevious: () => void;
@@ -38,6 +45,7 @@ const toInputString = (n: number | null): string =>
   n == null ? "" : n.toString();
 
 export function SetLogger(props: SetLoggerProps) {
+  const weightUnit = props.weightUnit ?? "kg";
   const [reps, setReps] = useState(toInputString(props.set.reps));
   const [weight_kg, setWeightKg] = useState(toInputString(props.set.weightKg));
   const weightInputRef = useRef<TextInput | null>(null);
@@ -76,7 +84,7 @@ export function SetLogger(props: SetLoggerProps) {
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            {props.previous.reps} reps • {props.previous.weightKg} kg
+            {`${props.previous.reps} reps • ${weightInUnit(props.previous.weightKg, weightUnit)} ${weightUnit}`}
           </Text>
         </TouchableOpacity>
       ) : (

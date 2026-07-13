@@ -3,13 +3,12 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useLogMeasurement } from "@/ui/hooks/useLogMeasurement";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { KG_PER_LB } from "@/shared/utils";
 import {
   WeighInSheetPresenter,
   type WeighInSaveInput,
   type WeighInUnit,
 } from "@/ui/presenters/WeighInSheetPresenter";
-
-const KG_PER_LB = 0.45359237;
 
 /**
  * Wires the weigh-in sheet to the offline-first measurement log

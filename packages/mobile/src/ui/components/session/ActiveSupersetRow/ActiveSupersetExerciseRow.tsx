@@ -28,6 +28,7 @@ import { GEIST_MONO_FAMILY } from "@/ui/theme/fonts";
 import { color } from "@/ui/theme/tokens";
 import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet } from "@/domain/models/session";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 export type ActiveSupersetExerciseRowProps = {
   exerciseName: string;
@@ -35,6 +36,12 @@ export type ActiveSupersetExerciseRowProps = {
   setNumber: number;
   currentSet?: ExerciseSet;
   previousSet?: { weightKg: number; reps: number };
+  /**
+   * Display-unit preference for the previous-set chip. The current-set
+   * weight TextInput below is unaffected — it's an input surface (writes
+   * kg), not a display label. Defaults to "kg".
+   */
+  weightUnit?: WeightUnit;
   onUpdateSet: (patch: Partial<Pick<ExerciseSet, "weightKg" | "reps">>) => void;
   onFillPrevious: () => void;
   showSwap?: boolean;
@@ -49,6 +56,7 @@ export function ActiveSupersetExerciseRow({
   setNumber,
   currentSet,
   previousSet,
+  weightUnit = "kg",
   onUpdateSet,
   onFillPrevious,
   showSwap = false,
@@ -141,7 +149,7 @@ export function ActiveSupersetExerciseRow({
               numberOfLines={1}
               ellipsizeMode="tail"
             >
-              {previousSet.reps} reps • {previousSet.weightKg} kg
+              {`${previousSet.reps} reps • ${weightInUnit(previousSet.weightKg, weightUnit)} ${weightUnit}`}
             </Text>
           </TouchableOpacity>
         ) : (

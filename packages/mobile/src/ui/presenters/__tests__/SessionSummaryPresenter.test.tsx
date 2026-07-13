@@ -249,4 +249,46 @@ describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
     );
     expect(getByText("Continue")).toBeTruthy();
   });
+
+  it("weightUnit='lb' converts the Total Volume tile + weight-type PR values", () => {
+    const pr: SummaryPersonalRecord = {
+      exerciseId: "ex-bench",
+      exerciseName: "Bench Press",
+      recordType: "1rm",
+      newValue: 100,
+      previousValue: null,
+    };
+    const { getByText } = renderWithTheme(
+      <SessionSummaryPresenter
+        {...baseProps}
+        totalVolume={500}
+        recordsHit={1}
+        personalRecords={[pr]}
+        weightUnit="lb"
+      />,
+    );
+    // 500 kg -> 1102.3 lb rounded to a whole number by formatVolume's lb branch.
+    expect(getByText("1,102 lb")).toBeTruthy();
+    // 100 kg -> 220.5 lb via formatWeight (1dp).
+    expect(getByText("220.5 lb")).toBeTruthy();
+  });
+
+  it("weightUnit='lb' does not affect max_reps/best_time/longest_distance PR units", () => {
+    const pr: SummaryPersonalRecord = {
+      exerciseId: "ex-row",
+      exerciseName: "Row",
+      recordType: "max_reps",
+      newValue: 18,
+      previousValue: null,
+    };
+    const { getByText } = renderWithTheme(
+      <SessionSummaryPresenter
+        {...baseProps}
+        recordsHit={1}
+        personalRecords={[pr]}
+        weightUnit="lb"
+      />,
+    );
+    expect(getByText("18 reps")).toBeTruthy();
+  });
 });

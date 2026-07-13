@@ -99,6 +99,36 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
+  it("threads weightUnit='lb' into the previous-set chip (device-QA #8b)", () => {
+    const exercise = buildExercise({
+      sets: [
+        {
+          id: "set-1",
+          sessionExerciseId: "se-1",
+          setNumber: 1,
+          weightKg: null,
+          reps: null,
+          rpe: null,
+          durationSeconds: null,
+          distanceMeters: null,
+          isCompleted: false,
+          completedAt: null,
+        },
+      ],
+    });
+    const props = {
+      ...baseProps,
+      exercises: [exercise],
+      previousSetsByExercise: { "se-1": { 1: { weightKg: 80, reps: 8 } } },
+      weightUnit: "lb" as const,
+    };
+    const { getByText } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+    // 80 kg -> 176.4 lb (weightInUnit, 1dp).
+    expect(getByText("8 reps • 176.4 lb")).toBeTruthy();
+  });
+
   it("renders substituted exercises in place alongside their replacement (legacy parity — both rows visible, sets preserved for bulk-record flush)", () => {
     const props = {
       ...baseProps,

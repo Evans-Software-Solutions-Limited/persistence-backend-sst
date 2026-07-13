@@ -16,7 +16,7 @@ import {
   IconCalendar,
   IconCheck,
 } from "@/ui/components/icons";
-import { localDayISO } from "@/shared/utils";
+import { KG_PER_LB, localDayISO } from "@/shared/utils";
 import { computePath } from "./charts";
 
 /**
@@ -30,7 +30,6 @@ import { computePath } from "./charts";
  * fields — followed the prototype; those are a flagged follow-up.
  */
 
-const KG_PER_LB = 0.45359237;
 const W = 320;
 const H = 64;
 const PRIMARY = toneHex("primary").base;

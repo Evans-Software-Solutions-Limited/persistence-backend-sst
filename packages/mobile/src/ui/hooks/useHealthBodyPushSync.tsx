@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { localDayISO } from "@/shared/utils/date";
+import { KG_PER_LB } from "@/shared/utils";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
 /** How many recent measurements to scan per sync pass. */
 const SCAN_LIMIT = 50;
-
-const KG_PER_LB = 0.45359237;
 
 /**
  * Pushes the latest HealthKit weight / body-fat readings to the server

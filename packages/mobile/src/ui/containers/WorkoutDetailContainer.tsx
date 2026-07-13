@@ -6,6 +6,7 @@ import {
 } from "@/domain/services/workoutMeta";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
@@ -30,6 +31,7 @@ export function WorkoutDetailContainer() {
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
+  const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   const detail = useWorkout(workoutId);
   const history = useWorkoutHistory(workoutId);
@@ -90,6 +92,7 @@ export function WorkoutDetailContainer() {
       isOwner={isOwner}
       isLoading={detail.isLoading}
       error={detail.error}
+      weightUnit={weightUnit}
       onClose={onClose}
       onEdit={onEdit}
       onStartWorkout={onStartWorkout}

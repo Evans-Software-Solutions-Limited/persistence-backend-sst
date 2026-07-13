@@ -28,6 +28,7 @@ import {
 } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
+import type { WeightUnit } from "@/shared/utils";
 
 export type SessionExerciseCardProps = {
   exercise: SessionExercise;
@@ -38,6 +39,12 @@ export type SessionExerciseCardProps = {
    * an em-dash. Mirrors legacy `previousSets[]` from user history.
    */
   previousSetsBySetNumber: Record<number, { weightKg: number; reps: number }>;
+  /**
+   * Display-unit preference for the previous-set chips + the weight
+   * column header. The per-set weight TextInput itself is unaffected — it's
+   * an input surface (writes kg), not a display label. Defaults to "kg".
+   */
+  weightUnit?: WeightUnit;
   /** Optional thumbnail URL. A barbell-outline placeholder renders when missing. */
   exerciseImageUrl?: string;
   /**
@@ -73,6 +80,7 @@ const formatRepsLabel = (
 };
 
 export function SessionExerciseCard(props: SessionExerciseCardProps) {
+  const weightUnit = props.weightUnit ?? "kg";
   const repsLabel = formatRepsLabel(props.targetRepsMin, props.targetRepsMax);
   const hasDescription = props.targetSets != null && repsLabel != null;
   const hasNotes =
@@ -152,7 +160,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           PREV
         </Text>
         <Text style={[styles.columnHeader, styles.columnHeaderReps]}>REPS</Text>
-        <Text style={[styles.columnHeader, styles.columnHeaderKg]}>KG</Text>
+        <Text style={[styles.columnHeader, styles.columnHeaderKg]}>
+          {weightUnit.toUpperCase()}
+        </Text>
         <View style={styles.columnHeaderSpacer} />
       </View>
 
@@ -171,6 +181,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
               set={set}
               setNumber={idx + 1}
               previous={previousForSet}
+              weightUnit={weightUnit}
               onChange={(patch) => props.onUpdateSet(set.id, patch)}
               onRemove={() => props.onRemoveSet(set.id)}
               onFillPrevious={() => {

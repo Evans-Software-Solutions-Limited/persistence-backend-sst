@@ -61,6 +61,8 @@ export type HomePresenterProps = {
   habits: HabitVM[];
   weekDates: string[];
   recentPRs: PersonalRecord[];
+  /** Athlete's weight-display preference. Defaults to "kg" when absent. */
+  weightUnit?: "kg" | "lb";
   showCoachPeek: boolean;
   coachPeek?: { clientCount: number; needAttention: number; newPRs: number };
 
@@ -111,6 +113,7 @@ export function HomePresenter(props: HomePresenterProps) {
     habits,
     weekDates,
     recentPRs,
+    weightUnit = "kg",
     showCoachPeek,
     coachPeek,
     isLoading,
@@ -287,7 +290,10 @@ export function HomePresenter(props: HomePresenterProps) {
                 </Text>
               }
             >
-              <WeeklyVolumePresenter weeklyVolume={home.weeklyVolume} />
+              <WeeklyVolumePresenter
+                weeklyVolume={home.weeklyVolume}
+                weightUnit={weightUnit}
+              />
             </Section>
           </Animated.View>
         )}
@@ -307,7 +313,7 @@ export function HomePresenter(props: HomePresenterProps) {
             }
           >
             {recentPRs.length > 0 ? (
-              <PRCarouselPresenter prs={recentPRs} />
+              <PRCarouselPresenter prs={recentPRs} weightUnit={weightUnit} />
             ) : (
               <View
                 paddingVertical={18}

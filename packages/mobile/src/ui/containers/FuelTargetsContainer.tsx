@@ -261,6 +261,8 @@ export function FuelTargetsContainer() {
       gender={gender}
       heightCm={heightCm}
       weightKg={weightKg}
+      weightUnit={profile?.weightUnit ?? "kg"}
+      heightUnit={profile?.heightUnit ?? "cm"}
       onOpenProfile={onOpenProfile}
       calorieMode={calorieMode}
       onCalorieModeChange={onCalorieModeChange}

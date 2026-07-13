@@ -150,6 +150,15 @@ describe("HomePresenter (V2)", () => {
     expect(queryByTestId("pr-carousel")).toBeNull();
   });
 
+  it("threads weightUnit='lb' into WeeklyVolume + the PR carousel (device-QA #8b)", () => {
+    const { getByText, getAllByText } = render({ weightUnit: "lb" });
+    // WeeklyVolume total: 14,820 kg -> 32,673 lb (volumeInUnit).
+    expect(getByText("32,673")).toBeTruthy();
+    // Recent-PR carousel value: 85 kg (1rm) -> 187.4 lb (weightInUnit).
+    expect(getByText("187.4")).toBeTruthy();
+    expect(getAllByText("lb").length).toBeGreaterThan(0);
+  });
+
   it("renders the workouts carousel + fires onOpenWorkout on a card press", () => {
     const onOpenWorkout = jest.fn();
     const { getByTestId } = render({ onOpenWorkout });

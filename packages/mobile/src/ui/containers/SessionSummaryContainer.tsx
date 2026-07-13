@@ -43,6 +43,7 @@ import type {
 } from "@/domain/ports/storage.port";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { SessionSummaryPresenter } from "@/ui/presenters/SessionSummaryPresenter";
 
 const EMPTY_SUMMARY: SessionSummary = {
@@ -65,6 +66,7 @@ export function SessionSummaryContainer() {
   const { storage } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
+  const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   // Snapshot the latest session as soon as auth resolves. We hold
   // it in state so `clearActiveSession` (called from Continue) can
@@ -173,6 +175,7 @@ export function SessionSummaryContainer() {
       personalRecords={displayPersonalRecords}
       recordsHit={recordsHit}
       workoutsThisMonth={workoutsThisMonth}
+      weightUnit={weightUnit}
       onSave={onContinue}
       onClose={onClose}
     />

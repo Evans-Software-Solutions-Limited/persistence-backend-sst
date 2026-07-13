@@ -36,6 +36,22 @@ describe("SetLogger", () => {
     expect(getByTestId("set-logger-weight")).toBeTruthy();
   });
 
+  it("converts the previous-set chip to lb when weightUnit is lb (device-QA #8b)", () => {
+    const { getByText } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={{ weightKg: 80, reps: 8 }}
+        weightUnit="lb"
+        onChange={jest.fn()}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    // 80 kg -> 176.4 lb (weightInUnit, 1dp).
+    expect(getByText("8 reps • 176.4 lb")).toBeTruthy();
+  });
+
   it("renders an em dash when no previous set is supplied", () => {
     const { getByText } = renderWithTheme(
       <SetLogger

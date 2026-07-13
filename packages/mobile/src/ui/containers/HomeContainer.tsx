@@ -267,6 +267,7 @@ export function HomeContainer() {
         habits={habitsState.habits}
         weekDates={habitsState.weekDates}
         recentPRs={home.data?.recentPRs ?? []}
+        weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
         showCoachPeek={mode === "coach"}
         coachPeek={undefined}
         isLoading={

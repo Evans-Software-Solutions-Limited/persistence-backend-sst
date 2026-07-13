@@ -41,7 +41,7 @@ describe("formatShortDate", () => {
 });
 
 describe("formatVolumeKg", () => {
-  it("groups thousands and appends kg", () => {
+  it("groups thousands and appends kg (default weightUnit)", () => {
     expect(formatVolumeKg(6240)).toBe("6,240 kg");
     expect(formatVolumeKg(999)).toBe("999 kg");
     expect(formatVolumeKg(1234567)).toBe("1,234,567 kg");
@@ -49,6 +49,14 @@ describe("formatVolumeKg", () => {
   it("rounds and floors negatives to zero", () => {
     expect(formatVolumeKg(120.6)).toBe("121 kg");
     expect(formatVolumeKg(-5)).toBe("0 kg");
+  });
+  it("groups thousands and appends kg when weightUnit is explicitly kg", () => {
+    expect(formatVolumeKg(6240, "kg")).toBe("6,240 kg");
+  });
+  it("converts to lb and appends lb when weightUnit is lb", () => {
+    // 6240 kg -> 13,756.845... lb, rounded to 13,757.
+    expect(formatVolumeKg(6240, "lb")).toBe("13,757 lb");
+    expect(formatVolumeKg(0, "lb")).toBe("0 lb");
   });
 });
 
