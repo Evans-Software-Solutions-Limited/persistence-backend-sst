@@ -106,6 +106,23 @@ export function isHabitCategory(value: string): value is HabitCategory {
   return Object.prototype.hasOwnProperty.call(HABIT_CATEGORIES, value);
 }
 
+/**
+ * Resolve the Calories habit's canonical target. The calorie target is owned by
+ * Nutrition Fuel-Targets (`nutrition_targets.daily_kcal`), not the habit config
+ * — it is the single source of truth so the habit card, streak scoring and the
+ * nutrition streak all judge against the SAME number (locked decision 9 / M9).
+ * Falls back to the category default when the user has no Fuel target yet, so a
+ * calorie habit stays usable before Fuel-Targets is set. Pure — the caller
+ * supplies the fetched `daily_kcal`.
+ */
+export function resolveCalorieHabitTarget(
+  dailyKcal: number | null | undefined,
+): number {
+  return dailyKcal != null && Number.isFinite(dailyKcal)
+    ? dailyKcal
+    : HABIT_CATEGORIES.calories.target.default;
+}
+
 export interface HabitConfigInput {
   targetValue: number;
   /** Required for daily habits; ignored (forced null) for Gym. */
@@ -199,17 +216,27 @@ export function validateCompletionValue(
 export function validateHabitConfigInput(
   category: HabitCategory,
   input: HabitConfigInput,
+  readOnlyTargetOverride?: number,
 ): ValidationResult {
   const meta = HABIT_CATEGORIES[category];
 
   // A read-only target (Calories) is owned by Nutrition — ignore whatever the
-  // client sent and substitute the canonical value (the default until M9 wires
-  // the Fuel-Targets value through), so habit-setup can't write it (AC 2.4).
+  // client sent and substitute the canonical value (AC 2.4). The caller resolves
+  // that value from `nutrition_targets.daily_kcal` (via resolveCalorieHabitTarget)
+  // and passes it as `readOnlyTargetOverride`; the category default stands in
+  // only when no override is supplied (keeps the pure unit tests deterministic).
   const targetValue = meta.targetReadOnly
-    ? meta.target.default
+    ? (readOnlyTargetOverride ?? meta.target.default)
     : input.targetValue;
 
-  if (!inRange(targetValue, meta.target)) {
+  // A read-only target (Calories) is server-derived — the resolved Fuel target
+  // (nutrition_targets.daily_kcal) or the category default — never client
+  // input, so it is trusted and skips the client-input range check. A user's
+  // Fuel target can legitimately sit outside the habit's [min,max] band (an
+  // aggressive 450 kcal cut, say); the calorie habit should score against it,
+  // not 422 on a read-only value the user can't edit here. Display + streak
+  // scoring likewise use daily_kcal verbatim, so this stays consistent.
+  if (!meta.targetReadOnly && !inRange(targetValue, meta.target)) {
     return {
       ok: false,
       error: `targetValue must be between ${meta.target.min} and ${meta.target.max}`,

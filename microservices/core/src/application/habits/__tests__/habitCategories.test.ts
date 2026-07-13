@@ -4,6 +4,7 @@ import {
   HABIT_CATEGORY_ORDER,
   completionValueRequired,
   isHabitCategory,
+  resolveCalorieHabitTarget,
   validateCompletionValue,
   validateHabitConfigInput,
 } from "../habitCategories";
@@ -176,6 +177,47 @@ describe("validateHabitConfigInput", () => {
     expect(r.config.targetValue).toBe(2000);
   });
 
+  it("substitutes the resolved Fuel target (override) for Calories, ignoring both the client value and the default", () => {
+    const r = validateHabitConfigInput(
+      "calories",
+      { targetValue: 5000, tolerancePct: 12 },
+      2500, // resolved from nutrition_targets.daily_kcal
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.config.targetValue).toBe(2500);
+    expect(r.config.tolerancePct).toBe(12);
+  });
+
+  it("ignores a readOnly override for a non-readOnly category (uses the client value)", () => {
+    const r = validateHabitConfigInput("water", { targetValue: 2 }, 2500);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.config.targetValue).toBe(2);
+  });
+
+  it("accepts a resolved Calories target outside the [500,20000] band (trusted, read-only) — no 422 on a value the user can't edit", () => {
+    // An aggressive 450 kcal Fuel target (below the habit's 500 floor) must not
+    // block enabling/editing the calorie habit — the target is Nutrition-owned.
+    const low = validateHabitConfigInput(
+      "calories",
+      { targetValue: 2000, tolerancePct: 10 },
+      450,
+    );
+    expect(low.ok).toBe(true);
+    if (!low.ok) throw new Error("expected ok");
+    expect(low.config.targetValue).toBe(450);
+
+    const high = validateHabitConfigInput(
+      "calories",
+      { targetValue: 2000 },
+      25000,
+    );
+    expect(high.ok).toBe(true);
+    if (!high.ok) throw new Error("expected ok");
+    expect(high.config.targetValue).toBe(25000);
+  });
+
   it("marks only the Calories target read-only", () => {
     for (const c of HABIT_CATEGORY_ORDER) {
       expect(Boolean(HABIT_CATEGORIES[c].targetReadOnly)).toBe(
@@ -250,5 +292,21 @@ describe("completionValueRequired / validateCompletionValue (T-18.4.1)", () => {
 
   it("accepts 0 (a real below-target day) for a value-carrying habit", () => {
     expect(validateCompletionValue("water", 0)).toEqual({ ok: true, value: 0 });
+  });
+});
+
+describe("resolveCalorieHabitTarget", () => {
+  it("uses the user's daily_kcal when a Fuel target is set", () => {
+    expect(resolveCalorieHabitTarget(2500)).toBe(2500);
+    expect(resolveCalorieHabitTarget(1800)).toBe(1800);
+  });
+
+  it("falls back to the 2000 category default when no Fuel target is set", () => {
+    expect(resolveCalorieHabitTarget(null)).toBe(2000);
+    expect(resolveCalorieHabitTarget(undefined)).toBe(2000);
+    expect(resolveCalorieHabitTarget(NaN)).toBe(2000);
+    expect(resolveCalorieHabitTarget(2000)).toBe(
+      HABIT_CATEGORIES.calories.target.default,
+    );
   });
 });

@@ -18,6 +18,11 @@ vi.mock("../../../repositories/habitConfigRepository", () => ({
   })),
 }));
 
+const repoGetTarget = vi.fn();
+vi.mock("../../../repositories/nutritionTargetRepository", () => ({
+  NutritionTargetRepository: vi.fn(() => ({ get: repoGetTarget })),
+}));
+
 import { getDb } from "@persistence/db/client";
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";
 import { auditTrainerAction } from "../../../relationships/auditTrainerAction";
@@ -45,6 +50,7 @@ beforeEach(() => {
   (auditTrainerAction as any).mockResolvedValue(undefined);
   repoGetAssigner.mockResolvedValue({ goalId: "g1", assignedByUserId: null });
   repoUpsert.mockResolvedValue({ goalId: "g1", category: "water" });
+  repoGetTarget.mockResolvedValue(null);
 });
 
 describe("configureClientHabitOnBehalf (T-18.3.1)", () => {
@@ -128,5 +134,40 @@ describe("configureClientHabitOnBehalf (T-18.3.1)", () => {
     const r = await configureClientHabitOnBehalf(ARGS);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.status).toBe(404);
+  });
+
+  it("substitutes the client's Fuel target for a Calories habit, ignoring the coach-supplied target", async () => {
+    repoGetTarget.mockResolvedValue({ dailyKcal: 2600 });
+    repoUpsert.mockResolvedValue({ goalId: "gc", category: "calories" });
+    const r = await configureClientHabitOnBehalf({
+      ...ARGS,
+      category: "calories",
+      body: { targetValue: 1234, daysPerWeek: 6, tolerancePct: 10 },
+    });
+    expect(r.ok).toBe(true);
+    expect(repoGetTarget).toHaveBeenCalledWith("client-1");
+    expect(repoUpsert).toHaveBeenCalledWith(
+      "client-1",
+      "calories",
+      expect.objectContaining({ targetValue: 2600, tolerancePct: 10 }),
+      expect.objectContaining({ assignedByUserId: "trainer-1" }),
+    );
+  });
+
+  it("falls back to the 2000 default for a Calories habit when the client has no Fuel target", async () => {
+    repoGetTarget.mockResolvedValue(null);
+    repoUpsert.mockResolvedValue({ goalId: "gc", category: "calories" });
+    const r = await configureClientHabitOnBehalf({
+      ...ARGS,
+      category: "calories",
+      body: { targetValue: 1234, tolerancePct: 10 },
+    });
+    expect(r.ok).toBe(true);
+    expect(repoUpsert).toHaveBeenCalledWith(
+      "client-1",
+      "calories",
+      expect.objectContaining({ targetValue: 2000 }),
+      expect.anything(),
+    );
   });
 });

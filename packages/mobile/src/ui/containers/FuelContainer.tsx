@@ -188,7 +188,10 @@ export function FuelContainer() {
     prevHitRef.current = goalHit.all;
   }, [goalHit.all, data]);
 
-  // A sheet logged an entry → re-read the optimistic cache + reconcile online.
+  // A sheet OR a pushed fuel route (Scan/QuickAdd/Snap sheets, the Targets
+  // editor, recipe/meal logging) mutated fuel data → re-read the optimistic
+  // cache + reconcile online. All those sites bump `sheetRev` via
+  // `useFuelSheets().notifyMutated()`, so this single watcher covers them.
   const seenRevRef = useRef(sheetRev);
   useEffect(() => {
     if (seenRevRef.current === sheetRev) return;

@@ -8,8 +8,19 @@ const repoMock = {
   disable: vi.fn(async () => true),
 };
 
+// The Calories habit target is resolved from the user's Nutrition Fuel-Target;
+// default to "no target set" so calories falls back to the 2000 category default.
+const nutritionTargetRepoMock = {
+  get: vi.fn(async () => null as { dailyKcal: number } | null),
+};
+
 vi.mock("../../../repositories/habitConfigRepository", () => ({
   HabitConfigRepository: vi.fn().mockImplementation(() => repoMock),
+}));
+vi.mock("../../../repositories/nutritionTargetRepository", () => ({
+  NutritionTargetRepository: vi
+    .fn()
+    .mockImplementation(() => nutritionTargetRepoMock),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) =>
@@ -49,6 +60,7 @@ beforeEach(() => {
   repoMock.listForUser.mockResolvedValue([]);
   repoMock.isHabitCoachLocked.mockResolvedValue(false);
   repoMock.disable.mockResolvedValue(true);
+  nutritionTargetRepoMock.get.mockResolvedValue(null);
 });
 
 describe("GET /users/me/habits/config", () => {
@@ -111,6 +123,57 @@ describe("GET /users/me/habits/config", () => {
     expect(water.targetValue).toBe(3);
     // Coach-lock is only probed for assigned habits.
     expect(repoMock.isHabitCoachLocked).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves the Calories target from the Fuel target (single source of truth), not the 2000 default", async () => {
+    nutritionTargetRepoMock.get.mockResolvedValue({ dailyKcal: 2500 });
+    const { habitConfigHandler } = await load();
+    const res = await habitConfigHandler.handle(
+      req("/users/me/habits/config", "GET"),
+    );
+    const body = (await res.json()) as { data: any[] };
+    const calories = body.data.find((d) => d.category === "calories");
+    expect(calories.targetValue).toBe(2500);
+  });
+
+  it("falls back to the 2000 default for Calories when no Fuel target is set", async () => {
+    nutritionTargetRepoMock.get.mockResolvedValue(null);
+    const { habitConfigHandler } = await load();
+    const res = await habitConfigHandler.handle(
+      req("/users/me/habits/config", "GET"),
+    );
+    const body = (await res.json()) as { data: any[] };
+    const calories = body.data.find((d) => d.category === "calories");
+    expect(calories.targetValue).toBe(2000);
+  });
+
+  it("overrides a stored Calories target with the current Fuel target (no drift)", async () => {
+    // A configured calorie habit whose stored snapshot (2000) is now stale
+    // because the user later raised their Fuel target to 3000.
+    repoMock.listForUser.mockResolvedValue([
+      {
+        category: "calories",
+        goalId: "gc",
+        enabled: true,
+        assignedByUserId: null,
+        assignedByName: null,
+        targetValue: 2000,
+        unit: "kcal",
+        period: "daily",
+        completionRule: "within_tolerance",
+        daysPerWeek: 6,
+        tolerancePct: 10,
+        pending: null,
+      },
+    ] as any);
+    nutritionTargetRepoMock.get.mockResolvedValue({ dailyKcal: 3000 });
+    const { habitConfigHandler } = await load();
+    const res = await habitConfigHandler.handle(
+      req("/users/me/habits/config", "GET"),
+    );
+    const body = (await res.json()) as { data: any[] };
+    const calories = body.data.find((d) => d.category === "calories");
+    expect(calories.targetValue).toBe(3000);
   });
 });
 
@@ -179,6 +242,37 @@ describe("PUT /users/me/habits/:category/config", () => {
       req("/users/me/habits/water/config", "PUT", { targetValue: 2 }),
     );
     expect(res.status).toBe(404);
+  });
+
+  it("substitutes the Fuel target for Calories, ignoring the client-supplied targetValue", async () => {
+    nutritionTargetRepoMock.get.mockResolvedValue({ dailyKcal: 2500 });
+    repoMock.upsert.mockResolvedValue({
+      category: "calories",
+      goalId: "gc",
+      enabled: true,
+      pending: null,
+    });
+    const { habitConfigHandler } = await load();
+    const res = await habitConfigHandler.handle(
+      // Client sends a bogus 1234 target — it must be ignored for calories.
+      req("/users/me/habits/calories/config", "PUT", {
+        targetValue: 1234,
+        daysPerWeek: 5,
+        tolerancePct: 15,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(repoMock.upsert).toHaveBeenCalledWith(
+      "u1",
+      "calories",
+      expect.objectContaining({
+        category: "calories",
+        targetValue: 2500,
+        daysPerWeek: 5,
+        tolerancePct: 15,
+        completionRule: "within_tolerance",
+      }),
+    );
   });
 });
 

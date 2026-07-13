@@ -6,6 +6,7 @@ import type { ProfilePageData } from "@/domain/models/profilePage";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import type { FuelTargetsPresenterProps } from "@/ui/presenters/FuelTargetsPresenter";
 import { FuelTargetsContainer } from "../FuelTargetsContainer";
 
@@ -454,11 +455,14 @@ describe("FuelTargetsContainer", () => {
     await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
     const { kcal, macroGrams, waterCups, macroMode } = mockProbe.last!;
 
+    const revBefore = useFuelSheets.getState().rev;
     await act(async () => {
       await mockProbe.last?.onSave();
     });
 
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    // Signals the Fuel screen to re-read the new target on return (Defect #3).
+    expect(useFuelSheets.getState().rev).toBeGreaterThan(revBefore);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain("/nutrition/targets");

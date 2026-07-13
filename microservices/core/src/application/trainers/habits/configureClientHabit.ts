@@ -3,8 +3,10 @@ import { assertTrainerCanActForClient } from "../../relationships/assertTrainerC
 import { auditTrainerAction } from "../../relationships/auditTrainerAction";
 import { HabitConfigRepository } from "../../repositories/habitConfigRepository";
 import type { HabitConfigView } from "../../repositories/habitConfigRepository";
+import { NutritionTargetRepository } from "../../repositories/nutritionTargetRepository";
 import {
   isHabitCategory,
+  resolveCalorieHabitTarget,
   validateHabitConfigInput,
   type HabitCategory,
 } from "../../habits/habitCategories";
@@ -86,11 +88,25 @@ export async function configureClientHabitOnBehalf({
     };
   }
 
-  const validated = validateHabitConfigInput(cat, {
-    targetValue: body.targetValue,
-    daysPerWeek: body.daysPerWeek,
-    tolerancePct: body.tolerancePct,
-  });
+  // Calories: the target is owned by the CLIENT's Nutrition Fuel-Targets, not
+  // anything the coach sends — substitute the client's canonical daily_kcal so
+  // a coach-set calorie habit scores against the same number as the client's
+  // nutrition streak (single source of truth).
+  const calorieOverride =
+    cat === "calories"
+      ? resolveCalorieHabitTarget(
+          (await new NutritionTargetRepository().get(clientId))?.dailyKcal,
+        )
+      : undefined;
+  const validated = validateHabitConfigInput(
+    cat,
+    {
+      targetValue: body.targetValue,
+      daysPerWeek: body.daysPerWeek,
+      tolerancePct: body.tolerancePct,
+    },
+    calorieOverride,
+  );
   if (!validated.ok) {
     return { ok: false, status: 422, body: { error: validated.error } };
   }

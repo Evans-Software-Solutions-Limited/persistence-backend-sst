@@ -712,19 +712,23 @@ describe("StreakRepository", () => {
       expect(sql.toLowerCase()).toContain("having coalesce(sum(");
     });
 
-    it("computes within_tolerance days from nutrition_entries kcal totals (M9 live)", async () => {
+    it("scores within_tolerance days against the live Fuel target, not the stored habit snapshot", async () => {
       let executed: unknown;
+      let call = 0;
       (getDb as any).mockReturnValue({
+        // 1st select = enabled-habits join; 2nd = the user's daily_kcal.
         select: () =>
-          enabledJoin([
-            {
-              goalId: "cal-goal",
-              completionRule: "within_tolerance",
-              targetValue: "2000",
-              daysPerWeek: 6,
-              tolerancePct: "10",
-            },
-          ]),
+          call++ === 0
+            ? enabledJoin([
+                {
+                  goalId: "cal-goal",
+                  completionRule: "within_tolerance",
+                  targetValue: "2000", // stale habit-config snapshot — must be ignored
+                  daysPerWeek: 6,
+                  tolerancePct: "10",
+                },
+              ])
+            : selectWhereLimit([{ daily: "2500" }]),
         execute: (q: unknown) => {
           executed = q;
           return Promise.resolve([{ days: 6 }]);
@@ -739,13 +743,44 @@ describe("StreakRepository", () => {
       );
       expect(out[0].qualifyingDays).toBe(6);
       expect(out[0].tolerancePct).toBe(10);
+      // Scored against the Fuel target (2500), NOT the stored 2000 snapshot —
+      // single source of truth, so this agrees with the nutrition streak.
+      expect(out[0].targetValue).toBe(2500);
 
       const { sql, params } = new PgDialect().sqlToQuery(executed as never);
       expect(sql.toLowerCase()).toContain("group by 1");
       expect(sql.toLowerCase()).toContain("between");
-      // target ± 10% → [1800, 2200] bounds are bound as params.
-      expect(params).toContain(1800);
-      expect(params).toContain(2200);
+      // 2500 ± 10% → [2250, 2750] bounds are bound as params.
+      expect(params).toContain(2250);
+      expect(params).toContain(2750);
+    });
+
+    it("falls back to the 2000 default for the Calories habit when no Fuel target is set", async () => {
+      let call = 0;
+      (getDb as any).mockReturnValue({
+        select: () =>
+          call++ === 0
+            ? enabledJoin([
+                {
+                  goalId: "cal-goal",
+                  completionRule: "within_tolerance",
+                  targetValue: "9999", // stored snapshot ignored
+                  daysPerWeek: 6,
+                  tolerancePct: "10",
+                },
+              ])
+            : selectWhereLimit([]), // no nutrition_targets row
+        execute: () => Promise.resolve([{ days: 4 }]),
+      });
+
+      const out = await new StreakRepository().getCollectionHabitAggregates(
+        "u1",
+        "2026-06-01",
+        "2026-06-07",
+        "Europe/London",
+      );
+      expect(out[0].qualifyingDays).toBe(4);
+      expect(out[0].targetValue).toBe(2000);
     });
 
     it("counts Gym sessions via a plain aggregate (no value/day grouping)", async () => {
