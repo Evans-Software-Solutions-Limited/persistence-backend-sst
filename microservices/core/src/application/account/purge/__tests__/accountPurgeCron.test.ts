@@ -19,13 +19,15 @@ type MockAccountRepo = ReturnType<typeof defaultAccountRepo>;
  * generic — annotating the return shape with a widened `ReturnType<typeof
  * vi.fn>` breaks structural assignability between differently-typed mocks.
  */
-function buildDeps(overrides: {
-  accountRepo?: MockAccountRepo;
-  cancelStripeSubscriptions?: AccountPurgeCronDeps["cancelStripeSubscriptions"];
-  deleteAuthUser?: AccountPurgeCronDeps["deleteAuthUser"];
-  deleteAvatar?: AccountPurgeCronDeps["deleteAvatar"];
-  now?: Date;
-} = {}) {
+function buildDeps(
+  overrides: {
+    accountRepo?: MockAccountRepo;
+    cancelStripeSubscriptions?: AccountPurgeCronDeps["cancelStripeSubscriptions"];
+    deleteAuthUser?: AccountPurgeCronDeps["deleteAuthUser"];
+    deleteAvatar?: AccountPurgeCronDeps["deleteAvatar"];
+    now?: Date;
+  } = {},
+) {
   return {
     accountRepo: defaultAccountRepo(),
     cancelStripeSubscriptions: vi.fn(async () => undefined),

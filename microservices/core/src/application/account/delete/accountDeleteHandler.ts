@@ -77,5 +77,7 @@ export const accountDeleteHandler = new Elysia()
       return { error: "Failed to delete account" };
     }
 
-    return { data: { softDeleted: true, purgeAfter: purgeAfter.toISOString() } };
+    return {
+      data: { softDeleted: true, purgeAfter: purgeAfter.toISOString() },
+    };
   });

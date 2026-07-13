@@ -1329,11 +1329,7 @@ describe("TrainerRepository", () => {
         transaction: vi.fn(async (fn: any) => fn(tx)),
       });
 
-      const result = await repo.inviteClientByEmail(
-        "t1",
-        "deleted@x.io",
-        null,
-      );
+      const result = await repo.inviteClientByEmail("t1", "deleted@x.io", null);
       // No existing profile matched → falls through to the plain
       // email-invitation branch, exactly like any unregistered address.
       expect(result).toMatchObject({ success: true });

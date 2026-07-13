@@ -29,7 +29,10 @@ describe("AccountRepository.purgeUserData", () => {
    * Pass `[]` to simulate a restore having cleared `deleted_at` mid-sweep,
    * so the purge must abort and delete nothing.
    */
-  function makeTx(executed: SQL[], gateRows: Array<{ id: string }> = [{ id: "x" }]) {
+  function makeTx(
+    executed: SQL[],
+    gateRows: Array<{ id: string }> = [{ id: "x" }],
+  ) {
     return {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -173,12 +176,11 @@ describe("AccountRepository.softDelete", () => {
     const update = vi.fn(() => ({ set }));
     (getDb as any).mockReturnValue({ update });
 
-    const purgeAfter = await new AccountRepository().softDelete(
-      "user-42",
-      now,
-    );
+    const purgeAfter = await new AccountRepository().softDelete("user-42", now);
 
-    expect(purgeAfter.getTime()).toBe(now.getTime() + SOFT_DELETE_GRACE_PERIOD_MS);
+    expect(purgeAfter.getTime()).toBe(
+      now.getTime() + SOFT_DELETE_GRACE_PERIOD_MS,
+    );
     expect(purgeAfter.toISOString()).toBe("2026-08-12T12:00:00.000Z");
     expect(capturedSet).toEqual({
       deletedAt: now,
@@ -190,9 +192,9 @@ describe("AccountRepository.softDelete", () => {
 
   it("defaults to the current time when `now` is omitted", async () => {
     const where = vi.fn(async () => undefined);
-    const set = vi.fn<(values: Record<string, unknown>) => { where: typeof where }>(
-      () => ({ where }),
-    );
+    const set = vi.fn<
+      (values: Record<string, unknown>) => { where: typeof where }
+    >(() => ({ where }));
     const update = vi.fn(() => ({ set }));
     (getDb as any).mockReturnValue({ update });
 
