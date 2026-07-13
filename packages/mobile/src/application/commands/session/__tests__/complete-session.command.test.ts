@@ -204,6 +204,33 @@ describe("completeSessionCommand", () => {
     );
   });
 
+  // ── M13 sync-hardening — clientSessionId idempotency ──────────────────────
+  it("stamps the finalize payload with a stable clientSessionId (the local active_sessions id)", () => {
+    storage.cacheActiveSession("user-1", buildSession({ id: "local-abc" }));
+    completeSessionCommand({ storage, userId: "user-1", now });
+
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    expect(payload.clientSessionId).toBe("local-abc");
+  });
+
+  it("re-enqueue/retry sends the same clientSessionId (payload is fixed at enqueue time)", () => {
+    storage.cacheActiveSession("user-1", buildSession({ id: "local-abc" }));
+    completeSessionCommand({ storage, userId: "user-1", now });
+
+    const entry = storage.getPendingMutations()[0];
+    const firstAttempt = JSON.parse(entry.payload).clientSessionId;
+
+    // Simulate a failed attempt + retry: the sync worker marks the entry
+    // failed and a later drain re-reads getPendingMutations() and resends
+    // the SAME stored payload — it never rebuilds the body per attempt.
+    storage.markMutationFailed(entry.id, "network error");
+    const retried = storage.getPendingMutations()[0];
+    const secondAttempt = JSON.parse(retried.payload).clientSessionId;
+
+    expect(secondAttempt).toBe(firstAttempt);
+    expect(secondAttempt).toBe("local-abc");
+  });
+
   it("upserts logged sets into the recent-sets cache so next session's Previous chip surfaces", () => {
     storage.cacheActiveSession("user-1", buildSession());
     completeSessionCommand({ storage, userId: "user-1", now });

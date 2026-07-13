@@ -219,6 +219,26 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = this.queue.filter((e) => !idSet.has(e.id));
   }
 
+  getFailedExhaustedEntries(): SyncQueueEntry[] {
+    // Parity with SQLite: FIFO order (insertion-ordered already, we
+    // just push to the end).
+    return this.queue.filter(
+      (e) => e.status === "failed" && e.retryCount >= e.maxRetries,
+    );
+  }
+
+  resetFailedEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    for (const entry of this.queue) {
+      if (!idSet.has(entry.id)) continue;
+      if (entry.status !== "failed") continue;
+      entry.status = "pending";
+      entry.retryCount = 0;
+      entry.errorMessage = null;
+    }
+  }
+
   getSyncStats(): SyncStats {
     const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const entry of this.queue) {

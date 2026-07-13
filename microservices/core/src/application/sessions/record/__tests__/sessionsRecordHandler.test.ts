@@ -2,7 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const sessionMocks = { recordSession: vi.fn() };
-const prMocks = { recordPRsForSession: vi.fn() };
+const prMocks = {
+  recordPRsForSession: vi.fn(),
+  getPersonalRecordsForSessionReplay: vi.fn(),
+};
 const workoutMocks = { getById: vi.fn() };
 
 // Hoisted so the vi.mock factory below can reference it (factories
@@ -216,6 +219,12 @@ describe("sessionsRecordHandler", () => {
       // Programme completion-linking hook — wired because validBody
       // references a workout template (specs/19-programs).
       expect.any(Function),
+      // `options` — the self path doesn't stamp `loggedByUserId` / an
+      // audit hook.
+      undefined,
+      // M13 sync-hardening (Cluster 1a Task 1): the replay-reconstruction
+      // callback wired to PersonalRecordsRepository.getPersonalRecordsForSessionReplay.
+      expect.any(Function),
     );
   });
 
@@ -272,6 +281,32 @@ describe("sessionsRecordHandler", () => {
     const fakeTx = { fake: "tx" };
     await passedCallback("test-user-id", "server-session-1", fakeTx);
     expect(prMocks.recordPRsForSession).toHaveBeenCalledWith(
+      "test-user-id",
+      "server-session-1",
+      fakeTx,
+    );
+  });
+
+  it("threads the M13 replay-reconstruction function so a replay reconstructs personalRecords via the repo", async () => {
+    const { sessionsRecordHandler } = await import("../sessionsRecordHandler");
+    await sessionsRecordHandler.handle(
+      new Request("http://localhost/sessions/record", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(validBody),
+      }),
+    );
+    // 6th arg to recordSession is the injected replay-reconstruction
+    // callback (Cluster 1a Task 1) — calling it should invoke
+    // prMocks.getPersonalRecordsForSessionReplay.
+    const passedCallback = sessionMocks.recordSession.mock.calls[0]?.[5];
+    expect(typeof passedCallback).toBe("function");
+    const fakeTx = { fake: "tx" };
+    await passedCallback("test-user-id", "server-session-1", fakeTx);
+    expect(prMocks.getPersonalRecordsForSessionReplay).toHaveBeenCalledWith(
       "test-user-id",
       "server-session-1",
       fakeTx,

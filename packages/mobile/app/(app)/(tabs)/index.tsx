@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CoachHomeContainer } from "../../../src/ui/containers/CoachHomeContainer";
 import { HomeContainer } from "../../../src/ui/containers/HomeContainer";
 import { SyncBlockedBannerMount } from "../../../src/ui/containers/SyncBlockedBannerMount";
+import { SyncFailedBannerMount } from "../../../src/ui/containers/SyncFailedBannerMount";
 import { useUserMode } from "../../../src/state/user-mode";
 
 /**
@@ -18,10 +19,15 @@ import { useUserMode } from "../../../src/state/user-mode";
  *       specs/14-navigation/tasks.md T-14.3.7
  *       specs/06-progress-goals/design.md § Dashboard mobile architecture (M1)
  *       specs/11-payments-subscriptions/design.md § Sync-queue entitlement (M10.6)
+ *       specs/milestones/M13-sync-hardening § Failed-sync review UI
  *
- * The `SyncBlockedBannerMount` renders nothing when the queue is clean — no
- * layout flicker, no banner-shaped gap on cold start. Mounted ABOVE the body
- * so it's the user's first signal that something needs their attention.
+ * Both `SyncBlockedBannerMount` and `SyncFailedBannerMount` render nothing
+ * when their respective queue is clean — no layout flicker, no banner-
+ * shaped gap on cold start. Mounted ABOVE the body so they're the user's
+ * first signal that something needs their attention. Both can be visible
+ * at once (a plan-blocked mutation and a retry-exhausted one are
+ * independent pools) — they stack, blocked-by-plan first since it has a
+ * known, one-tap fix (upgrade) vs. sync-failed's Retry/Discard decision.
  */
 export default function Home() {
   const mode = useUserMode((s) => s.mode);
@@ -33,6 +39,7 @@ export default function Home() {
   return (
     <View style={{ flex: 1, paddingTop: insets.top }}>
       <SyncBlockedBannerMount />
+      <SyncFailedBannerMount />
       {mode === "coach" ? <CoachHomeContainer /> : <HomeContainer />}
     </View>
   );

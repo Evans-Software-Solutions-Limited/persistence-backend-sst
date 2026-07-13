@@ -58,6 +58,7 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import { filterExercises } from "@/domain/services/exercise.service";
+import { runSqliteMigrations } from "@/adapters/storage/sqliteMigrations";
 import type {
   StoragePort,
   EnqueueMutationInput,
@@ -636,6 +637,14 @@ export class SQLiteStorageAdapter implements StoragePort {
         );
       });
     }
+
+    // M13 sync-hardening (Task 4): versioned migration mechanism. Runs
+    // LAST — every ad-hoc CREATE-IF-NOT-EXISTS / ALTER block above has
+    // already brought this install to the latest known shape by this
+    // point, so a fresh or pre-M13 install baselines here with nothing to
+    // run. `SQLITE_MIGRATIONS` is empty today; future schema changes land
+    // as a new entry there instead of another bespoke inline block.
+    runSqliteMigrations(db);
   }
 
   // -- Sync Queue --
@@ -786,6 +795,36 @@ export class SQLiteStorageAdapter implements StoragePort {
       const placeholders = ids.map(() => "?").join(",");
       db.runSync(
         `DELETE FROM sync_queue WHERE id IN (${placeholders})`,
+        ids as unknown as number[],
+      );
+    });
+  }
+
+  getFailedExhaustedEntries(): SyncQueueEntry[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT * FROM sync_queue WHERE status = 'failed' AND retry_count >= max_retries
+       ORDER BY created_at ASC`,
+    ) as Record<string, unknown>[];
+    return rows.map(mapRow);
+  }
+
+  resetFailedEntries(ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    const db = this.getDb();
+    // Conditional on `status = 'failed'` — mirrors `unblockEntries` — so a
+    // stale id (already discarded, or claimed by a concurrent drain since
+    // the caller's read) is silently skipped instead of corrupting an
+    // unrelated row.
+    db.withTransactionSync(() => {
+      const placeholders = ids.map(() => "?").join(",");
+      db.runSync(
+        `UPDATE sync_queue
+         SET status = 'pending',
+             retry_count = 0,
+             error_message = NULL,
+             updated_at = datetime('now')
+         WHERE id IN (${placeholders}) AND status = 'failed'`,
         ids as unknown as number[],
       );
     });

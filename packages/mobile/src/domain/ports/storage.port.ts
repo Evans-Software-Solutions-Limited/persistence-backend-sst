@@ -163,6 +163,40 @@ export interface StoragePort {
    * the storage layer doesn't reference-count across mutation types.
    */
   discardEntries(ids: readonly number[]): void;
+  /**
+   * Read every entry that has exhausted its retry budget:
+   * `status = 'failed' AND retry_count >= max_retries`. FIFO order
+   * (oldest first), mirroring `getBlockedEntries`.
+   *
+   * M13 sync-hardening: `getPendingMutations()` deliberately excludes
+   * these rows forever (retry_count < max_retries is part of its WHERE
+   * clause) — without this read path they were invisible to every future
+   * drain, so a completed-workout `POST /sessions/record` that failed 3
+   * times (e.g. an offline stretch) got permanently stranded, and every
+   * server-derived view (coach adherence, workout-detail PR state, the
+   * You-page volume stat) read empty forever even after connectivity
+   * returned. Powers `useSyncWorker`'s reconnect-triggered resurrect
+   * (`resetFailedEntries`) and the `useFailedSyncEntries` review-UI banner.
+   *
+   * Spec: specs/milestones/M13-sync-hardening
+   */
+  getFailedExhaustedEntries(): SyncQueueEntry[];
+  /**
+   * Flip the given entry ids from `failed` back to `pending`, zeroing
+   * `retry_count` and clearing `error_message` — the "self-heal" half of
+   * the reconnect flow. Conditional on `status = 'failed'` (mirrors
+   * `unblockEntries`'s conditional on `blocked_entitlement`) so a stale id
+   * that's already been discarded, or that a concurrent drain already
+   * moved to `in_flight`/`completed`, is silently skipped rather than
+   * corrupting an unrelated row.
+   *
+   * Called by `useSyncWorker` exactly once per offline→online transition
+   * (before the transition's flush), and by the Retry CTA on
+   * `/sync-failed`. Does NOT itself trigger a flush — callers are
+   * responsible for following up with `processSyncQueue` so the
+   * newly-`pending` rows actually get sent.
+   */
+  resetFailedEntries(ids: readonly number[]): void;
   getSyncStats(): SyncStats;
   pruneCompletedMutations(olderThanHours?: number): void;
 
