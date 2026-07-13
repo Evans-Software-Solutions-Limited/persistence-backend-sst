@@ -228,16 +228,6 @@ export function ClientDetailContainer() {
     openAssignWorkout(id, refreshAll);
   }, [id, openAssignWorkout, refreshAll]);
 
-  // Create-and-assign: open the creator in coach context carrying the client
-  // id/name; the creator does the direct online create → ad-hoc assign on
-  // save. The new assignment surfaces in Upcoming sessions on next refresh.
-  const onCreateAssignWorkout = useCallback(() => {
-    if (!id) return;
-    const query = new URLSearchParams({ ctx: "coach", assignClientId: id });
-    if (name) query.set("assignClientName", name);
-    router.push(`/(app)/workouts/create?${query.toString()}` as never);
-  }, [router, id, name]);
-
   const onEditTargets = useCallback(() => {
     if (!id) return;
     const client = detail.data?.client;
@@ -337,7 +327,6 @@ export function ClientDetailContainer() {
       onLogWeight={onLogWeight}
       onManageHabits={onManageHabits}
       onAssignWorkout={onAssignWorkout}
-      onCreateAssignWorkout={onCreateAssignWorkout}
       onEditTargets={onEditTargets}
       onAssignGoal={onAssignGoal}
       onSendBrief={onSendBrief}

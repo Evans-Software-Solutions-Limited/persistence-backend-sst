@@ -173,19 +173,21 @@ visibility, exercises with the matched superset treatment and shared sets/rest.
   (disabled + hint), add/remove, drag-to-reorder with auto-ungroup, delete
   confirm (edit only), validation (name required, `repsMin ≤ repsMax`).
 
-### STORY-007 — One-tap create + assign from Client Detail
+### STORY-007 — One-tap create + assign from Client Detail (REMOVED)
 
-**As** a coach on a client's detail **I can** create a workout and assign it to
-that client in one flow.
+**Revision (Cluster 6, workout creator/editor restyle):** the one-tap
+"Create & assign workout" quick action on Client Detail has been **removed**.
+Coaches create a workout via the coach Workout Library and assign it to a
+client via the existing AssignWorkoutSheet (`quick-action-assign` /
+`onAssignWorkout`) — two steps instead of one, no dedicated entry point.
 
-- **7.1** Client Detail SHALL offer a "Create & assign workout" action that opens
-  the creator (coach context, `show_in_owner_library` default `false`).
-- **7.2** WHEN saved, THE workout SHALL be created and then **ad-hoc-assigned** to
-  that client via `POST /trainers/me/clients/:id/workout-assignments`
-  (`program_assignment_id = null`), reusing the existing assignment path.
-- **7.3** IF the create succeeds but the assign fails, THE app SHALL surface the
-  error and leave the created workout intact (no silent loss) — the coach can
-  retry the assign from the existing AssignWorkoutSheet.
+- QuickActionsRow no longer offers a "Create" action (`onCreateAssignWorkout`,
+  `quick-action-create-assign` removed from `ClientDetailPresenter` /
+  `ClientDetailContainer`).
+- `WorkoutCreatorContainer` still supports its `assignClientId` create-and-assign
+  submit path (direct online create → ad-hoc assign) — it's just unreached
+  from Client Detail now. Left in place for a future coach-library entry point
+  to reuse rather than deleted.
 
 ### STORY-008 — Workout history aggregation (backend)
 
