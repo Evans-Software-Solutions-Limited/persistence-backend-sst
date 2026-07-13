@@ -1,7 +1,12 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { Slot, useRouter, useSegments } from "expo-router";
+import {
+  Slot,
+  useGlobalSearchParams,
+  useRouter,
+  useSegments,
+} from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
 import { StripeProvider } from "@stripe/stripe-react-native";
@@ -10,6 +15,7 @@ import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useProfilePage } from "../src/ui/hooks/useProfilePage";
+import { usePendingInvite } from "../src/state/pending-invite";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
@@ -134,8 +140,11 @@ function AuthGate() {
   const profilePage = useProfilePage();
   const segments = useSegments();
   const router = useRouter();
+  const params = useGlobalSearchParams<{ code?: string }>();
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
+  // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
+  const inviteCode = typeof params.code === "string" ? params.code : null;
 
   useEffect(() => {
     if (isLoading) return;
@@ -166,15 +175,33 @@ function AuthGate() {
     }
 
     if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
-      // Signed in but not in app and not in the post-sign-up flow —
-      // go to app. `/(app)/(tabs)` resolves to the tab navigator's
-      // first tab (home).
-      router.replace("/(app)/(tabs)");
+      // Signed in but not in app and not in the post-sign-up flow — go to app.
+      // If a coach invite code was stashed before auth (unauthenticated athlete
+      // opened /(app)/accept-invite?code=X — device-QA #2 follow-up), redeem it
+      // now instead of landing on the tabs. PEEK (don't clear) — Supabase fires
+      // several auth-state events in quick succession, so this effect can re-run
+      // with `segments` still on (auth); a read-and-clear would return null on
+      // the second run and clobber this redirect with the tabs one. The
+      // accept-invite screen clears the stash on arrival, and both peeks resolve
+      // to the same redirect (idempotent) until `segments` catch up.
+      const pendingCode = usePendingInvite.getState().pendingCode;
+      if (pendingCode) {
+        router.replace(
+          `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`,
+        );
+      } else {
+        router.replace("/(app)/(tabs)");
+      }
     } else if (!session && !inAuthGroup) {
-      // Not signed in and not on auth screen — go to sign-in
+      // Not signed in and not on an auth screen — go to sign-in. If they were
+      // opening a coach invite deep link, stash the code first so it survives
+      // sign-in/sign-up and is redeemed by the post-auth branch above.
+      if (inAppGroup && segmentName === "accept-invite" && inviteCode) {
+        usePendingInvite.getState().setPendingCode(inviteCode);
+      }
       router.replace("/(auth)/sign-in");
     }
-  }, [session, isLoading, segments, router, deletedAt]);
+  }, [session, isLoading, segments, router, deletedAt, inviteCode]);
 
   return <Slot />;
 }

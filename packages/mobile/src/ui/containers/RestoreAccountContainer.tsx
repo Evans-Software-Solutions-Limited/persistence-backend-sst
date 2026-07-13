@@ -5,6 +5,7 @@ import { RestoreAccountPresenter } from "@/ui/presenters/RestoreAccountPresenter
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestoreAccount } from "@/ui/hooks/useRestoreAccount";
+import { usePendingInvite } from "@/state/pending-invite";
 
 /**
  * Container for the `/(app)/restore-account` gate screen (Cluster 2b —
@@ -49,7 +50,17 @@ export function RestoreAccountContainer() {
       }
     }
     await profilePage.refresh();
-    router.replace("/(app)/(tabs)");
+    // Redeem a stashed coach invite code if the user arrived here via an invite
+    // deep link (device-QA #2 follow-up). This is the third consume site: after
+    // restore the user is already in (app), so AuthGate's post-auth branch
+    // (guarded by !inAppGroup) won't fire — redeem here directly. Peek; the
+    // accept-invite screen clears the stash on arrival.
+    const pendingCode = usePendingInvite.getState().pendingCode;
+    router.replace(
+      pendingCode
+        ? `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`
+        : "/(app)/(tabs)",
+    );
   }, [restoreAccount, profilePage, router]);
 
   const onSignOut = useCallback(async () => {

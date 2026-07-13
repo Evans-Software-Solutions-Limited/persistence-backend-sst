@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
 import { useUserMode } from "@/state/user-mode";
+import { usePendingInvite } from "@/state/pending-invite";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import {
   SubscriptionSuccessPresenter,
@@ -139,7 +140,18 @@ export function SubscriptionSuccessContainer() {
       successMessage={successMessage}
       benefits={benefits}
       isTrainerTier={isTrainerTier}
-      onGoToHome={() => router.replace("/(app)/(tabs)" as never)}
+      onGoToHome={() => {
+        // New-user path bypasses AuthGate's post-auth branch (success replaces
+        // straight into (app)), so redeem a stashed invite code here too
+        // (device-QA #2 follow-up — carry code through signup). Peek (the
+        // accept-invite screen clears the stash on arrival); encode the code.
+        const pendingCode = usePendingInvite.getState().pendingCode;
+        router.replace(
+          (pendingCode
+            ? `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`
+            : "/(app)/(tabs)") as never,
+        );
+      }}
       onManageClients={onManageClients}
     />
   );

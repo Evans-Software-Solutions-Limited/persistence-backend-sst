@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAcceptInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
+import { usePendingInvite } from "@/state/pending-invite";
 import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
 
 /**
@@ -25,6 +26,13 @@ export function AcceptInviteContainer() {
 
   const [code, setCode] = useState(() => (params.code ?? "").toUpperCase());
   const [errorMessage, setErrorMessage] = useState("");
+
+  // We've arrived on the redeem screen (the code, if any, is now in the URL) —
+  // clear the auth-flow stash so it can't resurface on a later sign-in
+  // (device-QA #2 follow-up; the stash is the carry-through-signup mechanism).
+  useEffect(() => {
+    usePendingInvite.getState().clearPendingCode();
+  }, []);
 
   const onBack = useCallback(() => {
     if (router.canGoBack()) router.back();

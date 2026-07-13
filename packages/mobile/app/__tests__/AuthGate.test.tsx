@@ -33,10 +33,17 @@ jest.mock("../../src/ui/hooks/useProfilePage", () => ({
 // Mock expo-router
 const mockReplace = jest.fn();
 const mockUseSegments = jest.fn<string[], []>();
+// Defaults to no query params ({}); carry-code tests override per-test. The
+// base impl guards the no-`beforeEach` describes below (which render RootLayout
+// and would otherwise read `.code` off undefined).
+const mockUseGlobalSearchParams = jest.fn<Record<string, string>, []>(
+  () => ({}),
+);
 jest.mock("expo-router", () => ({
   Slot: ({ children }: { children?: React.ReactNode }) => children ?? null,
   useRouter: () => ({ replace: mockReplace }),
   useSegments: () => mockUseSegments(),
+  useGlobalSearchParams: () => mockUseGlobalSearchParams(),
 }));
 
 // Mock AppProviders to avoid Supabase/SQLite initialization
@@ -104,6 +111,8 @@ import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
 import RootLayout from "../_layout";
 // eslint-disable-next-line import/first
+import { usePendingInvite } from "../../src/state/pending-invite";
+// eslint-disable-next-line import/first
 import * as Notifications from "expo-notifications";
 // eslint-disable-next-line import/first
 import { Platform } from "react-native";
@@ -120,10 +129,12 @@ describe("AuthGate", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseSegments.mockReturnValue([]);
+    mockUseGlobalSearchParams.mockReturnValue({});
     mockUseProfilePage.mockReturnValue({
       payload: null,
       refresh: jest.fn(),
     });
+    usePendingInvite.getState().reset();
   });
 
   it("does not redirect while loading", () => {
@@ -222,6 +233,93 @@ describe("AuthGate", () => {
     render(<RootLayout />);
 
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  // Carry the invite code through auth (device-QA #2 follow-up) ----------------
+
+  it("stashes the invite code before the sign-in redirect when an unauthenticated user opens accept-invite?code=X", async () => {
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseSegments.mockReturnValue(["(app)", "accept-invite"]);
+    mockUseGlobalSearchParams.mockReturnValue({ code: "AB23CD" });
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    });
+    expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
+  });
+
+  it("does NOT stash a code for an unauthenticated user who isn't on accept-invite", async () => {
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseSegments.mockReturnValue(["(app)"]);
+    mockUseGlobalSearchParams.mockReturnValue({ code: "STRAY" });
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    });
+    expect(usePendingInvite.getState().pendingCode).toBeNull();
+  });
+
+  it("redeems a stashed invite code after auth instead of landing on the tabs (PEEKs — does not clear)", async () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]); // just authed on the sign-in screen
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/(app)/accept-invite?code=AB23CD",
+      );
+    });
+    // NOT cleared here — a peek, so a session-churn re-run redirects to the
+    // same place rather than clobbering it with the tabs. The accept-invite
+    // screen clears the stash on arrival.
+    expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
+  });
+
+  it("lands an authenticated user with no stashed code on the tabs as usual", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
+    });
+  });
+
+  it("soft-delete gate wins over a stashed invite code (restore-account first; code untouched)", async () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/restore-account");
+    });
+    expect(mockReplace).not.toHaveBeenCalledWith(
+      "/(app)/accept-invite?code=AB23CD",
+    );
+    // Stash survives — redeemed after the user restores their account.
+    expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
   });
 });
 
