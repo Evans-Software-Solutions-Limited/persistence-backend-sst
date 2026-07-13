@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useRouter } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetCoachOverview } from "@/ui/hooks/useGetCoachOverview";
@@ -64,6 +65,7 @@ const MONTHS = [
 ];
 
 export function CoachYouContainer() {
+  const router = useRouter();
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -139,6 +141,9 @@ export function CoachYouContainer() {
   }, [openSheet, refreshOverview]);
 
   const noop = useCallback(() => {}, []);
+  const onOpenWorkoutLibrary = useCallback(() => {
+    router.push("/(app)/workouts/library");
+  }, [router]);
 
   return (
     <CoachYouPresenter
@@ -164,6 +169,7 @@ export function CoachYouContainer() {
       onInvite={onInvite}
       onStartSession={noop}
       onViewAllPrograms={noop}
+      onOpenWorkoutLibrary={onOpenWorkoutLibrary}
     />
   );
 }

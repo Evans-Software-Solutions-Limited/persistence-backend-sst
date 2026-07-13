@@ -42,7 +42,6 @@ const baseProps: ProfileDrawerPresenterProps = {
   onOpenSubscription: jest.fn(),
   onOpenNotifications: jest.fn(),
   onOpenSettings: jest.fn(),
-  onOpenWorkoutLibrary: jest.fn(),
   onSignOut: jest.fn(),
 };
 
@@ -86,19 +85,13 @@ describe("ProfileDrawerPresenter", () => {
     expect(getByText("Bradley Evans · 28 · 175.9lb")).toBeTruthy();
   });
 
-  it("shows the coach-only Workout library row + fires onOpenWorkoutLibrary", () => {
-    const onOpenWorkoutLibrary = jest.fn();
-    const { getByTestId } = renderDrawer({
+  it("no longer shows a Workout library row in coach mode (relocated to Coach You, device-QA #5)", () => {
+    const { queryByTestId } = renderDrawer({
       mode: "coach",
       isTrainerEligible: true,
-      onOpenWorkoutLibrary,
     });
-    fireEvent.press(getByTestId("row-workout-library"));
-    expect(onOpenWorkoutLibrary).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides the Workout library row for athletes", () => {
-    const { queryByTestId } = renderDrawer({ mode: "athlete" });
+    // The coach Workout Library moved out of the settings drawer onto Coach You;
+    // the drawer is now a mode-symmetric identity/account launcher.
     expect(queryByTestId("row-workout-library")).toBeNull();
   });
 

@@ -5,7 +5,13 @@ import { Avatar, Card } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { color } from "@/ui/theme/tokens";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
-import { IconSettings, IconSwap } from "@/ui/components/icons";
+import {
+  IconChevronR,
+  IconDumbbell,
+  IconSettings,
+  IconSwap,
+  iconDefaults,
+} from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import { BusinessStatsPresenter } from "./coach/BusinessStatsPresenter";
@@ -54,6 +60,8 @@ export type CoachYouPresenterProps = {
   onInvite: () => void;
   onStartSession?: () => void;
   onViewAllPrograms?: () => void;
+  /** Open the coach's workout library (relocated here from the profile drawer). */
+  onOpenWorkoutLibrary?: () => void;
 };
 
 export function CoachYouPresenter(props: CoachYouPresenterProps) {
@@ -76,6 +84,7 @@ export function CoachYouPresenter(props: CoachYouPresenterProps) {
     onInvite,
     onStartSession,
     onViewAllPrograms,
+    onOpenWorkoutLibrary,
   } = props;
 
   const insets = useSafeAreaInsets();
@@ -258,6 +267,49 @@ export function CoachYouPresenter(props: CoachYouPresenterProps) {
               </Pressable>
             </View>
           </Card>
+
+          {/* Workout library — hoisted ABOVE the overview-gated block so it
+              renders whenever Coach You's body does, independent of the coach
+              overview fetch (it needs no overview data). It's the only path to
+              the coach workout library after device-QA #5 moved it off the
+              profile drawer, so it must not disappear on an empty overview. */}
+          {onOpenWorkoutLibrary ? (
+            <Card
+              pad={14}
+              radius={14}
+              onPress={onOpenWorkoutLibrary}
+              testID="coach-workout-library"
+            >
+              <View flexDirection="row" alignItems="center" gap={12}>
+                <IconDumbbell
+                  {...iconDefaults({ size: 18 })}
+                  color={toneHex("trainer").base}
+                />
+                <View flex={1}>
+                  <Text
+                    fontFamily="$display"
+                    fontWeight="600"
+                    fontSize={14}
+                    color="$text"
+                  >
+                    Workout library
+                  </Text>
+                  <Text
+                    fontFamily="$body"
+                    fontSize={12}
+                    color="$text3"
+                    marginTop={1}
+                  >
+                    Create &amp; manage your workouts
+                  </Text>
+                </View>
+                <IconChevronR
+                  {...iconDefaults({ size: 18 })}
+                  color={color.$text3}
+                />
+              </View>
+            </Card>
+          ) : null}
 
           {overview ? (
             <>

@@ -15,6 +15,10 @@ import { makeCoachOverview } from "@/ui/presenters/coach/__tests__/coachOverview
 const mockSwitchMode = jest.fn();
 const mockProbe: { last: CoachYouPresenterProps | null } = { last: null };
 
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
 jest.mock("@/ui/hooks/useModeSwitch", () => ({
   useModeSwitch: () => ({ switchMode: mockSwitchMode }),
 }));
@@ -157,6 +161,20 @@ describe("CoachYouContainer", () => {
     expect(mockProbe.last?.streakCount).toBe(23);
     expect(mockProbe.last?.coachMeta).toContain("8 active clients");
     expect(mockProbe.last?.coachMeta).toContain("Coach since Feb 2024");
+  });
+
+  it("routes the relocated Workout library entry to the coach workout library", async () => {
+    mockPush.mockClear();
+    const { adapters, api } = makeAdapters();
+    api.coachOverview = makeCoachOverview();
+    render(
+      <Wrapper adapters={adapters}>
+        <CoachYouContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    mockProbe.last?.onOpenWorkoutLibrary?.();
+    expect(mockPush).toHaveBeenCalledWith("/(app)/workouts/library");
   });
 
   it("labels a weekly streak in weeks", async () => {

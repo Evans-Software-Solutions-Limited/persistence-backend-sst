@@ -127,7 +127,6 @@ export function ProfileDrawerContainer() {
       onOpenSubscription={() => pushFrom("/(auth)/subscription-selection")}
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
       onOpenSettings={() => pushFrom("/(app)/profile/privacy-settings")}
-      onOpenWorkoutLibrary={() => pushFrom("/(app)/workouts/library")}
       onSignOut={onSignOut}
     />
   );
