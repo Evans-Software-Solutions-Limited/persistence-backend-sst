@@ -142,6 +142,17 @@ export function BottomSheet({
       // dynamic sizing is never wanted — disable it to honour `height` exactly.
       enableDynamicSizing={false}
       enablePanDownToClose
+      // Keyboard handling (device-QA #5): without these, gorhom's default
+      // keyboard behaviour fights the inner BottomSheetScrollView on
+      // form-heavy sheets (worst case: the Fuel Targets calculator) — the
+      // content stops scrolling reliably once the keyboard is up on-device.
+      // `interactive` keeps the sheet pinned above the keyboard + lets the
+      // scroll track the keyboard; `restore` returns to the snap point on
+      // dismiss; Android needs `adjustResize` so the window (not just the
+      // sheet) reflows. CI mocks gorhom, so this is device-verified.
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustResize"
       onClose={onClose}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={{
