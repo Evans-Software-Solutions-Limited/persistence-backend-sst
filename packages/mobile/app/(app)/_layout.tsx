@@ -191,6 +191,16 @@ export default function AppLayout() {
           options={{ title: "Blocked by your plan", headerShown: true }}
         />
         {/*
+          M13 sync-hardening sync-failed review screen. Same push-over-
+          tabs pattern as sync-blocked, reached from its own banner
+          (`SyncFailedBannerMount`) mounted alongside `SyncBlockedBannerMount`
+          on the Home tab.
+        */}
+        <Stack.Screen
+          name="sync-failed"
+          options={{ title: "Sync issues", headerShown: true }}
+        />
+        {/*
           Generic placeholder route. Renders no <HeaderBar> of its own, so it
           opts back into the native header for a back affordance.
         */}

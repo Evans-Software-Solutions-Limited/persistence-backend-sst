@@ -1719,6 +1719,24 @@ describe("SessionRepository", () => {
         (getDb as any).mockReturnValue(mockDb);
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
+        // M13 sync-hardening (Cluster 1a Task 1): the replay reconstruction
+        // callback — proves the response is NOT hardcoded to `[]` on a
+        // replay. A pre-fix `recordSession` ignores this callback entirely
+        // and always returns `[]` on the step-0 short-circuit, so this
+        // assertion fails against that code (revert-check).
+        const originalPersonalRecords = [
+          {
+            exerciseId: "ex-1",
+            exerciseName: "Bench Press",
+            recordType: "max_weight" as const,
+            newValue: 100,
+            previousValue: 90,
+            setId: "set-x",
+          },
+        ];
+        const getReplayPersonalRecords = vi
+          .fn()
+          .mockResolvedValue(originalPersonalRecords);
         const { SessionRepository } = await import("../sessionRepository");
         const repo = new SessionRepository();
 
@@ -1726,6 +1744,9 @@ describe("SessionRepository", () => {
           "u1",
           idemPayload,
           runPRDetection,
+          undefined,
+          undefined,
+          getReplayPersonalRecords,
         );
 
         // Nothing inserted, no PR detection re-run — pure replay.
@@ -1733,9 +1754,50 @@ describe("SessionRepository", () => {
         expect(insertValues).toHaveLength(0);
         expect(runPRDetection).not.toHaveBeenCalled();
         expect(result.id).toBe("s-existing");
-        expect(result.personalRecords).toEqual([]);
+        // The replay reconstruction ran, scoped to the EXISTING session id —
+        // and the response carries the SAME personalRecords list a first
+        // (non-replay) call for this session would have produced, not `[]`.
+        expect(getReplayPersonalRecords).toHaveBeenCalledWith(
+          "u1",
+          "s-existing",
+          tx,
+        );
+        expect(result.personalRecords).toEqual(originalPersonalRecords);
         expect(result.workoutsThisMonth).toBe(3);
         // Signals a replay so callers skip non-idempotent post-commit effects.
+        expect(result.wasReplay).toBe(true);
+      });
+
+      it("defaults personalRecords to [] when no getReplayPersonalRecords callback is wired (pre-fix-compatible degrade, not a throw)", async () => {
+        const { tx } = makeIdempotencyTx(
+          [
+            [{ id: "s-existing" }],
+            [idemRefreshed.session],
+            idemRefreshed.exercises,
+            idemRefreshed.sets,
+            [{ count: 3 }],
+          ],
+          [],
+        );
+        const mockDb = {
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
+
+        const runPRDetection = vi.fn().mockResolvedValue([]);
+        const { SessionRepository } = await import("../sessionRepository");
+        const repo = new SessionRepository();
+
+        // No 4th/5th/6th arg — omitting getReplayPersonalRecords entirely.
+        const result = await repo.recordSession(
+          "u1",
+          idemPayload,
+          runPRDetection,
+        );
+
+        expect(result.personalRecords).toEqual([]);
         expect(result.wasReplay).toBe(true);
       });
 
@@ -1803,6 +1865,20 @@ describe("SessionRepository", () => {
         (getDb as any).mockReturnValue(mockDb);
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
+        // Same Task 1 fix, exercised on the concurrent-race backstop path.
+        const raceWinnerPersonalRecords = [
+          {
+            exerciseId: "ex-1",
+            exerciseName: "Bench Press",
+            recordType: "10rm" as const,
+            newValue: 100,
+            previousValue: 80,
+            setId: "set-x",
+          },
+        ];
+        const getReplayPersonalRecords = vi
+          .fn()
+          .mockResolvedValue(raceWinnerPersonalRecords);
         const { SessionRepository } = await import("../sessionRepository");
         const repo = new SessionRepository();
 
@@ -1810,6 +1886,9 @@ describe("SessionRepository", () => {
           "u1",
           idemPayload,
           runPRDetection,
+          undefined,
+          undefined,
+          getReplayPersonalRecords,
         );
 
         // Only the (no-op) session insert was attempted; the exercise loop and
@@ -1817,6 +1896,12 @@ describe("SessionRepository", () => {
         expect(insertValues).toHaveLength(1);
         expect(runPRDetection).not.toHaveBeenCalled();
         expect(result.id).toBe("s-winner");
+        expect(getReplayPersonalRecords).toHaveBeenCalledWith(
+          "u1",
+          "s-winner",
+          tx,
+        );
+        expect(result.personalRecords).toEqual(raceWinnerPersonalRecords);
         expect(result.wasReplay).toBe(true);
       });
 

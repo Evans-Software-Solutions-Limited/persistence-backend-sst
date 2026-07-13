@@ -47,18 +47,37 @@ export const getVolumeStatsHandler = new Elysia()
       // quarter/year/lifetime would never update after their first cold write).
       // This is the low-frequency You/Progress path, so a recompute-on-read
       // (a small delete+insert of per-muscle rows) is cheap + always consistent.
-      await ctx.VolumeRepository.recomputeVolumeByMuscle(
-        userId,
-        tz,
-        kind,
-        start,
-        end,
-      );
+      //
+      // Guarded (Cluster 1a Task 2): a throw here used to 500 the WHOLE
+      // request, disappearing the You-page card entirely even though
+      // `workouts`/`totalKg` below are independently computable. Degrade
+      // instead — log and keep serving the live totals with `byMuscle: []`
+      // rather than skip the (freshly failing) by-muscle read and risk
+      // silently serving a STALE materialised row.
+      let recomputeFailed = false;
+      try {
+        await ctx.VolumeRepository.recomputeVolumeByMuscle(
+          userId,
+          tz,
+          kind,
+          start,
+          end,
+        );
+      } catch (err) {
+        recomputeFailed = true;
+        console.error("[volume-stats] recompute failed, degrading to []", {
+          userId,
+          kind,
+          error: err,
+        });
+      }
 
       const [workouts, totalKg, byMuscleRaw] = await Promise.all([
         ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
         ctx.VolumeRepository.totalVolume(userId, tz, start, end),
-        ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
+        recomputeFailed
+          ? Promise.resolve([])
+          : ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
       ]);
 
       const adherence =

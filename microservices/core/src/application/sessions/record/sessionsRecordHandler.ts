@@ -129,6 +129,16 @@ export const sessionsRecordHandler = new Elysia()
                 tx,
               )
           : undefined,
+        undefined,
+        // M13 sync-hardening (Cluster 1a Task 1): reconstruct the
+        // `personalRecords` response list on a replay instead of leaving it
+        // blank — see SessionRepository.recordSession's docstring.
+        (uid, sessionId, tx) =>
+          ctx.PersonalRecordsRepository.getPersonalRecordsForSessionReplay(
+            uid,
+            sessionId,
+            tx,
+          ),
       );
 
       // Advance the workout streak for a completed session (STORY-006).

@@ -109,6 +109,15 @@ export async function recordClientSessionOnBehalf({
         });
       },
     },
+    // M13 sync-hardening (Cluster 1a Task 1): reconstruct the
+    // `personalRecords` response list on a replay instead of leaving it
+    // blank — see SessionRepository.recordSession's docstring.
+    (uid, sessionId, tx) =>
+      personalRecordsRepository.getPersonalRecordsForSessionReplay(
+        uid,
+        sessionId,
+        tx,
+      ),
   );
 
   // Post-commit, completed only: mirror the self handler's streak + volume

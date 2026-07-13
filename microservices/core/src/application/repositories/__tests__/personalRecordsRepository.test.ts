@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -703,6 +704,321 @@ describe("PersonalRecordsRepository", () => {
       // candidate — 7 doesn't sit on the legacy 1/3/5/10 ladder, and
       // unlike Epley we don't approximate from off-ladder reps.
       expect(mockDb.insert).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("getPersonalRecordsForSessionReplay (M13 sync-hardening, Cluster 1a Task 1)", () => {
+    it("returns [] when the session has no completed sets", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValueOnce(makeDoubleJoinSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.getPersonalRecordsForSessionReplay(
+        "u1",
+        "session-empty",
+      );
+
+      expect(result).toEqual([]);
+      // Only the sessionSets query fired — no personal_records / otherSets
+      // round trips for a session with nothing completed.
+      expect(mockDb.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns [] when none of this session's sets are the CURRENT canonical PR holder (superseded by a later session)", async () => {
+      const sessionSets = [
+        {
+          setId: "set-replay-session",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 10,
+        },
+      ];
+      // personal_records currently points at a DIFFERENT set (a later
+      // session beat this one) — not attributable to our session.
+      const currentPRs = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "110.00",
+          setId: "set-from-a-later-session",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(sessionSets))
+          .mockReturnValueOnce(makeWhereSelectChain(currentPRs)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.getPersonalRecordsForSessionReplay(
+        "u1",
+        "session-replay",
+      );
+
+      expect(result).toEqual([]);
+      // No otherSets / exerciseName round trip — bailed after finding zero
+      // attributable rows.
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns [] when this session's PR has no other-session baseline (first-occurrence within this session)", async () => {
+      const sessionSets = [
+        {
+          setId: "set-first-ever",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 10,
+        },
+      ];
+      const currentPRs = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "100.00",
+          setId: "set-first-ever",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(sessionSets))
+          .mockReturnValueOnce(makeWhereSelectChain(currentPRs))
+          // No other session ever logged this exercise.
+          .mockReturnValueOnce(makeDoubleJoinSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.getPersonalRecordsForSessionReplay(
+        "u1",
+        "session-replay",
+      );
+
+      expect(result).toEqual([]);
+      // No exerciseName lookup — nothing surfaced.
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+    });
+
+    it("reconstructs the PR (previousValue + newValue + exerciseName) when this session still holds the canonical PR and a prior baseline exists", async () => {
+      const sessionSets = [
+        {
+          setId: "set-replay-winner",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 10,
+        },
+      ];
+      const currentPRs = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "10rm",
+          value: "100.00",
+          setId: "set-replay-winner",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "100.00",
+          setId: "set-replay-winner",
+        },
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_volume",
+          value: "1000.00",
+          setId: "set-replay-winner",
+        },
+      ];
+      // An earlier (different) session's set is the historical baseline.
+      const otherSets = [
+        {
+          setId: "set-earlier-session",
+          exerciseId: "exercise-bench",
+          weightKg: "90.00",
+          reps: 10,
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(sessionSets))
+          .mockReturnValueOnce(makeWhereSelectChain(currentPRs))
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(otherSets))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([
+              { id: "exercise-bench", name: "Bench Press" },
+            ]),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.getPersonalRecordsForSessionReplay(
+        "u1",
+        "session-replay",
+      );
+
+      expect(result).toHaveLength(3);
+      const rm = result.find((r) => r.recordType === "10rm");
+      expect(rm).toMatchObject({
+        exerciseId: "exercise-bench",
+        exerciseName: "Bench Press",
+        newValue: 100,
+        previousValue: 90,
+        setId: "set-replay-winner",
+      });
+      const mw = result.find((r) => r.recordType === "max_weight");
+      expect(mw).toMatchObject({ newValue: 100, previousValue: 90 });
+      const mv = result.find((r) => r.recordType === "max_volume");
+      expect(mv).toMatchObject({ newValue: 1000, previousValue: 900 });
+    });
+
+    it("excludes THIS session's own sets from the otherSets baseline query (does not compare a session against itself)", async () => {
+      // If the otherSets query didn't exclude this session, the baseline
+      // would include this session's own 100kg set, making
+      // `newValue > previousValue` false (100 > 100) and wrongly hiding a
+      // genuine PR. This test just asserts the `otherSets` select fires
+      // (its `ne(workoutSessions.id, sessionId)` predicate is exercised via
+      // the mocked chain) and the PR still surfaces when the mock's
+      // returned otherSets correctly excludes the session's own data.
+      const sessionSets = [
+        {
+          setId: "set-only-winner",
+          exerciseId: "exercise-squat",
+          weightKg: "150.00",
+          reps: 5,
+        },
+      ];
+      const currentPRs = [
+        {
+          exerciseId: "exercise-squat",
+          recordType: "max_weight",
+          value: "150.00",
+          setId: "set-only-winner",
+        },
+      ];
+      const otherSets = [
+        {
+          setId: "set-prior-best",
+          exerciseId: "exercise-squat",
+          weightKg: "140.00",
+          reps: 5,
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(sessionSets))
+          .mockReturnValueOnce(makeWhereSelectChain(currentPRs))
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(otherSets))
+          .mockReturnValueOnce(
+            makeWhereSelectChain([
+              { id: "exercise-squat", name: "Back Squat" },
+            ]),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      const result = await repo.getPersonalRecordsForSessionReplay(
+        "u1",
+        "session-squat-replay",
+      );
+
+      expect(result).toEqual([
+        {
+          exerciseId: "exercise-squat",
+          exerciseName: "Back Squat",
+          recordType: "max_weight",
+          newValue: 150,
+          previousValue: 140,
+          setId: "set-only-winner",
+        },
+      ]);
+    });
+
+    it("renders the otherSets query's WHERE clause with an explicit != this sessionId (mocked-DB blind spot guard)", async () => {
+      // A mocked chain resolves to whatever we hand it regardless of the
+      // WHERE predicate, so a bug that dropped the `ne(workoutSessions.id,
+      // sessionId)` exclusion (comparing a session's own sets against
+      // themselves as "history") would NOT be caught by the behavioural
+      // tests above if their fixtures happened to still produce the right
+      // answer. Render the actual `.where(...)` argument passed to the
+      // otherSets select via PgDialect and assert the compiled SQL/params
+      // really exclude `sessionId`.
+      const sessionSets = [
+        {
+          setId: "set-x",
+          exerciseId: "exercise-bench",
+          weightKg: "100.00",
+          reps: 5,
+        },
+      ];
+      const currentPRs = [
+        {
+          exerciseId: "exercise-bench",
+          recordType: "max_weight",
+          value: "100.00",
+          setId: "set-x",
+        },
+      ];
+      let capturedOtherSetsWhere: unknown;
+      let selectCallCount = 0;
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => {
+          selectCallCount += 1;
+          if (selectCallCount === 1) {
+            return makeDoubleJoinSelectChain(sessionSets);
+          }
+          if (selectCallCount === 2) {
+            return makeWhereSelectChain(currentPRs);
+          }
+          // 3rd call: otherSets — capture the where predicate instead of
+          // using the plain chain helper.
+          return {
+            from: vi.fn().mockReturnValue({
+              innerJoin: vi.fn().mockReturnValue({
+                innerJoin: vi.fn().mockReturnValue({
+                  where: vi.fn().mockImplementation((w: unknown) => {
+                    capturedOtherSetsWhere = w;
+                    return Promise.resolve([]);
+                  }),
+                }),
+              }),
+            }),
+          };
+        }),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const repo = new PersonalRecordsRepository();
+      await repo.getPersonalRecordsForSessionReplay("u1", "session-x");
+
+      expect(capturedOtherSetsWhere).toBeDefined();
+      const { sql, params } = new PgDialect().sqlToQuery(
+        capturedOtherSetsWhere as never,
+      );
+      // The exclusion predicate compiles to a `<>` (Drizzle's `ne`) against
+      // workout_sessions.id, and the excluded session's id is bound as a
+      // parameter — proving the query genuinely scopes "history" to every
+      // OTHER session, not this one.
+      expect(sql).toContain('"workout_sessions"."id" <>');
+      expect(params).toContain("session-x");
     });
   });
 });

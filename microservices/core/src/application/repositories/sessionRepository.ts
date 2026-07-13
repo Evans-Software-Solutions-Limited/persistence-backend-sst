@@ -283,12 +283,14 @@ export class SessionRepository {
    * `(userId, clientSessionId)` returns the already-recorded session instead of
    * inserting a duplicate — proven by the `workout_sessions_user_client_session_idx`
    * unique index (a first-line SELECT for the common sequential retry, plus an
-   * `onConflictDoNothing` backstop for a concurrent double-submit). A replay is
-   * a no-op beyond returning the existing row: PR detection, the completed-only
-   * hook and the audit hook do NOT re-run (they already committed on the first
-   * write, and re-running them would double-count). Callers that omit
-   * `clientSessionId` (legacy clients / direct-API) keep the pre-M13 behaviour:
-   * every call inserts a fresh session.
+   * `onConflictDoNothing` backstop for a concurrent double-submit). A replay
+   * does not RE-RUN PR detection, the completed-only hook, or the audit hook
+   * (they already committed on the first write, and re-running them would
+   * double-count) — but the response's top-level `personalRecords` list IS
+   * reconstructed via `getReplayPersonalRecords` (Cluster 1a Task 1 fix) so a
+   * genuine retry-after-success doesn't blank the Summary screen's PR list.
+   * Callers that omit `clientSessionId` (legacy clients / direct-API) keep
+   * the pre-M13 behaviour: every call inserts a fresh session.
    *
    * Spec: specs/milestones/M3-active-session/BACKEND_BRIEF.md § 7,
    * specs/milestones/M13-sync-hardening/BACKEND_BRIEF.md.
@@ -315,6 +317,22 @@ export class SessionRepository {
     // `logged_by_user_id` and threads an unconditional in-tx audit hook through
     // here. The self path omits this argument (behaviour unchanged).
     options?: RecordSessionOptions,
+    // M13 sync-hardening (Cluster 1a Task 1): replay-safe reconstruction of the
+    // `personalRecords` response list, called ONLY on the two replay paths
+    // below (the step-0 short-circuit and the concurrent-race backstop)
+    // instead of re-running `runPRDetection` — which is self-referential
+    // against the already-upserted `personal_records` row and would silently
+    // return `[]` again, blanking the Summary screen's PR list on every
+    // retry. Optional + defaults to the pre-fix `[]` behaviour so a caller
+    // that hasn't wired this yet degrades gracefully rather than throwing;
+    // both current callers (`sessionsRecordHandler`,
+    // `recordClientSessionOnBehalf`) wire it via
+    // `PersonalRecordsRepository.getPersonalRecordsForSessionReplay`.
+    getReplayPersonalRecords: (
+      userId: string,
+      sessionId: string,
+      tx: DbOrTx,
+    ) => Promise<DetectedPersonalRecord[]> = async () => [],
   ): Promise<RecordedSession> {
     const db = getDb();
 
@@ -348,11 +366,16 @@ export class SessionRepository {
       //    double-submit is caught by the onConflictDoNothing backstop below.
       const existingSessionId = await findExistingSessionId();
       if (existingSessionId) {
+        const replayPersonalRecords = await getReplayPersonalRecords(
+          userId,
+          existingSessionId,
+          tx,
+        );
         return this.buildRecordedSession(
           tx,
           userId,
           existingSessionId,
-          [],
+          replayPersonalRecords,
           true,
         );
       }
@@ -428,7 +451,18 @@ export class SessionRepository {
             "recordSession: insert returned no row but no existing session found",
           );
         }
-        return this.buildRecordedSession(tx, userId, winnerId, [], true);
+        const replayPersonalRecords = await getReplayPersonalRecords(
+          userId,
+          winnerId,
+          tx,
+        );
+        return this.buildRecordedSession(
+          tx,
+          userId,
+          winnerId,
+          replayPersonalRecords,
+          true,
+        );
       }
 
       const session = insertedSessions[0];
@@ -536,8 +570,9 @@ export class SessionRepository {
    * Shared by three paths in {@link recordSession}: the normal insert, the M13
    * idempotency short-circuit (a sequential retry), and the M13 concurrent-race
    * backstop. `personalRecords` is passed through from the caller — the normal
-   * path supplies the freshly-detected PRs; the two replay paths pass `[]`
-   * because a replay must not re-surface PRs the first response already carried.
+   * path supplies the freshly-detected PRs; the two replay paths supply the
+   * RECONSTRUCTED list from `getReplayPersonalRecords` (Cluster 1a Task 1) so
+   * a retried record still returns the PRs the user actually earned, not `[]`.
    */
   private async buildRecordedSession(
     tx: DbTransaction,

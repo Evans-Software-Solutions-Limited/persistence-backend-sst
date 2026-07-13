@@ -1644,10 +1644,26 @@ export type GetPersonalRecordsParams = {
  * this once on Finish from local state, server writes everything in
  * one transaction (root + all exercises + all sets + PR detection).
  *
- * Mirrors `RecordSessionInput` on the backend exactly — keep the two
- * in sync.
+ * Mostly mirrors `RecordSessionInput` on the backend
+ * (microservices/core/src/application/sessions/record/sessionsRecordHandler.ts)
+ * — keep the two in sync. `clientSessionId` (M13 sync-hardening) is the
+ * one deliberate mobile-only-origin field: it's the local `active_sessions`
+ * id (`WorkoutSession.id`) at finalize time, sent so the backend's
+ * `(userId, clientSessionId)` unique index can dedupe an ambiguous-success
+ * retry instead of writing a duplicate session. `complete-session.command.ts`
+ * builds it once at enqueue time and the sync queue resends the exact same
+ * serialized payload on every retry, so the id is stable for the entry's
+ * whole retry lifecycle — see `swapLocalSessionId` (storage.port.ts), which
+ * only rewrites the cache AFTER a successful flush, never a queued payload.
  */
 export type RecordSessionInput = {
+  /**
+   * M13 sync-hardening — see the type-level doc comment above. Optional so
+   * older enqueued-but-not-yet-flushed payloads (pre this change) still
+   * deserialize; the backend also treats it as optional for legacy/direct-
+   * API callers.
+   */
+  clientSessionId?: string | null;
   workoutId?: string | null;
   name?: string | null;
   startedAt: string;

@@ -100,4 +100,53 @@ describe("getVolumeStatsHandler", () => {
     const { data } = (await res.json()) as any;
     expect(data.adherencePct).toBeNull();
   });
+
+  describe("recompute guard (Cluster 1a Task 2)", () => {
+    it("still returns 200 with live workouts/totalKg + byMuscle: [] when the recompute throws", async () => {
+      repoMock.completedSessionCount.mockResolvedValue(9);
+      repoMock.totalVolume.mockResolvedValue(31200);
+      repoMock.recomputeVolumeByMuscle.mockRejectedValue(
+        new Error("materialised-table write failed"),
+      );
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await getVolumeStatsHandler.handle(
+        new Request("http://localhost/users/me/volume-stats?window=month", {
+          headers: { authorization: "Bearer t" },
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      const { data } = (await res.json()) as any;
+      // Live totals still served — computed independently of the recompute.
+      expect(data.workouts).toBe(9);
+      expect(data.totalTonnes).toBe(31.2);
+      // Degrades to an empty by-muscle breakdown rather than 500ing or
+      // risking a stale read.
+      expect(data.byMuscle).toEqual([]);
+      // getVolumeByMuscle is skipped entirely once the recompute has failed
+      // — no attempt to read a (potentially stale/half-written) table.
+      expect(repoMock.getVolumeByMuscle).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+
+      errorSpy.mockRestore();
+    });
+
+    it("does not let a recompute failure block adherence/workouts computation for a non-lifetime window", async () => {
+      repoMock.completedSessionCount.mockResolvedValue(4);
+      repoMock.totalVolume.mockResolvedValue(1000);
+      repoMock.recomputeVolumeByMuscle.mockRejectedValue(new Error("boom"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await getVolumeStatsHandler.handle(
+        new Request("http://localhost/users/me/volume-stats?window=month", {
+          headers: { authorization: "Bearer t" },
+        }),
+      );
+      const { data } = (await res.json()) as any;
+
+      expect(res.status).toBe(200);
+      expect(data.adherencePct).not.toBeNull();
+    });
+  });
 });

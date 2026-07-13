@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import {
   exerciseSets,
   exercises,
@@ -111,6 +111,82 @@ function repMaxTypeForReps(reps: number): RecordType | null {
     default:
       return null;
   }
+}
+
+/**
+ * A per-set PR candidate — one row of raw `exercise_sets` data reduced to
+ * the (exerciseId, recordType, value) shape the detection/reconstruction
+ * logic partitions on. Shared shape between `recordPRsForSession`'s
+ * candidate enumeration and `getPersonalRecordsForSessionReplay`'s
+ * replay-safe reconstruction (M13 sync-hardening, Cluster 1a Task 1) so
+ * the two paths agree on exactly which record types a set qualifies for.
+ */
+interface PRCandidate {
+  exerciseId: string;
+  recordType: RecordType;
+  value: number;
+  setId: string;
+}
+
+/**
+ * Enumerates every PR candidate a list of completed sets qualifies for —
+ * `max_weight` + `max_volume` always, plus the exact-rep ladder type when
+ * applicable. Pure function over raw set rows (no DB access), mirroring
+ * step 1 of `recordPRsForSession`'s candidate enumeration exactly so
+ * `getPersonalRecordsForSessionReplay` can recompute the same partition
+ * from immutable `exercise_sets` data without touching `personal_records`.
+ */
+function candidatesForSets(
+  sets: Array<{
+    setId: string;
+    exerciseId: string;
+    weightKg: string | null;
+    reps: number | null;
+  }>,
+): PRCandidate[] {
+  const candidates: PRCandidate[] = [];
+  for (const set of sets) {
+    if (set.weightKg == null || set.reps == null || set.reps <= 0) continue;
+    const weight = parseFloat(set.weightKg);
+    if (!Number.isFinite(weight) || weight <= 0) continue;
+
+    candidates.push({
+      exerciseId: set.exerciseId,
+      recordType: "max_weight",
+      value: weight,
+      setId: set.setId,
+    });
+    candidates.push({
+      exerciseId: set.exerciseId,
+      recordType: "max_volume",
+      value: weight * set.reps,
+      setId: set.setId,
+    });
+
+    const repMaxType = repMaxTypeForReps(set.reps);
+    if (repMaxType !== null) {
+      candidates.push({
+        exerciseId: set.exerciseId,
+        recordType: repMaxType,
+        value: weight,
+        setId: set.setId,
+      });
+    }
+  }
+  return candidates;
+}
+
+/** Collapses a candidate list to one winner per `${exerciseId}|${recordType}`. */
+function bestCandidatePerKey(
+  candidates: PRCandidate[],
+): Map<string, PRCandidate> {
+  const best = new Map<string, PRCandidate>();
+  for (const c of candidates) {
+    const k = `${c.exerciseId}|${c.recordType}`;
+    const existing = best.get(k);
+    if (!existing || c.value > existing.value) best.set(k, c);
+  }
+  return best;
 }
 
 export interface ListPersonalRecordsFilters {
@@ -495,6 +571,177 @@ export class PersonalRecordsRepository {
     // (persistence-mobile/lib/supabase/queries/workoutMutations.ts:815-817).
     // Skips the round-trip entirely when nothing was surfaced (the
     // common path for first-occurrence-only sessions under Brad's rule).
+    if (detected.length === 0) return [];
+
+    const detectedExerciseIds = [...new Set(detected.map((d) => d.exerciseId))];
+    const nameRows = await db
+      .select({ id: exercises.id, name: exercises.name })
+      .from(exercises)
+      .where(inArray(exercises.id, detectedExerciseIds));
+    const nameById = new Map(nameRows.map((r) => [r.id, r.name]));
+
+    return detected.map((d) => ({
+      ...d,
+      exerciseName: nameById.get(d.exerciseId) ?? "Unknown",
+    }));
+  }
+
+  /**
+   * M13 sync-hardening (Cluster 1a Task 1): replay-safe reconstruction of
+   * the `personalRecords` response list for an ALREADY-recorded session.
+   *
+   * The bug: `SessionRepository.recordSession`'s two replay paths (the
+   * step-0 sequential short-circuit and the concurrent-race backstop)
+   * currently pass `personalRecords: []` to `buildRecordedSession` —
+   * per-set `is_personal_record` flags survive the refetch, but the
+   * TOP-LEVEL list the Summary screen reads comes back empty on every
+   * replay. Once mobile actually sends `clientSessionId` (this cluster's
+   * companion mobile change), a genuine retry-after-success blanks the
+   * PR list the user should see.
+   *
+   * Why this does NOT just call `recordPRsForSession` again: that method
+   * compares each candidate against the row IT ITSELF already upserted
+   * into `personal_records` on the original (non-replay) call — by
+   * replay time, `personal_records.value` already equals the candidate's
+   * value, so `candidate > prior` is always false and it silently
+   * returns `[]` again. Self-referential and unsafe on already-persisted
+   * sets, per the docstring above.
+   *
+   * Instead this recomputes the same partition `recordPRsForSession` used
+   * at write time, sourced entirely from immutable `exercise_sets` rows:
+   *
+   *   1. Load THIS session's completed sets. Empty → `[]` (cancelled
+   *      session, or nothing completed).
+   *   2. Read the CURRENT `personal_records` rows for the touched
+   *      exercises, keeping only the ones whose `set_id` is one of this
+   *      session's own sets — i.e. the (exerciseId, recordType) pairs
+   *      this session still canonically holds. This is the authoritative
+   *      "attributable to this session" check: if a LATER session has
+   *      since beaten this one, its row's `set_id` no longer matches ours
+   *      and it correctly drops out (mirrors what a fresh per-set
+   *      `is_personal_record` flag refetch would show).
+   *   3. Load every OTHER session's completed sets for the same
+   *      exercises (excluding this session) and collapse them to a
+   *      best-per-key map — the historical baseline this session's
+   *      candidates were compared against at write time.
+   *   4. For each attributable row, previousValue = that baseline's
+   *      value for the same key. No baseline (this session was the
+   *      first-ever set for that exercise+type) → excluded, mirroring
+   *      Brad's first-workout rule.
+   *
+   * Caveat (documented, not fixed here): if an unrelated session for the
+   * SAME user+exercise completes strictly between the original commit
+   * and the replay — an edge case outside the retry-safety scenario this
+   * fix targets — `previousValue` reflects the baseline AT REPLAY TIME
+   * rather than at original-detection time. Read-only: never writes to
+   * `personal_records` or `exercise_sets`.
+   */
+  async getPersonalRecordsForSessionReplay(
+    userId: string,
+    sessionId: string,
+    tx?: DbOrTx,
+  ): Promise<DetectedPersonalRecord[]> {
+    const db = tx ?? getDb();
+
+    const sessionSets = await db
+      .select({
+        setId: exerciseSets.id,
+        exerciseId: sessionExercises.exerciseId,
+        weightKg: exerciseSets.weightKg,
+        reps: exerciseSets.reps,
+      })
+      .from(exerciseSets)
+      .innerJoin(
+        sessionExercises,
+        eq(exerciseSets.sessionExerciseId, sessionExercises.id),
+      )
+      .innerJoin(
+        workoutSessions,
+        eq(sessionExercises.sessionId, workoutSessions.id),
+      )
+      .where(
+        and(
+          eq(workoutSessions.id, sessionId),
+          eq(workoutSessions.userId, userId),
+          eq(exerciseSets.isCompleted, true),
+        ),
+      );
+
+    if (sessionSets.length === 0) return [];
+
+    const sessionSetIds = new Set(sessionSets.map((s) => s.setId));
+    const touchedExerciseIds = [
+      ...new Set(sessionSets.map((s) => s.exerciseId)),
+    ];
+
+    // Current canonical PRs for the touched exercises — narrowed to the
+    // ones this session's own sets still hold (step 2 in the docstring).
+    const currentPRs = await db
+      .select({
+        exerciseId: personalRecords.exerciseId,
+        recordType: personalRecords.recordType,
+        value: personalRecords.value,
+        setId: personalRecords.setId,
+      })
+      .from(personalRecords)
+      .where(
+        and(
+          eq(personalRecords.userId, userId),
+          inArray(personalRecords.exerciseId, touchedExerciseIds),
+        ),
+      );
+    const attributablePRs = currentPRs.filter(
+      (rec) => rec.setId != null && sessionSetIds.has(rec.setId),
+    );
+    if (attributablePRs.length === 0) return [];
+
+    // Every OTHER session's completed sets for the same exercises — the
+    // historical baseline (step 3 in the docstring).
+    const otherSets = await db
+      .select({
+        setId: exerciseSets.id,
+        exerciseId: sessionExercises.exerciseId,
+        weightKg: exerciseSets.weightKg,
+        reps: exerciseSets.reps,
+      })
+      .from(exerciseSets)
+      .innerJoin(
+        sessionExercises,
+        eq(exerciseSets.sessionExerciseId, sessionExercises.id),
+      )
+      .innerJoin(
+        workoutSessions,
+        eq(sessionExercises.sessionId, workoutSessions.id),
+      )
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          eq(exerciseSets.isCompleted, true),
+          inArray(sessionExercises.exerciseId, touchedExerciseIds),
+          ne(workoutSessions.id, sessionId),
+        ),
+      );
+    const priorBestPerKey = bestCandidatePerKey(candidatesForSets(otherSets));
+
+    const detected: Array<Omit<DetectedPersonalRecord, "exerciseName">> = [];
+    for (const rec of attributablePRs) {
+      const key = `${rec.exerciseId}|${rec.recordType}`;
+      const prior = priorBestPerKey.get(key);
+      if (!prior) continue; // no other-session baseline — first-occurrence, excluded
+
+      const newValue = parseFloat(rec.value);
+      const previousValue = parseFloat(prior.value.toFixed(2));
+      if (newValue > previousValue) {
+        detected.push({
+          exerciseId: rec.exerciseId,
+          recordType: rec.recordType,
+          newValue,
+          previousValue,
+          setId: rec.setId as string,
+        });
+      }
+    }
+
     if (detected.length === 0) return [];
 
     const detectedExerciseIds = [...new Set(detected.map((d) => d.exerciseId))];

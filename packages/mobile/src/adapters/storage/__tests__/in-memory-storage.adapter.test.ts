@@ -395,6 +395,107 @@ describe("InMemoryStorageAdapter", () => {
     });
   });
 
+  describe("failed-exhausted entries (M13 sync-hardening)", () => {
+    function enqueueOne(): number {
+      storage.enqueueMutation({
+        entityType: "session",
+        operation: "create",
+        payload: { name: "Push Day" },
+        endpoint: "/sessions/record",
+        method: "POST",
+      });
+      // `.slice(-1)[0]` (not `[0]`) — a prior enqueueOne() call in the same
+      // test may still be sitting `pending` (not yet exhausted), so index 0
+      // would keep returning the FIRST-ever entry instead of the one just
+      // created.
+      return storage.getPendingMutations().slice(-1)[0].id;
+    }
+
+    function exhaust(id: number, maxRetries = 3): void {
+      for (let i = 0; i < maxRetries; i++) {
+        storage.markMutationFailed(id, `attempt ${i + 1} failed`);
+      }
+    }
+
+    it("getFailedExhaustedEntries is empty for a fresh pending entry", () => {
+      enqueueOne();
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    });
+
+    it("getFailedExhaustedEntries is empty while retry_count < max_retries", () => {
+      const id = enqueueOne();
+      storage.markMutationFailed(id, "attempt 1 failed");
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+      // Still visible to getPendingMutations — not yet exhausted.
+      expect(storage.getPendingMutations()).toHaveLength(1);
+    });
+
+    it("surfaces an entry once retry_count reaches max_retries", () => {
+      const id = enqueueOne();
+      exhaust(id);
+      const exhausted = storage.getFailedExhaustedEntries();
+      expect(exhausted).toHaveLength(1);
+      expect(exhausted[0].id).toBe(id);
+      expect(exhausted[0].status).toBe("failed");
+      expect(exhausted[0].retryCount).toBe(3);
+    });
+
+    it("an exhausted entry is invisible to getPendingMutations (the bug this fixes)", () => {
+      const id = enqueueOne();
+      exhaust(id);
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      // ...but it's not gone — it's recoverable via getFailedExhaustedEntries.
+      expect(storage.getFailedExhaustedEntries().map((e) => e.id)).toEqual([
+        id,
+      ]);
+    });
+
+    it("resetFailedEntries returns an exhausted entry to pending with a clean retry budget", () => {
+      const id = enqueueOne();
+      exhaust(id);
+      storage.resetFailedEntries([id]);
+
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+      const pending = storage.getPendingMutations();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].id).toBe(id);
+      expect(pending[0].retryCount).toBe(0);
+      expect(pending[0].errorMessage).toBeNull();
+    });
+
+    it("resetFailedEntries with an empty list is a no-op", () => {
+      const id = enqueueOne();
+      exhaust(id);
+      storage.resetFailedEntries([]);
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+    });
+
+    it("resetFailedEntries skips ids that aren't currently failed (defensive)", () => {
+      const pendingId = enqueueOne();
+      storage.resetFailedEntries([pendingId]);
+      // Was never failed — status stays pending, untouched.
+      const pending = storage.getPendingMutations();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].id).toBe(pendingId);
+    });
+
+    it("getFailedExhaustedEntries returns entries in FIFO (created_at) order", () => {
+      const ids = [enqueueOne(), enqueueOne(), enqueueOne()];
+      ids.forEach((id) => exhaust(id));
+      expect(storage.getFailedExhaustedEntries().map((e) => e.id)).toEqual(ids);
+    });
+
+    it("a re-exhausted entry (fails again after reset) re-surfaces instead of looping silently", () => {
+      const id = enqueueOne();
+      exhaust(id);
+      storage.resetFailedEntries([id]);
+      exhaust(id);
+      const exhausted = storage.getFailedExhaustedEntries();
+      expect(exhausted).toHaveLength(1);
+      expect(exhausted[0].id).toBe(id);
+    });
+  });
+
   describe("sync metadata", () => {
     it("stores and retrieves last synced time", () => {
       expect(storage.getLastSyncedAt("workout")).toBeNull();

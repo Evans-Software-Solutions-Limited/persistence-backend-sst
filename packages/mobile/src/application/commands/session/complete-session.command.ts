@@ -137,6 +137,13 @@ export function finalizeSessionCommand(
   // `difficultyRanking` as a back-compat alias mirroring legacy
   // `useActiveWorkout.recordWorkout` payload shape.
   const payload: RecordSessionInput = {
+    // M13 sync-hardening: the local `active_sessions` id, stable across
+    // every retry of this enqueued mutation (the sync queue resends this
+    // exact serialized payload — see api.port.ts's RecordSessionInput doc
+    // comment). Lets the backend's `(userId, clientSessionId)` unique
+    // index dedupe an ambiguous-success retry instead of writing a
+    // second session row (and double-counting coach adherence).
+    clientSessionId: finalized.id,
     workoutId: finalized.workoutId,
     name: finalized.name,
     startedAt: finalized.startedAt,
