@@ -15,3 +15,18 @@ export {
   cupsToLitres,
   litresToCups,
 } from "./water";
+export {
+  type WeightUnit,
+  type HeightUnit,
+  KG_PER_LB,
+  CM_PER_INCH,
+  kgToLb,
+  lbToKg,
+  weightInUnit,
+  formatWeight,
+  volumeInUnit,
+  formatVolumeParts,
+  formatVolume,
+  cmToFeetInches,
+  formatHeight,
+} from "./units";
