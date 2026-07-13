@@ -216,4 +216,30 @@ export const offDeltaCron = new sst.aws.Cron("off-delta-refresh", {
   },
 });
 
+// ─── Nightly account-purge sweep (Cluster 2a — 30-day soft-delete) ─────────
+//
+// 05:00 UTC daily — after the other nightly sweeps. Completes every account
+// whose cooling-off window (`profiles.deleted_at`/`purge_after`, stamped by
+// `DELETE /account`) has elapsed: safety-net Stripe cancel → the corrected
+// `ACCOUNT_DELETION_STEPS` SQL purge (Part A) → Supabase auth-user delete →
+// best-effort avatar S3 cleanup (Part B). Logs `[account-purge-cron:summary]`
+// each run; per-user failures are isolated (see accountPurgeCron.ts) so one
+// bad user never blocks the rest of the batch. `link: [avatarsBucket]` grants
+// the same `s3:*Object` access `profilesAvatarHandler` gets on the API route,
+// for the DeleteObjectCommand in `deleteUserAvatar.ts`.
+export const accountPurgeCron = new sst.aws.Cron("account-purge-sweep", {
+  schedule: "cron(0 5 * * ? *)",
+  job: {
+    handler: "microservices/core/src/accountPurgeCron.handler",
+    timeout: "300 seconds",
+    link: [avatarsBucket],
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+      SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey.value,
+      STRIPE_SECRET_KEY: stripeSecretKey.value,
+    },
+  },
+});
+
 // api.addAuthorizer

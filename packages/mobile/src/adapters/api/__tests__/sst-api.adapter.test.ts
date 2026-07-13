@@ -102,6 +102,78 @@ describe("SSTApiAdapter.getDashboard timeout", () => {
   });
 });
 
+describe("SSTApiAdapter.deleteAccount / restoreAccount (Cluster 2b soft-delete)", () => {
+  it("deleteAccount unwraps the { softDeleted, purgeAfter } envelope from DELETE /account", async () => {
+    const fetchMock = installFetchMock(async (url) => {
+      expect(String(url)).toContain("/account");
+      return new Response(
+        JSON.stringify({
+          data: { softDeleted: true, purgeAfter: "2026-08-12T00:00:00.000Z" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.deleteAccount();
+
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      softDeleted: true,
+      purgeAfter: "2026-08-12T00:00:00.000Z",
+    });
+  });
+
+  it("deleteAccount surfaces a transport failure as an api error", async () => {
+    installFetchMock(async () => {
+      throw new Error("offline");
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.deleteAccount();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("api");
+    expect(result.error.code).toBe("network");
+  });
+
+  it("restoreAccount POSTs to /account/restore and unwraps { restored: true }", async () => {
+    const fetchMock = installFetchMock(async (url) => {
+      expect(String(url)).toContain("/account/restore");
+      return new Response(JSON.stringify({ data: { restored: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.restoreAccount();
+
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({ restored: true });
+  });
+
+  it("restoreAccount surfaces a 409 (not soft-deleted) as an api error with status 409", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ error: "Account is not scheduled for deletion" }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.restoreAccount();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("api");
+    expect(result.error.status).toBe(409);
+  });
+});
+
 describe("SSTApiAdapter.getWorkouts envelope (M2)", () => {
   it("unwraps the double-envelope { data, meta } including pagination + quota for type=mine", async () => {
     installFetchMock(async () => {

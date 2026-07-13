@@ -582,9 +582,14 @@ describe("useAuth", () => {
     });
     expect(result.current.session).not.toBeNull();
 
+    let deleteResult: { purgeAfter: string } | undefined;
     await act(async () => {
-      await result.current.deleteAccount();
+      deleteResult = await result.current.deleteAccount();
     });
+
+    // Cluster 2b: the backend soft-deletes and returns a grace-period
+    // purgeAfter date instead of purging immediately.
+    expect(deleteResult?.purgeAfter).toEqual(expect.any(String));
 
     // Session torn down (AuthGate routes to sign-in on this), and the
     // device-global slices + storage cache reset — same as sign-out.

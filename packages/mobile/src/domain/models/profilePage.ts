@@ -70,6 +70,22 @@ export type ProfilePageProfile = {
   isProfilePublic: boolean;
   /** ISO timestamp — drives the "member since" copy. */
   createdAt: string;
+  /**
+   * Cluster 2b (account-deletion soft-delete): non-null while the account
+   * is in its 30-day post-deletion grace period. Drives the
+   * `restore-account` gate in `app/_layout.tsx`'s `AuthGate` — a
+   * signed-in user whose profile carries a non-null `deletedAt` is routed
+   * to `/(app)/restore-account` instead of the normal tabs. Optional (not
+   * every backend response predates this field) — treat `undefined` the
+   * same as `null`.
+   */
+  deletedAt?: string | null;
+  /**
+   * ISO timestamp — the account is permanently purged on this date if not
+   * restored. Only meaningful when `deletedAt` is non-null. Optional, same
+   * back-compat rationale as `deletedAt`.
+   */
+  purgeAfter?: string | null;
 };
 
 export type ProfilePageSubscription = {

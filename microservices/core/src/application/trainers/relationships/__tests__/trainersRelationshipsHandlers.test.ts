@@ -305,4 +305,28 @@ describe("trainersClientRelationshipsListHandler", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0].status).toBe("active");
   });
+
+  it("Cluster 2a: filters on profiles.deleted_at IS NULL — a soft-deleted trainer disappears from the client's own relationship list immediately", async () => {
+    let capturedWhere: unknown;
+    const builder: any = {};
+    const passthrough = () => builder;
+    for (const m of ["from", "innerJoin", "orderBy"]) {
+      builder[m] = vi.fn(passthrough);
+    }
+    builder.where = vi.fn((cond: unknown) => {
+      capturedWhere = cond;
+      return builder;
+    });
+    builder.then = (resolve: (v: unknown[]) => unknown) => resolve([]);
+    (getDb as any).mockReturnValue({ select: vi.fn(() => builder) });
+
+    const { trainersClientRelationshipsListHandler } =
+      await import("../trainersClientRelationshipsListHandler");
+    await trainersClientRelationshipsListHandler.handle(get());
+
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const dialect = new PgDialect();
+    const rendered = dialect.sqlToQuery(capturedWhere as any).sql;
+    expect(rendered).toContain('"deleted_at" is null');
+  });
 });

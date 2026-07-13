@@ -19,7 +19,11 @@ export type AuthState = {
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  /**
+   * Cluster 2b: returns the backend's `purgeAfter` so the caller can show
+   * the grace-period date after signing the user out.
+   */
+  deleteAccount: () => Promise<{ purgeAfter: string }>;
 };
 
 /**
@@ -179,14 +183,21 @@ export function useAuth(): AuthState {
     [auth],
   );
 
-  // App Store Guideline 5.1.1(v): permanently delete the account. Calls the
-  // backend (cascade-purge + Supabase auth-user delete) and only tears down
-  // the local session on success — a failure leaves the user signed in so
-  // they can retry (the endpoint is idempotent). Navigation to the sign-in
-  // screen is handled by AuthGate reacting to the session→null change, same
-  // as sign-out. The backend delete goes through the SST API (not Supabase
-  // directly) per the repo's "all business data through the API" rule.
-  const deleteAccount = useCallback(async () => {
+  // App Store Guideline 5.1.1(v): schedule the account for deletion.
+  // Cluster 2b revised the backend from an immediate cascade-purge to a
+  // 30-day soft-delete grace period, but the local-teardown contract is
+  // unchanged: on success, tear down the session same as sign-out; on
+  // failure leave the user signed in so they can retry (the endpoint is
+  // idempotent). Navigation to the sign-in screen is handled by AuthGate
+  // reacting to the session→null change, same as sign-out. The backend
+  // delete goes through the SST API (not Supabase directly) per the
+  // repo's "all business data through the API" rule.
+  //
+  // Returns the backend's `purgeAfter` so callers (PrivacySettingsContainer)
+  // can surface the grace-period date after the sign-out completes.
+  const deleteAccount = useCallback(async (): Promise<{
+    purgeAfter: string;
+  }> => {
     setError(null);
     const result = await api.deleteAccount();
     if (!result.ok) {
@@ -198,10 +209,12 @@ export function useAuth(): AuthState {
       setError(err);
       throw new Error(result.error.message);
     }
-    // Account is gone server-side. Clear the local Supabase session
-    // (best-effort — the credential no longer exists) + local state.
+    // Account is soft-deleted server-side. Clear the local Supabase session
+    // (best-effort — a subsequent sign-in during the grace period routes
+    // through the restore-account gate instead) + local state.
     await auth.signOut().catch(() => undefined);
     clearLocalState();
+    return { purgeAfter: result.value.purgeAfter };
   }, [api, auth, clearLocalState]);
 
   return {

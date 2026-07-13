@@ -43,7 +43,7 @@ function executor(queue: unknown[]) {
   let i = 0;
   const builder: any = {};
   const passthrough = () => builder;
-  for (const m of ["select", "from", "where", "limit"]) {
+  for (const m of ["select", "from", "innerJoin", "where", "limit"]) {
     builder[m] = vi.fn(passthrough);
   }
   builder.then = (resolve: (v: unknown[]) => unknown) =>
@@ -85,6 +85,21 @@ describe("trainersClientBodyTrendHandler", () => {
 
   it("403 when the caller has no active relationship with the client", async () => {
     (getDb as any).mockReturnValue(executor([[]])); // guard finds no row
+    const { trainersClientBodyTrendHandler } =
+      await import("../trainersClientBodyTrendHandler");
+    const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("not_your_client");
+    expect(repo.getBodyTrend).not.toHaveBeenCalled();
+  });
+
+  it("403 (Cluster 2a) when the client is soft-deleted, even with an active relationship row", async () => {
+    (getDb as any).mockReturnValue(
+      executor([
+        [{ id: "rel-1", clientDeletedAt: new Date("2026-07-13T00:00:00Z") }],
+      ]),
+    );
     const { trainersClientBodyTrendHandler } =
       await import("../trainersClientBodyTrendHandler");
     const res = await trainersClientBodyTrendHandler.handle(get("client-1"));

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   personalRecords,
   profiles,
@@ -388,6 +388,12 @@ export class TrainerRepository {
           eq(ptClientRelationships.trainerId, trainerId),
           eq(ptClientRelationships.status, "active"),
           eq(ptClientRelationships.isAiTrainer, false),
+          // Cluster 2a — hide a soft-deleted client from the coach
+          // immediately. `isNull` on a LEFT JOIN column is correct for the
+          // "no matching profiles row at all" edge case too (that already
+          // falls back to `clientName ?? ""` below), so this only excludes
+          // rows where the client profile genuinely exists AND is deleted.
+          isNull(profiles.deletedAt),
         ),
       );
     return rows.map((r) => ({
@@ -432,6 +438,9 @@ export class TrainerRepository {
           eq(ptClientRelationships.trainerId, trainerId),
           inArray(ptClientRelationships.status, ["active", "pending"]),
           eq(ptClientRelationships.isAiTrainer, false),
+          // Cluster 2a — hide a soft-deleted client from the coach's roster
+          // immediately (same rationale as getActiveClients above).
+          isNull(profiles.deletedAt),
         ),
       );
     return rows.map((r) => ({
@@ -1263,11 +1272,21 @@ export class TrainerRepository {
         );
       }
 
-      // Look up the client profile by email.
+      // Look up the client profile by email. Cluster 2a: a soft-deleted
+      // user's email must not resolve to an inviteable account — excluding
+      // it here means the invite falls through to the "no existing user"
+      // branch below (a plain email invitation, same as any unregistered
+      // address), rather than silently creating/reviving a relationship
+      // against an account that's mid-deletion.
       const clientRows = await tx
         .select({ id: profiles.id, fullName: profiles.fullName })
         .from(profiles)
-        .where(sql`lower(${profiles.email}) = ${clientEmail}`)
+        .where(
+          and(
+            sql`lower(${profiles.email}) = ${clientEmail}`,
+            isNull(profiles.deletedAt),
+          ),
+        )
         .limit(1);
       const client = clientRows[0];
 

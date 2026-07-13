@@ -26,7 +26,7 @@ export function Privacy() {
   return (
     <main style={containerStyle}>
       <h1 style={{ fontSize: "2rem", fontWeight: 700 }}>Privacy Policy</h1>
-      <p style={mutedStyle}>Last updated: 10 July 2026</p>
+      <p style={mutedStyle}>Last updated: 13 July 2026</p>
 
       <p>
         Persistence ("we", "us", "our") is a fitness-tracking application. This
@@ -100,16 +100,24 @@ export function Privacy() {
 
       <h2 style={headingStyle}>Data retention</h2>
       <p>
-        We keep your data for as long as your account is active. When you delete
-        your account, your data is removed as described below.
+        We keep your data for as long as your account is active. When you
+        request deletion, your account is deactivated immediately and scheduled
+        for permanent deletion 30 days later. During that 30-day window you can
+        restore your account simply by signing back in — your data is not
+        removed until the window ends. If you don't sign back in, your account
+        and all associated personal data — workouts, nutrition logs, progress
+        and personal records, custom workouts and recipes, and your profile
+        (including your profile photo) — are permanently deleted once the 30
+        days have passed.
       </p>
 
       <h2 style={headingStyle}>Your rights</h2>
       <p>
         You can access and update your information from within the app. You may
-        delete your account at any time from the app's profile settings — this
-        permanently removes your workouts, nutrition logs, progress records, and
-        account. You may also contact us to request access to, correction of, or
+        request deletion of your account at any time from the app's profile
+        settings, which starts the 30-day process described above — signing back
+        in during that window restores your account, and no further action is
+        taken. You may also contact us to request access to, correction of, or
         deletion of your data.
       </p>
 

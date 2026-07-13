@@ -1,5 +1,5 @@
 import Elysia, { t } from "elysia";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { ptClientRelationships, profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import {
@@ -40,6 +40,11 @@ export const trainersClientRelationshipsListHandler = new Elysia()
       const conditions = [
         eq(ptClientRelationships.clientId, userId),
         eq(ptClientRelationships.isAiTrainer, false),
+        // Cluster 2a — a soft-deleted trainer must disappear from the
+        // client's own view immediately (innerJoin means a missing profiles
+        // row already excludes the relationship; this excludes a profile
+        // row that still exists but is mid-deletion).
+        isNull(profiles.deletedAt),
       ];
       if (status) {
         conditions.push(eq(ptClientRelationships.status, status));

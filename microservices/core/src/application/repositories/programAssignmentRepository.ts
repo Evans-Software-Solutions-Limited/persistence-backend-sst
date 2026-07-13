@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
 import {
   profiles,
   programAssignments,
@@ -278,10 +278,25 @@ export class ProgramAssignmentRepository {
           eq(programAssignments.clientId, clientId),
           inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
           sql`${workoutPrograms.durationWeeks} is null`,
+          // `assigned_by` is nullable (Cluster 2a, migration
+          // 20260713120000_account_soft_delete.sql — ON DELETE SET NULL when
+          // the assigning coach's account is purged). `workout_assignments
+          // .trainer_id` stays NOT NULL, so a programme whose coach is gone
+          // can't grow new occurrences — it stops advancing but the
+          // already-materialised history stays intact for adherence.
+          isNotNull(programAssignments.assignedBy),
         ),
       );
 
     for (const a of live) {
+      // Narrow `a.assignedBy` from `string | null` to `string` into a local
+      // — the `isNotNull` WHERE clause above guarantees this at runtime, but
+      // Drizzle's select type can't express that, and narrowing a property
+      // read (rather than a local `const`) doesn't survive into the
+      // `.map()` closure below.
+      const assignedBy = a.assignedBy;
+      if (assignedBy === null) continue;
+
       const cycleRows = await db
         .select({ workoutId: programWorkouts.workoutId })
         .from(programWorkouts)
@@ -303,7 +318,7 @@ export class ProgramAssignmentRepository {
         .insert(workoutAssignments)
         .values(
           occurrences.map((o) => ({
-            trainerId: a.assignedBy,
+            trainerId: assignedBy,
             clientId,
             workoutId: o.workoutId,
             assignedDate: today,

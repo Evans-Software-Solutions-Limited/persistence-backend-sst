@@ -208,12 +208,62 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.getProfile();
   }
 
-  async deleteAccount(): Promise<Result<void, ApiError>> {
+  /** 30-day grace period the soft-delete fixture stamps on `purgeAfter`. */
+  private static readonly SOFT_DELETE_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+
+  async deleteAccount(): Promise<
+    Result<{ softDeleted: true; purgeAfter: string }, ApiError>
+  > {
     const result = this.mayFail(undefined);
     if (!result.ok) return fail<ApiError>(result.error);
-    this.profiles = [];
-    this.profilePage = null;
-    return ok(undefined);
+    const deletedAt = new Date().toISOString();
+    const purgeAfter = new Date(
+      Date.now() + InMemoryApiAdapter.SOFT_DELETE_GRACE_MS,
+    ).toISOString();
+    if (this.profiles[0]) {
+      this.profiles[0] = { ...this.profiles[0], deletedAt, purgeAfter };
+    }
+    if (this.profilePage) {
+      this.profilePage = {
+        ...this.profilePage,
+        profile: { ...this.profilePage.profile, deletedAt, purgeAfter },
+      };
+    }
+    return ok({ softDeleted: true, purgeAfter });
+  }
+
+  async restoreAccount(): Promise<Result<{ restored: true }, ApiError>> {
+    const result = this.mayFail(undefined);
+    if (!result.ok) return fail<ApiError>(result.error);
+    const wasSoftDeleted =
+      (this.profiles[0]?.deletedAt ?? this.profilePage?.profile.deletedAt) !=
+      null;
+    if (!wasSoftDeleted) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "server",
+        status: 409,
+        message: "Account is not scheduled for deletion",
+      });
+    }
+    if (this.profiles[0]) {
+      this.profiles[0] = {
+        ...this.profiles[0],
+        deletedAt: null,
+        purgeAfter: null,
+      };
+    }
+    if (this.profilePage) {
+      this.profilePage = {
+        ...this.profilePage,
+        profile: {
+          ...this.profilePage.profile,
+          deletedAt: null,
+          purgeAfter: null,
+        },
+      };
+    }
+    return ok({ restored: true });
   }
 
   async getWorkouts(

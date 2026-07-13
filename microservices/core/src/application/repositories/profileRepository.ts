@@ -115,6 +115,16 @@ export interface ProfilePageProfileSlice {
   heightUnit: "cm" | "ftin";
   isProfilePublic: boolean;
   createdAt: string;
+  /**
+   * Cluster 2a 30-day soft-delete cooling-off. Non-null = the account is
+   * currently soft-deleted (via `DELETE /account`) — the mobile app reads
+   * this on bootstrap to route into the restore screen instead of the
+   * normal app shell. `purgeAfter` is when the nightly purge worker will
+   * complete the deletion; `POST /account/restore` clears both within the
+   * window.
+   */
+  deletedAt: string | null;
+  purgeAfter: string | null;
 }
 
 /**
@@ -311,6 +321,8 @@ export class ProfileRepository {
         heightUnit: profiles.heightUnit,
         isProfilePublic: profiles.isProfilePublic,
         createdAt: profiles.createdAt,
+        deletedAt: profiles.deletedAt,
+        purgeAfter: profiles.purgeAfter,
       })
       .from(profiles)
       .where(eq(profiles.id, userId))
@@ -350,6 +362,8 @@ export class ProfileRepository {
       heightUnit: row.heightUnit === "ftin" ? "ftin" : "cm",
       isProfilePublic: row.isProfilePublic === true,
       createdAt: toIsoString(row.createdAt),
+      deletedAt: toOptionalIsoString(row.deletedAt),
+      purgeAfter: toOptionalIsoString(row.purgeAfter),
     };
   }
 

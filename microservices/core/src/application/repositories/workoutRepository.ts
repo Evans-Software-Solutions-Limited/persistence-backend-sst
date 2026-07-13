@@ -20,6 +20,7 @@ import {
   workoutSessions,
   sessionExercises,
   exerciseSets,
+  profiles,
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
@@ -486,7 +487,30 @@ export class WorkoutRepository {
     return and(
       eq(workouts.visibility, "public"),
       or(isNull(workouts.createdBy), ne(workouts.createdBy, userId)),
+      // Cluster 2a — hide a soft-deleted author's public workouts from
+      // everyone else's browse/list immediately. `createdBy IS NULL`
+      // (system-seeded) trivially satisfies NOT EXISTS, so this only
+      // excludes rows with a real, currently-soft-deleted owner.
+      sql`not exists (select 1 from ${profiles} where ${profiles.id} = ${workouts.createdBy} and ${profiles.deletedAt} is not null)`,
     );
+  }
+
+  /**
+   * Cluster 2a — is `ownerId`'s profile currently soft-deleted? `null`
+   * ownerId (system-seeded / community content with no author) is never
+   * "deleted" — there's no profile to check.
+   */
+  private async isOwnerSoftDeleted(
+    db: DbOrTx,
+    ownerId: string | null,
+  ): Promise<boolean> {
+    if (ownerId === null) return false;
+    const rows = await db
+      .select({ deletedAt: profiles.deletedAt })
+      .from(profiles)
+      .where(eq(profiles.id, ownerId))
+      .limit(1);
+    return rows[0]?.deletedAt != null;
   }
 
   private async canRead(
@@ -495,8 +519,26 @@ export class WorkoutRepository {
     userId: string,
   ): Promise<boolean> {
     if (workout.createdBy === userId) return true;
-    if (workout.visibility === "public") return true;
-    if (workout.visibility === "friends") {
+
+    // Cluster 2a — a soft-deleted author's public/friends workout stops
+    // being grantable through THOSE visibility paths immediately (Brad's
+    // "hide from coach immediately" call extends to any cross-user
+    // visibility surface). Deliberately falls through to the assignment
+    // grant below rather than returning false outright — a client who
+    // already has this workout assigned (e.g. by a coach who has since
+    // deleted their account) keeps access to what was already assigned;
+    // only the general public/friends-browse grant is revoked. Only checked
+    // for public/friends — a private workout's only possible grant is the
+    // assignment below regardless of the owner's deletion status, so this
+    // extra round-trip is skipped for the (dominant, coach-assigns-private-
+    // workout) private-visibility case.
+    const ownerDeleted =
+      workout.visibility === "public" || workout.visibility === "friends"
+        ? await this.isOwnerSoftDeleted(db, workout.createdBy)
+        : false;
+
+    if (!ownerDeleted && workout.visibility === "public") return true;
+    if (!ownerDeleted && workout.visibility === "friends") {
       const ownerId = workout.createdBy!;
       const friendship = await db
         .select({ id: friendships.id })

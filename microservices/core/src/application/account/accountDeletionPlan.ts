@@ -79,6 +79,22 @@ export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
     table: "subscription_status_transitions",
     column: "user_id",
   },
+  // trainer_actions_audit.trainer_id / .client_id are both NOT NULL
+  // REFERENCES profiles(id) with NO ACTION (migration
+  // 20260705140000_trainer_actions_audit.sql) — the deleting user can be
+  // EITHER party (the trainer who wrote the audit row, or the client it was
+  // written about). Deleting their own audit rows either way is correct for
+  // GDPR (the row is the deleting user's data / activity about them) and
+  // unblocks the FK. Two independent steps because a single row could in
+  // theory match on neither, either, column — never assume trainer_id and
+  // client_id are mutually exclusive for a given deleting user across rows.
+  { kind: "delete", table: "trainer_actions_audit", column: "trainer_id" },
+  { kind: "delete", table: "trainer_actions_audit", column: "client_id" },
+  // client_ai_summaries has the identical NOT NULL/NO ACTION shape on both
+  // trainer_id and client_id (migration 20260708130000_client_ai_summaries.sql)
+  // — same rationale as trainer_actions_audit above.
+  { kind: "delete", table: "client_ai_summaries", column: "trainer_id" },
+  { kind: "delete", table: "client_ai_summaries", column: "client_id" },
 
   // 3) Delete the profile — ON DELETE CASCADE FKs remove every remaining
   //    owned row (workouts, sessions, PRs, measurements, achievements,

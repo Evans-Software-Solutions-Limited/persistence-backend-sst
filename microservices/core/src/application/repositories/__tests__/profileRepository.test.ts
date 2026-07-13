@@ -411,6 +411,41 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.activeTrainers[0].trainer.fullName).toBe("Coach Sam");
   });
 
+  it("surfaces deletedAt/purgeAfter as null for an active (never soft-deleted) account", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [makeProfileRow()],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.deletedAt).toBeNull();
+    expect(result?.profile.purgeAfter).toBeNull();
+  });
+
+  it("surfaces deletedAt/purgeAfter as ISO strings for a soft-deleted account (Cluster 2a restore-screen gate)", async () => {
+    const mockDb = makeAggregateDb({
+      profile: [
+        makeProfileRow({
+          deletedAt: new Date("2026-07-13T12:00:00Z"),
+          purgeAfter: new Date("2026-08-12T12:00:00Z"),
+        }),
+      ],
+      workoutsCount: [{ total: 0 }],
+    });
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { ProfileRepository } = await import("../profileRepository");
+    const repo = new ProfileRepository();
+    const result = await repo.getProfilePageData("user-1");
+
+    expect(result?.profile.deletedAt).toBe("2026-07-13T12:00:00.000Z");
+    expect(result?.profile.purgeAfter).toBe("2026-08-12T12:00:00.000Z");
+  });
+
   it("falls back to free-tier defaults when no subscription row exists", async () => {
     const mockDb = makeAggregateDb({
       profile: [makeProfileRow()],

@@ -20,13 +20,18 @@ const guardMocks = { hasActiveRelationship: vi.fn() };
 
 // `trainersClientActiveProgrammeGetHandler` checks the relationship with a
 // direct getDb() query (mirrors body-trend) rather than the shared guard, so
-// stub getDb to resolve `relRows` for that .select().from().where().limit()
-// chain. The other handlers go through mocked repos and never hit getDb.
-let relRows: Array<{ id: string }> = [{ id: "rel-1" }];
+// stub getDb to resolve `relRows` for that
+// .select().from().innerJoin().where().limit() chain (Cluster 2a joins in
+// the client's profile to check deleted_at). The other handlers go through
+// mocked repos and never hit getDb.
+let relRows: Array<{ id: string; clientDeletedAt?: Date | null }> = [
+  { id: "rel-1" },
+];
 vi.mock("@persistence/db/client", () => ({
   getDb: () => {
     const chain: any = {};
-    for (const k of ["from", "where", "limit"]) chain[k] = () => chain;
+    for (const k of ["from", "innerJoin", "where", "limit"])
+      chain[k] = () => chain;
     chain.then = (res: any, rej: any) =>
       Promise.resolve(relRows).then(res, rej);
     return { select: () => chain };
@@ -104,6 +109,20 @@ describe("programme handlers", () => {
 
     it("403 when no active relationship with the client", async () => {
       relRows = [];
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(403);
+      expect(
+        assignmentMocks.getActiveProgrammeForClient,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("403 (Cluster 2a) when the client is soft-deleted, even with an active relationship row", async () => {
+      relRows = [
+        { id: "rel-1", clientDeletedAt: new Date("2026-07-13T00:00:00Z") },
+      ];
       const h = await load();
       const res = await h.handle(
         authed("/trainers/me/clients/c1/active-programme"),
