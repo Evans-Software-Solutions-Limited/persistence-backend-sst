@@ -586,8 +586,8 @@
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
             <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>9464675</code></span>
-            <span class="meta-pill">📅 Synced 12 Jul 2026 (late eve)</span>
+            <span class="meta-pill">🔀 <code>9805221</code></span>
+            <span class="meta-pill">📅 Synced 13 Jul 2026</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-12, main HEAD 9464675)
+      // DATA  (verified against repo on 2026-07-13, main HEAD 9805221)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -697,10 +697,57 @@
         { id: "athlete", name: "Athlete App", icon: "🏋️" },
         { id: "coach", name: "Coach Mode", icon: "🧑‍💼" },
         { id: "phase12", name: "Production Readiness (Phase 12)", icon: "⚙️" },
+        { id: "deviceqa", name: "Device-QA Sweep (2026-07-13)", icon: "📱" },
         { id: "deferred", name: "Deferred — Post-Launch", icon: "🔒" },
       ];
 
       const ITEMS = [
+        // ── DEVICE-QA SWEEP (2026-07-13) ─────────────────────────────────────────
+        // 11-item on-device audit. #1/#6/#8-volume + #11 shipped earlier (#213/#214).
+        // The rest below. ⚠ ALL device-QA fixes are EAS/device-UNVERIFIED (flagged).
+        {
+          id: "dq2",
+          area: "deviceqa",
+          status: "done",
+          title: "Accept-invite QR / deep link routes correctly (#2)",
+          note: "SHIPPED (PR #215). New app/+native-intent.ts routes a scanned/shared invite link through Expo Router's OS-linking pipeline (was dead-ending on Unmatched); QR encoded via Linking.createURL. Follow-up PR #220 carries the ?code= through sign-in/sign-up so an unauthenticated athlete can still redeem after signing up (in-memory one-shot store, 3 consume sites). Device-verify pending (native).",
+        },
+        {
+          id: "dq3-9",
+          area: "deviceqa",
+          status: "done",
+          title: "Nutrition freshness + Habits/Fuel calorie unification (#3, #9)",
+          note: "SHIPPED (PR #216). Fuel target save reflects instantly (notifyMutated). The calorie habit now derives nutrition_targets.daily_kcal as the single source of truth — at read for BOTH display and streak scoring — so the calorie habit streak agrees with the nutrition streak (was scoring against a stale 2000 default). #9b bulk/cut deferred.",
+        },
+        {
+          id: "dq8b",
+          area: "deviceqa",
+          status: "done",
+          title: "Real kg/lb (+ cm/ft-in) display-unit preference (#8b)",
+          note: "SHIPPED (PR #217). Shared units helper threaded through ~15 surfaces (body-weight tile, previous-set chips, PRs, volume, Fuel targets, profile drawer). kg/cm output byte-identical (no metric regression); only imperial converts. Follow-up: coach Client-Detail + coach nutrition label still show kg (payloads don't carry the client's unit yet).",
+        },
+        {
+          id: "dq4a",
+          area: "deviceqa",
+          status: "done",
+          title: "Workout creator/editor prototype restyle (#4a)",
+          note: "SHIPPED (PR #218). Visual-layer-only port of the creator/editor + ExerciseConfigCard onto the foundation kit + v3 prototype (new Field/Stepper/RepRange). All business logic + testIDs preserved. Drag-reorder + delete-workout modal deliberately omitted (net-new, flagged). ⚠ On-device VISUAL verification outstanding.",
+        },
+        {
+          id: "dq4b",
+          area: "deviceqa",
+          status: "done",
+          title: "Remove Create entry from Client Detail (#4b)",
+          note: "SHIPPED (PR #218). Removed the create-and-assign quick-action from coach Client Detail + updated STORY-007. (WorkoutCreatorContainer's assignClientId path retained for a future coach-library entry.)",
+        },
+        {
+          id: "dq5",
+          area: "deviceqa",
+          status: "done",
+          title: "Drawer scroll hardening + coach Workout Library relocation (#5)",
+          note: "SHIPPED (PR #219). In-package gorhom fix (keyboard props on the shared BottomSheet — helps all 18 sheets); coach Workout Library moved off the settings drawer onto Coach You (design review: keep the drawer, don't full-screen/merge). ⚠ scroll-fix efficacy is DEVICE-ONLY (CI mocks gorhom). #10 You/profile merge NOT needed per the design review.",
+        },
+
         // ── COMPLIANCE / APP STORE BLOCKERS ──────────────────────────────────────
         {
           id: "c1",
