@@ -86,6 +86,7 @@ const DB_NAME = "persistence.db";
  */
 export class SQLiteStorageAdapter implements StoragePort {
   private db: SQLite.SQLiteDatabase | null = null;
+  private _backendChanged = false;
 
   private getDb(): SQLite.SQLiteDatabase {
     if (!this.db) {
@@ -96,7 +97,7 @@ export class SQLiteStorageAdapter implements StoragePort {
     return this.db;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(backendFingerprint?: string): Promise<void> {
     const db = this.getDb();
 
     // One-time pre-M2 → M2 migration for `cached_workouts` (legacy flat
@@ -645,6 +646,60 @@ export class SQLiteStorageAdapter implements StoragePort {
     // run. `SQLITE_MIGRATIONS` is empty today; future schema changes land
     // as a new entry there instead of another bespoke inline block.
     runSqliteMigrations(db);
+
+    // Backend-fingerprint cache/session auto-wipe: stamp the cache with the
+    // backend it was populated against (the compiled Supabase URL). New
+    // table — CREATE IF NOT EXISTS is safe for fresh + existing installs.
+    // Deliberately NOT included in clearAll()'s DELETE list — the stamp
+    // must survive the wipe it triggers (and since clearAll() runs BEFORE
+    // the upsert below, ordering is safe regardless).
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+    this._backendChanged = false;
+    if (backendFingerprint) {
+      const row = db.getFirstSync(
+        `SELECT value FROM meta WHERE key = 'backend_fingerprint'`,
+      ) as { value: string } | null;
+      if (row === null || row.value !== backendFingerprint) {
+        // Absent stamp (first launch on an existing install post-upgrade,
+        // possibly holding stale prior-backend data) OR a genuine backend
+        // change — wipe the cache, flag the change for the caller (which
+        // also clears the local auth session), then stamp the new value.
+        //
+        // ⚠ On the FIRST fingerprinted build the stamp is always absent, so
+        // this fires exactly once per install. On a backend migration that's
+        // precisely right (old cache + old-backend session must go); on a
+        // same-backend upgrade it's a one-time wipe + re-login. Any dropped
+        // sync_queue mutations targeted the prior backend and are
+        // unreplayable there anyway, so losing them is acceptable.
+        //
+        // Wipe + stamp run in ONE transaction so a process kill between them
+        // can't leave an un-stamped empty cache that re-wipes (and re-clears
+        // the session) on the next launch.
+        db.withTransactionSync(() => {
+          this.clearAll();
+          db.runSync(
+            `INSERT INTO meta (key, value) VALUES ('backend_fingerprint', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+            [backendFingerprint],
+          );
+        });
+        this._backendChanged = true;
+      }
+    }
+  }
+
+  /**
+   * Whether the last `initialize()` call detected an absent/mismatched
+   * backend fingerprint and wiped the cache. See storage.port.ts for the
+   * full semantics.
+   */
+  backendChanged(): boolean {
+    return this._backendChanged;
   }
 
   // -- Sync Queue --

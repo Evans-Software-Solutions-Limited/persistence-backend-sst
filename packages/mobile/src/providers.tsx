@@ -102,10 +102,28 @@ export function AppProviders({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    // Initialize offline database on mount (async to avoid blocking JS thread)
-    adapters.storage.initialize().catch((err) => {
-      console.error("[AppProviders] Storage init failed:", err);
-    });
+    // Initialize offline database on mount (async to avoid blocking JS thread).
+    // `supabaseFingerprint` identifies which backend this build talks to (the
+    // same compiled Supabase URL the auth adapter reads) — the storage layer
+    // stamps the cache with it and wipes on first-launch-post-upgrade /
+    // genuine backend change (see storage.port.ts). When the cache wiped,
+    // the lingering local session belongs to the OLD backend project, so it
+    // must be cleared too (local-only — no network revoke against a project
+    // that session doesn't belong to).
+    const supabaseFingerprint =
+      Constants.expoConfig?.extra?.supabaseUrl ??
+      process.env.EXPO_PUBLIC_SUPABASE_URL ??
+      "";
+    adapters.storage
+      .initialize(supabaseFingerprint)
+      .then(() => {
+        if (adapters.storage.backendChanged()) {
+          return adapters._auth.clearLocalSession();
+        }
+      })
+      .catch((err) => {
+        console.error("[AppProviders] Storage init failed:", err);
+      });
 
     // Cleanup AppState listener when provider unmounts (hot reload, strict mode)
     return () => {

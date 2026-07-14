@@ -347,6 +347,34 @@ export class SupabaseAuthAdapter implements AuthPort {
     return { accessToken: null, refreshToken: null };
   }
 
+  /**
+   * Clear the locally-persisted session WITHOUT a network revoke call.
+   *
+   * Backend-fingerprint auto-wipe (providers.tsx): when the SQLite cache
+   * detects it was populated against a different backend project, we drop
+   * the local session so the user re-authenticates against the new backend.
+   * `scope: "local"` clears the on-device tokens only — no network revoke
+   * (the old session belongs to a *different* project; revoking against the
+   * current one would 401 or no-op).
+   *
+   * NOTE: supabase-js namespaces its auth storage key by project ref
+   * (`sb-<ref>-auth-token`). So when the compiled Supabase URL changes, the
+   * newly-constructed client already reads a *different* (empty) key and the
+   * user is effectively logged out regardless — this call is belt-and-braces
+   * (and clears the current key cleanly). A prior project's key is left
+   * orphaned in AsyncStorage, but its token is useless, so that's harmless.
+   *
+   * Wrapped in try/catch: a stale/invalid session may error internally, but
+   * the local clear must always happen — this method never throws.
+   */
+  async clearLocalSession(): Promise<void> {
+    try {
+      await this.client.auth.signOut({ scope: "local" });
+    } catch (err) {
+      console.error("[SupabaseAuthAdapter] clearLocalSession failed:", err);
+    }
+  }
+
   async signOut(): Promise<Result<void, AuthError>> {
     const { error } = await this.client.auth.signOut();
     if (error) {
