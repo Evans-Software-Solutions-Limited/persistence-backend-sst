@@ -62,12 +62,16 @@ const ZONE_IDS: Record<"production" | "staging", string> = {
  *      different value per environment in one PR — no per-stage SST
  *      Secret rotation, no GH-secret drift.
  *
- * Currently identical across stages because the project shares one
- * Supabase free-tier DB. Diverges when production gets its own project.
+ * Diverged 2026-07-14: production + staging now have isolated Supabase
+ * projects (the old shared free project `dfeyebgdktfteqlacmru` is retired
+ * after cutover). ⚠ Changing a value here only takes effect once that
+ * stage's GitHub Environment `DATABASE_URL`/`SUPABASE_*` secrets also point
+ * at the same project — deploy the code + secrets together or JWT
+ * verification (JWKS) and DB access will target different projects.
  */
 const SUPABASE_URLS: Record<"production" | "staging", string> = {
-  production: "https://dfeyebgdktfteqlacmru.supabase.co",
-  staging: "https://dfeyebgdktfteqlacmru.supabase.co",
+  production: "https://opcvjypsoivaxerahbal.supabase.co",
+  staging: "https://nxkhlrvjxotyjulodxzk.supabase.co",
 };
 
 export type Environment = "production" | "staging" | "dev";

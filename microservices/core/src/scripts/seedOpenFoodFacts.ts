@@ -12,7 +12,8 @@
  *   1. Download the OFF Parquet dump (https://world.openfoodfacts.org/data).
  *   2. Filter to the curated slice with DuckDB, e.g.:
  *        duckdb -c "COPY (
- *          SELECT code, product_name, brands, countries_tags, nutriments
+ *          SELECT code, product_name, brands, countries_tags, nutriments,
+ *                 TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity
  *          FROM 'food.parquet'
  *          WHERE code IS NOT NULL
  *            AND nutriments->>'energy-kcal_100g' IS NOT NULL

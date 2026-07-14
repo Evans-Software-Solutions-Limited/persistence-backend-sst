@@ -41,6 +41,11 @@ COPY (
     ) AS product_name,
     brands,
     countries_tags,
+    -- Real pack serving (grams) → offMapper reads top-level `serving_quantity`
+    -- (positive → value, else NULL). Without this the seed lands serving_quantity
+    -- NULL and the mobile Serving tab falls back to servingSize=100g. Cast to
+    -- DOUBLE so a VARCHAR/absent column is tolerated (finiteNumber() coerces).
+    TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity,
     map(
       ['energy-kcal_100g','proteins_100g','carbohydrates_100g','fat_100g'],
       [ list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kcal'),   x -> x['100g']), 1),

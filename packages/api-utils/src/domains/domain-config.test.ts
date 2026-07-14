@@ -79,19 +79,18 @@ describe("domain-config", () => {
       expect(getDomainConfig("feature-active-session").zoneId).toBeUndefined();
     });
 
-    it("returns the canonical Supabase URL for production", () => {
+    it("returns the production Supabase URL for production", () => {
       expect(getDomainConfig("production").supabaseUrl).toBe(
-        "https://dfeyebgdktfteqlacmru.supabase.co",
+        "https://opcvjypsoivaxerahbal.supabase.co",
       );
     });
 
-    it("returns the same Supabase URL for staging while on a single project", () => {
-      // While the project shares one free-tier Supabase, both stages
-      // resolve to the same URL. When production gets its own project
-      // this test will need to flip; SUPABASE_URLS in domain-config.ts
-      // is the single point of change.
+    it("returns the isolated staging Supabase URL for staging", () => {
+      // Staging + production now have separate Supabase projects (diverged
+      // 2026-07-14). SUPABASE_URLS in domain-config.ts is the single point
+      // of change; a stage's URL must match its GitHub Environment secrets.
       expect(getDomainConfig("staging").supabaseUrl).toBe(
-        "https://dfeyebgdktfteqlacmru.supabase.co",
+        "https://nxkhlrvjxotyjulodxzk.supabase.co",
       );
     });
 
