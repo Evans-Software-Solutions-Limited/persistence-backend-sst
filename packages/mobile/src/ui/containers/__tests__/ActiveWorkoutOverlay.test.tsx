@@ -11,7 +11,7 @@ jest.mock("expo-router", () => ({
 // eslint-disable-next-line import/first
 import { renderWithTheme, waitFor } from "../../../../__tests__/test-utils";
 // eslint-disable-next-line import/first
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 // eslint-disable-next-line import/first
@@ -34,6 +34,8 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 // eslint-disable-next-line import/first
 import { useActiveWorkout } from "@/state/active-workout";
+// eslint-disable-next-line import/first
+import { useDrawer } from "@/state/drawer";
 // eslint-disable-next-line import/first
 import { ActiveWorkoutOverlay } from "../ActiveWorkoutOverlay";
 
@@ -126,6 +128,7 @@ function renderOverlay(adapters: Adapters) {
 
 beforeEach(() => {
   useActiveWorkout.setState({ active: null, expanded: false });
+  useDrawer.setState({ open: false });
   mockPush.mockReset();
   mockSegments = ["(app)", "(tabs)", "train"];
 });
@@ -168,6 +171,32 @@ it("hides on the session screen (expanded surface owns the view)", async () => {
   // Give useAuth a tick to resolve, then assert it stays hidden.
   await waitFor(() => {
     expect(queryByTestId("active-workout-bar")).toBeNull();
+  });
+});
+
+it("hides while the profile drawer is open (drawer paints over the bar otherwise)", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheActiveSession(USER, makeSession());
+
+  // Drawer closed by default (beforeEach) — wait until auth resolves and the
+  // bar is actually showing, so the toggle below is the ONLY thing that can
+  // hide it (guards against a vacuous pass before auth loads).
+  const { queryByTestId } = renderOverlay(adapters);
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeTruthy();
+  });
+
+  // Open the drawer → bar must hide (fails against the unfixed code).
+  act(() => useDrawer.setState({ open: true }));
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeNull();
+  });
+
+  // Close the drawer → bar reappears.
+  act(() => useDrawer.setState({ open: false }));
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeTruthy();
   });
 });
 
