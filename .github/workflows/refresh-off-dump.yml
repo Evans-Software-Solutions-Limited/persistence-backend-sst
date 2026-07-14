@@ -1,0 +1,64 @@
+name: Refresh OFF Foods Dump
+
+# Regenerates the committed packages/seed/data/off-uk.jsonl.gz from the current
+# Open Food Facts Parquet dump (~7.6 GB) via DuckDB, so the foods seed carries
+# `serving_quantity`. Does NOT touch any database — it only rebuilds the seed
+# file and pushes a branch you then open as a PR. Run this BEFORE seeding foods
+# on the fresh projects.
+#
+# ⚠ Best-effort / not yet run in CI. The DuckDB projection assumes the OFF
+# parquet exposes a top-level `serving_quantity` column; if OFF renames/drops it
+# the DuckDB step will fail loudly (fix the column name in refreshOffDump.sh).
+# The reliable fallback is local: `brew install duckdb && bun run --filter
+# @persistence/seed refresh:foods`, then commit the regenerated gz.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-off-dump
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Free disk space (parquet dump is ~7.6 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      - name: Install DuckDB CLI
+        run: |
+          curl -fsSL https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip -o /tmp/duckdb.zip
+          sudo unzip -o /tmp/duckdb.zip -d /usr/local/bin
+          duckdb --version
+
+      - name: Refresh dump (download + filter + gzip)
+        run: bun run --filter @persistence/seed refresh:foods
+
+      - name: Push branch with the refreshed dump
+        run: |
+          set -e
+          if git diff --quiet -- packages/seed/data/off-uk.jsonl.gz; then
+            echo "off-uk.jsonl.gz unchanged — nothing to push."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/refresh-off-dump-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          git add packages/seed/data/off-uk.jsonl.gz
+          git commit -m "chore(seed): refresh OFF UK foods dump (carry serving_quantity)"
+          git push -u origin "$BRANCH"
+          echo "::notice::Open a PR: https://github.com/${{ github.repository }}/pull/new/$BRANCH"

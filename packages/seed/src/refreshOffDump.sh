@@ -41,6 +41,13 @@ COPY (
     ) AS product_name,
     brands,
     countries_tags,
+    -- Real pack serving (grams) → offMapper reads top-level `serving_quantity`
+    -- (positive → value, else NULL). Without this the seed lands serving_quantity
+    -- NULL and the mobile Serving tab falls back to servingSize=100g. TRY_CAST
+    -- coerces a non-numeric VARCHAR value to NULL; if OFF ever drops/renames the
+    -- column the query fails loudly at bind time (that's intended — see the
+    -- refresh-off-dump.yml header).
+    TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity,
     map(
       ['energy-kcal_100g','proteins_100g','carbohydrates_100g','fat_100g'],
       [ list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kcal'),   x -> x['100g']), 1),
@@ -61,5 +68,8 @@ COPY (
 ) TO 'off-uk.jsonl' (FORMAT JSON);
 "
 echo "[refresh:foods] rows: $(wc -l < off-uk.jsonl)"
-gzip -c off-uk.jsonl > "$DATA/off-uk.jsonl.gz"
+# -n drops the mtime + filename from the gzip header so a re-run over identical
+# OFF data produces byte-identical output (keeps refresh-off-dump.yml's
+# "nothing changed" guard meaningful instead of always pushing a churn branch).
+gzip -nc off-uk.jsonl > "$DATA/off-uk.jsonl.gz"
 echo "[refresh:foods] wrote $DATA/off-uk.jsonl.gz — commit it, then run: bun run seed:foods"
