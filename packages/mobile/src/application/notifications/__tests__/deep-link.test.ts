@@ -74,6 +74,33 @@ describe("resolveNotificationRoute", () => {
       "/(app)/accept-invite",
     );
   });
+
+  it("resolves staging/dev scheme-family links identically to the prod scheme", () => {
+    expect(
+      resolveNotificationRoute(
+        "persistencemobile-staging://accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+    expect(
+      resolveNotificationRoute(
+        "persistencemobile-dev://accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+    expect(
+      resolveNotificationRoute(
+        "persistencemobile-staging://clients?clientId=c-1",
+      ),
+    ).toBe("/(app)/(tabs)/clients?clientId=c-1");
+  });
+
+  it("does not treat a non-app scheme as a custom-scheme host link", () => {
+    expect(resolveNotificationRoute("https://evil.example/clients")).toBe(
+      HOME_ROUTE,
+    );
+    expect(resolveNotificationRoute("exp://127.0.0.1:8081/clients")).toBe(
+      HOME_ROUTE,
+    );
+  });
 });
 
 describe("redirectSystemPathForDeepLink", () => {
@@ -130,5 +157,24 @@ describe("redirectSystemPathForDeepLink", () => {
     expect(redirectSystemPathForDeepLink(null)).toBe(HOME_ROUTE);
     expect(redirectSystemPathForDeepLink(undefined)).toBe(HOME_ROUTE);
     expect(redirectSystemPathForDeepLink("")).toBe(HOME_ROUTE);
+  });
+
+  it("rewrites staging/dev scheme-family host-form URLs identically to the prod scheme", () => {
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile-staging://accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile-dev://accept-invite?code=AB23CD",
+      ),
+    ).toBe("/(app)/accept-invite?code=AB23CD");
+  });
+
+  it("does not treat a non-app scheme as a custom-scheme host link", () => {
+    expect(redirectSystemPathForDeepLink("https://evil.example/clients")).toBe(
+      "https://evil.example/clients",
+    );
   });
 });

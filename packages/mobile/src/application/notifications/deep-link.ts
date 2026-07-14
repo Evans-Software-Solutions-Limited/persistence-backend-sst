@@ -41,8 +41,15 @@ const LEGACY_REDIRECTS: Record<string, string> = {
  * dead-ends. Producers historically emitted these under `data.deeplink`
  * (lowercase) while the app reads `data.deepLink`; the adapters now tolerate
  * both, and this resolver normalises the scheme.
+ *
+ * Matches the app's custom scheme across variants (see `app.config.ts`):
+ * `persistencemobile://`, `persistencemobile-staging://`,
+ * `persistencemobile-dev://`. NOT `https://` or `exp://` — those fall
+ * through to the existing path handling. Kept as a regex (rather than a
+ * per-variant constant) so this module stays pure — no expo/Constants import
+ * — while still resolving links from any variant's build.
  */
-const APP_SCHEME = "persistencemobile://";
+const APP_SCHEME_RE = /^persistencemobile(?:-[a-z0-9]+)?:\/\//i;
 
 const SCHEME_HOSTS: Record<string, string> = {
   requests: "/(app)/requests",
@@ -88,8 +95,9 @@ export function resolveNotificationRoute(
   if (!deepLink) return HOME_ROUTE;
   const trimmed = deepLink.trim();
   if (trimmed === "") return HOME_ROUTE;
-  if (trimmed.startsWith(APP_SCHEME)) {
-    return resolveSchemeLink(trimmed.slice(APP_SCHEME.length));
+  const schemeMatch = trimmed.match(APP_SCHEME_RE);
+  if (schemeMatch) {
+    return resolveSchemeLink(trimmed.slice(schemeMatch[0].length));
   }
   if (LEGACY_REDIRECTS[trimmed]) return LEGACY_REDIRECTS[trimmed];
   // Already an absolute app path → pass through. Anything else is unknown.
@@ -120,8 +128,9 @@ export function redirectSystemPathForDeepLink(
   if (!path) return HOME_ROUTE;
   // Strip the custom scheme if the OS handed us a full URL, then drop a single
   // leading slash so the first path segment lines up with the scheme-host keys.
-  const stripped = path.startsWith(APP_SCHEME)
-    ? path.slice(APP_SCHEME.length)
+  const pathSchemeMatch = path.match(APP_SCHEME_RE);
+  const stripped = pathSchemeMatch
+    ? path.slice(pathSchemeMatch[0].length)
     : path;
   const candidate = stripped.startsWith("/") ? stripped.slice(1) : stripped;
   const { host, query } = splitHostAndQuery(candidate);

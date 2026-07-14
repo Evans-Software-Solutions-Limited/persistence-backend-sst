@@ -11,6 +11,7 @@
       "environment": "preview",
       "autoIncrement": true,
       "env": {
+        "APP_VARIANT": "staging",
         "EXPO_PUBLIC_API_URL": "https://api.staging.persistence.evans-software-solutions.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://nxkhlrvjxotyjulodxzk.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54a2hscnZqeG90eWp1bG9keHprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMjY1NjEsImV4cCI6MjA5OTYwMjU2MX0.0_Y1EZmY4erEII_7u1gKm1XbffLkM6PIfDEtMWI8Kmc",
@@ -31,6 +32,7 @@
       "environment": "production",
       "autoIncrement": true,
       "env": {
+        "APP_VARIANT": "production",
         "EXPO_PUBLIC_API_URL": "https://api.persistence.evans-software-solutions.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://opcvjypsoivaxerahbal.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wY3ZqeXBzb2l2YXhlcmFoYmFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMzM0MTMsImV4cCI6MjA5OTYwOTQxM30.vrYofqrmpzlp_E9bWRNzLh7XymFsSxoTDvKyygI24Vw",
@@ -49,7 +51,7 @@
   "submit": {
     "staging": {
       "ios": {
-        "ascAppId": "6755091280",
+        "ascAppId": "6790912063",
         "appleTeamId": "U9S9BFTM4V"
       }
     },
