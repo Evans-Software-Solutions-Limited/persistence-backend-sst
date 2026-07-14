@@ -70,10 +70,20 @@ jobs:
         if: ${{ github.event.inputs.dataset == 'exercises' || github.event.inputs.dataset == 'both' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bun run seed:exercises
+        run: |
+          # Bulk one-shot seed → SESSION pooler (5432), NOT the Lambda
+          # transaction pooler (6543). Transaction mode parks the client
+          # connection between transactions with no server backend, wedging
+          # the multi-statement seed (client hangs, zero DB-side activity —
+          # verified via pg_stat_activity). Same host + creds, only the port.
+          export DATABASE_URL="$(printf '%s' "$DATABASE_URL" | sed 's|:6543/|:5432/|')"
+          bun run seed:exercises
 
       - name: Seed foods (~146k OFF UK)
         if: ${{ github.event.inputs.dataset == 'foods' || github.event.inputs.dataset == 'both' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bun run seed:foods
+        run: |
+          # SESSION pooler (5432) for the bulk seed — see the exercises step.
+          export DATABASE_URL="$(printf '%s' "$DATABASE_URL" | sed 's|:6543/|:5432/|')"
+          bun run seed:foods
