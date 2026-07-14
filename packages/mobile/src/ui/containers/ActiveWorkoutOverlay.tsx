@@ -13,7 +13,7 @@
  * by the existence authority (SQLite via `useActiveSession`) gated on the
  * current route segment:
  *
- *   showBar = hasActiveSession && !onSessionScreen && !inAuth
+ *   showBar = hasActiveSession && !onSessionScreen && !inAuth && !drawerOpen
  *
  * "Minimise" = the session screen's chevron dismisses the modal → the segment
  * no longer includes "session" → the bar reappears (no manually-synced flag to
@@ -35,6 +35,7 @@ import {
   activeWorkoutElapsedSeconds,
   useActiveWorkout,
 } from "@/state/active-workout";
+import { useDrawer } from "@/state/drawer";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
@@ -72,12 +73,19 @@ export function ActiveWorkoutOverlay() {
   const inAuth = segments.includes("(auth)");
   const inTabs = segments.includes("(tabs)");
 
+  // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay
+  // in `app/(app)/_layout.tsx`, so with no z-index the floating bar paints on
+  // TOP of the open drawer (device-QA: "active workout shows over the drawer").
+  // Hide the bar while the drawer is open — same gating posture as the session
+  // screen / auth flow. It reappears (store bump re-renders) on drawer dismiss.
+  const drawerOpen = useDrawer((s) => s.open);
+
   const startedAt = session?.startedAt ?? null;
   const [elapsed, setElapsed] = useState(() =>
     startedAt ? activeWorkoutElapsedSeconds(startedAt) : 0,
   );
 
-  const visible = session != null && !onSessionScreen && !inAuth;
+  const visible = session != null && !onSessionScreen && !inAuth && !drawerOpen;
 
   // Tick the clock once a second while visible. Wall-clock derivation means a
   // missed tick (background) self-corrects on the next one.
