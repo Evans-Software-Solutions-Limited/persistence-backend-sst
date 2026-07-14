@@ -14,8 +14,8 @@ See [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md) for the audit this is built on 
 |---|---|---|
 | Project | `persistence-staging` (new) | `persistence-prod` (new) |
 | Org | **existing free org** `yeasty-apricot-zahshtf` | **new org, upgraded to Pro** |
-| Plan | Free | Pro + PITR (7-day) |
-| Compute | (free default) | **Small** (min for PITR) |
+| Plan | Free | Pro (daily backups; **PITR dropped — cost**) |
+| Compute | (free default) | **Micro** (Pro default) |
 | Region | `eu-west-2` | `eu-west-2` (match the Lambda) |
 | SST stage | `staging` | `production` |
 | GitHub Environment | `staging` | `Production` |
@@ -128,7 +128,12 @@ operational runs against the pooled `DATABASE_URL`.
   `db push`. Keep it gated + manual — do not auto-migrate prod.
 
 ### 3b. Seeds (run once per project, after migrations)
-Run with the project's **transaction-pooler** `DATABASE_URL`:
+**Preferred — CI dispatch** (uses the env's `DATABASE_URL` secret, no local pooled
+string needed): GitHub → Actions → **Seed Database** → Run workflow → pick
+`environment` (`staging` / `Production`) + `dataset` (`exercises` / `foods` / `both`).
+Idempotent, so safe to re-run.
+
+Or locally with the project's **transaction-pooler** `DATABASE_URL`:
 ```bash
 # Exercise library + muscle_groups/equipment_types/accessibility_tags (idempotent)
 DATABASE_URL='<pooled-conn-string>' bun run seed:exercises
@@ -145,13 +150,18 @@ feature and does **not** carry the field — seeding from it lands `serving_quan
 NULL (exactly why the old project is 100% NULL). This runbook ships a fix to
 `refreshOffDump.sh` + the seed header so a **regenerated** dump carries it. To seed
 prod with it populated from day 1:
+**CI:** GitHub → Actions → **Refresh OFF Foods Dump** → Run workflow. It regenerates
+the gz and pushes a `chore/refresh-off-dump-*` branch for you to PR + merge. Then run
+the foods seed. (Best-effort — see the workflow header caveats.)
+
+**Local (reliable):**
 ```bash
-brew install duckdb           # if needed; ~10 GB free disk for the ~7.6 GB dump
-bun run refresh:foods         # regenerates off-uk.jsonl.gz WITH serving_quantity
-# commit the regenerated packages/seed/data/off-uk.jsonl.gz
+brew install duckdb           # ~10 GB free disk for the ~7.6 GB dump
+bun run --filter @persistence/seed refresh:foods   # regenerates off-uk.jsonl.gz WITH serving_quantity
+# commit the regenerated packages/seed/data/off-uk.jsonl.gz, then:
 DATABASE_URL='<prod-pooled>' bun run seed:foods
 ```
-> ⚠ Claude could not run DuckDB in-sandbox — when you first run `refresh:foods`,
+> ⚠ Claude could not run DuckDB in-sandbox — when you first run the refresh,
 > confirm the OFF parquet exposes a top-level `serving_quantity` column (the query
 > `TRY_CAST`s it, so a rename/absence yields NULL rather than an error, but verify a
 > sample of the output rows actually has non-null `serving_quantity`).
@@ -248,12 +258,14 @@ the MCP's org, so all of Phase 5 is manual dashboard work.
 
 ## Phase 6 — Backups / DR / monitoring (prod)
 
-1. Confirm **daily backups** (Pro) + **PITR 7-day** are active (Settings → Add-ons /
-   Database → Backups).
+1. Confirm **daily backups** are active (Settings → Database → Backups — included with
+   Pro). ⚠ **PITR is DROPPED** (cost — see DECISIONS.md); recovery granularity is
+   therefore **1 day, not to-the-minute**. To add PITR later: upgrade compute to ≥ Small,
+   then enable the PITR add-on (7-day min).
 2. **Restore procedure** (document + rehearse on staging):
-   - PITR: Dashboard → Database → Backups → **Point in Time** → pick timestamp →
-     restore (creates a restored state; note it causes downtime on the target).
-   - Daily: restore from the latest daily snapshot.
+   - Daily: Dashboard → Database → Backups → restore from the latest daily snapshot
+     (causes downtime on the target while it restores).
+   - (PITR restore N/A until the add-on is enabled.)
    - Rehearse on staging so the steps are known before a real incident.
 3. **Alerting** — enable project health alerts (DB CPU/RAM, disk, connection
    saturation). At minimum email; wire to Slack/PagerDuty if desired.
