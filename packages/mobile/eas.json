@@ -32,8 +32,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.persistence.evans-software-solutions.com",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://dfeyebgdktfteqlacmru.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZXllYmdka3RmdGVxbGFjbXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTMzMDUsImV4cCI6MjA3NTY2OTMwNX0.zW82kwUAFOL8djHC8cmEIS0dmB-8k1ONN-ciYF1T_WQ",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://opcvjypsoivaxerahbal.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wY3ZqeXBzb2l2YXhlcmFoYmFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMzM0MTMsImV4cCI6MjA5OTYwOTQxM30.vrYofqrmpzlp_E9bWRNzLh7XymFsSxoTDvKyygI24Vw",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51SgCLFDuA39ky7tYWc2aamKCnKqDYv166ei1kpC7wPbehewdhk0WKWat7akKAiIy9uUVXIzboV40hvJva5B8DPBp003xl6AYHq",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_TvwwfusyLUcCZrtvVtKledMUcWf"
       },

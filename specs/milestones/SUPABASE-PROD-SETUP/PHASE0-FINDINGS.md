@@ -20,6 +20,7 @@ No workflow logic, `sst.config.ts`, or `infra/secrets.ts` change is needed.
 ## Facts verified against repo + live project
 
 ### Live project state (`dfeyebgdktfteqlacmru`)
+
 - Region `eu-west-2` (London), Postgres 17, `ACTIVE_HEALTHY`.
 - **63 migrations already applied** (`001_initial_schema` → `20260714120000_foods_serving_quantity`).
 - Data present:
@@ -31,8 +32,9 @@ No workflow logic, `sst.config.ts`, or `infra/secrets.ts` change is needed.
   are disposable.
 
 ### Data-exposure posture (Phase 2 relevance) — **brief was wrong here**
+
 - The brief says "RLS is OFF." It is **not**: **59 of 60** public tables have RLS
-  **enabled** (the repo migrated *toward* RLS — `20260626104105_enable_rls_missing_tables`, etc.).
+  **enabled** (the repo migrated _toward_ RLS — `20260626104105_enable_rls_missing_tables`, etc.).
 - **But** `anon` and `authenticated` still hold **full CRUD grants** on all 63 tables,
   and **`revenuecat_webhook_events` has RLS fully disabled** → directly
   readable/writable via the public anon key **iff the Data API (PostgREST) is on**.
@@ -46,6 +48,7 @@ No workflow logic, `sst.config.ts`, or `infra/secrets.ts` change is needed.
   intentional; do not reflexively "enable RLS" because `get_advisors` complains.
 
 ### Cutover wiring (Phase 4 relevance)
+
 - **DB client** `packages/db/src/client.ts`: postgres.js, `prepare:false`, `max:1`;
   reads SST Secret `PersistenceDatabaseUrl` → Lambda env `DATABASE_URL`
   (`infra/api.ts:67`), falling back to `process.env.DATABASE_URL`. Already
@@ -58,8 +61,8 @@ No workflow logic, `sst.config.ts`, or `infra/secrets.ts` change is needed.
   `packages/api-utils/src/domains/domain-config.ts:68-71`:
   ```ts
   const SUPABASE_URLS = {
-    production: "https://dfeyebgdktfteqlacmru.supabase.co",   // ← must change to prod project
-    staging:    "https://dfeyebgdktfteqlacmru.supabase.co",   // ← change if staging becomes a new project
+    production: "https://dfeyebgdktfteqlacmru.supabase.co", // ← must change to prod project
+    staging: "https://dfeyebgdktfteqlacmru.supabase.co", // ← change if staging becomes a new project
   };
   ```
   baked into the Lambda at build time via `infra/domains/index.ts` → `infra/api.ts:68`.
@@ -73,6 +76,7 @@ No workflow logic, `sst.config.ts`, or `infra/secrets.ts` change is needed.
   authenticates against staging.
 
 ### SST Secrets (all in `infra/secrets.ts`, consumed via `.value` in `infra/api.ts`)
+
 `PersistenceDatabaseUrl`, `StripeSecretKey`, `StripeWebhookSecret`,
 `RevenueCatWebhookSecret`, `RevenueCatApiKey`, `RevenueCatProjectId`,
 `ExpoAccessToken`, `SupabaseServiceRoleKey`. `SUPABASE_URL` + the `AI_*` values are
@@ -80,8 +84,9 @@ plain env, not secrets. `sst.config.ts` gives **production** `removal:"retain"` 
 `protect:true`.
 
 ### CI/CD (already exists — we harden/populate, not create)
+
 - `deploy-staging.yml`: push→`main`, `environment: staging`. `supabase link
-  --project-ref ${{secrets.SUPABASE_PROJECT_REF}}` → dry-run `db push` → real
+--project-ref ${{secrets.SUPABASE_PROJECT_REF}}` → dry-run `db push` → real
   `db push` → `sst secret set … --stage staging` → `sst deploy --stage staging`.
   **Auto-applies migrations to staging on every merge to main.**
 - `production-deploy.yml`: GitHub release published / manual `workflow_dispatch`,
@@ -97,12 +102,13 @@ plain env, not secrets. `sst.config.ts` gives **production** `removal:"retain"` 
   (`REVENUECATAPIKEY`) though the SST names do (`RevenueCatApiKey`).
 
 ### Seeds / reference data (Phase 3 relevance)
+
 - **Via migrations** (auto-applied by `db push`): `subscription_tiers`
   (`004`, re-seeded `20260526120000`), `goal_types` + `muscle_categories` +
   `muscle_group_categories` (`005`), `achievements` (`20260607120200`),
   `subscription_price_history` (`008`).
 - **Via `packages/seed/src/seedExercises.ts`** (`DATABASE_URL='<pooled>' bun run
-  seed:exercises`): `muscle_groups`, `equipment_types`, `accessibility_tags`
+seed:exercises`): `muscle_groups`, `equipment_types`, `accessibility_tags`
   (from `data/reference.json`), then the **exercise catalogue** (`data/exercises.json`,
   ~2.3k). Idempotent (`ON CONFLICT DO NOTHING` / name→UUID resolution).
 - **OFF foods (~146k UK)** via `packages/seed/src/seedFoods.sh` →
@@ -119,15 +125,17 @@ plain env, not secrets. `sst.config.ts` gives **production** `removal:"retain"` 
     `serving_quantity` populated from the start.
 
 ### Hardcoded project-ref/URL literals to change at cutover
+
 Only load-bearing spots: `domain-config.ts:69-70` (+ test `:84,94`),
 `packages/mobile/eas.json` (prod profile), `packages/mobile/.env.example`. Everything
 else (`client.ts`, workflow error messages, `config.toml`) is doc/format hints or
 test fixtures.
 
 ## What can be automated vs. Brad-gated
+
 - **Brad-gated (billing / dashboard / irreversible):** create/upgrade projects, plan
-  + PITR add-on, compute size, custom SMTP, provider (Apple/Google) config, network
-  restrictions, key rotation. These cost money or touch account settings.
+  - PITR add-on, compute size, custom SMTP, provider (Apple/Google) config, network
+    restrictions, key rotation. These cost money or touch account settings.
 - **Claude-automatable once projects exist:** disable Data API via SQL/config,
   `db push` migrations, run seeds, the `domain-config.ts`/`eas.json` code edits, the
   runbook, STATE.md.

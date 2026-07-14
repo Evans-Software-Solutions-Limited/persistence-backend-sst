@@ -10,16 +10,16 @@ See [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md) for the audit this is built on 
 
 ## Target end-state
 
-| | Staging | Production |
-|---|---|---|
-| Project | `persistence-staging` (new) | `persistence-prod` (new) |
-| Org | **existing free org** `yeasty-apricot-zahshtf` | **new org, upgraded to Pro** |
-| Plan | Free | Pro (daily backups; **PITR dropped — cost**) |
-| Compute | (free default) | **Micro** (Pro default) |
-| Region | `eu-west-2` | `eu-west-2` (match the Lambda) |
-| SST stage | `staging` | `production` |
-| GitHub Environment | `staging` | `Production` |
-| Old free project `dfeyebgdktfteqlacmru` | — | **retire only after prod cutover is proven** |
+|                                         | Staging                                        | Production                                   |
+| --------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| Project                                 | `persistence-staging` (new)                    | `persistence-prod` (new)                     |
+| Org                                     | **existing free org** `yeasty-apricot-zahshtf` | **new org, upgraded to Pro**                 |
+| Plan                                    | Free                                           | Pro (daily backups; **PITR dropped — cost**) |
+| Compute                                 | (free default)                                 | **Micro** (Pro default)                      |
+| Region                                  | `eu-west-2`                                    | `eu-west-2` (match the Lambda)               |
+| SST stage                               | `staging`                                      | `production`                                 |
+| GitHub Environment                      | `staging`                                      | `Production`                                 |
+| Old free project `dfeyebgdktfteqlacmru` | —                                              | **retire only after prod cutover is proven** |
 
 Because Supabase bills **per org** (one plan per org), Free-staging + Pro-prod
 **must** be in separate orgs — that's why prod gets a new org.
@@ -32,30 +32,35 @@ Because Supabase bills **per org** (one plan per org), Free-staging + Pro-prod
 > the dashboard.** Claude does not create projects/orgs via MCP.
 
 ### 1a. Staging project (Free, existing org)
+
 1. Dashboard → org **`BradleyEvans96's Org`** → **New project**.
 2. Name `persistence-staging`, region **West EU (London) `eu-west-2`**, generate a
    strong DB password (save it to your password manager — it's needed for the
    pooler string + `SUPABASE_DB_PASSWORD`).
 3. Wait for provisioning.
 
-### 1b. Production org + project (Pro + Small + PITR)
+### 1b. Production org + project (Pro, Micro compute — PITR dropped)
+
 1. Dashboard → **New organization** (e.g. `persistence-prod-org`).
 2. Upgrade that org to **Pro** ($25/mo).
 3. **New project** in it: name `persistence-prod`, region **`eu-west-2`**, strong DB
    password (save it).
-4. Project → **Settings → Compute and Disk** → set compute **Small** (required for PITR).
-5. Project → **Settings → Add-ons → Point-in-Time Recovery** → enable, **7-day**.
+4. Compute stays **Micro** (Pro default). PITR was **dropped** (cost ~$100/mo — see
+   DECISIONS.md); to add it later, upgrade compute to ≥ Small then enable the PITR
+   add-on (7-day min).
 
 ### 1c. Capture per-project values (do NOT paste secrets into the repo)
+
 For **each** project, from **Settings → Database** and **Settings → API**:
-- **Project ref** (the `xxxx` in `xxxx.supabase.co`) — *non-secret*.
-- **Project URL** `https://<ref>.supabase.co` — *non-secret* (goes in code, see Phase 4).
+
+- **Project ref** (the `xxxx` in `xxxx.supabase.co`) — _non-secret_.
+- **Project URL** `https://<ref>.supabase.co` — _non-secret_ (goes in code, see Phase 4).
 - **Transaction pooler** connection string (**port 6543**), shape:
   `postgresql://postgres.<ref>:<password>@aws-1-eu-west-2.pooler.supabase.com:6543/postgres`
   — this is the `DATABASE_URL` secret. **Secret.**
 - **DB password** → `SUPABASE_DB_PASSWORD` secret. **Secret.**
 - **service_role key** (Settings → API) → `SUPABASE_SERVICE_ROLE_KEY` secret. **Secret.**
-- **anon / publishable key** (Settings → API) — *non-secret*; needed for the mobile
+- **anon / publishable key** (Settings → API) — _non-secret_; needed for the mobile
   build profiles (Phase 4).
 - A **Supabase access token** (Account → Access Tokens) → `SUPABASE_ACCESS_TOKEN`
   secret (one token works for both if the account owns both orgs). **Secret.**
@@ -119,21 +124,24 @@ Migrations promote via the existing CI (`db push --linked`); seeds are manual
 operational runs against the pooled `DATABASE_URL`.
 
 ### 3a. Migrations
+
 - **Staging**: once the `staging` GitHub Environment secrets point at the new project
   (Phase 4), a push to `main` runs `db push` (dry-run then real) automatically. Or run
   locally: `SUPABASE_ACCESS_TOKEN=… supabase link --project-ref <staging-ref>
-  --password <pw>` then `supabase db push --linked --dry-run` → `supabase db push
-  --linked`. Confirm all **63** migrations apply in order.
+--password <pw>` then `supabase db push --linked --dry-run` → `supabase db push
+--linked`. Confirm all **63** migrations apply in order.
 - **Prod**: gated `production-deploy.yml` (release/manual) does the same dry-run→real
   `db push`. Keep it gated + manual — do not auto-migrate prod.
 
 ### 3b. Seeds (run once per project, after migrations)
+
 **Preferred — CI dispatch** (uses the env's `DATABASE_URL` secret, no local pooled
 string needed): GitHub → Actions → **Seed Database** → Run workflow → pick
 `environment` (`staging` / `Production`) + `dataset` (`exercises` / `foods` / `both`).
 Idempotent, so safe to re-run.
 
 Or locally with the project's **transaction-pooler** `DATABASE_URL`:
+
 ```bash
 # Exercise library + muscle_groups/equipment_types/accessibility_tags (idempotent)
 DATABASE_URL='<pooled-conn-string>' bun run seed:exercises
@@ -141,6 +149,7 @@ DATABASE_URL='<pooled-conn-string>' bun run seed:exercises
 # OFF UK foods (~146k). ⚠ See serving_quantity note below BEFORE running.
 DATABASE_URL='<pooled-conn-string>' bun run seed:foods
 ```
+
 Catalog data seeded **by migrations** (no script needed): `subscription_tiers`,
 `goal_types`, `muscle_categories`, `achievements`, `subscription_price_history`.
 
@@ -155,12 +164,14 @@ the gz and pushes a `chore/refresh-off-dump-*` branch for you to PR + merge. The
 the foods seed. (Best-effort — see the workflow header caveats.)
 
 **Local (reliable):**
+
 ```bash
 brew install duckdb           # ~10 GB free disk for the ~7.6 GB dump
 bun run --filter @persistence/seed refresh:foods   # regenerates off-uk.jsonl.gz WITH serving_quantity
 # commit the regenerated packages/seed/data/off-uk.jsonl.gz, then:
 DATABASE_URL='<prod-pooled>' bun run seed:foods
 ```
+
 > ⚠ Claude could not run DuckDB in-sandbox — when you first run the refresh,
 > confirm the OFF parquet exposes a top-level `serving_quantity` column (the query
 > `TRY_CAST`s it, so a rename/absence yields NULL rather than an error, but verify a
@@ -171,23 +182,26 @@ DATABASE_URL='<prod-pooled>' bun run seed:foods
 ## Phase 4 — Secrets & per-stage wiring
 
 ### 4a. GitHub Environment secrets (Brad; Settings → Environments)
+
 Populate **both** environments with that project's values. Names must match the
 workflows exactly (note RevenueCat names have **no underscores**):
 
-| Secret | staging value | Production value |
-|---|---|---|
-| `SUPABASE_PROJECT_REF` | staging ref | prod ref |
-| `SUPABASE_ACCESS_TOKEN` | account token | account token |
-| `SUPABASE_DB_PASSWORD` | staging DB pw | prod DB pw |
-| `DATABASE_URL` | staging pooler (6543) | prod pooler (6543) |
-| `SUPABASE_SERVICE_ROLE_KEY` | staging service_role | prod service_role |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | test (`sk_test_…`) | live (`sk_live_…`) |
-| `REVENUECATAPIKEY` / `REVENUECATPROJECTID` / `REVENUECATWEBHOOKSECRET` | sandbox | live |
-| `EXPO_ACCESS_TOKEN` | (optional) | (optional) |
-| `AWS_ROLE_ARN_STAGING` / `AWS_ROLE_ARN_PRODUCTION` | (unchanged) | (unchanged) |
+| Secret                                                                 | staging value         | Production value   |
+| ---------------------------------------------------------------------- | --------------------- | ------------------ |
+| `SUPABASE_PROJECT_REF`                                                 | staging ref           | prod ref           |
+| `SUPABASE_ACCESS_TOKEN`                                                | account token         | account token      |
+| `SUPABASE_DB_PASSWORD`                                                 | staging DB pw         | prod DB pw         |
+| `DATABASE_URL`                                                         | staging pooler (6543) | prod pooler (6543) |
+| `SUPABASE_SERVICE_ROLE_KEY`                                            | staging service_role  | prod service_role  |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`                          | test (`sk_test_…`)    | live (`sk_live_…`) |
+| `REVENUECATAPIKEY` / `REVENUECATPROJECTID` / `REVENUECATWEBHOOKSECRET` | sandbox               | live               |
+| `EXPO_ACCESS_TOKEN`                                                    | (optional)            | (optional)         |
+| `AWS_ROLE_ARN_STAGING` / `AWS_ROLE_ARN_PRODUCTION`                     | (unchanged)           | (unchanged)        |
 
 ### 4b. Code edits (Claude; committable — public URL only)
+
 `SUPABASE_URL` is **not** a GitHub secret — it's hardcoded per stage. Update:
+
 - `packages/api-utils/src/domains/domain-config.ts` `SUPABASE_URLS`:
   `production` → `https://<prod-ref>.supabase.co`, `staging` →
   `https://<staging-ref>.supabase.co`.
@@ -215,12 +229,14 @@ Because each Supabase project has its own callback host, **providers are configu
 per project** (staging + prod separately).
 
 ### 5.0 Email + core auth (both projects → Authentication)
+
 - **Custom SMTP** — built-in email is rate-limited / not for production (SES/Resend/Postmark).
 - **Email provider** enabled, **confirmations required**, OTP/magic-link expiry ≤ 1h.
 - **JWT/JWKS** — asymmetric signing keys (the backend validates via JWKS); confirm
   `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json` returns keys.
 
 ### 5.1 URL configuration (both projects → Authentication → URL Configuration)
+
 - **Redirect URLs** allow-list (needed for the Google web flow):
   - `persistencemobile://auth/callback`
   - `persistencemobile://**` (covers deep links like accept-invite)
@@ -229,6 +245,7 @@ per project** (staging + prod separately).
 - **Site URL** — the app scheme or the web origin.
 
 ### 5.2 Google (both projects) — web OAuth client
+
 1. Google Cloud Console → APIs & Services → Credentials → create an **OAuth 2.0
    Client ID (type: Web application)**. One client can serve both stages — add BOTH
    authorized redirect URIs:
@@ -241,15 +258,16 @@ per project** (staging + prod separately).
    client id needed — the app uses the Supabase-hosted web flow, not the native SDK.)
 
 ### 5.3 Apple (both projects) — native Sign in with Apple
+
 1. Apple Developer → the App ID `com.bradleyevans96.persistence` → ensure **Sign in
    with Apple** capability is enabled (matches `usesAppleSignIn: true`).
 2. In **each** Supabase project → Authentication → Providers → **Apple** → enable, and
    under **Client IDs** add:
    - `com.bradleyevans96.persistence` (the app bundle id)
    - `host.exp.Exponent` (Expo Go dev)
-   Native id-token verification checks the token audience against these Client IDs —
-   **no Services ID / secret key required** (those are only for a web Apple-OAuth flow,
-   which this app does not use).
+     Native id-token verification checks the token audience against these Client IDs —
+     **no Services ID / secret key required** (those are only for a web Apple-OAuth flow,
+     which this app does not use).
 
 Providers are Auth-dashboard settings — **not MCP-addressable**, and prod is outside
 the MCP's org, so all of Phase 5 is manual dashboard work.
@@ -278,6 +296,7 @@ the MCP's org, so all of Phase 5 is manual dashboard work.
 ## Phase 7 — Verify + cutover
 
 ### Per-environment smoke test (through the SST API, not PostgREST)
+
 1. Sign in via Supabase Auth (mobile/web against that env) → get a JWT.
 2. A couple of authed reads + one write through the deployed API base URL.
 3. Confirm a **bad/expired JWT is rejected** (401) — proves JWKS is wired to the
@@ -285,6 +304,7 @@ the MCP's org, so all of Phase 5 is manual dashboard work.
 4. Confirm the anon key **cannot** read tables over PostgREST (Data API closed).
 
 ### Cutover order (safe)
+
 1. Point **staging** GitHub secrets + `domain-config.ts` staging URL at the new
    staging project; merge → staging deploys + migrates + (manually) seed. Smoke-test.
 2. Only once staging is green: point **Production** secrets + `domain-config.ts` prod
@@ -294,14 +314,16 @@ the MCP's org, so all of Phase 5 is manual dashboard work.
    pause first, delete later.
 
 ## Promotion (steady state)
+
 - **Code + migrations**: merge to `main` → auto staging deploy (`db push` + `sst
-  deploy --stage staging`). Verify on staging.
+deploy --stage staging`). Verify on staging.
 - **Prod**: publish a GitHub release (or manual `workflow_dispatch`) → gated
   `production-deploy.yml` runs dry-run `db push` → real `db push` → `sst secret set`
   → `sst deploy --stage production`. Prod migrations are **manual + gated by design —
   keep it that way.**
 
 ## Secret rotation
+
 Rotate a DB password / service-role key in the Supabase dashboard → update the
 matching GitHub Environment secret → re-run the deploy workflow for that stage
 (`sst secret set` re-pushes to SSM before deploy). Never commit rotated values.
