@@ -586,8 +586,8 @@
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
             <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>9805221</code></span>
-            <span class="meta-pill">📅 Synced 13 Jul 2026</span>
+            <span class="meta-pill">🔀 <code>401f207</code></span>
+            <span class="meta-pill">📅 Synced 14 Jul 2026</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-13, main HEAD 9805221)
+      // DATA  (verified against repo on 2026-07-14, main HEAD 401f207)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -698,6 +698,7 @@
         { id: "coach", name: "Coach Mode", icon: "🧑‍💼" },
         { id: "phase12", name: "Production Readiness (Phase 12)", icon: "⚙️" },
         { id: "deviceqa", name: "Device-QA Sweep (2026-07-13)", icon: "📱" },
+        { id: "infra", name: "Infra / Environments", icon: "🗄️" },
         { id: "deferred", name: "Deferred — Post-Launch", icon: "🔒" },
       ];
 
@@ -746,6 +747,20 @@
           status: "done",
           title: "Drawer scroll hardening + coach Workout Library relocation (#5)",
           note: "SHIPPED (PR #219). In-package gorhom fix (keyboard props on the shared BottomSheet — helps all 18 sheets); coach Workout Library moved off the settings drawer onto Coach You (design review: keep the drawer, don't full-screen/merge). ⚠ scroll-fix efficacy is DEVICE-ONLY (CI mocks gorhom). #10 You/profile merge NOT needed per the design review.",
+        },
+        {
+          id: "dqbarcode",
+          area: "deviceqa",
+          status: "done",
+          title: "Barcode Serving tab = real pack + kJ-only products resolve",
+          note: "SHIPPED (PR #223, 14 Jul). OFF serving_quantity now flows through to the scan sheet so the 'Serving' tab means the real pack (e.g. 220 g) not a flat 100 g; kJ-only products resolve via a ÷4.184 fallback (were 404-ing as barcode_not_found). Macros stay per-100g — serving_quantity is only the Serving-tab multiplier, so null/legacy rows + custom foods are byte-identical. New foods.serving_quantity column. ⚠ PROD migration MANUAL. ⚠ the ~143k already-seeded rows stay NULL until a manual re-seed re-ingests the OFF dump (follow-up, not in the PR — ties into c4). Scan-sheet macro/serving editing-before-Add still deferred (product call). Device-verify pending.",
+        },
+        {
+          id: "dqdrawer",
+          area: "deviceqa",
+          status: "done",
+          title: "Active-workout bar no longer paints over the profile drawer",
+          note: "SHIPPED (PR #222, 14 Jul). The floating 'workout in progress' bar and the profile drawer are root-mounted siblings; the bar mounted after the drawer with no z-index so it painted on top. Fixed by hiding the bar while the drawer is open (gate on !drawerOpen, mirroring the session/auth gates). Device-verify pending.",
         },
 
         // ── COMPLIANCE / APP STORE BLOCKERS ──────────────────────────────────────
@@ -998,6 +1013,39 @@
           status: "done",
           title: "Invite code + QR + coach-accept (Phase 8)",
           note: "Coach Mode Phase 8 shipped (PR #198 backend + #202 mobile) — this COMPLETES Coach Mode. Coach shares a short code + QR (encodes persistencemobile://accept-invite?code=…) with tap-to-copy + native Share; athlete redeems (typed or via deep link) → a pending request the COACH accepts (decision #2, not the athlete). New POST /trainers/me/relationships/:id/respond (at-cap accept = 402 upsell); an initiated_by direction column reconciles email-invite (client accepts) vs invite-code (coach accepts) so the shared notification trigger targets the right party. ⚠ 4 migrations auto-applied to staging on merge, PROD apply still MANUAL. Device verify needs a fresh EAS dev build (QR + expo-clipboard are native).",
+        },
+
+        // ── INFRA / ENVIRONMENTS (Supabase prod setup, 2026-07-14) ───────────────
+        {
+          id: "inf1",
+          area: "infra",
+          status: "partial",
+          title: "Prod-grade Supabase — isolated staging + prod projects",
+          note: "Split the single shared free project into persistence-staging (nxkhlrvjxotyjulodxzk, free org) + persistence-prod (opcvjypsoivaxerahbal, new Pro org, Micro compute; PITR dropped — cost). Data API disabled + auth hardened on both. STAGING cut over + migrated (full 63-migration chain) + smoke-tested (JWKS on new project, 401 on bad/absent auth, anon can't read PostgREST). PROD cutover pending (point Production env secrets → prod project, run the gated production-deploy, seed). Docs: specs/milestones/SUPABASE-PROD-SETUP/. PRs #224/#225/#227.",
+        },
+
+        {
+          id: "inf2",
+          area: "infra",
+          status: "done",
+          title: "Multi-env: app variants + backend-fingerprint cache",
+          note: "App variants (PR #228) — staging/prod get separate bundle ids + custom schemes → isolated iOS sandboxes, installable side-by-side (prod byte-identical). Backend-fingerprint cache/session auto-wipe (PR #226) — the offline SQLite cache self-heals on a backend switch (this cutover + future migrations). Both merged, Inspector-Brad-clean, gates green (jest 4570). ⚠ Device-verify on an EAS staging build pending (schemes/QR/OAuth per variant + the cache wipe firing on a backend switch).",
+        },
+
+        {
+          id: "inf3",
+          area: "infra",
+          status: "partial",
+          title: "OFF foods re-seed carries serving_quantity",
+          note: "refreshOffDump.sh now projects serving_quantity; dump regenerated (PR #227 — 147,408 UK rows, ~54% non-null). New Seed Database + Refresh OFF Dump dispatch workflows added. Seed runs (Actions → Seed Database → staging/Production → both) still pending per project.",
+        },
+
+        {
+          id: "inf4",
+          area: "infra",
+          status: "todo",
+          title: "IAP sandbox verification on prod build (SIGN-OFF GATE)",
+          note: "Staging IAP deliberately deferred (no separate staging RevenueCat project — RC webhook is per-project). Verify IAP via Apple SANDBOX on the PRODUCTION build: buy each tier → entitlement syncs via the RC webhook → prod backend → unlocks. REQUIRED before final go-live sign-off.",
         },
 
         // ── PRODUCTION READINESS — PHASE 12 ──────────────────────────────────────
