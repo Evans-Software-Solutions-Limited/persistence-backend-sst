@@ -2002,6 +2002,7 @@ export class InMemoryApiAdapter implements ApiPort {
       fatG: input.fatG,
       servingSize: input.servingSize,
       servingUnit: input.servingUnit,
+      servingQuantity: null,
       source: "user",
       createdBy: this.profiles[0]?.id ?? "test-user",
     };
@@ -2222,6 +2223,7 @@ export class InMemoryApiAdapter implements ApiPort {
       fatG: 5,
       servingSize: 100,
       servingUnit: "g",
+      servingQuantity: null,
       source: "ai_recognized",
       createdBy: null,
     };

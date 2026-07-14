@@ -28,6 +28,7 @@ import {
   manualKcalInRange,
   MANUAL_KCAL_MAX,
   MANUAL_KCAL_MIN,
+  portionToServings,
   presetSplit,
   recomputeFuelToday,
   recommendedSplit,
@@ -72,6 +73,7 @@ const food = (over: Partial<Food> = {}): Food => ({
   fatG: 3,
   servingSize: 40,
   servingUnit: "g",
+  servingQuantity: null,
   source: "openfoodfacts",
   createdBy: null,
   ...over,
@@ -889,5 +891,62 @@ describe("computeRecipeDraftMacros", () => {
       carbsG: 0,
       fatG: 0,
     });
+  });
+});
+
+describe("portionToServings — real pack serving (OFF serving_quantity)", () => {
+  it("serving mode uses servingQuantity as the real serving, scaled to the per-100g basis", () => {
+    // OFF food: macros per-100g (servingSize 100), real pack serving 220 g.
+    // 1 serving = 220 g = 2.2 × the per-100g macros.
+    expect(
+      portionToServings(
+        { servingSize: 100, servingQuantity: 220 },
+        "serving",
+        1,
+      ),
+    ).toBeCloseTo(2.2, 5);
+    // 2 servings = 440 g = 4.4×.
+    expect(
+      portionToServings(
+        { servingSize: 100, servingQuantity: 220 },
+        "serving",
+        2,
+      ),
+    ).toBeCloseTo(4.4, 5);
+  });
+
+  it("grams mode is unaffected by servingQuantity (still grams / servingSize)", () => {
+    expect(
+      portionToServings(
+        { servingSize: 100, servingQuantity: 220 },
+        "grams",
+        220,
+      ),
+    ).toBeCloseTo(2.2, 5);
+  });
+
+  it("falls back to servingSize (legacy behaviour) when servingQuantity is null", () => {
+    // Pre-serving_quantity seeded OFF row: 1 serving = 100 g = 1× per-100g.
+    expect(
+      portionToServings(
+        { servingSize: 100, servingQuantity: null },
+        "serving",
+        1,
+      ),
+    ).toBe(1);
+    // A custom food (servingSize is its own real serving) stays 1 serving = value.
+    expect(
+      portionToServings(
+        { servingSize: 30, servingQuantity: null },
+        "serving",
+        2,
+      ),
+    ).toBe(2);
+  });
+
+  it("ignores a non-positive servingQuantity (treats as legacy)", () => {
+    expect(
+      portionToServings({ servingSize: 100, servingQuantity: 0 }, "serving", 1),
+    ).toBe(1);
   });
 });

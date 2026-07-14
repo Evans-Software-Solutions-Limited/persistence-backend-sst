@@ -199,6 +199,7 @@ describe("FoodRepository", () => {
           fatG: 8,
           servingSize: 100,
           servingUnit: "g",
+          servingQuantity: 220,
           source: "openfoodfacts",
         },
       ]);
@@ -207,11 +208,46 @@ describe("FoodRepository", () => {
       expect(passed[0].source).toBe("openfoodfacts");
       expect(passed[0].createdBy).toBeNull();
       expect(passed[0].kcal).toBe("379");
+      // Real pack serving is persisted as a numeric string.
+      expect(passed[0].servingQuantity).toBe("220");
       // Conflict-targets the PARTIAL index so it can't overwrite user rows.
       const conflict = onConflictDoUpdate.mock.calls[0][0];
       expect(conflict.targetWhere).toBeDefined();
       expect(conflict.set.createdBy).toBeUndefined();
       expect(conflict.set.source).toBeUndefined();
+      // The refresh updates serving_quantity too (so a re-seed backfills it).
+      // getDb is mocked, so the raw `excluded.serving_quantity` SQL fragment
+      // never hits Postgres — render it to guard the column name / mocked-DB
+      // blind spot (reference_drizzle_groupby_param_bug).
+      expect(conflict.set.servingQuantity).toBeDefined();
+      const renderedSet = new PgDialect().sqlToQuery(
+        conflict.set.servingQuantity as any,
+      );
+      expect(renderedSet.sql).toContain("serving_quantity");
+    });
+
+    it("persists a null servingQuantity when OFF omits the serving", async () => {
+      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+      const valuesSpy = vi.fn().mockReturnValue({ onConflictDoUpdate });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      await new FoodRepository().upsertManyFromOff([
+        {
+          barcode: "999",
+          name: "Mystery",
+          brand: null,
+          kcal: 100,
+          proteinG: 1,
+          carbsG: 2,
+          fatG: 3,
+          servingSize: 100,
+          servingUnit: "g",
+          servingQuantity: null,
+          source: "openfoodfacts",
+        },
+      ]);
+      expect(valuesSpy.mock.calls[0][0][0].servingQuantity).toBeNull();
     });
   });
 });

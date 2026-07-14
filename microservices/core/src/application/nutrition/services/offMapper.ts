@@ -10,12 +10,15 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { kcalFromOffNutriments } from "./offEnergy";
+
 export type OffProduct = {
   code?: string;
   product_name?: string;
   brands?: string;
   countries_tags?: string[];
   nutriments?: Record<string, unknown>;
+  serving_quantity?: number | string;
 };
 
 export type OffFoodRow = {
@@ -28,6 +31,8 @@ export type OffFoodRow = {
   fatG: number;
   servingSize: number;
   servingUnit: string;
+  /** Real pack serving (grams) from OFF `serving_quantity`; null when absent. */
+  servingQuantity: number | null;
   source: "openfoodfacts";
 };
 
@@ -70,7 +75,9 @@ export function mapOffProductToFood(
   }
 
   const n = product.nutriments ?? {};
-  const kcal = finiteNumber((n as any)["energy-kcal_100g"]);
+  // kcal with a kJ→kcal fallback so kJ-only products aren't dropped from the
+  // seed (mirrors the live resolver).
+  const kcal = kcalFromOffNutriments(n as Record<string, unknown>);
   const proteinG = finiteNumber((n as any)["proteins_100g"]);
   const carbsG = finiteNumber((n as any)["carbohydrates_100g"]);
   const fatG = finiteNumber((n as any)["fat_100g"]);
@@ -78,6 +85,9 @@ export function mapOffProductToFood(
     return null;
   }
   if (kcal < 0 || proteinG < 0 || carbsG < 0 || fatG < 0) return null;
+
+  // Real pack serving (grams). Only a positive value is meaningful.
+  const sq = finiteNumber(product.serving_quantity);
 
   return {
     barcode,
@@ -89,6 +99,7 @@ export function mapOffProductToFood(
     fatG,
     servingSize: 100,
     servingUnit: "g",
+    servingQuantity: sq !== null && sq > 0 ? sq : null,
     source: "openfoodfacts",
   };
 }

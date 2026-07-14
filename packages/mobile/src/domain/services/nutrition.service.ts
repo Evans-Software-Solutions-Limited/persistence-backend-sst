@@ -563,21 +563,33 @@ export const GRAMS_PER_CUP = 245;
  * Convert a portion (mode + value) into a multiple of the food's serving — the
  * value `scaleFoodMacros` / the logged `servings` expects. A food's per-serving
  * macros cover `food.servingSize` grams, so:
- *   serving → value (servings directly)
+ *   serving → value × (realServing / servingSize)
  *   grams   → grams / servingSize
  *   cups    → (cups × 245) / servingSize
+ * where `realServing` = `servingQuantity` (the pack serving OFF reports, e.g.
+ * 220 g) when present, else `servingSize` itself. So for an OFF food (macros
+ * per-100 g, servingQuantity 220) one "Serving" is 220 g = 2.2 × the per-100 g
+ * macros — not a flat 100 g. When `servingQuantity` is null (custom foods, or a
+ * pre-`serving_quantity` seeded row) the serving falls back to `servingSize`,
+ * i.e. the pre-existing behaviour (value servings directly).
  * When `servingSize` is missing/0 (permitted by the model; common in raw OFF
  * data) grams/cups fall back to a **100 g basis** — i.e. the macros are treated
  * as per-100 g (OFF's default reference) rather than per-1 g, which would
  * otherwise over-count by ~100×.
  */
 export function portionToServings(
-  food: Pick<Food, "servingSize">,
+  food: Pick<Food, "servingSize" | "servingQuantity">,
   mode: PortionMode,
   value: number,
 ): number {
-  if (mode === "serving") return value;
   const size = food.servingSize > 0 ? food.servingSize : 100;
+  if (mode === "serving") {
+    const realServing =
+      food.servingQuantity && food.servingQuantity > 0
+        ? food.servingQuantity
+        : size;
+    return (value * realServing) / size;
+  }
   const grams = mode === "cups" ? value * GRAMS_PER_CUP : value;
   return grams / size;
 }

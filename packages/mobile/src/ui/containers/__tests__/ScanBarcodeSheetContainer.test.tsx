@@ -44,6 +44,7 @@ const food: Food = {
   fatG: 5,
   servingSize: 100,
   servingUnit: "g",
+  servingQuantity: null,
   source: "openfoodfacts",
   createdBy: null,
 };
@@ -217,5 +218,29 @@ describe("ScanBarcodeSheetContainer", () => {
     expect(mockProbe.last?.scaled.kcal).toBe(735);
     act(() => mockProbe.last!.onPortionDec()); // 0.75 cups
     await waitFor(() => expect(mockProbe.last?.effectiveGrams).toBe(184));
+  });
+
+  it("defaults the Serving tab to the real pack serving (OFF serving_quantity)", async () => {
+    const { adapters, storage } = makeAdapters();
+    // Per-100g macros (300 kcal), real pack serving 220 g.
+    storage.cacheFoods([
+      { ...food, barcode: "5099999999999", servingQuantity: 220 },
+    ]);
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openScan("snack"));
+    await act(async () => {
+      mockProbe.last!.onBarcodeScanned("5099999999999");
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("found"));
+
+    // 1 serving now means the real 220 g pack, NOT 100 g:
+    // 2.2 × per-100g → 660 kcal, 220 g.
+    expect(mockProbe.last?.portionMode).toBe("serving");
+    expect(mockProbe.last?.effectiveGrams).toBe(220);
+    expect(mockProbe.last?.scaled.kcal).toBe(660);
   });
 });

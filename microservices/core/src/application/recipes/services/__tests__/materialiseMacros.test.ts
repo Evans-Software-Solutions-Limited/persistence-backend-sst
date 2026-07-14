@@ -18,6 +18,7 @@ function food(id: string, over: Partial<FoodDTO> = {}): FoodDTO {
     fatG: 5,
     servingSize: 100,
     servingUnit: "g",
+    servingQuantity: null,
     source: "user",
     createdBy: null,
     ...over,

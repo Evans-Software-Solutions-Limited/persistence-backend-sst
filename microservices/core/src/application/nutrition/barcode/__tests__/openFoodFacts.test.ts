@@ -8,6 +8,7 @@ import {
 const product = {
   product_name: "Porridge Oats",
   brands: "Quaker, PepsiCo",
+  serving_quantity: 40,
   nutriments: {
     "energy-kcal_100g": 379,
     proteins_100g: 11,
@@ -24,7 +25,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("mapOffProduct", () => {
-  it("maps a product on a per-100g basis, taking the first brand", () => {
+  it("maps a product per-100g, taking the first brand + the real serving", () => {
     const out = mapOffProduct("123", product);
     expect(out).toEqual({
       name: "Porridge Oats",
@@ -36,12 +37,44 @@ describe("mapOffProduct", () => {
       fatG: 8,
       servingSize: 100,
       servingUnit: "g",
+      servingQuantity: 40,
     });
   });
 
-  it("returns null when energy-kcal_100g is absent (can't persist NOT NULL kcal)", () => {
+  it("returns null when no energy figure is present (can't persist NOT NULL kcal)", () => {
     expect(
       mapOffProduct("123", { product_name: "x", nutriments: {} }),
+    ).toBeNull();
+  });
+
+  it("resolves a kJ-only product via the kcal fallback (÷4.184)", () => {
+    const out = mapOffProduct("123", {
+      product_name: "kJ only",
+      nutriments: { "energy-kj_100g": 1000, proteins_100g: 5 },
+    });
+    expect(out?.kcal).toBe(239);
+    expect(out?.proteinG).toBe(5);
+  });
+
+  it("carries a null servingQuantity when OFF omits serving_quantity", () => {
+    const out = mapOffProduct("123", {
+      nutriments: { "energy-kcal_100g": 100 },
+    });
+    expect(out?.servingQuantity).toBeNull();
+  });
+
+  it("treats a zero / negative serving_quantity as null", () => {
+    expect(
+      mapOffProduct("123", {
+        serving_quantity: 0,
+        nutriments: { "energy-kcal_100g": 100 },
+      })?.servingQuantity,
+    ).toBeNull();
+    expect(
+      mapOffProduct("123", {
+        serving_quantity: -5,
+        nutriments: { "energy-kcal_100g": 100 },
+      })?.servingQuantity,
     ).toBeNull();
   });
 

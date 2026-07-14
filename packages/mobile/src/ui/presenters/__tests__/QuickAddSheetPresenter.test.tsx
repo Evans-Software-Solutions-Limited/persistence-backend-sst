@@ -18,6 +18,7 @@ const food: Food = {
   fatG: 3,
   servingSize: 40,
   servingUnit: "g",
+  servingQuantity: null,
   source: "openfoodfacts",
   createdBy: null,
 };
