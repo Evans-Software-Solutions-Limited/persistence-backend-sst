@@ -18,6 +18,9 @@ export type FoodDTO = {
   fatG: number;
   servingSize: number;
   servingUnit: string;
+  /** Real pack serving (grams) from OFF; null when unknown (custom foods, or a
+   * pre-serving_quantity seeded row). */
+  servingQuantity: number | null;
   source: string;
   createdBy: string | null;
 };
@@ -32,6 +35,7 @@ export type CreateFoodInput = {
   fatG: number;
   servingSize: number;
   servingUnit: string;
+  servingQuantity?: number | null;
   source?: string;
 };
 
@@ -47,6 +51,8 @@ export function toFoodDTO(row: Food): FoodDTO {
     fatG: Number(row.fatG),
     servingSize: Number(row.servingSize),
     servingUnit: row.servingUnit,
+    servingQuantity:
+      row.servingQuantity == null ? null : Number(row.servingQuantity),
     source: row.source,
     createdBy: row.createdBy,
   };
@@ -160,6 +166,8 @@ export class FoodRepository {
         fatG: String(input.fatG),
         servingSize: String(input.servingSize),
         servingUnit: input.servingUnit,
+        servingQuantity:
+          input.servingQuantity != null ? String(input.servingQuantity) : null,
         source: input.source ?? "user",
         createdBy: userId,
       })
@@ -189,6 +197,8 @@ export class FoodRepository {
           fatG: String(r.fatG),
           servingSize: String(r.servingSize),
           servingUnit: r.servingUnit,
+          servingQuantity:
+            r.servingQuantity != null ? String(r.servingQuantity) : null,
           source: r.source,
           createdBy: null,
         })),
@@ -210,6 +220,7 @@ export class FoodRepository {
           fatG: sql`excluded.fat_g`,
           servingSize: sql`excluded.serving_size`,
           servingUnit: sql`excluded.serving_unit`,
+          servingQuantity: sql`excluded.serving_quantity`,
         },
       });
     return rows.length;

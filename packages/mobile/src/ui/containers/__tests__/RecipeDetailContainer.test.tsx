@@ -47,6 +47,7 @@ const food: Food = {
   fatG: 3.6,
   servingSize: 100,
   servingUnit: "g",
+  servingQuantity: null,
   source: "user",
   createdBy: USER,
 };

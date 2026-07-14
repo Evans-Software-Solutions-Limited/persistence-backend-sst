@@ -1716,6 +1716,12 @@ export const foods = pgTable(
     fatG: numeric("fat_g").notNull(),
     servingSize: numeric("serving_size").notNull(),
     servingUnit: text("serving_unit").notNull(),
+    // Real pack serving size (grams), from OFF `serving_quantity`. Macros stay
+    // per-100g (serving_size=100); this is a display/scale multiplier for the
+    // scan sheet's "Serving" tab so it can mean the real pack (e.g. 220 g) not
+    // a flat 100 g. Nullable: OFF often omits it, and pre-existing seeded rows
+    // are null (Serving tab falls back to serving_size for those).
+    servingQuantity: numeric("serving_quantity"),
     // 'user' | 'openfoodfacts' | 'ai_recognized'
     source: text("source").notNull().default("user"),
     createdBy: uuid("created_by").references(() => profiles.id),

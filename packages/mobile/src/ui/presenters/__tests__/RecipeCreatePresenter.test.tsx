@@ -30,6 +30,7 @@ const searchFood: Food = {
   fatG: 3.6,
   servingSize: 100,
   servingUnit: "g",
+  servingQuantity: null,
   source: "openfoodfacts",
   createdBy: null,
 };

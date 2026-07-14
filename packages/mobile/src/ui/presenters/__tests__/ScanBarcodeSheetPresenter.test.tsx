@@ -17,6 +17,7 @@ const food: Food = {
   fatG: 3,
   servingSize: 40,
   servingUnit: "g",
+  servingQuantity: null,
   source: "openfoodfacts",
   createdBy: null,
 };
@@ -71,6 +72,26 @@ describe("ScanBarcodeSheetPresenter", () => {
     expect(getByTestId("scan-portion")).toBeTruthy();
     expect(getByTestId("scan-meal-picker")).toBeTruthy();
     expect(getByTestId("scan-off-credit")).toBeTruthy();
+  });
+
+  it("labels the Serving portion with the real pack serving when known", () => {
+    // OFF food: per-100g macros, real pack serving 220 g → Serving tab shows
+    // "× 220g", not the per-100g basis.
+    const { getByText } = render({
+      stage: "found",
+      food: { ...food, servingSize: 100, servingQuantity: 220 },
+      portionMode: "serving",
+    });
+    expect(getByText("× 220g")).toBeTruthy();
+  });
+
+  it("falls back to servingSize in the Serving label when serving_quantity is null", () => {
+    const { getByText } = render({
+      stage: "found",
+      food, // servingQuantity null, servingSize 40
+      portionMode: "serving",
+    });
+    expect(getByText("× 40g")).toBeTruthy();
   });
 
   it("switches portion mode + steps the portion", () => {

@@ -14,6 +14,7 @@ const FAKE_FOOD: FoodDTO = {
   fatG: 11,
   servingSize: 100,
   servingUnit: "g",
+  servingQuantity: null,
   source: "ai_recognized",
   createdBy: "user-1",
 };

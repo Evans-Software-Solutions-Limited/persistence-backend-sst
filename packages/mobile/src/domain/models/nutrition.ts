@@ -26,6 +26,13 @@ export type Food = {
   fatG: number;
   servingSize: number;
   servingUnit: string;
+  /**
+   * Real pack serving (grams) from OFF `serving_quantity`; null when unknown
+   * (user custom foods, or a pre-`serving_quantity` seeded row). Macros stay on
+   * the `servingSize` basis — this is only the scan sheet's "Serving" tab
+   * multiplier, so 1 serving means the real pack (e.g. 220 g) not a flat 100 g.
+   */
+  servingQuantity: number | null;
   /** `openfoodfacts` | `user` | `usda` | … — drives ODbL attribution on the FE. */
   source: string;
   createdBy: string | null;

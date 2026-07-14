@@ -171,9 +171,15 @@ export function ScanBarcodeSheetPresenter({
   onRescan,
   testID = "scan-sheet",
 }: ScanBarcodeSheetProps) {
+  // A "serving" means the real pack serving (OFF `servingQuantity`) when known,
+  // else the food's own `servingSize` — matches portionToServings.
+  const servingGrams =
+    food?.servingQuantity && food.servingQuantity > 0
+      ? food.servingQuantity
+      : (food?.servingSize ?? 0);
   const portionUnit =
     portionMode === "serving"
-      ? `× ${food?.servingSize ?? 0}${food?.servingUnit ?? "g"}`
+      ? `× ${servingGrams}${food?.servingUnit ?? "g"}`
       : portionMode === "grams"
         ? "grams"
         : portionValue === 1

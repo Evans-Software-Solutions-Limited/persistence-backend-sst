@@ -10,6 +10,7 @@ const complete: OffProduct = {
   product_name: "Oats",
   brands: "Quaker",
   countries_tags: ["en:united-kingdom", "en:france"],
+  serving_quantity: 40,
   nutriments: {
     "energy-kcal_100g": 379,
     proteins_100g: 13,
@@ -19,7 +20,7 @@ const complete: OffProduct = {
 };
 
 describe("mapOffProductToFood", () => {
-  it("maps a complete product to a per-100g food row", () => {
+  it("maps a complete product to a per-100g food row with the real serving", () => {
     expect(mapOffProductToFood(complete)).toEqual({
       barcode: "5000159484695",
       name: "Oats",
@@ -30,8 +31,33 @@ describe("mapOffProductToFood", () => {
       fatG: 8,
       servingSize: 100,
       servingUnit: "g",
+      servingQuantity: 40,
       source: "openfoodfacts",
     });
+  });
+
+  it("carries a null servingQuantity when serving_quantity is absent / non-positive", () => {
+    expect(
+      mapOffProductToFood({ ...complete, serving_quantity: undefined })
+        ?.servingQuantity,
+    ).toBeNull();
+    expect(
+      mapOffProductToFood({ ...complete, serving_quantity: 0 })
+        ?.servingQuantity,
+    ).toBeNull();
+  });
+
+  it("seeds a kJ-only product via the kcal fallback (÷4.184)", () => {
+    const r = mapOffProductToFood({
+      ...complete,
+      nutriments: {
+        "energy-kj_100g": 1000,
+        proteins_100g: 13,
+        carbohydrates_100g: 67,
+        fat_100g: 8,
+      },
+    });
+    expect(r?.kcal).toBe(239);
   });
 
   it("coerces numeric strings (OFF often stores nutriments as strings)", () => {
