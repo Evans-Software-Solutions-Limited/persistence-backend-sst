@@ -74,8 +74,35 @@ export type RecentSetEntry = {
  * Methods are added per-feature milestone.
  */
 export interface StoragePort {
-  /** Initialize local database tables */
-  initialize(): Promise<void>;
+  /**
+   * Initialize local database tables.
+   *
+   * `backendFingerprint` identifies which backend the cache was populated
+   * against (the compiled Supabase URL). When omitted/empty, the fingerprint
+   * check is skipped entirely — preserves existing no-arg callers/tests.
+   * When provided, it's compared against the stamp in the `meta` table:
+   *   - absent (no prior stamp) OR differs from the stored value → wipe
+   *     the cache (`clearAll()`), record the change (`backendChanged()`
+   *     returns true), then stamp the new fingerprint.
+   *   - equals the stored value → no wipe, `backendChanged()` returns false.
+   *
+   * The "absent → wipe" branch handles an existing install's first launch
+   * on a build that introduces fingerprinting: it has no stamp yet but may
+   * hold stale data from a prior backend, so a one-time wipe is correct (a
+   * fresh install just wipes an already-empty cache — a no-op).
+   *
+   * Spec: specs/milestones — backend-fingerprint cache/session auto-wipe
+   */
+  initialize(backendFingerprint?: string): Promise<void>;
+
+  /**
+   * Whether the most recent `initialize()` call detected a backend change
+   * (or an absent stamp) and wiped the cache. Callers use this to decide
+   * whether to also clear the local auth session (a stale session from a
+   * different backend project would otherwise linger). Always `false` when
+   * `initialize()` was called with no fingerprint.
+   */
+  backendChanged(): boolean;
 
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;

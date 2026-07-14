@@ -101,6 +101,8 @@ export class InMemoryStorageAdapter implements StoragePort {
   private notificationsCache: Map<string, Notification> = new Map();
   private notificationPreferencesCache: NotificationPreferences | null = null;
   private nextId = 1;
+  private storedBackendFingerprint: string | null = null;
+  private _backendChanged = false;
 
   private workoutsListKey(userId: string, type: WorkoutListType): string {
     return `${userId}::${type}`;
@@ -110,8 +112,26 @@ export class InMemoryStorageAdapter implements StoragePort {
     return `${userId}::${workoutId}`;
   }
 
-  async initialize(): Promise<void> {
-    // No-op for in-memory
+  async initialize(backendFingerprint?: string): Promise<void> {
+    // Mirrors the SQLite adapter's fingerprint semantics (storage.port.ts):
+    // no fingerprint arg → skip the check entirely (backendChanged stays
+    // false). Provided + absent-or-differs → wipe + flag + stamp. Provided
+    // + equals → no wipe.
+    this._backendChanged = false;
+    if (backendFingerprint) {
+      if (
+        this.storedBackendFingerprint === null ||
+        this.storedBackendFingerprint !== backendFingerprint
+      ) {
+        this.clearAll();
+        this._backendChanged = true;
+        this.storedBackendFingerprint = backendFingerprint;
+      }
+    }
+  }
+
+  backendChanged(): boolean {
+    return this._backendChanged;
   }
 
   enqueueMutation(entry: EnqueueMutationInput): void {
