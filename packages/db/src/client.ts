@@ -56,10 +56,18 @@ function getDatabaseUrl(): string {
  *   - `max: 1` — a Lambda container is single-threaded and handles one
  *     request at a time, so there's no upside to a per-container pool.
  *     Keeping it at 1 avoids idle connections sitting open between invokes.
+ *
+ *   - `ssl: "require"` — the Supabase pooler enforces SSL ("Enforce SSL on
+ *     incoming connections" is on), so a plain connection is rejected with
+ *     `FATAL: SSL connection is required (ESSLREQUIRED)`. The pooler
+ *     connection string doesn't carry `?sslmode=require`, so we set it here
+ *     explicitly — this covers every consumer (the Lambda AND the seed
+ *     scripts) regardless of the URL. `"require"` encrypts without CA
+ *     verification, which is the Supabase-documented setting for postgres.js.
  */
 export function createDb(databaseUrl?: string) {
   const url = databaseUrl ?? getDatabaseUrl();
-  const sql = postgres(url, { prepare: false, max: 1 });
+  const sql = postgres(url, { prepare: false, max: 1, ssl: "require" });
   return drizzle(sql, { schema });
 }
 
