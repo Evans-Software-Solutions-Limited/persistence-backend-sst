@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.0.0...persistence-v1.1.0) (2026-07-15)
+
+
+### Features
+
+* **core:** Sentry crash reporting for the backend Lambda + crons ([#234](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/234)) ([9321b0f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/9321b0fa0385465bc2ad256f21d22b7117937d4b))
+* **mobile:** adopt EAS Update (expo-updates + dynamic-config keys) ([#232](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/232)) ([bb4965f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bb4965fc18caa5dd0168bcfa094fae2b3cf5b978))
+* **mobile:** Sentry crash reporting + iOS Apple privacy manifest ([#235](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/235)) ([f33343c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f33343cf126d4e7d356ce2f4274dda6daf4794c7))
+
 ## 1.0.0 (2026-07-14)
 
 
