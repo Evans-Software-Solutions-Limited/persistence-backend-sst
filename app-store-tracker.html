@@ -586,8 +586,8 @@
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
             <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>401f207</code></span>
-            <span class="meta-pill">📅 Synced 14 Jul 2026</span>
+            <span class="meta-pill">🔀 <code>f33343c</code></span>
+            <span class="meta-pill">📅 Synced 15 Jul 2026</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-14, main HEAD 401f207)
+      // DATA  (verified against repo on 2026-07-15, main HEAD f33343c)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -799,9 +799,9 @@
         {
           id: "c5",
           area: "compliance",
-          status: "todo",
-          title: "Sentry / crash reporting — not installed",
-          note: "@sentry/react-native and @sentry/aws-serverless not installed anywhere. Zero crash visibility on day 1 of prod. Required before any real-user launch.",
+          status: "partial",
+          title: "Sentry / crash reporting",
+          note: "CODE SHIPPED — backend PR #234 (@sentry/aws-serverless on the core Lambda + 5 crons) + mobile PR #235 (@sentry/react-native). Fail-safe: init no-ops on an empty DSN, so it's dormant until configured. Mandatory PII scrubbing (errors, traces, breadcrumbs — deep-recursive redact of emails/JWTs/auth/bodies/contexts/spans); sendDefaultPii off. REMAINING (Brad): create the Sentry project(s) + set SENTRY_DSN (GitHub env secret, backend) and EXPO_PUBLIC_SENTRY_DSN (eas.json, mobile), plus SENTRY_AUTH_TOKEN (EAS secret) for source-map upload. Until then crash visibility is OFF. Not deploy/device-verified.",
         },
 
         {
@@ -809,7 +809,7 @@
           area: "compliance",
           status: "partial",
           title: "Privacy policy URL + PrivacyInfo manifest",
-          note: "Public /privacy + /terms pages shipped (packages/web) on custom domain persistence.evans-software-solutions.com (PRs #190/#193). REMAINING: no PrivacyInfo.xcprivacy manifest file in the repo yet, and the privacy URL still needs registering in App Store Connect.",
+          note: "Public /privacy + /terms pages shipped (packages/web) on persistence.evans-software-solutions.com (PRs #190/#193). PrivacyInfo.xcprivacy now DECLARED via app.config.ts ios.privacyManifests (mobile PR #235; ios/ is gitignored so config is the source of truth) — NSPrivacyTracking=false, 11 collected data types (audited), 4 required-reason APIs. REMAINING (Brad): register the privacy URL in App Store Connect + fill the App Privacy 'nutrition label' to match the manifest, and confirm the data-type list (SensitiveInfo/PerformanceData calls flagged in the PR).",
         },
 
         // ── PRODUCTION READY ──────────────────────────────────────────────────────
