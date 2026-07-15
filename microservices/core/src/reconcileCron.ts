@@ -1,3 +1,4 @@
+import { initSentry, wrapLambda } from "./shared/sentry";
 import { eq, or } from "drizzle-orm";
 import { subscriptionTiers, userSubscriptions } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
@@ -21,7 +22,7 @@ import {
  * Writes NOTHING — healing remains the manual, reviewed `scripts/
  * reconcile-stripe.ts --write` op.
  */
-export async function handler(): Promise<{
+async function baseHandler(): Promise<{
   hasDrift: boolean;
   total: number;
   drift: number;
@@ -86,3 +87,8 @@ export async function handler(): Promise<{
     errored: result.counts.errored,
   };
 }
+
+// Initialise Sentry (no-op without SENTRY_DSN) and wrap so thrown errors are
+// captured + flushed to Sentry before the Lambda container freezes.
+initSentry();
+export const handler = wrapLambda(baseHandler);

@@ -1,3 +1,4 @@
+import { initSentry, wrapLambda } from "./shared/sentry";
 import { accountPurgeCron } from "./application/account/purge/accountPurgeCron";
 import { AccountRepository } from "./application/account/accountRepository";
 import { cancelStripeSubscriptions } from "./application/account/cancelUserStripeSubscriptions";
@@ -11,7 +12,7 @@ import { deleteUserAvatar } from "./application/account/deleteUserAvatar";
  * (the impure edge); `accountPurgeCron` takes an injected clock + deps so
  * the sweep logic stays deterministic under test.
  */
-export async function handler(): Promise<{
+async function baseHandler(): Promise<{
   pending: number;
   purged: number;
   failed: number;
@@ -26,3 +27,8 @@ export async function handler(): Promise<{
   console.log(`[account-purge-cron:summary] ${JSON.stringify(summary)}`);
   return summary;
 }
+
+// Initialise Sentry (no-op without SENTRY_DSN) and wrap so thrown errors are
+// captured + flushed to Sentry before the Lambda container freezes.
+initSentry();
+export const handler = wrapLambda(baseHandler);

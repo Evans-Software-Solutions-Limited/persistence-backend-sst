@@ -65,3 +65,17 @@ export const expoAccessToken = new sst.Secret("ExpoAccessToken");
 //   `bunx sst secret set SupabaseServiceRoleKey "<service_role_key>" --stage <stage>`.
 // Never file-commit the value; the repo is public.
 export const supabaseServiceRoleKey = new sst.Secret("SupabaseServiceRoleKey");
+
+// Sentry DSN — backend crash/error reporting (@sentry/aws-serverless).
+//
+// `SentryDsn` — the project's ingest DSN. A DSN is public-safe (like the mobile
+//               anon key), but it flows through the SST Secret pattern for
+//               per-stage wiring. OPTIONAL + fail-safe: the empty-string default
+//               below means a stage without the secret still deploys, and
+//               `initSentry()` (microservices/core/src/shared/sentry.ts) no-ops
+//               on an empty DSN — reporting is simply off until Brad sets it.
+//               Do NOT fail-fast on this in the deploy workflows (mirror the
+//               ExpoAccessToken pattern, not the SupabaseServiceRoleKey one).
+//
+// Set per-stage from CI via `bunx sst secret set SentryDsn "<dsn>" --stage <stage>`.
+export const sentryDsn = new sst.Secret("SentryDsn", "");

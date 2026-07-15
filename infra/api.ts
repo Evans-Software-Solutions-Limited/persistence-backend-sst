@@ -4,6 +4,7 @@ import {
   revenueCatApiKey,
   revenueCatProjectId,
   revenueCatWebhookSecret,
+  sentryDsn,
   stripeSecretKey,
   stripeWebhookSecret,
   supabaseServiceRoleKey,
@@ -94,6 +95,10 @@ coreAPI.route("$default", {
     // "Enhanced Security for Push" is enabled on the Expo account). Set
     // per-stage by the deploy workflows; not fail-fast.
     EXPO_ACCESS_TOKEN: expoAccessToken.value,
+    // Sentry DSN — backend crash/error reporting. OPTIONAL + fail-safe: empty
+    // string is valid (`initSentry()` no-ops), so an unset value still deploys
+    // and runs (mirrors EXPO_ACCESS_TOKEN, not the fail-fast secrets).
+    SENTRY_DSN: sentryDsn.value,
     // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
     // Bedrock auth is IAM (see `permissions` above), so there's nothing
     // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;
@@ -152,6 +157,8 @@ export const reconcileCron = new sst.aws.Cron("reconcile-stripe-drift", {
     environment: {
       DATABASE_URL: databaseUrl.value,
       STRIPE_SECRET_KEY: stripeSecretKey.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
     },
   },
 });
@@ -174,6 +181,8 @@ export const streakCron = new sst.aws.Cron("streak-sweep", {
       // Streak notifier emits push via the dispatcher; mirror the API route's
       // binding so Enhanced-Security-on sends don't silently 4xx in this Lambda.
       EXPO_ACCESS_TOKEN: expoAccessToken.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
     },
   },
 });
@@ -192,6 +201,8 @@ export const volumeCron = new sst.aws.Cron("volume-aggregation", {
     timeout: "300 seconds",
     environment: {
       DATABASE_URL: databaseUrl.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
     },
   },
 });
@@ -212,6 +223,8 @@ export const offDeltaCron = new sst.aws.Cron("off-delta-refresh", {
     environment: {
       DATABASE_URL: databaseUrl.value,
       OFF_CONTACT_EMAIL: "apps@persistence.app",
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
     },
   },
 });
@@ -238,6 +251,8 @@ export const accountPurgeCron = new sst.aws.Cron("account-purge-sweep", {
       SUPABASE_URL: supabaseUrl,
       SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey.value,
       STRIPE_SECRET_KEY: stripeSecretKey.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
     },
   },
 });

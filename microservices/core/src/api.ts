@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import openapi from "@elysiajs/openapi";
 
+import { captureFatal, initSentry, wrapLambda } from "./shared/sentry";
 import { coreErrorHandler } from "./shared/errorHandler";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesSearchHandler } from "./application/exercises/search/exercisesSearchHandler";
@@ -103,6 +104,11 @@ import { trainersClientWorkoutAssignmentsSwapHandler } from "./application/train
 // AND the Client Detail read aggregate, grouped into one sub-app to keep the
 // root `.use()` chain under TS's type-depth ceiling (TS2589).
 import { trainersOnBehalfRoutes } from "./application/trainersOnBehalfRoutes";
+
+// Initialise Sentry at module load, before any request is handled. No-op when
+// `SENTRY_DSN` is unset (fail-safe — DSN-less stages run unchanged). Errors are
+// PII-scrubbed by `beforeSend`/`beforeBreadcrumb` (see ./shared/sentry).
+initSentry();
 
 const app = new Elysia()
   .use(coreErrorHandler)
@@ -273,7 +279,7 @@ const honoHandler = handle(honoApp);
  * body for the client. BACKSTOP only — the Elysia plugin remains the
  * primary handler and fires for in-lifecycle errors.
  */
-export const handler: typeof honoHandler = async (event, context) => {
+const baseHandler: typeof honoHandler = async (event, context) => {
   try {
     return await honoHandler(event, context);
   } catch (err) {
@@ -283,6 +289,12 @@ export const handler: typeof honoHandler = async (event, context) => {
       "awsRequestId" in context
         ? String((context as { awsRequestId?: unknown }).awsRequestId)
         : undefined;
+
+    // Report to Sentry (no-op when disabled). The Elysia error handler catches
+    // in-lifecycle errors; this backstop catches errors that escape the
+    // lifecycle (JWKS fetch in `.derive`, TLS/connection errors thrown outside
+    // the request span). captureFatal is PII-scrubbed by `beforeSend`.
+    captureFatal(err, requestId ? { requestId } : undefined);
 
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
@@ -317,6 +329,17 @@ export const handler: typeof honoHandler = async (event, context) => {
     } as unknown as Awaited<ReturnType<typeof honoHandler>>;
   }
 };
+
+/**
+ * Lambda entrypoint. When Sentry is enabled we wrap with `Sentry.wrapHandler`,
+ * which attaches request context and — critically for Lambda — flushes buffered
+ * events before the runtime freezes the container. `baseHandler` never rethrows
+ * (it catches everything and returns a 500), so `wrapHandler`'s own capture
+ * won't fire; the explicit `captureFatal` above does the reporting and
+ * `wrapHandler` guarantees the flush. When disabled we export `baseHandler`
+ * directly — zero wrapper overhead, and `captureFatal` is a no-op anyway.
+ */
+export const handler: typeof honoHandler = wrapLambda(baseHandler);
 
 // Cause-chain helpers, intentionally duplicated from `errorHandler.ts`
 // rather than re-exported. The Lambda backstop must have zero coupling
