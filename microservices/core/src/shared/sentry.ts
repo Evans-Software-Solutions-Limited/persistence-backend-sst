@@ -53,13 +53,41 @@ export function redactString(value: string): string {
     .replace(EMAIL_RE, `${REDACTED}-email`);
 }
 
-function redactUnknown(value: unknown): unknown {
-  return typeof value === "string" ? redactString(value) : value;
+// Guards against a pathological deeply-nested structure; Sentry payloads are
+// plain JSON and never this deep.
+const MAX_REDACT_DEPTH = 8;
+
+/**
+ * Recursively redact every string reachable from `value` (strings inside
+ * nested objects/arrays too — a console breadcrumb's `arguments` array or a
+ * structured payload can bury an email/JWT). Mutates objects/arrays in place
+ * and returns the (possibly transformed) value.
+ */
+function redactDeep(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return redactString(value);
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    depth >= MAX_REDACT_DEPTH
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      value[i] = redactDeep(value[i], depth + 1);
+    }
+    return value;
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    obj[key] = redactDeep(obj[key], depth + 1);
+  }
+  return obj;
 }
 
 /**
  * Scrub the fields common to BOTH error and transaction events: user context,
- * request context, top-level message, and attached breadcrumbs. Mutates in
+ * request context, message, breadcrumbs, extra, and contexts. Mutates in
  * place. `scrubEvent`/`scrubTransaction` layer their event-type-specific
  * scrubbing (exceptions / spans) on top.
  */
@@ -73,13 +101,16 @@ function scrubSharedFields(event: ErrorEvent | TransactionEvent): void {
 
   // Request context: the body (`data`) is where nutrition/health/measurement
   // payloads live — drop it wholesale. Cookies + auth/cookie headers carry
-  // session tokens — drop/redact them. Query strings can carry ids/tokens —
-  // redact rather than parse.
+  // session tokens — drop/redact them. The query string + URL can carry
+  // ids/tokens — redact rather than parse.
   if (event.request) {
     delete event.request.data;
     delete event.request.cookies;
     if (typeof event.request.query_string === "string") {
       event.request.query_string = redactString(event.request.query_string);
+    }
+    if (typeof event.request.url === "string") {
+      event.request.url = redactString(event.request.url);
     }
     if (event.request.headers) {
       for (const key of Object.keys(event.request.headers)) {
@@ -87,9 +118,7 @@ function scrubSharedFields(event: ErrorEvent | TransactionEvent): void {
         if (lower === "authorization" || lower === "cookie") {
           event.request.headers[key] = REDACTED;
         } else {
-          event.request.headers[key] = redactUnknown(
-            event.request.headers[key],
-          ) as string;
+          event.request.headers[key] = redactString(event.request.headers[key]);
         }
       }
     }
@@ -100,9 +129,25 @@ function scrubSharedFields(event: ErrorEvent | TransactionEvent): void {
     event.breadcrumbs = event.breadcrumbs.map((b) => scrubBreadcrumb(b));
   }
 
-  // Top-level message (Sentry.captureMessage path).
+  // `extra` (arbitrary attached data, incl. anything passed to captureFatal)
+  // and `contexts` (auto-populated request/runtime context) — deep-redact both.
+  if (event.extra) redactDeep(event.extra);
+  if (event.contexts) redactDeep(event.contexts);
+
+  // Top-level message — both the plain string and the structured logentry form.
   if (typeof event.message === "string") {
     event.message = redactString(event.message);
+  }
+  const logentry = (
+    event as { logentry?: { message?: string; formatted?: string } }
+  ).logentry;
+  if (logentry) {
+    if (typeof logentry.message === "string") {
+      logentry.message = redactString(logentry.message);
+    }
+    if (typeof logentry.formatted === "string") {
+      logentry.formatted = redactString(logentry.formatted);
+    }
   }
 }
 
@@ -142,16 +187,10 @@ export function scrubTransaction(event: TransactionEvent): TransactionEvent {
       if (typeof span.description === "string") {
         span.description = redactString(span.description);
       }
-      if (span.data) {
-        // Alias to a loose record for the in-place mutation — span data values
-        // are typed `SpanAttributeValue`, but `redactUnknown` only swaps a
-        // string for a redacted string and returns everything else as-is, so
-        // the runtime value stays a valid attribute value.
-        const data = span.data as Record<string, unknown>;
-        for (const key of Object.keys(data)) {
-          data[key] = redactUnknown(data[key]);
-        }
-      }
+      // Span data values are typed `SpanAttributeValue`; deep-redact via a
+      // loose alias (redactDeep only swaps strings, leaving other attribute
+      // values intact).
+      if (span.data) redactDeep(span.data as Record<string, unknown>);
     }
   }
 
@@ -168,11 +207,7 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   if (typeof breadcrumb.message === "string") {
     breadcrumb.message = redactString(breadcrumb.message);
   }
-  if (breadcrumb.data) {
-    for (const key of Object.keys(breadcrumb.data)) {
-      breadcrumb.data[key] = redactUnknown(breadcrumb.data[key]);
-    }
-  }
+  if (breadcrumb.data) redactDeep(breadcrumb.data);
   return breadcrumb;
 }
 

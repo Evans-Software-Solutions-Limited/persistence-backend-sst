@@ -164,6 +164,31 @@ describe("scrubEvent", () => {
     expect(event.breadcrumbs[0].message).toBe("GET /x?token=[redacted]-token");
   });
 
+  it("deep-redacts extra + contexts, and redacts request.url + structured message", async () => {
+    const { scrubEvent } = await import("../sentry");
+    const event = scrubEvent({
+      logentry: { message: "hi a@b.com", formatted: "fmt a@b.com" },
+      request: { url: "https://api/x?email=a@b.com" },
+      extra: {
+        note: "reach me at a@b.com",
+        nested: { token: "eyJa.eyJb.sigZ" },
+      },
+      contexts: { runtime: { name: "node a@b.com", version: "22" } },
+    } as never) as unknown as {
+      logentry: { message: string; formatted: string };
+      request: { url: string };
+      extra: { note: string; nested: { token: string } };
+      contexts: { runtime: { name: string; version: string } };
+    };
+    expect(event.logentry.message).toBe("hi [redacted]-email");
+    expect(event.logentry.formatted).toBe("fmt [redacted]-email");
+    expect(event.request.url).toBe("https://api/x?email=[redacted]-email");
+    expect(event.extra.note).toBe("reach me at [redacted]-email");
+    expect(event.extra.nested.token).toBe("[redacted]-token");
+    expect(event.contexts.runtime.name).toBe("node [redacted]-email");
+    expect(event.contexts.runtime.version).toBe("22");
+  });
+
   it("handles a minimal event with none of the optional fields", async () => {
     const { scrubEvent } = await import("../sentry");
     expect(() => scrubEvent({} as never)).not.toThrow();
@@ -175,14 +200,21 @@ describe("scrubBreadcrumb", () => {
     const { scrubBreadcrumb } = await import("../sentry");
     const crumb = scrubBreadcrumb({
       message: "login a@b.com",
-      data: { url: "https://x/y?email=c@d.com", status: 500 },
+      data: {
+        url: "https://x/y?email=c@d.com",
+        status: 500,
+        args: ["called with e@f.com", { jwt: "eyJa.eyJb.sigZ" }],
+      },
     } as never) as unknown as {
       message: string;
-      data: Record<string, unknown>;
+      data: { url: string; status: number; args: [string, { jwt: string }] };
     };
     expect(crumb.message).toBe("login [redacted]-email");
     expect(crumb.data.url).toBe("https://x/y?email=[redacted]-email");
     expect(crumb.data.status).toBe(500);
+    // Nested array/object values are redacted too (recursion).
+    expect(crumb.data.args[0]).toBe("called with [redacted]-email");
+    expect(crumb.data.args[1].jwt).toBe("[redacted]-token");
   });
 
   it("handles a breadcrumb with no message or data", async () => {
