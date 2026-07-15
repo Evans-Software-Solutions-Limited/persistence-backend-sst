@@ -1,3 +1,4 @@
+import { initSentry, wrapLambda } from "./shared/sentry";
 import { streakCron } from "./application/streaks/cron";
 import { nutritionStreakCron } from "./application/streaks/nutritionCron";
 import { habitCollectionCron } from "./application/streaks/habitCollectionCron";
@@ -19,7 +20,7 @@ import { StreakNotificationDispatcher } from "./application/streaks/notifier";
  * `new Date()` is read here (the impure edge); the engine + cron logic take an
  * injected clock so they stay deterministic under test.
  */
-export async function handler(): Promise<{
+async function baseHandler(): Promise<{
   swept: number;
   upToDate: number;
   frozen: number;
@@ -69,3 +70,8 @@ export async function handler(): Promise<{
     habitFailed: habit.failed,
   };
 }
+
+// Initialise Sentry (no-op without SENTRY_DSN) and wrap so thrown errors are
+// captured + flushed to Sentry before the Lambda container freezes.
+initSentry();
+export const handler = wrapLambda(baseHandler);

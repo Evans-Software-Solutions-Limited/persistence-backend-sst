@@ -1,3 +1,4 @@
+import { initSentry, wrapLambda } from "./shared/sentry";
 import { gunzipSync } from "node:zlib";
 import { runOffDeltaRefresh } from "./application/nutrition/services/offDelta";
 import { FoodRepository } from "./application/repositories/foodRepository";
@@ -29,7 +30,7 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-export async function handler(): Promise<{
+async function baseHandler(): Promise<{
   files: number;
   parsed: number;
   mapped: number;
@@ -63,3 +64,8 @@ export async function handler(): Promise<{
   console.log(`[off-delta-cron:summary] ${JSON.stringify(summary)}`);
   return summary;
 }
+
+// Initialise Sentry (no-op without SENTRY_DSN) and wrap so thrown errors are
+// captured + flushed to Sentry before the Lambda container freezes.
+initSentry();
+export const handler = wrapLambda(baseHandler);
