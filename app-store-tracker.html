@@ -807,9 +807,9 @@
         {
           id: "c6",
           area: "compliance",
-          status: "partial",
-          title: "Privacy — manifest DONE; only App Store Connect entry remains",
-          note: "CODE DONE: public /privacy + /terms pages live on persistence.evans-software-solutions.com (PRs #190/#193) AND PrivacyInfo.xcprivacy now declared via app.config.ts ios.privacyManifests (mobile PR #235; ios/ is gitignored so config is the source of truth) — NSPrivacyTracking=false, 11 collected data types (audited), 4 required-reason APIs. Still red because the ONE remaining step is a genuine Apple submission gate (dashboard, not code, ~5 min): paste the privacy URL into App Store Connect + fill the App Privacy 'nutrition label' to match the manifest. Also confirm the data-type list (SensitiveInfo-for-gender + PerformanceData calls flagged in #235). Flips to green once the URL is registered.",
+          status: "done",
+          title: "Privacy policy URL + PrivacyInfo manifest",
+          note: "DONE. Code: public /privacy + /terms pages live on persistence.evans-software-solutions.com (PRs #190/#193) + PrivacyInfo.xcprivacy declared via app.config.ts ios.privacyManifests (mobile PR #235; ios/ is gitignored so config is the source of truth) — NSPrivacyTracking=false, 11 collected data types (audited), 4 required-reason APIs. Dashboard: privacy URL registered in App Store Connect + App Privacy 'nutrition label' filled to match the manifest (Brad, 15 Jul). This was the last Apple hard-reject blocker — the blockers card is now empty.",
         },
 
         // ── PRODUCTION READY ──────────────────────────────────────────────────────
