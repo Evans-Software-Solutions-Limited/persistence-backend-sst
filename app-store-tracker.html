@@ -1068,17 +1068,17 @@
         {
           id: "p3",
           area: "phase12",
-          status: "todo",
+          status: "done",
           title: "12.3 — Sentry mobile init",
-          note: "@sentry/react-native install, init in app/_layout.tsx with PII scrubbing, ErrorBoundary class component, wrap all screen containers.",
+          note: "SHIPPED (PR #235). @sentry/react-native init in app/_layout.tsx before render (fail-safe: no-op on empty DSN), PII scrubbing (recursive deep-redact of emails/JWTs/auth/bodies/contexts + device.name dropped), ErrorBoundary→Sentry, single Sentry.wrap(root). See c5 for the remaining DSN/source-map config Brad must provide.",
         },
 
         {
           id: "p4",
           area: "phase12",
-          status: "todo",
+          status: "done",
           title: "12.4 — Sentry Lambda (SST backend)",
-          note: "@sentry/aws-serverless v8 install, sentry.ts infra module, wrapHandler codemod on all Lambda handlers. Source maps uploaded via EAS config plugin.",
+          note: "SHIPPED (PR #234). @sentry/aws-serverless v10 init module (shared/sentry.ts), wrapLambda on the core API handler + all 5 crons, captureFatal in the lambda backstop, SentryDsn SST secret wired per-stage in both deploy workflows (fail-safe). Source-map upload via the Sentry Expo plugin (mobile). See c5 for the DSN/auth-token config Brad must provide.",
         },
 
         {
