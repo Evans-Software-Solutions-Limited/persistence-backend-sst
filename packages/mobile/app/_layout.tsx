@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
 import { StripeProvider } from "@stripe/stripe-react-native";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
+import { captureBoundaryError, initSentry, Sentry } from "../src/lib/sentry";
 import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
@@ -20,6 +21,12 @@ import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermi
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
+
+// Initialise Sentry at module load, before the app renders. No-op when
+// `EXPO_PUBLIC_SENTRY_DSN` is unset (fail-safe — DSN-less builds run
+// unchanged). Errors are PII-scrubbed by the beforeSend/beforeBreadcrumb hooks
+// (see ../src/lib/sentry).
+initSentry();
 
 /**
  * Foreground-display behaviour for local notifications fired by the
@@ -206,7 +213,7 @@ function AuthGate() {
   return <Slot />;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   // Android 8+ requires an explicit notification channel for any
   // notification to render — without one, `scheduleNotificationAsync`
   // silently no-ops. Idempotent: calling `setNotificationChannelAsync`
@@ -249,7 +256,7 @@ export default function RootLayout() {
   // slot — share the same gesture root).
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary>
+      <ErrorBoundary onError={(error) => captureBoundaryError(error)}>
         <StripeProvider
           publishableKey={stripePublishableKey}
           merchantIdentifier="merchant.com.bradleyevans96.persistence"
@@ -267,3 +274,10 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// `Sentry.wrap` instruments the root component (touch/navigation breadcrumbs,
+// profiling) when Sentry is enabled, and is a transparent pass-through when
+// it isn't — so wrapping is safe regardless of whether a DSN is set. This is
+// the recommended single root wrap in place of wrapping each screen container
+// individually (keeps the component tree — and the UI — unchanged).
+export default Sentry.wrap(RootLayout);

@@ -511,6 +511,20 @@ jest.mock("@stripe/stripe-react-native", () => {
   };
 });
 
+// Mock @sentry/react-native — the native crash-reporting SDK isn't linked in
+// Jest. The app inits Sentry at module load (app/_layout.tsx) and wraps the
+// root via `Sentry.wrap`; this global keeps that module-load from touching
+// native bindings and lets the layout tree render. `wrap` passes the component
+// through unchanged. The PII scrubbers are exercised directly by
+// src/lib/__tests__/sentry.test.ts (which installs its own local mock to
+// assert init options). Per-file jest.mock overrides still take precedence.
+jest.mock("@sentry/react-native", () => ({
+  __esModule: true,
+  init: jest.fn(),
+  wrap: (component: unknown) => component,
+  captureException: jest.fn(),
+}));
+
 // Mock @react-native-community/netinfo — the native module isn't
 // linked in Jest, so importing it directly throws on its native
 // bindings. The `RNNetInfoAdapter` (production) is the only consumer

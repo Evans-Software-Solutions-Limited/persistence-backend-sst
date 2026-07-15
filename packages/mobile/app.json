@@ -106,7 +106,8 @@
         {
           "cameraPermission": "Persistence uses the camera to scan food barcodes and snap photos of your meals for AI food logging."
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
