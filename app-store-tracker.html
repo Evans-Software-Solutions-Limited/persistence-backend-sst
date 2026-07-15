@@ -799,17 +799,17 @@
         {
           id: "c5",
           area: "compliance",
-          status: "partial",
-          title: "Sentry / crash reporting",
-          note: "CODE SHIPPED — backend PR #234 (@sentry/aws-serverless on the core Lambda + 5 crons) + mobile PR #235 (@sentry/react-native). Fail-safe: init no-ops on an empty DSN, so it's dormant until configured. Mandatory PII scrubbing (errors, traces, breadcrumbs — deep-recursive redact of emails/JWTs/auth/bodies/contexts/spans); sendDefaultPii off. REMAINING (Brad): create the Sentry project(s) + set SENTRY_DSN (GitHub env secret, backend) and EXPO_PUBLIC_SENTRY_DSN (eas.json, mobile), plus SENTRY_AUTH_TOKEN (EAS secret) for source-map upload. Until then crash visibility is OFF. Not deploy/device-verified.",
+          status: "done",
+          title: "Sentry / crash reporting (NOT an Apple blocker)",
+          note: "CODE SHIPPED + MERGED — backend PR #234 (@sentry/aws-serverless on the core Lambda + 5 crons) + mobile PR #235 (@sentry/react-native). Fail-safe: init no-ops on an empty DSN. Mandatory PII scrubbing (errors, traces, breadcrumbs — deep-recursive redact of emails/JWTs/auth/bodies/contexts/spans, device.name dropped); sendDefaultPii off. NOTE: crash reporting is NOT an Apple submission requirement — this never blocked review (it's an observability/launch item, same work as Phase-12 p3/p4). LAUNCH CONFIG (ops, not code, to actually see crashes): set SENTRY_DSN (GitHub env secret, backend) + EXPO_PUBLIC_SENTRY_DSN (eas.json, mobile) + SENTRY_AUTH_TOKEN (EAS secret, source maps). Until then it's dormant. Not deploy/device-verified.",
         },
 
         {
           id: "c6",
           area: "compliance",
           status: "partial",
-          title: "Privacy policy URL + PrivacyInfo manifest",
-          note: "Public /privacy + /terms pages shipped (packages/web) on persistence.evans-software-solutions.com (PRs #190/#193). PrivacyInfo.xcprivacy now DECLARED via app.config.ts ios.privacyManifests (mobile PR #235; ios/ is gitignored so config is the source of truth) — NSPrivacyTracking=false, 11 collected data types (audited), 4 required-reason APIs. REMAINING (Brad): register the privacy URL in App Store Connect + fill the App Privacy 'nutrition label' to match the manifest, and confirm the data-type list (SensitiveInfo/PerformanceData calls flagged in the PR).",
+          title: "Privacy — manifest DONE; only App Store Connect entry remains",
+          note: "CODE DONE: public /privacy + /terms pages live on persistence.evans-software-solutions.com (PRs #190/#193) AND PrivacyInfo.xcprivacy now declared via app.config.ts ios.privacyManifests (mobile PR #235; ios/ is gitignored so config is the source of truth) — NSPrivacyTracking=false, 11 collected data types (audited), 4 required-reason APIs. Still red because the ONE remaining step is a genuine Apple submission gate (dashboard, not code, ~5 min): paste the privacy URL into App Store Connect + fill the App Privacy 'nutrition label' to match the manifest. Also confirm the data-type list (SensitiveInfo-for-gender + PerformanceData calls flagged in #235). Flips to green once the URL is registered.",
         },
 
         // ── PRODUCTION READY ──────────────────────────────────────────────────────
