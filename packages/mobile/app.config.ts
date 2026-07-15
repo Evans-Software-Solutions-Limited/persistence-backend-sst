@@ -28,6 +28,74 @@ const VARIANTS = {
 } as const;
 
 /**
+ * iOS App Privacy manifest (`PrivacyInfo.xcprivacy`). Expo generates the file
+ * from this at prebuild — `ios/` is gitignored, so app.config.ts is the source
+ * of truth. Audited against the codebase (see the Sentry/privacy PR):
+ *
+ *  - NSPrivacyTracking = false — the app does NO cross-app tracking (no ATT,
+ *    no ad/attribution/analytics SDKs). Sentry/RevenueCat/Stripe/Supabase are
+ *    the only data egress and none build a device/ad graph.
+ *  - NSPrivacyCollectedDataTypes — every type is Linked to the authenticated
+ *    Supabase user id and NOT used for tracking; purpose is App Functionality.
+ *  - NSPrivacyAccessedAPITypes — required-reason APIs for app-owned usage
+ *    (AsyncStorage→UserDefaults, expo-sqlite/updates/image file access). The
+ *    bundled SDKs (Expo modules, Sentry, RevenueCat, Stripe) ship their own
+ *    manifests, so this covers only app-level usage. Reason codes mirror what
+ *    Expo prebuild already generates.
+ */
+const DATA_PURPOSE_APP_FUNCTIONALITY =
+  "NSPrivacyCollectedDataTypePurposeAppFunctionality";
+
+const collectedDataType = (type: string) => ({
+  NSPrivacyCollectedDataType: type,
+  // Linked to the authenticated user id; never used for cross-app tracking.
+  NSPrivacyCollectedDataTypeLinked: true,
+  NSPrivacyCollectedDataTypeTracking: false,
+  NSPrivacyCollectedDataTypePurposes: [DATA_PURPOSE_APP_FUNCTIONALITY],
+});
+
+const IOS_PRIVACY_MANIFESTS = {
+  NSPrivacyTracking: false,
+  NSPrivacyTrackingDomains: [],
+  NSPrivacyCollectedDataTypes: [
+    // Health & fitness — the core of the app.
+    collectedDataType("NSPrivacyCollectedDataTypeHealth"), // HealthKit weight/body-fat, profile body metrics, measurements
+    collectedDataType("NSPrivacyCollectedDataTypeFitness"), // workouts, sessions, sets/reps, nutrition/calories
+    // Account / contact.
+    collectedDataType("NSPrivacyCollectedDataTypeEmailAddress"), // email + Apple sign-in
+    collectedDataType("NSPrivacyCollectedDataTypeName"), // profile full name / username / Apple full-name
+    collectedDataType("NSPrivacyCollectedDataTypeUserID"), // Supabase user id (+ RevenueCat app user id)
+    collectedDataType("NSPrivacyCollectedDataTypeDeviceID"), // Expo push token registered for notifications
+    // User-generated content.
+    collectedDataType("NSPrivacyCollectedDataTypePhotosorVideos"), // avatar, meal/recipe photos for AI logging
+    collectedDataType("NSPrivacyCollectedDataTypeOtherUserContent"), // goal/session/coach notes, custom foods/recipes
+    // Commerce.
+    collectedDataType("NSPrivacyCollectedDataTypePurchaseHistory"), // RevenueCat/IAP subscription state
+    // Diagnostics (Sentry).
+    collectedDataType("NSPrivacyCollectedDataTypeCrashData"), // Sentry crash/error events (PII-scrubbed)
+    collectedDataType("NSPrivacyCollectedDataTypePerformanceData"), // Sentry performance traces (PII-scrubbed)
+  ],
+  NSPrivacyAccessedAPITypes: [
+    {
+      NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+      NSPrivacyAccessedAPITypeReasons: ["C617.1", "0A2A.1", "3B52.1"],
+    },
+    {
+      NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+      NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+    },
+    {
+      NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+      NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
+    },
+    {
+      NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+      NSPrivacyAccessedAPITypeReasons: ["E174.1", "85F4.1"],
+    },
+  ],
+};
+
+/**
  * Expo dynamic config. Expo loads `app.json` first and hands its `expo`
  * object in as `config`, so spreading `...config` and overriding ONLY the
  * per-variant fields below preserves everything else untouched — infoPlist,
@@ -42,6 +110,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const variant = isProduction
     ? VARIANTS.production
     : VARIANTS[rawVariant as keyof typeof VARIANTS];
+  // Normalised environment label — feeds Sentry's `environment` tag via
+  // `extra.appVariant` (read at runtime in src/lib/sentry.ts). Unknown/unset
+  // APP_VARIANT collapses to "production" to match the variant fallback above.
+  const environment: "production" | "staging" | "development" = isProduction
+    ? "production"
+    : (rawVariant as "staging" | "development");
 
   return {
     ...config,
@@ -54,7 +128,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // project.
     slug: config.slug ?? "persistence",
     scheme: variant.scheme,
-    ios: { ...config.ios, bundleIdentifier: variant.bundleId },
+    ios: {
+      ...config.ios,
+      bundleIdentifier: variant.bundleId,
+      privacyManifests: IOS_PRIVACY_MANIFESTS,
+    },
     android: { ...config.android, package: variant.bundleId },
     // EAS Update (OTA JS updates). Shared across all variants — the single EAS
     // project (`extra.eas.projectId`) serves them all; the per-profile
@@ -67,5 +145,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       url: "https://u.expo.dev/255d542d-8dae-43c9-8d98-d9a3a325a470",
     },
     runtimeVersion: { policy: "appVersion" },
+    // Preserve app.json's `extra` (eas.projectId, router) and add the resolved
+    // build variant so the runtime can tag Sentry's `environment` off it.
+    extra: {
+      ...config.extra,
+      appVariant: environment,
+    },
   };
 };
