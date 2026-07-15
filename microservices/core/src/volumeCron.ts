@@ -1,3 +1,4 @@
+import { initSentry, wrapLambda } from "./shared/sentry";
 import { volumeCron } from "./application/progress/volumeCron";
 import { VolumeRepository } from "./application/repositories/volumeRepository";
 
@@ -8,7 +9,7 @@ import { VolumeRepository } from "./application/repositories/volumeRepository";
  * warm. `new Date()` is read here (impure edge); the cron logic takes an
  * injected clock for deterministic tests.
  */
-export async function handler(): Promise<{
+async function baseHandler(): Promise<{
   users: number;
   recomputed: number;
   failed: number;
@@ -20,3 +21,8 @@ export async function handler(): Promise<{
   console.log(`[volume-cron:summary] ${JSON.stringify(summary)}`);
   return summary;
 }
+
+// Initialise Sentry (no-op without SENTRY_DSN) and wrap so thrown errors are
+// captured + flushed to Sentry before the Lambda container freezes.
+initSentry();
+export const handler = wrapLambda(baseHandler);

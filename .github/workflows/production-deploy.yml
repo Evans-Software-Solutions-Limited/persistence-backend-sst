@@ -121,6 +121,10 @@ jobs:
           # for Push" is enabled on the Expo account. NOT fail-fast: an empty
           # value is valid (the send client omits the Authorization header).
           EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          # Sentry DSN — backend crash reporting. OPTIONAL + NOT fail-fast: an
+          # empty value is valid (initSentry() no-ops on an empty DSN). A DSN is
+          # public-safe but flows through the secret pattern for per-stage wiring.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL is not set on the Production GitHub environment."
@@ -164,6 +168,8 @@ jobs:
           bunx sst secret set SupabaseServiceRoleKey "$SUPABASE_SERVICE_ROLE_KEY" --stage production
           # Optional — safe to set empty; the client omits the auth header when blank.
           bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage production
+          # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
+          bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
 
       - name: Deploy
         run: bunx sst deploy --stage production
