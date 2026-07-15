@@ -111,10 +111,17 @@ function scrubSharedFields(event: ErrorEvent | TransactionEvent): void {
   }
 
   // `extra` (arbitrary attached data, incl. anything a caller passes to
-  // captureBoundaryError) and `contexts` (Sentry auto-populates device/app/os
-  // — on Android `device.name` can be the owner's real name). Deep-redact both.
+  // captureBoundaryError) and `contexts` (Sentry auto-populates device/app/os).
+  // Deep-redact both for emails/tokens.
   if (event.extra) redactDeep(event.extra);
-  if (event.contexts) redactDeep(event.contexts);
+  if (event.contexts) {
+    redactDeep(event.contexts);
+    // `device.name` is Sentry-auto-populated and on Android is the user-set
+    // device name — often the owner's real name (e.g. "Sarah's Phone"). We
+    // can't pattern-match an arbitrary name, so drop the field wholesale.
+    const device = (event.contexts as { device?: { name?: unknown } }).device;
+    if (device && "name" in device) device.name = REDACTED;
+  }
 
   // Top-level message — both the plain string and the structured logentry form.
   if (typeof event.message === "string") {

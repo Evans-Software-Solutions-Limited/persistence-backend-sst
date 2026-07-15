@@ -256,7 +256,13 @@ function RootLayout() {
   // slot — share the same gesture root).
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary onError={(error) => captureBoundaryError(error)}>
+      <ErrorBoundary
+        onError={(error, errorInfo) =>
+          captureBoundaryError(error, {
+            componentStack: errorInfo.componentStack,
+          })
+        }
+      >
         <StripeProvider
           publishableKey={stripePublishableKey}
           merchantIdentifier="merchant.com.bradleyevans96.persistence"

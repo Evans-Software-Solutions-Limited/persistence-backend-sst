@@ -155,7 +155,8 @@ describe("scrubEvent", () => {
     expect(event.request.url).toBe("https://api/x?email=[redacted]-email");
     expect(event.extra.note).toBe("reach me at [redacted]-email");
     expect(event.extra.nested.token).toBe("[redacted]-token");
-    expect(event.contexts.device.name).toBe("Sarah's iPhone [redacted]-email");
+    // device.name can't be pattern-matched (arbitrary name) → dropped wholesale.
+    expect(event.contexts.device.name).toBe("[redacted]");
     expect(event.contexts.device.family).toBe("iPhone");
   });
 
