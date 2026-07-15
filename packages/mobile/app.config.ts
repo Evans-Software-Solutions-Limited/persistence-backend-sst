@@ -56,5 +56,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     scheme: variant.scheme,
     ios: { ...config.ios, bundleIdentifier: variant.bundleId },
     android: { ...config.android, package: variant.bundleId },
+    // EAS Update (OTA JS updates). Shared across all variants — the single EAS
+    // project (`extra.eas.projectId`) serves them all; the per-profile
+    // `channel` in eas.json routes each build to its own update branch
+    // (staging/production). These live here because `eas update:configure`
+    // can't auto-write a dynamic `app.config.ts`. `appVersion` runtime policy
+    // ties an update's compatibility to the native app version.
+    updates: {
+      ...config.updates,
+      url: "https://u.expo.dev/255d542d-8dae-43c9-8d98-d9a3a325a470",
+    },
+    runtimeVersion: { policy: "appVersion" },
   };
 };

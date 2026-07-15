@@ -86,6 +86,18 @@ describe("app.config.ts", () => {
     expect(result.android?.package).toBe("com.bradleyevans96.persistence");
   });
 
+  it("sets EAS Update url + appVersion runtime policy (all variants share the one EAS project)", () => {
+    for (const v of [undefined, "staging", "production"]) {
+      if (v === undefined) delete process.env.APP_VARIANT;
+      else process.env.APP_VARIANT = v;
+      const result = invoke();
+      expect(result.updates?.url).toBe(
+        "https://u.expo.dev/255d542d-8dae-43c9-8d98-d9a3a325a470",
+      );
+      expect(result.runtimeVersion).toEqual({ policy: "appVersion" });
+    }
+  });
+
   it("preserves unrelated fields from the base config untouched", () => {
     process.env.APP_VARIANT = "staging";
     const result = invoke();
