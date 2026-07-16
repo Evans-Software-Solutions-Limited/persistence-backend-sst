@@ -10,8 +10,7 @@ module.exports = defineConfig([
   },
   // no-raw-hex-colors (01-design-system STORY-006 AC 6.4): block raw hex in
   // token-resolvable positions across the UI layer. theme/** holds the token
-  // source (exempt); __tests__/** assert on concrete values (exempt); the four
-  // *LegacyTheme files are allow-listed until M11 Polish deletes them.
+  // source (exempt); __tests__/** assert on concrete values (exempt).
   //
   // The new design-system primitives (foundation/**, composite/**) are the
   // RN/SVG bridge: they legitimately hold concrete colour constants for

@@ -1,13 +1,7 @@
 import React from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Workout-carousel card. Ported verbatim from
@@ -114,7 +108,7 @@ export function WorkoutCard({
           <Ionicons
             name="play"
             size={20}
-            color={isDisabled ? Colors.text.tertiary : Colors.text.primary}
+            color={isDisabled ? color.$text3 : color.$text}
           />
         </TouchableOpacity>
       </View>
@@ -148,11 +142,7 @@ export function WorkoutCard({
           ) : null}
           {typeof workout.estimated_duration_minutes === "number" ? (
             <View style={styles.durationContainer}>
-              <Ionicons
-                name="time-outline"
-                size={16}
-                color={Colors.text.secondary}
-              />
+              <Ionicons name="time-outline" size={16} color={color.$text2} />
               <Text style={styles.metadataText}>
                 {formatDuration(workout.estimated_duration_minutes)}
               </Text>
@@ -160,7 +150,7 @@ export function WorkoutCard({
           ) : null}
           {workout.exercises ? (
             <View style={styles.exerciseCountContainer}>
-              <Ionicons name="list" size={16} color={Colors.text.secondary} />
+              <Ionicons name="list" size={16} color={color.$text2} />
               <Text style={styles.exerciseCountText}>
                 {workout.exercises.length} exercises
               </Text>
@@ -202,9 +192,7 @@ export function WorkoutCard({
               <Ionicons
                 name="create-outline"
                 size={18}
-                color={
-                  isDisabled ? Colors.text.tertiary : Colors.text.secondary
-                }
+                color={isDisabled ? color.$text3 : color.$text2}
               />
               <Text
                 style={[
@@ -226,15 +214,13 @@ export function WorkoutCard({
               <Ionicons
                 name="trash-outline"
                 size={18}
-                color={isDisabled ? Colors.text.tertiary : Colors.error.DEFAULT}
+                color={isDisabled ? color.$text3 : color.$error}
               />
               <Text
                 style={[
                   styles.actionButtonText,
                   {
-                    color: isDisabled
-                      ? Colors.text.tertiary
-                      : Colors.error.DEFAULT,
+                    color: isDisabled ? color.$text3 : color.$error,
                   },
                 ]}
               >
@@ -250,16 +236,20 @@ export function WorkoutCard({
 
 const styles = {
   workoutCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.sm,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 8,
     // Fill the carousel slot height (200) so cards without a
     // description don't look squat next to cards with one. The
     // description block uses numberOfLines={2} which gives the
     // taller layout; this lets shorter cards stretch to match.
     height: "100%" as const,
-    ...Shadows.medium,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   workoutCardDisabled: {
     opacity: 0.5,
@@ -268,7 +258,7 @@ const styles = {
     flexDirection: "row" as const,
     justifyContent: "space-between" as const,
     alignItems: "center" as const,
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   cardTitleContainer: {
     flex: 1,
@@ -276,64 +266,69 @@ const styles = {
     alignItems: "center" as const,
   },
   cardTitle: {
-    ...Typography.h3,
+    fontWeight: "600" as const,
+    lineHeight: 28,
     flex: 1,
     fontSize: 18,
-    color: Colors.text.primary,
+    color: color.$text,
   },
   cardTitleDisabled: {
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   startButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.full,
+    backgroundColor: color.$primary,
+    borderRadius: 9999,
     width: 40,
     height: 40,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   cardDescription: {
-    ...Typography.body2,
-    marginBottom: Spacing.sm,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    marginBottom: 8,
+    color: color.$text2,
   },
   cardMetadata: {
     flexDirection: "row" as const,
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   metadataRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: Spacing.md,
+    gap: 16,
   },
   durationContainer: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
   },
   metadataText: {
-    ...Typography.body2,
-    marginLeft: Spacing.xs,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    marginLeft: 4,
+    color: color.$text2,
   },
   muscleGroups: {
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   muscleBadge: {
-    backgroundColor: Colors.background.secondary,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
+    backgroundColor: color.$surface,
+    borderRadius: 4,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    marginRight: Spacing.xs,
+    marginRight: 4,
   },
   muscleBadgeText: {
     fontSize: 12,
     fontWeight: "500" as const,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   assignedTag: {
     alignSelf: "flex-start" as const,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 12,
   },
   ptTag: {
@@ -343,8 +338,9 @@ const styles = {
     backgroundColor: "#10B981", // Green for Physio
   },
   assignedTagText: {
-    ...Typography.caption,
-    color: Colors.text.primary,
+    fontSize: 12,
+    lineHeight: 16,
+    color: color.$text,
     fontWeight: "600" as const,
   },
   exerciseCountContainer: {
@@ -352,9 +348,11 @@ const styles = {
     alignItems: "center" as const,
   },
   exerciseCountText: {
-    ...Typography.caption,
-    color: Colors.text.secondary,
-    marginLeft: Spacing.xs,
+    fontSize: 12,
+    fontWeight: "400" as const,
+    lineHeight: 16,
+    color: color.$text2,
+    marginLeft: 4,
   },
   muscleTagsContainer: {
     flexDirection: "row" as const,
@@ -364,20 +362,22 @@ const styles = {
   cardActions: {
     flexDirection: "row" as const,
     justifyContent: "flex-end" as const,
-    gap: Spacing.md,
+    gap: 16,
   },
   actionButton: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
   actionButtonText: {
-    ...Typography.body2,
-    marginLeft: Spacing.xs,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    marginLeft: 4,
+    color: color.$text2,
   },
   actionButtonTextDisabled: {
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
 };

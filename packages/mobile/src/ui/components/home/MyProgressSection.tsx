@@ -4,7 +4,7 @@ import type {
   HealthPermissionStatus,
   HealthWeight,
 } from "@/domain/ports/health.port";
-import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { BodyFatTile } from "./BodyFatTile";
 import { BodyWeightTile } from "./BodyWeightTile";
 import { EnergyTile } from "./EnergyTile";
@@ -108,21 +108,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   sectionTitle: {
-    ...Typography.h3,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
   },
   viewAllText: {
-    ...Typography.body2,
-    color: Colors.primary.DEFAULT,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$primary,
   },
   grid: {
-    gap: Spacing.md,
+    gap: 16,
   },
   row: {
     flexDirection: "row",
-    gap: Spacing.md,
+    gap: 16,
   },
   placeholder: {
     flex: 1,

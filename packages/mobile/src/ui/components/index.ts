@@ -14,9 +14,9 @@
 //   Input (search) / ExerciseFilterBar → composite/SearchBar
 //   Skeleton stays (used by the primitives' loading states).
 //
-// These legacy components + the `*LegacyTheme` shims are retired in M11 Polish
-// (12-production-readiness) once no screen imports them. See each file's
-// @deprecated JSDoc for its specific replacement.
+// These legacy components are retired in M11 Polish (12-production-readiness)
+// once no screen imports them. See each file's @deprecated JSDoc for its
+// specific replacement.
 // ─────────────────────────────────────────────────────────────────────────
 
 export { ErrorBoundary } from "./ErrorBoundary";
