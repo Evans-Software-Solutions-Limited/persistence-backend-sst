@@ -15,6 +15,7 @@ import type {
   HealthError,
   HealthPermissionStatus,
   HealthPort,
+  HealthSleep,
   HealthWeight,
 } from "@/domain/ports/health.port";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -97,6 +98,37 @@ type SaveQuantitySample = (
   end: Date,
 ) => Promise<unknown>;
 
+/**
+ * `SleepAnalysis` is a HealthKit CATEGORY sample, not a quantity — it has no
+ * unit/statistics and is read/written via a distinct API
+ * (`queryCategorySamples` / `saveCategorySample`) from `queryStatisticsFor
+ * Quantity` / `saveQuantitySample` above. `value` is the raw
+ * `CategoryValueSleepAnalysis` numeric enum (0 inBed, 1 asleep(Unspecified),
+ * 2 awake, 3 asleepCore, 4 asleepDeep, 5 asleepREM).
+ */
+type CategorySample = {
+  value?: number;
+  startDate?: Date | string | number;
+  endDate?: Date | string | number;
+};
+
+type CategoryQuery = (
+  identifier: string,
+  options: {
+    limit: number;
+    ascending?: boolean;
+    filter?: { date?: { startDate: Date; endDate: Date } };
+  },
+) => Promise<readonly CategorySample[]>;
+
+/** v14 `saveCategorySample(identifier, value, start, end, metadata?)`. */
+type SaveCategorySample = (
+  identifier: string,
+  value: number,
+  start: Date,
+  end: Date,
+) => Promise<unknown>;
+
 /** Matches the library's AuthorizationStatus enum. 0 notDetermined, 1 sharingDenied, 2 sharingAuthorized. */
 const AUTH_STATUS_AUTHORIZED = 2;
 const AUTH_STATUS_DENIED = 1;
@@ -112,7 +144,20 @@ const IDENTIFIER = {
   BODY_MASS: "HKQuantityTypeIdentifierBodyMass",
   BODY_FAT_PERCENTAGE: "HKQuantityTypeIdentifierBodyFatPercentage",
   HEART_RATE: "HKQuantityTypeIdentifierHeartRate",
+  /** HKCategoryTypeIdentifier (not a quantity) — 20-sleep-quicklog. */
+  SLEEP_ANALYSIS: "HKCategoryTypeIdentifierSleepAnalysis",
 } as const;
+
+/**
+ * `CategoryValueSleepAnalysis` raw enum values (stable HealthKit constants).
+ * `asleepUnspecified` and `asleep` share the same raw value (1) across
+ * library versions — both are "asleep" for our summing purposes, along with
+ * the stage-specific core/deep/REM values. `inBed` (0) and `awake` (2) are
+ * explicitly excluded — time in bed but not asleep isn't sleep duration.
+ */
+const SLEEP_ASLEEP_VALUES: ReadonlySet<number> = new Set([1, 3, 4, 5]);
+/** Value written for a manual mirror — "asleep, stage unspecified". */
+const SLEEP_VALUE_ASLEEP_UNSPECIFIED = 1;
 
 /**
  * Read-permission scope. Mirrors the legacy app's
@@ -135,6 +180,7 @@ const READ_IDENTIFIERS: readonly string[] = [
   IDENTIFIER.BODY_MASS,
   IDENTIFIER.BODY_FAT_PERCENTAGE,
   IDENTIFIER.HEART_RATE,
+  IDENTIFIER.SLEEP_ANALYSIS,
 ];
 
 /**
@@ -154,6 +200,7 @@ const WRITE_IDENTIFIERS: readonly string[] = [
   IDENTIFIER.ACTIVE_ENERGY,
   IDENTIFIER.BODY_MASS,
   IDENTIFIER.BODY_FAT_PERCENTAGE,
+  IDENTIFIER.SLEEP_ANALYSIS,
 ];
 
 /** Type-erased handle to the HealthKit module (lazily imported). */
@@ -165,6 +212,8 @@ type HealthKitLike = {
   queryStatisticsCollectionForQuantity?: StatisticsCollectionQuery;
   getMostRecentQuantitySample: MostRecentQuery;
   saveQuantitySample: SaveQuantitySample;
+  queryCategorySamples: CategoryQuery;
+  saveCategorySample: SaveCategorySample;
 };
 
 function loadHealthKit(): HealthKitLike {
@@ -182,6 +231,26 @@ function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+/**
+ * A 24h window from yesterday-noon to today-noon, local time — wide enough
+ * to contain any typical bedtime→wake sleep session regardless of what hour
+ * the user went to bed, without pulling in the PRIOR night's sleep too
+ * (which an "any time before now" window would risk once past midnight).
+ */
+function lastNightWindow(): { start: Date; end: Date } {
+  const end = new Date();
+  end.setHours(12, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 1);
+  return { start, end };
+}
+
+function toDateOrNull(value: Date | string | number | undefined): Date | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function mapAuthorizationStatus(
@@ -257,6 +326,7 @@ export class ExpoHealthKitAdapter implements HealthPort {
       calories: safeStatusFor(IDENTIFIER.ACTIVE_ENERGY),
       bodyWeight: safeStatusFor(IDENTIFIER.BODY_MASS),
       heartRate: safeStatusFor(IDENTIFIER.HEART_RATE),
+      sleep: safeStatusFor(IDENTIFIER.SLEEP_ANALYSIS),
     };
   }
 
@@ -504,6 +574,80 @@ export class ExpoHealthKitAdapter implements HealthPort {
         code: "write_failed",
         message:
           err instanceof Error ? err.message : "Failed to write body fat",
+      });
+    }
+  }
+
+  /**
+   * Sum "asleep" `SleepAnalysis` category samples overlapping last night's
+   * window (20-sleep-quicklog STORY-003 AC 3.1). Uses the category query API
+   * — NOT `queryStatisticsForQuantity` — because sleep is a category sample,
+   * not a quantity (no unit, no cumulativeSum). `inBed`/`awake` samples are
+   * excluded; only asleep(-stage) samples count toward the duration.
+   * `start`/`end` span the earliest-to-latest asleep sample in the window —
+   * an approximation when sleep is fragmented, consistent with summing
+   * durations rather than treating the samples as one contiguous block.
+   */
+  async getSleepLastNight(): Promise<Result<HealthSleep | null, HealthError>> {
+    try {
+      const { start, end } = lastNightWindow();
+      const samples = await this.healthkit.queryCategorySamples(
+        IDENTIFIER.SLEEP_ANALYSIS,
+        { limit: 0, filter: { date: { startDate: start, endDate: end } } },
+      );
+
+      let durationMs = 0;
+      let earliestStart: Date | null = null;
+      let latestEnd: Date | null = null;
+      for (const sample of samples) {
+        if (sample.value == null || !SLEEP_ASLEEP_VALUES.has(sample.value)) {
+          continue;
+        }
+        const sampleStart = toDateOrNull(sample.startDate);
+        const sampleEnd = toDateOrNull(sample.endDate);
+        if (!sampleStart || !sampleEnd) continue;
+        durationMs += sampleEnd.getTime() - sampleStart.getTime();
+        if (!earliestStart || sampleStart < earliestStart) {
+          earliestStart = sampleStart;
+        }
+        if (!latestEnd || sampleEnd > latestEnd) latestEnd = sampleEnd;
+      }
+
+      if (durationMs <= 0 || !earliestStart || !latestEnd) return ok(null);
+      return ok({
+        durationMinutes: Math.round(durationMs / 60_000),
+        start: earliestStart,
+        end: latestEnd,
+      });
+    } catch (err) {
+      return fail(
+        readFailure(
+          err instanceof Error ? err.message : "Failed to read sleep",
+        ),
+      );
+    }
+  }
+
+  /**
+   * Write one "asleep, stage unspecified" `SleepAnalysis` category sample
+   * spanning `start`..`end` — the best-effort mirror of a manual quick-log
+   * entry (20-sleep-quicklog STORY-003 AC 3.3). Uses `saveCategorySample`,
+   * not `saveQuantitySample` (sleep has no unit/value scale).
+   */
+  async writeSleep(start: Date, end: Date): Promise<Result<void, HealthError>> {
+    try {
+      await this.healthkit.saveCategorySample(
+        IDENTIFIER.SLEEP_ANALYSIS,
+        SLEEP_VALUE_ASLEEP_UNSPECIFIED,
+        start,
+        end,
+      );
+      return ok(undefined);
+    } catch (err) {
+      return fail<HealthError>({
+        kind: "health",
+        code: "write_failed",
+        message: err instanceof Error ? err.message : "Failed to write sleep",
       });
     }
   }

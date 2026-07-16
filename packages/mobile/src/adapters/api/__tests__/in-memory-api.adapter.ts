@@ -71,6 +71,8 @@ import type {
   CancelSubscriptionInput,
   ApiMeasurement,
   LogMeasurementInput,
+  ApiSleep,
+  LogSleepInput,
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
   HabitConfigEntry,
@@ -1276,6 +1278,38 @@ export class InMemoryApiAdapter implements ApiPort {
     };
     this.measurements.push(row);
     return this.mayFail<ApiMeasurement>(row);
+  }
+
+  /** Sleep records keyed by `sleepDate` — mirrors the backend's one-manual-
+   * row-per-day upsert (20-sleep-quicklog). */
+  public sleepRecords: Map<string, ApiSleep> = new Map();
+  private sleepSeq = 0;
+
+  async logSleep(input: LogSleepInput): Promise<Result<ApiSleep, ApiError>> {
+    this.sleepSeq += 1;
+    const record: ApiSleep = {
+      id: `sleep-${this.sleepSeq}`,
+      userId: "test-user",
+      sleepDate: input.sleepDate,
+      durationMinutes: input.durationMinutes,
+      qualityScore: null,
+      deepSleepMinutes: null,
+      lightSleepMinutes: null,
+      remSleepMinutes: null,
+      awakeMinutes: null,
+      sleepStart: input.sleepStart ?? null,
+      sleepEnd: input.sleepEnd ?? null,
+      dataSource: "manual",
+      createdAt: new Date().toISOString(),
+    };
+    this.sleepRecords.set(input.sleepDate, record);
+    return this.mayFail<ApiSleep>(record);
+  }
+
+  async getSleepToday(
+    date: string,
+  ): Promise<Result<ApiSleep | null, ApiError>> {
+    return this.mayFail<ApiSleep | null>(this.sleepRecords.get(date) ?? null);
   }
 
   /** Captures logClientWeight calls for assertions. */

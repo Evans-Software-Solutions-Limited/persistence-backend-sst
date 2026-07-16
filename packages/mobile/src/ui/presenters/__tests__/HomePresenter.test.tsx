@@ -82,6 +82,7 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     onOpenWeighIn: jest.fn(),
     onOpenMealLog: jest.fn(),
     onLogWater: jest.fn(),
+    onOpenSleep: jest.fn(),
     onToggleHabitDay: jest.fn(),
     onManageHabits: jest.fn(),
     onOpenCaloriesFromGrid: jest.fn(),
@@ -100,6 +101,12 @@ describe("HomePresenter (V2)", () => {
     expect(getByTestId("home-quicklog")).toBeTruthy();
     expect(getByTestId("home-volume")).toBeTruthy();
     expect(getByTestId("home-prs")).toBeTruthy();
+  });
+
+  it("wires the quick-log strip's Sleep tile to onOpenSleep", () => {
+    const { getByText, props } = render();
+    fireEvent.press(getByText("Sleep"));
+    expect(props.onOpenSleep).toHaveBeenCalledTimes(1);
   });
 
   it("renders the time-of-day greeting + first name as the title", () => {

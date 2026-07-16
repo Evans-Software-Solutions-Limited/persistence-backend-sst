@@ -8,12 +8,14 @@ const NONE: HealthPermissionStatus = {
   calories: "not_determined",
   bodyWeight: "not_determined",
   heartRate: "not_determined",
+  sleep: "not_determined",
 };
 const GRANTED: HealthPermissionStatus = {
   steps: "granted",
   calories: "granted",
   bodyWeight: "denied",
   heartRate: "not_determined",
+  sleep: "not_determined",
 };
 
 describe("HealthSettingsPresenter", () => {

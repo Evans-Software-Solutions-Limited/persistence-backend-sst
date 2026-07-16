@@ -2043,3 +2043,116 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
     });
   });
 });
+
+describe("SSTApiAdapter sleep quick-log (20-sleep-quicklog)", () => {
+  it("logSleep POSTs /health/sleep and unwraps the standard {data} envelope", async () => {
+    const mockFetch = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "sleep-1",
+            userId: "u1",
+            sleepDate: "2026-07-16",
+            durationMinutes: 450,
+            qualityScore: null,
+            deepSleepMinutes: null,
+            lightSleepMinutes: null,
+            remSleepMinutes: null,
+            awakeMinutes: null,
+            sleepStart: "2026-07-15T23:30:00.000Z",
+            sleepEnd: "2026-07-16T07:00:00.000Z",
+            dataSource: "manual",
+            createdAt: "2026-07-16T07:05:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.logSleep({
+      sleepDate: "2026-07-16",
+      durationMinutes: 450,
+      sleepStart: "2026-07-15T23:30:00.000Z",
+      sleepEnd: "2026-07-16T07:00:00.000Z",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.durationMinutes).toBe(450);
+    expect(result.value.dataSource).toBe("manual");
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/health/sleep");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      sleepDate: "2026-07-16",
+      durationMinutes: 450,
+      sleepStart: "2026-07-15T23:30:00.000Z",
+      sleepEnd: "2026-07-16T07:00:00.000Z",
+    });
+  });
+
+  it("getSleepToday GETs /health/sleep?date= and unwraps the ASYMMETRIC {sleep} envelope", async () => {
+    const mockFetch = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          sleep: {
+            id: "sleep-1",
+            userId: "u1",
+            sleepDate: "2026-07-16",
+            durationMinutes: 420,
+            qualityScore: null,
+            deepSleepMinutes: null,
+            lightSleepMinutes: null,
+            remSleepMinutes: null,
+            awakeMinutes: null,
+            sleepStart: null,
+            sleepEnd: null,
+            dataSource: "manual",
+            createdAt: "2026-07-16T07:05:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getSleepToday("2026-07-16");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value?.durationMinutes).toBe(420);
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toContain("/health/sleep");
+    expect(url).toContain("date=2026-07-16");
+  });
+
+  it("getSleepToday returns null (not an error) when the backend has no record for the day", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ sleep: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getSleepToday("2026-07-16");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeNull();
+  });
+
+  it("getSleepToday surfaces a transport error on a non-2xx response", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "boom" }), {
+        status: 500,
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getSleepToday("2026-07-16");
+    expect(result.ok).toBe(false);
+  });
+});

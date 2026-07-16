@@ -47,6 +47,7 @@ function healthState(over: Partial<HealthDataState> = {}): HealthDataState {
       calories: "granted",
       bodyWeight: "not_determined",
       heartRate: "not_determined",
+      sleep: "not_determined",
     },
     isAvailable: true,
     isReading: false,

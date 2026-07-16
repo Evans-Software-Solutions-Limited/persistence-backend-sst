@@ -84,6 +84,8 @@ export type HomePresenterProps = {
   onOpenWeighIn: () => void;
   onOpenMealLog: () => void;
   onLogWater: () => void;
+  /** Opens the Sleep quick-log sheet (specs/20-sleep-quicklog STORY-001 AC 1.1). */
+  onOpenSleep: () => void;
   onToggleHabitDay: (
     goalId: string,
     day: string,
@@ -130,6 +132,7 @@ export function HomePresenter(props: HomePresenterProps) {
     onOpenWeighIn,
     onOpenMealLog,
     onLogWater,
+    onOpenSleep,
     onToggleHabitDay,
     onManageHabits,
     onOpenCaloriesFromGrid,
@@ -271,6 +274,7 @@ export function HomePresenter(props: HomePresenterProps) {
               onWeighIn={onOpenWeighIn}
               onLogMeal={onOpenMealLog}
               onLogWater={onLogWater}
+              onSleep={onOpenSleep}
             />
           </Section>
         </Animated.View>

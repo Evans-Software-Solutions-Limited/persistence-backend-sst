@@ -633,6 +633,31 @@ export interface ApiPort {
     input: LogMeasurementInput,
   ): Promise<Result<ApiMeasurement, ApiError>>;
 
+  // -- Sleep quick-log (20-sleep-quicklog) --
+  //
+  // Manual sleep log, mirroring the measurement write above. NOTE the
+  // ASYMMETRIC response envelopes: the POST returns the standard `{ data }`
+  // shape (unwrapped like every other single-envelope write), but the GET
+  // returns `{ sleep }` — the backend's `healthSleepGetHandler` deliberately
+  // doesn't reuse the `data` key so a "no record yet" response reads as
+  // `{ sleep: null }` rather than an empty `{ data: null }` that's easy to
+  // mistake for an error/miss.
+  /**
+   * Upsert the caller's manual sleep row for the day (`POST /health/sleep`).
+   * Backend upserts by `(userId, sleepDate, 'manual')` — re-saving the same
+   * `sleepDate` overwrites rather than duplicating. Returns the stored
+   * record.
+   */
+  logSleep(input: LogSleepInput): Promise<Result<ApiSleep, ApiError>>;
+  /**
+   * The caller's most-authoritative sleep record for a date
+   * (`GET /health/sleep?date=`) — most-recent by `created_at` across any
+   * `data_source` (manual or device-synced). `null` when no record exists
+   * for that day. Online-only: never queued (a direct read, like
+   * `getWaterToday`/`getFuelToday`).
+   */
+  getSleepToday(date: string): Promise<Result<ApiSleep | null, ApiError>>;
+
   /**
    * Coach logs a measurement (typically weight) on behalf of a client
    * (`POST /trainers/me/clients/:clientId/measurements`). Server-guarded by
@@ -1380,6 +1405,49 @@ export type LogMeasurementInput = {
    * push so a reading imported days later still lands on the right trend day.
    */
   measuredAt?: string;
+};
+
+/**
+ * Wire shape for `sleep_data` (20-sleep-quicklog). Mirrors the backend's
+ * Drizzle-returned row 1:1 — camelCase columns, no field mapping needed.
+ * The stage-breakdown columns (`qualityScore`/`deepSleepMinutes`/etc.) exist
+ * on the table but are never populated by the manual quick-log (v1 is
+ * duration-only) — they're `null` on every manually-logged row.
+ */
+export type ApiSleep = {
+  id: string;
+  userId: string;
+  sleepDate: string;
+  durationMinutes: number | null;
+  qualityScore: number | null;
+  deepSleepMinutes: number | null;
+  lightSleepMinutes: number | null;
+  remSleepMinutes: number | null;
+  awakeMinutes: number | null;
+  sleepStart: string | null;
+  sleepEnd: string | null;
+  dataSource:
+    | "apple_health"
+    | "google_fit"
+    | "fitbit"
+    | "samsung_health"
+    | "garmin"
+    | "manual"
+    | null;
+  createdAt: string | null;
+};
+
+/**
+ * POST /health/sleep body (20-sleep-quicklog, Decision D1: duration input).
+ * `sleepStart`/`sleepEnd` are the synthesised HealthKit-style window (wake
+ * anchored at 07:00 local on `sleepDate`, `start = end - duration`) — optional
+ * on the wire since the backend derives nothing from them beyond storage.
+ */
+export type LogSleepInput = {
+  sleepDate: string;
+  durationMinutes: number;
+  sleepStart?: string;
+  sleepEnd?: string;
 };
 
 export type ApiProfile = {

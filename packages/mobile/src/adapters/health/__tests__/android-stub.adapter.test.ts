@@ -16,6 +16,7 @@ describe("AndroidStubHealthAdapter", () => {
       calories: "denied",
       bodyWeight: "denied",
       heartRate: "denied",
+      sleep: "denied",
     });
   });
 
@@ -44,6 +45,15 @@ describe("AndroidStubHealthAdapter", () => {
   it("surfaces unavailable for writes", async () => {
     const result = await adapter.writeBodyWeight();
     expect(result.ok).toBe(false);
+  });
+
+  it("surfaces unavailable for sleep read + write", async () => {
+    const readResult = await adapter.getSleepLastNight();
+    expect(readResult.ok).toBe(false);
+    if (!readResult.ok) expect(readResult.error.code).toBe("unavailable");
+
+    const writeResult = await adapter.writeSleep();
+    expect(writeResult.ok).toBe(false);
   });
 
   it("has a no-op disconnect", async () => {

@@ -31,7 +31,12 @@ import { toneHex, toneTokens } from "./tones";
  * scroll. `accent` tints the eyebrow + drag-handle.
  */
 
-export type BottomSheetAccent = "primary" | "gold" | "trainer" | "ember";
+export type BottomSheetAccent =
+  | "primary"
+  | "gold"
+  | "trainer"
+  | "ember"
+  | "success";
 export type BottomSheetHeight = number | "peek" | "default" | "tall";
 
 export type BottomSheetProps = {

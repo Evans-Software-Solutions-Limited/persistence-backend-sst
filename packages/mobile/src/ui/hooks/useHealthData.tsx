@@ -30,6 +30,7 @@ const DEFAULT_PERMISSIONS: HealthPermissionStatus = {
   calories: "not_determined",
   bodyWeight: "not_determined",
   heartRate: "not_determined",
+  sleep: "not_determined",
 };
 
 export type HealthDataState = {
