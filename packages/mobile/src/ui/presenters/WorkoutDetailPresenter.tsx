@@ -1,11 +1,5 @@
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import type {
   Workout,
   WorkoutExercise,
@@ -75,7 +69,7 @@ const SUPERSET_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 /** Hero gradient: faint primary wash → surface, matching the prototype. */
 const HERO_GRADIENT: readonly [string, string] = [
   "rgba(34,211,238,0.16)",
-  Colors.background.tertiary,
+  color.$surface2,
 ];
 const MAX_MUSCLE_PILLS = 5;
 
@@ -161,7 +155,7 @@ export function WorkoutDetailPresenter({
           accessibilityLabel="Close"
           hitSlop={8}
         >
-          <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={color.$text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {workout?.name ?? "Workout"}
@@ -175,11 +169,7 @@ export function WorkoutDetailPresenter({
             accessibilityLabel="Edit workout"
             hitSlop={8}
           >
-            <Ionicons
-              name="create-outline"
-              size={22}
-              color={Colors.primary.DEFAULT}
-            />
+            <Ionicons name="create-outline" size={22} color={color.$primary} />
           </TouchableOpacity>
         ) : (
           <View style={styles.headerSpacer} />
@@ -196,7 +186,7 @@ export function WorkoutDetailPresenter({
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.error.DEFAULT}
+            color={color.$error}
           />
           <Text style={styles.errorTitle}>Failed to load workout</Text>
           <Text style={styles.errorMessage}>{error.message}</Text>
@@ -229,7 +219,7 @@ export function WorkoutDetailPresenter({
                 <Ionicons
                   name="information-circle-outline"
                   size={14}
-                  color={Colors.text.tertiary}
+                  color={color.$text3}
                 />
                 <Text style={styles.ownerNoteText}>
                   You created this workout · tap edit to change sets, supersets
@@ -245,7 +235,7 @@ export function WorkoutDetailPresenter({
               onPress={() => onStartWorkout(workout.id)}
               testID="workout-detail-start"
             >
-              <Ionicons name="play" size={18} color={Colors.text.primary} />
+              <Ionicons name="play" size={18} color={color.$text} />
               <Text style={styles.startButtonText}>Start workout</Text>
             </TouchableOpacity>
           </View>
@@ -289,7 +279,7 @@ function HeroCard({
     >
       <View style={styles.heroTop}>
         <View style={styles.heroIcon}>
-          <Ionicons name="barbell" size={24} color={Colors.text.inverse} />
+          <Ionicons name="barbell" size={24} color={color.$bg} />
         </View>
         <View style={styles.heroTitleColumn}>
           <Text style={styles.heroEyebrow} testID="workout-detail-eyebrow">
@@ -360,7 +350,7 @@ function HistoryBlock({
   if (!history || history.completedCount <= 0) {
     return (
       <View style={styles.notDoneRow} testID="workout-detail-history-empty">
-        <Ionicons name="time-outline" size={13} color={Colors.text.tertiary} />
+        <Ionicons name="time-outline" size={13} color={color.$text3} />
         <Text style={styles.notDoneText}>Not done yet</Text>
       </View>
     );
@@ -401,7 +391,7 @@ function HistoryBlock({
           <React.Fragment key={c.label}>
             {i > 0 && <View style={styles.historyDivider} />}
             <View style={styles.historyCell}>
-              <Ionicons name={c.icon} size={13} color={Colors.text.tertiary} />
+              <Ionicons name={c.icon} size={13} color={color.$text3} />
               <Text
                 style={[
                   styles.historyValue,
@@ -418,11 +408,7 @@ function HistoryBlock({
 
       {last && (lastDate || lastMinutes) && (
         <View style={styles.historyFooter}>
-          <Ionicons
-            name="trending-up"
-            size={12}
-            color={Colors.success.DEFAULT}
-          />
+          <Ionicons name="trending-up" size={12} color={color.$success} />
           <Text style={styles.historyFooterText}>
             Last session
             {lastDate ? ` · ${lastDate}` : ""}
@@ -501,7 +487,7 @@ function SingleExerciseRow({
         </Text>
         <Text style={styles.exerciseDetails}>{repsLabel(exercise)}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={Colors.text.tertiary} />
+      <Ionicons name="chevron-forward" size={20} color={color.$text3} />
     </TouchableOpacity>
   );
 }
@@ -523,11 +509,7 @@ function SupersetBlockRow({
       <View style={styles.supersetConnector}>
         <View style={styles.supersetLine} />
         <View style={styles.supersetPill}>
-          <Ionicons
-            name="layers-outline"
-            size={10}
-            color={Colors.text.inverse}
-          />
+          <Ionicons name="layers-outline" size={10} color={color.$bg} />
           <Text style={styles.supersetPillText}>SUPERSET {letter}</Text>
         </View>
         <View style={styles.supersetLine} />
@@ -554,11 +536,7 @@ function SupersetBlockRow({
               </Text>
               <Text style={styles.exerciseDetails}>{repsLabel(ex)}</Text>
             </View>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.tertiary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text3} />
           </TouchableOpacity>
         ))}
       </View>
@@ -579,34 +557,35 @@ function SupersetBlockRow({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   iconButton: {
-    padding: Spacing.sm,
+    padding: 8,
     minWidth: 40,
   },
   headerTitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
-    color: Colors.text.primary,
   },
   headerSpacer: {
     width: 40,
   },
   scrollContent: {
-    padding: Spacing.md,
+    padding: 16,
     paddingBottom: 104,
     gap: 14,
   },
@@ -614,36 +593,43 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xl,
+    paddingVertical: 32,
   },
   loadingText: {
-    ...Typography.body2,
-    marginTop: Spacing.md,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
+    marginTop: 16,
   },
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xl,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
   errorTitle: {
-    ...Typography.h3,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
+    color: color.$text,
+    marginTop: 16,
+    marginBottom: 8,
   },
   errorMessage: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
     textAlign: "center",
-    color: Colors.text.secondary,
   },
   // HERO
   hero: {
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: Colors.primary.DEFAULT + "44",
+    borderColor: color.$primary + "44",
   },
   heroTop: {
     flexDirection: "row",
@@ -654,10 +640,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     alignItems: "center",
     justifyContent: "center",
-    ...Shadows.glow,
+    shadowColor: color.$primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 10,
   },
   heroTitleColumn: {
     flex: 1,
@@ -667,18 +657,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.8,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     marginBottom: 3,
   },
   heroName: {
-    ...Typography.h2,
-    color: Colors.text.primary,
+    fontSize: 24,
+    fontWeight: "600",
+    lineHeight: 32,
+    color: color.$text,
   },
   heroDescription: {
-    ...Typography.body2,
+    fontWeight: "400",
     fontSize: 12.5,
     lineHeight: 19,
-    color: Colors.text.secondary,
+    color: color.$text2,
     marginTop: 12,
   },
   statRow: {
@@ -687,7 +679,7 @@ const styles = StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    backgroundColor: Colors.surface.border,
+    backgroundColor: color.$surface3,
     marginVertical: 2,
   },
   statCell: {
@@ -706,18 +698,18 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 21,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   statUnit: {
     fontSize: 11,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     marginBottom: 2,
   },
   statLabel: {
     fontSize: 8.5,
     fontWeight: "700",
     letterSpacing: 0.6,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     marginTop: 3,
   },
   pillRow: {
@@ -729,33 +721,33 @@ const styles = StyleSheet.create({
   pill: {
     paddingHorizontal: 9,
     paddingVertical: 3,
-    borderRadius: BorderRadius.full,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   pillPrimary: {
-    backgroundColor: Colors.primary.DEFAULT + "22",
-    borderColor: Colors.primary.DEFAULT + "55",
+    backgroundColor: color.$primary + "22",
+    borderColor: color.$primary + "55",
   },
   pillNeutral: {
-    backgroundColor: Colors.surface.tertiary,
-    borderColor: Colors.surface.border,
+    backgroundColor: color.$surface3,
+    borderColor: color.$surface3,
   },
   pillText: {
     fontSize: 11,
     fontWeight: "600",
   },
   pillTextPrimary: {
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
   },
   pillTextNeutral: {
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   // HISTORY
   historyCard: {
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface.primary,
+    borderRadius: 12,
+    backgroundColor: color.$surface,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
     overflow: "hidden",
   },
   historyStatRow: {
@@ -765,7 +757,7 @@ const styles = StyleSheet.create({
   },
   historyDivider: {
     width: 1,
-    backgroundColor: Colors.surface.border,
+    backgroundColor: color.$surface3,
     marginVertical: 4,
   },
   historyCell: {
@@ -776,16 +768,16 @@ const styles = StyleSheet.create({
   historyValue: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   historyValuePrimary: {
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
   },
   historyLabel: {
     fontSize: 8,
     fontWeight: "700",
     letterSpacing: 0.5,
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   historyFooter: {
     flexDirection: "row",
@@ -794,17 +786,18 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 14,
     borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
-    backgroundColor: Colors.background.tertiary,
+    borderTopColor: color.$surface3,
+    backgroundColor: color.$surface2,
   },
   historyFooterText: {
-    ...Typography.body2,
+    fontWeight: "400",
+    lineHeight: 20,
     fontSize: 11,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     flex: 1,
   },
   historyFooterVolume: {
-    color: Colors.text.secondary,
+    color: color.$text2,
     fontWeight: "600",
   },
   notDoneRow: {
@@ -814,9 +807,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   notDoneText: {
-    ...Typography.body2,
+    fontWeight: "400",
+    lineHeight: 20,
     fontSize: 11.5,
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   // PLAN
   planSection: {
@@ -833,11 +827,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.8,
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   planCount: {
     fontSize: 11,
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   planList: {
     gap: 12,
@@ -846,38 +840,40 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
     padding: 12,
   },
   exerciseNumberBadge: {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: Colors.surface.tertiary,
+    backgroundColor: color.$surface3,
     alignItems: "center",
     justifyContent: "center",
   },
   exerciseNumberText: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   exerciseInfo: {
     flex: 1,
     minWidth: 0,
   },
   exerciseName: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
-    color: Colors.text.primary,
   },
   exerciseDetails: {
-    ...Typography.body2,
+    fontWeight: "400",
+    lineHeight: 20,
     fontSize: 12,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     marginTop: 2,
   },
   // SUPERSET
@@ -892,7 +888,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 2,
     borderRadius: 2,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     opacity: 0.5,
   },
   supersetPill: {
@@ -901,14 +897,14 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.primary.DEFAULT,
+    borderRadius: 9999,
+    backgroundColor: color.$primary,
   },
   supersetPillText: {
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.5,
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   supersetMembers: {
     gap: 8,
@@ -917,12 +913,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
     borderLeftWidth: 3,
-    borderLeftColor: Colors.primary.DEFAULT,
+    borderLeftColor: color.$primary,
     padding: 12,
   },
   supersetTagBadge: {
@@ -930,14 +926,14 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 7,
     paddingHorizontal: 6,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     alignItems: "center",
     justifyContent: "center",
   },
   supersetTagText: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   supersetFooter: {
     flexDirection: "row",
@@ -948,7 +944,7 @@ const styles = StyleSheet.create({
   },
   supersetFooterText: {
     fontSize: 10,
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   // OWNER NOTE + FOOTER
   ownerNote: {
@@ -958,9 +954,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   ownerNoteText: {
-    ...Typography.body2,
+    fontWeight: "400",
+    lineHeight: 20,
     fontSize: 11.5,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     flex: 1,
   },
   footer: {
@@ -968,24 +965,30 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 18,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   startButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+    backgroundColor: color.$primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.sm,
-    ...Shadows.electric,
+    gap: 8,
+    shadowColor: color.$primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   startButtonText: {
-    ...Typography.button,
-    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: "600",
+    lineHeight: 20,
+    color: color.$text,
   },
 });

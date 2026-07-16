@@ -1,9 +1,4 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 export const styles = {
   container: {
@@ -12,7 +7,7 @@ export const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
     justifyContent: "center" as const,
     alignItems: "center" as const,
     zIndex: 2000,
@@ -21,23 +16,24 @@ export const styles = {
   content: {
     alignItems: "center" as const,
     width: "100%" as const,
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: 32,
   },
   timerContainer: {
     alignItems: "center" as const,
-    marginBottom: Spacing.xl * 2,
+    marginBottom: 32 * 2,
   },
   timerText: {
-    ...Typography.h1,
     fontSize: 72,
     fontWeight: "700" as const,
-    color: Colors.primary.DEFAULT,
-    marginVertical: Spacing.lg,
+    color: color.$primary,
+    marginVertical: 24,
     fontVariant: ["tabular-nums" as const],
   },
   timerLabel: {
-    ...Typography.body1,
-    color: Colors.text.secondary,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text2,
     textTransform: "uppercase" as const,
     letterSpacing: 1,
   },
@@ -46,18 +42,19 @@ export const styles = {
     maxWidth: 300,
   },
   stopButton: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface.secondary,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: color.$surface2,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   stopButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600" as const,
   },
 };

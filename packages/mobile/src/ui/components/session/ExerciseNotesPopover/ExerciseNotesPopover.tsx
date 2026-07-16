@@ -31,7 +31,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Colors, Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 export type ExerciseNotesPopoverProps = {
   visible: boolean;
@@ -87,7 +87,7 @@ export function ExerciseNotesPopover({
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <Ionicons name="close" size={24} color={Colors.text.primary} />
+                <Ionicons name="close" size={24} color={color.$text} />
               </TouchableOpacity>
             </View>
 
@@ -104,7 +104,7 @@ export function ExerciseNotesPopover({
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Add a note about this exercise..."
-                  placeholderTextColor={Colors.text.tertiary}
+                  placeholderTextColor={color.$text3}
                   multiline
                   numberOfLines={8}
                   textAlignVertical="top"
@@ -160,12 +160,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
+    paddingTop: 16,
+    paddingBottom: 32,
+    paddingHorizontal: 24,
     maxHeight: "80%",
     flex: 1,
   },
@@ -173,62 +173,69 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   headerTitle: {
-    ...Typography.h3,
-    color: Colors.text.primary,
+    fontSize: 20,
+    lineHeight: 28,
+    color: color.$text,
     fontWeight: "600",
   },
-  closeButton: { padding: Spacing.xs },
+  closeButton: { padding: 4 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingBottom: Spacing.md },
+  scrollContent: { paddingBottom: 16 },
   exerciseName: {
-    ...Typography.body1,
-    color: Colors.text.secondary,
-    marginBottom: Spacing.md,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
+    color: color.$text2,
+    marginBottom: 16,
   },
   inputContainer: {
     flex: 1,
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   notesInput: {
-    ...Typography.body2,
-    color: Colors.text.primary,
-    backgroundColor: Colors.surface.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text,
+    backgroundColor: color.$surface2,
     borderRadius: 12,
-    padding: Spacing.md,
+    padding: 16,
     minHeight: 150,
     maxHeight: 300,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   actionsContainer: {
     flexDirection: "row",
-    gap: Spacing.md,
+    gap: 16,
   },
   button: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
   },
   cancelButton: {
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   cancelButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
   saveButton: {
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
   },
   saveButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
 });

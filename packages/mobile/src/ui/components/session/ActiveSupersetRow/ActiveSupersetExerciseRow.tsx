@@ -26,7 +26,6 @@ import {
 import { IconSwap, IconTrash } from "@/ui/components/icons";
 import { GEIST_MONO_FAMILY } from "@/ui/theme/fonts";
 import { color } from "@/ui/theme/tokens";
-import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet } from "@/domain/models/session";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
@@ -186,9 +185,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    gap: Spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: color.$border,
   },
@@ -198,18 +197,20 @@ const styles = StyleSheet.create({
   columnExercise: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: 4,
     flex: 3,
   },
   exerciseName: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text,
     flex: 1,
     flexShrink: 1,
     textAlign: "left",
   },
-  swapButton: { padding: Spacing.xs },
-  removeButton: { padding: Spacing.xs },
+  swapButton: { padding: 4 },
+  removeButton: { padding: 4 },
   columnPrevious: {
     flex: 2.5,
     alignItems: "center",
@@ -232,8 +233,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: color.$border,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     fontFamily: GEIST_MONO_FAMILY,
     fontSize: 13,
     color: color.$text,

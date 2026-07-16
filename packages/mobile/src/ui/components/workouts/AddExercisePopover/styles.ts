@@ -1,9 +1,4 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
@@ -12,7 +7,7 @@ export const styles = StyleSheet.create({
   // modal fills the screen.
   modalSafeArea: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
 
   // Sticky header (list view) — back arrow + centered title + Create
@@ -21,35 +16,37 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   modalTitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
-    color: Colors.text.primary,
   },
   backButton: {
-    padding: Spacing.sm,
+    padding: 8,
     minWidth: 40,
   },
   headerSpacer: {
     width: 40,
   },
   createButton: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     minWidth: 40,
     alignItems: "flex-end",
   },
   createButtonText: {
-    ...Typography.body2,
-    color: Colors.primary.DEFAULT,
+    fontSize: 14,
+    lineHeight: 20,
+    color: color.$primary,
     fontWeight: "600",
   },
 
@@ -59,45 +56,48 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   detailsTitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
-    color: Colors.text.primary,
   },
 
   // Sticky search bar (between header and scrollable list).
   searchWrapper: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    backgroundColor: color.$surface2,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   searchIcon: {
-    marginRight: Spacing.sm,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
+    color: color.$text,
     padding: 0,
   },
   clearButton: {
-    padding: Spacing.xs,
+    padding: 4,
   },
 
   // Scrollable list region — flex: 1 so it consumes everything
@@ -109,7 +109,7 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
   },
   contentContainer: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 24,
   },
   // Centering shell for the in-list loading + empty branches. `flexGrow`
   // (not `flex`) lets the View occupy the ScrollView's full visible area
@@ -119,49 +119,51 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xl,
+    paddingVertical: 32,
   },
   emptyState: {
-    paddingVertical: Spacing.xl,
+    paddingVertical: 32,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyText: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
   },
 
   // List rows.
   exerciseRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.sm,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
-    paddingHorizontal: Spacing.xs,
-    borderRadius: BorderRadius.sm,
+    borderBottomColor: color.$surface3,
+    paddingHorizontal: 4,
+    borderRadius: 4,
   },
   exerciseRowSelected: {
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
     borderLeftWidth: 3,
-    borderLeftColor: Colors.primary.DEFAULT,
-    borderBottomColor: Colors.primary.DEFAULT,
+    borderLeftColor: color.$primary,
+    borderBottomColor: color.$primary,
   },
   exerciseRowDisabled: {
     opacity: 0.5,
   },
   exerciseImageContainer: {
-    marginRight: Spacing.md,
+    marginRight: 16,
   },
   exerciseImage: {
     width: 60,
     height: 60,
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
   },
   exerciseImagePlaceholder: {
     width: 60,
     height: 60,
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -169,27 +171,31 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseName: {
-    ...Typography.body1,
-    color: Colors.text.primary,
-    marginBottom: Spacing.xs,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
+    color: color.$text,
+    marginBottom: 4,
   },
   exerciseNameDisabled: {
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   exerciseMuscle: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
   },
   exerciseMuscleDisabled: {
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   actionButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: 8,
   },
   infoButton: {
-    padding: Spacing.xs,
+    padding: 4,
     minWidth: 24,
     minHeight: 24,
     alignItems: "center",
@@ -200,13 +206,13 @@ export const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
     alignItems: "center",
     justifyContent: "center",
   },
   checkboxSelected: {
-    backgroundColor: Colors.primary.DEFAULT,
-    borderColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
+    borderColor: color.$primary,
   },
   checkboxDisabled: {
     opacity: 0.3,
@@ -216,30 +222,31 @@ export const styles = StyleSheet.create({
   // area inset.
   modalFooter: {
     flexDirection: "row",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
+    gap: 16,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
     borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
+    borderTopColor: color.$surface3,
   },
   footerButton: {
     flex: 1,
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
+    backgroundColor: color.$primary,
+    borderRadius: 12,
+    paddingVertical: 8,
     alignItems: "center",
     justifyContent: "center",
   },
   footerButtonDisabled: {
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
   },
   footerButtonText: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
   footerButtonTextDisabled: {
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
 });

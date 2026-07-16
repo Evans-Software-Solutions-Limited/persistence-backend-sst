@@ -21,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { styles } from "./styles";
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 export type RestTimerDisplayProps = {
   isActive: boolean;
@@ -52,11 +52,7 @@ export function RestTimerDisplay(props: RestTimerDisplayProps) {
     <View style={styles.container} testID="rest-timer-display">
       <View style={styles.content}>
         <View style={styles.timerContainer}>
-          <Ionicons
-            name="timer-outline"
-            size={64}
-            color={Colors.primary.DEFAULT}
-          />
+          <Ionicons name="timer-outline" size={64} color={color.$primary} />
           <Text style={styles.timerText}>
             {formatTime(props.remainingSeconds)}
           </Text>

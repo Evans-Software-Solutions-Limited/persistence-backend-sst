@@ -28,7 +28,7 @@
  *       only — V2 owns this surface going forward.
  */
 
-import { Colors, Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
   getExercisesQuery,
@@ -321,11 +321,7 @@ function SwapExercisePopoverPresenter({
               accessibilityRole="button"
               accessibilityLabel="Back to list"
             >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={Colors.text.primary}
-              />
+              <Ionicons name="arrow-back" size={24} color={color.$text} />
             </TouchableOpacity>
             <Text style={styles.detailsTitle}>Exercise Details</Text>
             <View style={styles.headerSpacer} />
@@ -355,7 +351,7 @@ function SwapExercisePopoverPresenter({
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <Ionicons name="arrow-back" size={24} color={color.$text} />
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Swap Exercise</Text>
           <TouchableOpacity
@@ -372,13 +368,13 @@ function SwapExercisePopoverPresenter({
             <Ionicons
               name="search"
               size={20}
-              color={Colors.text.secondary}
+              color={color.$text2}
               style={styles.searchIcon}
             />
             <TextInput
               style={styles.searchInput}
               placeholder="Search exercises..."
-              placeholderTextColor={Colors.text.tertiary}
+              placeholderTextColor={color.$text3}
               value={searchQuery}
               onChangeText={onSearchChange}
               autoCapitalize="none"
@@ -393,11 +389,7 @@ function SwapExercisePopoverPresenter({
                 accessibilityRole="button"
                 accessibilityLabel="Clear search"
               >
-                <Ionicons
-                  name="close-circle"
-                  size={20}
-                  color={Colors.text.secondary}
-                />
+                <Ionicons name="close-circle" size={20} color={color.$text2} />
               </TouchableOpacity>
             )}
           </View>
@@ -411,7 +403,7 @@ function SwapExercisePopoverPresenter({
             <Ionicons
               name="filter"
               size={14}
-              color={Colors.text.secondary}
+              color={color.$text2}
               style={muscleFilterStyles.chipIcon}
             />
             <Text
@@ -475,19 +467,21 @@ const muscleFilterStyles = StyleSheet.create({
   chipWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
   chipIcon: {
-    marginRight: Spacing.xs,
+    marginRight: 4,
   },
   chipText: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
     flex: 1,
   },
   chipTextEmphasis: {
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
   },
 });

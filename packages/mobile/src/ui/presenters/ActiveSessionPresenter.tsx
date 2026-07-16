@@ -40,12 +40,6 @@ import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { IconCheck } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
 
@@ -260,7 +254,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                 testID="active-session-empty-add"
                 accessibilityLabel="Add exercise"
               >
-                <Ionicons name="add" size={18} color={Colors.text.primary} />
+                <Ionicons name="add" size={18} color={color.$text} />
                 <Text style={styles.emptyAddLabel}>Add exercise</Text>
               </TouchableOpacity>
             </View>
@@ -334,7 +328,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                 <Ionicons
                   name="add-circle-outline"
                   size={20}
-                  color={Colors.primary.DEFAULT}
+                  color={color.$primary}
                 />
                 <Text style={styles.addExerciseText}>Add Exercise</Text>
               </TouchableOpacity>
@@ -379,69 +373,75 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   keyboardAvoider: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: {
-    padding: Spacing.md,
+    padding: 16,
     // Clear the floating "Finish Workout" CTA (52pt + 24pt offset + breathing
     // room) so the last exercise's actions aren't hidden behind it.
     paddingBottom: 100,
   },
   exercisesContainer: {
-    gap: Spacing.md,
+    gap: 16,
   },
   emptyWrap: {
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xl,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
   emptyTitle: {
-    ...Typography.h3,
-    color: Colors.text.primary,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 8,
   },
   emptyBody: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
     textAlign: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   emptyAddButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
+    backgroundColor: color.$primary,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 4,
   },
   emptyAddLabel: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
   addExerciseSection: {
-    marginVertical: Spacing.lg,
+    marginVertical: 24,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.surface.border,
-    marginBottom: Spacing.md,
+    backgroundColor: color.$surface3,
+    marginBottom: 16,
   },
   addExerciseLink: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
+    gap: 8,
+    paddingVertical: 16,
   },
   addExerciseText: {
-    ...Typography.body1,
-    color: Colors.primary.DEFAULT,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$primary,
     fontWeight: "600",
   },
   finishContainer: {

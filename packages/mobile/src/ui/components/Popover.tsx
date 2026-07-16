@@ -1,10 +1,4 @@
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import React, { ReactNode } from "react";
 import {
@@ -68,11 +62,7 @@ export function Popover({
                   accessibilityLabel="Close"
                   hitSlop={8}
                 >
-                  <Ionicons
-                    name="close"
-                    size={24}
-                    color={Colors.text.primary}
-                  />
+                  <Ionicons name="close" size={24} color={color.$text} />
                 </TouchableOpacity>
               )}
             </View>
@@ -100,45 +90,49 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.lg,
+    padding: 24,
   },
   popover: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.xl,
+    backgroundColor: color.$surface,
+    borderRadius: 24,
     width: "100%",
     maxWidth: 500,
-    ...Shadows.large,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   headerContent: {
     flex: 1,
   },
   title: {
-    ...Typography.h3,
     fontSize: 18,
-    color: Colors.text.primary,
+    fontWeight: "600",
+    color: color.$text,
     lineHeight: 22,
     marginBottom: 0,
   },
   closeButton: {
-    padding: Spacing.sm,
-    marginLeft: Spacing.md,
+    padding: 8,
+    marginLeft: 16,
   },
   content: {
     flex: 1,
-    padding: Spacing.lg,
+    padding: 24,
   },
   footer: {
-    padding: Spacing.lg,
+    padding: 24,
     borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
+    borderTopColor: color.$surface3,
   },
 });

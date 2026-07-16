@@ -1,4 +1,4 @@
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import {
   getExercisesQuery,
@@ -269,11 +269,7 @@ function AddExercisePopoverPresenter({
               accessibilityRole="button"
               accessibilityLabel="Back to list"
             >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={Colors.text.primary}
-              />
+              <Ionicons name="arrow-back" size={24} color={color.$text} />
             </TouchableOpacity>
             <Text style={styles.detailsTitle}>Exercise Details</Text>
             <View style={styles.headerSpacer} />
@@ -305,7 +301,7 @@ function AddExercisePopoverPresenter({
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+            <Ionicons name="arrow-back" size={24} color={color.$text} />
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Add Exercises</Text>
           <TouchableOpacity
@@ -323,13 +319,13 @@ function AddExercisePopoverPresenter({
             <Ionicons
               name="search"
               size={20}
-              color={Colors.text.secondary}
+              color={color.$text2}
               style={styles.searchIcon}
             />
             <TextInput
               style={styles.searchInput}
               placeholder="Search exercises..."
-              placeholderTextColor={Colors.text.tertiary}
+              placeholderTextColor={color.$text3}
               value={searchQuery}
               onChangeText={onSearchChange}
               autoCapitalize="none"
@@ -343,11 +339,7 @@ function AddExercisePopoverPresenter({
                 accessibilityRole="button"
                 accessibilityLabel="Clear search"
               >
-                <Ionicons
-                  name="close-circle"
-                  size={20}
-                  color={Colors.text.secondary}
-                />
+                <Ionicons name="close-circle" size={20} color={color.$text2} />
               </TouchableOpacity>
             )}
           </View>
