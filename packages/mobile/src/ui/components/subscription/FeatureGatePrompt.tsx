@@ -3,12 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { EntitlementFeature } from "@/domain/models/entitlement";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Paywall card rendered by the feature-gate flow.
@@ -83,7 +78,7 @@ export function FeatureGatePrompt({
   return (
     <View style={styles.card} testID={`feature-gate-prompt-${feature}`}>
       <View style={styles.iconWrapper}>
-        <Ionicons name="lock-closed" size={28} color={Colors.primary.DEFAULT} />
+        <Ionicons name="lock-closed" size={28} color={color.$primary} />
       </View>
 
       <Text style={styles.title}>{featureDisplayName}</Text>
@@ -113,11 +108,7 @@ export function FeatureGatePrompt({
         </View>
       ) : (
         <View style={styles.supportRow} testID="feature-gate-contact-support">
-          <Ionicons
-            name="help-circle-outline"
-            size={20}
-            color={Colors.text.secondary}
-          />
+          <Ionicons name="help-circle-outline" size={20} color={color.$text2} />
           <Text style={styles.supportText}>
             You&apos;re already on our top tier. Contact support for help.
           </Text>
@@ -155,26 +146,30 @@ export function FeatureGatePrompt({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.medium,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
     alignItems: "stretch",
-    gap: Spacing.md,
+    gap: 16,
   },
   iconWrapper: {
     alignItems: "center",
-    paddingTop: Spacing.xs,
+    paddingTop: 4,
   },
   title: {
     fontSize: 20,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
     lineHeight: 20,
   },
@@ -182,22 +177,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: 4,
   },
   currentTierLabel: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   currentTierValue: {
     fontSize: 13,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
   },
   upgradePreview: {
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    gap: Spacing.xs,
+    backgroundColor: color.$surface2,
+    borderRadius: 12,
+    padding: 16,
+    gap: 4,
   },
   upgradePreviewHeader: {
     flexDirection: "row",
@@ -207,56 +202,56 @@ const styles = StyleSheet.create({
   upgradePreviewName: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   upgradePreviewPrice: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
   },
   upgradePreviewBlurb: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 18,
   },
   supportRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
+    gap: 4,
+    paddingVertical: 8,
   },
   supportText: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
     flexShrink: 1,
   },
   ctaRow: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   primaryButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 8 + 2,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   primaryButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   secondaryButton: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
 });

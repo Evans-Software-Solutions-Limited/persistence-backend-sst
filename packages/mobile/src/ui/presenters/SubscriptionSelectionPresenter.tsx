@@ -24,12 +24,7 @@ import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodFor
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Pure presenter for the Subscription Selection screen. Ported 1:1
@@ -261,7 +256,7 @@ export function SubscriptionSelectionPresenter(
         testID="subscription-selection-error"
       >
         <View style={styles.errorContainer}>
-          <Ionicons name="warning" size={48} color={Colors.error.DEFAULT} />
+          <Ionicons name="warning" size={48} color={color.$error} />
           <Text style={styles.errorTitle}>
             Failed to Load Subscription Options
           </Text>
@@ -280,10 +275,7 @@ export function SubscriptionSelectionPresenter(
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.background.primary}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
 
       <View style={styles.headerContainer}>
         <TouchableOpacity
@@ -294,7 +286,7 @@ export function SubscriptionSelectionPresenter(
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={color.$text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Choose your plan</Text>
         <View style={styles.headerSpacer} />
@@ -442,11 +434,7 @@ export function SubscriptionSelectionPresenter(
                 disabled={!!selectedTierForPayment || isProcessingSubscription}
                 testID="cancel-subscription-button"
               >
-                <Ionicons
-                  name="close-circle"
-                  size={16}
-                  color={Colors.error.DEFAULT}
-                />
+                <Ionicons name="close-circle" size={16} color={color.$error} />
                 <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
               </TouchableOpacity>
             </View>
@@ -606,18 +594,18 @@ export function deriveTrialEligibility(args: {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.lg,
+    padding: 24,
   },
   loadingText: {
-    color: Colors.text.primary,
+    color: color.$text,
     fontSize: 16,
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   processingOverlay: {
     position: "absolute",
@@ -625,82 +613,86 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: Colors.background.primary + "E6",
+    backgroundColor: color.$bg + "E6",
     zIndex: 1000,
     justifyContent: "center",
     alignItems: "center",
   },
   processingContainer: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 32,
     alignItems: "center",
-    ...Shadows.large,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
     minWidth: 200,
   },
   processingText: {
-    color: Colors.text.primary,
+    color: color.$text,
     fontSize: 16,
     fontWeight: "600",
-    marginTop: Spacing.md,
+    marginTop: 16,
     textAlign: "center",
   },
   processingSubtext: {
-    color: Colors.text.secondary,
+    color: color.$text2,
     fontSize: 14,
-    marginTop: Spacing.xs,
+    marginTop: 4,
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    padding: 24,
+    gap: 16,
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   errorMessage: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   retryButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
   },
   retryButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   headerSpacer: {
     width: 40,
@@ -710,53 +702,53 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 24,
   },
   roleToggleContainer: {
     flexDirection: "row",
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xs,
-    marginTop: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 4,
+    marginTop: 16,
   },
   roleToggleButton: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    paddingVertical: 16,
     alignItems: "center",
-    borderRadius: BorderRadius.md,
+    borderRadius: 12,
   },
   roleToggleButtonActive: {
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
   },
   roleToggleText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   roleToggleTextActive: {
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   billingToggleContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.md,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.md,
+    gap: 16,
+    marginTop: 24,
+    marginBottom: 16,
   },
   billingToggleLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   billingToggleSavings: {
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     fontWeight: "700",
   },
   billingToggle: {
     width: 52,
     height: 28,
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     borderRadius: 14,
     padding: 2,
     justifyContent: "center",
@@ -764,52 +756,52 @@ const styles = StyleSheet.create({
   billingToggleThumb: {
     width: 24,
     height: 24,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     borderRadius: 12,
   },
   subscriptionOptions: {
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   tierCards: {
-    gap: Spacing.md,
+    gap: 16,
   },
   trainerDescriptionText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 20,
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   emptyStateContainer: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
     alignItems: "center",
   },
   emptyStateText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   cancelSubscriptionContainer: {
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.lg,
+    marginTop: 24,
+    marginBottom: 24,
     alignItems: "center",
   },
   cancelButtonTrainerCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: Colors.error.DEFAULT,
-    borderRadius: BorderRadius.md,
+    borderColor: color.$error,
+    borderRadius: 12,
   },
   cancelButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.error.DEFAULT,
+    color: color.$error,
   },
   // M10.5 — applied conditionally on tier cards + cancel CTA when
   // `isOffline`. Cards remain tappable so the container can surface an
@@ -818,10 +810,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   slowLoadingText: {
-    color: Colors.text.secondary,
+    color: color.$text2,
     fontSize: 13,
     fontStyle: "italic",
-    marginTop: Spacing.sm,
+    marginTop: 8,
     textAlign: "center",
   },
 });

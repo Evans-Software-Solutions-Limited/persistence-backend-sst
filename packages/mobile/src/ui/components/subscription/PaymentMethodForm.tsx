@@ -5,11 +5,7 @@ import type {
   ApplePayCartItem,
   PaymentsPort,
 } from "@/domain/ports/payments.port";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Apple Pay trigger for subscription buy / change flows. Ported 1:1
@@ -237,11 +233,7 @@ export function PaymentMethodForm({
     return (
       <View style={styles.container} testID="payment-form-android-state">
         <View style={styles.errorContainer}>
-          <Ionicons
-            name="alert-circle"
-            size={24}
-            color={Colors.error.DEFAULT}
-          />
+          <Ionicons name="alert-circle" size={24} color={color.$error} />
           <Text style={styles.errorText}>
             Apple Pay is only available on iOS devices. Please use an iPhone or
             iPad to complete your subscription.
@@ -269,11 +261,7 @@ export function PaymentMethodForm({
     return (
       <View style={styles.container} testID="payment-form-no-wallet">
         <View style={styles.errorContainer}>
-          <Ionicons
-            name="alert-circle"
-            size={24}
-            color={Colors.warning.DEFAULT}
-          />
+          <Ionicons name="alert-circle" size={24} color={color.$warning} />
           <Text style={styles.errorText}>
             Apple Pay is not available on this device. Please ensure you have a
             card set up in Apple Wallet and that Apple Pay is enabled.
@@ -294,25 +282,25 @@ const styles = StyleSheet.create({
   errorContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.sm,
-    backgroundColor: Colors.error.DEFAULT + "20",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+    gap: 8,
+    backgroundColor: color.$error + "20",
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.error.DEFAULT + "40",
+    borderColor: color.$error + "40",
   },
   errorText: {
     flex: 1,
     fontSize: 14,
-    color: Colors.text.primary,
+    color: color.$text,
     lineHeight: 20,
   },
   loadingContainer: {
-    padding: Spacing.md,
+    padding: 16,
     alignItems: "center",
   },
   loadingText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
 });

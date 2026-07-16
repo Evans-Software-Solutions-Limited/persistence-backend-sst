@@ -4,11 +4,7 @@ import type {
   SubscriptionStatus,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Compact tier chip — small visual indicator of the user's current
@@ -68,19 +64,19 @@ function variantFor(tier: SubscriptionTierName): Variant {
 
 const VARIANT_STYLES: Record<Variant, { background: string; text: string }> = {
   free: {
-    background: Colors.surface.secondary,
-    text: Colors.text.secondary,
+    background: color.$surface2,
+    text: color.$text2,
   },
   premium: {
-    background: Colors.warning.DEFAULT,
-    text: Colors.text.inverse,
+    background: color.$warning,
+    text: color.$bg,
   },
   trainer: {
     // Trainer palette: warning-dark stand-in for "purple-ish" — keeps
     // the chip distinct from free / premium without introducing a new
     // accent token outside M10.5 scope.
     background: "#7C3AED",
-    text: Colors.text.inverse,
+    text: color.$bg,
   },
 };
 
@@ -130,12 +126,12 @@ export function SubscriptionBadge({
 const styles = StyleSheet.create({
   badge: {
     alignSelf: "flex-start",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 9999,
   },
   badgeCompact: {
-    paddingHorizontal: Spacing.xs + 2,
+    paddingHorizontal: 4 + 2,
     paddingVertical: 2,
   },
   text: {

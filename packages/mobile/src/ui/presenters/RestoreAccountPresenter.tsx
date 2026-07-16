@@ -7,13 +7,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Restore-account gate — pure presenter (Cluster 2b account-deletion
@@ -57,7 +51,7 @@ export function RestoreAccountPresenter({
 
   return (
     <View
-      style={[styles.container, { paddingTop: insets.top + Spacing.xl }]}
+      style={[styles.container, { paddingTop: insets.top + 32 }]}
       testID="restore-account-screen"
     >
       <View style={styles.card}>
@@ -82,7 +76,7 @@ export function RestoreAccountPresenter({
           accessibilityLabel="Restore my account"
         >
           {isRestoring ? (
-            <ActivityIndicator color={Colors.text.inverse} />
+            <ActivityIndicator color={color.$bg} />
           ) : (
             <Text style={styles.restoreButtonText}>Restore my account</Text>
           )}
@@ -111,27 +105,35 @@ export function RestoreAccountPresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
-    padding: Spacing.lg,
+    backgroundColor: color.$bg,
+    padding: 24,
   },
   card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-    ...Shadows.medium,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
+    gap: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   title: {
-    ...Typography.h3,
-    color: Colors.text.primary,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
+    color: color.$text,
   },
   body: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
   },
   button: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm + 2,
+    borderRadius: 12,
+    paddingVertical: 8 + 2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -139,20 +141,22 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   restoreButton: {
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
   },
   restoreButtonText: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   signOutButton: {
     borderWidth: 1,
-    borderColor: Colors.error.DEFAULT,
+    borderColor: color.$error,
   },
   signOutButtonText: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: "600",
-    color: Colors.error.DEFAULT,
+    color: color.$error,
   },
 });

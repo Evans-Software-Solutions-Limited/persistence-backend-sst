@@ -2,12 +2,7 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { SubscriptionTier } from "@/domain/models/subscription";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Single-column user-tier card. Ported 1:1 from legacy
@@ -109,11 +104,7 @@ export function SubscriptionCard({
           <View style={styles.features}>
             {features.map((feature, idx) => (
               <View key={idx} style={styles.feature}>
-                <Ionicons
-                  name="checkmark"
-                  size={18}
-                  color={Colors.primary.DEFAULT}
-                />
+                <Ionicons name="checkmark" size={18} color={color.$primary} />
                 <Text style={styles.featureText}>{feature}</Text>
               </View>
             ))}
@@ -146,44 +137,48 @@ export function SubscriptionCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
     borderWidth: 2,
     borderColor: "transparent",
-    ...Shadows.medium,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
     overflow: "hidden",
     position: "relative",
     flex: 1,
     minHeight: 200,
   },
   cardSelected: {
-    borderColor: Colors.primary.DEFAULT,
-    backgroundColor: Colors.primary.DEFAULT + "10",
+    borderColor: color.$primary,
+    backgroundColor: color.$primary + "10",
   },
   trialBanner: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
     alignItems: "center",
     zIndex: 1,
   },
   trialBannerText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.text.inverse,
+    color: color.$bg,
     textTransform: "uppercase",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+    marginBottom: 8,
+    marginTop: 4,
   },
   titleContainer: {
     flex: 1,
@@ -191,13 +186,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   clientSlots: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.secondary,
-    marginTop: Spacing.xs / 2,
+    color: color.$text2,
+    marginTop: 4 / 2,
   },
   priceContainer: {
     alignItems: "flex-end",
@@ -205,74 +200,74 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 22,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   priceStrikethrough: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.error.DEFAULT,
+    color: color.$error,
     textDecorationLine: "line-through",
-    marginBottom: Spacing.xs / 2,
+    marginBottom: 4 / 2,
   },
   subscribeButtonContainer: {
     marginTop: "auto",
-    paddingTop: Spacing.md,
+    paddingTop: 16,
   },
   subscribeButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   subscribeButtonDisabled: {
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     opacity: 0.6,
   },
   priceUnavailable: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
     fontStyle: "italic",
   },
   subscribeButtonCurrent: {
-    backgroundColor: Colors.primary.DEFAULT + "CC",
+    backgroundColor: color.$primary + "CC",
     opacity: 0.8,
   },
   subscribeButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   content: {
-    marginTop: Spacing.sm,
+    marginTop: 8,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
-    marginBottom: Spacing.sm,
+    color: color.$text2,
+    marginBottom: 8,
   },
   features: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   feature: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.sm,
+    gap: 8,
   },
   featureText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     flex: 1,
     lineHeight: 20,
   },
   currentBadge: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
-    marginTop: Spacing.md,
+    color: color.$primary,
+    marginTop: 16,
     textAlign: "center",
   },
 });

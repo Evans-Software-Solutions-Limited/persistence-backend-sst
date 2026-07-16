@@ -1,11 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Single-line banner shown at the top of the Home tab when one or
@@ -56,7 +52,7 @@ export function SyncBlockedBanner({
       <Ionicons
         name="lock-closed"
         size={16}
-        color={Colors.warning.DEFAULT}
+        color={color.$warning}
         style={styles.icon}
       />
       <View style={styles.textWrap}>
@@ -80,15 +76,15 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.warning.DEFAULT + "1A",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: color.$warning + "1A",
     borderWidth: 1,
-    borderColor: Colors.warning.DEFAULT + "40",
-    borderRadius: BorderRadius.md,
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
+    borderColor: color.$warning + "40",
+    borderRadius: 12,
+    marginHorizontal: 24,
+    marginTop: 8,
   },
   icon: {
     flexShrink: 0,
@@ -100,17 +96,17 @@ const styles = StyleSheet.create({
   line: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.warning.DEFAULT,
+    color: color.$warning,
   },
   reviewButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.warning.DEFAULT + "33",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    backgroundColor: color.$warning + "33",
   },
   reviewText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.warning.DEFAULT,
+    color: color.$warning,
   },
 });

@@ -1,11 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Single-line "You're offline" banner shown above the subscription
@@ -25,11 +21,7 @@ import {
 export function OfflineBanner() {
   return (
     <View style={styles.banner} testID="subscription-offline-banner">
-      <Ionicons
-        name="cloud-offline-outline"
-        size={16}
-        color={Colors.warning.DEFAULT}
-      />
+      <Ionicons name="cloud-offline-outline" size={16} color={color.$warning} />
       <Text style={styles.text}>You&apos;re offline</Text>
     </View>
   );
@@ -39,19 +31,19 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.warning.DEFAULT + "1A",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: color.$warning + "1A",
     borderWidth: 1,
-    borderColor: Colors.warning.DEFAULT + "40",
-    borderRadius: BorderRadius.md,
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
+    borderColor: color.$warning + "40",
+    borderRadius: 12,
+    marginHorizontal: 24,
+    marginTop: 8,
   },
   text: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.warning.DEFAULT,
+    color: color.$warning,
   },
 });

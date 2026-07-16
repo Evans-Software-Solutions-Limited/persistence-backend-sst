@@ -19,12 +19,7 @@ import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { getFeaturesList } from "@/ui/presenters/SubscriptionSelectionPresenter";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Pure presenter for the iOS RevenueCat purchase flow (M12, iOS rail).
@@ -197,7 +192,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     return (
       <SafeAreaView style={styles.safeArea} testID="ios-purchase-error">
         <View style={styles.centeredContainer}>
-          <Ionicons name="warning" size={48} color={Colors.error.DEFAULT} />
+          <Ionicons name="warning" size={48} color={color.$error} />
           <Text style={styles.errorTitle}>Couldn&apos;t load plans</Text>
           <Text style={styles.errorMessage}>{errorMessage}</Text>
           <TouchableOpacity
@@ -214,10 +209,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.background.primary}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
 
       <View style={styles.headerContainer}>
         <TouchableOpacity
@@ -228,7 +220,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={color.$text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Choose your plan</Text>
         <View style={styles.headerSpacer} />
@@ -374,11 +366,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             disabled={isProcessing || isRestoring}
             testID="ios-purchase-manage"
           >
-            <Ionicons
-              name="open-outline"
-              size={16}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="open-outline" size={16} color={color.$text2} />
             <Text style={styles.manageButtonText}>Manage in App Store</Text>
           </TouchableOpacity>
         )}
@@ -398,135 +386,139 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background.primary },
+  safeArea: { flex: 1, backgroundColor: color.$bg },
   centeredContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    padding: 24,
+    gap: 16,
   },
   loadingText: {
-    color: Colors.text.primary,
+    color: color.$text,
     fontSize: 16,
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   errorMessage: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   primaryButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
   },
   primaryButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
-  headerTitle: { fontSize: 20, fontWeight: "600", color: Colors.text.primary },
+  headerTitle: { fontSize: 20, fontWeight: "600", color: color.$text },
   headerSpacer: { width: 40 },
-  scrollView: { flex: 1, paddingHorizontal: Spacing.lg },
+  scrollView: { flex: 1, paddingHorizontal: 24 },
   processingOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: Colors.background.primary + "E6",
+    backgroundColor: color.$bg + "E6",
     zIndex: 1000,
     justifyContent: "center",
     alignItems: "center",
   },
   processingContainer: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 32,
     alignItems: "center",
-    ...Shadows.large,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
     minWidth: 200,
   },
   processingText: {
-    color: Colors.text.primary,
+    color: color.$text,
     fontSize: 16,
     fontWeight: "600",
-    marginTop: Spacing.md,
+    marginTop: 16,
     textAlign: "center",
   },
   noticeCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginTop: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
-  noticeText: { fontSize: 14, color: Colors.text.secondary },
+  noticeText: { fontSize: 14, color: color.$text2 },
   roleToggleContainer: {
     flexDirection: "row",
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xs,
-    marginTop: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 4,
+    marginTop: 16,
   },
   roleToggleButton: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    paddingVertical: 16,
     alignItems: "center",
-    borderRadius: BorderRadius.md,
+    borderRadius: 12,
   },
-  roleToggleButtonActive: { backgroundColor: Colors.primary.DEFAULT },
+  roleToggleButtonActive: { backgroundColor: color.$primary },
   roleToggleText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
-  roleToggleTextActive: { color: Colors.text.inverse },
+  roleToggleTextActive: { color: color.$bg },
   billingToggleContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.md,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.md,
+    gap: 16,
+    marginTop: 24,
+    marginBottom: 16,
   },
   billingToggleLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
-  billingToggleSavings: { color: Colors.primary.DEFAULT, fontWeight: "700" },
+  billingToggleSavings: { color: color.$primary, fontWeight: "700" },
   billingToggle: {
     width: 52,
     height: 28,
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     borderRadius: 14,
     padding: 2,
     justifyContent: "center",
@@ -534,55 +526,55 @@ const styles = StyleSheet.create({
   billingToggleThumb: {
     width: 24,
     height: 24,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     borderRadius: 12,
   },
-  subscriptionOptions: { marginTop: Spacing.md },
-  tierCards: { gap: Spacing.md },
+  subscriptionOptions: { marginTop: 16 },
+  tierCards: { gap: 16 },
   trainerDescriptionText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 20,
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   emptyStateContainer: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
     alignItems: "center",
   },
   emptyStateText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
   restoreButton: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.md,
+    marginTop: 24,
+    paddingVertical: 16,
     alignItems: "center",
   },
   restoreButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
   },
   manageButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    marginBottom: Spacing.lg,
+    gap: 8,
+    paddingVertical: 16,
+    marginBottom: 24,
   },
   manageButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   footnote: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
-    marginBottom: Spacing.xl,
+    marginBottom: 32,
   },
 });
