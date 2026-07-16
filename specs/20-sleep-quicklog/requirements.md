@@ -1,9 +1,9 @@
 # 20 — Sleep quick-log + HealthKit — Requirements
 
-> **Status: DRAFT — awaiting Brad's sign-off before any code (per the spec-12
-> brief, item 1).** Net-new feature spanning 3 spec areas (backend health,
-> `07-health-integration`, `06-progress-goals`). Plan of record: `ROADMAP.md
-> § 5.1`.
+> **Status: SIGNED OFF 2026-07-16 (Brad accepted the recommended Decisions
+> D1–D4 — see design.md).** Net-new feature spanning 3 spec areas (backend
+> health, `07-health-integration`, `06-progress-goals`). Plan of record:
+> `ROADMAP.md § 5.1`. Ships as two PRs (PR-A backend, PR-B mobile).
 
 ## Context (verified against the code, 2026-07-16)
 

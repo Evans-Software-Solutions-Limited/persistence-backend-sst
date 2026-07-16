@@ -1,7 +1,7 @@
 # 20 — Sleep quick-log + HealthKit — Tasks
 
-> **DRAFT — do not start until Brad signs off requirements + design (esp.
-> Decisions D1–D4).** Sequenced as two PRs per Decision D4.
+> **SIGNED OFF 2026-07-16 — Decisions D1–D4 LOCKED (see design.md).** Sequenced
+> as two PRs per Decision D4: PR-A backend, then PR-B mobile + health-port.
 
 ## PR-A — Backend endpoint + migration (`microservices/core`, `packages/db`)
 
@@ -71,5 +71,5 @@
 
 ---
 
-_Draft authored 2026-07-16 from `ROADMAP.md § 5.1` + a code-verified groundwork
-pass. Requirements + design + Decisions D1–D4 need Brad's sign-off before code._
+_Authored + signed off 2026-07-16 from `ROADMAP.md § 5.1` + a code-verified
+groundwork pass. Decisions D1–D4 locked to the recommended options._

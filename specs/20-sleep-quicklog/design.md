@@ -1,8 +1,8 @@
 # 20 — Sleep quick-log + HealthKit — Design
 
-> **DRAFT — awaiting sign-off.** Decisions D1–D4 below are the ones that need
-> Brad's call before code. Everything else follows the established WeighIn
-> pattern 1:1.
+> **SIGNED OFF 2026-07-16.** Decisions D1–D4 are LOCKED to the recommended
+> options (Brad accepted the recommendations). Everything else follows the
+> established WeighIn pattern 1:1.
 
 ## Architecture overview
 
@@ -118,26 +118,21 @@ string; sleepEnd?: string }`. Implement in `SSTApiAdapter` + `InMemoryApiAdapter
   `health.getSleepLastNight()` when available, calls `useLogSleep().mutate`,
   then best-effort `health.writeSleep(start, end)`.
 
-## Decisions needing sign-off
+## Decisions (LOCKED 2026-07-16 — Brad accepted the recommendations)
 
-- **D1 — Manual input model.** *Recommended:* **duration** (hours + minutes) —
-  fastest quick-log, matches "how much did you sleep." Trade-off: HealthKit +
-  `sleep_start/sleep_end` need concrete times, so we **synthesise** a window
-  (anchor wake at a fixed local hour, e.g. 07:00 on `sleepDate`; `start = end -
-  duration`) and store it — clearly an approximation. *Alternative:* collect
-  **bedtime + wake time** (two time pickers) → duration derived + real
-  start/end for HealthKit, at the cost of more taps. **Pick one.**
-- **D2 — Sleep-date semantics.** "Last night's sleep" logged in the morning:
-  is `sleepDate` **the wake day (today)** or **the night-before day
-  (yesterday)**? *Recommended:* the **wake day** (the day you're logging on),
-  matching how the Home pill reads "today". Confirm.
-- **D3 — Home-pill source precedence.** When both a `'manual'` row and a device
-  (`apple_health`) row exist for the day, which wins? *Recommended:* prefer the
-  **most-recent by `created_at`** (so a fresh manual entry shows immediately,
-  and a later device sync supersedes it). Alternative: device-always-wins.
-- **D4 — Ship shape.** *Recommended:* **two PRs** — PR-A backend endpoint +
-  migration, then PR-B mobile + health-port against that contract (matches
-  ROADMAP §5.1's recommended split). Confirm vs. one combined PR.
+- **D1 — Manual input model → DURATION (hours + minutes).** Fastest quick-log,
+  matches "how much did you sleep." HealthKit + `sleep_start/sleep_end` need
+  concrete times, so we **synthesise** a window: anchor wake at a fixed local
+  hour (07:00 on the wake day = `sleepDate`), `start = end − duration`, and
+  store both — documented as an approximation. (Not bedtime+wake-time pickers.)
+- **D2 — Sleep-date semantics → WAKE DAY.** `sleepDate` is the day you log on
+  (the morning-after day), matching how the Home pill reads "today."
+- **D3 — Home-pill source precedence → MOST-RECENT BY `created_at`.** When both
+  a `'manual'` and a device (`apple_health`) row exist for the day, the newer
+  row wins — a fresh manual entry shows immediately; a later device sync
+  supersedes it. (Not device-always-wins.)
+- **D4 — Ship shape → TWO PRs.** PR-A backend endpoint + migration, then PR-B
+  mobile + health-port against that contract (ROADMAP §5.1's recommended split).
 
 ## Testing & gates
 
