@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";
-import { Colors, Spacing, Typography } from "@/ui/theme/profileLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 // [08-profile-settings shell refresh 2026]
 // Header chrome moved to <HeaderBar> + <IconBtn> foundation primitives and
@@ -194,32 +194,42 @@ export function PrivacyPolicyPresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   content: {
     flex: 1,
-    padding: Spacing.md,
+    padding: 16,
   },
   lastUpdated: {
-    ...Typography.caption,
-    color: Colors.text.tertiary,
-    marginBottom: Spacing.lg,
+    fontSize: 12,
+    fontWeight: "400" as const,
+    lineHeight: 16,
+    color: color.$text3,
+    marginBottom: 24,
   },
   section: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 8,
   },
   bodyText: {
-    ...Typography.body1,
-    marginBottom: Spacing.sm,
+    fontSize: 16,
+    fontWeight: "400" as const,
     lineHeight: 24,
+    color: color.$text,
+    marginBottom: 8,
   },
   listItem: {
-    ...Typography.body1,
-    marginLeft: Spacing.md,
-    marginBottom: Spacing.xs,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
+    marginLeft: 16,
+    marginBottom: 4,
   },
 });

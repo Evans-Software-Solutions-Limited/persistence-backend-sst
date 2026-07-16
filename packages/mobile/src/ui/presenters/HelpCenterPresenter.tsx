@@ -14,13 +14,7 @@ import {
   IconMail,
   iconDefaults,
 } from "@/ui/components/icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/profileLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 // [08-profile-settings shell refresh 2026]
 // Header chrome moved to <HeaderBar> + <IconBtn> foundation primitives and
@@ -117,9 +111,9 @@ export function HelpCenterPresenter({
             onPress={onContactSupport}
             testID="help-center-contact-support"
           >
-            <IconMail size={20} color={Colors.primary.DEFAULT} />
+            <IconMail size={20} color={color.$primary} />
             <Text style={styles.actionButtonText}>Contact Support</Text>
-            <IconChevronR size={20} color={Colors.text.secondary} />
+            <IconChevronR size={20} color={color.$text2} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -130,46 +124,64 @@ export function HelpCenterPresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   content: {
     flex: 1,
-    padding: Spacing.md,
+    padding: 16,
   },
   section: {
-    marginBottom: Spacing.xl,
+    marginBottom: 32,
   },
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 16,
   },
   faqItem: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   faqQuestion: {
-    ...Typography.body1,
-    fontWeight: "600",
-    marginBottom: Spacing.xs,
+    fontSize: 16,
+    fontWeight: "600" as const,
+    lineHeight: 24,
+    color: color.$text,
+    marginBottom: 4,
   },
   faqAnswer: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
   actionButton: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    ...Shadows.small,
+    gap: 8,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   actionButtonText: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
     flex: 1,
   },
 });

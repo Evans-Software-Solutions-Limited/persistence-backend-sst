@@ -3,12 +3,7 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/profileLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 // [08-profile-settings shell refresh 2026]
 // Header chrome moved to <HeaderBar> + <IconBtn> and the Send Message CTA to
@@ -78,7 +73,7 @@ export function ContactSupportPresenter({
             style={styles.input}
             value={email}
             editable={false}
-            placeholderTextColor={Colors.text.tertiary}
+            placeholderTextColor={color.$text3}
             testID="contact-support-email"
           />
         </View>
@@ -90,7 +85,7 @@ export function ContactSupportPresenter({
             value={subject}
             onChangeText={onSubjectChange}
             placeholder="What can we help you with?"
-            placeholderTextColor={Colors.text.tertiary}
+            placeholderTextColor={color.$text3}
             testID="contact-support-subject"
           />
         </View>
@@ -102,7 +97,7 @@ export function ContactSupportPresenter({
             value={message}
             onChangeText={onMessageChange}
             placeholder="Describe your issue or question..."
-            placeholderTextColor={Colors.text.tertiary}
+            placeholderTextColor={color.$text3}
             multiline
             numberOfLines={6}
             textAlignVertical="top"
@@ -142,40 +137,47 @@ export function ContactSupportPresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   content: {
     flex: 1,
-    padding: Spacing.md,
+    padding: 16,
   },
   section: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   sectionDescription: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
   label: {
-    ...Typography.body1,
-    marginBottom: Spacing.sm,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
+    marginBottom: 8,
   },
   input: {
-    backgroundColor: Colors.surface.tertiary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    ...Typography.body1,
-    color: Colors.text.primary,
+    backgroundColor: color.$surface3,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   textArea: {
     minHeight: 120,
   },
   sendButton: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   link: {
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     textDecorationLine: "underline",
   },
 });
