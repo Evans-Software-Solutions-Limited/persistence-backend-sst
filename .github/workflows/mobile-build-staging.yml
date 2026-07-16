@@ -58,12 +58,18 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build (EAS)
+        # --wait (not --no-wait): the Submit step below uses `eas submit --latest`,
+        # which resolves to the latest *finished* build. Without --wait the build
+        # is only queued, so --latest would error on the first-ever build (none
+        # finished) or submit the PREVIOUS build on later runs. Blocking the job
+        # until the build completes makes --latest unambiguous. Public repo =
+        # unlimited Actions minutes, and --wait consumes no extra EAS build minutes.
         run: |
           eas build \
             --platform ${{ github.event.inputs.platform || 'ios' }} \
             --profile staging \
             --non-interactive \
-            --no-wait
+            --wait
 
       - name: Submit to TestFlight (iOS)
         # Push events: always submit (iOS-only by default).
