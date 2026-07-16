@@ -36,8 +36,17 @@ import { ClientRow } from "./ClientRow";
  * The roster arrives pre-sorted by adherence ascending (null last) from the
  * backend; this presenter never re-sorts — it only filters by status (segment)
  * and name (search). Rows render inside one Card mapped directly (per the
- * prototype) rather than a virtualized list: the roster is bounded by the
- * trainer's client-slot limit, and FlashList is deferred to M11.
+ * prototype) rather than a virtualized list.
+ *
+ * spec-12.5 decision (2026-07-16): this surface is EXEMPT from the FlashList
+ * >=20-row rule and stays a ScrollView + .map. Three reasons: (1) the roster is
+ * bounded by the trainer's subscription client-slot limit; (2) the rows live in
+ * one <Card radius={14}> that supplies the background + rounded-corner clipping
+ * (ClientRow only draws dividers) — virtualising would mean reconstructing that
+ * card container and risk a 1:1-fidelity regression; (3) the search + segmented
+ * filter would have to move into a FlashList ListHeaderComponent, where a
+ * TextInput risks keyboard-dismiss-on-keystroke the ScrollView avoids. ClientRow
+ * is still React.memo'd (T-12.5.2) so unchanged rows skip re-render.
  */
 
 export type ClientSegment = "Active" | "All" | "Archive";

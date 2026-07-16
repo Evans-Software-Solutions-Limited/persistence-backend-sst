@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 import { IconMedal } from "../icons";
 import { Skeleton } from "../Skeleton";
@@ -38,7 +38,7 @@ export type PRCardProps = {
   testID?: string;
 };
 
-export function PRCard({
+function PRCardBase({
   exerciseName,
   value,
   unit,
@@ -188,3 +188,8 @@ export function PRCard({
     </>,
   );
 }
+
+/**
+ * spec-12.5 (T-12.5.2): memoised for the PR carousel's recycled cards.
+ */
+export const PRCard = memo(PRCardBase);

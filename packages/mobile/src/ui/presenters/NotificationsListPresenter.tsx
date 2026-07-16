@@ -1,6 +1,7 @@
 import { Text, View } from "@tamagui/core";
 import { useCallback } from "react";
-import { FlatList, RefreshControl } from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Notification } from "@/domain/models/notification";
@@ -14,12 +15,14 @@ import { color } from "@/ui/theme/tokens";
 
 /**
  * <NotificationsListPresenter> — pure presenter for the notifications list.
- * Grouped date sections + rows in a single FlatList, pull-to-refresh,
+ * Grouped date sections + rows in a single FlashList, pull-to-refresh,
  * cursor pagination, empty state, mark-all-read.
  *
- * FlatList (not FlashList) per the Revised 2026-06-07 decision — FlashList
- * is deferred to M11; the data/renderItem/refresh/onEndReached contract is
- * identical so the swap is mechanical.
+ * FlashList (spec-12.5): the earlier 2026-06-07 "keep FlatList" note deferred
+ * the swap to M11 — 12.5 IS that slot. The list is paginated (onEndReached) and
+ * routinely exceeds 20 rows, so it qualifies under the >=20-row rule. Section
+ * headers and rows are heterogeneous, so `getItemType` keeps FlashList's
+ * recycling pools separate.
  *
  * Spec: specs/09-notifications-social/design.md § NotificationsListPresenter
  *       requirements.md STORY-002
@@ -79,7 +82,6 @@ export function NotificationsListPresenter({
 }: NotificationsListProps) {
   const insets = useSafeAreaInsets();
   const data = flattenGroups(groups);
-  const isEmpty = data.length === 0;
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) =>
@@ -90,7 +92,7 @@ export function NotificationsListPresenter({
       ) : (
         <NotificationRowPresenter
           notification={item.notification}
-          onPress={() => onTap(item.notification)}
+          onPress={onTap}
           now={now}
         />
       ),
@@ -123,25 +125,23 @@ export function NotificationsListPresenter({
         }
       />
 
-      <FlatList
-        testID="notifications-list"
-        data={data}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor={color.$text3}
-          />
-        }
-        onEndReached={onLoadMore}
-        onEndReachedThreshold={0.5}
-        contentContainerStyle={
-          isEmpty ? { flexGrow: 1 } : { paddingBottom: insets.bottom + 24 }
-        }
-        ListEmptyComponent={
-          isLoading ? null : (
+      {data.length === 0 ? (
+        // Empty state: FlashList v2 won't honour `flexGrow` in
+        // contentContainerStyle, so it can't centre an empty child. Fall back
+        // to a ScrollView (flexGrow:1) to keep the centred empty state AND
+        // pull-to-refresh, matching the legacy FlatList layout.
+        <ScrollView
+          testID="notifications-list"
+          contentContainerStyle={{ flexGrow: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor={color.$text3}
+            />
+          }
+        >
+          {isLoading ? null : (
             <View
               flex={1}
               alignItems="center"
@@ -169,9 +169,27 @@ export function NotificationsListPresenter({
                   : "Check back after a workout 💪"}
               </Text>
             </View>
-          )
-        }
-      />
+          )}
+        </ScrollView>
+      ) : (
+        <FlashList
+          testID="notifications-list"
+          data={data}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          getItemType={(item) => item.kind}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor={color.$text3}
+            />
+          }
+          onEndReached={onLoadMore}
+          onEndReachedThreshold={0.5}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        />
+      )}
     </View>
   );
 }

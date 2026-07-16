@@ -1,4 +1,5 @@
 import { Text, View } from "@tamagui/core";
+import { memo } from "react";
 import { Pressable } from "react-native";
 import { Avatar } from "@/ui/components/foundation/Avatar";
 import { Bar } from "@/ui/components/foundation/Bar";
@@ -64,7 +65,7 @@ export function buildClientSubtitle(
   return seen;
 }
 
-export function ClientRow({
+function ClientRowBase({
   client,
   isLast = false,
   onPress,
@@ -200,3 +201,10 @@ export function ClientRow({
     </Pressable>
   );
 }
+
+/**
+ * spec-12.5 (T-12.5.2): memoised so unchanged rows skip re-render while the
+ * ClientsList FlashList recycles. `client`/`now` are stable refs from the
+ * container; the callbacks are stable per parent render.
+ */
+export const ClientRow = memo(ClientRowBase);
