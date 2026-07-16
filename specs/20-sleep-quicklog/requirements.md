@@ -16,11 +16,11 @@ Groundwork that already exists (do NOT rebuild):
 - **`sleep_data` table** — `packages/db/src/schema.ts:1381-1407`. Defined but
   DORMANT: no handler reads or writes it, no endpoint. Columns:
   `id, user_id, sleep_date (text, NOT NULL), duration_minutes, quality_score,
-  deep/light/rem/awake_minutes, sleep_start, sleep_end, data_source
-  (health_provider enum, nullable), created_at`. Unique index
+deep/light/rem/awake_minutes, sleep_start, sleep_end, data_source
+(health_provider enum, nullable), created_at`. Unique index
   `sleep_data_user_date_source_idx` on `(user_id, sleep_date, data_source)`.
 - **`health_provider` enum** — `schema.ts:129-135`: `apple_health | google_fit |
-  fitbit | samsung_health | garmin`. **No `manual` value** (this spec adds it).
+fitbit | samsung_health | garmin`. **No `manual` value** (this spec adds it).
 - **Home "sleep" micro-pill UI already exists** —
   `TodayHeroPresenter.tsx:187-192` renders a `sleep` `<MicroPill>` (`IconClock`,
   `success` tone) showing `micro.sleep ?? "—"`. `MicroPills.sleep` is already
@@ -43,6 +43,7 @@ Groundwork that already exists (do NOT rebuild):
 ## Stories
 
 ### STORY-001 — Manual sleep quick-log (athlete)
+
 As an athlete, from the Home quick-log strip I can tap a **Sleep** tile, enter
 how long I slept last night, and save it — so my sleep is tracked without a
 wearable.
@@ -61,6 +62,7 @@ wearable.
   logged value (e.g. "7h 30m") without a manual refresh.
 
 ### STORY-002 — Durable backend sleep record + endpoint
+
 As the system, a manual sleep log is persisted server-side (userId-scoped) so it
 survives reinstall/device-switch and feeds the Home pill.
 
@@ -80,6 +82,7 @@ survives reinstall/device-switch and feeds the Home pill.
   D3) instead of hardcoded `null`.
 
 ### STORY-003 — HealthKit sleep read + best-effort mirror
+
 As an athlete with Apple Health, my manual entry is mirrored to HealthKit and my
 Home pill prefers HealthKit's own sleep data when present.
 
