@@ -318,6 +318,8 @@ function SwapExercisePopoverPresenter({
               onPress={onBackToList}
               style={styles.backButton}
               testID="swap-picker-details-back"
+              accessibilityRole="button"
+              accessibilityLabel="Back to list"
             >
               <Ionicons
                 name="arrow-back"
@@ -350,6 +352,8 @@ function SwapExercisePopoverPresenter({
             onPress={onClose}
             style={styles.backButton}
             testID="swap-picker-close"
+            accessibilityRole="button"
+            accessibilityLabel="Close"
           >
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
           </TouchableOpacity>
@@ -386,6 +390,8 @@ function SwapExercisePopoverPresenter({
                 onPress={() => onSearchChange("")}
                 style={styles.clearButton}
                 testID="swap-picker-clear-search"
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
               >
                 <Ionicons
                   name="close-circle"

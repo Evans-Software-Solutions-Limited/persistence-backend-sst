@@ -394,4 +394,28 @@ describe("AddExerciseToSupersetPopover", () => {
     expect(await findByTestId("exercise-row-ex-99")).toBeTruthy();
     expect(queryByTestId("exercise-row-ex-100")).toBeNull();
   });
+
+  it("exposes accessible names for the icon-only close, clear-search, and back-to-list controls", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [
+      buildExercise({ id: "ex-bench", name: "Bench Press" }),
+    ]);
+
+    const { findByLabelText, findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <AddExerciseToSupersetPopover
+          visible={true}
+          onClose={jest.fn()}
+          onAddExercise={jest.fn()}
+        />
+      </AdapterProvider>,
+    );
+    expect(await findByLabelText("Close")).toBeTruthy();
+    const search = await findByTestId("superset-picker-search");
+    fireEvent.changeText(search, "bench");
+    expect(await findByLabelText("Clear search")).toBeTruthy();
+    fireEvent.press(await findByTestId("exercise-info-button-ex-bench"));
+    expect(await findByLabelText("Back to list")).toBeTruthy();
+  });
 });

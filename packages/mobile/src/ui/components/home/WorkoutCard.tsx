@@ -107,6 +107,9 @@ export function WorkoutCard({
           onPress={isDisabled ? undefined : onStart}
           disabled={isDisabled}
           testID={`workout-card-${workout.id}-start`}
+          accessibilityRole="button"
+          accessibilityLabel="Start workout"
+          hitSlop={8}
         >
           <Ionicons
             name="play"

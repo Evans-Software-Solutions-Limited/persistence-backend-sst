@@ -56,6 +56,8 @@ export function CoachWorkoutLibraryPresenter({
           onPress={onBack}
           style={styles.iconButton}
           testID="coach-library-back"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
         </TouchableOpacity>

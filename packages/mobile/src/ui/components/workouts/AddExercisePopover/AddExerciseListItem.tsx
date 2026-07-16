@@ -80,6 +80,8 @@ export function AddExerciseListItem({
           onPress={onInfo}
           style={styles.infoButton}
           testID={`exercise-info-button-${exercise.id}`}
+          accessibilityRole="button"
+          accessibilityLabel="Exercise details"
         >
           <Ionicons
             name="information-circle-outline"

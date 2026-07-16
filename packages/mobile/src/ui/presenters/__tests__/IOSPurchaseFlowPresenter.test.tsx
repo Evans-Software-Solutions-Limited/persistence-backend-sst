@@ -144,4 +144,13 @@ describe("IOSPurchaseFlowPresenter", () => {
     );
     expect(screen.getByTestId("ios-purchase-tier-note")).toBeTruthy();
   });
+
+  it("exposes accessible names/state for the back control and the billing-cycle switch", () => {
+    const props = defaultProps();
+    render(<IOSPurchaseFlowPresenter {...props} />);
+    expect(screen.getByLabelText("Go back")).toBeTruthy();
+    const toggle = screen.getByLabelText("Billing cycle");
+    expect(toggle.props.accessibilityRole).toBe("switch");
+    expect(toggle.props.accessibilityState).toEqual({ checked: false });
+  });
 });
