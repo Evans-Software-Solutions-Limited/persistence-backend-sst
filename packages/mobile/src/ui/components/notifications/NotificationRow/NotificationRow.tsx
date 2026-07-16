@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
-import type { ComponentType } from "react";
+import { memo, type ComponentType } from "react";
 
 import type {
   Notification,
@@ -116,12 +116,15 @@ export function notificationVisual(type: WireNotificationType): Visual {
 
 export type NotificationRowProps = {
   notification: Notification;
-  onPress: () => void;
+  /** Receives the row's notification so the parent can pass a STABLE handler
+   *  (e.g. the container's `onTap`) rather than a per-render closure — that's
+   *  what lets the `memo` below actually skip unchanged rows (T-12.5.2). */
+  onPress: (notification: Notification) => void;
   /** Injected clock for deterministic relative-time rendering in tests. */
   now?: number;
 };
 
-export function NotificationRowPresenter({
+function NotificationRowPresenterBase({
   notification,
   onPress,
   now,
@@ -135,7 +138,7 @@ export function NotificationRowPresenter({
   return (
     <Pressable
       testID={`notification-row-${notification.id}`}
-      onPress={onPress}
+      onPress={() => onPress(notification)}
       accessibilityRole="button"
       // Fold unread into the label rather than `accessibilityState.selected`
       // (which screen readers announce as multi-select, the wrong semantic).
@@ -202,3 +205,11 @@ export function NotificationRowPresenter({
     </Pressable>
   );
 }
+
+/**
+ * spec-12.5 (T-12.5.2): memoised so the Notifications FlashList skips
+ * re-rendering unchanged rows on recycle. `notification`/`now` are stable refs
+ * and `onPress` receives the container's stable `onTap` (not a per-render
+ * closure), so the memo genuinely short-circuits unchanged rows.
+ */
+export const NotificationRowPresenter = memo(NotificationRowPresenterBase);

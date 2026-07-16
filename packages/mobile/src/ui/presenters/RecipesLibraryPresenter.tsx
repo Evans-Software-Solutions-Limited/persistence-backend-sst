@@ -1,4 +1,5 @@
-import { RefreshControl, ScrollView, Pressable } from "react-native";
+import { RefreshControl, Pressable, ScrollView } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -241,6 +242,11 @@ function RecipeRow({
   );
 }
 
+/** Stable 8px separator for the library FlashList (matches the old `gap={8}`). */
+function ListGap() {
+  return <View height={8} />;
+}
+
 export function RecipesLibraryPresenter({
   tab,
   onTabChange,
@@ -303,6 +309,9 @@ export function RecipesLibraryPresenter({
   }
 
   const rows = tab === "Meals" ? meals : recipes;
+  // Unify the tab's readonly array for FlashList's generic (each member is
+  // assignable to the array-of-union).
+  const data: readonly (MealRowVM | RecipeRowVM)[] = rows;
   const emptyTitle =
     query.length > 0
       ? "Nothing matches"
@@ -335,21 +344,29 @@ export function RecipesLibraryPresenter({
           onChangeText={onQueryChange}
         />
       </View>
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingBottom: 140,
-          flexGrow: 1,
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor="#22D3EE"
-          />
-        }
-      >
-        {rows.length === 0 ? (
+      {/* FlashList (spec-12.5): the recipe/meal library grows unbounded and each
+          row is a standalone card, so it virtualises cleanly. The search bar +
+          tab toggle stay ABOVE the list (outside the scroller), so there's no
+          TextInput-in-header keyboard concern. FlashList v2 auto-measures rows
+          (no estimatedItemSize) but won't honour `flexGrow` in
+          contentContainerStyle, so the empty state falls back to a ScrollView
+          (flexGrow:1) to stay centred + pull-to-refreshable, matching legacy. */}
+      {data.length === 0 ? (
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingBottom: 140,
+            flexGrow: 1,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#22D3EE"
+            />
+          }
+          testID="recipes-library-list"
+        >
           <EmptyState
             icon={
               tab === "Meals" ? (
@@ -362,18 +379,33 @@ export function RecipesLibraryPresenter({
             description={emptyDescription}
             testID="recipes-library-empty"
           />
-        ) : (
-          <View gap={8}>
-            {tab === "Meals"
-              ? meals.map((m) => (
-                  <MealRow key={m.id} meal={m} onPress={onSelectMeal} />
-                ))
-              : recipes.map((r) => (
-                  <RecipeRow key={r.id} recipe={r} onPress={onSelectRecipe} />
-                ))}
-          </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        <FlashList
+          testID="recipes-library-list"
+          data={data}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) =>
+            tab === "Meals" ? (
+              <MealRow meal={item as MealRowVM} onPress={onSelectMeal} />
+            ) : (
+              <RecipeRow
+                recipe={item as RecipeRowVM}
+                onPress={onSelectRecipe}
+              />
+            )
+          }
+          ItemSeparatorComponent={ListGap}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#22D3EE"
+            />
+          }
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 140 }}
+        />
+      )}
     </View>
   );
 }

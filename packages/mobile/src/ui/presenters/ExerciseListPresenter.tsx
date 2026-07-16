@@ -1,10 +1,7 @@
 import { Text, View } from "@tamagui/core";
 import { useCallback } from "react";
-import {
-  FlatList,
-  type ListRenderItemInfo,
-  RefreshControl,
-} from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Exercise } from "@/domain/models/exercise";
@@ -102,7 +99,7 @@ export function ExerciseListPresenter({
   const insets = useSafeAreaInsets();
 
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<Exercise>) => (
+    ({ item }: { item: Exercise }) => (
       <ExerciseCard
         exercise={item}
         onPress={onSelectExercise}
@@ -214,28 +211,56 @@ export function ExerciseListPresenter({
       )}
 
       <View flex={1}>
-        <FlatList
-          data={exercises}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              tintColor={NEUTRAL_HEX.text3}
-              testID="exercise-list-refresh-control"
-            />
-          }
-          ListEmptyComponent={renderListEmpty}
-          ItemSeparatorComponent={Separator}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingBottom: 48 + insets.bottom,
-            flexGrow: 1,
-          }}
-          showsVerticalScrollIndicator={false}
-          testID="exercise-list"
-        />
+        {/* FlashList (spec-12.5): the exercise library can hold 2000+ rows, so
+            it owns its own scroll and virtualises. FlashList v2 auto-measures
+            row size (no estimatedItemSize) but does NOT honour `flexGrow` in
+            contentContainerStyle, so it can't centre an empty/error state the
+            way the legacy FlatList did. When there's nothing to virtualise we
+            fall back to a ScrollView with `flexGrow:1` — this preserves the
+            centred empty/error/skeleton layout AND pull-to-refresh (the empty
+            copy literally says "Pull down to refresh"). */}
+        {exercises.length === 0 ? (
+          <ScrollView
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingBottom: 48 + insets.bottom,
+              flexGrow: 1,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                tintColor={NEUTRAL_HEX.text3}
+                testID="exercise-list-refresh-control"
+              />
+            }
+            showsVerticalScrollIndicator={false}
+            testID="exercise-list"
+          >
+            {renderListEmpty()}
+          </ScrollView>
+        ) : (
+          <FlashList
+            data={exercises}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                tintColor={NEUTRAL_HEX.text3}
+                testID="exercise-list-refresh-control"
+              />
+            }
+            ItemSeparatorComponent={Separator}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingBottom: 48 + insets.bottom,
+            }}
+            showsVerticalScrollIndicator={false}
+            testID="exercise-list"
+          />
+        )}
       </View>
     </View>
   );
