@@ -15,6 +15,7 @@ import type {
   HealthError,
   HealthPermissionStatus,
   HealthPort,
+  HealthSleep,
   HealthWeight,
 } from "@/domain/ports/health.port";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -30,6 +31,7 @@ const DENIED: HealthPermissionStatus = {
   calories: "denied",
   bodyWeight: "denied",
   heartRate: "denied",
+  sleep: "denied",
 };
 
 export class AndroidStubHealthAdapter implements HealthPort {
@@ -91,6 +93,14 @@ export class AndroidStubHealthAdapter implements HealthPort {
   }
 
   async writeBodyFat(): Promise<Result<void, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
+  async getSleepLastNight(): Promise<Result<HealthSleep | null, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+
+  async writeSleep(): Promise<Result<void, HealthError>> {
     return fail(UNAVAILABLE);
   }
 

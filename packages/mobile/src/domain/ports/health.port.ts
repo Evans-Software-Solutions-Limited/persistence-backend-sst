@@ -5,6 +5,8 @@ export type HealthPermissionStatus = {
   calories: "granted" | "denied" | "not_determined";
   bodyWeight: "granted" | "denied" | "not_determined";
   heartRate: "granted" | "denied" | "not_determined";
+  /** 20-sleep-quicklog: HKCategoryTypeIdentifierSleepAnalysis auth status. */
+  sleep: "granted" | "denied" | "not_determined";
 };
 
 export type HealthWeight = {
@@ -30,6 +32,20 @@ export type HealthBodyFat = {
 export type HealthDailySteps = {
   date: string; // ISO date at local start-of-day
   steps: number;
+};
+
+/**
+ * Last-night sleep duration read from HealthKit's `SleepAnalysis` category
+ * samples (20-sleep-quicklog STORY-003). `start`/`end` span the earliest
+ * asleep sample's start to the latest asleep sample's end within the query
+ * window — an approximation when sleep is fragmented across multiple
+ * samples, matching how `durationMinutes` is derived (sum of asleep sample
+ * durations, not `end - start`).
+ */
+export type HealthSleep = {
+  durationMinutes: number;
+  start: Date;
+  end: Date;
 };
 
 export type HealthError = {
@@ -105,5 +121,20 @@ export interface HealthPort {
     percentage: number,
     date: Date,
   ): Promise<Result<void, HealthError>>;
+  /**
+   * Last night's sleep duration from HealthKit's `SleepAnalysis` category
+   * samples (20-sleep-quicklog STORY-003 AC 3.1), or `null` when no asleep
+   * samples exist in the window. `SleepAnalysis` is a HealthKit CATEGORY
+   * sample, unlike the quantity reads above — implementations use the
+   * category query API. Powers the Sleep quick-log sheet's prefill.
+   */
+  getSleepLastNight(): Promise<Result<HealthSleep | null, HealthError>>;
+  /**
+   * Best-effort mirror of a manual sleep log into HealthKit as one "asleep"
+   * category sample spanning `start`..`end` (20-sleep-quicklog STORY-003 AC
+   * 3.3). Called AFTER the durable backend write is accepted; a failure here
+   * must never fail or block the caller's save.
+   */
+  writeSleep(start: Date, end: Date): Promise<Result<void, HealthError>>;
   disconnect(): Promise<void>;
 }

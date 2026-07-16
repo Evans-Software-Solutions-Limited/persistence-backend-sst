@@ -8,6 +8,7 @@ describe("MyProgressSection", () => {
     calories: "granted" as const,
     bodyWeight: "granted" as const,
     heartRate: "granted" as const,
+    sleep: "granted" as const,
   };
 
   const baseProps = {

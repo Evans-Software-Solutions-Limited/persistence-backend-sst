@@ -53,6 +53,8 @@ import type {
   CancelSubscriptionInput,
   ApiMeasurement,
   LogMeasurementInput,
+  ApiSleep,
+  LogSleepInput,
   CreateHabitCompletionInput,
   DeleteHabitCompletionInput,
   HabitConfigEntry,
@@ -1305,6 +1307,32 @@ export class SSTApiAdapter implements ApiPort {
       method: "POST",
       body: input,
     });
+  }
+
+  // -- Sleep quick-log (20-sleep-quicklog) --
+
+  async logSleep(input: LogSleepInput): Promise<Result<ApiSleep, ApiError>> {
+    return this.requestEnvelope<ApiSleep>("/health/sleep", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  /**
+   * `GET /health/sleep` returns `{ sleep }`, NOT the standard `{ data }`
+   * envelope — `requestEnvelope` can't be reused here (it always unwraps
+   * `.data`). Request the raw body and pluck `.sleep` directly, mirroring
+   * `getWorkouts`'s raw-envelope pattern above.
+   */
+  async getSleepToday(
+    date: string,
+  ): Promise<Result<ApiSleep | null, ApiError>> {
+    const result = await this.request<{ sleep: ApiSleep | null }>(
+      "/health/sleep",
+      { params: { date } },
+    );
+    if (!result.ok) return result;
+    return ok(result.value.sleep);
   }
 
   async logClientWeight(

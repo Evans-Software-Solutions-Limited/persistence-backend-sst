@@ -3,6 +3,7 @@ import type {
   HealthBodyFat,
   HealthDailySteps,
   HealthPermissionStatus,
+  HealthSleep,
   HealthWeight,
   HealthError,
 } from "@/domain/ports/health.port";
@@ -19,6 +20,7 @@ const NOT_DETERMINED: HealthPermissionStatus = {
   calories: "not_determined",
   bodyWeight: "not_determined",
   heartRate: "not_determined",
+  sleep: "not_determined",
 };
 
 /**
@@ -68,6 +70,12 @@ export class StubHealthAdapter implements HealthPort {
     return fail(UNAVAILABLE);
   }
   async writeBodyFat(): Promise<Result<void, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+  async getSleepLastNight(): Promise<Result<HealthSleep | null, HealthError>> {
+    return fail(UNAVAILABLE);
+  }
+  async writeSleep(): Promise<Result<void, HealthError>> {
     return fail(UNAVAILABLE);
   }
   async disconnect() {}

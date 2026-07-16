@@ -9,6 +9,7 @@ describe("StepsTodayTile", () => {
     calories: "granted" as const,
     bodyWeight: "granted" as const,
     heartRate: "granted" as const,
+    sleep: "granted" as const,
   };
 
   it("renders the granted state with locale-formatted value", () => {
@@ -81,6 +82,7 @@ describe("StepsTodayTile", () => {
           calories: "denied",
           bodyWeight: "denied",
           heartRate: "denied",
+          sleep: "denied",
         }}
         lastReadAt={null}
         onConnectPress={onConnect}
@@ -100,6 +102,7 @@ describe("StepsTodayTile", () => {
         calories: "not_determined" as const,
         bodyWeight: "not_determined" as const,
         heartRate: "not_determined" as const,
+        sleep: "not_determined" as const,
       },
       lastReadAt: null,
       onConnectPress: jest.fn(),

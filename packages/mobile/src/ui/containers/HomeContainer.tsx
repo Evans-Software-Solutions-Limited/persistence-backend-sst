@@ -20,6 +20,7 @@ import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
 import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
 import { WaterLogSheetContainer } from "@/ui/containers/WaterLogSheetContainer";
+import { SleepLogSheetContainer } from "@/ui/containers/SleepLogSheetContainer";
 
 /**
  * V2 Home container (06-progress-goals, STORY-001/002). Wires the cache-first
@@ -48,6 +49,7 @@ export function HomeContainer() {
   const profile = useProfilePage();
   const [weighInOpen, setWeighInOpen] = useState(false);
   const [waterOpen, setWaterOpen] = useState(false);
+  const [sleepOpen, setSleepOpen] = useState(false);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
 
   // Map the user's own workouts → carousel items (home.jsx WorkoutCarousel).
@@ -252,6 +254,8 @@ export function HomeContainer() {
   }, [router, openQuickAdd]);
   const openWater = useCallback(() => setWaterOpen(true), []);
   const closeWater = useCallback(() => setWaterOpen(false), []);
+  const openSleep = useCallback(() => setSleepOpen(true), []);
+  const closeSleep = useCallback(() => setSleepOpen(false), []);
 
   return (
     <>
@@ -287,6 +291,7 @@ export function HomeContainer() {
         onOpenWeighIn={openWeighIn}
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
+        onOpenSleep={openSleep}
         onToggleHabitDay={onToggleHabitDay}
         onManageHabits={onManageHabits}
         onOpenCaloriesFromGrid={onOpenCaloriesFromGrid}
@@ -294,6 +299,7 @@ export function HomeContainer() {
       />
       <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />
       <WaterLogSheetContainer visible={waterOpen} onClose={closeWater} />
+      <SleepLogSheetContainer visible={sleepOpen} onClose={closeSleep} />
     </>
   );
 }

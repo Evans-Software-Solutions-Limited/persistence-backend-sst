@@ -18,6 +18,8 @@ describe("ExpoHealthKitAdapter", () => {
         endDate: new Date("2026-04-20T07:00:00Z"),
       })),
       saveQuantitySample: jest.fn(async () => ({})),
+      queryCategorySamples: jest.fn(async () => [] as readonly unknown[]),
+      saveCategorySample: jest.fn(async () => ({})),
       ...overrides,
     };
   }
@@ -68,6 +70,7 @@ describe("ExpoHealthKitAdapter", () => {
       "HKQuantityTypeIdentifierBodyMass",
       "HKQuantityTypeIdentifierBodyFatPercentage",
       "HKQuantityTypeIdentifierHeartRate",
+      "HKCategoryTypeIdentifierSleepAnalysis",
     ];
     for (const id of expectedRead) {
       expect(authDataTypes.toRead).toContain(id);
@@ -84,6 +87,7 @@ describe("ExpoHealthKitAdapter", () => {
       "HKQuantityTypeIdentifierActiveEnergyBurned",
       "HKQuantityTypeIdentifierBodyMass",
       "HKQuantityTypeIdentifierBodyFatPercentage",
+      "HKCategoryTypeIdentifierSleepAnalysis",
     ];
     for (const id of expectedWrite) {
       expect(authDataTypes.toShare).toContain(id);
@@ -122,6 +126,7 @@ describe("ExpoHealthKitAdapter", () => {
       authorizationStatusFor: jest.fn((id: string) => {
         if (id === "HKQuantityTypeIdentifierStepCount") return 2;
         if (id === "HKQuantityTypeIdentifierBodyMass") return 1;
+        if (id === "HKCategoryTypeIdentifierSleepAnalysis") return 2;
         return 0;
       }),
     });
@@ -131,6 +136,7 @@ describe("ExpoHealthKitAdapter", () => {
     expect(status.bodyWeight).toBe("denied");
     expect(status.calories).toBe("not_determined");
     expect(status.heartRate).toBe("not_determined");
+    expect(status.sleep).toBe("granted");
   });
 
   it("treats a throwing authorizationStatusFor as not_determined", async () => {
@@ -524,5 +530,169 @@ describe("ExpoHealthKitAdapter", () => {
     const hk = makeHealthKit();
     const adapter = new ExpoHealthKitAdapter(hk as never);
     await expect(adapter.disconnect()).resolves.toBeUndefined();
+  });
+
+  describe("getSleepLastNight (SleepAnalysis category read)", () => {
+    it("sums asleep samples into a duration + spans earliest start to latest end", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => [
+          {
+            value: 4, // asleepDeep
+            startDate: new Date("2026-06-10T23:00:00Z"),
+            endDate: new Date("2026-06-11T01:00:00Z"),
+          },
+          {
+            value: 5, // asleepREM
+            startDate: new Date("2026-06-11T01:00:00Z"),
+            endDate: new Date("2026-06-11T03:30:00Z"),
+          },
+        ]),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).not.toBeNull();
+      expect(result.value?.durationMinutes).toBe(270); // 2h + 2.5h
+      expect(result.value?.start).toEqual(new Date("2026-06-10T23:00:00Z"));
+      expect(result.value?.end).toEqual(new Date("2026-06-11T03:30:00Z"));
+    });
+
+    it("uses the category query API, not the quantity path", async () => {
+      const query = jest.fn(async () => []);
+      const hk = makeHealthKit({ queryCategorySamples: query });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      await adapter.getSleepLastNight();
+      expect(query).toHaveBeenCalledWith(
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        expect.objectContaining({
+          filter: expect.objectContaining({
+            date: expect.objectContaining({
+              startDate: expect.any(Date),
+              endDate: expect.any(Date),
+            }),
+          }),
+        }),
+      );
+      expect(hk.queryStatisticsForQuantity).not.toHaveBeenCalled();
+    });
+
+    it("excludes inBed and awake samples from the duration", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => [
+          {
+            value: 0, // inBed — not asleep
+            startDate: new Date("2026-06-10T22:30:00Z"),
+            endDate: new Date("2026-06-10T23:00:00Z"),
+          },
+          {
+            value: 1, // asleep(Unspecified)
+            startDate: new Date("2026-06-10T23:00:00Z"),
+            endDate: new Date("2026-06-11T06:00:00Z"),
+          },
+          {
+            value: 2, // awake — not asleep
+            startDate: new Date("2026-06-11T02:00:00Z"),
+            endDate: new Date("2026-06-11T02:10:00Z"),
+          },
+        ]),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value?.durationMinutes).toBe(420); // only the 7h asleep sample
+    });
+
+    it("returns null when there are no asleep samples in the window", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => [
+          {
+            value: 0,
+            startDate: new Date("2026-06-10T22:30:00Z"),
+            endDate: new Date("2026-06-10T23:00:00Z"),
+          },
+        ]),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("returns null when the query returns no samples", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => []),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("skips a sample with an unparseable date rather than throwing", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => [
+          { value: 1, startDate: "not-a-date", endDate: "also-not-a-date" },
+          {
+            value: 1,
+            startDate: new Date("2026-06-10T23:00:00Z"),
+            endDate: new Date("2026-06-11T07:00:00Z"),
+          },
+        ]),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value?.durationMinutes).toBe(480);
+    });
+
+    it("surfaces read_failed when the category query throws", async () => {
+      const hk = makeHealthKit({
+        queryCategorySamples: jest.fn(async () => {
+          throw new Error("category boom");
+        }),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.getSleepLastNight();
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("read_failed");
+      expect(result.error.message).toBe("category boom");
+    });
+  });
+
+  describe("writeSleep (SleepAnalysis category write)", () => {
+    it("saves one asleep-unspecified category sample spanning start..end", async () => {
+      const hk = makeHealthKit();
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const start = new Date("2026-06-10T23:30:00Z");
+      const end = new Date("2026-06-11T07:00:00Z");
+      const result = await adapter.writeSleep(start, end);
+      expect(result.ok).toBe(true);
+      expect(hk.saveCategorySample).toHaveBeenCalledWith(
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        1,
+        start,
+        end,
+      );
+    });
+
+    it("surfaces write_failed when the library throws", async () => {
+      const hk = makeHealthKit({
+        saveCategorySample: jest.fn(async () => {
+          throw new Error("denied");
+        }),
+      });
+      const adapter = new ExpoHealthKitAdapter(hk as never);
+      const result = await adapter.writeSleep(new Date(), new Date());
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("write_failed");
+      expect(result.error.message).toBe("denied");
+    });
   });
 });

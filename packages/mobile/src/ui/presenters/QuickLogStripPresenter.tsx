@@ -1,6 +1,11 @@
 import { Text, View } from "@tamagui/core";
 import { toneHex } from "@/ui/components/foundation/tones";
-import { IconArrowUp, IconApple, IconDroplet } from "@/ui/components/icons";
+import {
+  IconArrowUp,
+  IconApple,
+  IconDroplet,
+  IconClock,
+} from "@/ui/components/icons";
 
 /**
  * <QuickLogStripPresenter> — Home quick-capture row (06-progress-goals,
@@ -8,14 +13,16 @@ import { IconArrowUp, IconApple, IconDroplet } from "@/ui/components/icons";
  * sheets/routes.
  *
  * The legacy "Mood" tile was dropped at launch — it was a no-op with no
- * backing store. A "Sleep" tile (durable backend + HealthKit) is the planned
- * replacement (ROADMAP §5.1) and re-adds a fourth target when it lands.
+ * backing store. "Sleep" (specs/20-sleep-quicklog) is its durable-backend +
+ * HealthKit replacement, re-adding a fourth target — icon + tone (IconClock,
+ * success) matches the Home "sleep" MicroPill (TodayHeroPresenter).
  */
 
 export type QuickLogStripProps = {
   onWeighIn: () => void;
   onLogMeal: () => void;
   onLogWater: () => void;
+  onSleep: () => void;
   testID?: string;
 };
 
@@ -23,6 +30,7 @@ export function QuickLogStripPresenter({
   onWeighIn,
   onLogMeal,
   onLogWater,
+  onSleep,
   testID = "quick-log-strip",
 }: QuickLogStripProps) {
   const items = [
@@ -43,6 +51,12 @@ export function QuickLogStripPresenter({
       icon: <IconDroplet size={16} color={toneHex("primary").base} />,
       label: "Water",
       onPress: onLogWater,
+    },
+    {
+      key: "sleep",
+      icon: <IconClock size={16} color={toneHex("success").base} />,
+      label: "Sleep",
+      onPress: onSleep,
     },
   ];
 

@@ -43,6 +43,7 @@ const PERMS_GRANTED: HealthPermissionStatus = {
   calories: "granted",
   bodyWeight: "granted",
   heartRate: "granted",
+  sleep: "granted",
 };
 
 type Stubs = {

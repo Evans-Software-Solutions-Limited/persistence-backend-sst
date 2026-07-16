@@ -156,6 +156,7 @@ describe("HomeContainer (V2)", () => {
         calories: "granted",
         bodyWeight: "granted",
         heartRate: "granted",
+        sleep: "granted",
       }),
       getStepsToday: async () => ok(8421),
     });
