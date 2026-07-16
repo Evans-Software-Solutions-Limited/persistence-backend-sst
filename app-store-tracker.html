@@ -586,8 +586,8 @@
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
             <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>f33343c</code></span>
-            <span class="meta-pill">📅 Synced 15 Jul 2026</span>
+            <span class="meta-pill">🔀 <code>57ff3e7</code></span>
+            <span class="meta-pill">📅 Synced 16 Jul 2026</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-15, main HEAD f33343c)
+      // DATA  (verified against repo on 2026-07-16, main HEAD 57ff3e7)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -857,9 +857,9 @@
         {
           id: "a2",
           area: "athlete",
-          status: "partial",
-          title: 'Home — "Mood/Sleep" quick-log button',
-          note: "Mood tile renamed to Sleep in follow-up 5.1 spec (2026-06-26). Still not implemented — needs POST /health/sleep backend + HealthKit write + Home UI rename. Other quick-log actions (water, weight, workout) are all wired.",
+          status: "done",
+          title: 'Home — Sleep quick-log tile',
+          note: "SHIPPED (spec-20, PRs #240 spec / #242 backend / #243 mobile). Net-new (legacy had no quick-log strip; 'Mood' was a dead prototype no-op). 4th QuickLogStrip 'Sleep' tile → SleepLogSheet (duration entry) → offline-first POST /health/sleep (dormant sleep_data table now live, data_source='manual') + best-effort HealthKit SleepAnalysis mirror; Home sleep MicroPill now populated (was null). ⚠ prod enum migration MANUAL. HealthKit + UI device-verify pending EAS.",
         },
 
         {
@@ -1052,17 +1052,17 @@
         {
           id: "p1",
           area: "phase12",
-          status: "todo",
+          status: "done",
           title: "12.1 — LegacyTheme file deletion",
-          note: "Delete 4 files: homeLegacyTheme, workoutsLegacyTheme, subscriptionLegacyTheme, profileLegacyTheme. Codemod adoption sweep is already done — deletion is safe.",
+          note: "SHIPPED — all 4 shims retired across 4 value-preserving slices: profileLegacyTheme (#245), subscriptionLegacyTheme (#247, 17 consumers), workoutsLegacyTheme (#248, 21 consumers + dead test), homeLegacyTheme (#249, 11 consumers + 3 stale-comment tidies). `git grep LegacyTheme packages/mobile/src` = zero. Every ref migrated to @/ui/theme/tokens by value-equality (Colors→color.$…; Spacing/BorderRadius→raw numbers NOT tokens; Shadows/Typography→inline literal objects; raw-hex only in StyleSheet). Guards: no-raw-hex-colors lint + tsc + jest all green; each slice IB-local clean. Byte-identical UI by construction (no device change).",
         },
 
         {
           id: "p2",
           area: "phase12",
-          status: "partial",
+          status: "done",
           title: "12.2 — Reduced-motion contract",
-          note: "useReducedMotion() adopted in Ring, Bar, TabBar, ActiveWorkoutBarPresenter. REMAINING: BottomSheet not yet confirmed. Required for App Store accessibility compliance.",
+          note: "SHIPPED (PR #239). New shared useReducedMotionGate() hook (single source of truth); Ring/MultiRing/Bar/TabBar/ActiveWorkoutBar refactored onto it. Closed the real gap: BottomSheet now snaps (animationConfigs duration:0) instead of sliding under reduce-motion. Hook 100% unit-tested. Device-verify (iOS Reduce Motion) pending EAS.",
         },
 
         {
@@ -1084,25 +1084,25 @@
         {
           id: "p5",
           area: "phase12",
-          status: "partial",
-          title: "12.5 — FlashList migration (6 surfaces)",
-          note: "Adopted in Notifications, Clients (ClientsListPresenter), QuickAdd. REMAINING: Exercises, Programs, Recipes/Meals, PR History. Rule: ≥20 rows → FlashList.",
+          status: "done",
+          title: "12.5 — FlashList migration",
+          note: "SHIPPED (PR #238). Migrated the surfaces that genuinely qualify under the ≥20-row + owns-its-scroll rule: ExerciseList, Notifications (flipped — the old 'keep FlatList' note was M11-deferred = now), RecipesLibrary. React.memo on ClientRow/PRCard/NotificationRow (ExerciseCard already was). EXEMPT (documented): ClientsList stays ScrollView+.map (bounded roster + Card-of-rows visual + SearchBar-in-header keyboard risk); MealPicker/MealLog/PRHistory aren't long lists / don't own their scroll. (Corrects the old note: Clients was NOT on FlashList.) Scroll perf is device-only (CI mocks FlashList).",
         },
 
         {
           id: "p6",
           area: "phase12",
-          status: "todo",
+          status: "done",
           title: "12.6 — expo-image adoption",
-          note: "Replace RN Image with expo-image for all user photos: avatars, exercise photos, recipe/meal images. Improves memory and decode perf.",
+          note: "SHIPPED (PR #237). 10 remote-uri render sites (avatars, trainer avatars, exercise thumbnails) migrated RN Image → expo-image with contentFit/transition/cachePolicy; cache-busting preserved. T-12.6.3 client-side compression was already satisfied by the existing manipulator pipelines (no new code). Device-verify pending EAS.",
         },
 
         {
           id: "p7",
           area: "phase12",
-          status: "todo",
+          status: "partial",
           title: "12.7 — Accessibility audit",
-          note: "Manual VoiceOver + TalkBack walkthrough, accessibility labels audit, focus order check, 44pt minimum touch targets on all interactive elements.",
+          note: "CODE PORTION SHIPPED (PR #244). Per-element audit → accessibilityLabel+role on 21 icon-only elements (already-named elements deliberately left to avoid double-announce), 2 billing toggles → role=switch+state, hitSlop=8 on 3 sub-44pt buttons; findings in docs/a11y-audit-results.md. Primitives already covered by a11y-audit.test.tsx. REMAINING: the manual VoiceOver + TalkBack device walkthrough is BRAD's. (Dynamic-Type/font work is M14, OUT of scope here.)",
         },
 
         {
