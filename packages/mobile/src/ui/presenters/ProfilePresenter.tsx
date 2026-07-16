@@ -12,13 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ComingSoon } from "@/ui/components/ComingSoon";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionBadge } from "@/ui/components/subscription/SubscriptionBadge";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/profileLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import type {
   ProfilePageAchievement,
   ProfilePageSubscription,
@@ -211,7 +205,7 @@ export function ProfilePresenter({
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.text.secondary}
+            tintColor={color.$text2}
           />
         }
       >
@@ -242,11 +236,7 @@ export function ProfilePresenter({
                 />
               ) : (
                 <View style={styles.profilePicturePlaceholder}>
-                  <Ionicons
-                    name="person"
-                    size={32}
-                    color={Colors.text.secondary}
-                  />
+                  <Ionicons name="person" size={32} color={color.$text2} />
                 </View>
               )}
             </View>
@@ -254,7 +244,7 @@ export function ProfilePresenter({
               {isAvatarWorking ? (
                 <PLogoDrawLoader size={16} />
               ) : (
-                <Ionicons name="camera" size={16} color={Colors.text.primary} />
+                <Ionicons name="camera" size={16} color={color.$text} />
               )}
             </View>
           </TouchableOpacity>
@@ -316,7 +306,7 @@ export function ProfilePresenter({
                     <Ionicons
                       name="arrow-forward"
                       size={14}
-                      color={Colors.primary.DEFAULT}
+                      color={color.$primary}
                     />
                   </Text>
                 </View>
@@ -371,11 +361,7 @@ export function ProfilePresenter({
             <View style={styles.trainerPromoBanner}>
               <View style={styles.trainerPromoContent}>
                 <View style={styles.trainerPromoIconContainer}>
-                  <Ionicons
-                    name="people"
-                    size={24}
-                    color={Colors.primary.DEFAULT}
-                  />
+                  <Ionicons name="people" size={24} color={color.$primary} />
                 </View>
                 <View style={styles.trainerPromoTextContainer}>
                   <Text style={styles.trainerPromoTitle}>
@@ -395,11 +381,7 @@ export function ProfilePresenter({
                 <Text style={styles.trainerPromoButtonText}>
                   Become a Trainer
                 </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={18}
-                  color={Colors.text.inverse}
-                />
+                <Ionicons name="arrow-forward" size={18} color={color.$bg} />
               </TouchableOpacity>
             </View>
           </View>
@@ -477,11 +459,7 @@ export function ProfilePresenter({
                     />
                   ) : (
                     <View style={styles.clientAvatarPlaceholder}>
-                      <Ionicons
-                        name="person"
-                        size={20}
-                        color={Colors.text.secondary}
-                      />
+                      <Ionicons name="person" size={20} color={color.$text2} />
                     </View>
                   )}
                   <View style={styles.clientInfo}>
@@ -494,11 +472,7 @@ export function ProfilePresenter({
             </View>
           ) : (
             <View style={styles.emptyState} testID="active-trainers-empty">
-              <Ionicons
-                name="fitness-outline"
-                size={48}
-                color={Colors.text.tertiary}
-              />
+              <Ionicons name="fitness-outline" size={48} color={color.$text3} />
               <Text style={styles.emptyText}>No active trainers</Text>
               <Text style={styles.emptySubtext}>
                 Connect with a trainer to get personalized workout guidance
@@ -531,11 +505,7 @@ export function ProfilePresenter({
                     />
                   ) : (
                     <View style={styles.clientAvatarPlaceholder}>
-                      <Ionicons
-                        name="person"
-                        size={20}
-                        color={Colors.text.secondary}
-                      />
+                      <Ionicons name="person" size={20} color={color.$text2} />
                     </View>
                   )}
                   <View style={styles.clientInfo}>
@@ -548,11 +518,7 @@ export function ProfilePresenter({
             </View>
           ) : (
             <View style={styles.emptyState} testID="pending-requests-empty">
-              <Ionicons
-                name="mail-outline"
-                size={48}
-                color={Colors.text.tertiary}
-              />
+              <Ionicons name="mail-outline" size={48} color={color.$text3} />
               <Text style={styles.emptyText}>No pending requests</Text>
               <Text style={styles.emptySubtext}>
                 You&apos;ll see trainer connection requests here when
@@ -572,11 +538,7 @@ export function ProfilePresenter({
             testID="menu-edit-profile"
           >
             <Text style={styles.menuText}>Edit Profile</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -585,11 +547,7 @@ export function ProfilePresenter({
             testID="menu-health-data"
           >
             <Text style={styles.menuText}>Health Data</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -598,11 +556,7 @@ export function ProfilePresenter({
             testID="menu-notifications"
           >
             <Text style={styles.menuText}>Notifications</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -611,11 +565,7 @@ export function ProfilePresenter({
             testID="menu-notification-preferences"
           >
             <Text style={styles.menuText}>Notification Preferences</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
         </View>
 
@@ -629,11 +579,7 @@ export function ProfilePresenter({
             testID="menu-help-center"
           >
             <Text style={styles.menuText}>Help Center</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -642,11 +588,7 @@ export function ProfilePresenter({
             testID="menu-contact-support"
           >
             <Text style={styles.menuText}>Contact Support</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -655,11 +597,7 @@ export function ProfilePresenter({
             testID="menu-terms"
           >
             <Text style={styles.menuText}>Terms of Service</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -668,11 +606,7 @@ export function ProfilePresenter({
             testID="menu-privacy"
           >
             <Text style={styles.menuText}>Privacy Policy</Text>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Colors.text.secondary}
-            />
+            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
         </View>
 
@@ -707,51 +641,58 @@ export function ProfilePresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xl,
+    paddingVertical: 32,
   },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
+    paddingHorizontal: 16,
+    paddingTop: 24,
   },
   section: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 16,
   },
   sectionDescription: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    marginBottom: Spacing.md,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
+    marginBottom: 16,
   },
 
   errorBanner: {
-    marginBottom: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.error.dark + "33",
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "#DC2626" + "33",
     borderWidth: 1,
-    borderColor: Colors.error.DEFAULT + "55",
+    borderColor: color.$error + "55",
   },
   errorBannerText: {
-    ...Typography.body2,
-    color: Colors.error.DEFAULT,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$error,
     textAlign: "center",
   },
 
   // Profile Header
   profilePictureContainer: {
     alignSelf: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
     position: "relative",
   },
   profilePictureWrapper: {
@@ -764,16 +705,20 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
   },
   profilePicturePlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.surface.primary,
+    backgroundColor: color.$surface,
     alignItems: "center",
     justifyContent: "center",
-    ...Shadows.medium,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   editIconContainer: {
     position: "absolute",
@@ -782,18 +727,18 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primary.DEFAULT,
+    backgroundColor: color.$primary,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.background.primary,
+    borderColor: color.$bg,
   },
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
+    gap: 8,
+    marginBottom: 4,
   },
   nameBadge: {
     // SubscriptionBadge has its own background colour + padding; this
@@ -801,164 +746,209 @@ const styles = StyleSheet.create({
     // forcing the chip to inherit the username's typographic colour.
   },
   userName: {
-    ...Typography.h2,
+    fontSize: 24,
+    fontWeight: "600" as const,
+    lineHeight: 32,
+    color: color.$text,
     textAlign: "center",
   },
   userEmail: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
     textAlign: "center",
-    color: Colors.text.secondary,
+    color: color.$text2,
     marginBottom: 4,
   },
   userRole: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
     textAlign: "center",
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
 
   // Stats
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: Spacing.sm,
+    gap: 8,
   },
   statCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
     alignItems: "center",
     flex: 1,
-    ...Shadows.small,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   statNumber: {
-    ...Typography.h2,
-    color: Colors.primary.DEFAULT,
+    fontSize: 24,
+    fontWeight: "600" as const,
+    lineHeight: 32,
+    color: color.$primary,
   },
   statLabel: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
     marginTop: 4,
     textAlign: "center",
   },
 
   // Achievements
   achievementsContainer: {
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   achievementsTitle: {
-    ...Typography.h4,
-    marginBottom: Spacing.sm,
+    fontSize: 18,
+    fontWeight: "600" as const,
+    lineHeight: 24,
+    color: color.$text,
+    marginBottom: 8,
   },
   achievementsList: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   achievementCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    ...Shadows.small,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   achievementEmoji: {
     fontSize: 32,
-    marginRight: Spacing.md,
+    marginRight: 16,
   },
   achievementInfo: {
     flex: 1,
   },
   achievementName: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
   achievementDescription: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
     marginTop: 2,
   },
 
   // Subscription
   subscriptionCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.medium,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   subscriptionHeader: {
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   subscriptionTitle: {
-    ...Typography.h3,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
   },
   subscriptionBadge: {
-    backgroundColor: Colors.success.DEFAULT,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
+    backgroundColor: color.$success,
+    borderRadius: 4,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     alignSelf: "flex-start",
-    marginTop: Spacing.xs,
+    marginTop: 4,
   },
   subscriptionBadgeText: {
     fontSize: 12,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
   },
   subscriptionBadgeWarning: {
-    backgroundColor: Colors.warning.DEFAULT,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
+    backgroundColor: color.$warning,
+    borderRadius: 4,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     alignSelf: "flex-start",
-    marginTop: Spacing.xs,
+    marginTop: 4,
   },
   subscriptionBadgeWarningText: {
     fontSize: 12,
-    color: Colors.text.primary,
+    color: color.$text,
     fontWeight: "600",
   },
   subscriptionSubtitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
     marginBottom: 4,
   },
   subscriptionDate: {
-    ...Typography.body2,
-    marginBottom: Spacing.sm,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
+    marginBottom: 8,
   },
   subscriptionFooter: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
+    marginTop: 16,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.surface.border,
+    borderTopColor: color.$surface3,
   },
   subscriptionFooterText: {
     fontSize: 12,
-    color: Colors.text.tertiary,
-    marginBottom: Spacing.xs,
+    color: color.$text3,
+    marginBottom: 4,
   },
   upgradeLink: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
   },
 
   // Trainer Promo
   trainerPromoBanner: {
-    backgroundColor: Colors.primary.DEFAULT + "15",
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$primary + "15",
+    borderRadius: 16,
+    padding: 24,
     borderWidth: 1,
-    borderColor: Colors.primary.DEFAULT + "30",
-    ...Shadows.small,
+    borderColor: color.$primary + "30",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   trainerPromoContent: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: Spacing.md,
-    gap: Spacing.md,
+    marginBottom: 16,
+    gap: 16,
   },
   trainerPromoIconContainer: {
     width: 40,
     height: 40,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primary.DEFAULT + "25",
+    borderRadius: 12,
+    backgroundColor: color.$primary + "25",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -969,123 +959,148 @@ const styles = StyleSheet.create({
   trainerPromoTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.text.primary,
-    marginBottom: Spacing.xs,
+    color: color.$text,
+    marginBottom: 4,
   },
   trainerPromoDescription: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 18,
   },
   trainerPromoButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    backgroundColor: color.$primary,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.xs,
-    ...Shadows.electric,
+    gap: 4,
+    shadowColor: color.$primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   trainerPromoButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
 
   // Trainer/Client cards
   clientsList: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   clientCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    ...Shadows.small,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   clientAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    marginRight: Spacing.md,
+    marginRight: 16,
   },
   clientAvatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: Spacing.md,
+    marginRight: 16,
   },
   clientInfo: {
     flex: 1,
   },
   clientName: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xl,
-    paddingHorizontal: Spacing.md,
+    paddingVertical: 32,
+    paddingHorizontal: 16,
   },
   emptyText: {
-    ...Typography.body1,
-    color: Colors.text.secondary,
-    marginTop: Spacing.md,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text2,
+    marginTop: 16,
     textAlign: "center",
   },
   emptySubtext: {
-    ...Typography.body2,
-    color: Colors.text.tertiary,
-    marginTop: Spacing.xs,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text3,
+    marginTop: 4,
     textAlign: "center",
   },
 
   // Menu Items
   menuItem: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    ...Shadows.small,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   menuText: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
   },
 
   // Sign Out
   signOutButton: {
-    backgroundColor: Colors.error.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+    backgroundColor: color.$error,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: "center",
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   signOutButtonDisabled: {
     opacity: 0.6,
   },
   signOutText: {
-    ...Typography.button,
-    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: "600" as const,
+    lineHeight: 20,
+    color: color.$text,
   },
 
   // Version
   versionSection: {
     alignItems: "center",
-    paddingVertical: Spacing.xl,
+    paddingVertical: 32,
   },
   versionText: {
-    ...Typography.caption,
-    color: Colors.text.tertiary,
+    fontSize: 12,
+    fontWeight: "400" as const,
+    lineHeight: 16,
+    color: color.$text3,
   },
 });

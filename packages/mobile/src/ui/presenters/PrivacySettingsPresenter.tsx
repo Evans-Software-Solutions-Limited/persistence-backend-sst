@@ -15,13 +15,7 @@ import {
   IconChevronR,
   iconDefaults,
 } from "@/ui/components/icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/profileLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 // [08-profile-settings shell refresh 2026]
 // Header chrome moved to <HeaderBar> + <IconBtn> foundation primitives and
@@ -128,7 +122,7 @@ export function PrivacySettingsPresenter({
             {currentVisibility === "private" && (
               <IconCheck
                 size={24}
-                color={Colors.primary.DEFAULT}
+                color={color.$primary}
                 testID="privacy-settings-check-private"
               />
             )}
@@ -154,7 +148,7 @@ export function PrivacySettingsPresenter({
             {currentVisibility === "public" && (
               <IconCheck
                 size={24}
-                color={Colors.primary.DEFAULT}
+                color={color.$primary}
                 testID="privacy-settings-check-public"
               />
             )}
@@ -219,7 +213,7 @@ export function PrivacySettingsPresenter({
             </View>
             <IconChevronR
               {...iconDefaults({ size: 16 })}
-              color={Colors.error.DEFAULT}
+              color={color.$error}
             />
           </TouchableOpacity>
         </View>
@@ -231,11 +225,11 @@ export function PrivacySettingsPresenter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   content: {
     flex: 1,
-    padding: Spacing.md,
+    padding: 16,
   },
   loadingContainer: {
     flex: 1,
@@ -243,48 +237,61 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   section: {
-    marginBottom: Spacing.xl,
+    marginBottom: 32,
   },
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 8,
   },
   sectionDescription: {
-    ...Typography.body2,
-    marginBottom: Spacing.md,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    marginBottom: 16,
+    color: color.$text2,
   },
   option: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    ...Shadows.small,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   optionSelected: {
     borderWidth: 2,
-    borderColor: Colors.primary.DEFAULT,
+    borderColor: color.$primary,
   },
   dangerOption: {
     borderWidth: 1,
-    borderColor: Colors.error.DEFAULT,
+    borderColor: color.$error,
   },
   dangerTitle: {
-    color: Colors.error.DEFAULT,
+    color: color.$error,
   },
   optionContent: {
     flex: 1,
   },
   optionTitle: {
-    ...Typography.body1,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "600" as const,
+    lineHeight: 24,
+    color: color.$text,
     marginBottom: 4,
   },
   optionDescription: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
 });
