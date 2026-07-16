@@ -3,13 +3,7 @@ import { StatusBar, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/ui/components/Button";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Pure presenter for the post-payment Success screen. Ported 1:1
@@ -48,10 +42,7 @@ export function SubscriptionSuccessPresenter(
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.background.primary}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
 
       <View style={styles.content}>
         <View style={styles.messageSection}>
@@ -74,7 +65,7 @@ export function SubscriptionSuccessPresenter(
                       >["name"]
                     }
                     size={24}
-                    color={Colors.primary.DEFAULT}
+                    color={color.$primary}
                   />
                 </View>
                 <View style={styles.benefitContent}>
@@ -111,78 +102,84 @@ export function SubscriptionSuccessPresenter(
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 8,
     justifyContent: "center",
     alignItems: "center",
   },
   messageSection: {
     alignItems: "center",
-    paddingBottom: Spacing.xl,
+    paddingBottom: 32,
   },
   title: {
     fontSize: 32,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
-    paddingBottom: Spacing.md,
+    paddingBottom: 16,
   },
   message: {
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
     lineHeight: 24,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
-    paddingBottom: Spacing.md,
+    paddingBottom: 16,
   },
   benefitsSection: {
     alignItems: "center",
     width: "100%",
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.lg,
+    paddingTop: 24,
+    paddingBottom: 24,
   },
   benefitsContainer: {
     width: "100%",
-    gap: Spacing.md,
+    gap: 16,
   },
   benefitItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   benefitIcon: {
-    paddingRight: Spacing.md,
+    paddingRight: 16,
     alignSelf: "flex-start",
   },
   benefitContent: {
     flex: 1,
   },
   benefitTitle: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
-    paddingBottom: Spacing.xs,
+    paddingBottom: 4,
   },
   benefitDescription: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
     lineHeight: 20,
+    color: color.$text2,
   },
   actionSection: {
-    gap: Spacing.md,
-    paddingTop: Spacing.lg,
+    gap: 16,
+    paddingTop: 24,
     width: "100%",
   },
 });

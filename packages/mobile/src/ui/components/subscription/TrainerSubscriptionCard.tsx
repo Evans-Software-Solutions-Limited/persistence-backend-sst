@@ -2,12 +2,7 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { SubscriptionTier } from "@/domain/models/subscription";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Dual-column trainer-tier card (Standard / Pro). Ported 1:1 from
@@ -103,19 +98,11 @@ export function TrainerSubscriptionCard({
         <Text style={styles.sectionTitle}>Standard includes:</Text>
         <View style={styles.features}>
           <View style={styles.feature}>
-            <Ionicons
-              name="checkmark"
-              size={18}
-              color={Colors.primary.DEFAULT}
-            />
+            <Ionicons name="checkmark" size={18} color={color.$primary} />
             <Text style={styles.featureText}>{clientSlots} client slots</Text>
           </View>
           <View style={styles.feature}>
-            <Ionicons
-              name="checkmark"
-              size={18}
-              color={Colors.primary.DEFAULT}
-            />
+            <Ionicons name="checkmark" size={18} color={color.$primary} />
             <Text style={styles.featureText}>Analytics & reporting</Text>
           </View>
         </View>
@@ -126,19 +113,11 @@ export function TrainerSubscriptionCard({
           </Text>
           <View style={styles.proFeatures}>
             <View style={styles.proFeature}>
-              <Ionicons
-                name="checkmark"
-                size={18}
-                color={Colors.primary.DEFAULT}
-              />
+              <Ionicons name="checkmark" size={18} color={color.$primary} />
               <Text style={styles.proFeatureText}>AI supported reporting</Text>
             </View>
             <View style={styles.proFeature}>
-              <Ionicons
-                name="checkmark"
-                size={18}
-                color={Colors.primary.DEFAULT}
-              />
+              <Ionicons name="checkmark" size={18} color={color.$primary} />
               <Text style={styles.proFeatureText}>
                 Client access to Reps buddy
               </Text>
@@ -256,70 +235,74 @@ export function TrainerSubscriptionCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
     borderWidth: 2,
     borderColor: "transparent",
-    ...Shadows.medium,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
     overflow: "hidden",
     position: "relative",
   },
   header: {
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+    marginBottom: 8,
+    marginTop: 4,
   },
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   content: {
-    marginTop: Spacing.sm,
+    marginTop: 8,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.secondary,
-    marginBottom: Spacing.sm,
+    color: color.$text2,
+    marginBottom: 8,
   },
   features: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
+    gap: 8,
+    marginBottom: 16,
   },
   feature: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.sm,
+    gap: 8,
   },
   featureText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     flex: 1,
     lineHeight: 20,
   },
   proEnhancementTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
-    marginBottom: Spacing.sm,
+    color: color.$primary,
+    marginBottom: 8,
   },
   proFeatures: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   proFeature: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.sm,
+    gap: 8,
   },
   proFeatureText: {
     fontSize: 14,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     flex: 1,
     lineHeight: 20,
   },
   pricingSection: {
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   pricingColumnLabelContainer: {
     flex: 1,
@@ -327,31 +310,31 @@ const styles = StyleSheet.create({
   },
   pricingColumns: {
     flexDirection: "row",
-    gap: Spacing.md,
+    gap: 16,
   },
   pricingColumn: {
     flex: 1,
   },
   pricingColumnTouchable: {
     borderWidth: 2,
-    borderColor: Colors.surface.border,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
+    borderColor: color.$surface3,
+    borderRadius: 12,
+    padding: 8,
     overflow: "hidden",
     position: "relative",
   },
   pricingColumnCurrent: {
-    borderColor: Colors.primary.DEFAULT,
-    backgroundColor: Colors.primary.DEFAULT + "10",
+    borderColor: color.$primary,
+    backgroundColor: color.$primary + "10",
   },
   pricingColumnDisabled: {
     opacity: 0.55,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   priceUnavailable: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.text.secondary,
+    color: color.$text2,
     fontStyle: "italic",
     textAlign: "center",
   },
@@ -360,29 +343,29 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.xs / 2,
-    paddingHorizontal: Spacing.xs,
+    backgroundColor: color.$primary,
+    paddingVertical: 4 / 2,
+    paddingHorizontal: 4,
     alignItems: "center",
     zIndex: 1,
   },
   trialBannerColumnText: {
     fontSize: 10,
     fontWeight: "700",
-    color: Colors.text.inverse,
+    color: color.$bg,
     textTransform: "uppercase",
   },
   pricingColumnLabel: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   pricingContentCompact: {
     flex: 1,
     justifyContent: "flex-end",
-    paddingTop: Spacing.md,
-    gap: Spacing.xs,
+    paddingTop: 16,
+    gap: 4,
   },
   pricingContent: {
     alignItems: "center",
@@ -390,35 +373,35 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   priceStrikethrough: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.error.DEFAULT,
+    color: color.$error,
     textDecorationLine: "line-through",
     textAlign: "center",
-    marginBottom: Spacing.xs / 2,
+    marginBottom: 4 / 2,
   },
   subscribeButton: {
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   subscribeButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   currentBadge: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.primary.DEFAULT,
-    marginTop: Spacing.md,
+    color: color.$primary,
+    marginTop: 16,
     textAlign: "center",
   },
 });

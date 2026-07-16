@@ -8,12 +8,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { SyncQueueEntry } from "@/domain/ports/storage.port";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Failed-sync review screen — pure presenter.
@@ -67,7 +62,7 @@ export function SyncFailedPresenter({
         <Ionicons
           name="checkmark-circle-outline"
           size={48}
-          color={Colors.success.DEFAULT}
+          color={color.$success}
         />
         <Text style={styles.emptyTitle}>All clear</Text>
         <Text style={styles.emptyBody}>
@@ -92,7 +87,7 @@ export function SyncFailedPresenter({
             <Ionicons
               name="alert-circle-outline"
               size={16}
-              color={Colors.error.DEFAULT}
+              color={color.$error}
             />
             <Text style={styles.cardTitle} numberOfLines={2}>
               {describeEntry(entry)}
@@ -132,80 +127,84 @@ export function SyncFailedPresenter({
 
 const styles = StyleSheet.create({
   scrollContent: {
-    padding: Spacing.md,
-    gap: Spacing.md,
+    padding: 16,
+    gap: 16,
   },
   card: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.medium,
-    gap: Spacing.sm,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    gap: 8,
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: 4,
   },
   cardTitle: {
     flex: 1,
     fontSize: 15,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   errorLine: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
   ctaRow: {
     flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
+    gap: 8,
+    marginTop: 8,
   },
   primaryButton: {
     flex: 1,
-    backgroundColor: Colors.primary.DEFAULT,
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    backgroundColor: color.$primary,
+    paddingVertical: 8 + 2,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   primaryButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
   secondaryButton: {
     flex: 1,
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 8 + 2,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   secondaryButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.tertiary,
+    color: color.$text3,
   },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing.xl,
-    gap: Spacing.sm,
+    padding: 32,
+    gap: 8,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   emptyBody: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     textAlign: "center",
   },
 });

@@ -1,12 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Current-plan status header. Ported 1:1 from legacy
@@ -62,11 +57,7 @@ export function CurrentSubscriptionStatusCard({
         <Ionicons
           name={isCancelledButActive ? "alert-circle" : "checkmark-circle"}
           size={20}
-          color={
-            isCancelledButActive
-              ? Colors.warning.DEFAULT
-              : Colors.success.DEFAULT
-          }
+          color={isCancelledButActive ? color.$warning : color.$success}
         />
         <View style={styles.currentSubscriptionContent}>
           <Text style={styles.currentSubscriptionText}>
@@ -82,11 +73,7 @@ export function CurrentSubscriptionStatusCard({
           )}
           {scheduledChange && (
             <View style={styles.scheduledChangeContainer}>
-              <Ionicons
-                name="time-outline"
-                size={16}
-                color={Colors.primary.DEFAULT}
-              />
+              <Ionicons name="time-outline" size={16} color={color.$primary} />
               <View style={styles.scheduledChangeContent}>
                 <Text style={styles.scheduledChangeText}>
                   Scheduled: {scheduledChange.nextTierDisplayName} (effective{" "}
@@ -109,37 +96,41 @@ export function CurrentSubscriptionStatusCard({
 
 const styles = StyleSheet.create({
   currentSubscriptionCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.md,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 16,
+    marginBottom: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   currentSubscriptionHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.sm,
+    gap: 8,
   },
   currentSubscriptionContent: {
     flex: 1,
-    gap: Spacing.xs,
+    gap: 4,
   },
   currentSubscriptionText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   currentSubscriptionSubtext: {
     fontSize: 13,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 18,
   },
   scheduledChangeContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: Spacing.xs,
-    marginTop: Spacing.xs,
+    gap: 4,
+    marginTop: 4,
   },
   scheduledChangeContent: {
     flex: 1,
@@ -147,11 +138,11 @@ const styles = StyleSheet.create({
   },
   scheduledChangeText: {
     fontSize: 13,
-    color: Colors.primary.DEFAULT,
+    color: color.$primary,
     fontWeight: "600",
   },
   scheduledChangeSubtext: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: color.$text2,
   },
 });

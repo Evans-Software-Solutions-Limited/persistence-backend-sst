@@ -12,7 +12,7 @@ import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useRespondToClientRequest } from "@/ui/hooks/useTrainerInviteCodes";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useAddClientSheet } from "@/state/add-client-sheet";
-import { Colors } from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import {
   ClientsListPresenter,
   type ClientSegment,
@@ -169,7 +169,7 @@ export function ClientsContainer() {
   if (subQuery.isPending) {
     return (
       <View style={styles.loading} testID="clients-loading">
-        <ActivityIndicator size="large" color={Colors.primary.DEFAULT} />
+        <ActivityIndicator size="large" color={color.$primary} />
       </View>
     );
   }
@@ -216,12 +216,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   gateWrapper: {
     flex: 1,
     padding: 24,
     justifyContent: "center",
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
 });

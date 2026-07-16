@@ -1,12 +1,7 @@
 import React from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-} from "@/ui/theme/subscriptionLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Cancellation-confirmation modal. Ported 1:1 from legacy
@@ -55,7 +50,7 @@ export function CancelSubscriptionModal({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Ionicons name="warning" size={48} color={Colors.warning.DEFAULT} />
+            <Ionicons name="warning" size={48} color={color.$warning} />
             <Text style={styles.modalTitle}>Cancel Subscription?</Text>
           </View>
 
@@ -67,7 +62,7 @@ export function CancelSubscriptionModal({
             <Ionicons
               name="information-circle"
               size={20}
-              color={Colors.primary.DEFAULT}
+              color={color.$primary}
             />
             <Text style={styles.modalInfoText}>
               Your subscription perks will remain active until{" "}
@@ -110,74 +105,78 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.lg,
+    padding: 24,
   },
   modalContent: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 24,
     width: "100%",
     maxWidth: 400,
-    ...Shadows.large,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   modalHeader: {
     alignItems: "center",
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
+    marginBottom: 16,
+    gap: 8,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
   },
   modalMessage: {
     fontSize: 16,
-    color: Colors.text.primary,
+    color: color.$text,
     textAlign: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
     lineHeight: 24,
   },
   modalInfoBox: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: Colors.primary.DEFAULT + "10",
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    backgroundColor: color.$primary + "10",
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+    marginBottom: 24,
   },
   modalInfoText: {
     flex: 1,
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: color.$text2,
     lineHeight: 20,
   },
   modalButtons: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   modalButton: {
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   modalButtonCancel: {
     backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: Colors.surface.border,
+    borderColor: color.$surface3,
   },
   modalButtonCancelText: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: color.$text,
   },
   modalButtonConfirm: {
-    backgroundColor: Colors.error.DEFAULT,
+    backgroundColor: color.$error,
   },
   modalButtonConfirmText: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.inverse,
+    color: color.$bg,
   },
 });
