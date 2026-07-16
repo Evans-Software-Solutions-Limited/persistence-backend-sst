@@ -4,11 +4,11 @@ import { View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedProps,
-  useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
+import { useReducedMotionGate } from "@/ui/hooks/useReducedMotionGate";
 
 /**
  * <Ring> + <MultiRing> — Apple-style activity rings.
@@ -27,7 +27,6 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const FILL_DEFAULT = "#22D3EE"; // $primary
 const TRACK_DEFAULT = "#232735"; // $surface3
 const MULTI_TRACK_DEFAULT = "rgba(255,255,255,0.08)";
-const DURATION_MS = 800;
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 export type RingProps = {
@@ -70,7 +69,8 @@ function AnimatedRingCircle({
 }) {
   const circumference = 2 * Math.PI * radius;
   const target = clamp01(pct);
-  const reduceMotion = useReducedMotion();
+  const gate = useReducedMotionGate();
+  const reduceMotion = gate.reduced;
   const progress = useSharedValue(reduceMotion ? target : 0);
 
   useEffect(() => {
@@ -79,10 +79,10 @@ function AnimatedRingCircle({
       return;
     }
     progress.value = withTiming(target, {
-      duration: DURATION_MS,
+      duration: gate.ringFillMs,
       easing: Easing.bezier(0.2, 0.7, 0.2, 1),
     });
-  }, [target, reduceMotion, progress]);
+  }, [target, reduceMotion, gate.ringFillMs, progress]);
 
   const animatedProps = useAnimatedProps(() => {
     const dash = circumference * progress.value;

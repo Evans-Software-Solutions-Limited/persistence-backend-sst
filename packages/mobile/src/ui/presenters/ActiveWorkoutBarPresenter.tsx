@@ -2,12 +2,12 @@ import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
 import Animated, {
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
 import { useEffect } from "react";
+import { useReducedMotionGate } from "@/ui/hooks/useReducedMotionGate";
 import { IconChevronUp, IconTimer } from "@/ui/components/icons";
 
 /**
@@ -55,19 +55,22 @@ export function ActiveWorkoutBarPresenter({
   reduceMotionOverride,
   testID = "active-workout-bar",
 }: ActiveWorkoutBarPresenterProps) {
-  const systemReduceMotion = useReducedMotion();
-  const reduceMotion = reduceMotionOverride ?? systemReduceMotion;
+  const gate = useReducedMotionGate();
+  // Consume the shared gate's `pulseDots` in production; the test seam still
+  // forces the pulse on/off deterministically (`?? undefined` → gate value).
+  const shouldPulse =
+    reduceMotionOverride != null ? !reduceMotionOverride : gate.pulseDots;
 
   // Pulse the dot opacity 1 → 0.35 and back, 1.4s cycle (700ms each leg),
   // matching `active-workout.jsx:166` `awbarpulse 1.4s ease-in-out infinite`.
   const pulse = useSharedValue(1);
   useEffect(() => {
-    if (reduceMotion) {
+    if (!shouldPulse) {
       pulse.value = 1;
       return;
     }
     pulse.value = withRepeat(withTiming(0.35, { duration: 700 }), -1, true);
-  }, [reduceMotion, pulse]);
+  }, [shouldPulse, pulse]);
   const dotStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   return (
