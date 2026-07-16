@@ -4,6 +4,7 @@ import { HomeReadService } from "../repositories/homeReadService";
 import { HabitService } from "../repositories/habitService";
 import { NutritionEntryService } from "../repositories/nutritionEntryService";
 import { NutritionTargetService } from "../repositories/nutritionTargetService";
+import { SleepService } from "../repositories/sleepService";
 import {
   getAuthUser,
   requireAuth,
@@ -15,6 +16,7 @@ import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
 import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 import { buildHabitsGrid } from "../habits/habitsView";
+import { formatSleepDuration } from "./formatSleepDuration";
 
 const RECENT_PR_LIMIT = 5;
 /**
@@ -34,6 +36,7 @@ export const getHomeHandler = new Elysia()
   .use(HabitService)
   .use(NutritionEntryService)
   .use(NutritionTargetService)
+  .use(SleepService)
   .get("/users/me/home", async (ctx) => {
     const { sub: userId } = getUser(ctx);
     const now = new Date();
@@ -78,6 +81,7 @@ export const getHomeHandler = new Elysia()
       kcalTarget,
       activeProgramme,
       todaysTraining,
+      sleepRecord,
     ] = await Promise.all([
       ctx.HomeReadRepository.getTodaySteps(userId, today),
       ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
@@ -98,6 +102,9 @@ export const getHomeHandler = new Elysia()
       ),
       ctx.HomeReadRepository.getActiveProgramme(userId, today),
       ctx.HomeReadRepository.getTodaysTraining(userId),
+      // specs/20-sleep-quicklog STORY-002 AC 2.5 — the same `today` basis the
+      // rest of this handler already computes (user's local wake-day).
+      ctx.SleepRepository.getForDate(userId, today),
     ]);
 
     const rings = buildRings(
@@ -111,7 +118,12 @@ export const getHomeHandler = new Elysia()
     return {
       data: {
         rings,
-        micro: { streak, water: null, strain: null, sleep: null },
+        micro: {
+          streak,
+          water: null,
+          strain: null,
+          sleep: formatSleepDuration(sleepRecord?.durationMinutes ?? null),
+        },
         weeklyVolume: {
           days: fillWeekDays(
             daily,
