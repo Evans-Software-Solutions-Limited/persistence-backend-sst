@@ -11,15 +11,15 @@ step.**_
 
 All four workflows exist on `main` and were audited end-to-end:
 
-| Workflow | Trigger | Verdict |
-| --- | --- | --- |
-| `deploy-staging.yml` | push `main` + manual | ✅ Production-grade. Full gate suite → dry-run migrate → migrate → SST secrets (fail-fast) → `sst deploy --stage staging`. Live today (12.13 auto-applied on the #251 merge). |
-| `production-deploy.yml` | release published + manual | ✅ Mirrors staging for `--stage production`. |
-| `mobile-build-staging.yml` | manual (auto-trigger commented) | ✅ after fix — build+submit race fixed 2026-07-16 (`--no-wait`→`--wait`). |
-| `mobile-build-production.yml` | manual (auto-trigger commented) | ✅ after fix — same fix applied. |
+| Workflow                      | Trigger                         | Verdict                                                                                                                                                                       |
+| ----------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy-staging.yml`          | push `main` + manual            | ✅ Production-grade. Full gate suite → dry-run migrate → migrate → SST secrets (fail-fast) → `sst deploy --stage staging`. Live today (12.13 auto-applied on the #251 merge). |
+| `production-deploy.yml`       | release published + manual      | ✅ Mirrors staging for `--stage production`.                                                                                                                                  |
+| `mobile-build-staging.yml`    | manual (auto-trigger commented) | ✅ after fix — build+submit race fixed 2026-07-16 (`--no-wait`→`--wait`).                                                                                                     |
+| `mobile-build-production.yml` | manual (auto-trigger commented) | ✅ after fix — same fix applied.                                                                                                                                              |
 
 **Fix landed this session:** both mobile workflows did `eas build --no-wait` then
-`eas submit --latest`, which submits the *previous* build (or errors on the first-ever
+`eas submit --latest`, which submits the _previous_ build (or errors on the first-ever
 build). Changed to `--wait` so `--latest` resolves to the just-finished build. No other
 code changes were needed to the pipeline.
 
