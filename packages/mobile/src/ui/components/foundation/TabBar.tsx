@@ -6,10 +6,10 @@ import Animated, {
   Easing,
   interpolateColor,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { useReducedMotionGate } from "@/ui/hooks/useReducedMotionGate";
 
 /**
  * <TabBar> — bottom tab bar, accent recolours the active state.
@@ -63,7 +63,6 @@ const INACTIVE = "#8A8A98"; // $text3 — icons take a concrete colour string.
 // 0 = athlete, 1 = coach. The shared value animates between them so every
 // active-tab accent interpolation reads a single driver.
 const MODE_PROGRESS = { athlete: 0, coach: 1 } as const;
-const ACCENT_DURATION_MS = 200;
 
 const AnimatedText = Animated.Text;
 
@@ -204,7 +203,8 @@ export function TabBar({
   mode = "athlete",
   testID,
 }: TabBarProps) {
-  const reduceMotion = useReducedMotion();
+  const gate = useReducedMotionGate();
+  const reduceMotion = gate.reduced;
   const progress = useSharedValue(MODE_PROGRESS[mode]);
 
   // Animate the accent driver when the mode flips (cyan ↔ violet, 200ms). On
@@ -217,10 +217,10 @@ export function TabBar({
       return;
     }
     progress.value = withTiming(target, {
-      duration: ACCENT_DURATION_MS,
+      duration: gate.tabAccentMs,
       easing: Easing.bezier(0.2, 0.7, 0.2, 1),
     });
-  }, [mode, reduceMotion, progress]);
+  }, [mode, reduceMotion, gate.tabAccentMs, progress]);
 
   return (
     <View

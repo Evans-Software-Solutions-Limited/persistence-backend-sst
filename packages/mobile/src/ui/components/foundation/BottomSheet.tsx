@@ -17,6 +17,7 @@ import {
 
 import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 
+import { useReducedMotionGate } from "@/ui/hooks/useReducedMotionGate";
 import { toneHex, toneTokens } from "./tones";
 
 /**
@@ -77,6 +78,15 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
   const snapPoints = useMemo(() => [resolveSnap(height)], [height]);
+  // Reduce-motion (spec-12.2 AC 3.3): snap the sheet open/closed instead of
+  // sliding. gorhom drives the mount + expand/close transitions through
+  // `animationConfigs`; a zero-duration timing config makes them instant while
+  // leaving the slide default untouched when reduce-motion is off.
+  const gate = useReducedMotionGate();
+  const animationConfigs = useMemo(
+    () => (gate.sheetAnimation === "snap" ? { duration: 0 } : undefined),
+    [gate.sheetAnimation],
+  );
   // Read the inset context directly (rather than useSafeAreaInsets, which
   // throws without a provider) so the sheet still renders in tests / any tree
   // mounted outside a SafeAreaProvider — falls back to 0.
@@ -135,6 +145,7 @@ export function BottomSheet({
       index={visible ? 0 : -1}
       onChange={handleChange}
       snapPoints={snapPoints}
+      animationConfigs={animationConfigs}
       // gorhom v5 defaults `enableDynamicSizing: true`, which sizes the sheet to
       // its CONTENT height and overrides `snapPoints`. With a long body (e.g. the
       // Create-Exercise form) that pushes the sheet to ~full screen instead of the

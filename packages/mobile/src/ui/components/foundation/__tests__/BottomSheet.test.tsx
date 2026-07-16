@@ -1,10 +1,54 @@
+import GorhomBottomSheet from "@gorhom/bottom-sheet";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Text } from "../../Text";
 import { BottomSheet, type BottomSheetAccent } from "../BottomSheet";
 
+// Toggle the reduce-motion gate per-test so we can assert the snap-vs-slide
+// contract (spec-12.2 AC 3.3) without driving the OS setting through reanimated
+// (the gate has its own unit test).
+let mockSheetAnimation: "slide" | "snap" = "slide";
+jest.mock("@/ui/hooks/useReducedMotionGate", () => ({
+  useReducedMotionGate: () => ({
+    reduced: mockSheetAnimation === "snap",
+    ringFillMs: 0,
+    barFillMs: 0,
+    sheetAnimation: mockSheetAnimation,
+    pulseDots: mockSheetAnimation === "slide",
+    tabAccentMs: 0,
+  }),
+}));
+
 const ACCENTS: BottomSheetAccent[] = ["primary", "gold", "trainer", "ember"];
 
 describe("BottomSheet", () => {
+  afterEach(() => {
+    mockSheetAnimation = "slide";
+  });
+
+  it("slides (no snap override) when reduce-motion is off", () => {
+    const { UNSAFE_getByType } = renderWithTheme(
+      <BottomSheet visible onClose={() => undefined} title="Scan">
+        <Text>x</Text>
+      </BottomSheet>,
+    );
+    // No animationConfigs → gorhom uses its default slide timing.
+    expect(
+      UNSAFE_getByType(GorhomBottomSheet).props.animationConfigs,
+    ).toBeUndefined();
+  });
+
+  it("snaps (zero-duration animation) when reduce-motion is on (AC 3.3)", () => {
+    mockSheetAnimation = "snap";
+    const { UNSAFE_getByType } = renderWithTheme(
+      <BottomSheet visible onClose={() => undefined} title="Scan">
+        <Text>x</Text>
+      </BottomSheet>,
+    );
+    expect(UNSAFE_getByType(GorhomBottomSheet).props.animationConfigs).toEqual({
+      duration: 0,
+    });
+  });
+
   it("renders nothing when not visible", () => {
     const { queryByTestId, queryByText } = renderWithTheme(
       <BottomSheet visible={false} onClose={() => undefined} title="Scan">

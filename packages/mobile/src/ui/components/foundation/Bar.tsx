@@ -3,10 +3,10 @@ import { View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { useReducedMotionGate } from "@/ui/hooks/useReducedMotionGate";
 
 /**
  * <Bar> — linear progress bar with an animated fill.
@@ -39,7 +39,6 @@ export type BarProps = {
 
 const FILL_DEFAULT = "#22D3EE"; // $primary
 const TRACK_DEFAULT = "#232735"; // $surface3
-const DURATION_MS = 600;
 
 export function Bar({
   pct,
@@ -51,7 +50,8 @@ export function Bar({
   accessibilityLabel,
 }: BarProps) {
   const clamped = Math.min(1, Math.max(0, pct));
-  const reduceMotion = useReducedMotion();
+  const gate = useReducedMotionGate();
+  const reduceMotion = gate.reduced;
   const progress = useSharedValue(reduceMotion ? clamped : 0);
 
   useEffect(() => {
@@ -60,10 +60,10 @@ export function Bar({
       return;
     }
     progress.value = withTiming(clamped, {
-      duration: DURATION_MS,
+      duration: gate.barFillMs,
       easing: Easing.bezier(0.2, 0.7, 0.2, 1),
     });
-  }, [clamped, reduceMotion, progress]);
+  }, [clamped, reduceMotion, gate.barFillMs, progress]);
 
   const fillStyle = useAnimatedStyle(() => ({
     width: `${progress.value * 100}%`,
