@@ -132,6 +132,10 @@ export const healthProviderEnum = pgEnum("health_provider", [
   "fitbit",
   "samsung_health",
   "garmin",
+  // specs/20-sleep-quicklog — manual sleep quick-log data_source. Added via
+  // its own migration (ALTER TYPE ... ADD VALUE IF NOT EXISTS), never in the
+  // same transaction as a query using it (Postgres restriction).
+  "manual",
 ]);
 
 export const syncStatusEnum = pgEnum("sync_status", [

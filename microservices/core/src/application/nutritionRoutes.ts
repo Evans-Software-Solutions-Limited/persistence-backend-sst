@@ -30,8 +30,18 @@ import { mealsCreateHandler } from "./meals/create/mealsCreateHandler";
 import { mealsGetHandler } from "./meals/get/mealsGetHandler";
 import { mealsUpdateHandler } from "./meals/update/mealsUpdateHandler";
 import { mealsDeleteHandler } from "./meals/delete/mealsDeleteHandler";
+// specs/20-sleep-quicklog (PR-A backend) — manual sleep quick-log. Bolted
+// onto this ALREADY-mounted sub-app (rather than a new `.use()` on the root
+// `app` chain in api.ts) purely to stay under TS's type-depth ceiling: the
+// root chain is already at the TS2589 limit (see trainersOnBehalfRoutes'
+// comment above its api.ts mount for the same constraint), so any new leaf
+// route MUST join an existing grouped sub-app, not add a new root `.use()`.
+// No domain relationship to nutrition — health/day-tracking is simply where
+// there happened to be headroom.
+import { healthRoutes } from "./healthRoutes";
 
 export const nutritionRoutes = new Elysia()
+  .use(healthRoutes)
   .use(nutritionTodayHandler)
   // entries — literal /nutrition/entries (GET/POST) and parameterised
   // /nutrition/entries/:id (PUT/DELETE) don't collide (different methods).

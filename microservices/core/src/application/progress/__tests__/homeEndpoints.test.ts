@@ -49,6 +49,12 @@ const streakMock = vi.hoisted(() => ({
     { id: "s1", streakType: "workout_streak", currentCount: 4 },
   ]),
 }));
+// specs/20-sleep-quicklog STORY-002 AC 2.5 — Home "sleep" micro-pill.
+// Default: no record → the pill stays null (matches the pre-existing
+// hardcoded `sleep: null` until a row is actually logged).
+const sleepMock = vi.hoisted(() => ({
+  getForDate: vi.fn(async () => null as any),
+}));
 
 vi.mock("../../repositories/volumeRepository", () => ({
   VolumeRepository: vi.fn().mockImplementation(() => volMock),
@@ -67,6 +73,9 @@ vi.mock("../../repositories/nutritionEntryRepository", () => ({
 }));
 vi.mock("../../repositories/nutritionTargetRepository", () => ({
   NutritionTargetRepository: vi.fn().mockImplementation(() => nutTargetMock),
+}));
+vi.mock("../../repositories/sleepRepository", () => ({
+  SleepRepository: vi.fn().mockImplementation(() => sleepMock),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -143,6 +152,8 @@ describe("Home/You endpoints", () => {
     // loadRings re-issued the this-week query.)
     expect(volMock.totalVolume).toHaveBeenCalledTimes(2);
     expect(data.micro.streak).toBe(23);
+    // No sleep_data row for today (sleepMock default) → the pill stays null.
+    expect(data.micro.sleep).toBeNull();
     expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: 5 });
     expect(data.recentPRs).toHaveLength(1);
     expect(Array.isArray(data.habits)).toBe(true);
@@ -162,6 +173,31 @@ describe("Home/You endpoints", () => {
       workoutId: "w1",
       assignedByType: "personal_trainer",
     });
+  });
+
+  it("GET /users/me/home returns micro.sleep as the formatted duration when a record exists (specs/20-sleep-quicklog STORY-002 AC 2.5)", async () => {
+    sleepMock.getForDate.mockResolvedValueOnce({
+      id: "sd1",
+      userId: "u1",
+      sleepDate: "2026-07-16",
+      durationMinutes: 450,
+      dataSource: "manual",
+    } as any);
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.micro.sleep).toBe("7h 30m");
+    expect(sleepMock.getForDate).toHaveBeenCalledWith("u1", expect.any(String));
+  });
+
+  it("GET /users/me/home returns micro.sleep as null when nothing is logged for today", async () => {
+    sleepMock.getForDate.mockResolvedValueOnce(null as any);
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.micro.sleep).toBeNull();
   });
 
   it("GET /users/me/home survives a programme top-up failure", async () => {
