@@ -78,12 +78,9 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
     hotfix **#162** (blank-line removal, content retained), staging deploy
     now GREEN incl. migrate + deploy.
   - **Two skill .md files deleted on main**; their replacement dir-form
-    (`.claude/skills/{elysia-route-change,sst-resource-change}/`, created
-    pre-session) is UNTRACKED, so on a clean checkout both skills are gone
-    until Brad commits the new dir form. **ACTION FOR BRAD:** commit the
-    dir-form skills to finish that migration (or restore the .md if the
-    dir-form was abandoned). Not reverted by me — the deletion looked
-    intentional (part of your refactor).
+    (`.claude/skills/{elysia-route-change,sst-resource-change}/`) was
+    UNTRACKED. **RESOLVED 2026-07-16 (cont. 4) — committed via #252**, so
+    both skills are now present on a clean checkout. Migration finished.
 
 ## Lessons learned
 
@@ -100,6 +97,14 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
   merged migration hits the STAGING DB on merge (prod is separate/gated).
 
 ## Last session
+
+**2026-07-16 (cont. 4) — housekeeping + independent sense-check of #251. `origin/main` HEAD = `3d6a881`. This session ran in PARALLEL with the one that shipped 12.13/#251 + the CI-CD audit (cont. 3 below); reconciled, no clobber.**
+- **#251 (IAP uniqueness index) INDEPENDENTLY SENSE-CHECKED — verdict: correct, NO fix PR needed.** Reviewed the merged diff (not just the message): migration partial-unique index + `schema.ts` mirror correct; `upsertByExternalId` handles the ON CONFLICT **partial-index predicate** correctly (`targetWhere: external_subscription_id IS NOT NULL` — a plain `ON CONFLICT (col)` would have errored), guards null id, updates mutable fields only (never user_id/starts_at); `syncCustomer` keeps `cancelLiveSubscriptions` so the one-live-row-per-user invariant holds; **no `cancelledAt` regression** (the old `updateById(values)` never reset it either — `values` never carried it). Stripe path correctly left as insert-or-skip. Ran the full **core suite locally (2518 pass / 255 files)**; #251's own staging deploy was green (migration applied cleanly to staging). Left it alone.
+- **Docs/cleanup shipped this session:** **#250** merged spec-12.1 ledger+tracker to main. Deleted **6 stale untracked briefs** whose work had shipped (M8-coach COACH_HOME_V1 + PHASE_8_INVITE_QR #197/#198/#202; M16 #184/#185; M18 #187/#188; WORKOUT-AUTHORING-V2 #204/#205; COMPLIANCE-SPRINT #139–#142+Sentry) + 2 emptied dirs — kept M8-coach's tracked specs + WA-v2's tracked triplet/SMOKE_TEST. **#252** committed the dir-form skills (resolves the long-standing Open-failures action, see above) + prettier-formatted `BRIEF-3` (which had been committed unformatted in `0bd9da8`).
+- **Deploy-failure caught + fixed:** the `e01997c` staging deploy had **FAILED on the Prettier step** — unformatted `BRIEF-3-build-bringup-runbook.md`. **#252's format fix resolved it; #252's staging deploy = green.** Lesson re-confirmed: committed `.md` must be prettier-clean or the tree-wide `prettier --check .` in deploy-staging fails (untracked files are invisible to CI, so they don't — only committed ones bite).
+- **GO-LIVE-FINAL briefs written + committed this entry:** BRIEF-1 (a11y device walkthrough — Brad's remaining manual gate; Part B/IAP marked SHIPPED via #251) and BRIEF-2 (launch runbook: 12.10 assets / 12.11 pre-launch incl. IAP-sandbox gate / 12.12 submission + repo privatization). This ledger update ALSO committed the remaining untracked planning keepers (M13/M14 DRAFT, M15 PARKED, marketing pricing, web design brief) so the repo holds everything.
+- **Repo privatization (Brad's, gated on his Actions limit):** only `persistence-backend-sst` is public (mobile + old backend already private; 0 forks). Going private makes GitHub Actions minutes **metered** (public = unlimited) — this repo's per-PR CI + per-merge staging deploy + crons is heavy; time the flip for after submission or confirm the org allowance. Brad said he'll flip it himself after the final CI job; #252's deploy was that job (green).
+- ntfy/Slack pings still unavailable (sandbox/connector).
 
 **2026-07-16 (cont. 3) — spec-12.13 IAP DB uniqueness index SHIPPED (GO-LIVE-FINAL Brief 1 Part B). `origin/main` HEAD = `64c0870`. PR #251 raised + self-merged (Brad's standing "merge green if IB happy"), CI-green + Inspector-Brad-local clean.**
 - **#251 = full 1+2+3 scope** (Brad chose via AskUserQuestion over 1+2-only): (1) migration `20260717120000_user_subscriptions_external_id_unique.sql` — replaces the non-unique `idx_user_subscriptions_external_id` with a PARTIAL UNIQUE index on `external_subscription_id WHERE NOT NULL`, mirroring the `20260605120000_widen_active_subscription_unique` precedent; (2) `schema.ts` Drizzle mirror; (3) `SubscriptionRepository.upsertByExternalId` (INSERT … ON CONFLICT (external_subscription_id) WHERE … DO UPDATE, mutable-fields-only, non-null guard) + RC `syncCustomer` active branch rewritten to `cancelLiveSubscriptions` + upsert. Closes the concurrent duplicate-grant race the old non-atomic find→insert left (previously caught only incidentally by the per-user `active_unique` index).
