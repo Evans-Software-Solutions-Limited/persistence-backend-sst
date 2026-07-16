@@ -1,13 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Energy (active / basal / stand-time) MyProgress tile. Ported verbatim
@@ -29,25 +23,21 @@ export function EnergyTile({
     <View style={styles.container} testID="tile-energy">
       <Text style={styles.title}>Energy</Text>
       <View style={styles.energyRow}>
-        <Ionicons name="flame" size={16} color={Colors.warning.DEFAULT} />
+        <Ionicons name="flame" size={16} color={color.$warning} />
         <Text style={styles.label}>Active:</Text>
         <Text style={styles.value}>
           {Math.round(activeEnergy).toLocaleString()} kcal
         </Text>
       </View>
       <View style={styles.energyRow}>
-        <Ionicons
-          name="battery-charging"
-          size={16}
-          color={Colors.primary.DEFAULT}
-        />
+        <Ionicons name="battery-charging" size={16} color={color.$primary} />
         <Text style={styles.label}>Basal:</Text>
         <Text style={styles.value}>
           {Math.round(basalEnergy).toLocaleString()} kcal
         </Text>
       </View>
       <View style={styles.energyRow}>
-        <Ionicons name="person" size={16} color={Colors.success.DEFAULT} />
+        <Ionicons name="person" size={16} color={color.$success} />
         <Text style={styles.label}>Stand:</Text>
         <Text style={styles.value}>{Math.round(standTime)}h</Text>
       </View>
@@ -58,30 +48,39 @@ export function EnergyTile({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   title: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    marginBottom: Spacing.sm,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
+    marginBottom: 8,
   },
   energyRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    marginBottom: Spacing.xs,
+    gap: 4,
+    marginBottom: 4,
   },
   label: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
     flex: 1,
   },
   value: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
   },
 });

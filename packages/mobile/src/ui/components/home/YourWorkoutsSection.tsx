@@ -7,7 +7,7 @@ import {
   View,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
-import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { WorkoutCard, type WorkoutCardWorkout } from "./WorkoutCard";
 
 /**
@@ -39,7 +39,7 @@ export function YourWorkoutsSection({
 }: YourWorkoutsSectionProps) {
   const screenWidth = Dimensions.get("window").width;
   const cardWidth = screenWidth * 0.85; // 85% of screen width
-  const itemWidth = cardWidth + Spacing.md; // Add spacing between cards
+  const itemWidth = cardWidth + 16; // Add spacing between cards
   // Fixed height — sized to fit the WorkoutCard's title + metadata
   // row + action buttons with a 2-line description, with a touch of
   // breathing room. The previous 200 was tuned for verbatim parity
@@ -105,19 +105,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   sectionTitle: {
-    ...Typography.h3,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
   },
   viewAllText: {
-    ...Typography.body2,
-    color: Colors.primary.DEFAULT,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$primary,
   },
   carousel: {
     width: "100%",
   },
   carouselItem: {
-    paddingHorizontal: Spacing.xs,
+    paddingHorizontal: 4,
   },
 });

@@ -1,12 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Recent activity list. Ported verbatim from
@@ -80,23 +74,34 @@ export function RecentActivitySection({
 const styles = StyleSheet.create({
   container: {},
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 16,
   },
   activityCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   activityName: {
-    ...Typography.body1,
-    color: Colors.text.primary,
-    marginBottom: Spacing.xs,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
+    marginBottom: 4,
   },
   activityTime: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
 });

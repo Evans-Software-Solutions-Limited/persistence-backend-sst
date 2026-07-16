@@ -1,13 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  Colors,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Stacked goal cards with progress bar. Ported verbatim from
@@ -49,11 +43,7 @@ export function GoalsSection({ goals }: GoalsSectionProps) {
             testID={`goal-card-${goal.id}`}
           >
             <View style={styles.goalHeader}>
-              <Ionicons
-                name={goal.icon}
-                size={20}
-                color={Colors.primary.DEFAULT}
-              />
+              <Ionicons name={goal.icon} size={20} color={color.$primary} />
               <Text style={styles.goalTitle}>{goal.title}</Text>
             </View>
             <View style={styles.progressContainer}>
@@ -64,8 +54,8 @@ export function GoalsSection({ goals }: GoalsSectionProps) {
                     {
                       width: `${percentage}%`,
                       backgroundColor: isComplete
-                        ? Colors.success.DEFAULT
-                        : Colors.primary.DEFAULT,
+                        ? color.$success
+                        : color.$primary,
                     },
                   ]}
                 />
@@ -85,41 +75,52 @@ export function GoalsSection({ goals }: GoalsSectionProps) {
 const styles = StyleSheet.create({
   container: {},
   sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
+    fontSize: 20,
+    fontWeight: "600" as const,
+    lineHeight: 28,
+    color: color.$text,
+    marginBottom: 16,
   },
   goalCard: {
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    ...Shadows.small,
+    backgroundColor: color.$surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   goalHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: 8,
+    marginBottom: 8,
   },
   goalTitle: {
-    ...Typography.body1,
-    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
+    color: color.$text,
   },
   progressContainer: {
-    gap: Spacing.xs,
+    gap: 4,
   },
   progressBar: {
     height: 8,
-    backgroundColor: Colors.surface.secondary,
-    borderRadius: BorderRadius.full,
+    backgroundColor: color.$surface2,
+    borderRadius: 9999,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: BorderRadius.full,
+    borderRadius: 9999,
   },
   progressText: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
 });

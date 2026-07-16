@@ -1,7 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Avatar } from "@/ui/components/foundation";
-import { Colors, Spacing, Typography } from "@/ui/theme/homeLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Greeting + tier row. Ported verbatim from
@@ -113,30 +113,38 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
-    marginBottom: Spacing.xxs,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
+    marginBottom: 2,
   },
   userName: {
-    ...Typography.h2,
-    color: Colors.text.primary,
-    marginBottom: Spacing.xs,
+    fontSize: 24,
+    fontWeight: "600" as const,
+    lineHeight: 32,
+    color: color.$text,
+    marginBottom: 4,
   },
   tierContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: 8,
   },
   tierText: {
-    ...Typography.body2,
-    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text2,
   },
   upgradeLink: {
-    paddingVertical: Spacing.xxs,
+    paddingVertical: 2,
   },
   upgradeText: {
-    ...Typography.body2,
-    color: Colors.primary.DEFAULT,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$primary,
     textDecorationLine: "underline",
   },
 });

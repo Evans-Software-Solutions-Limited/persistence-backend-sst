@@ -202,8 +202,8 @@ export const shadow = {
 /**
  * Legacy numbered colour scale. Consumed as plain JavaScript by a handful
  * of in-tree files (`ErrorBoundary`, `PLogoDrawLoader`, `HomePresenter`,
- * `ActiveSessionBanner`) and by `themes.ts` / `*LegacyTheme.ts`. Kept until
- * the STORY-006 codemod + STORY-007 adoption sweep retire every consumer.
+ * `ActiveSessionBanner`) and by `themes.ts`. Kept until the STORY-006 codemod
+ * + STORY-007 adoption sweep retire every consumer.
  *
  * @deprecated Use the semantic `$`-prefixed tokens above. Removal tracked in
  * `12-production-readiness` (M11 Polish).
