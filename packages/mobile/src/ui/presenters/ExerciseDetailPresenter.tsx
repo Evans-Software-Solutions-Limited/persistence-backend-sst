@@ -1,6 +1,7 @@
 import { Text, View } from "@tamagui/core";
 import type { ReactNode } from "react";
-import { Image, ScrollView } from "react-native";
+import { ScrollView } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { Exercise, ExerciseDifficulty } from "@/domain/models/exercise";
@@ -164,7 +165,9 @@ export function ExerciseDetailPresenter({
             <Image
               source={{ uri: exercise.thumbnailUrl }}
               style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 14 }}
-              resizeMode="cover"
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk"
               testID="exercise-detail-photo"
             />
           ) : (

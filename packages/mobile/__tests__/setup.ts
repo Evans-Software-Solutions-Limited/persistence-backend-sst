@@ -336,14 +336,19 @@ jest.mock("expo-haptics", () => ({
   },
 }));
 
-// Mock expo-image (M9 — recipe/food photos). Render the source-driven Image as
-// a plain View carrying its testID so cards mount; image decoding/caching is a
-// device concern not asserted in Jest.
+// Mock expo-image (Phase 12.6 — avatars, exercise & recipe/food photos). Render
+// the source-driven Image as a plain View that FORWARDS its props (source,
+// contentFit, transition, cachePolicy, style, testID) so render tests can still
+// assert on the resolved `source.uri`; image decoding/caching is a device
+// concern not asserted in Jest.
 jest.mock("expo-image", () => {
   const { View } = require("react-native");
   const React = require("react");
   const Image = (props: Record<string, unknown>) =>
-    React.createElement(View, { testID: (props.testID as string) ?? "image" });
+    React.createElement(View, {
+      ...props,
+      testID: (props.testID as string) ?? "image",
+    });
   return { __esModule: true, Image };
 });
 

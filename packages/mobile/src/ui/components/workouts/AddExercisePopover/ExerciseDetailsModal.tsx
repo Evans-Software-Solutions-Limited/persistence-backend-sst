@@ -8,13 +8,13 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
   Alert,
-  Image,
   Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 
 interface ExerciseDetailsModalProps {
   readonly exercise: any; // Using any to match the original
@@ -63,7 +63,9 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
                     <Image
                       source={{ uri: exercise.thumbnail_url }}
                       style={styles.mediaImage}
-                      resizeMode="cover"
+                      contentFit="cover"
+                      transition={200}
+                      cachePolicy="memory-disk"
                     />
                   ) : (
                     <View style={styles.mediaPlaceholder}>
@@ -93,7 +95,9 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
                 <Image
                   source={{ uri: exercise.thumbnail_url }}
                   style={styles.mediaImage}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  transition={200}
+                  cachePolicy="memory-disk"
                 />
               );
             }
