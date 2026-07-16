@@ -32,7 +32,6 @@ import {
   View,
 } from "react-native";
 import { color } from "@/ui/theme/tokens";
-import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import { SemiCircleSlider } from "@/ui/components/workouts/SemiCircleSlider";
 
 const MIN_RATING = 1;
@@ -186,44 +185,51 @@ const styles = StyleSheet.create({
     backgroundColor: color.$bg,
   },
   header: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   backButton: {
-    paddingVertical: Spacing.xs,
+    paddingVertical: 4,
   },
   backLabel: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
     color: color.$text2,
   },
   content: {
     width: "100%",
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 24,
     alignItems: "center",
-    gap: Spacing.md,
-    paddingBottom: Spacing.xl,
+    gap: 16,
+    paddingBottom: 32,
   },
   congrats: {
-    ...Typography.h1,
+    fontSize: 32,
+    fontWeight: "700",
     color: color.$text,
     textAlign: "center",
-    paddingTop: Spacing.sm,
+    paddingTop: 8,
   },
   subtitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
     color: color.$text2,
     textAlign: "center",
   },
   question: {
-    ...Typography.h3,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
     color: color.$text,
     textAlign: "center",
-    marginTop: Spacing.lg,
+    marginTop: 24,
   },
   sliderContainer: {
     width: "100%",
     alignItems: "center",
-    marginVertical: Spacing.lg,
+    marginVertical: 24,
   },
   ratingDisplay: {
     flexDirection: "row",
@@ -232,7 +238,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   ratingValue: {
-    ...Typography.h1,
+    color: color.$text,
     fontSize: 48,
     fontWeight: "700",
     includeFontPadding: false,
@@ -243,9 +249,11 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   ratingMax: {
-    ...Typography.h3,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
     color: color.$text3,
-    marginLeft: Spacing.xs,
+    marginLeft: 4,
   },
   difficultyContainer: {
     // Negative top margin pulls the difficulty caption tight against
@@ -254,42 +262,49 @@ const styles = StyleSheet.create({
     marginTop: -20,
   },
   difficultyMessage: {
-    ...Typography.h3,
+    fontSize: 20,
+    lineHeight: 28,
+    color: color.$text,
     fontWeight: "600",
     textAlign: "center",
   },
   notesContainer: {
     width: "100%",
-    marginTop: Spacing.md,
+    marginTop: 16,
   },
   notesLabel: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text3,
-    marginBottom: Spacing.sm,
+    marginBottom: 8,
   },
   notesInput: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text,
     backgroundColor: color.$surface2,
     borderRadius: 12,
-    padding: Spacing.md,
+    padding: 16,
     minHeight: 100,
     borderWidth: 1,
     borderColor: color.$border,
   },
   submitButton: {
     width: "100%",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
     borderRadius: 14,
     alignItems: "center",
-    marginTop: Spacing.lg,
+    marginTop: 24,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
   submitLabel: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     // Dark ink on the vivid difficulty-accent fill (the new band tokens are
     // lighter than the legacy palette → light text would fail contrast).
     color: color.$bg,

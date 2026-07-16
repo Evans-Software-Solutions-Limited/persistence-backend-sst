@@ -1,9 +1,4 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
@@ -21,19 +16,19 @@ interface ExerciseDetailsModalProps {
 }
 
 const getDifficultyColor = (difficulty: string | null | undefined) => {
-  if (!difficulty) return Colors.text.secondary;
+  if (!difficulty) return color.$text2;
 
   switch (difficulty) {
     case "beginner":
-      return Colors.success.DEFAULT;
+      return color.$success;
     case "intermediate":
-      return Colors.warning.DEFAULT;
+      return color.$warning;
     case "advanced":
-      return Colors.error.DEFAULT;
+      return color.$error;
     case "expert":
-      return Colors.primary.DEFAULT;
+      return color.$primary;
     default:
-      return Colors.text.secondary;
+      return color.$text2;
   }
 };
 
@@ -69,19 +64,11 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
                     />
                   ) : (
                     <View style={styles.mediaPlaceholder}>
-                      <Ionicons
-                        name="play"
-                        size={48}
-                        color={Colors.text.primary}
-                      />
+                      <Ionicons name="play" size={48} color={color.$text} />
                     </View>
                   )}
                   <View style={styles.playButton}>
-                    <Ionicons
-                      name="play"
-                      size={24}
-                      color={Colors.text.primary}
-                    />
+                    <Ionicons name="play" size={24} color={color.$text} />
                   </View>
                   <View style={styles.fullVideoButton}>
                     <Text style={styles.fullVideoText}>FULL VIDEO</Text>
@@ -104,11 +91,7 @@ export function ExerciseDetailsModal({ exercise }: ExerciseDetailsModalProps) {
 
             return (
               <View style={styles.defaultPlaceholder}>
-                <Ionicons
-                  name="fitness"
-                  size={48}
-                  color={Colors.text.tertiary}
-                />
+                <Ionicons name="fitness" size={48} color={color.$text3} />
                 <Text style={styles.defaultPlaceholderText}>
                   Exercise Image
                 </Text>
@@ -206,15 +189,15 @@ const styles = StyleSheet.create({
   // No `flex: 1` here — this surface renders inside Popover's
   // ScrollView, where flex-grow children collapse to 0 height.
   container: {
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   difficultyBadgeText: {
     fontSize: 10,
     fontWeight: "600",
   },
   difficultyBadge: {
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
+    borderRadius: 4,
+    paddingHorizontal: 8,
     paddingVertical: 2,
     alignSelf: "flex-start",
   },
@@ -226,17 +209,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   backButton: {
-    padding: Spacing.sm,
+    padding: 8,
   },
   screenTitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
@@ -256,27 +241,29 @@ const styles = StyleSheet.create({
   mediaPlaceholder: {
     width: "100%",
     height: "100%",
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     alignItems: "center",
     justifyContent: "center",
   },
   defaultPlaceholder: {
     width: "100%",
     height: "100%",
-    backgroundColor: Colors.surface.secondary,
+    backgroundColor: color.$surface2,
     alignItems: "center",
     justifyContent: "center",
   },
   defaultPlaceholderText: {
-    ...Typography.body2,
-    color: Colors.text.tertiary,
-    marginTop: Spacing.sm,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text3,
+    marginTop: 8,
   },
   videoContainer: {
     position: "relative",
-    borderRadius: BorderRadius.lg,
+    borderRadius: 16,
     overflow: "hidden",
-    marginTop: Spacing.sm,
+    marginTop: 8,
   },
   playButton: {
     position: "absolute",
@@ -292,46 +279,49 @@ const styles = StyleSheet.create({
   },
   fullVideoButton: {
     position: "absolute",
-    top: Spacing.md,
-    right: Spacing.md,
+    top: 16,
+    right: 16,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   fullVideoText: {
-    ...Typography.caption,
-    color: Colors.text.primary,
+    fontSize: 12,
+    lineHeight: 16,
+    color: color.$text,
     fontWeight: "600",
   },
   titleSection: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    marginBottom: Spacing.sm,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    marginBottom: 8,
   },
   exerciseName: {
-    ...Typography.h2,
+    lineHeight: 32,
     fontWeight: "400",
     fontSize: 22,
-    color: Colors.text.primary,
+    color: color.$text,
   },
   exerciseInfoSection: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xl,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   infoSection: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   infoTitle: {
-    ...Typography.h3,
+    fontWeight: "600",
+    lineHeight: 28,
     fontSize: 18,
-    marginBottom: Spacing.sm,
-    color: Colors.text.primary,
+    marginBottom: 8,
+    color: color.$text,
   },
   infoText: {
-    ...Typography.body1,
-    color: Colors.text.secondary,
+    fontSize: 16,
+    fontWeight: "400",
+    color: color.$text2,
     lineHeight: 24,
   },
 });

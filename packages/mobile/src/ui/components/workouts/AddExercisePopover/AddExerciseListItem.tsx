@@ -1,4 +1,4 @@
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
@@ -49,7 +49,7 @@ export function AddExerciseListItem({
           />
         ) : (
           <View style={styles.exerciseImagePlaceholder}>
-            <Ionicons name="fitness" size={24} color={Colors.text.secondary} />
+            <Ionicons name="fitness" size={24} color={color.$text2} />
           </View>
         )}
       </View>
@@ -86,7 +86,7 @@ export function AddExerciseListItem({
           <Ionicons
             name="information-circle-outline"
             size={24}
-            color={Colors.primary.DEFAULT}
+            color={color.$primary}
           />
         </TouchableOpacity>
         <View
@@ -97,7 +97,7 @@ export function AddExerciseListItem({
           ]}
         >
           {isSelected && (
-            <Ionicons name="checkmark" size={16} color={Colors.text.primary} />
+            <Ionicons name="checkmark" size={16} color={color.$text} />
           )}
         </View>
       </View>

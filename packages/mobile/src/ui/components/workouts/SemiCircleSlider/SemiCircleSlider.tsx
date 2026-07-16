@@ -10,7 +10,7 @@
  * overlay strategy. Imports rewired to V2's theme module.
  */
 
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import React, { useCallback, useEffect, useMemo } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import Animated, {
@@ -48,7 +48,7 @@ export function SemiCircleSlider({
   onValueChange,
   width = DEFAULT_WIDTH,
   radius = DEFAULT_RADIUS,
-  activeColor = Colors.primary.DEFAULT,
+  activeColor = color.$primary,
   renderLabel,
 }: SemiCircleSliderProps) {
   const centerX = width / 2;
@@ -211,7 +211,7 @@ export function SemiCircleSlider({
         {/* Background semicircle */}
         <Path
           d={semicirclePath}
-          stroke={Colors.surface.border}
+          stroke={color.$surface3}
           strokeWidth={6}
           fill="none"
           strokeLinecap="round"
@@ -231,7 +231,7 @@ export function SemiCircleSlider({
             cx={point.x}
             cy={point.y}
             r={8}
-            fill={markValue <= value ? activeColor : Colors.surface.border}
+            fill={markValue <= value ? activeColor : color.$surface3}
           />
         ))}
         {/* Slider handle - animated cursor */}

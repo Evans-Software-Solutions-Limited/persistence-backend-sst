@@ -8,7 +8,7 @@
  * reanimated's animated-component wrapper.
  */
 
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color as themeColor } from "@/ui/theme/tokens";
 import React from "react";
 import Animated, {
   type SharedValue,
@@ -32,7 +32,7 @@ export function Cursor({
   pos,
   color,
   radius = 14,
-  strokeColor = Colors.background.primary,
+  strokeColor = themeColor.$bg,
   strokeWidth = 4,
 }: CursorProps) {
   const animatedProps = useAnimatedProps(() => {

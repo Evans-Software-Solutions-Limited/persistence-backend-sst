@@ -1,10 +1,5 @@
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import type { Workout } from "@/domain/models/workout";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
@@ -59,7 +54,7 @@ export function CoachWorkoutLibraryPresenter({
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={color.$text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           Workout library
@@ -77,7 +72,7 @@ export function CoachWorkoutLibraryPresenter({
           <Ionicons
             name="alert-circle-outline"
             size={48}
-            color={Colors.error.DEFAULT}
+            color={color.$error}
           />
           <Text style={styles.errorTitle}>Couldn&apos;t load workouts</Text>
           <Text style={styles.centreText}>{error}</Text>
@@ -102,17 +97,13 @@ export function CoachWorkoutLibraryPresenter({
             onPress={onCreate}
             testID="coach-library-create"
           >
-            <Ionicons name="add" size={20} color={Colors.primary.DEFAULT} />
+            <Ionicons name="add" size={20} color={color.$primary} />
             <Text style={styles.createButtonText}>Create workout</Text>
           </TouchableOpacity>
 
           {workouts.length === 0 ? (
             <View style={styles.emptyBlock} testID="coach-library-empty">
-              <Ionicons
-                name="barbell-outline"
-                size={44}
-                color={Colors.text.tertiary}
-              />
+              <Ionicons name="barbell-outline" size={44} color={color.$text3} />
               <Text style={styles.emptyTitle}>No workouts yet</Text>
               <Text style={styles.emptyMessage}>
                 Build a workout to assign to your clients or keep for yourself.
@@ -141,7 +132,7 @@ export function CoachWorkoutLibraryPresenter({
                   <Ionicons
                     name="chevron-forward"
                     size={20}
-                    color={Colors.text.tertiary}
+                    color={color.$text3}
                   />
                 </TouchableOpacity>
               ))}
@@ -156,28 +147,29 @@ export function CoachWorkoutLibraryPresenter({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background.primary,
+    backgroundColor: color.$bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surface.border,
+    borderBottomColor: color.$surface3,
   },
   iconButton: {
-    padding: Spacing.sm,
+    padding: 8,
     minWidth: 40,
   },
   headerTitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
-    color: Colors.text.primary,
   },
   headerSpacer: {
     width: 40,
@@ -186,94 +178,108 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xl,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
   centreText: {
-    ...Typography.body2,
-    marginTop: Spacing.md,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
+    marginTop: 16,
     textAlign: "center",
-    color: Colors.text.secondary,
   },
   errorTitle: {
-    ...Typography.h3,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
+    color: color.$text,
+    marginTop: 16,
+    marginBottom: 8,
   },
   retryButton: {
-    marginTop: Spacing.md,
-    backgroundColor: Colors.primary.DEFAULT,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
+    marginTop: 16,
+    backgroundColor: color.$primary,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 24,
   },
   retryButtonText: {
-    ...Typography.body2,
-    color: Colors.text.primary,
+    fontSize: 14,
+    lineHeight: 20,
+    color: color.$text,
     fontWeight: "600",
   },
   scrollContent: {
-    padding: Spacing.md,
-    gap: Spacing.md,
+    padding: 16,
+    gap: 16,
   },
   createButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.xs,
+    gap: 4,
     borderWidth: 1.5,
     borderStyle: "dashed",
-    borderColor: Colors.primary.DEFAULT,
-    backgroundColor: Colors.primary.DEFAULT + "14",
-    borderRadius: BorderRadius.md,
+    borderColor: color.$primary,
+    backgroundColor: color.$primary + "14",
+    borderRadius: 12,
     paddingVertical: 14,
   },
   createButtonText: {
-    ...Typography.body1,
-    color: Colors.primary.DEFAULT,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$primary,
     fontWeight: "600",
   },
   list: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
-    backgroundColor: Colors.surface.primary,
-    borderRadius: BorderRadius.md,
+    gap: 16,
+    backgroundColor: color.$surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.surface.border,
-    padding: Spacing.md,
+    borderColor: color.$surface3,
+    padding: 16,
   },
   rowInfo: {
     flex: 1,
     minWidth: 0,
   },
   rowName: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "600",
-    color: Colors.text.primary,
   },
   rowMeta: {
-    ...Typography.body2,
+    fontWeight: "400",
+    lineHeight: 20,
     fontSize: 12,
-    color: Colors.text.tertiary,
+    color: color.$text3,
     marginTop: 2,
   },
   emptyBlock: {
     alignItems: "center",
-    paddingVertical: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
   },
   emptyTitle: {
-    ...Typography.h3,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 28,
+    color: color.$text,
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyMessage: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
+    color: color.$text2,
     textAlign: "center",
-    color: Colors.text.secondary,
   },
 });

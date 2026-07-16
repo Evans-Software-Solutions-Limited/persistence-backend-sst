@@ -1,4 +1,4 @@
-import { Colors } from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
@@ -18,7 +18,7 @@ export function WorkoutLimitIndicator({
   return (
     <View style={styles.container}>
       <View style={styles.limitCard}>
-        <Ionicons name="lock-closed" size={24} color={Colors.text.primary} />
+        <Ionicons name="lock-closed" size={24} color={color.$text} />
         <View style={styles.limitContent}>
           <Text style={styles.limitTitle}>Workout Limit Reached</Text>
           <Text style={styles.limitMessage}>

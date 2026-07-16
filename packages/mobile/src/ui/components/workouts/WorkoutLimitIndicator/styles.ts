@@ -1,48 +1,47 @@
-import {
-  BorderRadius,
-  Colors,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
+import { color } from "@/ui/theme/tokens";
 
 export const styles = {
   container: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   limitCard: {
     backgroundColor: "rgba(255, 183, 77, 0.15)", // Low opacity warning background
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
+    borderRadius: 12,
+    padding: 24,
     flexDirection: "row" as const,
     alignItems: "flex-start" as const,
-    gap: Spacing.md,
+    gap: 16,
     borderWidth: 2,
-    borderColor: Colors.warning.DEFAULT,
+    borderColor: color.$warning,
   },
   limitContent: {
     flex: 1,
   },
   limitTitle: {
-    ...Typography.h4,
-    color: Colors.text.primary,
+    fontSize: 18,
+    lineHeight: 24,
+    color: color.$text,
     fontWeight: "700" as const,
-    marginBottom: Spacing.xs,
+    marginBottom: 4,
   },
   limitMessage: {
-    ...Typography.body2,
-    color: Colors.text.primary,
-    marginBottom: Spacing.md,
+    fontSize: 14,
+    fontWeight: "400" as const,
+    lineHeight: 20,
+    color: color.$text,
+    marginBottom: 16,
   },
   upgradeButton: {
-    backgroundColor: Colors.warning.DEFAULT,
-    borderRadius: BorderRadius.sm,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    backgroundColor: color.$warning,
+    borderRadius: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     alignSelf: "flex-start" as const,
   },
   upgradeButtonText: {
-    ...Typography.body2,
-    color: Colors.text.primary,
+    fontSize: 14,
+    lineHeight: 20,
+    color: color.$text,
     fontWeight: "600" as const,
   },
 };

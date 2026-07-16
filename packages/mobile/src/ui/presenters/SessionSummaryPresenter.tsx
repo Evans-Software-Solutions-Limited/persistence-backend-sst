@@ -49,7 +49,6 @@ import {
   IconX,
 } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
-import { Spacing, Typography } from "@/ui/theme/workoutsLegacyTheme";
 import type { SummaryPersonalRecord } from "@/ui/containers/SessionSummaryContainer";
 import {
   formatVolume as formatVolumeShared,
@@ -268,30 +267,33 @@ const styles = StyleSheet.create({
   },
   scroll: { flex: 1 },
   scrollContent: {
-    padding: Spacing.lg,
-    gap: Spacing.lg,
+    padding: 24,
+    gap: 24,
   },
   header: {
     alignItems: "flex-end",
   },
   headerCloseButton: {
-    padding: Spacing.xs,
+    padding: 4,
   },
   title: {
-    ...Typography.h2,
+    fontSize: 24,
+    lineHeight: 32,
     color: color.$text,
     textAlign: "center",
     fontWeight: "700",
   },
   subtitle: {
-    ...Typography.body1,
+    fontSize: 16,
+    fontWeight: "400",
+    lineHeight: 24,
     color: color.$text2,
     textAlign: "center",
   },
   statsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.md,
+    gap: 16,
   },
   statCard: {
     flex: 1,
@@ -300,25 +302,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.$border,
     borderRadius: 14,
-    padding: Spacing.lg,
+    padding: 24,
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: 4,
   },
   statValue: {
-    ...Typography.h2,
+    fontSize: 24,
+    lineHeight: 32,
     color: color.$text,
     fontWeight: "700",
   },
   statLabel: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text3,
     textAlign: "center",
   },
   section: {
-    gap: Spacing.md,
+    gap: 16,
   },
   sectionTitle: {
-    ...Typography.h3,
+    fontSize: 20,
+    lineHeight: 28,
     color: color.$text,
     fontWeight: "600",
   },
@@ -327,16 +333,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.$goldDim,
     borderRadius: 14,
-    padding: Spacing.md,
-    gap: Spacing.sm,
+    padding: 16,
+    gap: 8,
   },
   prHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: 8,
   },
   prExerciseName: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     color: color.$text,
     fontWeight: "600",
     flex: 1,
@@ -348,30 +355,37 @@ const styles = StyleSheet.create({
     marginLeft: 32,
   },
   prType: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text3,
   },
   prValues: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: 8,
   },
   prNewValue: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     color: color.$gold,
     fontWeight: "600",
   },
   prArrow: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text3,
   },
   prPreviousValue: {
-    ...Typography.body2,
+    fontSize: 14,
+    fontWeight: "400",
+    lineHeight: 20,
     color: color.$text4,
     textDecorationLine: "line-through",
   },
   continueButtonContainer: {
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xl,
+    marginTop: 16,
+    marginBottom: 32,
   },
 });

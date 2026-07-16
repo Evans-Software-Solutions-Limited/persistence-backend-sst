@@ -35,11 +35,6 @@ import {
   IconTrash,
 } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
-import {
-  BorderRadius,
-  Spacing,
-  Typography,
-} from "@/ui/theme/workoutsLegacyTheme";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { SessionExerciseTemplate } from "@/ui/presenters/ActiveSessionPresenter";
 import type { WeightUnit } from "@/shared/utils";
@@ -298,54 +293,55 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginBottom: Spacing.lg,
-    gap: Spacing.sm,
+    marginBottom: 24,
+    gap: 8,
   },
   supersetContent: {
-    gap: Spacing.md,
+    gap: 16,
     borderLeftWidth: 2,
     borderLeftColor: color.$primary,
   },
   setBlock: {
-    gap: Spacing.sm,
+    gap: 8,
   },
   setHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   setHeaderActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
+    gap: 4,
   },
   setHeaderText: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     color: color.$primary,
     fontWeight: "700",
   },
-  actionButton: { padding: Spacing.xs },
-  removeSetButton: { padding: Spacing.xs },
-  setExercises: { gap: Spacing.xs },
+  actionButton: { padding: 4 },
+  removeSetButton: { padding: 4 },
+  setExercises: { gap: 4 },
   buttonsContainer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginHorizontal: Spacing.sm,
+    marginHorizontal: 8,
   },
   button: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
+    gap: 4,
+    paddingVertical: 8,
   },
   addExerciseToSupersetContainer: {
-    marginTop: Spacing.md,
-    marginHorizontal: Spacing.sm,
-    paddingTop: Spacing.md,
+    marginTop: 16,
+    marginHorizontal: 8,
+    paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: color.$border,
   },
@@ -353,16 +349,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
+    gap: 4,
+    paddingVertical: 8,
   },
   addExerciseToSupersetText: {
-    ...Typography.body1,
+    fontSize: 16,
+    lineHeight: 24,
     color: color.$primary,
     fontWeight: "600",
   },
   buttonText: {
-    ...Typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
     color: color.$primary,
     fontWeight: "600",
   },
@@ -370,7 +368,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: Spacing.xs,
+    marginBottom: 4,
     borderLeftWidth: 2,
     // Without an explicit color, RN defaults to black — leaves a 2pt
     // black segment at the top of the rail before `supersetContent`'s
@@ -390,13 +388,14 @@ const styles = StyleSheet.create({
   },
   supersetBadge: {
     backgroundColor: color.$primary,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
-    marginHorizontal: Spacing.xs,
+    borderRadius: 4,
+    marginHorizontal: 4,
   },
   supersetBadgeText: {
-    ...Typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
     color: color.$primaryInk,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -404,18 +403,19 @@ const styles = StyleSheet.create({
   columnHeaders: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingBottom: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: color.$border,
     // Must match `ActiveSupersetExerciseRow.row.gap` (Spacing.sm) so
     // the four flex columns line up under their headers — same flex
     // ratios + same gap = identical column positions. Was `xs`,
     // which subtly offset every header label.
-    gap: Spacing.sm,
+    gap: 8,
   },
   columnHeader: {
-    ...Typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
     color: color.$text3,
     textTransform: "uppercase",
     fontWeight: "600",
