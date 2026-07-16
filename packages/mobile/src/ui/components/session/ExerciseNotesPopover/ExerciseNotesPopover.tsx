@@ -84,6 +84,8 @@ export function ExerciseNotesPopover({
                 onPress={handleCancel}
                 style={styles.closeButton}
                 testID="exercise-notes-close"
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
                 <Ionicons name="close" size={24} color={Colors.text.primary} />
               </TouchableOpacity>

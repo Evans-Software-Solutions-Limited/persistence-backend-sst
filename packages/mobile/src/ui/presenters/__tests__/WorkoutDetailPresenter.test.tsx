@@ -307,4 +307,10 @@ describe("WorkoutDetailPresenter", () => {
     fireEvent.press(getByTestId("workout-detail-exercise-ex-1"));
     expect(onExercisePress).toHaveBeenCalledWith("ex-1");
   });
+
+  it("exposes accessible names for the icon-only close + edit controls", () => {
+    const { getByLabelText } = renderDetail({ isOwner: true });
+    expect(getByLabelText("Close")).toBeTruthy();
+    expect(getByLabelText("Edit workout")).toBeTruthy();
+  });
 });

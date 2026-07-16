@@ -452,3 +452,18 @@ describe("deriveTrialEligibility", () => {
     expect(result).toEqual({ isTrialEligible: false, trialDuration: null });
   });
 });
+
+describe("SubscriptionSelectionPresenter — accessibility", () => {
+  it("exposes accessible names/state for the back control and the billing-cycle switch", () => {
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        billingCycle="yearly"
+      />,
+    );
+    expect(screen.getByLabelText("Go back")).toBeTruthy();
+    const toggle = screen.getByLabelText("Billing cycle");
+    expect(toggle.props.accessibilityRole).toBe("switch");
+    expect(toggle.props.accessibilityState).toEqual({ checked: true });
+  });
+});

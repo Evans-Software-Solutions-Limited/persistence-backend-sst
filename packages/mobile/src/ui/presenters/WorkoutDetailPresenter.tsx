@@ -157,6 +157,9 @@ export function WorkoutDetailPresenter({
           onPress={onClose}
           style={styles.iconButton}
           testID="workout-detail-back"
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          hitSlop={8}
         >
           <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
         </TouchableOpacity>
@@ -168,6 +171,9 @@ export function WorkoutDetailPresenter({
             onPress={onEdit}
             style={styles.iconButton}
             testID="workout-detail-edit"
+            accessibilityRole="button"
+            accessibilityLabel="Edit workout"
+            hitSlop={8}
           >
             <Ionicons
               name="create-outline"

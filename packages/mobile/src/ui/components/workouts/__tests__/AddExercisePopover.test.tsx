@@ -411,4 +411,27 @@ describe("AddExercisePopover", () => {
     );
     await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
   });
+
+  it("exposes accessible names for the icon-only close, clear-search, and back-to-list controls", () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedCache(storage, [buildExercise({ id: "a", name: "Bench Press" })]);
+    const { getByLabelText, getByPlaceholderText, getByTestId } =
+      renderWithTheme(
+        withAdapters(
+          makeAdapters(api, storage),
+          <AddExercisePopover
+            visible
+            onClose={jest.fn()}
+            onAddExercises={jest.fn()}
+            onAddSuperset={jest.fn()}
+          />,
+        ),
+      );
+    expect(getByLabelText("Close")).toBeTruthy();
+    fireEvent.changeText(getByPlaceholderText("Search exercises..."), "b");
+    expect(getByLabelText("Clear search")).toBeTruthy();
+    fireEvent.press(getByTestId("exercise-info-button-a"));
+    expect(getByLabelText("Back to list")).toBeTruthy();
+  });
 });

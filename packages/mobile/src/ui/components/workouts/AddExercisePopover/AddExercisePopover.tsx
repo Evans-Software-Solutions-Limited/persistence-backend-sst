@@ -266,6 +266,8 @@ function AddExercisePopoverPresenter({
               onPress={onBackToList}
               style={styles.backButton}
               testID="details-back-button"
+              accessibilityRole="button"
+              accessibilityLabel="Back to list"
             >
               <Ionicons
                 name="arrow-back"
@@ -300,6 +302,8 @@ function AddExercisePopoverPresenter({
             onPress={onClose}
             style={styles.backButton}
             testID="close-button"
+            accessibilityRole="button"
+            accessibilityLabel="Close"
           >
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
           </TouchableOpacity>
@@ -336,6 +340,8 @@ function AddExercisePopoverPresenter({
                 onPress={() => onSearchChange("")}
                 style={styles.clearButton}
                 testID="clear-search-button"
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
               >
                 <Ionicons
                   name="close-circle"

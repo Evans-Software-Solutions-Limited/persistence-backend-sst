@@ -222,6 +222,8 @@ export function ProfilePresenter({
             onPress={onSelectProfilePicture}
             disabled={isAvatarWorking}
             testID="profile-avatar-button"
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
           >
             <View style={styles.profilePictureWrapper}>
               {avatarUrl ? (

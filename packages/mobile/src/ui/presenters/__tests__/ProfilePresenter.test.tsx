@@ -662,4 +662,11 @@ describe("ProfilePresenter", () => {
       expect(getByText("Premium · Cancelled")).toBeTruthy();
     });
   });
+
+  it("exposes an accessible name for the icon-only profile-picture button", () => {
+    const { getByLabelText } = renderWithTheme(
+      <ProfilePresenter {...makeProps()} />,
+    );
+    expect(getByLabelText("Change profile picture")).toBeTruthy();
+  });
 });

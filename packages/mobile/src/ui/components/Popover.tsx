@@ -64,6 +64,9 @@ export function Popover({
                   style={styles.closeButton}
                   onPress={onClose}
                   testID="close-button"
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                  hitSlop={8}
                 >
                   <Ionicons
                     name="close"

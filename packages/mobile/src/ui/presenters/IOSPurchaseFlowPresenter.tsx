@@ -225,6 +225,8 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           onPress={onBack}
           disabled={isProcessing || isRestoring}
           testID="ios-purchase-back"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
         </TouchableOpacity>
@@ -310,6 +312,9 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
               )
             }
             testID="billing-cycle-toggle"
+            accessibilityRole="switch"
+            accessibilityLabel="Billing cycle"
+            accessibilityState={{ checked: billingCycle === "yearly" }}
           >
             <View
               style={[

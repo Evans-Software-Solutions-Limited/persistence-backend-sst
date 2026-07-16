@@ -255,4 +255,11 @@ describe("WorkoutCard", () => {
     );
     expect(queryByText(/\dm$/)).toBeNull();
   });
+
+  it("exposes an accessible name for the icon-only start button", () => {
+    const { getByLabelText } = renderWithTheme(
+      <WorkoutCard workout={base()} onPress={noop} onStart={noop} />,
+    );
+    expect(getByLabelText("Start workout")).toBeTruthy();
+  });
 });

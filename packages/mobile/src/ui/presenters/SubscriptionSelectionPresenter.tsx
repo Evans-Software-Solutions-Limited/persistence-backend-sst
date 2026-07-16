@@ -291,6 +291,8 @@ export function SubscriptionSelectionPresenter(
           onPress={onBack}
           disabled={!!selectedTierForPayment || isProcessingSubscription}
           testID="subscription-selection-back"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
         </TouchableOpacity>
@@ -379,6 +381,9 @@ export function SubscriptionSelectionPresenter(
                 )
               }
               testID="billing-cycle-toggle"
+              accessibilityRole="switch"
+              accessibilityLabel="Billing cycle"
+              accessibilityState={{ checked: billingCycle === "yearly" }}
             >
               <View
                 style={[

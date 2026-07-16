@@ -252,6 +252,8 @@ function AddExerciseToSupersetPopoverPresenter({
               onPress={onBackToList}
               style={styles.backButton}
               testID="superset-picker-details-back"
+              accessibilityRole="button"
+              accessibilityLabel="Back to list"
             >
               <Ionicons
                 name="arrow-back"
@@ -284,6 +286,8 @@ function AddExerciseToSupersetPopoverPresenter({
             onPress={onClose}
             style={styles.backButton}
             testID="superset-picker-close"
+            accessibilityRole="button"
+            accessibilityLabel="Close"
           >
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
           </TouchableOpacity>
@@ -316,6 +320,8 @@ function AddExerciseToSupersetPopoverPresenter({
                 onPress={() => onSearchChange("")}
                 style={styles.clearButton}
                 testID="superset-picker-clear-search"
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
               >
                 <Ionicons
                   name="close-circle"

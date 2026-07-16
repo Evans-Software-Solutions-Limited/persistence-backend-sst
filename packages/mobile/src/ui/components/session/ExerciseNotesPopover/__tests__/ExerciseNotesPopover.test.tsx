@@ -91,4 +91,11 @@ describe("ExerciseNotesPopover", () => {
       "Add a note about this exercise...",
     );
   });
+
+  it("exposes an accessible name for the icon-only header close button", () => {
+    const { getByLabelText } = renderWithTheme(
+      <ExerciseNotesPopover {...baseProps} />,
+    );
+    expect(getByLabelText("Close")).toBeTruthy();
+  });
 });
