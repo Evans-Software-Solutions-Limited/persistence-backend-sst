@@ -457,6 +457,17 @@ export const userSubscriptions = pgTable(
       .where(
         sql`payment_status IN ('active', 'pending', 'trialing', 'past_due')`,
       ),
+    // One row per external (store) subscription id — the RevenueCat synthetic
+    // `rc_<appUserId>` and the Stripe `sub_…` id. Prevents duplicate grants from
+    // the non-atomic find->insert in the webhook paths and enables the idempotent
+    // `INSERT ... ON CONFLICT (external_subscription_id)` upsert in
+    // SubscriptionRepository.upsertByExternalId. Partial predicate is mandatory:
+    // the column is nullable (free-tier / legacy rows) and multiple NULLs must
+    // stay allowed. Keep this predicate VERBATIM in lockstep with migration
+    // 20260717120000_user_subscriptions_external_id_unique.sql (spec-12.13).
+    uniqueIndex("user_subscriptions_external_id_unique")
+      .on(t.externalSubscriptionId)
+      .where(sql`external_subscription_id IS NOT NULL`),
   ],
 );
 
