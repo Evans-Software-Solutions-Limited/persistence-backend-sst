@@ -312,6 +312,75 @@ export class SubscriptionRepository {
   }
 
   /**
+   * Insert a `user_subscriptions` row, or update the existing row that carries
+   * the same `external_subscription_id`, in a SINGLE atomic statement
+   * (`INSERT ... ON CONFLICT (external_subscription_id) DO UPDATE`).
+   *
+   * Replaces the non-atomic `findByExternalId` → insert-or-`updateById` dance in
+   * the RevenueCat sync, which could double-insert under RevenueCat's
+   * at-least-once + UNORDERED delivery: two concurrent FIRST deliveries for the
+   * same new customer both read `existing === null` and both insert. The partial
+   * unique index `user_subscriptions_external_id_unique` (spec-12.13) makes the
+   * second writer take the `DO UPDATE` branch instead of colliding — no more
+   * incidental-500 + retry.
+   *
+   * The conflict target is that partial index; its predicate
+   * (`external_subscription_id IS NOT NULL`) is supplied via `targetWhere` so
+   * Postgres infers the index rather than erroring on an ambiguous target.
+   *
+   * CONTRACT — `data.externalSubscriptionId` MUST be non-null. Callers pass a
+   * concrete store id (`rc_…` / `sub_…`). A NULL id falls outside the partial
+   * index, so `ON CONFLICT` could not dedup it and the row would insert
+   * unguarded; we reject it explicitly rather than silently inserting a
+   * duplicate-prone free-tier row.
+   *
+   * On conflict we update ONLY the mutable entitlement fields
+   * (tier / status / expiry / billingCycle / metadata + `updated_at`). We
+   * deliberately do NOT overwrite `user_id` or `starts_at`: the conflicting row
+   * is the same subscription (the external id encodes it), so its original
+   * ownership and start instant are preserved.
+   *
+   * Does NOT itself enforce the one-live-row-per-user invariant
+   * (`user_subscriptions_active_unique`). A caller that may flip a row back to
+   * live across rails (the RevenueCat sync) MUST still call
+   * `cancelLiveSubscriptions(userId)` first — exactly as the pre-upsert code did
+   * — or a sibling live row for the same user would trip that index.
+   */
+  async upsertByExternalId(
+    data: NewUserSubscription & { externalSubscriptionId: string },
+  ): Promise<UserSubscription> {
+    if (!data.externalSubscriptionId) {
+      throw new Error(
+        "SubscriptionRepository.upsertByExternalId requires a non-null externalSubscriptionId",
+      );
+    }
+    const db = getDb();
+    const rows = await db
+      .insert(userSubscriptions)
+      .values(data)
+      .onConflictDoUpdate({
+        target: userSubscriptions.externalSubscriptionId,
+        targetWhere: sql`${userSubscriptions.externalSubscriptionId} IS NOT NULL`,
+        set: {
+          tierName: data.tierName,
+          paymentStatus: data.paymentStatus,
+          expiresAt: data.expiresAt,
+          billingCycle: data.billingCycle,
+          metadata: data.metadata,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const upserted = rows[0];
+    if (!upserted) {
+      throw new Error(
+        `SubscriptionRepository.upsertByExternalId returned no rows for external id ${data.externalSubscriptionId}`,
+      );
+    }
+    return upserted;
+  }
+
+  /**
    * Cancel every LIVE `user_subscriptions` row for a user (set
    * `payment_status = 'cancelled'`). Used by the RevenueCat webhook sync
    * before inserting a fresh RevenueCat-mirror row, so the new active row

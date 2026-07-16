@@ -113,7 +113,6 @@ async function syncCustomer(appUserId: string): Promise<void> {
 
   const repo = new SubscriptionRepository();
   const rcExternalId = `rc_${appUserId}`;
-  const existing = await repo.findByExternalId(rcExternalId);
 
   if (desired !== null) {
     const values = {
@@ -131,31 +130,34 @@ async function syncCustomer(appUserId: string): Promise<void> {
 
     // Supersede ANY other live row for this user before the active write so we
     // never leave two live rows (the `user_subscriptions_active_unique` partial
-    // index allows one). This MUST run on the update branch too: the rc_ mirror
-    // may be `cancelled` while a sibling row (e.g. a Stripe-created mirror) is
-    // still live — flipping the mirror back to active without first cancelling
-    // the sibling would trip the index → 500 → RevenueCat retries forever.
-    // RevenueCat is the unifying source of truth across both rails, so a prior
-    // live row is safely superseded. Cancelling then re-activating the rc_ row
-    // itself (when it was already live) is a harmless extra write.
+    // index allows one). This MUST run even though the upsert below re-activates
+    // the rc_ mirror: the mirror may be `cancelled` while a sibling row (e.g. a
+    // Stripe-created mirror) is still live — re-activating the mirror without
+    // first cancelling the sibling would trip that index → 500 → RevenueCat
+    // retries forever. RevenueCat is the unifying source of truth across both
+    // rails, so a prior live row is safely superseded. Cancelling then
+    // re-activating the rc_ row itself (when it was already live) is a harmless
+    // extra write reconciled by the upsert's DO UPDATE.
     await repo.cancelLiveSubscriptions(appUserId);
 
-    if (existing !== null) {
-      await repo.updateById(existing.id, values);
-    } else {
-      // find→insert isn't atomic: two concurrent FIRST deliveries for the same
-      // new customer (RevenueCat is at-least-once + unordered) can both see
-      // `existing === null` and both insert, tripping the active-unique index.
-      // This self-heals — the loser returns 500, RevenueCat retries, and the
-      // retry takes the update branch. A true fix is an upsert on
-      // external_subscription_id; deferred (needs the unique constraint) since
-      // the transient 500 is harmless given the retry.
-      await repo.insert({ userId: appUserId, startsAt: new Date(), ...values });
-    }
+    // Single ATOMIC upsert on external_subscription_id (spec-12.13). Replaces
+    // the former non-atomic findByExternalId→insert-or-update: under
+    // RevenueCat's at-least-once + unordered delivery, two concurrent FIRST
+    // deliveries for the same new customer both saw `existing === null` and both
+    // inserted, tripping the active-unique index (loser 500'd → retry). The
+    // partial unique index now makes the second writer take DO UPDATE instead.
+    await repo.upsertByExternalId({
+      userId: appUserId,
+      startsAt: new Date(),
+      ...values,
+    });
     return;
   }
 
-  // No active entitlement → revert to free by cancelling the live mirror.
+  // No active entitlement → revert to free by cancelling the live mirror. This
+  // branch still needs the row lookup (nothing to cancel if there's no mirror,
+  // or the mirror is already terminal).
+  const existing = await repo.findByExternalId(rcExternalId);
   if (existing !== null && LIVE.includes(existing.paymentStatus ?? "")) {
     await repo.updateById(existing.id, { paymentStatus: "cancelled" });
   }

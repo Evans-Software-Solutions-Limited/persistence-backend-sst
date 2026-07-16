@@ -7,6 +7,7 @@ const {
   findByExternalIdMock,
   updateByIdMock,
   insertMock,
+  upsertByExternalIdMock,
   cancelLiveMock,
   claimMock,
   markDoneMock,
@@ -16,6 +17,7 @@ const {
   findByExternalIdMock: vi.fn(),
   updateByIdMock: vi.fn(),
   insertMock: vi.fn(),
+  upsertByExternalIdMock: vi.fn(),
   cancelLiveMock: vi.fn(),
   claimMock: vi.fn(),
   markDoneMock: vi.fn(),
@@ -29,6 +31,7 @@ vi.mock("../../repositories/subscriptionRepository", () => ({
     findByExternalId: findByExternalIdMock,
     updateById: updateByIdMock,
     insert: insertMock,
+    upsertByExternalId: upsertByExternalIdMock,
     cancelLiveSubscriptions: cancelLiveMock,
   })),
 }));
@@ -127,6 +130,7 @@ describe("handleRevenueCatWebhook", () => {
     findByExternalIdMock.mockResolvedValue(null);
     updateByIdMock.mockResolvedValue({ id: "us1" });
     insertMock.mockResolvedValue({ id: "us1" });
+    upsertByExternalIdMock.mockResolvedValue({ id: "us1" });
     cancelLiveMock.mockResolvedValue(0);
     fetchEntMock.mockResolvedValue([]);
   });
@@ -163,7 +167,7 @@ describe("handleRevenueCatWebhook", () => {
     expect(fetchEntMock).not.toHaveBeenCalled();
   });
 
-  it("active entitlement, no existing row → cancels live + inserts canonical row", async () => {
+  it("active entitlement → cancels live siblings then upserts the canonical row (atomic, no find→insert)", async () => {
     fetchEntMock.mockResolvedValue([
       {
         tier: "premium",
@@ -175,7 +179,7 @@ describe("handleRevenueCatWebhook", () => {
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     expect(cancelLiveMock).toHaveBeenCalledWith("user-1");
-    expect(insertMock).toHaveBeenCalledWith(
+    expect(upsertByExternalIdMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
         tierName: "premium",
@@ -184,50 +188,34 @@ describe("handleRevenueCatWebhook", () => {
         billingCycle: "monthly",
       }),
     );
+    // spec-12.13: the active branch no longer does the non-atomic
+    // findByExternalId→insert-or-update dance — a single upsert replaces it.
+    expect(insertMock).not.toHaveBeenCalled();
+    expect(updateByIdMock).not.toHaveBeenCalled();
+    expect(findByExternalIdMock).not.toHaveBeenCalled();
     expect(markDoneMock).toHaveBeenCalledWith("evt_1");
   });
 
-  it("active entitlement, existing rc row → cancels live siblings + updates in place (no insert)", async () => {
-    findByExternalIdMock.mockResolvedValue({
-      id: "us9",
-      paymentStatus: "active",
-    });
-    fetchEntMock.mockResolvedValue([
-      { tier: "premium", expiresAt: null, productId: null, store: null },
-    ]);
-    const res = await handleRevenueCatWebhook(buildRequest());
-    expect(res.status).toBe(200);
-    expect(updateByIdMock).toHaveBeenCalledWith(
-      "us9",
-      expect.objectContaining({ tierName: "premium", paymentStatus: "active" }),
-    );
-    expect(insertMock).not.toHaveBeenCalled();
-    // Cancel-then-write also runs on the update branch (finding 1): a sibling
-    // live row must be superseded before the mirror is (re)activated.
-    expect(cancelLiveMock).toHaveBeenCalledWith("user-1");
-  });
-
-  it("cancelled rc mirror + active entitlement → cancels siblings then re-activates the mirror (no active-unique violation)", async () => {
-    // The finding-1 scenario: the rc_ mirror lapsed to `cancelled` while a
-    // sibling row (e.g. a Stripe mirror) went live. Re-activating the mirror
-    // must first cancel the sibling, else two live rows trip the partial index.
-    findByExternalIdMock.mockResolvedValue({
-      id: "us9",
-      paymentStatus: "cancelled",
-    });
+  it("active entitlement → cancels siblings BEFORE the upsert (no active-unique violation when re-activating across rails)", async () => {
+    // A sibling row (e.g. a Stripe mirror) may be live while the rc_ mirror is
+    // (re)activated. cancelLiveSubscriptions MUST run before the upsert, else two
+    // live rows for one user trip the user_subscriptions_active_unique index.
     fetchEntMock.mockResolvedValue([
       { tier: "premium", expiresAt: null, productId: null, store: null },
     ]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     const cancelOrder = cancelLiveMock.mock.invocationCallOrder[0];
-    const updateOrder = updateByIdMock.mock.invocationCallOrder[0];
-    expect(cancelOrder).toBeLessThan(updateOrder);
-    expect(updateByIdMock).toHaveBeenCalledWith(
-      "us9",
-      expect.objectContaining({ paymentStatus: "active" }),
+    const upsertOrder = upsertByExternalIdMock.mock.invocationCallOrder[0];
+    expect(cancelOrder).toBeLessThan(upsertOrder);
+    expect(upsertByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalSubscriptionId: "rc_user-1",
+        paymentStatus: "active",
+      }),
     );
     expect(insertMock).not.toHaveBeenCalled();
+    expect(updateByIdMock).not.toHaveBeenCalled();
   });
 
   it("skips an anonymous app_user_id (no entitlement fetch, no writes)", async () => {
@@ -243,6 +231,7 @@ describe("handleRevenueCatWebhook", () => {
     expect(fetchEntMock).not.toHaveBeenCalled();
     expect(updateByIdMock).not.toHaveBeenCalled();
     expect(insertMock).not.toHaveBeenCalled();
+    expect(upsertByExternalIdMock).not.toHaveBeenCalled();
     expect(cancelLiveMock).not.toHaveBeenCalled();
     expect(markDoneMock).toHaveBeenCalledWith("evt_anon");
   });
@@ -267,6 +256,7 @@ describe("handleRevenueCatWebhook", () => {
     expect(res.status).toBe(200);
     expect(updateByIdMock).not.toHaveBeenCalled();
     expect(insertMock).not.toHaveBeenCalled();
+    expect(upsertByExternalIdMock).not.toHaveBeenCalled();
   });
 
   it("TRANSFER event re-syncs both implicated users", async () => {
