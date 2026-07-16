@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.1.0...persistence-v1.2.0) (2026-07-16)
+
+
+### Features
+
+* **core:** manual sleep quick-log backend + endpoint (spec-20 PR-A) ([#242](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/242)) ([f36b5de](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f36b5ded75ced4278410aa0d6ddfd8c1953c5580))
+* **mobile:** accessibility labels + touch targets (spec-12.7 code portion) ([#244](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/244)) ([4eedbf5](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/4eedbf56432fefb51c7db9b342656b7d54e051bc))
+* **mobile:** adopt expo-image for user-uploaded/remote photos (spec-12.6) ([#237](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/237)) ([69c3080](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/69c308040c3314fb6d068ec79e9af6bc8637a9f1))
+* **mobile:** FlashList sweep + row memoisation (spec-12.5) ([#238](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/238)) ([d47696c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d47696cbb484c14d199f3a2e7bae742d591c261b))
+* **mobile:** manual sleep quick-log UI + HealthKit (spec-20 PR-B) ([#243](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/243)) ([71fd8ca](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/71fd8ca860502b388ec8fbf0eb7f1de1ac7a2acb))
+* **mobile:** shared reduced-motion gate + BottomSheet snap (spec-12.2) ([#239](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/239)) ([041fb9a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/041fb9a8891bd581425e73cc55523b997b090f2a))
+* **subscriptions:** unique external_subscription_id index + atomic RC upsert (spec-12.13) ([#251](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/251)) ([64c0870](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/64c087083297fd66673f30bb5c086e912e9702bb))
+
 ## [1.1.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.0.0...persistence-v1.1.0) (2026-07-15)
 
 
