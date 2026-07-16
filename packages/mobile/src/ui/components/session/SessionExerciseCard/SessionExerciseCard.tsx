@@ -15,7 +15,8 @@
  */
 
 import React from "react";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
+import { Image } from "expo-image";
 import { SetLogger } from "../SetLogger";
 import { styles } from "./styles";
 import {
@@ -96,6 +97,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           <Image
             source={{ uri: props.exerciseImageUrl }}
             style={styles.exerciseImage}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
           />
         ) : (
           <View style={styles.iconTile}>

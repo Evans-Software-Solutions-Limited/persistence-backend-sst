@@ -194,9 +194,9 @@ describe("SessionExerciseCard", () => {
         {...baseHandlers}
       />,
     );
-    // Image is the only Image element rendered when the URL is present.
+    // Image is the only expo-image element rendered when the URL is present.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Image } = require("react-native");
+    const { Image } = require("expo-image");
     expect(UNSAFE_getByType(Image).props.source).toEqual({
       uri: "https://example.com/bench.png",
     });

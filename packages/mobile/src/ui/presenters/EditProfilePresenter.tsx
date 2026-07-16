@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "@tamagui/core";
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View as RNView,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
@@ -306,7 +306,9 @@ export function EditProfilePresenter({
                       uri: `${avatarUrl}${avatarUrl.includes("?") ? "&" : "?"}_cb=${avatarCacheKey}`,
                     }}
                     style={{ width: 76, height: 76, borderRadius: 9999 }}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    transition={200}
+                    cachePolicy="memory-disk"
                     testID="edit-profile-avatar-image"
                   />
                 ) : (

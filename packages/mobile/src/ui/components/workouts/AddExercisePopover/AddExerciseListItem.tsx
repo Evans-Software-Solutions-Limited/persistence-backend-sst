@@ -1,7 +1,8 @@
 import { Colors } from "@/ui/theme/workoutsLegacyTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
+import { Image } from "expo-image";
 import { styles } from "./styles";
 
 interface AddExerciseListItemProps {
@@ -42,6 +43,9 @@ export function AddExerciseListItem({
           <Image
             source={{ uri: exercise.thumbnail_url }}
             style={styles.exerciseImage}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
           />
         ) : (
           <View style={styles.exerciseImagePlaceholder}>

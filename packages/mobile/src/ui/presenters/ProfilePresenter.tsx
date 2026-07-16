@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { ComingSoon } from "@/ui/components/ComingSoon";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
@@ -233,7 +233,9 @@ export function ProfilePresenter({
                     }_cb=${avatarCacheKey}`,
                   }}
                   style={styles.profilePicture}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  transition={200}
+                  cachePolicy="memory-disk"
                   testID="profile-avatar-image"
                 />
               ) : (
@@ -467,7 +469,9 @@ export function ProfilePresenter({
                     <Image
                       source={{ uri: rel.trainer.avatarUrl }}
                       style={styles.clientAvatar}
-                      resizeMode="cover"
+                      contentFit="cover"
+                      transition={200}
+                      cachePolicy="memory-disk"
                     />
                   ) : (
                     <View style={styles.clientAvatarPlaceholder}>
@@ -519,7 +523,9 @@ export function ProfilePresenter({
                     <Image
                       source={{ uri: rel.trainer.avatarUrl }}
                       style={styles.clientAvatar}
-                      resizeMode="cover"
+                      contentFit="cover"
+                      transition={200}
+                      cachePolicy="memory-disk"
                     />
                   ) : (
                     <View style={styles.clientAvatarPlaceholder}>

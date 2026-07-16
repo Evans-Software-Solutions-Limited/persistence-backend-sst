@@ -1,5 +1,5 @@
 import { styled, View, Text as TamaguiText } from "@tamagui/core";
-import { Image } from "react-native";
+import { Image } from "expo-image";
 
 const AvatarFrame = styled(View, {
   borderRadius: "$full",
@@ -75,6 +75,9 @@ export function Avatar({ source, fallback, size = "md", testID }: AvatarProps) {
             width: imageSizes[size],
             height: imageSizes[size],
           }}
+          contentFit="cover"
+          transition={200}
+          cachePolicy="memory-disk"
           testID={testID ? `${testID}-image` : undefined}
         />
       ) : (
