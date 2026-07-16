@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-16, main HEAD 57ff3e7)
+      // DATA  (verified against repo on 2026-07-16, main HEAD 64c0870)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -1148,9 +1148,9 @@
         {
           id: "p13",
           area: "phase12",
-          status: "todo",
+          status: "done",
           title: "12.13 — IAP DB uniqueness index (migration)",
-          note: "Unique partial index on user_subscriptions.external_subscription_id (NULL-safe). Must land before full Apple IAP testing to prevent duplicate subscription grants.",
+          note: "SHIPPED (PR #251, main 64c0870). Partial UNIQUE index on user_subscriptions.external_subscription_id (WHERE NOT NULL) via migration 20260717120000 + schema.ts mirror, PLUS the atomic upsert: SubscriptionRepository.upsertByExternalId (INSERT ON CONFLICT DO UPDATE) replaces the RevenueCat webhook's non-atomic find→insert, closing the concurrent duplicate-grant race. Stripe subscriptionCreated left as insert-or-skip by design (23505 guard absorbs the new index). IB-clean; PgDialect render test guards the partial predicate. ⚠ Staging auto-applies on merge; PROD is release-gated — run the pre-flight dedup query (in the migration header) against BOTH envs before trusting it. Must be on prod before the 12.11 IAP sandbox sign-off.",
         },
 
         // ── DEFERRED — POST-LAUNCH ────────────────────────────────────────────────
