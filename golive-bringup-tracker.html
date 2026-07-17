@@ -1,0 +1,839 @@
+<style>
+  :root {
+    --paper: #f5f6f9;
+    --card: #ffffff;
+    --card-2: #fbfcfe;
+    --ink: #161922;
+    --muted: #5b6474;
+    --faint: #8a93a3;
+    --line: #e5e8ee;
+    --accent: #4a57cf;
+    --accent-soft: #ecefff;
+    --done: #0f7a4f;
+    --done-bg: #e4f3ec;
+    --prog: #a9660a;
+    --prog-bg: #fbefd8;
+    --verify: #2a55c4;
+    --verify-bg: #e7edfb;
+    --pending: #626c7e;
+    --pending-bg: #edeff3;
+    --blocked: #bb3838;
+    --blocked-bg: #fae6e6;
+    --shadow:
+      0 1px 2px rgba(20, 24, 36, 0.06), 0 6px 20px rgba(20, 24, 36, 0.05);
+    --mono:
+      ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans:
+      system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0c0e13;
+      --card: #161922;
+      --card-2: #12151d;
+      --ink: #e8eaf0;
+      --muted: #9aa2b2;
+      --faint: #6a7385;
+      --line: #242a35;
+      --accent: #828cf0;
+      --accent-soft: #1a1f30;
+      --done: #46c78c;
+      --done-bg: #13291f;
+      --prog: #e0a13a;
+      --prog-bg: #2c2110;
+      --verify: #7d97ef;
+      --verify-bg: #161d31;
+      --pending: #9098a8;
+      --pending-bg: #1c212b;
+      --blocked: #e07171;
+      --blocked-bg: #2c1616;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #f5f6f9;
+    --card: #ffffff;
+    --card-2: #fbfcfe;
+    --ink: #161922;
+    --muted: #5b6474;
+    --faint: #8a93a3;
+    --line: #e5e8ee;
+    --accent: #4a57cf;
+    --accent-soft: #ecefff;
+    --done: #0f7a4f;
+    --done-bg: #e4f3ec;
+    --prog: #a9660a;
+    --prog-bg: #fbefd8;
+    --verify: #2a55c4;
+    --verify-bg: #e7edfb;
+    --pending: #626c7e;
+    --pending-bg: #edeff3;
+    --blocked: #bb3838;
+    --blocked-bg: #fae6e6;
+    --shadow:
+      0 1px 2px rgba(20, 24, 36, 0.06), 0 6px 20px rgba(20, 24, 36, 0.05);
+  }
+  :root[data-theme="dark"] {
+    --paper: #0c0e13;
+    --card: #161922;
+    --card-2: #12151d;
+    --ink: #e8eaf0;
+    --muted: #9aa2b2;
+    --faint: #6a7385;
+    --line: #242a35;
+    --accent: #828cf0;
+    --accent-soft: #1a1f30;
+    --done: #46c78c;
+    --done-bg: #13291f;
+    --prog: #e0a13a;
+    --prog-bg: #2c2110;
+    --verify: #7d97ef;
+    --verify-bg: #161d31;
+    --pending: #9098a8;
+    --pending-bg: #1c212b;
+    --blocked: #e07171;
+    --blocked-bg: #2c1616;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+  }
+  .wrap {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    padding: clamp(18px, 4vw, 44px);
+    min-height: 100vh;
+  }
+  .inner {
+    max-width: 1060px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-size: clamp(26px, 4.4vw, 40px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    font-weight: 800;
+    text-wrap: balance;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    align-items: center;
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 26px;
+  }
+  .meta code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+
+  /* Next-action banner */
+  .now {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: start;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+    margin-bottom: 26px;
+  }
+  .now .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 6px 12px;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .now h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .now p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .now b {
+    color: var(--ink);
+    font-weight: 650;
+  }
+
+  /* Summary meter */
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+    margin-bottom: 30px;
+  }
+  .summary .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .summary .top h3 {
+    margin: 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--faint);
+    font-weight: 700;
+  }
+  .summary .frac {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .summary .frac b {
+    color: var(--ink);
+  }
+  .bar {
+    display: flex;
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--pending-bg);
+    border: 1px solid var(--line);
+  }
+  .bar span {
+    display: block;
+    height: 100%;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .legend i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    margin-right: 7px;
+    vertical-align: middle;
+  }
+  .legend b {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Track sections */
+  .track {
+    margin-bottom: 22px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .track > header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 14px;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--card-2);
+    border-bottom: 1px solid var(--line);
+    border-left: 4px solid var(--stripe, var(--accent));
+  }
+  .track > header .name {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .track > header .letter {
+    font-family: var(--mono);
+    font-weight: 800;
+    font-size: 13px;
+    color: #fff;
+    background: var(--stripe, var(--accent));
+    border-radius: 6px;
+    padding: 2px 8px;
+    letter-spacing: 0.04em;
+  }
+  .track > header h3 {
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+  }
+  .track > header .goal {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  .track > header .count {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .track > header .count b {
+    color: var(--ink);
+  }
+
+  .rows {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 116px 1fr;
+    gap: 4px 16px;
+    padding: 13px 20px;
+    border-top: 1px solid var(--line);
+    align-items: start;
+  }
+  .row:first-child {
+    border-top: none;
+  }
+  .row .chip {
+    justify-self: start;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+    margin-top: 1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .chip.done {
+    color: var(--done);
+    background: var(--done-bg);
+  }
+  .chip.prog {
+    color: var(--prog);
+    background: var(--prog-bg);
+  }
+  .chip.verify {
+    color: var(--verify);
+    background: var(--verify-bg);
+  }
+  .chip.pending {
+    color: var(--pending);
+    background: var(--pending-bg);
+  }
+  .chip.blocked {
+    color: var(--blocked);
+    background: var(--blocked-bg);
+  }
+  .row .body .t {
+    font-weight: 640;
+    font-size: 14.5px;
+  }
+  .row .body .code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--faint);
+    margin-left: 8px;
+  }
+  .row .body .d {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin-top: 3px;
+  }
+  .row .body .d code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--accent-soft);
+    padding: 0 5px;
+    border-radius: 4px;
+  }
+  .row .body .owner {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--faint);
+    font-family: var(--mono);
+  }
+
+  .done-strip .track > header {
+    border-left-color: var(--done);
+  }
+
+  h4.grouphead {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 700;
+    margin: 34px 0 14px;
+    padding-left: 2px;
+  }
+
+  .foot {
+    margin-top: 30px;
+    padding: 18px 20px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    background: var(--card-2);
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+  .foot b {
+    color: var(--ink);
+  }
+  .foot .seq {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    margin-top: 8px;
+  }
+  .arrow {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  @media (max-width: 560px) {
+    .now {
+      grid-template-columns: 1fr;
+    }
+    .row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .row .chip {
+      margin-top: 0;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <div class="inner">
+    <p class="eyebrow">Go-Live Bring-Up · BRIEF-3</p>
+    <h1>Persistence — the road to App Store submission</h1>
+    <div class="meta">
+      <span>Updated <b style="color: var(--ink)">17 Jul 2026</b></span>
+      <span>main <code>740482e</code> · v1.2.1</span>
+      <span
+        >Backend prod: live · Staging: verified on device · Next: App Store
+        (Track C)</span
+      >
+    </div>
+
+    <div class="now">
+      <span class="tag">Right now</span>
+      <div>
+        <h2>
+          Coach tooling is now the pre-build blocker — then one build verifies
+          everything
+        </h2>
+        <p>
+          <b>Per Brad (17 Jul):</b> no more staging/prod builds until
+          <b>coach tooling</b> (Programs unified tab + coach exercise authoring
+          + client-visible exercises) is done + device-verified. The three
+          device-test fixes (<b>#256</b> a11y, <b>#257</b> seed,
+          <b>#259</b> scroll) are <b>merged</b> but not yet on an installed
+          build. Then Track C (IAP → prod build → sandbox). <b>Website</b>,
+          <b>goals-hide + Training-gate</b>, and the <b>GTM/B2B specs</b> run in
+          parallel sessions — see
+          <code style="font-family: var(--mono)"
+            >specs/milestones/GO-LIVE-FINAL/PRE-LAUNCH-PLAN.md</code
+          >.
+        </p>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="top">
+        <h3>Overall progress</h3>
+        <span class="frac"
+          ><b>9</b> done · <b>1</b> in progress · <b>7</b> pending &nbsp;/&nbsp;
+          17 steps</span
+        >
+      </div>
+      <div
+        class="bar"
+        role="img"
+        aria-label="9 done, 1 in progress, 7 pending of 17 steps"
+      >
+        <span style="width: 53%; background: var(--done)"></span>
+        <span style="width: 5.9%; background: var(--prog)"></span>
+        <span style="width: 41.1%; background: var(--pending)"></span>
+      </div>
+      <div class="legend">
+        <span><i style="background: var(--done)"></i>Done <b>9</b></span>
+        <span><i style="background: var(--prog)"></i>In progress <b>1</b></span>
+        <span><i style="background: var(--pending)"></i>Pending <b>7</b></span>
+        <span><i style="background: var(--blocked)"></i>Blocked <b>0</b></span>
+      </div>
+    </div>
+
+    <div class="track" style="--stripe: var(--done)">
+      <header>
+        <div class="name">
+          <span class="letter">A</span>
+          <h3>Backend production bring-up</h3>
+        </div>
+        <span class="count"><b>5</b>/5 done ✓</span>
+        <p class="goal">
+          Goal: prod backend deployed against the prod Supabase project,
+          migrated, and seeded.
+        </p>
+      </header>
+      <ul class="rows">
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Prod Supabase cutover</span
+            ><span class="code">secrets + migrations</span>
+            <div class="d">
+              Prod project <code>opcvjypsoivaxerahbal</code> live; a green prod
+              deploy means all 63 migrations applied.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Production env secrets</span
+            ><span class="code">signed off</span>
+            <div class="d">
+              <code>Production</code> env secrets confirmed set (incl.
+              <code>DATABASE_URL</code>→prod pooler). Signed off by Brad 17 Jul.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Run production-deploy</span
+            ><span class="code">v1.2.1</span>
+            <div class="d">
+              3 green runs — latest <code>v1.2.1</code> (release-triggered).
+              Gates → dry-run migrate → migrate → SST secrets → deploy.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">12.13 dedup pre-flight on prod</span
+            ><span class="code">proven by deploy</span>
+            <div class="d">
+              The unique-index migration <b>fails hard on any duplicate</b> —
+              the green prod deploy means the index built ⇒ zero dupes. Optional
+              explicit confirm: run the dedup query in the prod SQL editor
+              (returns zero).
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Seed prod</span
+            ><span class="code">exercises + foods</span>
+            <div class="d">
+              Prod seeded — <b>except workout templates</b>, which the seed
+              script never covered (tracked separately). Exercises + foods
+              present.
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="track" style="--stripe: var(--done)">
+      <header>
+        <div class="name">
+          <span class="letter">B</span>
+          <h3>Mobile staging → TestFlight</h3>
+        </div>
+        <span class="count"><b>3</b>/3 done ✓</span>
+        <p class="goal">
+          Goal: the staging build installed and verified on a real device.
+        </p>
+      </header>
+      <ul class="rows">
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">EAS credentials + EXPO_TOKEN (staging)</span>
+            <div class="d">
+              Signing resolves for
+              <code>com.bradleyevans96.persistence.staging</code> (dist cert +
+              profile active, all capabilities present).
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Dispatch mobile-build-staging</span
+            ><span class="code">#254 fix landed</span>
+            <div class="d">
+              Built + submitted to TestFlight after the
+              <code>@sentry/cli</code> fix (#254) cleared the Sentry "Upload
+              Debug Symbols" <code>MODULE_NOT_FOUND</code>.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">Device-verify the staging variant</span>
+            <div class="d">
+              Verified on device — the account created landed in the
+              <b>staging</b> Supabase project, confirming the build points at
+              the staging backend.
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="track" style="--stripe: var(--pending)">
+      <header>
+        <div class="name">
+          <span class="letter">C</span>
+          <h3>Mobile production → App Store</h3>
+        </div>
+        <span class="count"><b>1</b>/4 done · 1 in progress · 2 pending</span>
+        <p class="goal">
+          Goal: prod build submitted and IAP verified via Apple sandbox.
+        </p>
+      </header>
+      <ul class="rows">
+        <li class="row">
+          <span class="chip prog">In progress</span>
+          <div class="body">
+            <span class="t">App Store Connect + RevenueCat dashboard</span
+            ><span class="code">12.9 / 12.10</span>
+            <div class="d">
+              Privacy label + privacy URL <b>done</b>. Remaining: create IAP
+              products in ASC (premium + individual_trainer monthly/yearly) →
+              map to RC entitlements/offerings; screenshots, icon, age-rating,
+              demo account + reviewer notes.
+            </div>
+            <span class="owner"
+              >owner: Brad (dashboards) · product IDs are fetched at runtime —
+              NOT baked into the build</span
+            >
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip done">Done</span>
+          <div class="body">
+            <span class="t">EXPO_TOKEN (production)</span>
+            <div class="d">
+              Set on the <code>Production</code> GitHub environment.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">Dispatch mobile-build-production</span>
+            <div class="d">
+              <b>Unblocked</b> — Tracks A &amp; B are done. Can dispatch before
+              IAP products exist (they're runtime). EAS build →
+              <code>eas submit --latest</code> → App Store.
+            </div>
+            <span class="owner">owner: Brad (build dispatch)</span>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">IAP sandbox sign-off gate</span
+            ><span class="code">inf4</span>
+            <div class="d">
+              Buy each tier via Apple <b>sandbox</b> → entitlement syncs via RC
+              webhook → prod backend unlocks. Requires
+              <b>12.13 on prod (A4)</b> so concurrent first-time purchases can't
+              double-insert. <b>Required before go-live.</b>
+            </div>
+            <span class="owner">owner: Brad · final gate</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <h4 class="grouphead">
+      Cross-cutting go-live gates (GO-LIVE-FINAL Briefs 1 & 2)
+    </h4>
+    <div class="track" style="--stripe: var(--pending)">
+      <header>
+        <div class="name">
+          <span class="letter">G</span>
+          <h3>Launch readiness</h3>
+        </div>
+        <span class="count"><b>0</b>/5 done · 5 pending</span>
+        <p class="goal">
+          Independent of the tracks — can run in parallel; all required before
+          submission.
+        </p>
+      </header>
+      <ul class="rows">
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">A11y device walkthrough</span
+            ><span class="code">Brief 1 · Part A</span>
+            <div class="d">
+              Manual VoiceOver / TalkBack pass on device (the code portion
+              shipped in #244). Your remaining manual gate.
+            </div>
+            <span class="owner">owner: Brad</span>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">Store assets</span><span class="code">12.10</span>
+            <div class="d">
+              Screenshots (all required sizes), app icon, age-rating
+              questionnaire, description + keywords.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">Pre-launch checks</span
+            ><span class="code">12.11</span>
+            <div class="d">
+              Final smoke on prod build incl. the IAP sandbox gate (C4) and
+              demo-account walkthrough.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">Submission</span><span class="code">12.12</span>
+            <div class="d">
+              Submit for review; monitor; respond to any Apple feedback.
+            </div>
+          </div>
+        </li>
+        <li class="row">
+          <span class="chip pending">Pending</span>
+          <div class="body">
+            <span class="t">Repo privatization</span>
+            <div class="d">
+              Going private makes Actions minutes metered (public = unlimited).
+              Time the flip for after the final heavy CI job, or confirm the org
+              allowance.
+            </div>
+            <span class="owner">owner: Brad · decision</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <h4 class="grouphead">Cleared this session</h4>
+    <div class="track done-strip">
+      <div
+        class="track"
+        style="--stripe: var(--done); box-shadow: none; border: none; margin: 0"
+      >
+        <ul class="rows">
+          <li class="row">
+            <span class="chip done">Done</span>
+            <div class="body">
+              <span class="t">EAS Sentry build failure fixed</span
+              ><span class="code">#254 · 1fff354</span>
+              <div class="d">
+                Promoted <code>@sentry/cli@2.58.4</code> to a direct dep so
+                bun's isolated layout resolves it in the Sentry Xcode phase.
+                Proven by a full local signed <code>.ipa</code>. Unblocked B2
+                &amp; the eventual C3.
+              </div>
+            </div>
+          </li>
+          <li class="row">
+            <span class="chip done">Done</span>
+            <div class="body">
+              <span class="t">release-please recovered</span
+              ><span class="code">1.2.0 + 1.2.1</span>
+              <div class="d">
+                Last night's failures were a transient GitHub 500, not a config
+                fault. Latest runs green; manifest/version/tags all consistent
+                at 1.2.1.
+              </div>
+            </div>
+          </li>
+          <li class="row">
+            <span class="chip done">Done</span>
+            <div class="body">
+              <span class="t">Prod backend deployed</span
+              ><span class="code">v1.2.1</span>
+              <div class="d">
+                production-deploy green; post-merge Deploy Staging also green —
+                main healthy.
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot">
+      <b>Sequencing.</b> Track A (prod backend + 12.13 on prod + seed) → Track B
+      (staging build verified on device) → Track C (prod build + IAP sandbox
+      sign-off). The G gates run in parallel.
+      <div class="seq">
+        A <span class="arrow">→</span> B <span class="arrow">→</span> C
+        &nbsp;·&nbsp; A4 (12.13 on prod) <span class="arrow">⟶</span> C4 (IAP
+        sandbox) is a hard dependency
+      </div>
+    </div>
+  </div>
+</div>
