@@ -21,7 +21,7 @@ export function PhoneDevice({
   style?: CSSProperties;
 }) {
   // No cycling when a real screenshot is shown (screens aren't rendered then).
-  const { index, setPaused } = useScreenCycle(screenshot ? 0 : screens.length);
+  const index = useScreenCycle(screenshot ? 0 : screens.length);
 
   return (
     <div
@@ -30,8 +30,6 @@ export function PhoneDevice({
       style={style}
       role="presentation"
       aria-hidden="true"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
     >
       <div
         className="phone-halo"
