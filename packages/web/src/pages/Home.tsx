@@ -2,6 +2,10 @@ import { Link } from "react-router";
 import type { CSSProperties, PointerEvent } from "react";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { PhoneMock } from "@/marketing/PhoneMock";
+import { PhoneDevice } from "@/marketing/PhoneDevice";
+import { CoachHomeScreen } from "@/marketing/screens/CoachHomeScreen";
+import { ClientsScreen } from "@/marketing/screens/ClientsScreen";
+import { ClientDetailScreen } from "@/marketing/screens/ClientDetailScreen";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
 import { heroScreenshot } from "@/marketing/config";
@@ -416,85 +420,15 @@ export function Home() {
                   </Link>
                 </div>
                 <div className="coach-right">
-                  <div className="roster-label">Coach dashboard · Today</div>
-                  <div className="client-row">
-                    <div
-                      className="client-av"
-                      style={{
-                        background: "linear-gradient(150deg,#8EEFF7,#0C99A8)",
-                      }}
-                    >
-                      JM
-                    </div>
-                    <div className="client-info">
-                      <b>James M.</b>
-                      <span>Push · Pull · Legs</span>
-                    </div>
-                    <div className="client-prog">
-                      <i style={{ width: "82%" }} />
-                    </div>
-                    <span className="client-badge">✓ on track</span>
-                  </div>
-                  <div className="client-row">
-                    <div
-                      className="client-av"
-                      style={{
-                        background: "linear-gradient(150deg,#CDBCFF,#7C5CE0)",
-                      }}
-                    >
-                      SR
-                    </div>
-                    <div className="client-info">
-                      <b>Sarah R.</b>
-                      <span>Hypertrophy · 5d</span>
-                    </div>
-                    <div className="client-prog">
-                      <i
-                        style={{ width: "64%", background: "var(--m-violet)" }}
-                      />
-                    </div>
-                    <span className="client-badge">✓ on track</span>
-                  </div>
-                  <div className="client-row">
-                    <div
-                      className="client-av"
-                      style={{
-                        background: "linear-gradient(150deg,#FFC08A,#E07B2E)",
-                      }}
-                    >
-                      TK
-                    </div>
-                    <div className="client-info">
-                      <b>Tom K.</b>
-                      <span>Strength · 4d</span>
-                    </div>
-                    <div className="client-prog">
-                      <i
-                        style={{ width: "38%", background: "var(--m-ember)" }}
-                      />
-                    </div>
-                    <span className="client-badge behind">2 days behind</span>
-                  </div>
-                  <div className="client-row">
-                    <div
-                      className="client-av"
-                      style={{
-                        background: "linear-gradient(150deg,#9FE6C4,#3F9E76)",
-                      }}
-                    >
-                      LP
-                    </div>
-                    <div className="client-info">
-                      <b>Leah P.</b>
-                      <span>Full body · 3d</span>
-                    </div>
-                    <div className="client-prog">
-                      <i
-                        style={{ width: "91%", background: "var(--m-success)" }}
-                      />
-                    </div>
-                    <span className="client-badge">✓ on track</span>
-                  </div>
+                  <PhoneDevice
+                    outerClassName="hero-phone coach-phone"
+                    haloColor="rgba(183,160,255,0.18)"
+                    screens={[
+                      <CoachHomeScreen key="ch" />,
+                      <ClientsScreen key="cl" />,
+                      <ClientDetailScreen key="cd" />,
+                    ]}
+                  />
                 </div>
               </div>
             </div>
