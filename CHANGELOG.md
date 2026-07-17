@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.2.1...persistence-v1.3.0) (2026-07-17)
+
+
+### Features
+
+* coach tooling & IA slice — unified library hub + assignment-scoped exercise visibility (spec-24) ([#260](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/260)) ([6156380](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/6156380c15ac246939754e3458c91a5ae0f81343))
+* **mobile:** pre-launch Train-hub tidy — hide Goals + gate Training on active coach ([#264](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/264)) ([0f23e72](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0f23e72c839ee99f025b706a936e4b54554248fd))
+* **seed:** template/example workouts (system-owned public) ([#257](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/257)) ([fbeb05a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/fbeb05a3335361af01cf8dc76fc077a5d3f71b06))
+* **web:** marketing site — landing, pricing, support + branding & SEO ([#261](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/261)) ([286f954](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/286f954d602073a1bd9e62512351c8b345c1798b))
+
+
+### Bug Fixes
+
+* **mobile:** expose drawers/sheets to screen readers ([#256](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/256)) ([c702d41](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c702d41d9845d4058dcb25ccb8999ce7c5075a9c))
+* **mobile:** make bottom-sheet bodies scroll (sign-out reachable) ([#259](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/259)) ([0304dea](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0304deaed43ac4684fdc0837b0eeb7313fa0d560))
+* replace &lt;BottomSheetView&gt; with a plain in-flow &lt;View flex={1}&gt; (Tamagui). As a direct child of gorhom's fixed-height content wrapper it fills the box, so the fixed header + BottomSheetScrollView split the bounded height and the body scrolls. Also repairs the same latent clipping in header sheets (Create Exercise, Fuel Targets). [#256](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/256)'s a11y props (accessibilityViewIsModal + header role) preserved. Needs on-device scroll + scroll-vs-pan-to-close verification (gorhom is mocked in CI). ([0304dea](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0304deaed43ac4684fdc0837b0eeb7313fa0d560))
+* **web:** align landing + pricing copy with the actual feature offering ([#265](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/265)) ([e99ae13](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e99ae13986319ecd2aaef0f021ee5c6307a5ca95))
+
 ## [1.2.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.2.0...persistence-v1.2.1) (2026-07-17)
 
 
