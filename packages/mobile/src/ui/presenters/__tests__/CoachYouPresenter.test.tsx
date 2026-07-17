@@ -25,7 +25,6 @@ function baseProps() {
     onInvite: jest.fn(),
     onStartSession: jest.fn(),
     onViewAllPrograms: jest.fn(),
-    onOpenWorkoutLibrary: jest.fn(),
   };
 }
 
@@ -43,25 +42,12 @@ describe("CoachYouPresenter", () => {
     expect(getByTestId("coach-recent-activity")).toBeTruthy();
   });
 
-  it("renders the Workout library entry (relocated from the profile drawer) and fires onOpenWorkoutLibrary", () => {
-    const onOpenWorkoutLibrary = jest.fn();
-    const { getByTestId, getByText } = renderWithTheme(
-      <CoachYouPresenter
-        {...baseProps()}
-        onOpenWorkoutLibrary={onOpenWorkoutLibrary}
-      />,
-    );
-    expect(getByText("Workout library")).toBeTruthy();
-    fireEvent.press(getByTestId("coach-workout-library"));
-    expect(onOpenWorkoutLibrary).toHaveBeenCalledTimes(1);
-  });
-
-  it("omits the Workout library entry when no handler is provided", () => {
-    const props = baseProps();
-    const { queryByTestId } = renderWithTheme(
-      <CoachYouPresenter {...props} onOpenWorkoutLibrary={undefined} />,
+  it("retires the Workout library card (STORY-004 — Programs > Workouts is now canonical)", () => {
+    const { queryByTestId, queryByText } = renderWithTheme(
+      <CoachYouPresenter {...baseProps()} />,
     );
     expect(queryByTestId("coach-workout-library")).toBeNull();
+    expect(queryByText("Workout library")).toBeNull();
   });
 
   it("shows the blocking loader only when loading with no data", () => {

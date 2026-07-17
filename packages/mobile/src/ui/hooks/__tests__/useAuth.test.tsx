@@ -4,6 +4,7 @@ import { useAuth } from "../useAuth";
 import { AdapterProvider } from "../useAdapters";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -118,6 +119,7 @@ describe("useAuth", () => {
         isEligibilityKnown: true,
       });
       useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+      useCoachLibrarySegment.setState({ segment: "Exercises" });
     });
 
     await act(async () => {
@@ -133,6 +135,8 @@ describe("useAuth", () => {
     // Same for the Train segment + the one-shot pendingCreate flag.
     expect(useTrainSegment.getState().segment).toBe("Training");
     expect(useTrainSegment.getState().pendingCreate).toBe(false);
+    // Same for the Coach Library segment (STORY-004 slice).
+    expect(useCoachLibrarySegment.getState().segment).toBe("Programmes");
   });
 
   it("throws and sets error when sign-in fails", async () => {
@@ -579,6 +583,7 @@ describe("useAuth", () => {
         isEligibilityKnown: true,
       });
       useTrainSegment.setState({ segment: "Exercises", pendingCreate: true });
+      useCoachLibrarySegment.setState({ segment: "Workouts" });
     });
     expect(result.current.session).not.toBeNull();
 
@@ -597,6 +602,7 @@ describe("useAuth", () => {
     expect(result.current.error).toBeNull();
     expect(useUserMode.getState().mode).toBe("athlete");
     expect(useTrainSegment.getState().segment).toBe("Training");
+    expect(useCoachLibrarySegment.getState().segment).toBe("Programmes");
     expect(storage.getLastSyncedAt("workout")).toBeNull();
   });
 

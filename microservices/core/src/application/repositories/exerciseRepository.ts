@@ -9,6 +9,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   exercises,
   type Exercise,
@@ -16,8 +17,13 @@ import {
   muscleGroups,
   equipmentTypes,
   ptClientRelationships,
+  workoutExercises,
+  workoutAssignments,
+  programWorkouts,
+  programAssignments,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { LIVE_ASSIGNMENT_STATUSES } from "./programRepository";
 
 /**
  * Sentinel UUID used by the legacy Supabase DB to mark system-authored
@@ -170,7 +176,62 @@ export class ExerciseRepository {
   }
 
   /**
-   * Visibility predicate applied to every `list()` and `getById()` call.
+   * Exercise ids the caller can read because the exercise belongs to a workout
+   * in a LIVE programme (`status IN ('assigned','started')`) assigned to the
+   * caller. Keys off the programme DEFINITION (`program_workouts`) rather than
+   * materialised occurrences, so it covers EVERY week of the programme —
+   * including not-yet-materialised occurrences of an indefinite programme
+   * (specs/24-coach-authoring AC 3.6).
+   *
+   * Built with drizzle's connection-free `QueryBuilder` (not `getDb()`) so the
+   * subquery is a pure, renderable SQL fragment: the assembled visibility SQL
+   * can then be asserted via `PgDialect` in tests, closing the mocked-`getDb`
+   * blind spot (see reference_drizzle_groupby_param_bug — mocked SQL ships
+   * green). It still serialises + executes normally inside the real query.
+   */
+  private programmeAssignedExerciseIdsSubquery(userId: string) {
+    return new QueryBuilder()
+      .select({ exerciseId: workoutExercises.exerciseId })
+      .from(workoutExercises)
+      .innerJoin(
+        programWorkouts,
+        eq(programWorkouts.workoutId, workoutExercises.workoutId),
+      )
+      .innerJoin(
+        programAssignments,
+        eq(programAssignments.programId, programWorkouts.programId),
+      )
+      .where(
+        and(
+          eq(programAssignments.clientId, userId),
+          inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
+        ),
+      );
+  }
+
+  /**
+   * Exercise ids the caller can read because the exercise belongs to a workout
+   * ASSIGNED to the caller — an ad-hoc single-workout assignment, OR a
+   * materialised/past programme occurrence. ANY status (not just live), so an
+   * exercise the caller actually trained stays readable in history after the
+   * programme is completed/unassigned — avoids a `getById` 404 regression on
+   * past-session detail. Complements the programme-definition branch above.
+   * Connection-free `QueryBuilder`, same rationale as above.
+   */
+  private assignedWorkoutExerciseIdsSubquery(userId: string) {
+    return new QueryBuilder()
+      .select({ exerciseId: workoutExercises.exerciseId })
+      .from(workoutExercises)
+      .innerJoin(
+        workoutAssignments,
+        eq(workoutAssignments.workoutId, workoutExercises.workoutId),
+      )
+      .where(eq(workoutAssignments.clientId, userId));
+  }
+
+  /**
+   * Visibility predicate applied to every `list()`, `count()`, `search()`, and
+   * `getById()` call.
    *
    * A caller sees an exercise iff ANY of:
    *   • `created_by = SYSTEM_USER_ID` (system catalogue — legacy Supabase
@@ -179,12 +240,21 @@ export class ExerciseRepository {
    *     potential Neon migration that drops the sentinel, never matches
    *     against the live Supabase rows).
    *   • `created_by = caller.sub` (own custom).
-   *   • `created_by` belongs to an active, non-AI PT/physio the caller is
-   *     connected to.
+   *   • the exercise is in a workout in a LIVE programme assigned to the caller.
+   *   • the exercise is in a workout otherwise assigned to the caller.
+   *
+   * The last two branches REPLACE the previous blanket "any exercise created by
+   * any linked active PT" branch: a coach's custom exercise is visible to a
+   * client ONLY once it has been assigned (in a programme or a workout), not by
+   * browsing/searching the whole catalogue (specs/24-coach-authoring STORY-003).
+   * A coach reading the workout/programme they authored still sees the exercise
+   * via the `created_by = caller.sub` branch. Note: the workout-detail payload
+   * embeds exercise fields WITHOUT this predicate, so an assigned workout still
+   * renders its exercises regardless (AC 3.4).
    *
    * Unauthenticated callers see only system exercises.
    *
-   * Spec: design.md § Backend Authorization Rules · AC 7.8
+   * Spec: specs/24-coach-authoring design.md § A.2; supersedes 03 AC 7.8.
    */
   private buildVisibilityCondition(userId: string | null): SQL {
     const systemClause = or(
@@ -199,7 +269,8 @@ export class ExerciseRepository {
     return or(
       systemClause,
       eq(exercises.createdBy, userId),
-      inArray(exercises.createdBy, this.activeTrainerIdsSubquery(userId)),
+      inArray(exercises.id, this.programmeAssignedExerciseIdsSubquery(userId)),
+      inArray(exercises.id, this.assignedWorkoutExerciseIdsSubquery(userId)),
     ) as SQL;
   }
 

@@ -163,8 +163,7 @@ describe("CoachYouContainer", () => {
     expect(mockProbe.last?.coachMeta).toContain("Coach since Feb 2024");
   });
 
-  it("routes the relocated Workout library entry to the coach workout library", async () => {
-    mockPush.mockClear();
+  it("no longer wires an onOpenWorkoutLibrary prop (STORY-004 — card retired)", async () => {
     const { adapters, api } = makeAdapters();
     api.coachOverview = makeCoachOverview();
     render(
@@ -173,8 +172,9 @@ describe("CoachYouContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    mockProbe.last?.onOpenWorkoutLibrary?.();
-    expect(mockPush).toHaveBeenCalledWith("/(app)/workouts/library");
+    expect(
+      (mockProbe.last as Record<string, unknown> | null)?.onOpenWorkoutLibrary,
+    ).toBeUndefined();
   });
 
   it("labels a weekly streak in weeks", async () => {

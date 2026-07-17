@@ -136,12 +136,13 @@ describe("ProgramsListContainer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("program-row-p-active")).toBeTruthy(),
     );
-    expect(screen.getByText("Programmes")).toBeTruthy();
-    // Counts derive from the FULL list, not the filtered (Active) view.
-    expect(screen.getByText("1 ACTIVE · 1 DRAFTS")).toBeTruthy();
+    // Container is body-only now (specs/24-coach-authoring § B.2) — the hub
+    // owns the "Programmes" title + eyebrow; this container renders straight
+    // to the search + segmented + list body.
+    expect(screen.getByTestId("programs-search")).toBeTruthy();
   });
 
-  it("navigates to the create route from the header +", async () => {
+  it("navigates to the create route from the dashed New programme CTA", async () => {
     const { adapters, api } = makeAdapters();
     api.programs = [makeProgram()];
     render(
@@ -150,9 +151,9 @@ describe("ProgramsListContainer", () => {
       </Wrapper>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("programs-create-btn")).toBeTruthy(),
+      expect(screen.getByTestId("programs-new-cta")).toBeTruthy(),
     );
-    fireEvent.press(screen.getByTestId("programs-create-btn"));
+    fireEvent.press(screen.getByTestId("programs-new-cta"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/programs/create");
   });
 

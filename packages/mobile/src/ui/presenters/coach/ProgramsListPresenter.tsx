@@ -1,10 +1,7 @@
 import { useMemo } from "react";
 import { Pressable, RefreshControl, ScrollView } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation";
-import { HeaderBar } from "@/ui/components/foundation/HeaderBar";
-import { IconBtn } from "@/ui/components/foundation/IconBtn";
 import { Pill } from "@/ui/components/foundation/Pill";
 import { Segmented } from "@/ui/components/foundation/Segmented";
 import { toneTokens, type Tone } from "@/ui/components/foundation/tones";
@@ -15,12 +12,18 @@ import type { ApiError } from "@/shared/errors";
 import type { ProgramSummary } from "@/domain/models/program";
 
 /**
- * <ProgramsListPresenter> — the coach Programs tab library.
- * Ports the prototype's `ProgramsScreenV2` (design-source/screens/coach.jsx:
- * 286-388) with strict fidelity: large HeaderBar ("Programmes", `N ACTIVE ·
- * N DRAFTS` eyebrow, trainer-tone "+") → SearchBar → trainer-accent Segmented
+ * <ProgramsListPresenter> — the coach Programmes BODY (specs/24-coach-authoring
+ * § B.2). Ports the prototype's `ProgramsScreenV2` (design-source/screens/
+ * coach.jsx:286-388) body content: SearchBar → trainer-accent Segmented
  * (Active | Drafts) → the accent-cycling `ProgramRowV2` cards → dashed
  * "+ New programme" CTA.
+ *
+ * BODY-ONLY: the outer screen chrome (top safe-area inset, large HeaderBar
+ * with the `N ACTIVE · N DRAFTS` eyebrow + trailing "+") is now owned by
+ * `<CoachLibraryHubContainer>` (the Programs-tab hub) — this presenter no
+ * longer renders it. The `N ACTIVE · N DRAFTS` count line is dropped with the
+ * HeaderBar (low value; the Active/Drafts segmented already labels the
+ * split) — see design.md § B.2 for the call.
  *
  * The prototype's tag-filter chip row and "Archive" segment are DROPPED: the
  * backend models neither tags nor an archive state (specs/19-programs D6 —
@@ -205,14 +208,6 @@ export function ProgramsListPresenter(props: ProgramsListPresenterProps) {
     testID,
   } = props;
 
-  const insets = useSafeAreaInsets();
-
-  const activeCount = useMemo(
-    () => programs.filter(isProgramActive).length,
-    [programs],
-  );
-  const draftCount = programs.length - activeCount;
-
   const filtered = useMemo(
     () => filterPrograms(programs, segment, searchQuery),
     [programs, segment, searchQuery],
@@ -244,7 +239,7 @@ export function ProgramsListPresenter(props: ProgramsListPresenterProps) {
   const hasAny = programs.length > 0;
 
   return (
-    <View flex={1} paddingTop={insets.top} testID={testID}>
+    <View flex={1} testID={testID}>
       <ScrollView
         testID="programs-scroll"
         contentContainerStyle={{ paddingBottom: 140 }}
@@ -253,21 +248,6 @@ export function ProgramsListPresenter(props: ProgramsListPresenterProps) {
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
       >
-        <HeaderBar
-          large
-          title="Programmes"
-          eyebrow={`${activeCount} ACTIVE · ${draftCount} DRAFTS`}
-          trailing={
-            <IconBtn
-              icon={<IconPlus size={18} strokeWidth={2.2} />}
-              tone="trainer"
-              onPress={onCreate}
-              accessibilityLabel="New programme"
-              testID="programs-create-btn"
-            />
-          }
-        />
-
         <View paddingHorizontal={16} gap={12}>
           <SearchBar
             placeholder="Search programmes"
