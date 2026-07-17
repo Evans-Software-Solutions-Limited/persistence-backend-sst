@@ -185,7 +185,7 @@ export function Pricing() {
                 </div>
                 <div className="plan-sub">No card required</div>
                 <p className="plan-desc">
-                  Everything you need to log workouts and track nutrition
+                  Everything you need to log workouts and track nutrition.
                 </p>
                 <ul className="plan-feats">
                   <Feat>Full workout &amp; set logging</Feat>

@@ -30,31 +30,39 @@ free (10× monthly).
 | Premium | £12.99 | £129.99 | LIVE |
 | Premium+ | £19.99 | £199.99 | LAUNCH |
 
-### What each plan includes (per Brad's gating, 2026-07-16)
+### What each plan includes — aligned to the shipped site (updated 2026-07-17)
+
+> Matches the copy shipped on `/pricing` (PR #265). The earlier "3 free AI
+> workout generations" taster was **dropped** — Free now offers **3 Custom
+> Workouts** (a real cap, not an AI pool). Smart-swap moved to Premium; Premium+
+> leads on "AI Workout Suggestions". **This supersedes §6.1 and the taster copy
+> in §7 below.**
 
 **Free**
-- Workout tracking, capped at 3 workouts
-- No ongoing AI features
-- **Free taster: 3 AI workout generations** (scan → generate, one-time pool) — the
-  conversion hook into Premium+. See the taster copy in §7.
+
+- Full workout & set logging
+- Nutrition tracking & barcode scanner
+- Streaks, PRs & core progress
+- **3 Custom Workouts** (cap)
 
 **Premium — £12.99/mo**
-- Unlimited workouts
-- Advanced analytics + data export
-- **Existing AI only:** AI gym buddy, AI nutrition / Snap AI, AI summaries
-- Does **not** include the adaptive workout suite
 
-**Premium+ — £19.99/mo** — the athlete tier
-- Everything in Premium, plus the **entire adaptive suite, exclusively:**
-  - AI workout generation
-  - Equipment scan / equipment-aware programming *(feature name TBC — see §5)*
-  - Smart swap suggestions
+- Everything in Free, plus
+- Unlimited workouts & history
+- Photo & free-text AI nutrition logging
+- Smart swap suggestions
+
+**Premium+ — £19.99/mo** — the athlete flagship (shown "Coming soon"; phase 2 ≈ Aug 2026)
+
+- Everything in Premium, plus the adaptive suite:
+  - **AI Workout Suggestions**
+  - **AnyGym equipment scan** — equipment-aware programming
   - Program import
 
-> **Positioning note:** this is a deliberately hard gate. The whole
-> "scan-your-gym → AI builds a workout that fits it" story lives in Premium+.
-> This diverges from the earlier GTM-Expansion proposal, which had given Premium
-> 10/day generation + scan; the site should follow this spec, not that table.
+> **Positioning note:** the "scan-your-gym → AI builds a workout that fits it"
+> story is a deliberately hard Premium+ gate. Diverges from the earlier
+> GTM-Expansion proposal (which gave Premium 10/day generation + scan) — the
+> site follows this spec, not that table.
 
 ---
 
