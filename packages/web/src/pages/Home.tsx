@@ -244,11 +244,15 @@ export function Home() {
                 <span className="kicker c-accent" data-reveal>
                   AnyGym · Premium+
                 </span>
-                <div className="soon-badge" data-reveal style={d(60)}>
+                <div
+                  className="soon-badge"
+                  data-reveal
+                  style={{ ...d(60), marginLeft: 5 }}
+                >
                   Coming soon
                 </div>
                 <h2 className="disp" data-reveal style={d(80)}>
-                  Any gym. Any kit.
+                  AnyGym. Any kit.
                   <br />
                   <span className="it">Same programme.</span>
                 </h2>
