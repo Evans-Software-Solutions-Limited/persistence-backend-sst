@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.2.0...persistence-v1.2.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* promote @sentry/cli to an explicit direct dependency of packages/mobile, pinned to 2.58.4 (the exact version @sentry/react-native@7.11.0 already locks). bun then links it into packages/mobile/node_modules, so resolution from ios/ succeeds. The @sentry/cli-darwin binary the shim runs is present on the macOS builder. Lockfile churn is hoisting re-keying only (all versions preserved, per-consumer keyed); typecheck + prettier green. ([1fff354](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1fff354e0edec49755fc3fb1d546d3893c161d57))
+
 ## [1.2.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.1.0...persistence-v1.2.0) (2026-07-16)
 
 
