@@ -183,7 +183,16 @@ export function BottomSheet({
         overflow: "hidden",
       }}
     >
-      <BottomSheetView testID={testID} style={{ flex: 1 }}>
+      <BottomSheetView
+        testID={testID}
+        style={{ flex: 1 }}
+        // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
+        // INSIDE it and ignores the screen behind the backdrop. Without this the
+        // sheet's contents were unreachable to a screen reader (focus stayed on
+        // the underlying screen), which read as "the drawer exposes nothing".
+        accessibilityViewIsModal
+        importantForAccessibility="yes"
+      >
         {title || eyebrow ? (
           <View
             paddingHorizontal={20}
@@ -212,6 +221,9 @@ export function BottomSheet({
                 fontSize={20}
                 letterSpacing={-0.4}
                 color="$text"
+                // a11y: announce the sheet title as a heading so screen-reader
+                // users get the sheet's purpose on focus + can navigate by header.
+                accessibilityRole="header"
               >
                 {title}
               </Text>
