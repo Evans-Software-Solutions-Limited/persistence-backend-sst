@@ -20,10 +20,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
  * coach context; tapping a row edits it (also coach context). Workouts hidden
  * from the coach's personal library get a quiet marker so the state is legible.
  *
+ * `embedded` (specs/24-coach-authoring § B.3): when rendered as the Workouts
+ * body of the coach library hub, drops the SafeAreaView top edge + the
+ * back-button header row (the hub owns that chrome) and renders the create
+ * CTA + list/empty/error inside a plain `View`; `onBack` is unused in this
+ * mode. Not embedded (the standalone `workouts/library.tsx` route): unchanged.
+ *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 11
+ *       specs/24-coach-authoring/design.md § B.3
  */
 
-interface CoachWorkoutLibraryPresenterProps {
+export interface CoachWorkoutLibraryPresenterProps {
   readonly workouts: readonly Workout[];
   readonly isLoading: boolean;
   readonly isRefreshing: boolean;
@@ -32,6 +39,7 @@ interface CoachWorkoutLibraryPresenterProps {
   readonly onCreate: () => void;
   readonly onOpen: (workoutId: string) => void;
   readonly onRefresh: () => void;
+  readonly embedded?: boolean;
 }
 
 export function CoachWorkoutLibraryPresenter({
@@ -43,25 +51,10 @@ export function CoachWorkoutLibraryPresenter({
   onCreate,
   onOpen,
   onRefresh,
+  embedded = false,
 }: CoachWorkoutLibraryPresenterProps) {
-  return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={onBack}
-          style={styles.iconButton}
-          testID="coach-library-back"
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="arrow-back" size={24} color={color.$text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Workout library
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+  const content = (
+    <>
       {isLoading && workouts.length === 0 ? (
         <View style={styles.centre} testID="coach-library-loading">
           <PLogoDrawLoader />
@@ -92,14 +85,20 @@ export function CoachWorkoutLibraryPresenter({
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
           }
         >
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={onCreate}
-            testID="coach-library-create"
-          >
-            <Ionicons name="add" size={20} color={color.$primary} />
-            <Text style={styles.createButtonText}>Create workout</Text>
-          </TouchableOpacity>
+          {/* Embedded in the hub, the hub's top-right contextual action owns
+              "Create workout" — suppress this body CTA so it isn't duplicated
+              (specs/24-coach-authoring § B.3). Standalone (deep-link route) has
+              no hub chrome, so it keeps its own create button. */}
+          {!embedded ? (
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={onCreate}
+              testID="coach-library-create"
+            >
+              <Ionicons name="add" size={20} color={color.$primary} />
+              <Text style={styles.createButtonText}>Create workout</Text>
+            </TouchableOpacity>
+          ) : null}
 
           {workouts.length === 0 ? (
             <View style={styles.emptyBlock} testID="coach-library-empty">
@@ -140,6 +139,32 @@ export function CoachWorkoutLibraryPresenter({
           )}
         </ScrollView>
       )}
+    </>
+  );
+
+  if (embedded) {
+    // The hub owns chrome (top inset + title) — render just the content.
+    return <View style={styles.safeArea}>{content}</View>;
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.iconButton}
+          testID="coach-library-back"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={24} color={color.$text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          Workout library
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
+      {content}
     </SafeAreaView>
   );
 }

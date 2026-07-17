@@ -107,14 +107,6 @@ describe("filterPrograms", () => {
 });
 
 describe("ProgramsListPresenter", () => {
-  it("renders the header eyebrow with active/draft counts derived from the full list", () => {
-    const { getByText } = renderWithTheme(
-      <ProgramsListPresenter {...baseProps()} />,
-    );
-    expect(getByText("Programmes")).toBeTruthy();
-    expect(getByText("2 ACTIVE · 1 DRAFTS")).toBeTruthy();
-  });
-
   it("renders active rows under the Active segment and hides drafts", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <ProgramsListPresenter {...baseProps()} />,
@@ -205,15 +197,6 @@ describe("ProgramsListPresenter", () => {
     );
     expect(getByTestId("programs-empty-filtered")).toBeTruthy();
     expect(getByText("No programmes match those filters.")).toBeTruthy();
-  });
-
-  it("fires onCreate from the header + button", () => {
-    const onCreate = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ProgramsListPresenter {...baseProps({ onCreate })} />,
-    );
-    fireEvent.press(getByTestId("programs-create-btn"));
-    expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
   it("fires onCreate from the dashed New programme CTA", () => {

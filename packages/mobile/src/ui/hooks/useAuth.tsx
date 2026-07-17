@@ -3,6 +3,7 @@ import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
 import type { AuthError } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { usePendingInvite } from "@/state/pending-invite";
 import { useAdapters } from "./useAdapters";
 
@@ -147,11 +148,11 @@ export function useAuth(): AuthState {
   // Shared local-session teardown for both sign-out and account deletion.
   // Clears cached user data (sync queue, exercises, metadata) so the next
   // sign-in starts clean, and resets the device-global runtime slices.
-  // The user-mode + train-segment STORAGE_KEYs are device-global (not
-  // user-scoped), so without this a trainer's coach mode / last segment /
-  // pending create-exercise redirect would bleed into the next account on
-  // this device (PR #93 review). In-memory resets are synchronous; the disk
-  // clears inside them + storage.clearAll() are best-effort.
+  // The user-mode + train-segment + coach-library-segment STORAGE_KEYs are
+  // device-global (not user-scoped), so without this a trainer's coach mode /
+  // last segment / pending create-exercise redirect would bleed into the next
+  // account on this device (PR #93 review). In-memory resets are synchronous;
+  // the disk clears inside them + storage.clearAll() are best-effort.
   const clearLocalState = useCallback(() => {
     try {
       storage.clearAll();
@@ -160,6 +161,7 @@ export function useAuth(): AuthState {
     }
     useUserMode.getState().reset();
     useTrainSegment.getState().reset();
+    useCoachLibrarySegment.getState().reset();
     usePendingInvite.getState().reset();
   }, [storage]);
 

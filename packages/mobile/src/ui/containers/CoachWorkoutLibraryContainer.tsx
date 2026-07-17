@@ -17,9 +17,17 @@ import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkout
  * slot deliberately avoids the shared `useWorkouts`/`cached_workouts` mine
  * cache, which for a trainer holds the owner-visible-filtered set.
  *
+ * `embedded` (specs/24-coach-authoring § B.3): when rendered as the Workouts
+ * body of `<CoachLibraryHubContainer>`, the presenter drops its own
+ * SafeAreaView top edge + back-button header (the hub owns that chrome).
+ * Standalone (the `app/(app)/workouts/library.tsx` route, still deep-link
+ * reachable) keeps the header + back unchanged.
+ *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 11
  */
-export function CoachWorkoutLibraryContainer() {
+export function CoachWorkoutLibraryContainer({
+  embedded = false,
+}: { embedded?: boolean } = {}) {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -105,6 +113,7 @@ export function CoachWorkoutLibraryContainer() {
       onCreate={onCreate}
       onOpen={onOpen}
       onRefresh={onRefresh}
+      embedded={embedded}
     />
   );
 }

@@ -128,6 +128,22 @@ describe("CoachWorkoutLibraryContainer", () => {
     expect(api.getWorkouts).toHaveBeenCalledWith({ type: "mine" });
   });
 
+  it("embedded: passes embedded through to the presenter, hiding its header/back", async () => {
+    const api = new InMemoryApiAdapter();
+    jest
+      .spyOn(api, "getWorkouts")
+      .mockResolvedValue(ok({ workouts: [], total: 0, quota: null }));
+    const { findByTestId, queryByTestId, queryByText } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api),
+        <CoachWorkoutLibraryContainer embedded />,
+      ),
+    );
+    expect(await findByTestId("coach-library-empty")).toBeTruthy();
+    expect(queryByTestId("coach-library-back")).toBeNull();
+    expect(queryByText("Workout library")).toBeNull();
+  });
+
   it("Create workout CTA pushes the creator in coach context", async () => {
     const api = new InMemoryApiAdapter();
     jest
