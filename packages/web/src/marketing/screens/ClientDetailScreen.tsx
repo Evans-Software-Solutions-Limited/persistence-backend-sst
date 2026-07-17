@@ -1,14 +1,13 @@
-/** Coach client detail — mirrors packages/mobile ClientDetailPresenter (violet). */
+/** Coach client detail — mirrors packages/mobile ClientDetailPresenter (violet).
+ *  Order: header → current programme → quick actions → AI weekly summary. */
 import { Avatar, StatusBar } from "./coachData";
 
-const activity = [
-  { k: "Workouts", v: "3/4", tone: "#4FE3F0" },
-  { k: "Volume", v: "12.4t", tone: "#F4F1EA" },
-  { k: "PRs", v: "2", tone: "#F2C94C" },
-  { k: "Check-ins", v: "5/7", tone: "#5FD9A6" },
+const actions = [
+  { k: "Assign", tone: "#4FE3F0" },
+  { k: "Macros", tone: "#F2C94C" },
+  { k: "Goals", tone: "#B7A0FF" },
+  { k: "Brief", tone: "#FF9A5A" },
 ];
-const vol = [0.5, 0.8, 0, 0.65, 0.9, 0.3, 0];
-const days = ["M", "T", "W", "T", "F", "S", "S"];
 
 export function ClientDetailScreen() {
   return (
@@ -17,14 +16,14 @@ export function ClientDetailScreen() {
 
       <div className="co-back">
         <span>‹ Clients</span>
-        <span className="co-back-ic">⋯</span>
+        <span className="co-back-ic">✉ ⋯</span>
       </div>
 
       <div className="co-detail-head">
         <Avatar initials="MR" tone="linear-gradient(150deg,#CDBCFF,#7C5CE0)" />
         <div>
           <b>Marcus Reid</b>
-          <span>Age 34 · 180 cm</span>
+          <span>Age 34 · 180 cm · Strength Foundations</span>
           <div className="co-pills">
             <span className="co-pill ember">2 missed</span>
             <span className="co-pill violet">WK 6/12</span>
@@ -40,31 +39,38 @@ export function ClientDetailScreen() {
         <span className="co-prog-wk">Week 6 of 12</span>
       </div>
 
-      <div className="app-sec">
-        <div className="app-sec-head">
-          <span className="e">THIS WEEK</span>
-          <b>Activity</b>
+      <div className="cd-qa">
+        {actions.map((a) => (
+          <span className="cd-qa-btn" key={a.k}>
+            <svg viewBox="0 0 24 24" fill="none" stroke={a.tone} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="4" />
+              <circle cx="12" cy="12" r="0.5" fill={a.tone} />
+            </svg>
+            {a.k}
+          </span>
+        ))}
+      </div>
+
+      {/* AI weekly summary — the flagship */}
+      <div className="cd-ai">
+        <div className="cd-ai-head">
+          <span className="cd-ai-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#B7A0FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z" />
+              <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
+            </svg>
+            AI WEEKLY SUMMARY
+          </span>
+          <span className="cd-ai-time">Updated 2h ago</span>
         </div>
-        <div className="co-stats">
-          {activity.map((a) => (
-            <div className="co-stat" key={a.k}>
-              <span className="cs-v" style={{ color: a.tone }}>
-                {a.v}
-              </span>
-              <span className="cs-k">{a.k}</span>
-            </div>
-          ))}
-        </div>
-        <div className="co-vol">
-          {vol.map((h, i) => (
-            <div className="co-vol-col" key={i}>
-              <div className="co-vol-bar">
-                <i style={{ height: `${Math.max(h * 100, 6)}%`, opacity: h ? 1 : 0.25 }} />
-              </div>
-              <span>{days[i]}</span>
-            </div>
-          ))}
-        </div>
+        <p className="cd-ai-text">
+          Marcus hit all 4 sessions — bench and squat each up ~2.5 kg. Protein
+          averaged 148 g against a 180 g target, so breakfast is the gap to close.
+          Sleep dipped midweek, which lines up with the lighter Thursday session.
+          Hold the current block; a deload is due in two weeks.
+        </p>
+        <span className="cd-ai-btn">Regenerate</span>
       </div>
     </div>
   );
