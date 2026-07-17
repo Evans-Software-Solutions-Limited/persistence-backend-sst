@@ -77,6 +77,7 @@ async function main(): Promise<void> {
 
   let inserted = 0;
   let skippedExisting = 0;
+  let skippedNoExercises = 0;
   const unresolvedExercises = new Set<string>();
 
   for (const w of catalogue) {
@@ -101,6 +102,19 @@ async function main(): Promise<void> {
         }
         return true;
       });
+
+    // A public, system-owned template with no resolvable exercises is worse
+    // than no template — and the skip-by-name guard above would then
+    // permanently skip backfilling it. Don't publish an empty workout; a later
+    // run (once the exercise catalogue is present) inserts it fresh. This also
+    // neutralises the `dataset=workouts` workflow path running before exercises.
+    if (!resolvedExercises.length) {
+      console.warn(
+        `[seed:workouts] skipping workout "${w.name}" — no exercises resolved (is the exercise catalogue seeded?)`,
+      );
+      skippedNoExercises += 1;
+      continue;
+    }
 
     await db.transaction(async (tx) => {
       const [row] = await tx
@@ -134,7 +148,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[seed:workouts] done — catalogue=${catalogue.length} alreadyPresent=${skippedExisting} inserted=${inserted} unresolvedExerciseNames=${unresolvedExercises.size}`,
+    `[seed:workouts] done — catalogue=${catalogue.length} alreadyPresent=${skippedExisting} inserted=${inserted} skippedNoExercises=${skippedNoExercises} unresolvedExerciseNames=${unresolvedExercises.size}`,
   );
   // postgres.js keeps the event loop alive; exit explicitly.
   process.exit(0);
