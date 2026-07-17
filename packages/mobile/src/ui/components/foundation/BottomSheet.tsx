@@ -2,7 +2,6 @@ import GorhomBottomSheet, {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
   BottomSheetScrollView,
-  BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Text, View } from "@tamagui/core";
 import {
@@ -183,13 +182,19 @@ export function BottomSheet({
         overflow: "hidden",
       }}
     >
-      <BottomSheetView
+      <View
+        flex={1}
         testID={testID}
-        style={{ flex: 1 }}
+        // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
+        // base style is position:absolute (top/left/right, no height) and thus
+        // overrides flex:1, sizing the node to its content. That left the inner
+        // BottomSheetScrollView with no bounded viewport, so it never scrolled
+        // and tall bodies (e.g. the coach ProfileDrawer) were clipped — the
+        // Sign-out button unreachable. As a direct child of gorhom's
+        // fixed-height content wrapper, a flex:1 View fills the box so the fixed
+        // header + scroll view split it correctly.
         // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
-        // INSIDE it and ignores the screen behind the backdrop. Without this the
-        // sheet's contents were unreachable to a screen reader (focus stayed on
-        // the underlying screen), which read as "the drawer exposes nothing".
+        // INSIDE it and ignores the screen behind the backdrop.
         accessibilityViewIsModal
         importantForAccessibility="yes"
       >
@@ -251,7 +256,7 @@ export function BottomSheet({
         >
           {children}
         </BottomSheetScrollView>
-      </BottomSheetView>
+      </View>
     </GorhomBottomSheet>
   );
 }
