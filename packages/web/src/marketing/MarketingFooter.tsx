@@ -11,7 +11,7 @@ export function MarketingFooter() {
             <Link to="/" className="logo">
               <img
                 className="logo-mark"
-                src="/persistence-logo.png"
+                src="/apple-touch-icon.png"
                 alt=""
                 aria-hidden="true"
               />

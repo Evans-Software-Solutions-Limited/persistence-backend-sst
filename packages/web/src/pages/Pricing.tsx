@@ -228,7 +228,7 @@ export function Pricing() {
               <div className="plan flagship" data-reveal style={d(200)}>
                 <span className="plan-ribbon gold">Flagship · AnyGym</span>
                 <div className="plan-name">Premium+</div>
-                <div className="plan-status soon">Launches w/c 17 Aug</div>
+                <div className="plan-status soon">Coming soon</div>
                 <PlanPrice m={19.99} y={199.99} cycle={cycle} />
                 <p className="plan-desc">
                   The full adaptive suite. Scan your gym and Persistence builds
@@ -245,7 +245,7 @@ export function Pricing() {
                   <Feat>Smart swap suggestions</Feat>
                   <Feat>Program import</Feat>
                 </ul>
-                <SoonCta label="Launches w/c 17 Aug" className="btn-line" />
+                <SoonCta label="Coming soon" className="btn-line" />
               </div>
             </div>
           </div>

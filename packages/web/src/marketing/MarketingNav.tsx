@@ -8,7 +8,7 @@ import { SectionLink } from "./SectionLink";
 function Logo() {
   return (
     <Link to="/" className="logo">
-      <img className="logo-mark" src="/persistence-logo.png" alt="" aria-hidden="true" />
+      <img className="logo-mark" src="/apple-touch-icon.png" alt="" aria-hidden="true" />
       Persistence
     </Link>
   );

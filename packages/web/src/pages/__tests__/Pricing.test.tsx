@@ -23,14 +23,14 @@ describe("Pricing", () => {
     expect(screen.getAllByText(/2 months free/i).length).toBeGreaterThan(0);
   });
 
-  it("keeps AnyGym one word and marks Premium+ as launching w/c 17 Aug", () => {
+  it("keeps AnyGym one word and marks Premium+ as coming soon", () => {
     renderPage(<Pricing />);
-    expect(screen.getAllByText(/launches w\/c 17 aug/i).length).toBeGreaterThan(
-      0,
-    );
     const flagship = screen
       .getByText("Premium+")
       .closest(".plan") as HTMLElement;
+    expect(
+      within(flagship).getAllByText(/coming soon/i).length,
+    ).toBeGreaterThan(0);
     expect(within(flagship).getByText(/AnyGym equipment scan/i)).toBeDefined();
   });
 

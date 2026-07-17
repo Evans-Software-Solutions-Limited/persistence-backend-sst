@@ -241,7 +241,7 @@ export function Home() {
                   AnyGym · Premium+
                 </span>
                 <div className="soon-badge" data-reveal style={d(60)}>
-                  Coming soon · Launches w/c 17 Aug
+                  Coming soon
                 </div>
                 <h2 className="disp" data-reveal style={d(80)}>
                   Any gym. Any kit.

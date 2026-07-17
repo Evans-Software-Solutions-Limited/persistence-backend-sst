@@ -306,6 +306,7 @@
 .mkt .logo-mark {
   width: 30px;
   height: 30px;
+  border-radius: 8px;
   object-fit: contain;
   flex-shrink: 0;
   display: block;
