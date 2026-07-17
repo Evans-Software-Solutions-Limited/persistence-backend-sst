@@ -12,7 +12,6 @@ export type {
   DashboardSubscription,
   DashboardRecentWorkout,
   DashboardRecentActivity,
-  DashboardActiveGoal,
   DashboardProgress,
   DashboardPROfTheWeek,
   DashboardLatestMeasurement,

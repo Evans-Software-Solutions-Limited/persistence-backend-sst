@@ -1,6 +1,4 @@
 export { GreetingSection } from "./GreetingSection";
-export { GoalsSection } from "./GoalsSection";
-export type { Goal } from "./GoalsSection";
 export { YourWorkoutsSection } from "./YourWorkoutsSection";
 export { WorkoutCard } from "./WorkoutCard";
 export type { WorkoutCardWorkout } from "./WorkoutCard";

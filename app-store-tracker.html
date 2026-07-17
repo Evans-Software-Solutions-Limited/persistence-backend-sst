@@ -585,9 +585,9 @@
         <div>
           <h1>Persistence — App Store Tracker</h1>
           <div class="header-meta">
-            <span class="meta-pill">📱 v1.1.1</span>
-            <span class="meta-pill">🔀 <code>3d6a881</code></span>
-            <span class="meta-pill">📅 Synced 16 Jul 2026</span>
+            <span class="meta-pill">📱 v1.2.1</span>
+            <span class="meta-pill">🔀 <code>1fae2af</code></span>
+            <span class="meta-pill">📅 Synced 17 Jul 2026</span>
             <span class="meta-pill">🍎 iOS + Google Play</span>
           </div>
         </div>
@@ -684,7 +684,7 @@
 
     <script>
       // ─────────────────────────────────────────────────────────────────────────────
-      // DATA  (verified against repo on 2026-07-16, main HEAD 3d6a881)
+      // DATA  (verified against repo on 2026-07-17, main HEAD 1fae2af; PR #264 Train-hub tidy pending)
       // ─────────────────────────────────────────────────────────────────────────────
 
       const AREAS = [
@@ -987,8 +987,8 @@
           id: "co5",
           area: "coach",
           status: "done",
-          title: "Programs tab",
-          note: "Shipped via spec-19 (PRs #148/#149/#152 backend + #166 mobile): coach Programmes tab, editor, and assign sheets all live.",
+          title: "Programs tab → unified library hub",
+          note: "Shipped via spec-19 (PRs #148/#149/#152 backend + #166 mobile): coach Programmes tab, editor, and assign sheets all live. Coach-tooling IA slice (spec-24, PR #260) turned it into a unified library hub (Programmes | Workouts | Exercises), surfaced the coach Workout Library + coach exercise creation, retired the You-tab 'Workout library' card, and narrowed coach→client exercise visibility to assignment-scoped. Device-verify pending on the next EAS build.",
         },
 
         {
@@ -1200,7 +1200,7 @@
           area: "athlete",
           status: "done",
           title: "Athlete Training page",
-          note: "SHIPPED (PR #185). Train-tab overview (active programme → today's training → goals) + full goals self-service (view/create/edit/delete own; coach-assigned view-only with attribution).",
+          note: "SHIPPED (PR #185). Train-tab overview (active programme → today's training) + full goals self-service. Pre-launch tidy (BRIEF-5 Phase A, PR #264): Goals HIDDEN for launch (decision C — inert/half-shipped; goal machinery parked for a future make-real spec) and the Training segment now GATED on an active human coach (no-coach athletes default to Workouts, Training tab hidden). Device-verify pending on the next EAS build.",
         },
         {
           id: "r5",

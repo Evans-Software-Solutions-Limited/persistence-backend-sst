@@ -956,76 +956,6 @@ describe("DashboardRepository sub-query composition", () => {
     });
   });
 
-  describe("getActiveGoalsWithProgress", () => {
-    it("derives title from goal_types.description and zeros out progress", async () => {
-      (getDb as any).mockReturnValue(
-        mockDbWithQueryResults([
-          [
-            {
-              id: "g-1",
-              priority: 2,
-              targetDate: "2026-12-31",
-              goalTypeName: "strength",
-              goalTypeDescription: "Increase overall strength",
-              goalTypeCategory: "lift",
-            },
-            {
-              id: "g-2",
-              priority: 1,
-              targetDate: null,
-              goalTypeName: "weight_loss",
-              goalTypeDescription: null,
-              goalTypeCategory: null,
-            },
-          ],
-        ]),
-      );
-
-      const goals = await repository.getActiveGoalsWithProgress("user-1");
-
-      expect(goals).toHaveLength(2);
-      // Sorted by priority ascending → g-2 (priority 1) first.
-      expect(goals[0]).toEqual({
-        id: "g-2",
-        title: "weight_loss",
-        current: 0,
-        target: 0,
-        unit: "",
-        priority: 1,
-        targetDate: null,
-      });
-      expect(goals[1].title).toBe("Increase overall strength");
-    });
-
-    it("applies defensive defaults when the join is empty", async () => {
-      (getDb as any).mockReturnValue(
-        mockDbWithQueryResults([
-          [
-            {
-              id: "g-1",
-              priority: null,
-              targetDate: null,
-              goalTypeName: null,
-              goalTypeDescription: null,
-              goalTypeCategory: null,
-            },
-          ],
-        ]),
-      );
-
-      const goals = await repository.getActiveGoalsWithProgress("user-1");
-      expect(goals[0]).toEqual({
-        id: "g-1",
-        title: "Goal",
-        current: 0,
-        target: 0,
-        unit: "",
-        priority: 1,
-        targetDate: null,
-      });
-    });
-  });
-
   describe("getPROfTheWeek", () => {
     it("returns null when the window is empty", async () => {
       (getDb as any).mockReturnValue(mockDbWithQueryResults([[]]));
@@ -1375,17 +1305,6 @@ describe("DashboardRepository sub-query composition", () => {
           durationSeconds: 3600,
         },
       ];
-      const activeGoals = [
-        {
-          id: "g-1",
-          title: "Build strength",
-          current: 0,
-          target: 0,
-          unit: "lift",
-          priority: 1,
-          targetDate: null,
-        },
-      ];
       const progress = {
         workoutsThisMonth: 3,
         workoutsLastMonth: 5,
@@ -1419,9 +1338,6 @@ describe("DashboardRepository sub-query composition", () => {
       const activitySpy = vi
         .spyOn(repository, "getRecentActivity")
         .mockResolvedValue(recentActivity);
-      const goalsSpy = vi
-        .spyOn(repository, "getActiveGoalsWithProgress")
-        .mockResolvedValue(activeGoals);
       const prSpy = vi
         .spyOn(repository, "getPROfTheWeek")
         .mockResolvedValue(prOfTheWeek);
@@ -1440,7 +1356,6 @@ describe("DashboardRepository sub-query composition", () => {
       expect(subSpy).toHaveBeenCalledWith("user-1");
       expect(workoutsSpy).toHaveBeenCalledWith("user-1");
       expect(activitySpy).toHaveBeenCalledWith("user-1");
-      expect(goalsSpy).toHaveBeenCalledWith("user-1");
       expect(prSpy).toHaveBeenCalledWith("user-1");
       expect(progressSpy).toHaveBeenCalledWith("user-1");
       expect(measurementSpy).toHaveBeenCalledWith("user-1");
@@ -1454,7 +1369,6 @@ describe("DashboardRepository sub-query composition", () => {
         subscription,
         recentWorkouts,
         recentActivity,
-        activeGoals,
         progress,
         prOfTheWeek,
         latestMeasurement,
@@ -1464,9 +1378,9 @@ describe("DashboardRepository sub-query composition", () => {
 
     it("runs the sub-queries concurrently (not sequentially)", async () => {
       // Each stubbed sub-query resolves after a shared deferred that only
-      // completes once getDashboard has started all eight. If any method
+      // completes once getDashboard has started all seven. If any method
       // were awaited sequentially, the trace order would be monotonic —
-      // Promise.all interleaves them, so all eight observe "started"
+      // Promise.all interleaves them, so all seven observe "started"
       // before any has resolved.
       const startedBeforeResolve: string[] = [];
       let resolveGate!: () => void;
@@ -1477,7 +1391,7 @@ describe("DashboardRepository sub-query composition", () => {
       function trace<T>(name: string, value: T) {
         return async (): Promise<T> => {
           startedBeforeResolve.push(name);
-          if (startedBeforeResolve.length === 8) resolveGate();
+          if (startedBeforeResolve.length === 7) resolveGate();
           await gate;
           return value;
         };
@@ -1505,9 +1419,6 @@ describe("DashboardRepository sub-query composition", () => {
       vi.spyOn(repository, "getRecentActivity").mockImplementation(
         trace("recentActivity", []),
       );
-      vi.spyOn(repository, "getActiveGoalsWithProgress").mockImplementation(
-        trace("activeGoals", []),
-      );
       vi.spyOn(repository, "getPROfTheWeek").mockImplementation(
         trace("prOfTheWeek", null),
       );
@@ -1524,7 +1435,7 @@ describe("DashboardRepository sub-query composition", () => {
       );
 
       await repository.getDashboard("user-1");
-      expect(startedBeforeResolve).toHaveLength(8);
+      expect(startedBeforeResolve).toHaveLength(7);
     });
 
     it("returns an empty-state payload with every slot initialised for a fresh user", async () => {
@@ -1542,7 +1453,6 @@ describe("DashboardRepository sub-query composition", () => {
       });
       vi.spyOn(repository, "getRecentWorkouts").mockResolvedValue([]);
       vi.spyOn(repository, "getRecentActivity").mockResolvedValue([]);
-      vi.spyOn(repository, "getActiveGoalsWithProgress").mockResolvedValue([]);
       vi.spyOn(repository, "getPROfTheWeek").mockResolvedValue(null);
       vi.spyOn(repository, "getProgressStats").mockResolvedValue({
         workoutsThisMonth: 0,
@@ -1558,7 +1468,6 @@ describe("DashboardRepository sub-query composition", () => {
       expect(payload.subscription.isFreeTier).toBe(true);
       expect(payload.recentWorkouts).toEqual([]);
       expect(payload.recentActivity).toEqual([]);
-      expect(payload.activeGoals).toEqual([]);
       expect(payload.prOfTheWeek).toBeNull();
       expect(payload.progress).toEqual({
         workoutsThisMonth: 0,

@@ -1,43 +1,35 @@
-import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
-import { Text, View } from "@tamagui/core";
+import { RefreshControl, ScrollView } from "react-native";
+import { View } from "@tamagui/core";
 import {
-  GoalCard,
   ProgrammeCard,
-  Section,
   TodaysTrainingSection,
 } from "@/ui/components/composite";
-import { toneHex } from "@/ui/components/foundation/tones";
 import type {
   ActiveProgramme,
   TodaysTrainingItem,
 } from "@/domain/models/progress";
-import type { Goal } from "@/domain/models/goal";
 
 /**
  * <TrainOverviewPresenter> — the Train tab's "Training" overview segment (M16).
- * Leads the Train hub with the athlete's plan: active programme → today's
- * training schedule → goals, keeping the Workouts/Exercises library segments
- * intact. Pure presentational; the container wires the cache-first hooks + the
- * goal sheet/commands.
+ * Leads the Train hub with the athlete's coach-assigned plan: active programme →
+ * today's training schedule. Pure presentational; the container wires the
+ * cache-first Home payload.
  *
- * Coach attribution (Phase 11) rides through: ProgrammeCard's `coachName`, the
- * shared <TodaysTrainingSection> rows, and each coach-assigned <GoalCard>.
- * Goals show NO progress bar (decision #2). Coach-assigned goals are view-only
- * (no edit/delete); self-set goals get edit + delete + an "Add goal" CTA.
+ * Coach attribution (Phase 11) rides through: ProgrammeCard's `coachName` and
+ * the shared <TodaysTrainingSection> rows.
+ *
+ * NOTE: the Goals section was hidden for launch (decision C — goals were an
+ * inert, half-shipped feature); the goal components are parked for the future
+ * "make goals real" spec.
  */
 
 export type TrainOverviewPresenterProps = {
   activeProgramme?: ActiveProgramme | null;
   todaysTraining: TodaysTrainingItem[];
-  goals: Goal[];
-  goalsLoading: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
   onOpenWorkout: (workoutId: string) => void;
   onOpenProgramme?: () => void;
-  onAddGoal: () => void;
-  onEditGoal: (goal: Goal) => void;
-  onDeleteGoal: (goal: Goal) => void;
   /** Injected today (YYYY-MM-DD) for deterministic due-label tests. */
   todayISO?: string;
 };
@@ -45,15 +37,10 @@ export type TrainOverviewPresenterProps = {
 export function TrainOverviewPresenter({
   activeProgramme = null,
   todaysTraining,
-  goals,
-  goalsLoading,
   isRefreshing,
   onRefresh,
   onOpenWorkout,
   onOpenProgramme,
-  onAddGoal,
-  onEditGoal,
-  onDeleteGoal,
   todayISO,
 }: TrainOverviewPresenterProps) {
   return (
@@ -87,55 +74,6 @@ export function TrainOverviewPresenter({
           todayISO={todayISO}
           testID="train-todays-training"
         />
-
-        {/* Goals — always present (with an Add CTA + empty state) so the
-            overview is never blank. */}
-        <View testID="train-goals">
-          <Section
-            eyebrow="GOALS"
-            title="Goals"
-            action={
-              <Text
-                fontSize={12}
-                color="$primary"
-                onPress={onAddGoal}
-                testID="train-add-goal"
-              >
-                Add goal
-              </Text>
-            }
-          >
-            {goalsLoading && goals.length === 0 ? (
-              <View
-                paddingVertical={20}
-                alignItems="center"
-                testID="train-goals-loading"
-              >
-                <ActivityIndicator
-                  size="small"
-                  color={toneHex("primary").base}
-                />
-              </View>
-            ) : goals.length === 0 ? (
-              <View paddingVertical={16} testID="train-goals-empty">
-                <Text fontFamily="$body" fontSize={13} color="$text3">
-                  No goals yet — add one to track what you’re working toward.
-                </Text>
-              </View>
-            ) : (
-              <View gap={8}>
-                {goals.map((goal) => (
-                  <GoalCard
-                    key={goal.id}
-                    goal={goal}
-                    onEdit={goal.isCoachAssigned ? undefined : onEditGoal}
-                    onDelete={goal.isCoachAssigned ? undefined : onDeleteGoal}
-                  />
-                ))}
-              </View>
-            )}
-          </Section>
-        </View>
       </View>
     </ScrollView>
   );

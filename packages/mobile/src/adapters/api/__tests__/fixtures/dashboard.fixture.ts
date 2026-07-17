@@ -71,26 +71,6 @@ export const DASHBOARD_FIXTURE: DashboardPayload = {
       durationSeconds: 2900,
     },
   ],
-  activeGoals: [
-    {
-      id: "goal-1",
-      title: "Bench 100kg",
-      current: 90,
-      target: 100,
-      unit: "kg",
-      priority: 1,
-      targetDate: "2026-06-01",
-    },
-    {
-      id: "goal-2",
-      title: "4 workouts / week",
-      current: 3,
-      target: 4,
-      unit: "workouts",
-      priority: 2,
-      targetDate: null,
-    },
-  ],
   progress: {
     workoutsThisMonth: 9,
     workoutsLastMonth: 12,

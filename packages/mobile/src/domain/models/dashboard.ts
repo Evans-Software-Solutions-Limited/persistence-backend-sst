@@ -55,16 +55,6 @@ export type DashboardRecentActivity = {
   durationSeconds: number | null;
 };
 
-export type DashboardActiveGoal = {
-  id: string;
-  title: string;
-  current: number;
-  target: number;
-  unit: string;
-  priority: number;
-  targetDate: string | null;
-};
-
 export type DashboardProgress = {
   workoutsThisMonth: number;
   workoutsLastMonth: number;
@@ -103,7 +93,6 @@ export type DashboardPayload = {
   subscription: DashboardSubscription;
   recentWorkouts: DashboardRecentWorkout[];
   recentActivity: DashboardRecentActivity[];
-  activeGoals: DashboardActiveGoal[];
   progress: DashboardProgress;
   prOfTheWeek: DashboardPROfTheWeek | null;
   latestMeasurement: DashboardLatestMeasurement | null;
