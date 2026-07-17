@@ -2,12 +2,10 @@ import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
 import {
   bodyMeasurements,
   exercises,
-  goalTypes,
   personalRecords,
   profiles,
   recordTypeEnum,
   subscriptionTiers,
-  userGoals,
   userSubscriptions,
   workoutAssignments,
   workoutSessions,
@@ -77,16 +75,6 @@ export interface DashboardRecentActivity {
   durationSeconds: number | null;
 }
 
-export interface DashboardActiveGoal {
-  id: string;
-  title: string;
-  current: number;
-  target: number;
-  unit: string;
-  priority: number;
-  targetDate: string | null;
-}
-
 export interface DashboardProgress {
   workoutsThisMonth: number;
   workoutsLastMonth: number;
@@ -135,7 +123,6 @@ export interface DashboardData {
   subscription: DashboardSubscription;
   recentWorkouts: DashboardRecentWorkout[];
   recentActivity: DashboardRecentActivity[];
-  activeGoals: DashboardActiveGoal[];
   progress: DashboardProgress;
   prOfTheWeek: DashboardPROfTheWeek | null;
   latestMeasurement: DashboardLatestMeasurement | null;
@@ -359,7 +346,6 @@ export class DashboardRepository {
       subscription,
       recentWorkouts,
       recentActivity,
-      activeGoals,
       prOfTheWeek,
       progress,
       latestMeasurement,
@@ -369,7 +355,6 @@ export class DashboardRepository {
       this.getSubscriptionSlice(userId),
       this.getRecentWorkouts(userId),
       this.getRecentActivity(userId),
-      this.getActiveGoalsWithProgress(userId),
       this.getPROfTheWeek(userId),
       this.getProgressStats(userId),
       this.getLatestMeasurement(userId),
@@ -384,7 +369,6 @@ export class DashboardRepository {
       subscription,
       recentWorkouts,
       recentActivity,
-      activeGoals,
       progress,
       prOfTheWeek,
       latestMeasurement,
@@ -629,41 +613,6 @@ export class DashboardRepository {
       completedAt: toIsoString(row.completedAt),
       durationSeconds: row.durationSeconds,
     }));
-  }
-
-  async getActiveGoalsWithProgress(
-    userId: string,
-  ): Promise<DashboardActiveGoal[]> {
-    const db = getDb();
-    const rows = await db
-      .select({
-        id: userGoals.id,
-        priority: userGoals.priority,
-        targetDate: userGoals.targetDate,
-        goalTypeName: goalTypes.name,
-        goalTypeDescription: goalTypes.description,
-        goalTypeCategory: goalTypes.category,
-      })
-      .from(userGoals)
-      .leftJoin(goalTypes, eq(userGoals.goalTypeId, goalTypes.id))
-      .where(and(eq(userGoals.userId, userId), eq(userGoals.isActive, true)));
-
-    const mapped = rows.map((row) => ({
-      id: row.id,
-      // Schema gap: user_goals has no title column; derive from goal_types.
-      title: row.goalTypeDescription ?? row.goalTypeName ?? "Goal",
-      // Schema gap: user_goals has no target / current / unit columns.
-      // Emit defensive zeros so the mobile progress bar renders gracefully.
-      current: 0,
-      target: 0,
-      unit: row.goalTypeCategory ?? "",
-      priority: row.priority ?? 1,
-      targetDate: row.targetDate ?? null,
-    }));
-
-    // Priority ascending (lower number = higher priority, legacy convention).
-    mapped.sort((a, b) => a.priority - b.priority);
-    return mapped;
   }
 
   async getPROfTheWeek(

@@ -86,17 +86,6 @@ describe("dashboardHandler", () => {
           durationSeconds: 3600,
         },
       ],
-      activeGoals: [
-        {
-          id: "g-1",
-          title: "Build strength",
-          current: 0,
-          target: 0,
-          unit: "lift",
-          priority: 1,
-          targetDate: null,
-        },
-      ],
       progress: {
         workoutsThisMonth: 3,
         workoutsLastMonth: 5,
@@ -164,7 +153,6 @@ describe("dashboardHandler", () => {
       },
       recentWorkouts: [],
       recentActivity: [],
-      activeGoals: [],
       progress: {
         workoutsThisMonth: 0,
         workoutsLastMonth: 0,
@@ -230,7 +218,6 @@ describe("dashboardHandler", () => {
       },
       recentWorkouts: [],
       recentActivity: [],
-      activeGoals: [],
       progress: {
         workoutsThisMonth: 0,
         workoutsLastMonth: 0,
@@ -256,7 +243,6 @@ describe("dashboardHandler", () => {
     // absent objects are null; never missing keys.
     expect(body.data.recentWorkouts).toEqual([]);
     expect(body.data.recentActivity).toEqual([]);
-    expect(body.data.activeGoals).toEqual([]);
     expect(body.data.prOfTheWeek).toBeNull();
     expect(body.data.latestMeasurement).toBeNull();
     expect(body.data.subscription.isFreeTier).toBe(true);

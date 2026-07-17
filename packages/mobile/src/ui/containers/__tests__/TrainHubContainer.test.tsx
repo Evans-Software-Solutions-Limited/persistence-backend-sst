@@ -62,6 +62,28 @@ jest.mock("@/ui/containers/TrainOverviewContainer", () => {
   };
 });
 
+// Athlete "has an active coach" signal — drives the Training-segment gate.
+// Default: one active coach, resolved (so the Training-tab tests below hold);
+// the gate tests flip `current`/`loading`.
+const activeCoaches: {
+  current: { relationshipId: string }[];
+  loading: boolean;
+} = {
+  current: [{ relationshipId: "rel-1" }],
+  loading: false,
+};
+jest.mock("@/ui/hooks/useClientRelationships", () => ({
+  useClientRelationships: () => ({
+    data: activeCoaches.current,
+    isLoading: activeCoaches.loading,
+    isRefreshing: false,
+    error: null,
+    refresh: jest.fn(),
+    respond: jest.fn(),
+    pendingIds: new Set<string>(),
+  }),
+}));
+
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
@@ -75,6 +97,10 @@ beforeEach(() => {
   mockPush.mockReset();
   mockSetItem.mockReset();
   mockSetItem.mockResolvedValue(undefined);
+  // Default: the athlete has an active coach, resolved, so the Training segment
+  // is available (the gate tests override this).
+  activeCoaches.current = [{ relationshipId: "rel-1" }];
+  activeCoaches.loading = false;
   // Reset the segment store to its default each test.
   useTrainSegment.setState({
     segment: "Workouts",
@@ -195,5 +221,69 @@ describe("TrainHubContainer", () => {
     const header = within(getByTestId("train-header"));
     expect(header.getByText("Exercises")).toBeTruthy();
     expect(getByTestId("exercises-body")).toBeTruthy();
+  });
+
+  // A2 — Training-segment gate. The "Training" segment (coach-assigned work) is
+  // only meaningful for athletes who actually have a coach.
+  it("hides the Training tab when the athlete has no active coach", () => {
+    activeCoaches.current = [];
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <TrainHubContainer />,
+    );
+
+    // Workouts + Exercises remain; Training is gone.
+    expect(getByTestId("train-segment-option-Workouts")).toBeTruthy();
+    expect(getByTestId("train-segment-option-Exercises")).toBeTruthy();
+    expect(queryByTestId("train-segment-option-Training")).toBeNull();
+  });
+
+  it("redirects a persisted/default Training segment to Workouts with no coach", () => {
+    activeCoaches.current = [];
+    useTrainSegment.setState({ segment: "Training", hydrated: true });
+
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <TrainHubContainer />,
+    );
+
+    // Body + title fall back to Workouts, not the empty Training overview.
+    const header = within(getByTestId("train-header"));
+    expect(header.getByText("Workouts")).toBeTruthy();
+    expect(getByTestId("workouts-body")).toBeTruthy();
+    expect(queryByTestId("overview-body")).toBeNull();
+    // The redirect is persisted so later launches land on Workouts directly.
+    expect(mockSetItem).toHaveBeenCalledWith(
+      "persistence.train.segment",
+      "Workouts",
+    );
+  });
+
+  it("keeps the Training tab when the athlete has an active coach", () => {
+    activeCoaches.current = [{ relationshipId: "rel-1" }];
+    useTrainSegment.setState({ segment: "Training", hydrated: true });
+
+    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
+
+    expect(getByTestId("train-segment-option-Training")).toBeTruthy();
+    expect(getByTestId("overview-body")).toBeTruthy();
+  });
+
+  // Regression: while the (network-only, uncached) coach signal is still
+  // loading, a coached athlete's `data` is momentarily [] — identical to a
+  // no-coach athlete. Treating that as "no coach" would yank them off Training
+  // AND persist the demotion. The gate must keep Training (and NOT persist)
+  // until the signal resolves.
+  it("keeps Training and does not persist a redirect while the coach signal is loading", () => {
+    activeCoaches.current = [];
+    activeCoaches.loading = true;
+    useTrainSegment.setState({ segment: "Training", hydrated: true });
+
+    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
+
+    expect(getByTestId("train-segment-option-Training")).toBeTruthy();
+    expect(getByTestId("overview-body")).toBeTruthy();
+    expect(mockSetItem).not.toHaveBeenCalledWith(
+      "persistence.train.segment",
+      "Workouts",
+    );
   });
 });

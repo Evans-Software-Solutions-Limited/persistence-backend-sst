@@ -28,7 +28,6 @@ export { type PersonalRecord, type RecordType, RECORD_TYPES } from "./record";
 
 export {
   type CachedDashboard,
-  type DashboardActiveGoal,
   type DashboardLatestMeasurement,
   type DashboardPayload,
   type DashboardPROfTheWeek,

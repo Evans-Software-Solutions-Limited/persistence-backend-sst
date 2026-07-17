@@ -1,9 +1,10 @@
 import { Text, View } from "@tamagui/core";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
+import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
 import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
 import { IconPlus, IconSearch } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
@@ -38,6 +39,36 @@ export function TrainHubContainer() {
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
   const consumePendingSegment = useTrainSegment((s) => s.consumePendingSegment);
+
+  // Gate the "Training" segment (coach-assigned programme + today's schedule) on
+  // the athlete actually having an active human coach. Without one it's an
+  // empty, pointless default — so a no-coach athlete leads with Workouts and
+  // never sees the tab. The signal is network-only + uncached (`data` starts []
+  // with `isLoading` true), so treating "still loading" as "no coach" would
+  // yank a coached athlete off Training AND persist that guess (see the effect
+  // below). Guard: while loading, keep Training available IFF the athlete is
+  // already on it — so a coached athlete on Training is never demoted during the
+  // round-trip, while a no-coach athlete already on Workouts sees no Training-tab
+  // flash on cold launch. Once resolved, the tab shows strictly on a real coach.
+  const { data: activeCoaches, isLoading: coachLoading } =
+    useClientRelationships("active");
+  const hasCoach = activeCoaches.length > 0;
+  const showTraining = hasCoach || (coachLoading && segment === "Training");
+
+  // Coerce a persisted/default "Training" to Workouts for a no-coach athlete.
+  // Done in-render (not just via the effect below) so the switcher, title, and
+  // body never flash the empty Training overview once we know there's no coach.
+  // `!showTraining && segment === "Training"` is only true once the query has
+  // RESOLVED with no coach — never mid-load — so a coached athlete is safe.
+  const effectiveSegment =
+    !showTraining && segment === "Training" ? "Workouts" : segment;
+
+  // Persist the redirect so later launches land on Workouts directly (the
+  // in-render coercion above is display-only; this writes it through). Only ever
+  // fires on the resolved-no-coach path, per the coercion guard above.
+  useEffect(() => {
+    if (effectiveSegment !== segment) setSegment(effectiveSegment);
+  }, [effectiveSegment, segment, setSegment]);
 
   // Apply a one-shot pending segment on focus (e.g. Home "View all" → always
   // Workouts). Re-asserts intent even when react-native-screens froze this hub
@@ -91,10 +122,10 @@ export function TrainHubContainer() {
             letterSpacing={-0.96}
             color="$text"
           >
-            {segment}
+            {effectiveSegment}
           </Text>
         </View>
-        {segment === "Exercises" ? (
+        {effectiveSegment === "Exercises" ? (
           <Btn
             variant="soft"
             tone="primary"
@@ -104,7 +135,7 @@ export function TrainHubContainer() {
           >
             Create
           </Btn>
-        ) : segment === "Workouts" ? (
+        ) : effectiveSegment === "Workouts" ? (
           <IconBtn
             icon={<IconSearch size={18} />}
             tone="ghost"
@@ -116,8 +147,12 @@ export function TrainHubContainer() {
 
       <View paddingHorizontal={16} paddingBottom={12}>
         <Segmented
-          options={["Training", "Workouts", "Exercises"]}
-          value={segment}
+          options={
+            showTraining
+              ? ["Training", "Workouts", "Exercises"]
+              : ["Workouts", "Exercises"]
+          }
+          value={effectiveSegment}
           onChange={(next) => {
             // Narrow rather than cast — if the option set ever drifts, an
             // unrecognised value is ignored instead of silently coercing.
@@ -133,9 +168,9 @@ export function TrainHubContainer() {
         />
       </View>
       <View flex={1}>
-        {segment === "Training" ? (
+        {effectiveSegment === "Training" ? (
           <TrainOverviewContainer />
-        ) : segment === "Workouts" ? (
+        ) : effectiveSegment === "Workouts" ? (
           <WorkoutsListContainer />
         ) : (
           <ExerciseListContainer />
