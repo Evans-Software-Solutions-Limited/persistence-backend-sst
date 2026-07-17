@@ -23,7 +23,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   exercises,
   muscleGroups,
@@ -31,14 +31,8 @@ import {
   accessibilityTags,
   getDb,
 } from "@persistence/db";
+import { SYSTEM_USER_ID, ensureSystemUser } from "./lib/ensureSystemUser";
 
-/**
- * Sentinel UUID for system-authored catalogue rows — must match
- * SYSTEM_USER_ID in microservices/core/src/application/repositories/exerciseRepository.ts.
- * That predicate is load-bearing: the backend treats rows with this created_by
- * as the stock catalogue every user can see. DO NOT change it.
- */
-const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
 const BATCH_SIZE = 500;
 
 type NewExercise = typeof exercises.$inferInsert;
@@ -67,35 +61,6 @@ type ExerciseSeed = {
 
 function readJson<T>(rel: string): T {
   return JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8")) as T;
-}
-
-async function ensureSystemUser(db: ReturnType<typeof getDb>): Promise<void> {
-  // auth.users first (profiles.id FKs to it). Best-effort: on prod this row
-  // already exists so the insert is a no-op; on a fresh local stack it creates
-  // the minimal system user. Wrapped because some managed setups restrict DML
-  // on the auth schema — if so, the profiles insert below will surface the gap.
-  try {
-    await db.execute(sql`
-      insert into auth.users
-        (instance_id, id, aud, role, email, encrypted_password,
-         email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
-      values
-        ('00000000-0000-0000-0000-000000000000', ${SYSTEM_USER_ID},
-         'authenticated', 'authenticated', 'system@persistence.local', '',
-         now(), now(), now(), '{}'::jsonb, '{}'::jsonb)
-      on conflict (id) do nothing
-    `);
-  } catch (err) {
-    console.warn(
-      "[seed:exercises] could not write auth.users system row (may be fine if it already exists):",
-      (err as Error).message,
-    );
-  }
-  await db.execute(sql`
-    insert into profiles (id, email, full_name, username, role)
-    values (${SYSTEM_USER_ID}, 'system@persistence.local', 'System', '__system__', 'admin')
-    on conflict (id) do nothing
-  `);
 }
 
 async function main(): Promise<void> {

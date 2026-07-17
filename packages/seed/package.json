@@ -6,8 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "seed": "bun run src/seedExercises.ts && bash src/seedFoods.sh",
+    "seed": "bun run src/seedExercises.ts && bun run src/seedWorkouts.ts && bash src/seedFoods.sh",
     "seed:exercises": "bun run src/seedExercises.ts",
+    "seed:workouts": "bun run src/seedWorkouts.ts",
     "seed:foods": "bash src/seedFoods.sh",
     "refresh:foods": "bash src/refreshOffDump.sh"
   },

@@ -1,0 +1,151 @@
+[
+  {
+    "name": "Upper Body",
+    "description": "Machine-based upper body workout targeting chest, shoulders, back, biceps, and triceps.",
+    "estimatedDurationMinutes": 45,
+    "exercises": [
+      {
+        "name": "Machine Chest Press",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, adjust weight as needed"
+      },
+      {
+        "name": "Machine Lateral Raise",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, focus on controlled movement"
+      },
+      {
+        "name": "Machine Seated Row",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, squeeze shoulder blades"
+      },
+      {
+        "name": "Machine Bicep Curl",
+        "targetSets": 3,
+        "targetRepsMin": 10,
+        "targetRepsMax": 12,
+        "restSeconds": 60,
+        "notes": "10-12 reps, control the weight"
+      },
+      {
+        "name": "Machine Triceps Extension",
+        "targetSets": 3,
+        "targetRepsMin": 10,
+        "targetRepsMax": 12,
+        "restSeconds": 60,
+        "notes": "10-12 reps, keep elbows stable"
+      }
+    ]
+  },
+  {
+    "name": "Lower Body",
+    "description": "Machine-based lower body workout targeting quads, hamstrings, calves, and glutes.",
+    "estimatedDurationMinutes": 40,
+    "exercises": [
+      {
+        "name": "Leg Extension",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, focus on quad contraction"
+      },
+      {
+        "name": "Leg Curl",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, squeeze hamstrings at top"
+      },
+      {
+        "name": "Standing Calf Raise",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, full range of motion"
+      },
+      {
+        "name": "Leg Press",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, drive through heels"
+      }
+    ]
+  },
+  {
+    "name": "Full Body Starter Workout",
+    "description": "Complete full-body workout combining machine and free-weight exercises for beginners.",
+    "estimatedDurationMinutes": 50,
+    "exercises": [
+      {
+        "name": "Leg Press",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, full range of motion"
+      },
+      {
+        "name": "Machine Chest Press",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, control the weight"
+      },
+      {
+        "name": "Walking Lunges",
+        "targetSets": 3,
+        "targetRepsMin": 20,
+        "targetRepsMax": 20,
+        "restSeconds": 60,
+        "notes": "20 reps total, 10 per leg"
+      },
+      {
+        "name": "Machine Seated Shoulder Press",
+        "targetSets": 3,
+        "targetRepsMin": 8,
+        "targetRepsMax": 10,
+        "restSeconds": 60,
+        "notes": "8-10 reps, keep core tight"
+      },
+      {
+        "name": "Lat Machine Wide Grip Pulldown",
+        "targetSets": 3,
+        "targetRepsMin": 10,
+        "targetRepsMax": 12,
+        "restSeconds": 60,
+        "notes": "10-12 reps, wide grip"
+      },
+      {
+        "name": "Ab Crunch",
+        "targetSets": 2,
+        "targetRepsMin": 15,
+        "targetRepsMax": 20,
+        "restSeconds": 60,
+        "notes": "15-20 reps, controlled movement"
+      },
+      {
+        "name": "Plank",
+        "targetSets": 2,
+        "targetRepsMin": 30,
+        "targetRepsMax": 30,
+        "restSeconds": 60,
+        "notes": "Hold for 30 seconds, keep body straight"
+      }
+    ]
+  }
+]
