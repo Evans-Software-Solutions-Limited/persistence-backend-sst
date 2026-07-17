@@ -20,13 +20,16 @@ export function PhoneDevice({
   haloColor?: string;
   style?: CSSProperties;
 }) {
-  const { index, setPaused } = useScreenCycle(screens.length);
+  // No cycling when a real screenshot is shown (screens aren't rendered then).
+  const { index, setPaused } = useScreenCycle(screenshot ? 0 : screens.length);
 
   return (
     <div
       className={outerClassName}
       data-reveal
       style={style}
+      role="presentation"
+      aria-hidden="true"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
@@ -42,11 +45,7 @@ export function PhoneDevice({
           ) : (
             <div className="app-screens">
               {screens.map((screen, i) => (
-                <div
-                  key={i}
-                  className={`app-screen${i === index ? " active" : ""}`}
-                  aria-hidden={i !== index}
-                >
+                <div key={i} className={`app-screen${i === index ? " active" : ""}`}>
                   {screen}
                 </div>
               ))}
