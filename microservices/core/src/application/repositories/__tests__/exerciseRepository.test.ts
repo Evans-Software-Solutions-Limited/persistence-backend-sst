@@ -98,8 +98,11 @@ describe("ExerciseRepository.list", () => {
     const result = await repo.list({ limit: 20, offset: 0 }, "user-1");
 
     expect(result).toEqual(mockExercises);
-    // Authed: one main-query select + one PT subquery select
-    expect(mockDb.select).toHaveBeenCalledTimes(2);
+    // Authed: only the main-query select hits getDb(). The visibility
+    // assignment subqueries are built with drizzle's connection-free
+    // QueryBuilder (not getDb().select()), so they add no getDb() call — the
+    // real SQL shape is asserted in exerciseRepository.visibility.test.ts.
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
   });
 
   it("passes difficulty array filter via inArray", async () => {
@@ -307,8 +310,11 @@ describe("ExerciseRepository.list", () => {
       const repo = new ExerciseRepository();
       const result = await repo.list({ createdByFilter: ["pt"] }, "user-1");
       expect(result).toEqual(mockExercises);
-      // main + visibility subquery + pt-filter subquery = 3
-      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      // main + pt-filter subquery = 2. (The visibility branch's assignment
+      // subqueries use connection-free QueryBuilder, so they add no getDb()
+      // call; only the created_by=pt FILTER still uses activeTrainerIdsSubquery
+      // via getDb().)
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
     it("treats 'physio' identically to 'pt' in M0", async () => {
@@ -318,7 +324,8 @@ describe("ExerciseRepository.list", () => {
       const repo = new ExerciseRepository();
       const result = await repo.list({ createdByFilter: ["physio"] }, "user-1");
       expect(result).toEqual(mockExercises);
-      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      // main + pt-filter subquery = 2 (see 'pt' test — visibility uses QueryBuilder).
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
     it("dedupes pt + physio into one trainer subquery (regression)", async () => {
@@ -328,9 +335,11 @@ describe("ExerciseRepository.list", () => {
       const repo = new ExerciseRepository();
       await repo.list({ createdByFilter: ["pt", "physio"] }, "user-1");
 
-      // Without dedup: 2 identical filter subqueries + visibility + main = 4.
-      // With dedup (physio→pt canonicalised): 1 filter + visibility + main = 3.
-      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      // Visibility subqueries use QueryBuilder (no getDb() call), so the only
+      // getDb().select() calls are main + the created_by filter subquery.
+      // Without dedup: 2 identical filter subqueries + main = 3.
+      // With dedup (physio→pt canonicalised): 1 filter + main = 2.
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
     it("dedupes repeated filter values (mine + mine → one eq)", async () => {
@@ -341,19 +350,16 @@ describe("ExerciseRepository.list", () => {
       const repo = new ExerciseRepository();
       await repo.list({ createdByFilter: ["mine", "mine"] }, "user-1");
 
-      // Count eq(column, "user-1") calls. Without dedup, "mine" fires twice
-      // at the filter layer + once at visibility = 3. With dedup: 1 + 1 = 2.
-      // (The PT-subquery eq calls are against clientId / status / isAiTrainer
-      // and never carry the value "user-1" as the second arg — except one
-      // eq(clientId, "user-1") per subquery emission, which visibility
-      // emits exactly once when authed.)
+      // Count eq(column, "user-1") calls. The value "user-1" appears as the
+      // 2nd eq arg in: the filter's deduped eq(createdBy, "user-1") (1);
+      // visibility's own-branch eq(createdBy, "user-1") (1); the programme
+      // subquery's eq(programAssignments.clientId, "user-1") (1); and the
+      // assigned-workout subquery's eq(workoutAssignments.clientId, "user-1")
+      // (1) — total 4. Pre-dedup would be 5 (two filter-layer eq calls).
       const createdByEqCalls = (eq as any).mock.calls.filter(
         (args: unknown[]) => args[1] === "user-1",
       );
-      // Visibility's eq(createdBy, "user-1") + eq(clientId, "user-1") +
-      // filter's single deduped eq(createdBy, "user-1") = 3.
-      // Pre-dedup would be 4 (two filter-layer eq calls instead of one).
-      expect(createdByEqCalls.length).toBe(3);
+      expect(createdByEqCalls.length).toBe(4);
     });
 
     it("drops auth-required values silently when userId is null", async () => {
@@ -850,18 +856,19 @@ describe("ExerciseRepository.search", () => {
     expect(mockDb.select).toHaveBeenCalledTimes(2);
   });
 
-  it("applies visibility predicate for authed callers (PT-relationships subquery fires)", async () => {
+  it("applies visibility predicate for authed callers (row-page + count selects)", async () => {
     const mockDb = makeSearchDb([], 0);
     (getDb as any).mockReturnValue(mockDb);
 
     const repo = new ExerciseRepository();
     await repo.search("bench", {}, "user-1");
 
-    // Authed: row-page select + count select + PT subquery select(s).
-    // buildVisibilityCondition is called once per `where` build; both
-    // queries share the same where, so the PT subquery materialises
-    // once per build = twice. >= 3 calls in total.
-    expect(mockDb.select.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // Authed: row-page select + count select = 2. The visibility branch's
+    // assignment subqueries are connection-free QueryBuilder fragments, so
+    // (unlike the old PT subquery) they add no getDb().select() call. The
+    // authed visibility SQL shape itself is asserted in
+    // exerciseRepository.visibility.test.ts.
+    expect(mockDb.select.mock.calls.length).toBe(2);
   });
 
   it("forwards limit and offset to the chain", async () => {
