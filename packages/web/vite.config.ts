@@ -11,32 +11,17 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["vite.svg", "pwa-icon.svg", "pwa-maskable-icon.svg"],
-      manifest: {
-        name: "Web App",
-        short_name: "Web",
-        description: "A Progressive Web App built with Vite",
-        theme_color: "#ef5e41",
-        background_color: "#02040f",
-        display: "standalone",
-        orientation: "portrait-primary",
-        start_url: "/",
-        scope: "/",
-        icons: [
-          {
-            src: "/pwa-icon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any",
-          },
-          {
-            src: "/pwa-maskable-icon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "maskable",
-          },
-        ],
-      },
+      includeAssets: [
+        "favicon.ico",
+        "favicon.svg",
+        "favicon-96x96.png",
+        "apple-touch-icon.png",
+        "web-app-manifest-192x192.png",
+        "web-app-manifest-512x512.png",
+      ],
+      // Use the hand-authored /site.webmanifest (linked in index.html) rather
+      // than generating one, so the icon set stays the single source of truth.
+      manifest: false,
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
@@ -56,6 +41,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    setupFiles: ["./src/test-setup.ts"],
     coverage: {
       provider: "v8",
       // Target 90% - increase as tests are added. Set to 0 for template to pass CI.
