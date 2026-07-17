@@ -58,6 +58,34 @@ export function useReveal<T extends HTMLElement>() {
   return ref;
 }
 
+/**
+ * Auto-advances an index 0..count-1 on an interval for the phone-mock screen
+ * crossfade. Pauses while `paused` is true (hover) and stays on the first
+ * screen when the user prefers reduced motion. Returns the active index and a
+ * hover-pause setter.
+ */
+export function useScreenCycle(count: number, intervalMs = 4200) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (count <= 1 || paused) return;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    const id = window.setInterval(
+      () => setIndex((i) => (i + 1) % count),
+      intervalMs,
+    );
+    return () => window.clearInterval(id);
+  }, [count, paused, intervalMs]);
+
+  return { index, setPaused };
+}
+
 /** True once the window has scrolled past `threshold` px (default 40). */
 export function useScrolled(threshold = 40) {
   const [scrolled, setScrolled] = useState(false);
