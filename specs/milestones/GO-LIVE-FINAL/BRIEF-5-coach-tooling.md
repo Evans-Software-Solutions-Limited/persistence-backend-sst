@@ -19,6 +19,8 @@ Both items touch the athlete Train hub, so do them together to avoid editing the
 
 ## Phase B — coach authoring & IA (fast-follow; spec-first)
 
+> **STATUS (2026-07-17): SHIPPED — `specs/24-coach-authoring/`, PR #260 merged (main `6156380`).** Unified Programs hub (Programmes | Workouts | Exercises), coach exercise-creation entry, You-tab card retired, and exercise visibility narrowed to assignment-scoped (backend). Client "from my coach" filter was **deferred** (Brad — assigned exercises surface via the programme/workout views). Gates green + Inspector-Brad-local clean. ⚠ **Device-verify still pending** before the next EAS build. (Phase A below — goals-hide + Training-gate — is a SEPARATE Train-hub tidy, still open.)
+
 Author a spec triplet (`specs/NN-coach-authoring/` — pick a free number) before code; the brief below is the input.
 
 ### B1. Programs tab = unified entry (Programmes | Workouts | Exercises)

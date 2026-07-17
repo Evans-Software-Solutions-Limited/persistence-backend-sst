@@ -21,7 +21,7 @@ There are really **two** candidate "launches", and conflating them stalls everyt
 
 ## 2. Tier 1 — Coach tooling (fast-follow; pre-launch only if coach mode must be "complete" at launch)
 
-- Programs tab as the unified entry (Programmes | Workouts | Exercises) + a coach-mode entry to **create exercises** + surface "from my coach" exercises to clients. → **`BRIEF-5-coach-tooling.md` Phase B**
+- Programs tab as the unified entry (Programmes | Workouts | Exercises) + a coach-mode entry to **create exercises** + surface "from my coach" exercises to clients. → **`BRIEF-5-coach-tooling.md` Phase B** — ✅ **SHIPPED (spec-24, PR #260, main `6156380`)**; client "from my coach" filter deferred (assigned exercises surface via programme/workout views). Device-verify pending. _Phase A (goals-hide + Training-gate, item 4 above) still open._
 - **Heavily de-risked by the investigation:** client-visibility of coach exercises **already works server-side**; the coach workout-library container already exists and is reusable; exercise create/command/handler are already ownership-generic. This is mostly mobile IA + wiring, not a backend build.
 
 ## 3. Tier 2 — GTM heroes (post-submission marketing push)
