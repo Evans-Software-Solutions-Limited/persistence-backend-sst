@@ -3,6 +3,13 @@
 **Written:** 2026-07-16 · **Owner:** Brad · **Purpose:** the single reference for
 pricing, tiers and feature copy on the marketing site.
 
+> **BUILD STATUS (2026-07-17):** SHIPPED to `packages/web` — `/pricing` renders
+> these tiers (Free/Premium live, Premium+ "Coming soon"), plus `/` landing and
+> `/support` (PR #261, merged to `main`). Per Brad's hard exclusion, the
+> **founding-waitlist / early-bird-discount is NOT on the site** (reviewed
+> separately). App-Store purchase CTAs render as non-linking "Coming to the App
+> Store" until launch (`packages/web/src/marketing/config.ts` › `appStore`).
+
 Figures marked **LIVE** are seeded in the DB catalog today
 (`packages/db/src/schema.ts` → `subscription_tiers`, set by migration
 `20260526120000_simplify_tier_model.sql`). Figures marked **LAUNCH** are
