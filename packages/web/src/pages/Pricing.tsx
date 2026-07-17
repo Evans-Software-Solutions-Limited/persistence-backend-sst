@@ -157,9 +157,8 @@ export function Pricing() {
               coach and team.
             </h1>
             <p className="ph-sub" data-reveal style={d(180)}>
-              Start free — including 3 AI workout generations, no card needed.
-              Upgrade when you're ready. Coaches and organisations get
-              purpose-built plans.
+              Start free, no card needed. Upgrade when you're ready. Coaches and
+              organisations get purpose-built plans.
             </p>
             <BillingToggle cycle={cycle} onChange={setCycle} />
           </div>
@@ -186,17 +185,13 @@ export function Pricing() {
                 </div>
                 <div className="plan-sub">No card required</div>
                 <p className="plan-desc">
-                  Everything you need to log workouts and track nutrition — plus
-                  a taste of AI.
+                  Everything you need to log workouts and track nutrition
                 </p>
                 <ul className="plan-feats">
                   <Feat>Full workout &amp; set logging</Feat>
                   <Feat>Nutrition tracking &amp; barcode scanner</Feat>
                   <Feat>Streaks, PRs &amp; core progress</Feat>
-                  <Feat>
-                    <b>3 free AI workout generations</b> — scan your gym and let
-                    AnyGym build your first sessions
-                  </Feat>
+                  <Feat>3 Custom Workouts</Feat>
                 </ul>
                 <SoonCta label="Coming to the App Store" className="btn-line" />
               </div>
@@ -214,9 +209,8 @@ export function Pricing() {
                 <ul className="plan-feats">
                   <Feat head>Everything in Free, plus</Feat>
                   <Feat>Unlimited workouts &amp; history</Feat>
-                  <Feat>Advanced analytics + data export</Feat>
-                  <Feat>Snap AI nutrition logging</Feat>
-                  <Feat>AI session summaries</Feat>
+                  <Feat>Photo & free text AI nutrition logging</Feat>
+                  <Feat>Smart swap suggestions</Feat>
                 </ul>
                 <SoonCta
                   label="Coming to the App Store"
@@ -237,12 +231,11 @@ export function Pricing() {
                 <ul className="plan-feats">
                   <Feat head>Everything in Premium, plus</Feat>
                   <Feat>
-                    <b>AI workout generation</b>
+                    <b>AI Workout Suggestions</b>
                   </Feat>
                   <Feat>
                     <b>AnyGym equipment scan</b> — equipment-aware programming
                   </Feat>
-                  <Feat>Smart swap suggestions</Feat>
                   <Feat>Program import</Feat>
                 </ul>
                 <SoonCta label="Coming soon" className="btn-line" />
@@ -369,7 +362,7 @@ export function Pricing() {
                 </div>
                 <div className="teams-right">
                   <div className="teams-stat">
-                    <span className="n">Any gym</span>
+                    <span className="n">AnyGym</span>
                     <span className="l">
                       Programmes adapt to whatever equipment is on site
                     </span>
@@ -405,25 +398,22 @@ export function Pricing() {
             <div className="faq-grid" data-reveal style={d(80)}>
               <div className="faq-item">
                 <h4>Do I need a card to start?</h4>
-                <p>
-                  No. The Free plan is free forever and includes 3 AI workout
-                  generations so you can try AnyGym before deciding.
-                </p>
+                <p>No. The Free plan is free forever.</p>
               </div>
               <div className="faq-item">
                 <h4>What's the difference between Premium and Premium+?</h4>
                 <p>
                   Premium gives you unlimited tracking plus Snap AI nutrition
-                  logging and AI session summaries. Premium+ adds the full
-                  adaptive suite — AI workout generation, AnyGym equipment scan,
-                  smart swaps and program import.
+                  logging. Premium+ adds the full adaptive suite — AI workout
+                  suggestions, AnyGym equipment scan and program import.
                 </p>
               </div>
               <div className="faq-item">
                 <h4>When does Premium+ arrive?</h4>
                 <p>
-                  Premium+ launches the week commencing 17 August. Free and
-                  Premium are available from launch on the App Store.
+                  Premium+ is coming in phase 2 of the app, which is expected
+                  August 2026. Free and Premium are available from launch on the
+                  App Store.
                 </p>
               </div>
               <div className="faq-item">
