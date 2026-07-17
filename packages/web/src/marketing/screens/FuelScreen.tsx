@@ -126,7 +126,7 @@ export function FuelScreen() {
           <span className="fm-kcal">520 kcal</span>
         </div>
       </div>
-      <div className="fuel-meal-card collapsed">
+      <div className="fuel-meal-card">
         <div className="fuel-meal-head">
           <div>
             <b>Lunch</b>
