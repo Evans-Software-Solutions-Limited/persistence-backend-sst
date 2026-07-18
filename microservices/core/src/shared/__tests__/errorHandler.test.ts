@@ -77,6 +77,58 @@ describe("coreErrorHandler", () => {
     expect(body.detail).toMatch(/server logs/i);
   });
 
+  it("maps a Postgres invalid-uuid (22P02) cause to 400 with a SQL-free detail", async () => {
+    // Even in production the detail must be safe: a 400 keeps its detail, so it
+    // must be the generic message, not the driver's "Failed query: …".
+    process.env.SST_STAGE = "production";
+
+    const app = new Elysia().use(coreErrorHandler).get("/workouts/:id", () => {
+      // Mirror how Drizzle wraps the driver error: the Postgres error (with its
+      // SQLSTATE `code`) hangs off `.cause` of the outer "Failed query" wrapper.
+      const pgError = Object.assign(
+        new Error(
+          'invalid input syntax for type uuid: "local-1784398059991-45kx3l"',
+        ),
+        { code: "22P02" },
+      );
+      throw Object.assign(
+        new Error('Failed query: select "id" from "workouts" where "id" = $1'),
+        { cause: pgError },
+      );
+    });
+
+    const response = await app.handle(
+      new Request("http://localhost/workouts/local-1784398059991-45kx3l"),
+    );
+    // Client sent a malformed id — 400, not an opaque 500 the sync queue loops.
+    expect(response.status).toBe(400);
+    const body = await jsonBody(response);
+    expect(body.error).toBe("Bad request");
+    expect(body.detail).toBe("Invalid identifier format");
+    // Must not leak the SQL fragment or the raw offending id.
+    expect(String(body.detail)).not.toContain("select");
+    expect(String(body.detail)).not.toContain("local-1784398059991");
+  });
+
+  it("maps a top-level 22P02 (no Drizzle .cause wrapper) to 400", async () => {
+    // Defense-in-depth: even if the SQLSTATE rides on the thrown error itself
+    // rather than its `.cause`, the guard must still catch it.
+    const app = new Elysia().use(coreErrorHandler).get("/goals/:id", () => {
+      throw Object.assign(
+        new Error('invalid input syntax for type uuid: "not-a-uuid"'),
+        { code: "22P02" },
+      );
+    });
+
+    const response = await app.handle(
+      new Request("http://localhost/goals/not-a-uuid"),
+    );
+    expect(response.status).toBe(400);
+    const body = await jsonBody(response);
+    expect(body.error).toBe("Bad request");
+    expect(body.detail).toBe("Invalid identifier format");
+  });
+
   it("keeps detail on 4xx errors even in production (client-facing)", async () => {
     process.env.SST_STAGE = "production";
 

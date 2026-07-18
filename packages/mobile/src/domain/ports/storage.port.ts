@@ -788,6 +788,27 @@ export interface StoragePort {
   swapLocalNutritionEntryId(localId: string, serverId: string): void;
 
   /**
+   * Rewrite a workout's optimistic `local-…` id to the server-assigned id once
+   * its `POST /workouts` create flushes. A workout is created offline-first with
+   * a `local-…` id (`createWorkoutCommand`), so anything that captured that id
+   * BEFORE the create synced still points at it: the cached workout detail/list
+   * rows, any queued follow-up `/workouts/local-…` PATCH/DELETE, and — critically
+   * — the `workout_id` of any `active_sessions` row plus the serialized
+   * `workoutId` inside any queued `/sessions/record` payload (the record body is
+   * frozen at enqueue time, so rewriting the session row alone does NOT reach an
+   * already-queued POST).
+   *
+   * Without this there is no `swapLocalWorkout`-equivalent, so a session started
+   * against a not-yet-synced workout keeps the `local-…` id forever; syncing it
+   * hits `WHERE id = 'local-…'` on the uuid `workouts.id` column → permanent 500
+   * retry loop, recoverable only by discarding the completed session. Mirrors
+   * `swapLocalExerciseId`/`swapLocalNutritionEntryId`/`swapLocalSessionId`. Called
+   * from the sync worker's reply path. No-op when the ids match or nothing
+   * references `localId`.
+   */
+  swapLocalWorkoutId(localId: string, serverId: string): void;
+
+  /**
    * Read the rest-timer state (started-at + total-seconds) for the
    * user's active session. Stored inline on `active_sessions` per
    * EXECUTION_PLAN § 3.1 — single-active-session invariant means a

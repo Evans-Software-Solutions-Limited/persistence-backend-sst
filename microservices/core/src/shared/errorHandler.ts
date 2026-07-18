@@ -126,9 +126,6 @@ export const coreErrorHandler = new Elysia({
       };
     }
 
-    const status = httpStatusForCode(code);
-    set.status = status;
-
     const method = request.method;
     const path = new URL(request.url).pathname;
     const requestId = request.headers.get("x-amz-request-id") ?? undefined;
@@ -137,6 +134,27 @@ export const coreErrorHandler = new Elysia({
     const stack = error instanceof Error ? error.stack : undefined;
     const causeChain = collectCauseChain(error);
     const causeSummaries = causeChain.map(summarizeCause);
+
+    // Postgres invalid_text_representation (SQLSTATE 22P02): the client sent a
+    // malformed literal for a typed column — most commonly a non-UUID id (e.g.
+    // an unsynced `local-…` id reaching a `/:id` route), but also a bad integer
+    // or enum input. That's a bad request, not a server fault, so map it to 400
+    // instead of letting it fall through to an opaque 500 that the offline sync
+    // queue retries forever. The SQL-free `detail` is set below — the 4xx path
+    // does NOT strip detail, so we must not echo the driver's "Failed query: …".
+    // Check the top-level error too, not just its `.cause` chain: while Drizzle
+    // wraps the driver error as `.cause` (so the cause chain normally carries
+    // the SQLSTATE), this handler is the defense-in-depth net — a `22P02`
+    // thrown directly must not slip through to a 500 and re-enter the retry loop.
+    const isInvalidTextRepresentation = [error, ...causeChain].some(
+      (c) =>
+        typeof c === "object" &&
+        c !== null &&
+        (c as { code?: unknown }).code === "22P02",
+    );
+
+    const status = isInvalidTextRepresentation ? 400 : httpStatusForCode(code);
+    set.status = status;
 
     // Single structured JSON line per failed request. Earlier impl
     // split summary / stack / cause across THREE separate console.error
@@ -186,13 +204,15 @@ export const coreErrorHandler = new Elysia({
     //
     // Non-production keeps detail across the board for dev ergonomics.
     const shouldStripDetail = isProduction() && status >= 500;
-    const safeDetail = shouldStripDetail
-      ? "An internal error occurred. See server logs for details."
-      : message;
+    const safeDetail = isInvalidTextRepresentation
+      ? "Invalid identifier format"
+      : shouldStripDetail
+        ? "An internal error occurred. See server logs for details."
+        : message;
 
     return {
       code,
-      error: codeToLabel(code),
+      error: isInvalidTextRepresentation ? "Bad request" : codeToLabel(code),
       detail: safeDetail,
       ...(validationDetail ? { validation: validationDetail } : {}),
       ...(requestId ? { requestId } : {}),

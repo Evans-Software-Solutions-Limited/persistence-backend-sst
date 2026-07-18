@@ -735,6 +735,96 @@ describe("InMemoryStorageAdapter", () => {
       });
     });
 
+    describe("swapLocalWorkoutId", () => {
+      const localWorkoutId = "local-1784398059991-45kx3l";
+      const serverWorkoutId = "33333333-3333-4333-8333-333333333333";
+
+      it("re-points cached rows, sessions, and queued session/workout mutations", () => {
+        const workout = buildWorkout({ id: localWorkoutId, name: "Leg Day" });
+        storage.cacheWorkoutsList("user-1", "mine", [workout], null);
+        storage.cacheWorkoutDetail("user-1", workout);
+        // A session started against the workout before its create synced.
+        storage.cacheActiveSession("user-1", {
+          id: "local-sess-1",
+          userId: "user-1",
+          workoutId: localWorkoutId,
+          name: "Leg Day",
+          status: "in_progress",
+          startedAt: "2026-07-18T10:00:00.000Z",
+          completedAt: null,
+          notes: null,
+          exercises: [],
+        });
+        // A queued /sessions/record whose payload froze the local workoutId,
+        // plus a queued follow-up workout edit.
+        storage.enqueueMutation({
+          entityType: "session",
+          entityId: "local-sess-1",
+          operation: "create",
+          payload: {
+            clientSessionId: "local-sess-1",
+            workoutId: localWorkoutId,
+            name: "Leg Day",
+          },
+          endpoint: "/sessions/record",
+          method: "POST",
+        });
+        storage.enqueueMutation({
+          entityType: "workout",
+          entityId: localWorkoutId,
+          operation: "update",
+          payload: { name: "Leg Day v2" },
+          endpoint: `/workouts/${localWorkoutId}`,
+          method: "PATCH",
+        });
+
+        storage.swapLocalWorkoutId(localWorkoutId, serverWorkoutId);
+
+        // Cached list + detail re-keyed to the server id.
+        expect(
+          storage.getCachedWorkoutsList("user-1", "mine")?.workouts[0].id,
+        ).toBe(serverWorkoutId);
+        expect(
+          storage.getCachedWorkoutDetail("user-1", localWorkoutId),
+        ).toBeNull();
+        expect(
+          storage.getCachedWorkoutDetail("user-1", serverWorkoutId)?.workout.id,
+        ).toBe(serverWorkoutId);
+        // Session workout_id re-pointed.
+        expect(storage.getActiveSession("user-1")?.workoutId).toBe(
+          serverWorkoutId,
+        );
+        // Queued mutations re-pointed: the session payload's workoutId and the
+        // follow-up workout mutation's endpoint + entity id.
+        const pending = storage.getPendingMutations();
+        const sessionEntry = pending.find((e) => e.entityType === "session");
+        expect(JSON.parse(sessionEntry!.payload).workoutId).toBe(
+          serverWorkoutId,
+        );
+        const workoutEntry = pending.find((e) => e.entityType === "workout");
+        expect(workoutEntry!.entityId).toBe(serverWorkoutId);
+        expect(workoutEntry!.endpoint).toBe(`/workouts/${serverWorkoutId}`);
+      });
+
+      it("is a no-op when the ids are equal", () => {
+        const workout = buildWorkout({ id: "wk-1" });
+        storage.cacheWorkoutDetail("user-1", workout);
+        storage.swapLocalWorkoutId("wk-1", "wk-1");
+        expect(
+          storage.getCachedWorkoutDetail("user-1", "wk-1")?.workout.id,
+        ).toBe("wk-1");
+      });
+
+      it("tolerates an unknown local id (nothing to swap)", () => {
+        expect(() =>
+          storage.swapLocalWorkoutId("local-missing", serverWorkoutId),
+        ).not.toThrow();
+        expect(
+          storage.getCachedWorkoutDetail("user-1", serverWorkoutId),
+        ).toBeNull();
+      });
+    });
+
     describe("swapLocalHabitGoalId (residual fix)", () => {
       it("re-keys cached_habit_completions rows AND rewrites a queued POST payload", () => {
         storage.upsertHabitCompletion({

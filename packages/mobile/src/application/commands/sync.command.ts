@@ -232,6 +232,33 @@ export async function processSyncQueue(
         }
       }
 
+      // Workout create: the optimistic workout (and, crucially, any queued
+      // `POST /sessions/record` whose serialized payload captured this
+      // workout's `local-…` id at session-finish, plus any follow-up
+      // PATCH/DELETE) still address the local id. Swap it to the server id so
+      // the session record hits the real workout uuid instead of erroring with
+      // `invalid input syntax for type uuid` forever (a permanent 500 retry
+      // loop the user can only escape by discarding the completed session).
+      // Mirrors the exercise/nutrition swaps above.
+      if (
+        entry.entityType === "workout" &&
+        entry.operation === "create" &&
+        entry.entityId !== null
+      ) {
+        try {
+          const body = (await response.json()) as { data?: { id?: string } };
+          const serverId = body.data?.id;
+          if (serverId && serverId !== entry.entityId) {
+            storage.swapLocalWorkoutId(entry.entityId, serverId);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /workouts succeeded but id-swap failed; a session started against this workout may stay stuck until the next full refresh:",
+            err,
+          );
+        }
+      }
+
       // 09: a flushed `POST /notifications/preferences` echoes the
       // server's authoritative merged JSONB column (RETURNING). Reset the
       // local cache to it so an optimistic toggle that raced a concurrent

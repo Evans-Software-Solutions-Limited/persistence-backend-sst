@@ -361,6 +361,66 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  swapLocalWorkoutId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    // Re-key the cached workout detail (key is `${userId}::${workoutId}`) and
+    // rewrite the nested workout.id, mirroring the SQLite INSERT/DELETE re-key.
+    for (const [key, detail] of [...this.workoutDetailCache.entries()]) {
+      if (detail.workoutId !== localId) continue;
+      this.workoutDetailCache.delete(key);
+      this.workoutDetailCache.set(
+        this.workoutDetailKey(detail.userId, serverId),
+        {
+          ...detail,
+          workoutId: serverId,
+          workout: { ...detail.workout, id: serverId },
+        },
+      );
+    }
+    for (const [key, history] of [...this.workoutHistoryCache.entries()]) {
+      if (history.workoutId !== localId) continue;
+      this.workoutHistoryCache.delete(key);
+      this.workoutHistoryCache.set(
+        this.workoutDetailKey(history.userId, serverId),
+        { ...history, workoutId: serverId },
+      );
+    }
+    // Rewrite the matching top-level id in every cached list slice.
+    for (const slice of this.workoutsListCache.values()) {
+      for (const w of slice.workouts) {
+        if (w.id === localId) w.id = serverId;
+      }
+    }
+    // Re-point the workout_id of any local-first session that captured it.
+    for (const [userId, session] of this.activeSessions) {
+      if (session.workoutId === localId) {
+        this.activeSessions.set(userId, { ...session, workoutId: serverId });
+      }
+    }
+    // Re-point queued follow-up workout mutations and rewrite the serialized
+    // `workoutId` inside any not-yet-completed session-record payload.
+    for (const e of this.queue) {
+      if (e.entityType === "workout" && e.entityId === localId) {
+        e.entityId = serverId;
+        if (e.endpoint === `/workouts/${localId}`) {
+          e.endpoint = `/workouts/${serverId}`;
+        }
+      }
+      if (e.entityType === "session" && e.status !== "completed") {
+        let body: { workoutId?: unknown };
+        try {
+          body = JSON.parse(e.payload) as { workoutId?: unknown };
+        } catch {
+          continue;
+        }
+        if (body.workoutId === localId) {
+          body.workoutId = serverId;
+          e.payload = JSON.stringify(body);
+        }
+      }
+    }
+  }
+
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
     return this.referenceLists.get(kind) ?? null;
   }
