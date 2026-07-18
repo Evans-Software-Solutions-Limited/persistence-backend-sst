@@ -51,7 +51,6 @@ describe("EditProfilePresenter", () => {
     expect(getByTestId("edit-profile-full-name").props.value).toBe(
       "Brad Simms",
     );
-    expect(getByTestId("edit-profile-public-switch").props.value).toBe(false);
   });
 
   it("highlights the selected fitness level", () => {
@@ -232,13 +231,14 @@ describe("EditProfilePresenter", () => {
     expect(onWeightUnitChange).toHaveBeenCalledWith("lb");
   });
 
-  it("fires onIsProfilePublicChange when the switch toggles", () => {
-    const onIsProfilePublicChange = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <EditProfilePresenter {...makeProps({ onIsProfilePublicChange })} />,
+  it("does NOT render the public-profile switch (v1 launch — public sharing hidden)", () => {
+    // The public-discoverability toggle is removed for v1 (Apple Guideline
+    // 1.2 de-risk). The wiring prop stays on the type but the control must
+    // not render — there must be no UI path to make a profile public.
+    const { queryByTestId } = renderWithTheme(
+      <EditProfilePresenter {...makeProps({ isProfilePublic: true })} />,
     );
-    fireEvent(getByTestId("edit-profile-public-switch"), "valueChange", true);
-    expect(onIsProfilePublicChange).toHaveBeenCalledWith(true);
+    expect(queryByTestId("edit-profile-public-switch")).toBeNull();
   });
 
   it("fires onSave when the Save Changes button is tapped", () => {

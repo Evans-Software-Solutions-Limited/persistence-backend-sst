@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   TextInput,
   View as RNView,
 } from "react-native";
@@ -91,6 +90,13 @@ export type EditProfilePresenterProps = {
    *  directly controls which input(s) render (cm vs ft+in), not just a
    *  seed for local state. */
   heightUnit: ProfilePageHeightUnit;
+  /**
+   * v1 launch: the "Public Profile" toggle is NOT rendered — public profile
+   * discoverability ships no discovery UI or moderation yet (Apple Guideline
+   * 1.2 de-risk). The container wiring is intentionally left in place (still
+   * passed, just unrendered) so public sharing can be reintroduced WITH
+   * moderation later without re-threading the props.
+   */
   isProfilePublic: boolean;
   isSaving: boolean;
   isLoadingInitial: boolean;
@@ -124,7 +130,9 @@ export function EditProfilePresenter({
   heightCm,
   weightUnit,
   heightUnit,
-  isProfilePublic,
+  // `isProfilePublic` / `onIsProfilePublicChange` are intentionally NOT
+  // destructured/rendered for v1 — see the props-type note. Kept on the type
+  // so the container wiring stays intact for a later moderated re-launch.
   isSaving,
   isLoadingInitial,
   errorMessage,
@@ -139,7 +147,6 @@ export function EditProfilePresenter({
   onHeightCmChange,
   onWeightUnitChange,
   onHeightUnitChange,
-  onIsProfilePublicChange,
   onSave,
   onBack,
 }: EditProfilePresenterProps) {
@@ -580,24 +587,10 @@ export function EditProfilePresenter({
             </View>
           </View>
 
-          {/* Public Profile */}
-          <View marginBottom={20}>
-            <View flexDirection="row" alignItems="center" gap={14}>
-              <View flex={1}>
-                <FieldLabel>Public Profile</FieldLabel>
-                <Text fontFamily="$body" fontSize={12} color="$text3">
-                  Allow other users to discover your profile and view your
-                  public workouts.
-                </Text>
-              </View>
-              <Switch
-                value={isProfilePublic}
-                onValueChange={onIsProfilePublicChange}
-                disabled={isSaving}
-                testID="edit-profile-public-switch"
-              />
-            </View>
-          </View>
+          {/* Public Profile — HIDDEN for v1 launch (public discoverability
+              ships no discovery UI / moderation yet; Apple Guideline 1.2
+              de-risk). Container wiring retained; see the props-type note.
+              Reintroduce WITH moderation in a later update. */}
 
           <View marginTop={8}>
             <Btn
