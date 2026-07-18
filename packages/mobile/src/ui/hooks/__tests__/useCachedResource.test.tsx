@@ -5,7 +5,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import { ok, type Result, type ApiError } from "@/shared/errors";
+import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import {
@@ -206,5 +206,196 @@ describe("useCachedResource — reload() reactive bridge (regression)", () => {
     expect(
       storage.getCachedHabitCompletions(USER, { goalId: "cell" })[0].value,
     ).toBe(42);
+  });
+});
+
+/**
+ * A cold-start config: stale + reads the same scalar slot as `scalarConfig`, so
+ * an empty cache means `value: null` (the new-account / new-device case) and the
+ * hook fires its auto-refresh on mount.
+ */
+function staleConfig(
+  fetcher: (api: ApiPort) => Promise<Result<number, ApiError>>,
+): CachedResourceConfig<number> {
+  return {
+    ...scalarConfig(fetcher),
+    read: (storage, userId) => ({
+      value:
+        storage.getCachedHabitCompletions(userId, { goalId: "cell" })[0]
+          ?.value ?? null,
+      isStale: true,
+    }),
+  };
+}
+
+const apiTimeout: ApiError = {
+  kind: "api",
+  code: "timeout",
+  message: "Request timed out",
+};
+
+describe("useCachedResource — cold-start retry", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it("retries a transient failure on an empty cache and succeeds on a later attempt", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Empty cache → cold start. First attempt times out (cold Lambda); the
+    // retry succeeds once the backend has warmed.
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValueOnce(fail(apiTimeout))
+      .mockResolvedValueOnce(ok(7));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000); // past the 1500ms 2nd-attempt delay
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe(7);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("surfaces the error only after exhausting the retry budget", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValue(fail(apiTimeout));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000); // 0 + 1500 + 4000 = all attempts
+    });
+
+    // Three attempts (COLD_START_RETRY_DELAYS_MS.length), then the error sticks.
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toEqual(apiTimeout);
+  });
+
+  it("does NOT retry a non-transient (4xx) failure", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const unauthorized: ApiError = {
+      kind: "api",
+      code: "unauthorized",
+      message: "Unauthorized",
+    };
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValue(fail(unauthorized));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
+    // A 4xx won't self-heal — surface it immediately, no retries.
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toEqual(unauthorized);
+  });
+
+  it("cancels the retry loop on unmount (no further attempts after unmount)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValue(fail(apiTimeout));
+
+    const { unmount } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      { wrapper: wrap(makeAdapters(api, storage)) },
+    );
+
+    // Attempt 1 (delay 0) fires and fails; unmount while awaiting the 1500ms
+    // backoff before attempt 2.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    const callsAtUnmount = fetcher.mock.calls.length;
+    unmount();
+
+    // Drain every remaining timer — the loop must see `cancelled` and stop.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetcher.mock.calls.length).toBe(callsAtUnmount);
+  });
+
+  it("logs and still fetches when the pre-fetch queue drain throws", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // A queue-drain failure must not abort the fetch — the GET still runs.
+    jest.spyOn(storage, "getPendingMutations").mockImplementation(() => {
+      throw new Error("queue read failed");
+    });
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValue(ok(3));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.data).toBe(3);
+    expect(errSpy).toHaveBeenCalledWith(
+      "[useCachedResource] queue flush failed:",
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("does NOT retry when a stale cache is already present (single attempt)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Stale-but-present cache: the stale value renders, so a failed refresh is
+    // invisible and must not trigger the cold-start retry loop.
+    writeCache(storage, 5);
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockResolvedValue(fail(apiTimeout));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(5); // stale cache still shown
   });
 });

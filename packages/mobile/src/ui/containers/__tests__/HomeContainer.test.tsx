@@ -186,6 +186,7 @@ describe("HomeContainer (V2)", () => {
   });
 
   it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {
+    jest.useFakeTimers();
     const { adapters, api } = makeAdapters();
     api.shouldFail = true; // empty cache + failing GET
     render(
@@ -193,12 +194,18 @@ describe("HomeContainer (V2)", () => {
         <HomeContainer />
       </Wrapper>,
     );
-    // The loader must NOT stick: once the failed fetch settles, isLoading drops
-    // to false so the error/retry state is reachable (regression: useCachedResource
-    // never resets isStale on error, so gating on stale+empty trapped the loader).
-    await waitFor(() => expect(mockProbe.last?.error).not.toBeNull());
+    // A cold-start fetch fails transiently (server) and retries with backoff;
+    // once the retry budget is exhausted the loader must NOT stick — isLoading
+    // drops to false so the error/retry state is reachable (regression:
+    // useCachedResource never resets isStale on error, so gating on stale+empty
+    // trapped the loader).
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(mockProbe.last?.error).not.toBeNull();
     expect(mockProbe.last?.isLoading).toBe(false);
     expect(mockProbe.last?.home).toBeNull();
+    jest.useRealTimers();
   });
 
   it("keeps onRefresh referentially stable across re-renders", async () => {

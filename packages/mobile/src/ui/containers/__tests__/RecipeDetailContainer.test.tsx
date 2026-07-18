@@ -341,6 +341,7 @@ describe("RecipeDetailContainer", () => {
   });
 
   it("onRetry re-fetches the recipe", async () => {
+    jest.useFakeTimers();
     const { adapters, api } = makeAdapters();
     const getSpy = jest
       .spyOn(api, "getRecipe")
@@ -352,11 +353,17 @@ describe("RecipeDetailContainer", () => {
         <RecipeDetailContainer id="r1" />
       </Wrapper>,
     );
-    await waitFor(() => expect(mockProbe.last?.error).not.toBeNull());
+    // Cold-start fetch fails transiently (server) and retries with backoff;
+    // drain the retry budget so the error/retry state is reachable.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(mockProbe.last?.error).not.toBeNull();
     const callsBefore = getSpy.mock.calls.length;
     await act(async () => {
-      mockProbe.last!.onRetry();
+      await mockProbe.last!.onRetry();
     });
     expect(getSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+    jest.useRealTimers();
   });
 });

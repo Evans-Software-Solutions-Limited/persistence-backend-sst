@@ -137,6 +137,7 @@ describe("useGetPrograms (cache-first + refresh)", () => {
   });
 
   it("surfaces the fetcher's error without clearing existing data", async () => {
+    jest.useFakeTimers();
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     api.shouldFail = true;
@@ -150,8 +151,14 @@ describe("useGetPrograms (cache-first + refresh)", () => {
       wrapper: wrap(makeAdapters(api, storage)),
     });
 
-    await waitFor(() => expect(result.current.error).not.toBeNull());
+    // Cold start + transient (server) failure → retried with backoff; the error
+    // surfaces once the retry budget is exhausted.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(result.current.error).not.toBeNull();
     expect(result.current.error?.message).toBe("boom");
     expect(result.current.data).toBeNull();
+    jest.useRealTimers();
   });
 });
