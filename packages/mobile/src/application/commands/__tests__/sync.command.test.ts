@@ -78,6 +78,124 @@ describe("processSyncQueue", () => {
     );
   });
 
+  it("swaps a local workout id to the server id when its create flushes", async () => {
+    const localWorkoutId = "local-1784398059991-45kx3l";
+    const serverWorkoutId = "11111111-1111-4111-8111-111111111111";
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: localWorkoutId,
+      operation: "create",
+      payload: { name: "Leg Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    const swapSpy = jest.spyOn(storage, "swapLocalWorkoutId");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: serverWorkoutId } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(swapSpy).toHaveBeenCalledWith(localWorkoutId, serverWorkoutId);
+  });
+
+  it("re-points a queued session record's workoutId after the workout create flushes", async () => {
+    // The real-world stuck-session bug: a workout created offline (local id) and
+    // a session recorded against it before the create synced. Both are queued;
+    // the session payload froze the local workoutId at enqueue time.
+    const localWorkoutId = "local-1784398059991-45kx3l";
+    const serverWorkoutId = "22222222-2222-4222-8222-222222222222";
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: localWorkoutId,
+      operation: "create",
+      payload: { name: "Leg Day" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-sess-1",
+      operation: "create",
+      payload: {
+        clientSessionId: "local-sess-1",
+        workoutId: localWorkoutId,
+        name: "Leg Day",
+      },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+
+    // Only flush the workout create this drain (the session's snapshot payload
+    // is corrected in storage; it sends the server id on the next drain — same
+    // eventual-consistency contract as the exercise/nutrition swaps).
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: serverWorkoutId } }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => "workout not yet reconciled",
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    // The queued session record now carries the SERVER workout id.
+    const sessionEntry = storage
+      .getPendingMutations()
+      .find((e) => e.entityType === "session");
+    expect(sessionEntry).toBeDefined();
+    expect(JSON.parse(sessionEntry!.payload).workoutId).toBe(serverWorkoutId);
+  });
+
+  it("does not swap when the workout create response omits an id", async () => {
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-x",
+      operation: "create",
+      payload: { name: "x" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    const swapSpy = jest.spyOn(storage, "swapLocalWorkoutId");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: {} }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(swapSpy).not.toHaveBeenCalled();
+  });
+
+  it("tolerates an unparseable workout create response (id-swap is best-effort)", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-y",
+      operation: "create",
+      payload: { name: "y" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    const swapSpy = jest.spyOn(storage, "swapLocalWorkoutId");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error("not json");
+      },
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    // The create still succeeded server-side, so the entry completes; only the
+    // best-effort swap was skipped.
+    expect(result.succeeded).toBe(1);
+    expect(swapSpy).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("resets the preferences cache to the server's merged column on flush", async () => {
     // optimistic value pre-flush
     storage.cacheNotificationPreferences({ goal_milestone: false });

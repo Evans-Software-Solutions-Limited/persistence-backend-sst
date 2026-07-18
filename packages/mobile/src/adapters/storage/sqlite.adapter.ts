@@ -1074,6 +1074,122 @@ export class SQLiteStorageAdapter implements StoragePort {
     });
   }
 
+  swapLocalWorkoutId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // 1. cached_workout_detail — the id lives in BOTH the PK column and the
+      // serialized blob. INSERT-then-DELETE (rather than `UPDATE workout_id`)
+      // folds cleanly onto any row a concurrent refresh already pulled under
+      // the server id. Nested workout-exercise ids inside the blob are left as
+      // their own `local-…-idx` values — sessions reference the top-level
+      // workout id only, and the detail cache is re-fetched from server (with
+      // real junction ids) on the next open.
+      const detailRows = db.getAllSync(
+        `SELECT user_id, payload FROM cached_workout_detail WHERE workout_id = ?`,
+        [localId],
+      ) as { user_id: string; payload: string }[];
+      for (const r of detailRows) {
+        const workout = JSON.parse(r.payload) as Workout;
+        workout.id = serverId;
+        db.runSync(
+          `INSERT INTO cached_workout_detail (user_id, workout_id, payload, synced_at)
+             VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, workout_id) DO UPDATE SET
+             payload = excluded.payload, synced_at = excluded.synced_at`,
+          [r.user_id, serverId, JSON.stringify(workout)],
+        );
+        db.runSync(
+          `DELETE FROM cached_workout_detail WHERE user_id = ? AND workout_id = ?`,
+          [r.user_id, localId],
+        );
+      }
+
+      // 2. cached_workout_history — PK re-key only (a local workout has no
+      // server-side history yet; the row is virtually always absent). `OR
+      // REPLACE` folds onto any pre-existing server-id row.
+      db.runSync(
+        `UPDATE OR REPLACE cached_workout_history SET workout_id = ? WHERE workout_id = ?`,
+        [serverId, localId],
+      );
+
+      // 3. cached_workouts — each list slice stores a JSON array of workouts;
+      // rewrite the matching top-level id in every slice that carries it.
+      const listRows = db.getAllSync(
+        `SELECT user_id, type, payload FROM cached_workouts`,
+      ) as { user_id: string; type: string; payload: string }[];
+      for (const r of listRows) {
+        const workouts = JSON.parse(r.payload) as Workout[];
+        let touched = false;
+        for (const w of workouts) {
+          if (w.id === localId) {
+            w.id = serverId;
+            touched = true;
+          }
+        }
+        if (touched) {
+          db.runSync(
+            `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
+            [JSON.stringify(workouts), r.user_id, r.type],
+          );
+        }
+      }
+
+      // 4. active_sessions.workout_id — the local-first sessions that captured
+      // this workout id at session-start. Re-pointing these keeps the local
+      // session rows coherent (workout_id is plain TEXT, no FK, so no deferral
+      // needed).
+      db.runSync(
+        `UPDATE active_sessions SET workout_id = ? WHERE workout_id = ?`,
+        [serverId, localId],
+      );
+
+      // 5a. sync_queue — queued follow-up workout mutations (a PATCH/DELETE
+      // `/workouts/local-…` enqueued before the create flushed) so they hit the
+      // real resource instead of 404ing. Mirrors the exercise/nutrition swaps.
+      db.runSync(
+        `UPDATE sync_queue SET endpoint = ?
+         WHERE entity_type = 'workout' AND endpoint = ?`,
+        [`/workouts/${serverId}`, `/workouts/${localId}`],
+      );
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?
+         WHERE entity_type = 'workout' AND entity_id = ?`,
+        [serverId, localId],
+      );
+
+      // 5b. sync_queue — the critical one: a queued `POST /sessions/record`
+      // serializes `workoutId` into its payload at enqueue time
+      // (complete-session.command.ts), so the active_sessions rewrite above does
+      // NOT reach an already-queued session record. Parse each not-yet-completed
+      // session mutation and rewrite a `workoutId` still equal to the local id.
+      // Covers both the self `/sessions/record` and the on-behalf
+      // `/trainers/me/clients/:id/sessions/record` endpoints (matched by payload,
+      // not endpoint).
+      const sessionRows = db.getAllSync(
+        `SELECT id, payload FROM sync_queue
+         WHERE entity_type = 'session' AND status != 'completed'`,
+      ) as { id: number; payload: string }[];
+      for (const r of sessionRows) {
+        let body: { workoutId?: unknown };
+        try {
+          body = JSON.parse(r.payload) as { workoutId?: unknown };
+        } catch {
+          // A payload we can't parse isn't one we can safely rewrite; leave it
+          // for the generic failure path rather than corrupting it.
+          continue;
+        }
+        if (body.workoutId === localId) {
+          body.workoutId = serverId;
+          db.runSync(`UPDATE sync_queue SET payload = ? WHERE id = ?`, [
+            JSON.stringify(body),
+            r.id,
+          ]);
+        }
+      }
+    });
+  }
+
   // -- Reference-List Cache --
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {
