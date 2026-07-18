@@ -234,10 +234,4 @@ const styles = StyleSheet.create({
     color: color.$text,
     marginBottom: 4,
   },
-  optionDescription: {
-    fontSize: 14,
-    fontWeight: "400" as const,
-    lineHeight: 20,
-    color: color.$text2,
-  },
 });

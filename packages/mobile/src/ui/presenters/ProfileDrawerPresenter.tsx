@@ -335,7 +335,7 @@ export function ProfileDrawerPresenter({
         <DrawerRow
           icon={<IconSettings {...iconDefaults({ size: 16 })} />}
           title="Privacy"
-          sub="Profile visibility · Data & policy"
+          sub="Data & policy · Account"
           onPress={onOpenSettings}
           testID="row-settings"
         />
