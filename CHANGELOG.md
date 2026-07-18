@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.3.0...persistence-v1.3.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **mobile:** retry the cold-start fetch so a fresh user isn't stranded on the error screen ([#267](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/267)) ([7b833cf](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7b833cfa4fc737b676fafc0f0f02d622400d0532))
+* **sync:** reconcile local workout ids so offline sessions don't stick ([#266](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/266)) ([c5537c3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c5537c3d6e7b138cb9e08e0158268fcc35e0f722))
+
 ## [1.3.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.2.1...persistence-v1.3.0) (2026-07-17)
 
 
