@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.3.1...persistence-v1.4.0) (2026-07-19)
+
+
+### Features
+
+* **mobile:** hide public sharing for v1 launch ([#269](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/269)) ([7f612a7](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7f612a7cea3230f6e851fa35d312037933675fdb))
+* **observability:** report server 5xx and terminal sync failures to Sentry ([#271](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/271)) ([929d447](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/929d447947057cc13a57c91c417e2847ad3c6114))
+
 ## [1.3.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.3.0...persistence-v1.3.1) (2026-07-18)
 
 
