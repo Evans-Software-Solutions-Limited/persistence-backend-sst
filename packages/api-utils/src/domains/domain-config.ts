@@ -24,6 +24,16 @@
 export const BASE_DOMAIN = "persistence.evans-software-solutions.com";
 
 /**
+ * Apex domain in the ESS production Route 53 zone. This is the production
+ * SES sender domain — production auth email comes `from` the apex so it
+ * shares the brand's root domain. SES only adds DKIM CNAMEs + a `_dmarc`
+ * TXT here (never MX), so any current or future apex MX is left untouched.
+ * Not derivable from `BASE_DOMAIN` — the apex is the parent of
+ * `persistence.` — so it's spelled out here.
+ */
+export const ROOT_DOMAIN = "evans-software-solutions.com";
+
+/**
  * Route 53 hosted zone IDs per environment.
  *
  * - `production`: the parent `evans-software-solutions.com` zone in the
@@ -102,6 +112,22 @@ export interface DomainConfig {
    * runner's process.env — same as before this field existed.
    */
   supabaseUrl: string;
+  /**
+   * SES sender **domain** for the stage — the identity `infra/email.ts`
+   * verifies (domain-level DKIM, so any address in the domain can send).
+   * `null` for dev — no SES identity is provisioned off a named stage.
+   *   - production → `evans-software-solutions.com` (the apex; Google MX
+   *     is left intact, SES only adds DKIM CNAMEs + `_dmarc` TXT)
+   *   - staging    → `staging.persistence.evans-software-solutions.com`
+   *     (the apex of the delegated staging zone)
+   */
+  emailDomain: string | null;
+  /**
+   * The `From` address auth email is sent as (`no-reply@<emailDomain>`).
+   * Written to SSM for the Supabase custom-SMTP "sender" field. `null`
+   * for dev.
+   */
+  emailSender: string | null;
 }
 
 /**
@@ -129,6 +155,8 @@ export function getDomainConfig(stage: string): DomainConfig {
         webHost: BASE_DOMAIN,
         zoneId: ZONE_IDS.production,
         supabaseUrl: SUPABASE_URLS.production,
+        emailDomain: ROOT_DOMAIN,
+        emailSender: `no-reply@${ROOT_DOMAIN}`,
       };
     case "staging":
       return {
@@ -136,6 +164,8 @@ export function getDomainConfig(stage: string): DomainConfig {
         webHost: `staging.${BASE_DOMAIN}`,
         zoneId: ZONE_IDS.staging,
         supabaseUrl: SUPABASE_URLS.staging,
+        emailDomain: `staging.${BASE_DOMAIN}`,
+        emailSender: `no-reply@staging.${BASE_DOMAIN}`,
       };
     case "dev":
       // Local dev / personal stages fall back to process.env so
@@ -145,6 +175,8 @@ export function getDomainConfig(stage: string): DomainConfig {
         webHost: null,
         zoneId: undefined,
         supabaseUrl: process.env.SUPABASE_URL ?? "",
+        emailDomain: null,
+        emailSender: null,
       };
   }
 }
