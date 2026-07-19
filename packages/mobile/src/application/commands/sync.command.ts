@@ -10,6 +10,7 @@ import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
+import { captureSyncFailure } from "@/lib/sentry";
 
 export type SyncResult = {
   processed: number;
@@ -349,8 +350,30 @@ export async function processSyncQueue(
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      // Terminal failure: this attempt exhausts the retry budget, so the drain
+      // will never pick this entry up again (`getPendingMutations` gates on
+      // `retry_count < max_retries`) — a silently-stuck mutation with no user
+      // recovery path. Compute this BEFORE `markMutationFailed`: it reads
+      // `entry.retryCount` as the snapshot value (pre-increment) for both the
+      // SQLite adapter and the in-memory double (which mutates the live entry).
+      const isTerminalFailure = entry.retryCount + 1 >= entry.maxRetries;
       storage.markMutationFailed(entry.id, message);
       failed++;
+      // Report the terminal failure to Sentry so it isn't invisible (the
+      // local-workout-id 500 went unseen for exactly this reason). Best-effort:
+      // a telemetry failure must never break the drain.
+      if (isTerminalFailure) {
+        try {
+          captureSyncFailure({
+            endpoint: entry.endpoint,
+            entityType: entry.entityType,
+            operation: entry.operation,
+            message,
+          });
+        } catch {
+          // swallow — telemetry is not allowed to affect sync outcomes
+        }
+      }
     }
   }
 

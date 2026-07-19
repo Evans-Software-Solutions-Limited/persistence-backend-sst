@@ -2,6 +2,9 @@ import Elysia, { t } from "elysia";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { coreErrorHandler } from "../errorHandler";
 import { EntitlementError } from "../../application/entitlement/assertEntitlement";
+import { captureServerError } from "../sentry";
+
+vi.mock("../sentry", () => ({ captureServerError: vi.fn() }));
 
 describe("coreErrorHandler", () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -9,6 +12,7 @@ describe("coreErrorHandler", () => {
 
   beforeEach(() => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(captureServerError).mockClear();
   });
 
   afterEach(() => {
@@ -108,6 +112,122 @@ describe("coreErrorHandler", () => {
     // Must not leak the SQL fragment or the raw offending id.
     expect(String(body.detail)).not.toContain("select");
     expect(String(body.detail)).not.toContain("local-1784398059991");
+    // A 4xx is client input, not a server fault — must NOT reach Sentry.
+    expect(captureServerError).not.toHaveBeenCalled();
+  });
+
+  it("reports a genuine 5xx to Sentry (with request context), but not 4xx", async () => {
+    delete process.env.SST_STAGE;
+    const boom = new Error("kaboom");
+
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
+      throw boom;
+    });
+    const response = await app.handle(
+      new Request("http://localhost/boom", {
+        headers: { "x-amz-request-id": "req-123" },
+      }),
+    );
+    expect(response.status).toBe(500);
+    // The handled 500 never escapes the Lambda, so this explicit capture is the
+    // only path to Sentry — assert it fired with the error + request context.
+    expect(captureServerError).toHaveBeenCalledTimes(1);
+    expect(captureServerError).toHaveBeenCalledWith(
+      boom,
+      expect.objectContaining({
+        method: "GET",
+        path: "/boom",
+        status: 500,
+        requestId: "req-123",
+      }),
+    );
+  });
+
+  it("forwards only identifier cause fields to Sentry — never the driver's raw detail/where (health PII)", async () => {
+    delete process.env.SST_STAGE;
+    // A CHECK-constraint violation: Postgres puts the whole offending row into
+    // `detail` ("Failing row contains (…)") — health data that must not leave
+    // the platform.
+    const pgError = Object.assign(new Error("check constraint violated"), {
+      code: "23514",
+      constraint: "habit_configs_target_chk",
+      table: "habit_configs",
+      detail: "Failing row contains (uid-1, 999, secret personal note).",
+      where: "PL/pgSQL assignment",
+      // A non-object link deeper in the chain must be dropped (not forwarded).
+      cause: "raw notice: 999 secret",
+    });
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
+      throw Object.assign(
+        new Error("Failed query: insert into habit_configs"),
+        {
+          cause: pgError,
+        },
+      );
+    });
+
+    const response = await app.handle(new Request("http://localhost/boom"));
+    expect(response.status).toBe(500);
+    expect(captureServerError).toHaveBeenCalledTimes(1);
+
+    const context = vi.mocked(captureServerError).mock.calls[0][1] as {
+      causes: Record<string, unknown>[];
+    };
+    const flat = JSON.stringify(context.causes);
+    // Safe identifiers ARE forwarded for triage…
+    expect(flat).toContain("23514");
+    expect(flat).toContain("habit_configs_target_chk");
+    // …but the free-text row values are NOT.
+    expect(flat).not.toContain("secret personal note");
+    expect(flat).not.toContain("Failing row contains");
+    expect(context.causes.some((c) => "detail" in c)).toBe(false);
+    expect(context.causes.some((c) => "where" in c)).toBe(false);
+    // The primitive `.cause` link is dropped entirely — never forwarded.
+    expect(flat).not.toContain("raw notice");
+  });
+
+  it("maps a malformed JSON body (PARSE) to 400 without a Sentry capture", async () => {
+    delete process.env.SST_STAGE;
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .post("/x", () => ({ ok: true }), { body: t.Object({ a: t.String() }) });
+    const response = await app.handle(
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{ this is not valid json",
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = await jsonBody(response);
+    expect(body.error).toBe("Malformed request");
+    expect(captureServerError).not.toHaveBeenCalled(); // 400 is not a 5xx
+  });
+
+  it("maps an unknown route (NOT_FOUND) to 404 without a Sentry capture", async () => {
+    delete process.env.SST_STAGE;
+    const app = new Elysia().use(coreErrorHandler).get("/known", () => "ok");
+    const response = await app.handle(new Request("http://localhost/nope"));
+    expect(response.status).toBe(404);
+    const body = await jsonBody(response);
+    expect(body.error).toBe("Not found");
+    expect(captureServerError).not.toHaveBeenCalled(); // 404 is not a 5xx
+  });
+
+  it("drops a cause that carries no identifier fields (nothing safe to forward)", async () => {
+    delete process.env.SST_STAGE;
+    const app = new Elysia().use(coreErrorHandler).get("/boom", () => {
+      // Only free-text row values, no code/constraint/etc → nothing safe.
+      throw Object.assign(new Error("Failed query"), {
+        cause: { detail: "Failing row contains (secret)", hint: "leak" },
+      });
+    });
+
+    await app.handle(new Request("http://localhost/boom"));
+    const context = vi.mocked(captureServerError).mock.calls[0][1] as {
+      causes: unknown[];
+    };
+    expect(context.causes).toEqual([]);
   });
 
   it("maps a top-level 22P02 (no Drizzle .cause wrapper) to 400", async () => {
@@ -323,6 +443,7 @@ describe("coreErrorHandler", () => {
         }),
       );
 
+      expect(captureServerError).not.toHaveBeenCalled(); // 402 is not a 5xx
       expect(response.status).toBe(402);
       const body = await jsonBody(response);
       // EXACT field names + values — mobile parses these verbatim.
