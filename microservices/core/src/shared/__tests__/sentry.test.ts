@@ -88,6 +88,48 @@ describe("scrubEvent", () => {
     expect(event.request.query_string).toBe("token=[redacted]-token&x=1");
   });
 
+  it("strips the Drizzle params tail from an exception message (bound row values)", async () => {
+    const { scrubEvent } = await import("../sentry");
+    const event = scrubEvent({
+      exception: {
+        values: [
+          {
+            value:
+              'Failed query: insert into "measurements" ("weight_kg","note") values ($1, $2)\nparams: 82, private note about my health',
+          },
+        ],
+      },
+    } as never) as unknown as { exception: { values: { value: string }[] } };
+    const msg = event.exception.values[0].value;
+    // The SQL (with $1/$2 placeholders) is kept; the bound values are gone.
+    expect(msg).toContain("Failed query: insert into");
+    expect(msg).toContain("params: [redacted]");
+    expect(msg).not.toContain("82");
+    expect(msg).not.toContain("private note about my health");
+  });
+
+  it("redacts the inlined user value in a Postgres data-exception message (linked-error path)", async () => {
+    const { scrubEvent } = await import("../sentry");
+    // Sentry's linkedErrors integration ships the pg `.cause` as its own
+    // exception value; its message inlines the offending user input with no
+    // `params:` tail, so it must be redacted here too.
+    const event = scrubEvent({
+      exception: {
+        values: [
+          { value: "Failed query: insert ...\nparams: 82" },
+          {
+            value:
+              'invalid input syntax for type timestamp: "my-secret-birthday"',
+          },
+        ],
+      },
+    } as never) as unknown as { exception: { values: { value: string }[] } };
+    const pgMsg = event.exception.values[1].value;
+    expect(pgMsg).toContain("invalid input syntax for type timestamp:");
+    expect(pgMsg).toContain("[redacted]");
+    expect(pgMsg).not.toContain("my-secret-birthday");
+  });
+
   it("redacts authorization/cookie headers (case-insensitive) and other header values", async () => {
     const { scrubEvent } = await import("../sentry");
     const event = scrubEvent({
@@ -327,6 +369,34 @@ describe("captureFatal", () => {
     });
     const err = new Error("boom");
     mod.captureFatal(err);
+    expect(mocks.captureException).toHaveBeenCalledWith(err, undefined);
+  });
+});
+
+describe("captureServerError", () => {
+  it("is a no-op when Sentry is disabled", async () => {
+    const mod = await loadInitialised({ dsn: undefined });
+    mod.captureServerError(new Error("boom"), { status: 500 });
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("captures with extra context when enabled", async () => {
+    const mod = await loadInitialised({
+      dsn: "https://abc@o1.ingest.sentry.io/42",
+    });
+    const err = new Error("boom");
+    mod.captureServerError(err, { status: 500, path: "/x" });
+    expect(mocks.captureException).toHaveBeenCalledWith(err, {
+      extra: { status: 500, path: "/x" },
+    });
+  });
+
+  it("captures without a hint when no context is given", async () => {
+    const mod = await loadInitialised({
+      dsn: "https://abc@o1.ingest.sentry.io/42",
+    });
+    const err = new Error("boom");
+    mod.captureServerError(err);
     expect(mocks.captureException).toHaveBeenCalledWith(err, undefined);
   });
 });

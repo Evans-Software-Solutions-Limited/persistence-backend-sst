@@ -53,6 +53,28 @@ export function redactString(value: string): string {
     .replace(EMAIL_RE, `${REDACTED}-email`);
 }
 
+// Drizzle serializes a failed query as `Failed query: <sql>\nparams: <values…>`.
+// The `params` tail carries the ACTUAL bound values — on a failing INSERT/UPDATE
+// that's a user's weight, food name, notes, etc. (health data). The SQL itself
+// uses $1/$2 placeholders and is safe + useful for debugging, so keep it and
+// drop only the values. Applied to exception messages before they leave the
+// process — the generic token scrubber (`redactString`) can't recognise a bare
+// numeric weight or a name as sensitive.
+const QUERY_PARAMS_RE = /\nparams:[\s\S]*$/i;
+export function stripQueryParams(value: string): string {
+  return value.replace(QUERY_PARAMS_RE, "\nparams: [redacted]");
+}
+
+// Postgres data-exceptions inline the offending USER value in the message, e.g.
+// `invalid input syntax for type timestamp: "13/13/2026"`. Sentry's linkedErrors
+// integration ships the pg `.cause` as its own `exception.values[]` entry — past
+// the params scrubber (there is no `params:` tail here). Redact the quoted value
+// but keep the type, so the message stays diagnostic without carrying input.
+const PG_SYNTAX_VALUE_RE = /(invalid input syntax for type \w+: )"[^"]*"/gi;
+export function redactPgSyntaxValue(value: string): string {
+  return value.replace(PG_SYNTAX_VALUE_RE, `$1"${REDACTED}"`);
+}
+
 // Guards against a pathological deeply-nested structure; Sentry payloads are
 // plain JSON and never this deep.
 const MAX_REDACT_DEPTH = 8;
@@ -162,10 +184,16 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
   scrubSharedFields(event);
 
   // Exception messages can echo user-supplied values (e.g. a validation error
-  // quoting the offending input). Redact the free text.
+  // quoting the offending input, or a Drizzle "Failed query: … params: […]"
+  // carrying the bound row values). Redact tokens/emails AND drop the query
+  // params tail.
   if (event.exception?.values) {
     for (const ex of event.exception.values) {
-      if (typeof ex.value === "string") ex.value = redactString(ex.value);
+      if (typeof ex.value === "string") {
+        ex.value = redactPgSyntaxValue(
+          stripQueryParams(redactString(ex.value)),
+        );
+      }
     }
   }
 
@@ -252,6 +280,21 @@ export function initSentry(): boolean {
  * backstop in api.ts). No-op when Sentry is disabled.
  */
 export function captureFatal(
+  error: unknown,
+  context?: Record<string, unknown>,
+): void {
+  if (!enabled) return;
+  Sentry.captureException(error, context ? { extra: context } : undefined);
+}
+
+/**
+ * Report a handled server-side fault (a 5xx that the Elysia `onError` hook
+ * caught and turned into a normal response). Because the error never escapes
+ * the Lambda, neither `Sentry.wrapHandler` nor `captureFatal` sees it — so this
+ * is the only way an in-lifecycle 500 reaches Sentry rather than living solely
+ * in CloudWatch. No-op when Sentry is disabled. PII is scrubbed by `beforeSend`.
+ */
+export function captureServerError(
   error: unknown,
   context?: Record<string, unknown>,
 ): void {

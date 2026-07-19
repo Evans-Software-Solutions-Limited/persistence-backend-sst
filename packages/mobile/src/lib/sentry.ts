@@ -236,4 +236,40 @@ export function captureBoundaryError(
   Sentry.captureException(error, context ? { extra: context } : undefined);
 }
 
+/**
+ * Report a sync-queue mutation that has exhausted its retry budget. Such an
+ * entry is dropped from the drain forever (`getPendingMutations` gates on
+ * `retry_count < max_retries`) with no user recovery path — a silently-stuck
+ * mutation. Before this, those were invisible in Sentry (the sync path treats a
+ * server error as a handled `Result.fail`, never an uncaught exception), which
+ * is how the local-workout-id 500 went unnoticed until manual testing.
+ *
+ * The exception message intentionally OMITS the concrete endpoint (which can
+ * embed ids) so Sentry groups by entity/operation rather than one issue per id;
+ * the endpoint + server message ride along as `extra`. No-op when disabled.
+ */
+export function captureSyncFailure(info: {
+  endpoint: string;
+  entityType: string;
+  operation: string;
+  message: string;
+  status?: number;
+}): void {
+  if (!enabled) return;
+  Sentry.captureException(
+    new Error(
+      `Sync mutation exhausted retries: ${info.entityType}/${info.operation}`,
+    ),
+    {
+      level: "error",
+      tags: { sync_entity: info.entityType, sync_operation: info.operation },
+      extra: {
+        endpoint: info.endpoint,
+        serverMessage: info.message,
+        ...(info.status != null ? { status: info.status } : {}),
+      },
+    },
+  );
+}
+
 export { Sentry };

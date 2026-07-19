@@ -4,6 +4,9 @@ import { toggleHabitDayCommand } from "../toggle-habit.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import type { Exercise } from "@/domain/models/exercise";
+import { captureSyncFailure } from "@/lib/sentry";
+
+jest.mock("@/lib/sentry", () => ({ captureSyncFailure: jest.fn() }));
 
 // Wed 2026-06-10 — deterministic clock for the offline configure→tap→drain
 // residual-fix scenario (nextMondayISO needs a fixed "now").
@@ -38,6 +41,7 @@ describe("processSyncQueue", () => {
     storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
+    jest.mocked(captureSyncFailure).mockClear();
   });
 
   it("returns zero counts when queue is empty", async () => {
@@ -76,6 +80,45 @@ describe("processSyncQueue", () => {
       "https://api.test/workouts",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("reports a terminal sync failure to Sentry once the retry budget is exhausted", async () => {
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-s1",
+      operation: "create",
+      payload: { clientSessionId: "local-s1" },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+    // Every attempt 500s.
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    });
+
+    // Attempts 1 and 2 fail but stay retryable — no capture yet.
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+
+    // Attempt 3 exhausts max_retries (default 3) → the entry is now silently
+    // stuck, so it's reported exactly once.
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
+    expect(captureSyncFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: "/sessions/record",
+        entityType: "session",
+        operation: "create",
+      }),
+    );
+
+    // Once terminal it drops out of the drain — no repeat captures.
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
   });
 
   it("swaps a local workout id to the server id when its create flushes", async () => {

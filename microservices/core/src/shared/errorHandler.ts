@@ -1,5 +1,6 @@
 import Elysia from "elysia";
 import { EntitlementError } from "../application/entitlement/assertEntitlement";
+import { captureServerError } from "./sentry";
 
 /**
  * Global error-logging + response-shape plugin for the core Elysia app.
@@ -187,6 +188,41 @@ export const coreErrorHandler = new Elysia({
       console.error(stack);
     }
 
+    // Report genuine server faults (5xx) to Sentry. This hook caught the error
+    // and is about to return a normal 5xx response, so it NEVER escapes the
+    // Lambda — meaning `Sentry.wrapHandler` and the `captureFatal` backstop in
+    // api.ts both miss it (they only see errors that propagate out of the
+    // handler). Without this, in-lifecycle 500s are CloudWatch-only and
+    // invisible in Sentry. Gated on `status >= 500` so 4xx client input (incl.
+    // the 22P02→400 above) stays out of alerting; the 402 EntitlementError path
+    // returned earlier, so it never reaches here.
+    //
+    // Only IDENTIFIER-shaped cause fields go to Sentry (a third-party
+    // subprocessor) — NOT the driver's free-text `detail`/`hint`/`where`, which
+    // on a constraint violation (e.g. SQLSTATE 23514) echo raw row values
+    // ("Failing row contains (…)") — health data the token-only scrubber won't
+    // catch. The full detail stays in the CloudWatch line above. The exception
+    // message's Drizzle `params:` tail is stripped by `scrubEvent` in sentry.ts.
+    //
+    // Runs AFTER the CloudWatch log and is wrapped so a telemetry fault can
+    // never suppress the log or the error response this handler exists to send.
+    if (status >= 500) {
+      try {
+        captureServerError(error, {
+          method,
+          path,
+          status,
+          code: String(code),
+          ...(requestId ? { requestId } : {}),
+          causes: causeChain
+            .map(sentrySafeCause)
+            .filter((c) => c !== undefined),
+        });
+      } catch {
+        // Telemetry must not affect request handling — swallow.
+      }
+    }
+
     // Validation errors carry Elysia's own `all` array under the hood;
     // surface it so clients can map to fields.
     const validationDetail = extractValidationDetail(error);
@@ -295,6 +331,36 @@ function summarizeCause(link: unknown): Record<string, unknown> | string {
     }
   }
   return summary;
+}
+
+/**
+ * A cause summary safe to forward to Sentry (a third-party subprocessor). Unlike
+ * `summarizeCause` (which feeds the CloudWatch log and deliberately lifts the
+ * driver's free-text `detail`/`hint`/`where`/`message`), this keeps ONLY
+ * identifier/code fields. Postgres puts raw row values in `detail` on a
+ * constraint violation ("Failing row contains (…)") — health data we must not
+ * ship off-platform, and the token-only Sentry scrubber won't catch it. Returns
+ * undefined for a link that carries no safe fields (dropped by the caller).
+ */
+function sentrySafeCause(link: unknown): Record<string, unknown> | undefined {
+  if (typeof link !== "object" || link === null) return undefined;
+  const obj = link as Record<string, unknown>;
+  const safe: Record<string, unknown> = {};
+  if (link instanceof Error) safe.name = link.name;
+  for (const key of [
+    "code",
+    "severity",
+    "schema",
+    "table",
+    "column",
+    "constraint",
+    "routine",
+    "errno",
+    "syscall",
+  ]) {
+    if (obj[key] !== undefined) safe[key] = obj[key];
+  }
+  return Object.keys(safe).length > 0 ? safe : undefined;
 }
 
 /**
