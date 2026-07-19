@@ -9,12 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { HeaderBar, IconBtn } from "@/ui/components/foundation";
-import {
-  IconBack,
-  IconCheck,
-  IconChevronR,
-  iconDefaults,
-} from "@/ui/components/icons";
+import { IconBack, IconChevronR, iconDefaults } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 
 // [08-profile-settings shell refresh 2026]
@@ -30,19 +25,28 @@ import { color } from "@/ui/theme/tokens";
  * Privacy Settings — pure presenter. Visibility picker ported from
  * `persistence-mobile/app/privacy-settings.tsx`.
  *
- * PORT-GAP: legacy stored `profile_visibility` ∈ {private, friends, public}.
- * V2's `ApiProfile.isProfilePublic` is a boolean — see
- * `packages/mobile/src/domain/ports/api.port.ts:373`. Until a backend field
- * add is specced, M12 ships only the Private + Public options and maps
- * 1:1 to the boolean. The "Friends Only" middle option is intentionally
- * dropped. Same StyleSheet, same row affordance, same Data & Privacy
- * footer copy.
+ * v1 launch: the "Profile Visibility" section is NOT rendered — the only
+ * choice it offered was public discoverability, which ships no discovery UI
+ * or moderation yet (Apple Guideline 1.2 de-risk). With "public" gone the
+ * lone "Private" option is not a real choice, so the whole section is hidden
+ * rather than left as a single always-selected row. The container wiring
+ * (`isProfilePublic` / `onUpdateVisibility`) is intentionally kept so it can
+ * be reintroduced WITH moderation later without re-threading props.
+ *
+ * PORT-GAP (retained note): legacy stored `profile_visibility` ∈
+ * {private, friends, public}. V2's `ApiProfile.isProfilePublic` is a boolean
+ * — see `packages/mobile/src/domain/ports/api.port.ts:373`.
  */
 
 export type PrivacyVisibility = "private" | "public";
 
 export type PrivacySettingsPresenterProps = {
   isLoading: boolean;
+  /**
+   * Retained but unrendered for v1 (see the module header) — the Profile
+   * Visibility section is hidden, so these are passed by the container but
+   * not consumed here until a moderated re-launch.
+   */
   isProfilePublic: boolean;
   onUpdateVisibility: (next: PrivacyVisibility) => void;
   onBack: () => void;
@@ -70,8 +74,9 @@ function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
 
 export function PrivacySettingsPresenter({
   isLoading,
-  isProfilePublic,
-  onUpdateVisibility,
+  // `isProfilePublic` / `onUpdateVisibility` are intentionally not
+  // destructured for v1 — the Profile Visibility section is hidden. See the
+  // module header.
   onBack,
   onOpenPrivacyPolicy,
   onOpenTerms,
@@ -90,70 +95,15 @@ export function PrivacySettingsPresenter({
     );
   }
 
-  const currentVisibility: PrivacyVisibility = isProfilePublic
-    ? "public"
-    : "private";
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <PrivacySettingsHeader onBack={onBack} />
 
       <ScrollView style={styles.content} testID="privacy-settings-scroll">
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Profile Visibility</Text>
-          <Text style={styles.sectionDescription}>
-            Control who can see your profile and workout data
-          </Text>
-
-          <TouchableOpacity
-            style={[
-              styles.option,
-              currentVisibility === "private" && styles.optionSelected,
-            ]}
-            onPress={() => onUpdateVisibility("private")}
-            testID="privacy-settings-option-private"
-          >
-            <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>Private</Text>
-              <Text style={styles.optionDescription}>
-                Only you can see your profile and workouts
-              </Text>
-            </View>
-            {currentVisibility === "private" && (
-              <IconCheck
-                size={24}
-                color={color.$primary}
-                testID="privacy-settings-check-private"
-              />
-            )}
-          </TouchableOpacity>
-
-          {/* PORT-GAP: legacy "Friends Only" option dropped — V2 backend
-              exposes `isProfilePublic` boolean only. See module header. */}
-
-          <TouchableOpacity
-            style={[
-              styles.option,
-              currentVisibility === "public" && styles.optionSelected,
-            ]}
-            onPress={() => onUpdateVisibility("public")}
-            testID="privacy-settings-option-public"
-          >
-            <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>Public</Text>
-              <Text style={styles.optionDescription}>
-                Everyone can see your profile and workouts
-              </Text>
-            </View>
-            {currentVisibility === "public" && (
-              <IconCheck
-                size={24}
-                color={color.$primary}
-                testID="privacy-settings-check-public"
-              />
-            )}
-          </TouchableOpacity>
-        </View>
+        {/* Profile Visibility section HIDDEN for v1 launch — its only choice
+            was public discoverability (no discovery UI / moderation yet;
+            Apple Guideline 1.2 de-risk), leaving no real Private-vs-Public
+            choice. Container wiring retained; see the module header. */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data &amp; Privacy</Text>
@@ -267,10 +217,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  optionSelected: {
-    borderWidth: 2,
-    borderColor: color.$primary,
-  },
   dangerOption: {
     borderWidth: 1,
     borderColor: color.$error,
@@ -287,11 +233,5 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: color.$text,
     marginBottom: 4,
-  },
-  optionDescription: {
-    fontSize: 14,
-    fontWeight: "400" as const,
-    lineHeight: 20,
-    color: color.$text2,
   },
 });

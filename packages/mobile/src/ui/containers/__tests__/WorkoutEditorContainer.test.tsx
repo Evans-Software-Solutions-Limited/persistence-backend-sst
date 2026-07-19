@@ -329,13 +329,52 @@ describe("WorkoutEditorContainer", () => {
     );
 
     await act(async () => {
-      fireEvent.press(getByTestId("visibility-public"));
+      fireEvent.press(getByTestId("visibility-friends"));
     });
     fireEvent.press(getByTestId("save-workout-button"));
 
     await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
     const updated = storage.getCachedWorkoutDetail("user-1", "w-1");
-    expect(updated?.workout.visibility).toBe("public");
+    expect(updated?.workout.visibility).toBe("friends");
+  });
+
+  it("shows an already-public workout read-only (v1) and lets you move it OFF public", async () => {
+    // Edge case: editing a legacy/seeded "public" workout. v1 removed Public
+    // as a selectable option, so the current value renders as a disabled
+    // read-only chip — visible but not re-selectable — while Private/Friends
+    // stay tappable so the user can move it off public one-way.
+    const api = new InMemoryApiAdapter();
+    jest
+      .spyOn(api, "getWorkout")
+      .mockResolvedValue(ok(buildWorkout({ visibility: "public" })));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail(
+      "user-1",
+      buildWorkout({ visibility: "public" }),
+    );
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+
+    // The read-only "Public" chip is present but disabled (no re-selecting).
+    expect(
+      getByTestId("visibility-public").props.accessibilityState?.disabled,
+    ).toBe(true);
+
+    // Moving it to Private is allowed and persists off public.
+    await act(async () => {
+      fireEvent.press(getByTestId("visibility-private"));
+    });
+    fireEvent.press(getByTestId("save-workout-button"));
+
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+    const updated = storage.getCachedWorkoutDetail("user-1", "w-1");
+    expect(updated?.workout.visibility).toBe("private");
   });
 
   it("blocks submit when the name is cleared after hydrate", async () => {

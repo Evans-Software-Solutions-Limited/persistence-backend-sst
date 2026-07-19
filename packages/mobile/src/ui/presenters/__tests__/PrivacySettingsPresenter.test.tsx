@@ -42,3 +42,24 @@ describe("PrivacySettingsPresenter — account deletion (Apple 5.1.1(v))", () =>
     expect(queryByTestId("privacy-settings-loader")).not.toBeNull();
   });
 });
+
+describe("PrivacySettingsPresenter — Profile Visibility hidden (v1 launch)", () => {
+  it("does NOT render the Profile Visibility section or a Public option", () => {
+    // v1 removes public discoverability entirely — no discovery UI /
+    // moderation yet (Apple Guideline 1.2 de-risk). With no real choice
+    // left, the whole section is hidden so there's no path to go public.
+    const { queryByTestId, queryByText } = setup({ isProfilePublic: true });
+    expect(queryByTestId("privacy-settings-option-public")).toBeNull();
+    expect(queryByTestId("privacy-settings-option-private")).toBeNull();
+    expect(queryByText("Profile Visibility")).toBeNull();
+  });
+
+  it("still renders the Legal + Delete Account sections", () => {
+    // Removing the visibility section must leave the App-Store-required
+    // Legal links + account-deletion affordance intact.
+    const { queryByTestId } = setup();
+    expect(queryByTestId("privacy-settings-policy")).not.toBeNull();
+    expect(queryByTestId("privacy-settings-terms")).not.toBeNull();
+    expect(queryByTestId("privacy-settings-delete-account")).not.toBeNull();
+  });
+});

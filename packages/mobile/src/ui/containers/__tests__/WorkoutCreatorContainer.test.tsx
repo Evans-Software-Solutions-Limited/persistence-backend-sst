@@ -266,7 +266,7 @@ describe("WorkoutCreatorContainer", () => {
     expect(setsInputs[1].props.editable).toBe(false);
   }, 30_000);
 
-  it("renders the Visibility tri-state but NO owner toggle in athlete context", async () => {
+  it("renders only Private/Friends visibility (no Public) + NO owner toggle in athlete context", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const { findByText, getByTestId, queryByTestId } = renderWithTheme(
@@ -275,7 +275,9 @@ describe("WorkoutCreatorContainer", () => {
     expect(await findByText("Create Workout")).toBeTruthy();
     expect(getByTestId("visibility-private")).toBeTruthy();
     expect(getByTestId("visibility-friends")).toBeTruthy();
-    expect(getByTestId("visibility-public")).toBeTruthy();
+    // v1 launch: "Public" removed as a selectable option — a brand-new
+    // workout defaults to private, so there's no public chip at all.
+    expect(queryByTestId("visibility-public")).toBeNull();
     // Athlete context → no coach-only owner-visibility toggle.
     expect(queryByTestId("show-in-owner-library-toggle")).toBeNull();
   });
@@ -300,7 +302,7 @@ describe("WorkoutCreatorContainer", () => {
         true,
       ),
     );
-    fireEvent.press(getByTestId("visibility-public"));
+    fireEvent.press(getByTestId("visibility-friends"));
   });
 
   it("create-and-assign: creates online then assigns to the client", async () => {

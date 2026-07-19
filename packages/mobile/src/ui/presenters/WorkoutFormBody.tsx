@@ -53,6 +53,18 @@ import {
  *    while `isSubmitting`, matching pre-restyle behaviour).
  */
 
+/**
+ * v1 launch: "Public" is removed as a user-selectable option — the app ships
+ * no discovery UI and no moderation tooling for stranger-facing content, so
+ * we don't expose it (Apple Guideline 1.2 de-risk). Users may only choose
+ * Private or Friends. Public sharing returns WITH moderation in a later
+ * update.
+ *
+ * The `visibility` type union still includes "public" (backend + seeded
+ * template workouts — `createdBy IS NULL` — rely on it), so `VISIBILITY_ICON`
+ * keeps the "public" key and an already-public workout renders read-only via
+ * `PUBLIC_READONLY_OPTION` below.
+ */
 const VISIBILITY_OPTIONS: readonly {
   value: WorkoutFormState["visibility"];
   label: string;
@@ -60,8 +72,19 @@ const VISIBILITY_OPTIONS: readonly {
 }[] = [
   { value: "private", label: "Private", hint: "Only you" },
   { value: "friends", label: "Friends", hint: "Your circle" },
-  { value: "public", label: "Public", hint: "Anyone" },
 ];
+
+/**
+ * Shown (read-only) only when editing a workout whose visibility is ALREADY
+ * "public" — e.g. a legacy or seeded one. It surfaces the current value
+ * without offering re-selection: the chip is disabled, so tapping Private or
+ * Friends moves the workout off public one-way and the chip then disappears.
+ */
+const PUBLIC_READONLY_OPTION = {
+  value: "public",
+  label: "Public",
+  hint: "Anyone",
+} as const;
 
 const VISIBILITY_ICON: Record<
   WorkoutFormState["visibility"],
@@ -138,6 +161,14 @@ export function WorkoutFormBody({
     hasAttemptedSubmit && formState.name.trim().length === 0
       ? "Workout name is required"
       : null;
+
+  // Only Private/Friends are user-selectable (v1 — see VISIBILITY_OPTIONS).
+  // When editing an already-public workout, append a disabled read-only
+  // "Public" chip so the current value stays visible without re-selection.
+  const visibilityOptions =
+    formState.visibility === "public"
+      ? [...VISIBILITY_OPTIONS, PUBLIC_READONLY_OPTION]
+      : VISIBILITY_OPTIONS;
 
   return (
     <>
@@ -232,13 +263,22 @@ export function WorkoutFormBody({
 
                 <Field label="Visibility">
                   <View flexDirection="row" gap={6}>
-                    {VISIBILITY_OPTIONS.map((opt) => {
+                    {visibilityOptions.map((opt) => {
                       const selected = formState.visibility === opt.value;
                       const Icon = VISIBILITY_ICON[opt.value];
+                      // The read-only "Public" chip (legacy/seeded workouts)
+                      // is disabled — it shows the current value but can't be
+                      // (re-)selected. See PUBLIC_READONLY_OPTION.
+                      const readOnly = opt.value === "public";
                       return (
                         <Pressable
                           key={opt.value}
-                          onPress={() => onSetVisibility(opt.value)}
+                          onPress={
+                            readOnly
+                              ? undefined
+                              : () => onSetVisibility(opt.value)
+                          }
+                          disabled={readOnly}
                           testID={`visibility-${opt.value}`}
                           style={({ pressed }) => ({
                             flex: 1,
