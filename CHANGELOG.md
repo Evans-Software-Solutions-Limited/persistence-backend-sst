@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.4.0...persistence-v1.5.0) (2026-07-19)
+
+
+### Features
+
+* **infra:** provision SES email + SMTP creds for staging/production ([#274](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/274)) ([bd2e6a8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bd2e6a8d3a99e6ccf2ac6c953dfa9afac3b9caf2))
+
+
+### Bug Fixes
+
+* **mobile:** set production app display name to "Persistence" ([#272](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/272)) ([d6d43af](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d6d43afe2677a4b9e8994568f87cd094cbc3a544))
+
 ## [1.4.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.3.1...persistence-v1.4.0) (2026-07-19)
 
 
