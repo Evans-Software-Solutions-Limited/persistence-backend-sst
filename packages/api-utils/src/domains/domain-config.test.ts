@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { BASE_DOMAIN, getDomainConfig, getEnvironment } from "./domain-config";
+import {
+  BASE_DOMAIN,
+  ROOT_DOMAIN,
+  getDomainConfig,
+  getEnvironment,
+} from "./domain-config";
 
 describe("domain-config", () => {
   describe("BASE_DOMAIN", () => {
     it("is persistence.evans-software-solutions.com", () => {
       expect(BASE_DOMAIN).toBe("persistence.evans-software-solutions.com");
+    });
+  });
+
+  describe("ROOT_DOMAIN", () => {
+    it("is the apex evans-software-solutions.com", () => {
+      expect(ROOT_DOMAIN).toBe("evans-software-solutions.com");
     });
   });
 
@@ -122,6 +133,28 @@ describe("domain-config", () => {
         if (originalEnv !== undefined) {
           process.env.SUPABASE_URL = originalEnv;
         }
+      }
+    });
+
+    it("returns the apex domain + no-reply sender for production", () => {
+      // SES sends production auth email from the apex (Google MX untouched —
+      // SES only adds DKIM CNAMEs + a _dmarc TXT alongside it).
+      const config = getDomainConfig("production");
+      expect(config.emailDomain).toBe(ROOT_DOMAIN);
+      expect(config.emailSender).toBe(`no-reply@${ROOT_DOMAIN}`);
+    });
+
+    it("returns the staging subdomain + no-reply sender for staging", () => {
+      const config = getDomainConfig("staging");
+      expect(config.emailDomain).toBe(`staging.${BASE_DOMAIN}`);
+      expect(config.emailSender).toBe(`no-reply@staging.${BASE_DOMAIN}`);
+    });
+
+    it("returns null email domain + sender for dev / personal / unknown", () => {
+      for (const stage of ["dev", "brad", "pr-42", "feature-active-session"]) {
+        const config = getDomainConfig(stage);
+        expect(config.emailDomain).toBeNull();
+        expect(config.emailSender).toBeNull();
       }
     });
   });

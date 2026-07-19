@@ -61,3 +61,19 @@ export const hostedZoneId = domainConfig.zoneId;
  * removes the deploy-time env-var dependency entirely.
  */
 export const supabaseUrl = domainConfig.supabaseUrl;
+
+/**
+ * SES sender domain for the env. `null` for dev — `infra/email.ts` only
+ * provisions an SES identity + SMTP creds on named stages (production /
+ * staging), gated on this being non-null alongside `hostedZoneId`.
+ * - production → evans-software-solutions.com (apex; Google MX untouched)
+ * - staging    → staging.persistence.evans-software-solutions.com
+ */
+export const emailDomain = domainConfig.emailDomain;
+
+/**
+ * The `From` address (`no-reply@<emailDomain>`) auth email is sent as.
+ * `null` for dev. Written to SSM by `infra/email.ts` for the Supabase
+ * custom-SMTP "sender" field.
+ */
+export const emailSender = domainConfig.emailSender;
