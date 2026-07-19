@@ -3,6 +3,7 @@ import Home from "./pages/Home";
 import Pricing from "./pages/Pricing";
 import Support from "./pages/Support";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import { ThemeProvider } from "./components/theme-provider";
@@ -19,6 +20,7 @@ function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/support" element={<Support />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
         </Routes>
