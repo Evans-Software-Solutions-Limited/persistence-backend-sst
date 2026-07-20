@@ -232,6 +232,21 @@ export function IOSPurchaseFlowContainer() {
     try {
       const entitlements = await restoreMutation.mutateAsync();
       if (entitlements.length > 0) {
+        // Bridge the restored tier forward to the success screen exactly like
+        // the purchase path: a restore that had to re-associate the sub to this
+        // App User ID fires an ASYNC RevenueCat transfer webhook, so the
+        // `/subscriptions/me` refetch usually wins the race and returns the
+        // stale (free) tier — leaving the user on "free" despite a successful
+        // restore. The success screen prefers the `tier` param over that racy
+        // read (SubscriptionSuccessContainer), so the correct plan shows
+        // immediately while the webhook reconciles. Fall back to an alert only
+        // when the restored entitlement maps to no known tier.
+        const restoredTier =
+          entitlements.find((e) => e.tier !== null)?.tier ?? null;
+        if (restoredTier !== null) {
+          router.push(`/(auth)/success?tier=${restoredTier}` as Href);
+          return;
+        }
         Alert.alert(
           "Purchases Restored",
           "Your subscription has been restored.",
@@ -249,7 +264,7 @@ export function IOSPurchaseFlowContainer() {
         error.message ?? "Couldn't restore purchases. Please try again.",
       );
     }
-  }, [isProcessing, restoreMutation]);
+  }, [isProcessing, restoreMutation, router]);
 
   const handleManageInAppStore = useCallback(() => {
     void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL);
