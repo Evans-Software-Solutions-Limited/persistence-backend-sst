@@ -148,6 +148,7 @@ function render(over: Partial<ClientDetailProps> = {}) {
     isGeneratingSummary: false,
     online: true,
     onRegenerateSummary: jest.fn(),
+    onRemoveClient: jest.fn(),
     ...over,
   };
   return { props, ...renderWithTheme(<ClientDetailPresenter {...props} />) };
@@ -209,6 +210,15 @@ describe("ClientDetailPresenter — header", () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("client-detail-back"));
     expect(props.onBack).toHaveBeenCalledTimes(1);
+  });
+
+  // Spec 25 coach↔client offboarding AC-4.1 — the "More" kebab was dead
+  // (no onPress) before this slice; the container owns the confirm +
+  // mutation, this presenter just needs to fire the callback on tap.
+  it("fires onRemoveClient from the More kebab", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("client-detail-more"));
+    expect(props.onRemoveClient).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -84,6 +84,13 @@ export type ProfilePresenterProps = {
   // Trainer relationships
   activeTrainers: readonly ProfilePageTrainerRef[];
   pendingTrainerRequests: readonly ProfilePageTrainerRef[];
+  /**
+   * Active-trainer row "Leave coach" affordance (spec 25 coach↔client
+   * offboarding AC-4.2). `relationshipId` is `rel.id` (the
+   * `pt_client_relationships` row, not the trainer) — the container passes
+   * the coach's display name through for the confirm copy.
+   */
+  onLeaveTrainer: (relationshipId: string, coachName: string | null) => void;
 
   // Footer
   appVersion: string;
@@ -164,6 +171,7 @@ export function ProfilePresenter({
   recentAchievements,
   activeTrainers,
   pendingTrainerRequests,
+  onLeaveTrainer,
   appVersion,
   isSigningOut,
   onRefresh,
@@ -467,6 +475,19 @@ export function ProfilePresenter({
                       {rel.trainer.fullName ?? "Unknown Trainer"}
                     </Text>
                   </View>
+                  <TouchableOpacity
+                    style={styles.leaveTrainerButton}
+                    onPress={() => onLeaveTrainer(rel.id, rel.trainer.fullName)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Leave coach"
+                    testID={`leave-trainer-${rel.id}`}
+                  >
+                    <Ionicons
+                      name="exit-outline"
+                      size={20}
+                      color={color.$text2}
+                    />
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -1027,6 +1048,10 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: color.$text,
     fontWeight: "600",
+  },
+  leaveTrainerButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   emptyState: {
     alignItems: "center",

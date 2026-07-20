@@ -1,8 +1,6 @@
 import Elysia, { t } from "elysia";
-import { and, eq } from "drizzle-orm";
-import { profiles, ptClientRelationships } from "@persistence/db";
-import { getDb } from "@persistence/db/client";
 import { ProgramService } from "../../repositories/programService";
+import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
 import {
   getAuthUser,
   requireAuth,
@@ -17,14 +15,11 @@ import { todayIso } from "./shared";
  * own Home card (`ActiveProgrammeSummary`), so the mobile side reuses the
  * shared `<ProgrammeCard>` unchanged. `null` = no live plan-visible programme.
  *
- * Authorization: an ACTIVE, non-AI relationship with :clientId as the trainer
- * (403 `not_your_client` otherwise) — identical inline guard to
- * `trainersClientBodyTrendHandler`. This is a read of a single client's
+ * Authorization: `assertTrainerCanActForClient` (25-coach-client-offboarding
+ * guard consolidation) — role check first, then an ACTIVE, non-AI relationship
+ * with :clientId, then client-not-soft-deleted (Cluster 2a). Replaces the
+ * former inline relationship-only check. This is a read of a single client's
  * derived programme state, so no audit row.
- *
- * Cluster 2a: also denies (same 403 `not_your_client` body — never disclose
- * the specific reason) when the client is soft-deleted, joined into the same
- * query. Brad's "hide from coach immediately" call.
  */
 export const trainersClientActiveProgrammeGetHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -38,29 +33,10 @@ export const trainersClientActiveProgrammeGetHandler = new Elysia()
       const { sub: trainerId } = getUser(ctx);
       const { clientId } = ctx.params;
 
-      const db = getDb();
-      const rel = await db
-        .select({
-          id: ptClientRelationships.id,
-          clientDeletedAt: profiles.deletedAt,
-        })
-        .from(ptClientRelationships)
-        .innerJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
-        .where(
-          and(
-            eq(ptClientRelationships.trainerId, trainerId),
-            eq(ptClientRelationships.clientId, clientId),
-            eq(ptClientRelationships.status, "active"),
-            eq(ptClientRelationships.isAiTrainer, false),
-          ),
-        )
-        .limit(1);
-      if (!rel[0] || rel[0].clientDeletedAt != null) {
-        ctx.set.status = 403;
-        return {
-          code: "not_your_client",
-          message: "You can only view programmes for your active clients",
-        };
+      const verdict = await assertTrainerCanActForClient(trainerId, clientId);
+      if (!verdict.allowed) {
+        ctx.set.status = verdict.status;
+        return verdict.body;
       }
 
       const programme =

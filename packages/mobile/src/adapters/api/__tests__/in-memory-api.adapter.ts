@@ -640,7 +640,11 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(this.dashboard);
   }
 
+  /** Count of `getProfilePage` calls (refresh-path assertions). */
+  public getProfilePageCalls = 0;
+
   async getProfilePage(): Promise<Result<ProfilePageData, ApiError>> {
+    this.getProfilePageCalls += 1;
     if (this.profilePage === null) {
       return fail<ApiError>({
         kind: "api",
@@ -1647,6 +1651,22 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<TrainerClient[]>([...this.trainerClients]);
   }
 
+  /** Captures `removeClient` calls (spec 25 coach↔client offboarding F1). */
+  public removeClientCalls: string[] = [];
+
+  async removeClient(
+    clientId: string,
+  ): Promise<Result<{ ended: true }, ApiError>> {
+    this.removeClientCalls.push(clientId);
+    const result = this.mayFail<{ ended: true }>({ ended: true });
+    if (result.ok) {
+      this.trainerClients = this.trainerClients.filter(
+        (c) => c.id !== clientId,
+      );
+    }
+    return result;
+  }
+
   async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {
     this.getInvitationsCalls += 1;
     return this.mayFail<TrainerInvitation[]>([...this.invitations]);
@@ -2292,6 +2312,22 @@ export class InMemoryApiAdapter implements ApiPort {
       trainerId: "trainer-test",
       status: action === "accept" ? "active" : "terminated",
     });
+    if (result.ok) {
+      this.clientRelationships = this.clientRelationships.filter(
+        (r) => r.relationshipId !== relationshipId,
+      );
+    }
+    return result;
+  }
+
+  /** Captures `leaveCoach` calls (spec 25 coach↔client offboarding F1). */
+  public leaveCoachCalls: string[] = [];
+
+  async leaveCoach(
+    relationshipId: string,
+  ): Promise<Result<{ ended: true }, ApiError>> {
+    this.leaveCoachCalls.push(relationshipId);
+    const result = this.mayFail<{ ended: true }>({ ended: true });
     if (result.ok) {
       this.clientRelationships = this.clientRelationships.filter(
         (r) => r.relationshipId !== relationshipId,

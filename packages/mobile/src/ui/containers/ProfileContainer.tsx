@@ -11,6 +11,7 @@ import type {
   SubscriptionStatus,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
+import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
@@ -62,6 +63,7 @@ function deriveDisplayName(
 export function ProfileContainer() {
   const router = useRouter();
   const { session, signOut } = useAuth();
+  const { api, storage } = useAdapters();
   const profilePage = useProfilePage();
   // Source the badge from `useMySubscription` rather than the
   // ProfilePage payload because the badge requires the typed
@@ -122,6 +124,65 @@ export function ProfileContainer() {
     useCallback(() => {
       void refresh();
     }, [refresh]),
+  );
+
+  // Leave coach (spec 25 coach↔client offboarding AC-4.2). A ref guards a
+  // double-tap opening two Alerts (and firing two DELETEs) — same posture as
+  // `promptSignOut`'s state guard, but ref-based because Alert presentation
+  // is async and a second tap can land before a state update re-renders.
+  const isLeavingCoachRef = useRef(false);
+  const onLeaveTrainer = useCallback(
+    (relationshipId: string, coachName: string | null) => {
+      if (isLeavingCoachRef.current) return;
+      const label = coachName ?? "this coach";
+      isLeavingCoachRef.current = true;
+      Alert.alert(
+        `Leave ${label}?`,
+        "Their assigned workouts and programmes will be removed from your plan. You'll keep any habits and goals they set, and they'll no longer see your data.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              isLeavingCoachRef.current = false;
+            },
+          },
+          {
+            text: "Leave",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const result = await api.leaveCoach(relationshipId);
+                if (!result.ok) {
+                  Alert.alert("Couldn't leave coach", result.error.message, [
+                    { text: "OK" },
+                  ]);
+                  return;
+                }
+                // Assigned workouts/programmes are torn down server-side —
+                // drop the cached Home aggregate so it re-fetches without the
+                // ex-coach's content. Habits/goals are KEPT under offboarding
+                // (hybrid teardown) so their cache is untouched.
+                const userId = session?.userId;
+                if (userId) storage.invalidateHome(userId);
+                void refresh();
+              } finally {
+                isLeavingCoachRef.current = false;
+              }
+            },
+          },
+        ],
+        // Android tap-outside / hardware-back fires neither button's onPress;
+        // reset the guard here too or the button stays dead for the session.
+        {
+          cancelable: true,
+          onDismiss: () => {
+            isLeavingCoachRef.current = false;
+          },
+        },
+      );
+    },
+    [api, storage, session, refresh],
   );
 
   const avatarUrl = profilePage.payload?.profile.avatarUrl ?? null;
@@ -268,6 +329,7 @@ export function ProfileContainer() {
       recentAchievements={viewModel.recentAchievements}
       activeTrainers={viewModel.activeTrainers}
       pendingTrainerRequests={viewModel.pendingTrainerRequests}
+      onLeaveTrainer={onLeaveTrainer}
       appVersion={deriveAppVersion()}
       isSigningOut={isSigningOut}
       onRefresh={() => void refresh()}

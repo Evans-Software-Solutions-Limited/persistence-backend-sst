@@ -25,6 +25,12 @@ import { trainersClientDetailGetHandler } from "./trainers/clients/trainersClien
 import { trainersClientNotesRoutes } from "./trainersClientNotesRoutes";
 import { trainersMeGenerateClientAiSummaryHandler } from "./trainers/clients/trainersMeGenerateClientAiSummaryHandler";
 import { trainersMeSendClientBriefHandler } from "./trainers/briefs/trainersMeSendClientBriefHandler";
+// 25-coach-client-offboarding — bidirectional relationship end (coach removes
+// client / client leaves coach). Nested here (rather than at the api.ts root)
+// as a single `.use()` so the root chain stays under TS's depth ceiling
+// (TS2589) — the root chain was already at the limit. Both handlers declare
+// absolute paths, so nesting adds no prefix.
+import { coachClientOffboardingRoutes } from "./coachClientOffboardingRoutes";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create (header-only), POST .../sessions/record (full
@@ -67,4 +73,9 @@ export const trainersOnBehalfRoutes = new Elysia()
   // are registered first; Elysia's radix router matches static segments before
   // the terminal `:clientId` regardless of order, guarded by a route-ordering
   // test.
-  .use(trainersClientDetailGetHandler);
+  .use(trainersClientDetailGetHandler)
+  // 25-coach-client-offboarding — DELETE /trainers/me/clients/:clientId (coach
+  // removes client) + DELETE /clients/me/relationships/:relationshipId (client
+  // leaves coach). DELETE method, so no collision with the bare `:clientId` GET
+  // above.
+  .use(coachClientOffboardingRoutes);

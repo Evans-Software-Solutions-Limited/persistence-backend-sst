@@ -1,9 +1,7 @@
 import Elysia, { t } from "elysia";
-import { and, eq } from "drizzle-orm";
-import { profiles, ptClientRelationships } from "@persistence/db";
-import { getDb } from "@persistence/db/client";
 import { HomeReadService } from "../../repositories/homeReadService";
 import { parseBodyTrendWindow } from "../../progress/getBodyTrendHandler";
+import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
 import {
   getAuthUser,
   requireAuth,
@@ -20,12 +18,13 @@ import {
  * Days are bucketed in the CLIENT's timezone — the coach sees the same
  * calendar days the client sees on their own You screen.
  *
- * Authorization: identical to the coach measurement-log route — the caller
- * MUST have an ACTIVE, non-AI relationship with :clientId as the trainer.
- * 403 otherwise (`not_your_client`).
- *
- * Cluster 2a: also denies (same 403 body) when the client is soft-deleted,
- * joined into the same query. Brad's "hide from coach immediately" call.
+ * Authorization: `assertTrainerCanActForClient` (25-coach-client-offboarding
+ * guard consolidation) — role check FIRST (trainer/physio/admin, not
+ * soft-deleted), then an ACTIVE, non-AI relationship with :clientId, then the
+ * client not soft-deleted (Cluster 2a "hide from coach immediately"). Replaces
+ * the former inline relationship-only check so a lapsed trainer whose role
+ * reverted can no longer read a client's body trend off a stale relationship
+ * row. 403 (`not_a_trainer` / `not_your_client` / `account_deleted`).
  */
 export const trainersClientBodyTrendHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -39,34 +38,10 @@ export const trainersClientBodyTrendHandler = new Elysia()
       const { sub: trainerId } = getUser(ctx);
       const { clientId } = ctx.params as { clientId: string };
 
-      // Active-relationship guard (trainer side of the pair) — mirrors
-      // trainersLogClientMeasurementHandler. Joined to the client's profile
-      // so a soft-deleted client (Cluster 2a) is denied in the same
-      // round-trip.
-      const db = getDb();
-      const rel = await db
-        .select({
-          id: ptClientRelationships.id,
-          clientDeletedAt: profiles.deletedAt,
-        })
-        .from(ptClientRelationships)
-        .innerJoin(profiles, eq(ptClientRelationships.clientId, profiles.id))
-        .where(
-          and(
-            eq(ptClientRelationships.trainerId, trainerId),
-            eq(ptClientRelationships.clientId, clientId),
-            eq(ptClientRelationships.status, "active"),
-            eq(ptClientRelationships.isAiTrainer, false),
-          ),
-        )
-        .limit(1);
-
-      if (!rel[0] || rel[0].clientDeletedAt != null) {
-        ctx.set.status = 403;
-        return {
-          code: "not_your_client",
-          message: "You can only view measurements for your active clients",
-        };
+      const verdict = await assertTrainerCanActForClient(trainerId, clientId);
+      if (!verdict.allowed) {
+        ctx.set.status = verdict.status;
+        return verdict.body;
       }
 
       const windowDays = parseBodyTrendWindow(ctx.query.window);

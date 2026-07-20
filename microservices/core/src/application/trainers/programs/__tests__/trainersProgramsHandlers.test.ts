@@ -18,25 +18,38 @@ const assignmentMocks = {
 const trainerMocks = { isTrainer: vi.fn() };
 const guardMocks = { hasActiveRelationship: vi.fn() };
 
-// `trainersClientActiveProgrammeGetHandler` checks the relationship with a
-// direct getDb() query (mirrors body-trend) rather than the shared guard, so
-// stub getDb to resolve `relRows` for that
-// .select().from().innerJoin().where().limit() chain (Cluster 2a joins in
-// the client's profile to check deleted_at). The other handlers go through
-// mocked repos and never hit getDb.
-let relRows: Array<{ id: string; clientDeletedAt?: Date | null }> = [
-  { id: "rel-1" },
-];
+// `trainersClientActiveProgrammeGetHandler` now authorizes via the shared
+// `assertTrainerCanActForClient` guard (25-coach-client-offboarding guard
+// consolidation), so we mock that directly (below). The generic getDb stub is
+// retained as a harmless no-op safety net; no handler in this file hits it now.
 vi.mock("@persistence/db/client", () => ({
   getDb: () => {
     const chain: any = {};
     for (const k of ["from", "innerJoin", "where", "limit"])
       chain[k] = () => chain;
-    chain.then = (res: any, rej: any) =>
-      Promise.resolve(relRows).then(res, rej);
+    chain.then = (res: any, rej: any) => Promise.resolve([]).then(res, rej);
     return { select: () => chain };
   },
 }));
+
+// Shared authorization guard for the active-programme read. Its internals
+// (role + active non-AI relationship + client-not-soft-deleted) are covered in
+// assertTrainerCanActForClient.test.ts; here we assert the handler forwards the
+// verdict.
+const assertActGuard = vi.fn();
+vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
+  assertTrainerCanActForClient: (...args: unknown[]) => assertActGuard(...args),
+}));
+
+const DENY_NOT_CLIENT = {
+  allowed: false as const,
+  reason: "no_relationship" as const,
+  status: 403 as const,
+  body: {
+    code: "not_your_client",
+    message: "You can only act for your active clients",
+  },
+};
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -90,7 +103,7 @@ describe("programme handlers", () => {
     vi.clearAllMocks();
     trainerMocks.isTrainer.mockResolvedValue(true);
     guardMocks.hasActiveRelationship.mockResolvedValue(true);
-    relRows = [{ id: "rel-1" }];
+    assertActGuard.mockResolvedValue({ allowed: true });
   });
 
   describe("GET /trainers/me/clients/:clientId/active-programme", () => {
@@ -107,22 +120,30 @@ describe("programme handlers", () => {
       expect(res.status).toBe(401);
     });
 
-    it("403 when no active relationship with the client", async () => {
-      relRows = [];
+    it("403 when the guard denies (not the caller's active client)", async () => {
+      assertActGuard.mockResolvedValue(DENY_NOT_CLIENT);
       const h = await load();
       const res = await h.handle(
         authed("/trainers/me/clients/c1/active-programme"),
       );
       expect(res.status).toBe(403);
+      expect(((await res.json()) as any).code).toBe("not_your_client");
+      expect(assertActGuard).toHaveBeenCalledWith("trainer-id", "c1");
       expect(
         assignmentMocks.getActiveProgrammeForClient,
       ).not.toHaveBeenCalled();
     });
 
-    it("403 (Cluster 2a) when the client is soft-deleted, even with an active relationship row", async () => {
-      relRows = [
-        { id: "rel-1", clientDeletedAt: new Date("2026-07-13T00:00:00Z") },
-      ];
+    it("403 when the guard denies for a soft-deleted client (Cluster 2a, handled inside the guard)", async () => {
+      assertActGuard.mockResolvedValue({
+        allowed: false,
+        reason: "client_deleted",
+        status: 403,
+        body: {
+          code: "not_your_client",
+          message: "You can only act for your active clients",
+        },
+      });
       const h = await load();
       const res = await h.handle(
         authed("/trainers/me/clients/c1/active-programme"),

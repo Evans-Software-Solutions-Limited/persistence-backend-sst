@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useGetClientBodyTrend } from "@/ui/hooks/useGetClientBodyTrend";
 import { useGetClientDetail } from "@/ui/hooks/useGetClientDetail";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
 import { useAssignWorkoutSheet } from "@/state/assign-workout-sheet";
@@ -70,7 +72,8 @@ export function ClientDetailContainer() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const detail = useGetClientDetail(id);
   const trend = useGetClientBodyTrend(id);
-  const { api, netInfo } = useAdapters();
+  const { api, netInfo, storage } = useAdapters();
+  const { session } = useAuth();
   const online = useOnlineStatus();
   const openAssignProgram = useAssignProgramSheet((s) => s.openForClient);
   const openAssignWorkout = useAssignWorkoutSheet((s) => s.openSheet);
@@ -204,6 +207,67 @@ export function ClientDetailContainer() {
   const onBack = useCallback(() => {
     if (router.canGoBack()) router.back();
   }, [router]);
+
+  // Remove client (spec 25 coach↔client offboarding AC-4.1). The header kebab
+  // is the only item on the menu today, so it goes straight to the
+  // destructive confirm rather than an intermediate action-sheet step —
+  // mirrors ExerciseListContainer's long-press-delete pattern (this app has
+  // no dedicated action-sheet primitive). A ref guards against a double-tap
+  // opening two Alerts (and firing two DELETEs) — Alert presentation is
+  // async, so a state-based guard would still race the second tap in.
+  const isRemovingClientRef = useRef(false);
+  const onRemoveClient = useCallback(() => {
+    if (!id || isRemovingClientRef.current) return;
+    const clientLabel = detail.data?.client.name ?? name ?? "this client";
+    isRemovingClientRef.current = true;
+    Alert.alert(
+      `Remove ${clientLabel}?`,
+      "Their assigned workouts and programmes will be removed and you'll no longer see their data. Any habits and goals you set stay with them. This frees a client seat.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => {
+            isRemovingClientRef.current = false;
+          },
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await api.removeClient(id);
+              if (!result.ok) {
+                Alert.alert("Couldn't remove client", result.error.message, [
+                  { text: "OK" },
+                ]);
+                return;
+              }
+              // Force the roster + this client's detail cache stale so they
+              // don't resurface from a stale read (the Clients screen
+              // re-fetches on its next focus).
+              const userId = session?.userId;
+              if (userId) {
+                storage.invalidateTrainerClients(userId);
+                storage.invalidateClientDetail(userId, id);
+              }
+              onBack();
+            } finally {
+              isRemovingClientRef.current = false;
+            }
+          },
+        },
+      ],
+      // Android tap-outside / hardware-back fires neither button's onPress;
+      // reset the guard here too or the kebab stays dead until remount.
+      {
+        cancelable: true,
+        onDismiss: () => {
+          isRemovingClientRef.current = false;
+        },
+      },
+    );
+  }, [id, api, storage, session, detail.data, name, onBack]);
 
   const onManageHabits = useCallback(() => {
     if (!id) return;
@@ -340,6 +404,7 @@ export function ClientDetailContainer() {
       isGeneratingSummary={isGeneratingSummary}
       online={online}
       onRegenerateSummary={onRegenerateSummary}
+      onRemoveClient={onRemoveClient}
     />
   );
 }

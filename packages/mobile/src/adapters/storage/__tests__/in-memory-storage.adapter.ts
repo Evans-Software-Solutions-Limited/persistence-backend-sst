@@ -505,6 +505,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     );
   }
 
+  invalidateClientDetail(userId: string, clientId: string): void {
+    this.clientDetailCache.delete(this.clientDetailKey(userId, clientId));
+  }
+
   // -- Clients Roster Cache (10-trainer-features) --
 
   getCachedTrainerClients(userId: string): TrainerClient[] | null {
@@ -520,6 +524,10 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   getTrainerClientsAge(userId: string): string | null {
     return this.trainerClientsCache.get(userId)?.syncedAt ?? null;
+  }
+
+  invalidateTrainerClients(userId: string): void {
+    this.trainerClientsCache.delete(userId);
   }
 
   // -- Programmes List Cache (19-programs, Phase 9 mobile — coach F1) --
