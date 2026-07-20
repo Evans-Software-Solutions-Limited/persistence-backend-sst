@@ -9,6 +9,7 @@ const {
   insertMock,
   upsertByExternalIdMock,
   cancelLiveMock,
+  userExistsMock,
   claimMock,
   markDoneMock,
   markFailedMock,
@@ -19,6 +20,7 @@ const {
   insertMock: vi.fn(),
   upsertByExternalIdMock: vi.fn(),
   cancelLiveMock: vi.fn(),
+  userExistsMock: vi.fn(),
   claimMock: vi.fn(),
   markDoneMock: vi.fn(),
   markFailedMock: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock("../../repositories/subscriptionRepository", () => ({
     insert: insertMock,
     upsertByExternalId: upsertByExternalIdMock,
     cancelLiveSubscriptions: cancelLiveMock,
+    userExists: userExistsMock,
   })),
 }));
 
@@ -132,6 +135,7 @@ describe("handleRevenueCatWebhook", () => {
     insertMock.mockResolvedValue({ id: "us1" });
     upsertByExternalIdMock.mockResolvedValue({ id: "us1" });
     cancelLiveMock.mockResolvedValue(0);
+    userExistsMock.mockResolvedValue(true);
     fetchEntMock.mockResolvedValue([]);
   });
 
@@ -236,6 +240,19 @@ describe("handleRevenueCatWebhook", () => {
     expect(markDoneMock).toHaveBeenCalledWith("evt_anon");
   });
 
+  it("skips an app_user_id with no matching profile (foreign environment on a shared RC project) — no fetch, no writes, 200 done", async () => {
+    // Simulate a cross-environment event: the user exists in the OTHER
+    // Supabase project, not this backend. Must no-op (not 500-loop on the FK).
+    userExistsMock.mockResolvedValue(false);
+    const res = await handleRevenueCatWebhook(buildRequest());
+    expect(res.status).toBe(200);
+    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(upsertByExternalIdMock).not.toHaveBeenCalled();
+    expect(cancelLiveMock).not.toHaveBeenCalled();
+    expect(findByExternalIdMock).not.toHaveBeenCalled();
+    expect(markDoneMock).toHaveBeenCalledWith("evt_1");
+  });
+
   it("no active entitlement + existing live rc row → cancels it (revert to free)", async () => {
     findByExternalIdMock.mockResolvedValue({
       id: "us9",
@@ -280,5 +297,19 @@ describe("handleRevenueCatWebhook", () => {
     expect(res.status).toBe(500);
     expect(markFailedMock).toHaveBeenCalledWith("evt_1", "rc down");
     expect(markDoneMock).not.toHaveBeenCalled();
+  });
+
+  it("500s (retryable) — NOT a skip — when the profile lookup throws a transient error", async () => {
+    // A transient DB error must not be mistaken for "foreign user": the event
+    // must fail + retry, never markDone, so a real purchase isn't lost.
+    userExistsMock.mockRejectedValue(new Error("connection terminated"));
+    const res = await handleRevenueCatWebhook(buildRequest());
+    expect(res.status).toBe(500);
+    expect(markFailedMock).toHaveBeenCalledWith(
+      "evt_1",
+      "connection terminated",
+    );
+    expect(markDoneMock).not.toHaveBeenCalled();
+    expect(fetchEntMock).not.toHaveBeenCalled();
   });
 });

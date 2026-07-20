@@ -53,6 +53,20 @@ export const LIVE_SUBSCRIPTION_STATUSES = [
  * being dropped to free the instant they cancel. A cancelled row with no
  * `expires_at` is treated as lapsed (no open-ended grace).
  */
+/**
+ * A Postgres "invalid input syntax for type uuid" error (SQLSTATE `22P02`),
+ * raised when a non-UUID string is compared against a `uuid` column. Matched
+ * on the SQLSTATE code, falling back to the message text if the driver doesn't
+ * surface `code`. Used to distinguish a genuinely-not-a-user id (skip) from a
+ * transient DB failure (must propagate + retry).
+ */
+function isInvalidUuidError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  if (code === "22P02") return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /invalid input syntax for type uuid/i.test(message);
+}
+
 export function liveSubscriptionFilter(): SQL {
   const notExpired = sql`(${userSubscriptions.expiresAt} IS NULL OR ${userSubscriptions.expiresAt} > NOW())`;
   return and(
@@ -161,6 +175,37 @@ export type NewUserSubscription = typeof userSubscriptions.$inferInsert;
  */
 export class SubscriptionRepository {
   static readonly key = "SubscriptionRepository";
+
+  /**
+   * Does a `profiles` row exist for this id?
+   *
+   * RevenueCat's `app_user_id` is the Supabase user UUID, and
+   * `user_subscriptions.user_id` is a FK to `profiles.id`. A SHARED RevenueCat
+   * project (staging + production behind one project) fans every event out to
+   * every configured webhook, so this backend can receive events for a user
+   * that only exists in the OTHER environment's database. `syncCustomer` calls
+   * this before writing so a foreign id is skipped instead of tripping the FK
+   * and 500-looping forever on RevenueCat's at-least-once retries.
+   *
+   * A non-UUID id resolves to `false` (Postgres 22P02 cast failure) — it can't
+   * be one of our users. Any OTHER error (transient Neon blip, connection
+   * reset) is RETHROWN so the webhook 500s and RevenueCat retries, rather than
+   * silently skipping a real user's purchase and dedup-swallowing every retry.
+   */
+  async userExists(userId: string): Promise<boolean> {
+    const db = getDb();
+    try {
+      const rows = await db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(eq(profiles.id, userId))
+        .limit(1);
+      return rows.length > 0;
+    } catch (err) {
+      if (isInvalidUuidError(err)) return false;
+      throw err;
+    }
+  }
 
   /**
    * Find by the Stripe-assigned `external_subscription_id` (`sub_…`).

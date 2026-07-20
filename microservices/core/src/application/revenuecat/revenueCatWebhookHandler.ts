@@ -108,10 +108,24 @@ async function syncCustomer(appUserId: string): Promise<void> {
     return;
   }
 
+  const repo = new SubscriptionRepository();
+
+  // Shared-RevenueCat-project guard: one RC project behind both staging and
+  // production fans every event out to every webhook, so this backend may be
+  // pinged for a user that only exists in the OTHER environment's database.
+  // `user_subscriptions.user_id` FKs to `profiles.id`, so writing a foreign id
+  // would throw and 500-loop on RevenueCat's retries forever. Skip it (the
+  // event is a no-op success) — only this environment's own users get a row.
+  if (!(await repo.userExists(appUserId))) {
+    console.warn(
+      `[revenuecat:webhook] skipping app_user_id with no matching profile (likely a different environment on a shared RevenueCat project): ${appUserId}`,
+    );
+    return;
+  }
+
   const entitlements = await fetchActiveEntitlements(appUserId);
   const desired = pickDesiredSubscription(entitlements);
 
-  const repo = new SubscriptionRepository();
   const rcExternalId = `rc_${appUserId}`;
 
   if (desired !== null) {
