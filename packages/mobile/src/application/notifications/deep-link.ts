@@ -15,6 +15,16 @@
 export const HOME_ROUTE = "/(app)/(tabs)";
 
 /**
+ * The auth-callback route. Target of `persistencemobile://auth/callback` —
+ * the Supabase email-confirmation / password-recovery / OAuth redirect that
+ * the web callback page (the Supabase Site URL) deep-links into on-device.
+ * The screen at `app/auth/callback.tsx` reads the token fragment off the raw
+ * launch URL, so the routed path is bare (no query/fragment needed here).
+ */
+export const AUTH_CALLBACK_HOST = "auth/callback";
+export const AUTH_CALLBACK_ROUTE = "/auth/callback";
+
+/**
  * The Train hub route — exported so notification dispatch sites can detect
  * a train-bound resolution and prime the Training-segment one-shot (M17
  * Send-brief lands the athlete on Train → Training even when a persisted
@@ -133,6 +143,15 @@ export function redirectSystemPathForDeepLink(
     ? path.slice(pathSchemeMatch[0].length)
     : path;
   const candidate = stripped.startsWith("/") ? stripped.slice(1) : stripped;
+
+  // Auth callback is a two-segment host (`auth/callback`) that carries its
+  // tokens in the fragment, which the callback screen reads off the raw launch
+  // URL — so drop any query/fragment and land Expo Router on the bare route.
+  // Handled ahead of the single-segment SCHEME_HOSTS lookup below; without a
+  // matching route a cold open would dead-end on the Unmatched route.
+  const pathOnly = candidate.split(/[?#]/)[0];
+  if (pathOnly === AUTH_CALLBACK_HOST) return AUTH_CALLBACK_ROUTE;
+
   const { host, query } = splitHostAndQuery(candidate);
   const base = SCHEME_HOSTS[host];
   if (!base) return path;

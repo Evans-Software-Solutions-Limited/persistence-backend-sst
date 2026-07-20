@@ -81,6 +81,22 @@ export class InMemoryAuthAdapter implements AuthPort {
     return ok(this.currentSession);
   }
 
+  async setSessionFromTokens(
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<Result<AuthSession, AuthError>> {
+    if (this.shouldFail) return fail(this.failError);
+    this.currentSession = {
+      accessToken,
+      refreshToken,
+      userId: "callback-user",
+      email: "callback@example.com",
+      expiresAt: Date.now() / 1000 + 3600,
+    };
+    this.notify();
+    return ok(this.currentSession);
+  }
+
   async signOut(): Promise<Result<void, AuthError>> {
     if (this.shouldFail) return fail(this.failError);
     this.currentSession = null;

@@ -83,4 +83,26 @@ describe("InMemoryAuthAdapter", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("auth");
   });
+
+  it("sets a session from tokens and notifies listeners", async () => {
+    const seen: (string | null)[] = [];
+    auth.onAuthStateChange((s) => seen.push(s?.accessToken ?? null));
+
+    const result = await auth.setSessionFromTokens("acc-tok", "ref-tok");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.accessToken).toBe("acc-tok");
+      expect(result.value.refreshToken).toBe("ref-tok");
+    }
+    expect(auth.currentSession?.accessToken).toBe("acc-tok");
+    expect(seen).toContain("acc-tok");
+  });
+
+  it("fails setSessionFromTokens when shouldFail is set", async () => {
+    auth.shouldFail = true;
+    const result = await auth.setSessionFromTokens("acc", "ref");
+    expect(result.ok).toBe(false);
+    expect(auth.currentSession).toBeNull();
+  });
 });
