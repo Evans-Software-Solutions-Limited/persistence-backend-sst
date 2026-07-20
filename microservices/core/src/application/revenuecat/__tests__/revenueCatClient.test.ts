@@ -13,6 +13,7 @@ vi.mock("@persistence/api-utils/env", () => ({
 
 import {
   fetchActiveEntitlements,
+  fetchAutoRenewOff,
   getRevenueCatApiKey,
   getRevenueCatProjectId,
   getRevenueCatWebhookSecret,
@@ -148,5 +149,78 @@ describe("fetchActiveEntitlements", () => {
     await expect(fetchActiveEntitlements("user-1")).rejects.toThrow(
       /RevenueCat active_entitlements failed: 503/,
     );
+  });
+});
+
+describe("fetchAutoRenewOff", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  function stubFetch(impl: () => Promise<Response> | Response) {
+    vi.stubGlobal("fetch", vi.fn(impl));
+  }
+
+  it("true when an access-granting subscription won't renew (cancelled but active), hitting the right URL", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            items: [
+              { gives_access: true, auto_renewal_status: "will_not_renew" },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchAutoRenewOff("user-1")).toBe(true);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe(
+      "https://api.revenuecat.com/v2/projects/proj_123/customers/user-1/subscriptions",
+    );
+  });
+
+  it("false when the will-not-renew subscription no longer grants access", async () => {
+    stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            items: [
+              { gives_access: false, auto_renewal_status: "will_not_renew" },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+    expect(await fetchAutoRenewOff("user-1")).toBe(false);
+  });
+
+  it("false when auto-renew is on", async () => {
+    stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            items: [{ gives_access: true, auto_renewal_status: "will_renew" }],
+          }),
+          { status: 200 },
+        ),
+    );
+    expect(await fetchAutoRenewOff("user-1")).toBe(false);
+  });
+
+  it("fail-safe false on non-2xx, thrown error, or missing items", async () => {
+    stubFetch(() => new Response("nope", { status: 500 }));
+    expect(await fetchAutoRenewOff("user-1")).toBe(false);
+
+    stubFetch(() => {
+      throw new Error("network");
+    });
+    expect(await fetchAutoRenewOff("user-1")).toBe(false);
+
+    stubFetch(() => new Response(JSON.stringify({}), { status: 200 }));
+    expect(await fetchAutoRenewOff("user-1")).toBe(false);
   });
 });

@@ -112,6 +112,7 @@ describe("SubscriptionRepository.upsertByExternalId (spec-12.13 atomic upsert)",
     expect(renderedWhere).toContain('"external_subscription_id" is not null');
     expect(Object.keys(conflictArg.set).sort()).toEqual([
       "billingCycle",
+      "cancelledAt",
       "expiresAt",
       "metadata",
       "paymentStatus",

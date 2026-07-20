@@ -109,3 +109,58 @@ export async function fetchActiveEntitlements(
     .map(normalizeEntitlement)
     .filter((e): e is NormalizedEntitlement => e !== null);
 }
+
+/** Raw shape of one `subscriptions` list item (parsed defensively). */
+interface RawSubscription {
+  auto_renewal_status?: unknown;
+  gives_access?: unknown;
+}
+
+interface SubscriptionsResponse {
+  items?: RawSubscription[];
+}
+
+/**
+ * Whether the customer has turned OFF auto-renew on a subscription that still
+ * grants access — i.e. "cancelled but active" (in the paid period, won't
+ * renew). Drives the in-app "cancelled — active until X" banner on the iOS
+ * rail (Apple owns the cancel UX; the app only reflects it).
+ *
+ * Reads RevenueCat v2 `GET /customers/{id}/subscriptions` and looks for an
+ * access-granting item whose `auto_renewal_status` is `will_not_renew` (the
+ * field RevenueCat provides specifically so integrators don't have to derive
+ * cancellation from `unsubscribe_detected_at`).
+ *
+ * FAIL-SAFE + COSMETIC: this only toggles a display flag — access is decided
+ * elsewhere (active entitlement + expiry). Any error, a non-2xx, or an
+ * unexpected shape resolves to `false` (banner simply doesn't show — the prior
+ * behaviour), so a subscriptions-endpoint hiccup can never fail the webhook or
+ * revoke access. The exact `auto_renewal_status` / `gives_access` field
+ * spellings are doc-derived; confirm against a real sandbox response at the
+ * 12.11 IAP sign-off (a wrong spelling just leaves the banner hidden).
+ */
+export async function fetchAutoRenewOff(appUserId: string): Promise<boolean> {
+  try {
+    const key = getRevenueCatApiKey();
+    const projectId = getRevenueCatProjectId();
+    const url = `${RC_API_BASE}/projects/${projectId}/customers/${encodeURIComponent(
+      appUserId,
+    )}/subscriptions`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return false;
+
+    const json = (await res.json()) as SubscriptionsResponse;
+    const items = Array.isArray(json.items) ? json.items : [];
+    return items.some(
+      (item) =>
+        item.gives_access === true &&
+        item.auto_renewal_status === "will_not_renew",
+    );
+  } catch {
+    return false;
+  }
+}

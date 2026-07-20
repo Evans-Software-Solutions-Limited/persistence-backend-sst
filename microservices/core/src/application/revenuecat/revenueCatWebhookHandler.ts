@@ -6,6 +6,7 @@ import {
 import { RevenueCatWebhookEventsRepository } from "../repositories/revenuecatWebhookEventsRepository";
 import {
   fetchActiveEntitlements,
+  fetchAutoRenewOff,
   getRevenueCatWebhookSecret,
 } from "./revenueCatClient";
 import { pickDesiredSubscription } from "./entitlements";
@@ -129,11 +130,19 @@ async function syncCustomer(appUserId: string): Promise<void> {
   const rcExternalId = `rc_${appUserId}`;
 
   if (desired !== null) {
+    // Cosmetic "cancelled but active" flag: auto-renew OFF while still in the
+    // paid period. Fetched separately (fail-safe → false); drives the in-app
+    // "cancelled — active until X" banner. `cancelledAt` is set to now when off
+    // (the banner only needs it non-null; the date shown is `expiresAt`), and
+    // cleared when auto-renew is back on so an uncancellation removes the flag.
+    const autoRenewOff = await fetchAutoRenewOff(appUserId);
+
     const values = {
       tierName: desired.tier,
       paymentStatus: "active",
       expiresAt: desired.expiresAt,
       billingCycle: desired.billingCycle,
+      cancelledAt: autoRenewOff ? new Date() : null,
       externalSubscriptionId: rcExternalId,
       metadata: {
         source: "revenuecat",
