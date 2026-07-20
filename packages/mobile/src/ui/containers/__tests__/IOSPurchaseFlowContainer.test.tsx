@@ -319,7 +319,7 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("restore: success surfaces a confirmation alert", async () => {
+  it("restore: bridges the restored tier to the success screen (no free-tier lag)", async () => {
     const { adapters, purchases } = makeAdapters();
     purchases.nextRestoreResponse = {
       ok: true,
@@ -340,6 +340,37 @@ describe("IOSPurchaseFlowContainer", () => {
       fireEvent.press(screen.getByTestId("ios-purchase-restore"));
     });
     await waitFor(() => expect(purchases.restoreCalls).toBe(1));
+    // Navigates to success with the restored tier rather than showing an alert
+    // that would leave the paywall on the stale free tier during the webhook race.
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      "Purchases Restored",
+      expect.any(String),
+    );
+  });
+
+  it("restore: falls back to an alert when the restored entitlement maps to no known tier", async () => {
+    const { adapters, purchases } = makeAdapters();
+    purchases.nextRestoreResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "legacy_unknown",
+          tier: null,
+          productId: null,
+          expiresAt: null,
+        },
+      ],
+    };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("ios-purchase-restore"));
+    });
+    await waitFor(() => expect(purchases.restoreCalls).toBe(1));
+    expect(mockPush).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalledWith(
       "Purchases Restored",
       expect.any(String),
