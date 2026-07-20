@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
   type CustomerInfo,
   type PurchasesEntitlementInfo,
@@ -102,6 +103,30 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
         offerings.all[DEFAULT_OFFERING_ID] ?? offerings.current ?? null;
       if (offering === null) return ok([]);
       return ok(offering.availablePackages.map(toPurchaseProduct));
+    } catch (err) {
+      return fail(classifyPurchasesError(err));
+    }
+  }
+
+  async getIntroEligibility(
+    productIds: string[],
+  ): Promise<Result<Record<string, boolean>, PurchasesError>> {
+    if (!this.configured) {
+      return fail(notConfigured("getIntroEligibility"));
+    }
+    try {
+      const eligibility =
+        await Purchases.checkTrialOrIntroductoryPriceEligibility(productIds);
+      const map: Record<string, boolean> = {};
+      for (const [productId, result] of Object.entries(eligibility)) {
+        // ELIGIBLE only. INELIGIBLE / UNKNOWN / NO_INTRO_OFFER_EXISTS → false
+        // so the paywall shows the non-intro state (RevenueCat's own guidance
+        // for UNKNOWN) and never advertises a trial the user can't get.
+        map[productId] =
+          result.status ===
+          INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE;
+      }
+      return ok(map);
     } catch (err) {
       return fail(classifyPurchasesError(err));
     }

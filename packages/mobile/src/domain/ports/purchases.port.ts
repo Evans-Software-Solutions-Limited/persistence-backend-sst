@@ -134,6 +134,19 @@ export interface PurchasesPort {
   getPurchasablePackages(): Promise<Result<PurchaseProduct[], PurchasesError>>;
 
   /**
+   * Check, per store product id, whether the current Apple Account is eligible
+   * for that product's introductory (free-trial) offer — Apple's real answer
+   * (per Apple ID, per subscription group), read on-device. `true` only when
+   * the SDK reports ELIGIBLE; INELIGIBLE / UNKNOWN / no-offer all map to
+   * `false` so the paywall never advertises a trial the user won't get. Used
+   * as the single source of truth for the iOS trial banner (the backend
+   * `has_used_*` flags are Stripe-rail-only and never set on iOS).
+   */
+  getIntroEligibility(
+    productIds: string[],
+  ): Promise<Result<Record<string, boolean>, PurchasesError>>;
+
+  /**
    * Run the native purchase sheet for `packageId` and return the resulting
    * active entitlements. User cancellation → `fail` with kind `cancelled`.
    */

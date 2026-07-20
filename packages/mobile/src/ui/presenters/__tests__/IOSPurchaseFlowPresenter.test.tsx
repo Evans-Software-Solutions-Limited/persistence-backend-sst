@@ -42,10 +42,11 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     currentTier: "free",
     selectedRole: "user",
     purchasableTiers: new Set(["premium", "individual_trainer"]),
-    isTrialEligibleUser: true,
-    isTrialEligibleTrainer: true,
+    isTierTrialEligible: () => true,
     trialDurationDays: 14,
     hasTrialEligibilityData: true,
+    contactSalesTiers: new Set(["small_business", "medium_enterprise"]),
+    onContactSales: jest.fn(),
     subscriptionEndsAt: null,
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
@@ -89,12 +90,78 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByText("30-day free trial")).toBeTruthy();
   });
 
+  it("shows the trial banner per-tier — only on tiers whose own product is eligible", () => {
+    const SMALL_BUSINESS: SubscriptionTier = {
+      ...PREMIUM,
+      tierName: "small_business",
+      displayName: "Small Business",
+      isTrainerTier: true,
+    };
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS]}
+        selectedRole="trainer"
+        billingCycle="monthly"
+        // Only individual_trainer is eligible; small_business is not.
+        isTierTrialEligible={(tier) => tier === "individual_trainer"}
+      />,
+    );
+    // Exactly one trainer card shows the banner (individual_trainer), not SB.
+    expect(screen.getAllByText("14-day free trial")).toHaveLength(1);
+  });
+
   it("renders trainer cards under the trainer role", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} selectedRole="trainer" />);
     expect(
       screen.getByTestId("trainer-subscription-card-individual_trainer"),
     ).toBeTruthy();
+  });
+
+  it("shows Contact Sales (not Subscribe) for a contact-sales tier on the yearly cycle", () => {
+    const MEDIUM_ENTERPRISE: SubscriptionTier = {
+      ...PREMIUM,
+      tierName: "medium_enterprise",
+      displayName: "Medium Enterprise",
+      isTrainerTier: true,
+      priceYearly: null,
+    };
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
+        selectedRole="trainer"
+        billingCycle="yearly"
+      />,
+    );
+    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
+    expect(props.onContactSales).toHaveBeenCalledWith("medium_enterprise");
+    // Individual Trainer keeps a normal purchase (has a yearly product).
+    expect(screen.getByText("Contact Sales")).toBeTruthy();
+  });
+
+  it("does NOT show Contact Sales for a contact-sales tier on the monthly cycle", () => {
+    const MEDIUM_ENTERPRISE: SubscriptionTier = {
+      ...PREMIUM,
+      tierName: "medium_enterprise",
+      displayName: "Medium Enterprise",
+      isTrainerTier: true,
+    };
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
+        selectedRole="trainer"
+        billingCycle="monthly"
+      />,
+    );
+    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
+    expect(props.onContactSales).not.toHaveBeenCalled();
+    expect(props.onTierSelect).toHaveBeenCalledWith("medium_enterprise");
   });
 
   it("invokes restore", () => {

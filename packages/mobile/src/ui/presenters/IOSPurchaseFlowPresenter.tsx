@@ -54,12 +54,19 @@ export interface IOSPurchaseFlowPresenterProps {
   /** Tiers with at least one purchasable Apple product in the offering. */
   purchasableTiers: ReadonlySet<SubscriptionTierName>;
 
-  isTrialEligibleUser: boolean;
-  isTrialEligibleTrainer: boolean;
+  /** Whether the current Apple Account is intro-eligible for THIS tier's
+   * product on the shown cycle (RevenueCat's real answer). Per-tier so a
+   * banner only shows on a tile whose own product grants a trial. */
+  isTierTrialEligible: (tier: SubscriptionTierName) => boolean;
   /** Free-trial length (days) advertised on every tile — derived from the
    * product's Apple intro offer, falling back to DEFAULT_TRIAL_DAYS. */
   trialDurationDays: number;
   hasTrialEligibilityData: boolean;
+
+  /** Tiers whose ANNUAL plan shows "Contact Sales" instead of an IAP button
+   * (too large for IAP — handled B2B). Only applies on the yearly cycle. */
+  contactSalesTiers: ReadonlySet<SubscriptionTierName>;
+  onContactSales: (tier: SubscriptionTierName) => void;
 
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
@@ -87,10 +94,11 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     currentTier,
     selectedRole,
     purchasableTiers,
-    isTrialEligibleUser,
-    isTrialEligibleTrainer,
+    isTierTrialEligible,
     trialDurationDays,
     hasTrialEligibilityData,
+    contactSalesTiers,
+    onContactSales,
     subscriptionEndsAt,
     isCancelledButActive,
     currentTierDisplayName,
@@ -111,7 +119,9 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     if (premium) {
       const isPremiumCurrent = currentTier === "premium";
       const showPremiumTrial =
-        hasTrialEligibilityData && isTrialEligibleUser && !isPremiumCurrent;
+        hasTrialEligibilityData &&
+        isTierTrialEligible("premium") &&
+        !isPremiumCurrent;
       cards.push(
         <SubscriptionCard
           key={premium.tierName}
@@ -133,7 +143,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     billingCycle,
     currentTier,
     hasTrialEligibilityData,
-    isTrialEligibleUser,
+    isTierTrialEligible,
     trialDurationDays,
     isProcessing,
     isRestoring,
@@ -151,8 +161,15 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
       const tier = subscriptionTiers.find((t) => t.tierName === baseName);
       if (tier) {
         const isCurrent = currentTier === tier.tierName;
+        // This tier's annual plan is sold via sales, not IAP → show a
+        // "Contact Sales" CTA instead of a purchase button (and no trial).
+        const isContactSales =
+          billingCycle === "yearly" && contactSalesTiers.has(baseName);
         const showTrialBanner =
-          hasTrialEligibilityData && isTrialEligibleTrainer && !isCurrent;
+          hasTrialEligibilityData &&
+          isTierTrialEligible(baseName) &&
+          !isCurrent &&
+          !isContactSales;
         cards.push(
           <TrainerSubscriptionCard
             key={baseName}
@@ -163,6 +180,8 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             isProCurrent={isCurrent}
             showProTrialBanner={showTrialBanner}
             trialBannerText={`${trialDurationDays}-day free trial`}
+            contactSalesMode={isContactSales}
+            onContactSales={() => onContactSales(baseName)}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             disabled={isProcessing || isRestoring}
@@ -176,8 +195,10 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     billingCycle,
     currentTier,
     hasTrialEligibilityData,
-    isTrialEligibleTrainer,
+    isTierTrialEligible,
     trialDurationDays,
+    contactSalesTiers,
+    onContactSales,
     isProcessing,
     isRestoring,
     onTierSelect,
@@ -357,7 +378,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
         <TouchableOpacity
           style={styles.restoreButton}
           onPress={onRestore}
-          disabled={isProcessing || isRestoring}
+          disabled={isProcessing || isRestoring || isUnavailable}
           testID="ios-purchase-restore"
         >
           <Text style={styles.restoreButtonText}>

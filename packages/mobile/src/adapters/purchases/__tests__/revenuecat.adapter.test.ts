@@ -14,6 +14,7 @@ const mockPurchases = Purchases as unknown as {
   getOfferings: jest.Mock;
   purchasePackage: jest.Mock;
   restorePurchases: jest.Mock;
+  checkTrialOrIntroductoryPriceEligibility: jest.Mock;
 };
 
 function offeringWith(packages: unknown[]) {
@@ -62,9 +63,10 @@ describe("RevenueCatPurchasesAdapter — guards when unconfigured", () => {
     const a = new RevenueCatPurchasesAdapter();
     const login = await a.logIn("u-1");
     const pkgs = await a.getPurchasablePackages();
+    const elig = await a.getIntroEligibility(["x"]);
     const buy = await a.purchase("$rc_monthly");
     const restore = await a.restore();
-    for (const r of [login, pkgs, buy, restore]) {
+    for (const r of [login, pkgs, elig, buy, restore]) {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.kind).toBe("not_configured");
     }
@@ -135,6 +137,40 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     const r = await a.getPurchasablePackages();
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value[0].introTrialDays).toBe(14);
+  });
+
+  it("maps intro eligibility: only ELIGIBLE → true", async () => {
+    const a = configured();
+    mockPurchases.checkTrialOrIntroductoryPriceEligibility.mockResolvedValue({
+      "app.persistence.premium.monthly": { status: 2 }, // ELIGIBLE
+      "app.persistence.trainer.individual.monthly": { status: 1 }, // INELIGIBLE
+      "app.persistence.small_business.monthly": { status: 0 }, // UNKNOWN
+      "app.persistence.medium_enterprise.monthly": { status: 3 }, // NO_INTRO
+    });
+    const r = await a.getIntroEligibility([
+      "app.persistence.premium.monthly",
+      "app.persistence.trainer.individual.monthly",
+      "app.persistence.small_business.monthly",
+      "app.persistence.medium_enterprise.monthly",
+    ]);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value).toEqual({
+        "app.persistence.premium.monthly": true,
+        "app.persistence.trainer.individual.monthly": false,
+        "app.persistence.small_business.monthly": false,
+        "app.persistence.medium_enterprise.monthly": false,
+      });
+    }
+  });
+
+  it("getIntroEligibility fails cleanly on a thrown SDK error", async () => {
+    const a = configured();
+    mockPurchases.checkTrialOrIntroductoryPriceEligibility.mockRejectedValue(
+      new Error("store down"),
+    );
+    const r = await a.getIntroEligibility(["x"]);
+    expect(r.ok).toBe(false);
   });
 
   it("getPurchasablePackages returns empty when no offering exists", async () => {

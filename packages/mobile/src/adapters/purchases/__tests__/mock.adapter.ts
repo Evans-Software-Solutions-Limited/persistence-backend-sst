@@ -31,10 +31,19 @@ export class MockPurchasesAdapter implements PurchasesPort {
     | { ok: true }
     | { ok: false; error: PurchasesError } = { ok: true };
 
+  /**
+   * Per-product intro-eligibility the mock returns. Tests set this to control
+   * whether the trial banner shows; unset product ids default to `true`
+   * (eligible) so existing tests that don't care keep the trial visible.
+   */
+  public introEligibility: Record<string, boolean> = {};
+  public nextIntroEligibilityError: PurchasesError | null = null;
+
   public configureCalls: string[] = [];
   public logInCalls: string[] = [];
   public logOutCalls = 0;
   public getPackagesCalls = 0;
+  public introEligibilityCalls: string[][] = [];
   public purchaseCalls: string[] = [];
   public restoreCalls = 0;
 
@@ -65,6 +74,20 @@ export class MockPurchasesAdapter implements PurchasesPort {
     this.getPackagesCalls += 1;
     if (this.nextPackagesError !== null) return fail(this.nextPackagesError);
     return ok(this.packages);
+  }
+
+  async getIntroEligibility(
+    productIds: string[],
+  ): Promise<Result<Record<string, boolean>, PurchasesError>> {
+    this.introEligibilityCalls.push(productIds);
+    if (this.nextIntroEligibilityError !== null) {
+      return fail(this.nextIntroEligibilityError);
+    }
+    const map: Record<string, boolean> = {};
+    for (const id of productIds) {
+      map[id] = this.introEligibility[id] ?? true;
+    }
+    return ok(map);
   }
 
   async purchase(

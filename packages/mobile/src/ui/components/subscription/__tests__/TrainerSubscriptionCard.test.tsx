@@ -306,4 +306,29 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.getByText("£490/year")).toBeTruthy();
     expect(screen.getByText("£990/year")).toBeTruthy();
   });
+
+  it("contactSalesMode: shows Contact Sales (no price) and fires onContactSales instead of onProPress", () => {
+    const onContactSales = jest.fn();
+    const onProPress = jest.fn();
+    render(
+      <TrainerSubscriptionCard
+        standardTier={null}
+        proTier={PRO}
+        billingCycle="yearly"
+        isStandardCurrent={false}
+        isProCurrent={false}
+        showProTrialBanner
+        contactSalesMode
+        onContactSales={onContactSales}
+        onStandardPress={jest.fn()}
+        onProPress={onProPress}
+      />,
+    );
+    expect(screen.getByText("Contact Sales")).toBeTruthy();
+    // No trial banner in contact-sales mode.
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
+    expect(onContactSales).toHaveBeenCalledTimes(1);
+    expect(onProPress).not.toHaveBeenCalled();
+  });
 });
