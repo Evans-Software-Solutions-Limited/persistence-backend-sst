@@ -447,6 +447,25 @@ export class SupabaseAuthAdapter implements AuthPort {
     return ok(undefined);
   }
 
+  async updatePassword(newPassword: string): Promise<Result<void, AuthError>> {
+    try {
+      const { error } = await this.client.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) {
+        return fail({ kind: "auth", code: "unknown", message: error.message });
+      }
+      return ok(undefined);
+    } catch (err) {
+      // Never throw — the set-new-password screen awaits a Result.
+      return fail({
+        kind: "auth",
+        code: "unknown",
+        message: err instanceof Error ? err.message : "Failed to set password",
+      });
+    }
+  }
+
   async refreshSession(): Promise<Result<AuthSession, AuthError>> {
     const { data, error } = await this.client.auth.refreshSession();
     if (error || !data.session) {

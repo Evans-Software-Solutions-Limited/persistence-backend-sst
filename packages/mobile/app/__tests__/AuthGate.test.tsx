@@ -113,6 +113,8 @@ import RootLayout from "../_layout";
 // eslint-disable-next-line import/first
 import { usePendingInvite } from "../../src/state/pending-invite";
 // eslint-disable-next-line import/first
+import { usePasswordRecovery } from "../../src/state/password-recovery";
+// eslint-disable-next-line import/first
 import * as Notifications from "expo-notifications";
 // eslint-disable-next-line import/first
 import { Platform } from "react-native";
@@ -135,6 +137,7 @@ describe("AuthGate", () => {
       refresh: jest.fn(),
     });
     usePendingInvite.getState().reset();
+    usePasswordRecovery.getState().reset();
   });
 
   it("does not redirect while loading", () => {
@@ -263,6 +266,62 @@ describe("AuthGate", () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
     });
+  });
+
+  // Password-recovery divert (set-new-password) --------------------------------
+
+  it("diverts a recovery-flagged session to set-new-password instead of the tabs", async () => {
+    usePasswordRecovery.getState().begin();
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["auth"]); // just landed on /auth/callback
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/set-new-password");
+    });
+    expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
+    // Peeked, not cleared — the set-new-password screen owns the clear.
+    expect(usePasswordRecovery.getState().pending).toBe(true);
+  });
+
+  it("clears an armed recovery flag when the soft-delete gate pre-empts the divert", async () => {
+    // A soft-deleted user opening a recovery link must not leave `pending`
+    // armed — otherwise a later normal sign-in would be trapped on
+    // set-new-password (Inspector Brad 🟡).
+    usePasswordRecovery.getState().begin();
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseProfilePage.mockReturnValue({
+      payload: { profile: { deletedAt: "2026-07-01T00:00:00.000Z" } },
+      refresh: jest.fn(),
+    });
+    mockUseSegments.mockReturnValue(["auth"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/restore-account");
+    });
+    expect(usePasswordRecovery.getState().pending).toBe(false);
+  });
+
+  it("does not bounce a signed-in user already on set-new-password", () => {
+    usePasswordRecovery.getState().begin();
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)", "set-new-password"]);
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   // Carry the invite code through auth (device-QA #2 follow-up) ----------------

@@ -11,6 +11,7 @@ import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
+import { usePasswordRecovery } from "@/state/password-recovery";
 import { AuthCallbackContainer } from "../AuthCallbackContainer";
 
 // The launch URL comes from expo-linking's useURL hook — control it per test.
@@ -65,6 +66,7 @@ describe("AuthCallbackContainer", () => {
   beforeEach(() => {
     mockUrl = null;
     mockReplace.mockClear();
+    usePasswordRecovery.setState({ pending: false });
   });
 
   it("establishes a session from the fragment tokens and lets AuthGate route (no explicit nav)", async () => {
@@ -85,6 +87,46 @@ describe("AuthCallbackContainer", () => {
     expect(auth.currentSession?.refreshToken).toBe("def");
     // Success path defers navigation to AuthGate.
     expect(mockReplace).not.toHaveBeenCalled();
+    // Not a recovery link — no divert flag set.
+    expect(usePasswordRecovery.getState().pending).toBe(false);
+  });
+
+  it("flags password-recovery before establishing the session so AuthGate diverts", async () => {
+    mockUrl =
+      "persistencemobile://auth/callback#access_token=abc&refresh_token=def&type=recovery";
+    const { adapters, auth } = createTestAdapters();
+
+    render(
+      <TestWrapper adapters={adapters}>
+        <AuthCallbackContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(auth.currentSession).not.toBeNull();
+    });
+    // Flag set; navigation is left to AuthGate (→ set-new-password).
+    expect(usePasswordRecovery.getState().pending).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("clears the recovery flag and bounces to sign-in if a recovery session fails", async () => {
+    mockUrl =
+      "persistencemobile://auth/callback#access_token=abc&refresh_token=def&type=recovery";
+    const { adapters, auth } = createTestAdapters();
+    auth.shouldFail = true;
+
+    render(
+      <TestWrapper adapters={adapters}>
+        <AuthCallbackContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    });
+    // Flag undone so it can't divert a later normal sign-in.
+    expect(usePasswordRecovery.getState().pending).toBe(false);
   });
 
   it("bounces to sign-in when the link carries no tokens (error fragment)", async () => {

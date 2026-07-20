@@ -128,6 +128,10 @@ export class InMemoryAuthAdapter implements AuthPort {
     return this.mayFail(undefined);
   }
 
+  async updatePassword(_newPassword: string): Promise<Result<void, AuthError>> {
+    return this.mayFail(undefined);
+  }
+
   async refreshSession(): Promise<Result<AuthSession, AuthError>> {
     if (!this.currentSession) {
       return fail({

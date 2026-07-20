@@ -105,4 +105,10 @@ describe("InMemoryAuthAdapter", () => {
     expect(result.ok).toBe(false);
     expect(auth.currentSession).toBeNull();
   });
+
+  it("updatePassword resolves ok, and fails when shouldFail is set", async () => {
+    expect((await auth.updatePassword("newpass123")).ok).toBe(true);
+    auth.shouldFail = true;
+    expect((await auth.updatePassword("newpass123")).ok).toBe(false);
+  });
 });
