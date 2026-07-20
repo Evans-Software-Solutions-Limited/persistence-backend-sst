@@ -2,6 +2,8 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
 import {
   billingCycleFromProductId,
   findPackageForTier,
+  freeTrialDaysFromIntroOffer,
+  offeringTrialDays,
   purchasableTiers,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
@@ -13,6 +15,7 @@ function pkg(overrides: Partial<PurchaseProduct>): PurchaseProduct {
     tier: "premium",
     billingCycle: "monthly",
     priceString: "£9.99",
+    introTrialDays: null,
     ...overrides,
   };
 }
@@ -104,5 +107,82 @@ describe("purchasableTiers", () => {
 
   it("is empty for no packages", () => {
     expect(purchasableTiers([]).size).toBe(0);
+  });
+});
+
+describe("freeTrialDaysFromIntroOffer", () => {
+  it("converts a free-trial period to days by unit", () => {
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "DAY",
+        periodNumberOfUnits: 14,
+      }),
+    ).toBe(14);
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "WEEK",
+        periodNumberOfUnits: 2,
+      }),
+    ).toBe(14);
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "MONTH",
+        periodNumberOfUnits: 1,
+      }),
+    ).toBe(30);
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "YEAR",
+        periodNumberOfUnits: 1,
+      }),
+    ).toBe(365);
+  });
+
+  it("returns null for a paid intro offer (not a free trial)", () => {
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 4.99,
+        periodUnit: "MONTH",
+        periodNumberOfUnits: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for absent, zero-length, or unknown-unit offers", () => {
+    expect(freeTrialDaysFromIntroOffer(null)).toBeNull();
+    expect(freeTrialDaysFromIntroOffer(undefined)).toBeNull();
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "DAY",
+        periodNumberOfUnits: 0,
+      }),
+    ).toBeNull();
+    expect(
+      freeTrialDaysFromIntroOffer({
+        price: 0,
+        periodUnit: "FORTNIGHT",
+        periodNumberOfUnits: 1,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("offeringTrialDays", () => {
+  it("returns the first package's free-trial length when present", () => {
+    const packages = [
+      pkg({ tier: "premium", introTrialDays: null }),
+      pkg({ tier: "individual_trainer", introTrialDays: 14 }),
+    ];
+    expect(offeringTrialDays(packages, 99)).toBe(14);
+  });
+
+  it("falls back when no package carries a free-trial offer", () => {
+    expect(offeringTrialDays([pkg({ introTrialDays: null })], 14)).toBe(14);
+    expect(offeringTrialDays([], 14)).toBe(14);
   });
 });

@@ -56,6 +56,9 @@ export interface IOSPurchaseFlowPresenterProps {
 
   isTrialEligibleUser: boolean;
   isTrialEligibleTrainer: boolean;
+  /** Free-trial length (days) advertised on every tile — derived from the
+   * product's Apple intro offer, falling back to DEFAULT_TRIAL_DAYS. */
+  trialDurationDays: number;
   hasTrialEligibilityData: boolean;
 
   subscriptionEndsAt: string | null;
@@ -86,6 +89,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     purchasableTiers,
     isTrialEligibleUser,
     isTrialEligibleTrainer,
+    trialDurationDays,
     hasTrialEligibilityData,
     subscriptionEndsAt,
     isCancelledButActive,
@@ -115,7 +119,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           billingCycle={billingCycle}
           isCurrent={isPremiumCurrent}
           showTrialBanner={showPremiumTrial}
-          trialBannerText="7-day free trial"
+          trialBannerText={`${trialDurationDays}-day free trial`}
           onPress={() => onTierSelect("premium")}
           disabled={isProcessing || isRestoring}
           getFeaturesList={getFeaturesList}
@@ -130,6 +134,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleUser,
+    trialDurationDays,
     isProcessing,
     isRestoring,
     onTierSelect,
@@ -157,7 +162,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             isStandardCurrent={false}
             isProCurrent={isCurrent}
             showProTrialBanner={showTrialBanner}
-            trialBannerText="14-day free trial"
+            trialBannerText={`${trialDurationDays}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             disabled={isProcessing || isRestoring}
@@ -172,6 +177,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleTrainer,
+    trialDurationDays,
     isProcessing,
     isRestoring,
     onTierSelect,

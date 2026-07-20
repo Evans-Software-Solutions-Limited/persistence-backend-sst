@@ -14,6 +14,7 @@ import type {
 } from "@/domain/ports/purchases.port";
 import {
   billingCycleFromProductId,
+  freeTrialDaysFromIntroOffer,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -167,6 +168,9 @@ function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct {
     tier: tierFromProductId(productId),
     billingCycle: billingCycleFromProductId(productId),
     priceString: pkg.product.priceString,
+    // RevenueCat reflects the App Store Connect introductory offer on the
+    // product; derive the free-trial length so the paywall copy matches it.
+    introTrialDays: freeTrialDaysFromIntroOffer(pkg.product.introPrice),
   };
 }
 

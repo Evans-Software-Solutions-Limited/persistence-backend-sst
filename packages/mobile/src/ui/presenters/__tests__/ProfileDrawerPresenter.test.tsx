@@ -99,7 +99,7 @@ describe("ProfileDrawerPresenter", () => {
     const { getAllByText, getByText } = renderDrawer();
     // "PREMIUM" appears twice — identity-block pill + subscription-card pill.
     expect(getAllByText("PREMIUM").length).toBeGreaterThanOrEqual(1);
-    expect(getByText("7-DAY TRIAL")).toBeTruthy();
+    expect(getByText("14-DAY TRIAL")).toBeTruthy();
   });
 
   it("renders the subscription expiry from a UTC ISO timestamp without a timezone day-shift (PR #94 bug 3)", () => {

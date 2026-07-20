@@ -354,7 +354,7 @@ describe("deriveTrialEligibility", () => {
     scheduledChange: null,
   };
 
-  it("returns 7-day trial for 'premium' when eligible (not reinstating)", () => {
+  it("returns a 14-day trial for 'premium' when eligible (consistent across all tiers)", () => {
     expect(
       deriveTrialEligibility({
         tierName: "premium",
@@ -363,7 +363,7 @@ describe("deriveTrialEligibility", () => {
         isTrialEligibleUser: true,
         isTrialEligibleTrainer: false,
       }),
-    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
+    ).toEqual({ isTrialEligible: true, trialDuration: 14 });
   });
 
   it("returns null trial for 'premium' when ineligible", () => {

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import type {
-  BillingCycle,
-  SubscriptionTierName,
+import {
+  DEFAULT_TRIAL_DAYS,
+  type BillingCycle,
+  type SubscriptionTierName,
 } from "@/domain/models/subscription";
 import {
   getSubscriptionDisplayInfo,
@@ -11,6 +12,7 @@ import {
 } from "@/domain/services/subscriptionService";
 import {
   findPackageForTier,
+  offeringTrialDays,
   purchasableTiers as derivePurchasableTiers,
 } from "@/domain/services/purchaseOfferings";
 import { usePurchases } from "@/ui/hooks/usePurchases";
@@ -111,6 +113,13 @@ export function IOSPurchaseFlowContainer() {
   );
   const purchasableTiers = useMemo(
     () => derivePurchasableTiers(packages),
+    [packages],
+  );
+  // Trial length advertised on the paywall — derived from the product's Apple
+  // introductory offer, falling back to DEFAULT_TRIAL_DAYS until the offer is
+  // live in App Store Connect / RevenueCat.
+  const trialDurationDays = useMemo(
+    () => offeringTrialDays(packages, DEFAULT_TRIAL_DAYS),
     [packages],
   );
 
@@ -223,6 +232,7 @@ export function IOSPurchaseFlowContainer() {
       isTrialEligibleTrainer={
         subscriptionData?.isEligibleForTrainerTrial ?? false
       }
+      trialDurationDays={trialDurationDays}
       hasTrialEligibilityData={subscriptionData !== null}
       subscriptionEndsAt={subscriptionData?.expiresAt ?? null}
       isCancelledButActive={isCancelledButActive}

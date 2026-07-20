@@ -44,6 +44,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     purchasableTiers: new Set(["premium", "individual_trainer"]),
     isTrialEligibleUser: true,
     isTrialEligibleTrainer: true,
+    trialDurationDays: 14,
     hasTrialEligibilityData: true,
     subscriptionEndsAt: null,
     isCancelledButActive: false,
@@ -79,6 +80,13 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
     expect(props.onTierSelect).toHaveBeenCalledWith("premium");
+  });
+
+  it("advertises the trial length from trialDurationDays (not a hardcoded number)", () => {
+    render(
+      <IOSPurchaseFlowPresenter {...defaultProps()} trialDurationDays={30} />,
+    );
+    expect(screen.getByText("30-day free trial")).toBeTruthy();
   });
 
   it("renders trainer cards under the trainer role", () => {

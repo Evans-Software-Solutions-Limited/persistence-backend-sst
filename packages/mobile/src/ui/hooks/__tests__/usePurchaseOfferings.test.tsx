@@ -52,6 +52,7 @@ const PKG: PurchaseProduct = {
   tier: "premium",
   billingCycle: "monthly",
   priceString: "£9.99",
+  introTrialDays: null,
 };
 
 describe("usePurchaseOfferings", () => {

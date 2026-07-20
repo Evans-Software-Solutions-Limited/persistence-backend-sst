@@ -97,10 +97,10 @@ export function isCancelledButActive(
 /**
  * Trial-banner derivation. Mirrors legacy `shouldShowTrialBanner`.
  *
- * - `premium` → user trial eligibility (7-day)
+ * - `premium` → user trial eligibility (DEFAULT_TRIAL_DAYS)
  * - Any trainer tier (post tier-simplification — Standards dropped,
  *   `_pro` suffix removed; check is now "is this a known trainer tier
- *   name") → trainer trial eligibility (14-day)
+ *   name") → trainer trial eligibility (DEFAULT_TRIAL_DAYS)
  * - `free` → never
  *
  * Returns false when eligibility data hasn't loaded yet (legacy

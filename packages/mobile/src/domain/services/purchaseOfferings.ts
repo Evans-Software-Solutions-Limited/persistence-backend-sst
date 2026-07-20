@@ -97,3 +97,60 @@ export function purchasableTiers(
   }
   return tiers;
 }
+
+/**
+ * The intro-offer shape we care about, mirrored structurally from RevenueCat's
+ * `PurchasesStoreProduct.introPrice` so this stays a pure, RN-free function.
+ */
+export interface IntroOffer {
+  /** Intro-offer price in the store currency; `0` marks a free trial. */
+  price: number;
+  /** `"DAY" | "WEEK" | "MONTH" | "YEAR"` (others → not a trial we advertise). */
+  periodUnit: string;
+  periodNumberOfUnits: number;
+}
+
+/**
+ * Convert a product's introductory offer into whole trial days — but ONLY when
+ * it's a FREE trial (zero price). A paid intro offer, an absent offer, or an
+ * unrecognised period unit returns `null` so callers fall back to
+ * `DEFAULT_TRIAL_DAYS`. Keeps app copy tied to what Apple actually grants
+ * rather than a hardcoded number.
+ */
+export function freeTrialDaysFromIntroOffer(
+  introOffer: IntroOffer | null | undefined,
+): number | null {
+  if (!introOffer || introOffer.price !== 0) return null;
+  const n = introOffer.periodNumberOfUnits;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  switch (introOffer.periodUnit) {
+    case "DAY":
+      return n;
+    case "WEEK":
+      return n * 7;
+    case "MONTH":
+      return n * 30;
+    case "YEAR":
+      return n * 365;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The free-trial length (days) to advertise for an offering: the first package
+ * carrying a free-trial intro offer wins, else `fallbackDays`. All products
+ * share the same 14-day offer in practice, so one value is correct for every
+ * card; deriving it means the banner can never drift from the store.
+ */
+export function offeringTrialDays(
+  packages: PurchaseProduct[],
+  fallbackDays: number,
+): number {
+  for (const pkg of packages) {
+    if (pkg.introTrialDays != null && pkg.introTrialDays > 0) {
+      return pkg.introTrialDays;
+    }
+  }
+  return fallbackDays;
+}
