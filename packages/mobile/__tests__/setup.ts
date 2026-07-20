@@ -478,8 +478,15 @@ jest.mock("react-native-purchases", () => ({
       productIdentifier: "",
     })),
     restorePurchases: jest.fn(async () => ({ entitlements: { active: {} } })),
+    checkTrialOrIntroductoryPriceEligibility: jest.fn(async () => ({})),
   },
   LOG_LEVEL: { DEBUG: "DEBUG", INFO: "INFO" },
+  INTRO_ELIGIBILITY_STATUS: {
+    INTRO_ELIGIBILITY_STATUS_UNKNOWN: 0,
+    INTRO_ELIGIBILITY_STATUS_INELIGIBLE: 1,
+    INTRO_ELIGIBILITY_STATUS_ELIGIBLE: 2,
+    INTRO_ELIGIBILITY_STATUS_NO_INTRO_OFFER_EXISTS: 3,
+  },
 }));
 
 // Mock @stripe/stripe-react-native — M10. The native module isn't

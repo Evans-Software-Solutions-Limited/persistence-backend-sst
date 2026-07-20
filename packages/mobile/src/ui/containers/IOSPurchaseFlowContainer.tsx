@@ -17,6 +17,7 @@ import {
 } from "@/domain/services/purchaseOfferings";
 import { usePurchases } from "@/ui/hooks/usePurchases";
 import { usePurchaseOfferings } from "@/ui/hooks/usePurchaseOfferings";
+import { useIntroEligibility } from "@/ui/hooks/useIntroEligibility";
 import { usePurchasePackage } from "@/ui/hooks/usePurchasePackage";
 import { useRestorePurchases } from "@/ui/hooks/useRestorePurchases";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
@@ -40,6 +41,18 @@ import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresent
 /** Apple's account-level subscription management page (IAP can't be cancelled in-app). */
 export const APP_STORE_SUBSCRIPTIONS_URL =
   "https://apps.apple.com/account/subscriptions";
+
+/**
+ * Business tiers whose ANNUAL plan is handled by sales, not in-app purchase:
+ * the annual fee exceeds Apple's IAP price ceiling / economics, so the yearly
+ * tile shows a "Contact Sales" CTA (a B2B mailto — no external purchase, Apple
+ * §3.1.1-safe) instead of an IAP button. Monthly for these tiers stays IAP.
+ */
+export const CONTACT_SALES_ANNUAL_TIERS: ReadonlySet<SubscriptionTierName> =
+  new Set(["small_business", "medium_enterprise"]);
+
+/** Sales enquiry address for the Contact Sales CTA (matches the support address). */
+export const SALES_CONTACT_EMAIL = "admin@evans-software-solutions.com";
 
 type Role = "user" | "trainer";
 
@@ -122,6 +135,32 @@ export function IOSPurchaseFlowContainer() {
     () => offeringTrialDays(packages, DEFAULT_TRIAL_DAYS),
     [packages],
   );
+
+  // Trial eligibility = Apple's real on-device answer (per Apple ID, per
+  // subscription group), NOT the backend `isEligibleFor*Trial` flags. Those
+  // flags are only ever set by the Stripe rail, so on iOS they'd always read
+  // "eligible" and advertise a trial an already-trialed user can't get. Read
+  // eligibility per product and only show the banner when RevenueCat says
+  // ELIGIBLE (loading/unknown → false, so we never over-promise).
+  const productIds = useMemo(
+    () => packages.map((p) => p.productId),
+    [packages],
+  );
+  const introEligibilityQuery = useIntroEligibility(productIds);
+  const introEligibility = introEligibilityQuery.data ?? null;
+  // Per-tier (per the CURRENT cycle's product), so each card's banner reflects
+  // its OWN product's eligibility — not an OR across tiers, which could show a
+  // trial banner on a tier whose product grants none. Memoised so the
+  // presenter's card useMemos stay stable.
+  const isTierTrialEligible = useCallback(
+    (tier: SubscriptionTierName): boolean => {
+      if (introEligibility === null) return false;
+      const pkg = findPackageForTier(packages, tier, billingCycle);
+      return pkg !== null && (introEligibility[pkg.productId] ?? false);
+    },
+    [introEligibility, packages, billingCycle],
+  );
+  const hasTrialEligibilityData = introEligibility !== null;
 
   const tierDisplayNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -216,6 +255,17 @@ export function IOSPurchaseFlowContainer() {
     void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL);
   }, []);
 
+  const handleContactSales = useCallback(
+    (tier: SubscriptionTierName) => {
+      const label = tierDisplayNames[tier] ?? tier;
+      const subject = `Persistence — Annual plan enquiry (${label})`;
+      void Linking.openURL(
+        `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`,
+      );
+    },
+    [tierDisplayNames],
+  );
+
   return (
     <IOSPurchaseFlowPresenter
       subscriptionTiers={tiersQuery.data ?? []}
@@ -228,12 +278,11 @@ export function IOSPurchaseFlowContainer() {
       currentTier={currentTier}
       selectedRole={selectedRole}
       purchasableTiers={purchasableTiers}
-      isTrialEligibleUser={subscriptionData?.isEligibleForUserTrial ?? false}
-      isTrialEligibleTrainer={
-        subscriptionData?.isEligibleForTrainerTrial ?? false
-      }
+      isTierTrialEligible={isTierTrialEligible}
       trialDurationDays={trialDurationDays}
-      hasTrialEligibilityData={subscriptionData !== null}
+      hasTrialEligibilityData={hasTrialEligibilityData}
+      contactSalesTiers={CONTACT_SALES_ANNUAL_TIERS}
+      onContactSales={handleContactSales}
       subscriptionEndsAt={subscriptionData?.expiresAt ?? null}
       isCancelledButActive={isCancelledButActive}
       currentTierDisplayName={displayInfo.currentTierDisplayName}
@@ -246,6 +295,7 @@ export function IOSPurchaseFlowContainer() {
       onRetry={() => {
         void tiersQuery.refetch();
         void offeringsQuery.refetch();
+        void introEligibilityQuery.refetch();
       }}
       onRestore={() => void handleRestore()}
       onManageInAppStore={handleManageInAppStore}

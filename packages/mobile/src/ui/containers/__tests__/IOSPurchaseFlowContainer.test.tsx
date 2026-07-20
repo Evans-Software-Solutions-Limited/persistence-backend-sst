@@ -165,6 +165,64 @@ describe("IOSPurchaseFlowContainer", () => {
     );
   });
 
+  it("shows the trial banner only when RevenueCat reports the product intro-eligible", async () => {
+    // Ineligible per RevenueCat → no trial banner (the backend flags say
+    // eligible, but on-device eligibility is the source of truth now).
+    const { adapters, purchases } = makeAdapters();
+    purchases.introEligibility = { "app.persistence.premium.monthly": false };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    expect(screen.queryByText("14-day free trial")).toBeNull();
+  });
+
+  it("shows the trial banner when RevenueCat reports the product eligible", async () => {
+    const { adapters, purchases } = makeAdapters();
+    purchases.introEligibility = { "app.persistence.premium.monthly": true };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByText("14-day free trial")).toBeTruthy(),
+    );
+  });
+
+  it("contact sales: Medium Enterprise on yearly opens a sales mailto instead of purchasing", async () => {
+    const { adapters, purchases } = makeAdapters();
+    const ME: SubscriptionTier = {
+      ...PREMIUM,
+      tierName: "medium_enterprise",
+      displayName: "Medium Enterprise",
+      isTrainerTier: true,
+      priceYearly: null,
+    };
+    (adapters.api as InMemoryApiAdapter).subscriptionTiers = [PREMIUM, ME];
+    purchases.packages = [
+      {
+        packageId: "$rc_me_monthly",
+        productId: "app.persistence.medium_enterprise.monthly",
+        tier: "medium_enterprise",
+        billingCycle: "monthly",
+        priceString: "£199.99",
+        introTrialDays: null,
+      },
+    ];
+    renderContainer(adapters);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("role-toggle-trainer")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("role-toggle-trainer"));
+    fireEvent.press(screen.getByTestId("billing-cycle-toggle")); // → yearly
+
+    await waitFor(() => expect(screen.getByText("Contact Sales")).toBeTruthy());
+    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
+
+    expect(openURLSpy).toHaveBeenCalledWith(
+      expect.stringContaining("mailto:admin@evans-software-solutions.com"),
+    );
+    expect(purchases.purchaseCalls).toHaveLength(0);
+  });
+
   it("purchase flow: tap premium → purchases the package → routes to success", async () => {
     const { adapters, purchases } = makeAdapters();
     purchases.nextPurchaseResponse = {
