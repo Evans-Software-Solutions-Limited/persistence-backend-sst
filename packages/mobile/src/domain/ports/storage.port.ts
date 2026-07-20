@@ -413,6 +413,13 @@ export interface StoragePort {
   ): void;
   /** Age of the cached aggregate as an ISO timestamp, or null when no row. */
   getClientDetailAge(userId: string, clientId: string): string | null;
+  /**
+   * Drop the cached Client Detail aggregate for `(userId, clientId)` (spec 25
+   * coach↔client offboarding F2) — the next read is forced to re-fetch, so a
+   * removed client's stale card never resurfaces from cache. Mirrors
+   * `invalidateDashboard`/`invalidateHome`.
+   */
+  invalidateClientDetail(userId: string, clientId: string): void;
 
   // -- Clients Roster Cache (10-trainer-features) --
   /**
@@ -430,6 +437,13 @@ export interface StoragePort {
    * Age of the cached roster as an ISO timestamp, or null when no row.
    */
   getTrainerClientsAge(userId: string): string | null;
+  /**
+   * Drop the cached client roster for a trainer (spec 25 coach↔client
+   * offboarding F2) — forces the next read to re-fetch, so a removed client
+   * disappears from the roster (and the freed seat count updates) as soon as
+   * the Clients screen regains focus. Mirrors `invalidateDashboard`.
+   */
+  invalidateTrainerClients(userId: string): void;
 
   // -- Programmes List Cache (19-programs, Phase 9 mobile — coach F1) --
   /**

@@ -188,6 +188,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // pending relationship; sent to the ATHLETE. Companion enum migration:
   // 20260711140100_coach_request_accepted_notification_type.sql.
   "coach_request_accepted",
+  // 25-coach-client-offboarding — a coach↔client relationship ended. Sent to
+  // the COUNTERPARTY (client when the coach removed them; coach when the
+  // client left), best-effort post-commit. Companion enum migration:
+  // 20260720120100_coaching_relationship_ended_notification_type.sql.
+  "coaching_relationship_ended",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -256,6 +261,13 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // 20260711140200_client_request_response_audit_values.sql.
   "client_request_accepted",
   "client_request_declined",
+  // 25-coach-client-offboarding — a coach↔client relationship was ended
+  // (coach removed a client, or a client left a coach). The soft-end UPDATE +
+  // the assignment-teardown deletes + this audit row land in ONE transaction
+  // (cross-cuts § 1.4.2). `payload.initiatedBy` records the direction.
+  // Companion enum migration:
+  // 20260720120000_relationship_terminated_audit_value.sql.
+  "relationship_terminated",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────

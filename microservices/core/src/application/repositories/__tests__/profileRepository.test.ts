@@ -893,6 +893,8 @@ describe("defaultNotificationPreferences", () => {
       trainer_client_limit_reached: true,
       // Coach Mode Phase 8 — default opt-in "on".
       coach_request_accepted: true,
+      // 25-coach-client-offboarding — default opt-in "on".
+      coaching_relationship_ended: true,
     });
   });
 
@@ -1023,6 +1025,8 @@ describe("ProfileRepository.getNotificationPreferences", () => {
       trainer_client_limit_reached: true,
       // Coach Mode Phase 8 — default opt-in "on".
       coach_request_accepted: true,
+      // 25-coach-client-offboarding — default opt-in "on".
+      coaching_relationship_ended: true,
     });
   });
 

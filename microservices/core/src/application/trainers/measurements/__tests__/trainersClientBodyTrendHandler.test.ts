@@ -1,12 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@persistence/db/client", () => ({
-  getDb: vi.fn(),
-}));
-
-import { getDb } from "@persistence/db/client";
-
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
@@ -27,6 +21,16 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "trainer-id" }),
 }));
 
+// Guard consolidation (25-coach-client-offboarding): the handler now delegates
+// authorization to assertTrainerCanActForClient (role + active non-AI
+// relationship + client-not-soft-deleted). Its internals are tested in
+// assertTrainerCanActForClient.test.ts; here we mock it and assert the handler
+// forwards its verdict.
+const assertGuard = vi.fn();
+vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
+  assertTrainerCanActForClient: (...args: unknown[]) => assertGuard(...args),
+}));
+
 const repo = {
   getUserTimezone: vi.fn(async () => "Europe/London"),
   getBodyTrend: vi.fn(async () => [
@@ -38,18 +42,15 @@ vi.mock("../../../repositories/homeReadRepository", () => ({
   HomeReadRepository: vi.fn(() => repo),
 }));
 
-/** Thenable query-builder mock; awaiting resolves to the next queued result. */
-function executor(queue: unknown[]) {
-  let i = 0;
-  const builder: any = {};
-  const passthrough = () => builder;
-  for (const m of ["select", "from", "innerJoin", "where", "limit"]) {
-    builder[m] = vi.fn(passthrough);
-  }
-  builder.then = (resolve: (v: unknown[]) => unknown) =>
-    resolve((queue[i++] ?? []) as unknown[]);
-  return builder;
-}
+const DENY = {
+  allowed: false as const,
+  reason: "no_relationship" as const,
+  status: 403 as const,
+  body: {
+    code: "not_your_client",
+    message: "You can only act for your active clients",
+  },
+};
 
 const auth = { authorization: "Bearer token" };
 
@@ -67,6 +68,7 @@ function get(
 describe("trainersClientBodyTrendHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertGuard.mockResolvedValue({ allowed: true });
     repo.getUserTimezone.mockResolvedValue("Europe/London");
     repo.getBodyTrend.mockResolvedValue([
       { date: "2026-06-20", weightKg: 80, bodyFat: 21 },
@@ -83,34 +85,20 @@ describe("trainersClientBodyTrendHandler", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403 when the caller has no active relationship with the client", async () => {
-    (getDb as any).mockReturnValue(executor([[]])); // guard finds no row
+  it("403 when the guard denies (not the caller's active client) — no data read", async () => {
+    assertGuard.mockResolvedValue(DENY);
     const { trainersClientBodyTrendHandler } =
       await import("../trainersClientBodyTrendHandler");
     const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
     expect(res.status).toBe(403);
     const body = (await res.json()) as any;
     expect(body.code).toBe("not_your_client");
-    expect(repo.getBodyTrend).not.toHaveBeenCalled();
-  });
-
-  it("403 (Cluster 2a) when the client is soft-deleted, even with an active relationship row", async () => {
-    (getDb as any).mockReturnValue(
-      executor([
-        [{ id: "rel-1", clientDeletedAt: new Date("2026-07-13T00:00:00Z") }],
-      ]),
-    );
-    const { trainersClientBodyTrendHandler } =
-      await import("../trainersClientBodyTrendHandler");
-    const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as any;
-    expect(body.code).toBe("not_your_client");
+    // Guard is called with (trainerId from JWT, clientId from path).
+    expect(assertGuard).toHaveBeenCalledWith("trainer-id", "client-1");
     expect(repo.getBodyTrend).not.toHaveBeenCalled();
   });
 
   it("200 returns the client's trend series bucketed in the CLIENT's timezone", async () => {
-    (getDb as any).mockReturnValue(executor([[{ id: "rel-1" }]])); // active rel
     const { trainersClientBodyTrendHandler } =
       await import("../trainersClientBodyTrendHandler");
     const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
@@ -130,7 +118,6 @@ describe("trainersClientBodyTrendHandler", () => {
   });
 
   it("parses the window query param (capped Nd format)", async () => {
-    (getDb as any).mockReturnValue(executor([[{ id: "rel-1" }]]));
     const { trainersClientBodyTrendHandler } =
       await import("../trainersClientBodyTrendHandler");
     const res = await trainersClientBodyTrendHandler.handle(

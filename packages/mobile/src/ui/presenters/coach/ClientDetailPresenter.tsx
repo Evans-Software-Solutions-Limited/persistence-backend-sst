@@ -124,6 +124,13 @@ export type ClientDetailProps = {
   online: boolean;
   /** Regenerate tap → POST ai-summary { manual: true }, then refresh. */
   onRegenerateSummary: () => void;
+  /**
+   * The header "More" kebab → the destructive Remove-client confirm (spec 25
+   * coach↔client offboarding AC-4.1). The container owns the confirm dialog
+   * and mutation; this is a single tap-through since there is only one
+   * action on the menu today.
+   */
+  onRemoveClient: () => void;
 };
 
 export function ClientDetailPresenter(props: ClientDetailProps) {
@@ -154,6 +161,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     isGeneratingSummary,
     online,
     onRegenerateSummary,
+    onRemoveClient,
   } = props;
 
   const insets = useSafeAreaInsets();
@@ -193,6 +201,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
           fallbackName={clientName}
           activeProgramme={activeProgramme}
           onBack={onBack}
+          onRemoveClient={onRemoveClient}
         />
 
         <View paddingHorizontal={16} gap={16} marginTop={4}>
@@ -265,11 +274,13 @@ function ClientHeader({
   fallbackName,
   activeProgramme,
   onBack,
+  onRemoveClient,
 }: {
   detail: ClientDetail | null;
   fallbackName: string | null;
   activeProgramme: ActiveProgramme | null;
   onBack: () => void;
+  onRemoveClient: () => void;
 }) {
   const name = detail?.client.name ?? fallbackName ?? "Client";
   const initials =
@@ -325,6 +336,7 @@ function ClientHeader({
             tone="ghost"
             accessibilityLabel="More"
             testID="client-detail-more"
+            onPress={onRemoveClient}
           />
         </View>
       </View>

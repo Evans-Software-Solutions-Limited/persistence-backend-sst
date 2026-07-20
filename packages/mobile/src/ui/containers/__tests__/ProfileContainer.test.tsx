@@ -12,6 +12,7 @@ import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { ProfilePageData } from "@/domain/models/profilePage";
+import type { HomePayload } from "@/domain/models/progress";
 import type {
   MySubscription,
   SubscriptionStatus,
@@ -150,6 +151,12 @@ MockPresenter.mockImplementation((props) => {
           props.onPrivacyPolicy();
         }}
       />
+      <Pressable
+        testID="stub-leave-trainer"
+        onPress={() => {
+          props.onLeaveTrainer("rel-1", "Coach K");
+        }}
+      />
     </View>
   );
 });
@@ -241,6 +248,29 @@ function makeProfilePagePayload(
     activeTrainers: [],
     pendingTrainerRequests: [],
     ...overrides,
+  };
+}
+
+function homePayload(): HomePayload {
+  return {
+    rings: {
+      move: { current: 0, target: 100, pct: 0, unit: "" },
+      train: { current: 0, target: 100, pct: 0, unit: "" },
+      fuel: "gated",
+      todayPct: 0,
+    },
+    micro: { streak: 0, water: null, strain: null, sleep: null },
+    weeklyVolume: {
+      days: [],
+      totalKg: 0,
+      deltaPct: null,
+      workouts: { completed: 0, target: 0 },
+    },
+    recentPRs: [],
+    habits: [],
+    todayWorkout: [],
+    activeProgramme: null,
+    todaysTraining: [],
   };
 }
 
@@ -802,6 +832,167 @@ describe("ProfileContainer", () => {
           "individual_trainer",
         );
       });
+    });
+  });
+
+  describe("onLeaveTrainer (spec 25 coach↔client offboarding AC-4.2)", () => {
+    function destructiveButton() {
+      const call = alertSpy.mock.calls.find(
+        ([title]) => typeof title === "string" && title.startsWith("Leave"),
+      );
+      expect(call).toBeDefined();
+      const buttons = call?.[2] as
+        | {
+            text: string;
+            style?: string;
+            onPress?: () => void | Promise<void>;
+          }[]
+        | undefined;
+      const button = buttons?.find((b) => b.style === "destructive");
+      expect(button).toBeDefined();
+      return button;
+    }
+
+    it("confirms naming the coach, then leaves, invalidates Home, and refreshes the profile page", async () => {
+      const { adapters, api, storage } = await createTestAdapters();
+      api.profilePage = makeProfilePagePayload();
+      const userId = (adapters.auth as InMemoryAuthAdapter).currentSession
+        ?.userId;
+      if (!userId) throw new Error("expected a signed-in session");
+      // Pre-seed Home so we can prove the container invalidates it — an
+      // already-empty cache would look identical whether or not it ran.
+      storage.cacheHome(userId, homePayload());
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+      // Wait for the mount fetch to fully resolve (not just for the stub to
+      // render, which happens synchronously) so `refresh` isn't still
+      // in-flight when the mutation calls it again below.
+      await waitFor(() => {
+        expect(getByTestId("stub-email").props.children).toBe(
+          "brad@example.com",
+        );
+      });
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      const [title, message] = alertSpy.mock.calls[0];
+      expect(title).toBe("Leave Coach K?");
+      expect(message).toMatch(/assigned workouts and programmes/);
+      expect(message).toMatch(/keep any habits and goals/);
+
+      const before = api.getProfilePageCalls;
+      await act(async () => {
+        await destructiveButton()?.onPress?.();
+      });
+
+      expect(api.leaveCoachCalls).toEqual(["rel-1"]);
+      expect(storage.getCachedHome(userId)).toBeNull();
+      // A successful leave re-pulls the profile page (so the ex-coach drops
+      // off "Active Trainers" without waiting for the next focus).
+      await waitFor(() => {
+        expect(api.getProfilePageCalls).toBeGreaterThan(before);
+      });
+    });
+
+    it("shows an error alert and does not invalidate Home when the API call fails", async () => {
+      const { adapters, api, storage } = await createTestAdapters();
+      api.profilePage = makeProfilePagePayload();
+      const userId = (adapters.auth as InMemoryAuthAdapter).currentSession
+        ?.userId;
+      if (!userId) throw new Error("expected a signed-in session");
+      storage.cacheHome(userId, homePayload());
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+      await waitFor(() => {
+        expect(getByTestId("stub-email").props.children).toBe(
+          "brad@example.com",
+        );
+      });
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      api.shouldFail = true;
+      api.failError = {
+        kind: "api",
+        code: "not_found",
+        message: "Relationship not found",
+      };
+
+      await act(async () => {
+        await destructiveButton()?.onPress?.();
+      });
+
+      expect(api.leaveCoachCalls).toEqual(["rel-1"]);
+      const errorCall = alertSpy.mock.calls.find(
+        ([title]) => title === "Couldn't leave coach",
+      );
+      expect(errorCall?.[1]).toBe("Relationship not found");
+      expect(storage.getCachedHome(userId)).not.toBeNull();
+    });
+
+    it("re-arms the guard on Cancel so a later tap opens the confirm again", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.profilePage = makeProfilePagePayload();
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+      await waitFor(() => {
+        expect(getByTestId("stub-email").props.children).toBe(
+          "brad@example.com",
+        );
+      });
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      const [, , buttons] = alertSpy.mock.calls[0] as [
+        string,
+        string,
+        { text: string; style?: string; onPress?: () => void }[],
+      ];
+      const cancelButton = buttons.find((b) => b.style === "cancel");
+      cancelButton?.onPress?.();
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+      expect(api.leaveCoachCalls).toEqual([]);
+    });
+
+    it("re-arms the guard on Android dialog dismiss (onDismiss) so the button isn't left dead", async () => {
+      const { adapters, api } = await createTestAdapters();
+      api.profilePage = makeProfilePagePayload();
+
+      const { getByTestId } = render(
+        <TestWrapper adapters={adapters}>
+          <ProfileContainer />
+        </TestWrapper>,
+      );
+      await waitFor(() => {
+        expect(getByTestId("stub-email").props.children).toBe(
+          "brad@example.com",
+        );
+      });
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      // Simulate Android tap-outside / hardware-back: neither button's onPress
+      // fires — only the options.onDismiss callback runs.
+      const options = alertSpy.mock.calls[0][3] as {
+        cancelable?: boolean;
+        onDismiss?: () => void;
+      };
+      expect(options.cancelable).toBe(true);
+      options.onDismiss?.();
+
+      fireEvent.press(getByTestId("stub-leave-trainer"));
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+      expect(api.leaveCoachCalls).toEqual([]);
     });
   });
 });

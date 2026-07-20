@@ -35,6 +35,11 @@ const mockFetch = jest.fn(async () => ({
 
 const mockPush = jest.fn();
 const mockSearchParams: { clientId?: string } = {};
+// Capture the focus callback so a test can invoke it manually (wrapped in
+// act) rather than firing it on every render — the container's first-focus
+// guard skips the callback's very first registration, matching device
+// behaviour (mirrors ClientDetailContainer.test.tsx).
+const focusCallbacks: (() => void)[] = [];
 jest.mock("expo-router", () => ({
   __esModule: true,
   useRouter: () => ({
@@ -43,6 +48,10 @@ jest.mock("expo-router", () => ({
     back: jest.fn(),
   }),
   useLocalSearchParams: () => mockSearchParams,
+  useFocusEffect: (cb: () => void) => {
+    focusCallbacks.length = 0;
+    focusCallbacks.push(cb);
+  },
   router: {
     push: (...args: unknown[]) => mockPush(...args),
     replace: jest.fn(),
@@ -235,6 +244,37 @@ describe("ClientsContainer", () => {
     expect(screen.getByText("COACHING · 5 ACTIVE")).toBeTruthy();
     expect(screen.queryByTestId("clients-gate")).toBeNull();
     expect(screen.queryByTestId("clients-coming-soon")).toBeNull();
+  });
+
+  it("re-fetches the roster on refocus, but not on the first (mount-coincident) focus (spec 25 AC-1.3)", async () => {
+    const { adapters, api } = makeAdapters(makeTrainerSub());
+    api.trainerClients = makeTrainerClients();
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <ClientsContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+    );
+    const afterMount = api.getTrainerClientsCalls;
+
+    // The first focus callback registration coincides with the mount fetch —
+    // firing it must NOT trigger a second fetch.
+    await act(async () => {
+      focusCallbacks[0]?.();
+    });
+    expect(api.getTrainerClientsCalls).toBe(afterMount);
+
+    // Simulate: a client was removed on Client Detail (which invalidated the
+    // roster cache) and the user navigated back — the Clients screen regains
+    // focus and must re-fetch so the removed row/seat count catch up.
+    await act(async () => {
+      focusCallbacks[0]?.();
+    });
+    await waitFor(() =>
+      expect(api.getTrainerClientsCalls).toBeGreaterThan(afterMount),
+    );
   });
 
   it("opens the AddClient sheet from the header + (registering a refresh)", async () => {

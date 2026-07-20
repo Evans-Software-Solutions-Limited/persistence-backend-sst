@@ -1511,6 +1511,14 @@ export class SQLiteStorageAdapter implements StoragePort {
     return rows[0]?.synced_at ?? null;
   }
 
+  invalidateClientDetail(userId: string, clientId: string): void {
+    const db = this.getDb();
+    db.runSync(
+      `DELETE FROM cached_client_detail WHERE user_id = ? AND client_id = ?`,
+      [userId, clientId],
+    );
+  }
+
   // -- Clients Roster Cache (10-trainer-features) --
 
   getCachedTrainerClients(userId: string): TrainerClient[] | null {
@@ -1541,6 +1549,13 @@ export class SQLiteStorageAdapter implements StoragePort {
       [userId],
     ) as { synced_at: string }[];
     return rows[0]?.synced_at ?? null;
+  }
+
+  invalidateTrainerClients(userId: string): void {
+    const db = this.getDb();
+    db.runSync(`DELETE FROM cached_trainer_clients WHERE user_id = ?`, [
+      userId,
+    ]);
   }
 
   // -- Programmes List Cache (19-programs, Phase 9 mobile — coach F1) --

@@ -1,0 +1,23 @@
+-- 25-coach-client-offboarding — extend notification_type enum for the
+-- best-effort counterparty notification emitted when a coach↔client
+-- relationship ends.
+--
+--   coaching_relationship_ended — sent to the COUNTERPARTY: the client when
+--     the coach removed them, the coach when the client left. Best-effort,
+--     post-commit (a delivery failure never rolls back the teardown).
+--
+-- Per specs/_shared/cross-cuts.md § 5 the notification_type enum is *owned* by
+-- 09-notifications-social; each producing slice sequences its own ADD VALUE
+-- before it emits. Without this migration the first INSERT INTO notifications
+-- with type 'coaching_relationship_ended' fails at runtime with
+-- `invalid input value for enum notification_type`.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping the ADD VALUE statement in its own
+-- migration (no usage here) sidesteps that entirely — mirrors the M17 precedent
+-- (20260709120000_coach_brief_notification_type.sql).
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'coaching_relationship_ended';

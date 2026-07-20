@@ -820,6 +820,17 @@ export interface ApiPort {
   getTrainerClients(): Promise<Result<TrainerClient[], ApiError>>;
 
   /**
+   * Remove a client from the trainer's roster
+   * (`DELETE /trainers/me/clients/:clientId`, spec 25 coach↔client
+   * offboarding AC-1.1–1.6). Soft-ends the relationship (kept for history),
+   * deletes the coach's workout/programme assignments to this client, and
+   * disables the habits/goals the coach assigned. 404 when the relationship
+   * isn't active / isn't owned by the caller / is an AI-trainer relationship
+   * (not removable via this route).
+   */
+  removeClient(clientId: string): Promise<Result<{ ended: true }, ApiError>>;
+
+  /**
    * List the trainer's pending invitations (`GET /trainers/me/invitations`).
    * `{ data: TrainerInvitation[] }` envelope.
    */
@@ -1056,6 +1067,17 @@ export interface ApiPort {
     relationshipId: string,
     action: RelationshipResponseAction,
   ): Promise<Result<RelationshipResponseResult, ApiError>>;
+
+  /**
+   * Leave a coach (`DELETE /clients/me/relationships/:relationshipId`, spec
+   * 25 coach↔client offboarding AC-2.1–2.4). Same teardown as `removeClient`
+   * (assignments removed, coach-set habits/goals disabled, relationship
+   * soft-ended), initiated by the client side. 404 when the relationship
+   * isn't active / isn't the caller's / is an AI-trainer relationship.
+   */
+  leaveCoach(
+    relationshipId: string,
+  ): Promise<Result<{ ended: true }, ApiError>>;
 
   // -- Programs (19-programs, Phase 9 mobile — coach F1) --
   //

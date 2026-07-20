@@ -55,6 +55,7 @@ function makeProps(
     recentAchievements: [],
     activeTrainers: [],
     pendingTrainerRequests: [],
+    onLeaveTrainer: jest.fn(),
     appVersion: "1.1.1",
     isSigningOut: false,
     onRefresh: jest.fn(),
@@ -174,6 +175,26 @@ describe("ProfilePresenter", () => {
     );
     expect(getByTestId("active-trainer-rel-1")).toBeTruthy();
     expect(queryByTestId("active-trainers-empty")).toBeNull();
+  });
+
+  // Spec 25 coach↔client offboarding AC-4.2 — each active-trainer row exposes
+  // a "Leave coach" affordance. The presenter stays pure: it just forwards
+  // the relationship id + coach name so the container can own the confirm.
+  it("fires onLeaveTrainer with the relationship id + coach name from the row", () => {
+    const trainers: ProfilePageTrainerRef[] = [
+      {
+        id: "rel-1",
+        trainer: { id: "tr-1", fullName: "Coach K", avatarUrl: null },
+      },
+    ];
+    const onLeaveTrainer = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ProfilePresenter
+        {...makeProps({ activeTrainers: trainers, onLeaveTrainer })}
+      />,
+    );
+    fireEvent.press(getByTestId("leave-trainer-rel-1"));
+    expect(onLeaveTrainer).toHaveBeenCalledWith("rel-1", "Coach K");
   });
 
   it("renders achievement cards when achievements are present", () => {

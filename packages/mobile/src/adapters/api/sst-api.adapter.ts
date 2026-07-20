@@ -1508,6 +1508,15 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<TrainerClient[]>("/trainers/me/clients");
   }
 
+  async removeClient(
+    clientId: string,
+  ): Promise<Result<{ ended: true }, ApiError>> {
+    return this.requestEnvelope<{ ended: true }>(
+      `/trainers/me/clients/${clientId}`,
+      { method: "DELETE" },
+    );
+  }
+
   async getInvitations(): Promise<Result<TrainerInvitation[], ApiError>> {
     return this.requestEnvelope<TrainerInvitation[]>(
       "/trainers/me/invitations",
@@ -1820,6 +1829,15 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<RelationshipResponseResult>(
       `/clients/me/relationships/${relationshipId}/respond`,
       { method: "POST", body: { action } },
+    );
+  }
+
+  async leaveCoach(
+    relationshipId: string,
+  ): Promise<Result<{ ended: true }, ApiError>> {
+    return this.requestEnvelope<{ ended: true }>(
+      `/clients/me/relationships/${relationshipId}`,
+      { method: "DELETE" },
     );
   }
 

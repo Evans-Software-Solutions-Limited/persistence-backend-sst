@@ -1,5 +1,6 @@
 import { act, render, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
+import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -12,6 +13,7 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { ClientDetailProps } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { ActiveProgramme } from "@/domain/models/progress";
+import { makeTrainerClients } from "@/ui/presenters/coach/__tests__/trainerClients.fixture";
 
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -650,5 +652,146 @@ describe("ClientDetailContainer — degraded", () => {
     });
     props().onEditGoal();
     expect(useAssignGoalSheet.getState().open).toBe(false);
+  });
+
+  describe("onRemoveClient (spec 25 coach↔client offboarding AC-4.1)", () => {
+    let alertSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      alertSpy.mockRestore();
+    });
+
+    function destructiveButton() {
+      const [, , buttons] = alertSpy.mock.calls[0] as [
+        string,
+        string,
+        {
+          text: string;
+          style?: string;
+          onPress?: () => void | Promise<void>;
+        }[],
+      ];
+      const button = buttons.find((b) => b.style === "destructive");
+      expect(button).toBeDefined();
+      return button;
+    }
+
+    it("confirms naming the client, then removes, invalidates caches, and navigates back", async () => {
+      const { adapters, api } = makeAdapters();
+      api.clientDetails["client-1"] = fullDetail();
+      const storage = adapters.storage as InMemoryStorageAdapter;
+      // Pre-seed both caches so we can prove the container invalidates them
+      // (an empty cache would look identical whether or not invalidate ran).
+      storage.cacheTrainerClients("trainer-1", makeTrainerClients());
+      storage.cacheClientDetail("trainer-1", "client-1", fullDetail());
+
+      renderWith(adapters);
+      await waitFor(() => expect(props().detail).not.toBeNull());
+
+      props().onRemoveClient();
+      expect(alertSpy).toHaveBeenCalledTimes(1);
+      const [title, message] = alertSpy.mock.calls[0];
+      expect(title).toBe("Remove Jordan Blake?");
+      expect(message).toMatch(/assigned workouts and programmes/);
+      expect(message).toMatch(/habits and goals you set stay with them/);
+
+      await act(async () => {
+        await destructiveButton()?.onPress?.();
+      });
+
+      expect(api.removeClientCalls).toEqual(["client-1"]);
+      expect(mockBack).toHaveBeenCalled();
+      expect(storage.getCachedTrainerClients("trainer-1")).toBeNull();
+      expect(storage.getCachedClientDetail("trainer-1", "client-1")).toBeNull();
+    });
+
+    it("shows an error alert and does not navigate back when the API call fails", async () => {
+      const { adapters, api } = makeAdapters();
+      api.clientDetails["client-1"] = fullDetail();
+      const storage = adapters.storage as InMemoryStorageAdapter;
+      storage.cacheTrainerClients("trainer-1", makeTrainerClients());
+
+      renderWith(adapters);
+      await waitFor(() => expect(props().detail).not.toBeNull());
+
+      // Flip the failure toggle only AFTER the initial load resolves —
+      // `mayFail` is a single global switch on the fixture, so setting it
+      // before render would also fail the client-detail GET itself.
+      api.shouldFail = true;
+      api.failError = {
+        kind: "api",
+        code: "not_found",
+        message: "Client not found",
+      };
+
+      props().onRemoveClient();
+      await act(async () => {
+        await destructiveButton()?.onPress?.();
+      });
+
+      expect(api.removeClientCalls).toEqual(["client-1"]);
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+      const [errorTitle, errorMessage] = alertSpy.mock.calls[1];
+      expect(errorTitle).toBe("Couldn't remove client");
+      expect(errorMessage).toBe("Client not found");
+      expect(mockBack).not.toHaveBeenCalled();
+      // A failed removal must NOT invalidate the roster cache.
+      expect(storage.getCachedTrainerClients("trainer-1")).not.toBeNull();
+    });
+
+    it("ignores a second tap while the confirm Alert is already open (double-tap guard)", async () => {
+      const { adapters, api } = makeAdapters();
+      api.clientDetails["client-1"] = fullDetail();
+      renderWith(adapters);
+      await waitFor(() => expect(props().detail).not.toBeNull());
+
+      props().onRemoveClient();
+      props().onRemoveClient();
+      expect(alertSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-arms the guard on Cancel so a later tap opens the confirm again", async () => {
+      const { adapters, api } = makeAdapters();
+      api.clientDetails["client-1"] = fullDetail();
+      renderWith(adapters);
+      await waitFor(() => expect(props().detail).not.toBeNull());
+
+      props().onRemoveClient();
+      const [, , buttons] = alertSpy.mock.calls[0] as [
+        string,
+        string,
+        { text: string; style?: string; onPress?: () => void }[],
+      ];
+      const cancelButton = buttons.find((b) => b.style === "cancel");
+      cancelButton?.onPress?.();
+
+      props().onRemoveClient();
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+      expect(api.removeClientCalls).toEqual([]);
+    });
+
+    it("re-arms the guard on Android dialog dismiss (onDismiss) so the kebab isn't left dead", async () => {
+      const { adapters, api } = makeAdapters();
+      api.clientDetails["client-1"] = fullDetail();
+      renderWith(adapters);
+      await waitFor(() => expect(props().detail).not.toBeNull());
+
+      props().onRemoveClient();
+      // Android tap-outside / hardware-back fires only options.onDismiss.
+      const options = alertSpy.mock.calls[0][3] as {
+        cancelable?: boolean;
+        onDismiss?: () => void;
+      };
+      expect(options.cancelable).toBe(true);
+      options.onDismiss?.();
+
+      props().onRemoveClient();
+      expect(alertSpy).toHaveBeenCalledTimes(2);
+      expect(api.removeClientCalls).toEqual([]);
+    });
   });
 });

@@ -1,6 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
-import { router, useLocalSearchParams, type Href } from "expo-router";
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  type Href,
+} from "expo-router";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
 import {
   useFeatureGate,
@@ -91,6 +102,25 @@ export function ClientsContainer() {
   );
 
   const refreshRoster = roster.refresh;
+
+  // Re-fetch on refocus (spec 25 coach↔client offboarding AC-1.3) — a client
+  // removed from Client Detail invalidates the roster cache and navigates
+  // back here; this screen stays mounted underneath (expo-router keeps the
+  // previous stack entry alive), so without a focus-driven refresh the
+  // removed row and stale seat count would otherwise linger until the 5-
+  // minute staleness window lapses. Skip the FIRST focus — it coincides with
+  // the hook's own mount-time fetch — mirrors ClientDetailContainer.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      void refreshRoster();
+    }, [refreshRoster]),
+  );
+
   const onInvite = useCallback(() => {
     // Register the roster refresh so a successful invite re-pulls the list.
     openSheet(() => {

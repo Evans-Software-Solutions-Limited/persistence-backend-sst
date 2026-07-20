@@ -52,7 +52,13 @@ export type NotificationType =
   // pending relationship; sent to the ATHLETE. DB enum extended in
   // 20260711140100_coach_request_accepted_notification_type.sql. Default
   // opt-in "on" per cross-cuts § 5.
-  | "coach_request_accepted";
+  | "coach_request_accepted"
+  // 25-coach-client-offboarding — a coach↔client relationship ended; sent to
+  // the COUNTERPARTY (client when the coach removed them, coach when the
+  // client left). DB enum extended in
+  // 20260720120100_coaching_relationship_ended_notification_type.sql. Default
+  // opt-in "on" per cross-cuts § 5.
+  | "coaching_relationship_ended";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
@@ -74,6 +80,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "coach_brief",
   "trainer_client_limit_reached",
   "coach_request_accepted",
+  "coaching_relationship_ended",
 ] as const;
 
 /**
