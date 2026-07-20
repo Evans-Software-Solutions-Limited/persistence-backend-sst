@@ -53,6 +53,13 @@ export interface AuthPort {
     callback: (session: AuthSession | null) => void,
   ): () => void;
   resetPassword(email: string): Promise<Result<void, AuthError>>;
+  /**
+   * Change the signed-in user's password. Requires a live session — used by
+   * the set-new-password screen after a recovery link establishes one (via
+   * `setSessionFromTokens`). Distinct from `resetPassword`, which only sends
+   * the recovery email.
+   */
+  updatePassword(newPassword: string): Promise<Result<void, AuthError>>;
   refreshSession(): Promise<Result<AuthSession, AuthError>>;
   getAccessToken(): Promise<string | null>;
 }

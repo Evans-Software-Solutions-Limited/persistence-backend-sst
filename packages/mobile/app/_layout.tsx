@@ -17,6 +17,7 @@ import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutReh
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useProfilePage } from "../src/ui/hooks/useProfilePage";
 import { usePendingInvite } from "../src/state/pending-invite";
+import { usePasswordRecovery } from "../src/state/password-recovery";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
@@ -177,6 +178,11 @@ function AuthGate() {
       (segmentName === "subscription-selection" || segmentName === "success");
     const inRestoreAccountScreen =
       inAppGroup && segmentName === "restore-account";
+    // A recovery-link session must set a new password before reaching the
+    // tabs. Whitelisted like the post-sign-up screens so AuthGate doesn't
+    // bounce the signed-in user off set-new-password back to the app.
+    const inSetNewPasswordScreen =
+      inAuthGroup && segmentName === "set-new-password";
 
     // Soft-deleted (grace-period) gate: a signed-in user whose profile
     // carries a non-null `deletedAt` must restore (or sign out) before
@@ -185,12 +191,30 @@ function AuthGate() {
     // Deliberately does NOT preserve the segments being left, mirroring
     // the existing sign-in/sign-out redirects below.
     if (session && deletedAt != null && !inRestoreAccountScreen) {
+      // The restore-account gate pre-empts the recovery divert below, so clear
+      // the recovery flag here too — otherwise a soft-deleted user who opened a
+      // recovery link would leave `pending` armed and later trap a normal
+      // sign-in on set-new-password (Inspector Brad 🟡). Recovery isn't
+      // completed via this detour; a fresh reset link re-arms it cleanly.
+      usePasswordRecovery.getState().clear();
       router.replace("/(app)/restore-account");
       return;
     }
 
-    if (session && !inAppGroup && !inPostAuthSubscriptionFlow) {
-      // Signed in but not in app and not in the post-sign-up flow — go to app.
+    if (
+      session &&
+      !inAppGroup &&
+      !inPostAuthSubscriptionFlow &&
+      !inSetNewPasswordScreen
+    ) {
+      // Signed in but not in app and not in a whitelisted auth-flow screen.
+      // A recovery-link session wins first: divert to set-new-password so the
+      // user resets before the app (peeked — the set-new-password screen owns
+      // the clear, same non-reactive-peek reasoning as the invite code below).
+      if (usePasswordRecovery.getState().pending) {
+        router.replace("/(auth)/set-new-password");
+        return;
+      }
       // If a coach invite code was stashed before auth (unauthenticated athlete
       // opened /(app)/accept-invite?code=X — device-QA #2 follow-up), redeem it
       // now instead of landing on the tabs. PEEK (don't clear) — Supabase fires

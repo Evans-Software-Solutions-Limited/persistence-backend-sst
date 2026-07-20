@@ -15,6 +15,13 @@ export default function AuthLayout() {
       <Stack.Screen name="sign-up" />
       <Stack.Screen name="forgot-password" />
       {/*
+        set-new-password completes a recovery link: AuthGate diverts a
+        recovery-flagged session here (app/_layout.tsx §inSetNewPasswordScreen)
+        instead of the tabs. Declared explicitly so its stack animation + back
+        behaviour match the rest of the auth flow.
+      */}
+      <Stack.Screen name="set-new-password" />
+      {/*
         subscription-selection + success live under (auth) because they're
         also rendered in the post-sign-up flow before the user reaches the
         app. They're additionally reached cross-segment from the profile

@@ -5,6 +5,7 @@ import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { usePendingInvite } from "@/state/pending-invite";
+import { usePasswordRecovery } from "@/state/password-recovery";
 import { useAdapters } from "./useAdapters";
 
 export type AuthState = {
@@ -21,6 +22,12 @@ export type AuthState = {
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  /**
+   * Change the signed-in user's password (set-new-password screen, after a
+   * recovery link established the session). Throws on failure so the caller
+   * can surface an inline error.
+   */
+  updatePassword: (newPassword: string) => Promise<void>;
   /**
    * Cluster 2b: returns the backend's `purgeAfter` so the caller can show
    * the grace-period date after signing the user out.
@@ -163,6 +170,7 @@ export function useAuth(): AuthState {
     useTrainSegment.getState().reset();
     useCoachLibrarySegment.getState().reset();
     usePendingInvite.getState().reset();
+    usePasswordRecovery.getState().reset();
   }, [storage]);
 
   const signOut = useCallback(async () => {
@@ -179,6 +187,18 @@ export function useAuth(): AuthState {
     async (email: string) => {
       setError(null);
       const result = await auth.resetPassword(email);
+      if (!result.ok) {
+        setError(result.error);
+        throw new Error(result.error.message);
+      }
+    },
+    [auth],
+  );
+
+  const updatePassword = useCallback(
+    async (newPassword: string) => {
+      setError(null);
+      const result = await auth.updatePassword(newPassword);
       if (!result.ok) {
         setError(result.error);
         throw new Error(result.error.message);
@@ -232,6 +252,7 @@ export function useAuth(): AuthState {
     signInWithApple,
     signOut,
     resetPassword,
+    updatePassword,
     deleteAccount,
   };
 }

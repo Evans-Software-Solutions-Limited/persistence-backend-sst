@@ -446,6 +446,52 @@ describe("useAuth", () => {
     expect(result.current.error?.kind).toBe("auth");
   });
 
+  it("updates the password successfully", async () => {
+    const { adapters } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.updatePassword("newpass123");
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it("throws and sets error when updatePassword fails", async () => {
+    const { adapters, auth } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    auth.shouldFail = true;
+
+    let thrownError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.updatePassword("newpass123");
+      } catch (err) {
+        thrownError = err;
+      }
+    });
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect(result.current.error?.kind).toBe("auth");
+  });
+
   it("resolves loading even when getSession fails on bootstrap", async () => {
     const { adapters, auth } = createTestAdapters();
     auth.shouldFail = true;

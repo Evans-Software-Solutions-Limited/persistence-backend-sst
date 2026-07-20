@@ -717,6 +717,44 @@ describe("SupabaseAuthAdapter", () => {
     });
   });
 
+  // -- updatePassword --
+
+  describe("updatePassword", () => {
+    it("updates the user's password and returns ok", async () => {
+      mockUpdateUser.mockResolvedValue({ data: {}, error: null });
+
+      const result = await adapter.updatePassword("newpass123");
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateUser).toHaveBeenCalledWith({ password: "newpass123" });
+    });
+
+    it("returns an error when Supabase rejects the update", async () => {
+      mockUpdateUser.mockResolvedValue({
+        data: {},
+        error: { message: "Password too weak" },
+      });
+
+      const result = await adapter.updatePassword("weak");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe("Password too weak");
+      }
+    });
+
+    it("returns a failure Result instead of throwing when updateUser rejects", async () => {
+      mockUpdateUser.mockRejectedValue(new Error("network down"));
+
+      const result = await adapter.updatePassword("newpass123");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe("network down");
+      }
+    });
+  });
+
   // -- refreshSession --
 
   describe("refreshSession", () => {
