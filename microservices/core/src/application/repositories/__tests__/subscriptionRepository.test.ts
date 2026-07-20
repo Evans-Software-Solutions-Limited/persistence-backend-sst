@@ -67,6 +67,88 @@ describe("SubscriptionRepository", () => {
     vi.clearAllMocks();
   });
 
+  describe("userExists", () => {
+    it("returns true when a profile row matches the id", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([{ id: "user-1" }])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      expect(await repo.userExists("user-1")).toBe(true);
+    });
+
+    it("returns false when no profile matches", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      expect(await repo.userExists("nobody")).toBe(false);
+    });
+
+    function mockRejectingSelect(err: unknown) {
+      return {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockRejectedValue(err),
+            }),
+          }),
+        }),
+      };
+    }
+
+    it("returns false (not throw) for an invalid-uuid cast error (22P02)", async () => {
+      (getDb as any).mockReturnValue(
+        mockRejectingSelect(
+          Object.assign(new Error("invalid input syntax for type uuid"), {
+            code: "22P02",
+          }),
+        ),
+      );
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      expect(await repo.userExists("not-a-uuid")).toBe(false);
+    });
+
+    it("returns false for an invalid-uuid error surfaced by message only (driver dropped the code)", async () => {
+      (getDb as any).mockReturnValue(
+        // No `code` — force the message-regex fallback branch.
+        mockRejectingSelect(new Error("invalid input syntax for type uuid: x")),
+      );
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      expect(await repo.userExists("not-a-uuid")).toBe(false);
+    });
+
+    it("RETHROWS a transient DB error (so the webhook 500s and RevenueCat retries — not silent entitlement loss)", async () => {
+      (getDb as any).mockReturnValue(
+        mockRejectingSelect(
+          Object.assign(new Error("connection terminated"), {
+            code: "ETIMEDOUT",
+          }),
+        ),
+      );
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      const repo = new SubscriptionRepository();
+      await expect(repo.userExists("real-user")).rejects.toThrow(
+        "connection terminated",
+      );
+    });
+  });
+
   describe("findByExternalId", () => {
     it("returns the row when an external_subscription_id matches", async () => {
       const mockDb = {
