@@ -158,6 +158,14 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inAppGroup = segments[0] === "(app)";
+    // The auth-callback deep-link screen (`app/auth/callback.tsx`) is
+    // ungrouped, so it's in neither group. It owns its own routing — the
+    // container establishes the session (then the `session && !inAppGroup`
+    // branch below enters the app) or bounces to sign-in on a bad link. Exempt
+    // it from the signed-out redirect so a cold open from a confirmation link
+    // doesn't bounce a *successful* confirm to sign-in in the window before
+    // the container's async `setSessionFromTokens` has resolved.
+    const onAuthCallback = segments[0] === "auth";
     // M10: subscription-selection + success live under (auth) because
     // they're rendered post-sign-up before the user has reached the
     // app. AuthGate must NOT bounce signed-in users out of those
@@ -199,7 +207,7 @@ function AuthGate() {
       } else {
         router.replace("/(app)/(tabs)");
       }
-    } else if (!session && !inAuthGroup) {
+    } else if (!session && !inAuthGroup && !onAuthCallback) {
       // Not signed in and not on an auth screen — go to sign-in. If they were
       // opening a coach invite deep link, stash the code first so it survives
       // sign-in/sign-up and is redeemed by the post-auth branch above.

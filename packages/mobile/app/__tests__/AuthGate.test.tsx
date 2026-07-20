@@ -235,6 +235,36 @@ describe("AuthGate", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
+  // Auth-callback deep-link route (ungrouped) ---------------------------------
+
+  it("does NOT bounce an unauthenticated user on the auth/callback route to sign-in (the container owns its routing)", () => {
+    // A cold open from a Supabase confirmation link lands on /auth/callback
+    // before the container's async setSessionFromTokens resolves. AuthGate
+    // must leave it alone or it would bounce a successful confirm to sign-in.
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseSegments.mockReturnValue(["auth"]);
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("routes a now-authenticated user on the auth/callback route into the app", async () => {
+    // Once setSessionFromTokens establishes the session, the session-present
+    // branch enters the app — the deliberate success handoff.
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["auth"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
+    });
+  });
+
   // Carry the invite code through auth (device-QA #2 follow-up) ----------------
 
   it("stashes the invite code before the sign-in redirect when an unauthenticated user opens accept-invite?code=X", async () => {

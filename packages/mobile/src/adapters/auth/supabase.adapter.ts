@@ -383,6 +383,36 @@ export class SupabaseAuthAdapter implements AuthPort {
     return ok(undefined);
   }
 
+  async setSessionFromTokens(
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<Result<AuthSession, AuthError>> {
+    try {
+      const { data, error } = await this.client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error || !data.session) {
+        // Expired/already-used confirmation link, or a malformed token — the
+        // callback screen maps any failure to a bounce back to sign-in.
+        return fail({
+          kind: "auth",
+          code: "token_expired",
+          message: error?.message ?? "Failed to set session from tokens",
+        });
+      }
+      return ok(this.mapSession(data.session));
+    } catch (err) {
+      // Never throw — the callback screen awaits a Result and would otherwise
+      // strand the user on the loader (mirrors signInWithApple/OAuth catches).
+      return fail({
+        kind: "auth",
+        code: "token_expired",
+        message: err instanceof Error ? err.message : "Failed to set session",
+      });
+    }
+  }
+
   async getSession(): Promise<Result<AuthSession | null, AuthError>> {
     const {
       data: { session },

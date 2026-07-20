@@ -608,6 +608,68 @@ describe("SupabaseAuthAdapter", () => {
     });
   });
 
+  // -- setSessionFromTokens --
+
+  describe("setSessionFromTokens", () => {
+    it("sets the session from tokens and returns the mapped session", async () => {
+      mockSetSession.mockResolvedValue({
+        data: { session: MOCK_SUPABASE_SESSION },
+        error: null,
+      });
+
+      const result = await adapter.setSessionFromTokens("acc", "ref");
+
+      expect(mockSetSession).toHaveBeenCalledWith({
+        access_token: "acc",
+        refresh_token: "ref",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual(EXPECTED_AUTH_SESSION);
+      }
+    });
+
+    it("returns token_expired when Supabase rejects the tokens", async () => {
+      mockSetSession.mockResolvedValue({
+        data: { session: null },
+        error: { message: "Invalid refresh token" },
+      });
+
+      const result = await adapter.setSessionFromTokens("acc", "bad");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("token_expired");
+      }
+    });
+
+    it("returns token_expired when no session comes back without an error", async () => {
+      mockSetSession.mockResolvedValue({
+        data: { session: null },
+        error: null,
+      });
+
+      const result = await adapter.setSessionFromTokens("acc", "ref");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("token_expired");
+      }
+    });
+
+    it("returns a failure Result instead of throwing when setSession rejects", async () => {
+      mockSetSession.mockRejectedValue(new Error("network down"));
+
+      const result = await adapter.setSessionFromTokens("acc", "ref");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("token_expired");
+        expect(result.error.message).toBe("network down");
+      }
+    });
+  });
+
   // -- onAuthStateChange --
 
   describe("onAuthStateChange", () => {

@@ -36,6 +36,18 @@ export interface AuthPort {
    */
   signInWithApple(): Promise<Result<AuthSession, AuthError>>;
   signOut(): Promise<Result<void, AuthError>>;
+  /**
+   * Establish a session from tokens handed back by an auth redirect
+   * (email-confirmation / password-recovery / OAuth implicit flow). Used by
+   * the `auth/callback` deep-link screen when the app is cold-opened from a
+   * Supabase confirmation link on-device. Persists the session and fires
+   * `onAuthStateChange`, so callers let the auth gate route into the app
+   * rather than navigating on success themselves.
+   */
+  setSessionFromTokens(
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<Result<AuthSession, AuthError>>;
   getSession(): Promise<Result<AuthSession | null, AuthError>>;
   onAuthStateChange(
     callback: (session: AuthSession | null) => void,

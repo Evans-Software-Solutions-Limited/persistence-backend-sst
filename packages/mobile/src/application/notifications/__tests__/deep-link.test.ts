@@ -177,4 +177,28 @@ describe("redirectSystemPathForDeepLink", () => {
       "https://evil.example/clients",
     );
   });
+
+  it("routes the auth/callback deep link to the bare callback route, dropping the token fragment", () => {
+    // Full custom-scheme URL with the Supabase token fragment — the fragment
+    // is dropped from the routed path (the screen reads it off the raw URL).
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile://auth/callback#access_token=abc&refresh_token=def&type=signup",
+      ),
+    ).toBe("/auth/callback");
+    // Linking.createURL canonical (leading-slash) form.
+    expect(redirectSystemPathForDeepLink("/auth/callback")).toBe(
+      "/auth/callback",
+    );
+    // Bare host-form + an error fragment.
+    expect(
+      redirectSystemPathForDeepLink("auth/callback#error=access_denied"),
+    ).toBe("/auth/callback");
+    // Staging/dev scheme families resolve identically.
+    expect(
+      redirectSystemPathForDeepLink(
+        "persistencemobile-staging://auth/callback#access_token=x&refresh_token=y",
+      ),
+    ).toBe("/auth/callback");
+  });
 });
