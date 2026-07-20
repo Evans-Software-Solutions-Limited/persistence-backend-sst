@@ -25,6 +25,19 @@ export type SubscriptionTierName =
   | "medium_enterprise";
 
 /**
+ * Fallback free-trial length in days, used for paywall/drawer copy when the
+ * actual introductory-offer period isn't available from the store product
+ * (e.g. the Stripe rail, or before RevenueCat has surfaced the intro offer).
+ *
+ * The real trial is an App Store Connect Introductory Offer (14-day free
+ * trial on every auto-renewable sub); RevenueCat reflects its period on the
+ * product, which the iOS rail derives at runtime. This constant keeps every
+ * tier consistent at 14 days and stops the copy drifting from what Apple
+ * charges when the offer can't be read.
+ */
+export const DEFAULT_TRIAL_DAYS = 14;
+
+/**
  * Profile role. Drives the auto-default on the Subscription Selection
  * role toggle (`requirements.md` AC 6.1).
  */
@@ -40,8 +53,8 @@ export type SubscriptionRole =
  * schema.ts`) and the values the webhook handler writes.
  *
  * - `active` — paid subscription in good standing.
- * - `trialing` — inside the 7/14-day free trial. Backend flips to
- *   `active` after `invoice.payment_succeeded` post trial-end.
+ * - `trialing` — inside the free trial (see DEFAULT_TRIAL_DAYS). Backend
+ *   flips to `active` after `invoice.payment_succeeded` post trial-end.
  * - `past_due` — most recent invoice failed. Webhook drives this.
  * - `cancelled` — period-end cancel has been applied (sub still
  *   active until `expires_at`) OR immediate cancel committed.

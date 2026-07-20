@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DEFAULT_TRIAL_DAYS } from "@/domain/models/subscription";
 import type {
   BillingCycle,
   MySubscription,
@@ -152,7 +153,7 @@ export function SubscriptionSelectionPresenter(
           billingCycle={billingCycle}
           isCurrent={isPremiumCurrent}
           showTrialBanner={showPremiumTrial}
-          trialBannerText="7-day free trial"
+          trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
           onPress={() => onTierSelect("premium")}
           disabled={!!selectedTierForPayment || isProcessingSubscription}
           getFeaturesList={getFeaturesList}
@@ -204,7 +205,7 @@ export function SubscriptionSelectionPresenter(
             isStandardCurrent={false}
             isProCurrent={isCurrent}
             showProTrialBanner={showTrialBanner}
-            trialBannerText="14-day free trial"
+            trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             disabled={!!selectedTierForPayment || isProcessingSubscription}
@@ -572,11 +573,12 @@ export function deriveTrialEligibility(args: {
   if (tierName === "premium") {
     return {
       isTrialEligible: isTrialEligibleUser,
-      trialDuration: isTrialEligibleUser ? 7 : null,
+      trialDuration: isTrialEligibleUser ? DEFAULT_TRIAL_DAYS : null,
     };
   }
-  // Post tier-simplification: any trainer tier gets the 14-day trial
-  // (was `_pro` suffix-checked when Standard trainer tiers existed).
+  // Post tier-simplification: any trainer tier gets the same free trial
+  // (was `_pro` suffix-checked when Standard trainer tiers existed). All
+  // tiers share one duration now — see DEFAULT_TRIAL_DAYS.
   const trainerTiers: ReadonlySet<SubscriptionTierName> = new Set([
     "individual_trainer",
     "small_business",
@@ -585,7 +587,7 @@ export function deriveTrialEligibility(args: {
   if (trainerTiers.has(tierName)) {
     return {
       isTrialEligible: isTrialEligibleTrainer,
-      trialDuration: isTrialEligibleTrainer ? 14 : null,
+      trialDuration: isTrialEligibleTrainer ? DEFAULT_TRIAL_DAYS : null,
     };
   }
   return { isTrialEligible: false, trialDuration: null };

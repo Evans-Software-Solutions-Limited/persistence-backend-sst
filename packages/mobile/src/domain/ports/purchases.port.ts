@@ -78,6 +78,14 @@ export interface PurchaseProduct {
   billingCycle: BillingCycle;
   /** Localised, currency-formatted price for display (e.g. `£9.99`). */
   priceString: string;
+  /**
+   * Free-trial length in days derived from the product's introductory offer,
+   * or `null` when the product has no free-trial intro offer (paid intro, no
+   * offer, or before the App Store Connect offer is live). The paywall reads
+   * this so trial copy reflects Apple's actual offer; it falls back to
+   * `DEFAULT_TRIAL_DAYS` when null. See `freeTrialDaysFromIntroOffer`.
+   */
+  introTrialDays: number | null;
 }
 
 /**

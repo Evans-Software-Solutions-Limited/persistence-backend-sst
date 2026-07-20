@@ -17,7 +17,10 @@ import {
   iconDefaults,
 } from "@/ui/components/icons";
 import { toneHex } from "@/ui/components/foundation/tones";
-import type { SubscriptionTierName } from "@/domain/models/subscription";
+import {
+  DEFAULT_TRIAL_DAYS,
+  type SubscriptionTierName,
+} from "@/domain/models/subscription";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import { ModeSwitchCardPresenter } from "./ModeSwitchCardPresenter";
 import { SignOutConfirmDialog } from "./SignOutConfirmDialog";
@@ -219,7 +222,7 @@ export function ProfileDrawerPresenter({
             ) : null}
             {subscription?.inTrial ? (
               <Pill tone="ember" size="xs">
-                7-DAY TRIAL
+                {`${DEFAULT_TRIAL_DAYS}-DAY TRIAL`}
               </Pill>
             ) : null}
           </View>

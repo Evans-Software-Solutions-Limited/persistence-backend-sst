@@ -105,6 +105,7 @@ function makeAdapters(sub: MySubscription = freeSub()): {
       tier: "premium",
       billingCycle: "monthly",
       priceString: "£9.99",
+      introTrialDays: null,
     },
   ];
   auth.currentSession = {

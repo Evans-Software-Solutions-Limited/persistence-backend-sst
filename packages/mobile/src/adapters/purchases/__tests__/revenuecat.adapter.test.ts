@@ -106,9 +106,35 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
           tier: "premium",
           billingCycle: "monthly",
           priceString: "£9.99",
+          // No introPrice on the fixture → no free-trial length.
+          introTrialDays: null,
         },
       ]);
     }
+  });
+
+  it("derives introTrialDays from a free-trial introductory offer", async () => {
+    const a = configured();
+    mockPurchases.getOfferings.mockResolvedValue(
+      offeringWith([
+        {
+          identifier: "$rc_monthly",
+          packageType: "MONTHLY",
+          product: {
+            identifier: "app.persistence.premium.monthly",
+            priceString: "£9.99",
+            introPrice: {
+              price: 0,
+              periodUnit: "DAY",
+              periodNumberOfUnits: 14,
+            },
+          },
+        },
+      ]),
+    );
+    const r = await a.getPurchasablePackages();
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value[0].introTrialDays).toBe(14);
   });
 
   it("getPurchasablePackages returns empty when no offering exists", async () => {
