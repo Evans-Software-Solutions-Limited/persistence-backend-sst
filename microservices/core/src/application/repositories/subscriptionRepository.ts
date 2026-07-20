@@ -380,8 +380,9 @@ export class SubscriptionRepository {
    * duplicate-prone free-tier row.
    *
    * On conflict we update ONLY the mutable entitlement fields
-   * (tier / status / expiry / billingCycle / metadata + `updated_at`). We
-   * deliberately do NOT overwrite `user_id` or `starts_at`: the conflicting row
+   * (tier / status / expiry / billingCycle / cancelledAt / metadata +
+   * `updated_at`). We deliberately do NOT overwrite `user_id` or `starts_at`:
+   * the conflicting row
    * is the same subscription (the external id encodes it), so its original
    * ownership and start instant are preserved.
    *
@@ -411,6 +412,9 @@ export class SubscriptionRepository {
           paymentStatus: data.paymentStatus,
           expiresAt: data.expiresAt,
           billingCycle: data.billingCycle,
+          // Reflect the cancelled-but-active flag on re-sync too (e.g. an
+          // uncancellation must clear it), not just on first insert.
+          cancelledAt: data.cancelledAt ?? null,
           metadata: data.metadata,
           updatedAt: new Date(),
         },

@@ -14,6 +14,7 @@ const {
   markDoneMock,
   markFailedMock,
   fetchEntMock,
+  autoRenewOffMock,
 } = vi.hoisted(() => ({
   findByExternalIdMock: vi.fn(),
   updateByIdMock: vi.fn(),
@@ -25,6 +26,7 @@ const {
   markDoneMock: vi.fn(),
   markFailedMock: vi.fn(),
   fetchEntMock: vi.fn(),
+  autoRenewOffMock: vi.fn(),
 }));
 
 vi.mock("../../repositories/subscriptionRepository", () => ({
@@ -49,6 +51,7 @@ vi.mock("../../repositories/revenuecatWebhookEventsRepository", () => ({
 
 vi.mock("../revenueCatClient", () => ({
   fetchActiveEntitlements: fetchEntMock,
+  fetchAutoRenewOff: autoRenewOffMock,
   getRevenueCatWebhookSecret: () => "rc_whsec_test",
 }));
 
@@ -136,6 +139,7 @@ describe("handleRevenueCatWebhook", () => {
     upsertByExternalIdMock.mockResolvedValue({ id: "us1" });
     cancelLiveMock.mockResolvedValue(0);
     userExistsMock.mockResolvedValue(true);
+    autoRenewOffMock.mockResolvedValue(false);
     fetchEntMock.mockResolvedValue([]);
   });
 
@@ -198,6 +202,31 @@ describe("handleRevenueCatWebhook", () => {
     expect(updateByIdMock).not.toHaveBeenCalled();
     expect(findByExternalIdMock).not.toHaveBeenCalled();
     expect(markDoneMock).toHaveBeenCalledWith("evt_1");
+  });
+
+  it("sets cancelledAt when auto-renew is OFF (cancelled but active)", async () => {
+    fetchEntMock.mockResolvedValue([
+      { tier: "premium", expiresAt: null, productId: null, store: null },
+    ]);
+    autoRenewOffMock.mockResolvedValue(true);
+    const res = await handleRevenueCatWebhook(buildRequest());
+    expect(res.status).toBe(200);
+    const values = upsertByExternalIdMock.mock.calls[0][0] as {
+      cancelledAt: Date | null;
+    };
+    expect(values.cancelledAt).toBeInstanceOf(Date);
+  });
+
+  it("leaves cancelledAt null when auto-renew is ON", async () => {
+    fetchEntMock.mockResolvedValue([
+      { tier: "premium", expiresAt: null, productId: null, store: null },
+    ]);
+    autoRenewOffMock.mockResolvedValue(false);
+    await handleRevenueCatWebhook(buildRequest());
+    const values = upsertByExternalIdMock.mock.calls[0][0] as {
+      cancelledAt: Date | null;
+    };
+    expect(values.cancelledAt).toBeNull();
   });
 
   it("active entitlement → cancels siblings BEFORE the upsert (no active-unique violation when re-activating across rails)", async () => {
