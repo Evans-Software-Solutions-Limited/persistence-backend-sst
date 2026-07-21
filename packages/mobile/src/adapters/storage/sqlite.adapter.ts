@@ -1216,6 +1216,123 @@ export class SQLiteStorageAdapter implements StoragePort {
     });
   }
 
+  /**
+   * Rewrite a queued, not-yet-completed `POST /nutrition/entries` payload's
+   * `recipeId`/`mealId` reference from a `local-…` id to the server id. Shared
+   * by `swapLocalRecipeId`/`swapLocalMealId` — the entry body froze the
+   * reference at enqueue time, so re-keying the cached recipe/meal alone does
+   * NOT reach an already-queued log (mirrors the session `workoutId` rewrite in
+   * `swapLocalWorkoutId`). Assumes it's called inside a transaction.
+   */
+  private rewriteQueuedEntryRef(
+    db: SQLite.SQLiteDatabase,
+    field: "recipeId" | "mealId",
+    localId: string,
+    serverId: string,
+  ): void {
+    const rows = db.getAllSync(
+      `SELECT id, payload FROM sync_queue
+       WHERE entity_type = 'nutrition_entry' AND status != 'completed'`,
+    ) as { id: number; payload: string }[];
+    for (const r of rows) {
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(r.payload) as Record<string, unknown>;
+      } catch {
+        // Unparseable payload — leave it for the generic failure path rather
+        // than corrupting it.
+        continue;
+      }
+      if (body[field] === localId) {
+        body[field] = serverId;
+        db.runSync(`UPDATE sync_queue SET payload = ? WHERE id = ?`, [
+          JSON.stringify(body),
+          r.id,
+        ]);
+      }
+    }
+  }
+
+  swapLocalRecipeId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      // 1. cached_recipes — the id lives in the PK column AND the payload blob.
+      // INSERT-then-DELETE folds cleanly onto any row a concurrent refresh
+      // already pulled under the server id (mirrors the workout-detail re-key).
+      const rows = db.getAllSync(
+        `SELECT user_id, payload FROM cached_recipes WHERE id = ?`,
+        [localId],
+      ) as { user_id: string; payload: string }[];
+      for (const r of rows) {
+        const recipe = JSON.parse(r.payload) as Recipe;
+        recipe.id = serverId;
+        db.runSync(
+          `INSERT INTO cached_recipes (user_id, id, payload, synced_at)
+             VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, id) DO UPDATE SET
+             payload = excluded.payload, synced_at = excluded.synced_at`,
+          [r.user_id, serverId, JSON.stringify(recipe)],
+        );
+        db.runSync(`DELETE FROM cached_recipes WHERE user_id = ? AND id = ?`, [
+          r.user_id,
+          localId,
+        ]);
+      }
+      // 2. sync_queue — re-point any queued recipe follow-up mutation (rare —
+      // recipe detail is read-only today — but mirror the workout/nutrition swaps).
+      db.runSync(
+        `UPDATE sync_queue SET endpoint = ?
+         WHERE entity_type = 'recipe' AND endpoint = ?`,
+        [`/recipes/${serverId}`, `/recipes/${localId}`],
+      );
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?
+         WHERE entity_type = 'recipe' AND entity_id = ?`,
+        [serverId, localId],
+      );
+      // 3. sync_queue — the critical one: a queued log froze `recipeId`.
+      this.rewriteQueuedEntryRef(db, "recipeId", localId, serverId);
+    });
+  }
+
+  swapLocalMealId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const rows = db.getAllSync(
+        `SELECT user_id, payload FROM cached_meals WHERE id = ?`,
+        [localId],
+      ) as { user_id: string; payload: string }[];
+      for (const r of rows) {
+        const meal = JSON.parse(r.payload) as Meal;
+        meal.id = serverId;
+        db.runSync(
+          `INSERT INTO cached_meals (user_id, id, payload, synced_at)
+             VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, id) DO UPDATE SET
+             payload = excluded.payload, synced_at = excluded.synced_at`,
+          [r.user_id, serverId, JSON.stringify(meal)],
+        );
+        db.runSync(`DELETE FROM cached_meals WHERE user_id = ? AND id = ?`, [
+          r.user_id,
+          localId,
+        ]);
+      }
+      db.runSync(
+        `UPDATE sync_queue SET endpoint = ?
+         WHERE entity_type = 'meal' AND endpoint = ?`,
+        [`/meals/${serverId}`, `/meals/${localId}`],
+      );
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?
+         WHERE entity_type = 'meal' AND entity_id = ?`,
+        [serverId, localId],
+      );
+      this.rewriteQueuedEntryRef(db, "mealId", localId, serverId);
+    });
+  }
+
   // -- Reference-List Cache --
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {

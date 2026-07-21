@@ -836,6 +836,26 @@ export interface StoragePort {
   swapLocalWorkoutId(localId: string, serverId: string): void;
 
   /**
+   * Rewrite a recipe's optimistic `local-…` id to the server-assigned id once
+   * its `POST /recipes` create flushes. A recipe is created offline-first with
+   * a `local-…` id (`createRecipeCommand`); anything that froze that id before
+   * the create synced still points at it — the cached recipe row and, critically,
+   * the `recipeId` inside any queued `POST /nutrition/entries` payload (the log
+   * body is frozen at enqueue time, so a user who creates a recipe and logs it
+   * before the create round-trips enqueues an entry referencing the `local-…`
+   * id). Without this swap that entry syncs against
+   * `RecipeRepository.getById('local-…')` → 400 `recipe_not_found` →
+   * `permanently_failed`, and the logged food silently vanishes. Mirrors
+   * `swapLocalWorkoutId`'s payload-reference rewrite. Called from the sync
+   * worker's reply path. No-op when the ids match or nothing references `localId`.
+   */
+  swapLocalRecipeId(localId: string, serverId: string): void;
+
+  /** As `swapLocalRecipeId`, for a saved meal's `local-…` id and the `mealId`
+   * reference inside queued `/nutrition/entries` payloads. */
+  swapLocalMealId(localId: string, serverId: string): void;
+
+  /**
    * Read the rest-timer state (started-at + total-seconds) for the
    * user's active session. Stored inline on `active_sessions` per
    * EXECUTION_PLAN § 3.1 — single-active-session invariant means a

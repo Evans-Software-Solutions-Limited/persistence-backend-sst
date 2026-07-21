@@ -83,10 +83,13 @@ export function scaleFoodMacros(food: Food, servings: number): MacroSum {
 /**
  * Recipe macros scaled to `servings`. Recipe `total_*` are the totals for the
  * recipe's own `servings`, so one logged serving = total / recipe.servings.
- * Guards a zero/absent recipe yield (→ 0 macros rather than NaN).
+ * A zero/absent recipe yield falls back to a divisor of 1 — MATCHING the
+ * server's derivation in `nutritionEntriesCreateHandler` (`perServing =
+ * recipe.servings > 0 ? recipe.servings : 1`), so the optimistic local total
+ * equals what the server persists (no post-reconcile jump).
  */
 export function scaleRecipeMacros(recipe: Recipe, servings: number): MacroSum {
-  const per = recipe.servings > 0 ? servings / recipe.servings : 0;
+  const per = servings / (recipe.servings > 0 ? recipe.servings : 1);
   return {
     kcal: Math.round((recipe.totalKcal ?? 0) * per),
     proteinG: Math.round((recipe.totalProteinG ?? 0) * per),
